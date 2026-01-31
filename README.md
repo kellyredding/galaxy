@@ -1,6 +1,6 @@
-# galaxy
+# Galaxy
 
-**Galaxy** - A toolkit of utilities for enhancing Claude Code sessions.
+**Galaxy brain for Claude Code** — Multi-agent orchestration tools for Claude Code.
 
 ## Tools
 
