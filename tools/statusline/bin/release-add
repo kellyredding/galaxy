@@ -22,7 +22,7 @@ if [ -z "$VERSION" ]; then
   exit 1
 fi
 
-TAG="v$VERSION"
+TAG="statusline-v$VERSION"
 
 # Detect platform
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')

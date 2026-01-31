@@ -2,6 +2,15 @@
 
 This document describes how to create releases and distribute binaries.
 
+## Multi-Tool Repository
+
+Galaxy is a multi-tool repository. Each tool has independent releases with tool-prefixed tags:
+
+- `statusline-v0.1.0` - statusline releases
+- `othertool-v1.0.0` - other tool releases (future)
+
+This allows each tool to version independently while sharing a single repository.
+
 ## Prerequisites
 
 - Crystal installed (`crystal --version`)
@@ -30,7 +39,7 @@ Version must be in `X.Y.Z` format (semver).
 
 ### 2. Run the Release Script
 
-From your primary development machine (ARM Mac):
+From your primary development machine (ARM Mac), within the `tools/statusline/` directory:
 
 ```bash
 bin/release
@@ -42,7 +51,7 @@ This will:
 - Run test suite
 - Create tarball with SHA256 checksum
 - Commit version bump
-- Create and push git tag
+- Create and push git tag (`statusline-vX.Y.Z`)
 - Create GitHub release with macOS ARM64 binary
 
 ### 3. Add Additional Platforms (Optional)
@@ -52,6 +61,7 @@ To add binaries for other platforms, run `bin/release-add` on each target machin
 **On an Intel Mac:**
 ```bash
 git pull origin main
+cd tools/statusline
 bin/release-add
 # Uploads galaxy-statusline-X.Y.Z-darwin-amd64.tar.gz
 ```
@@ -59,6 +69,7 @@ bin/release-add
 **On a Linux x64 machine:**
 ```bash
 git pull origin main
+cd tools/statusline
 bin/release-add
 # Uploads galaxy-statusline-X.Y.Z-linux-amd64.tar.gz
 ```
@@ -80,6 +91,14 @@ Each release includes:
 - `galaxy-statusline-X.Y.Z-<os>-<arch>.tar.gz` - Compressed binary
 - `galaxy-statusline-X.Y.Z-<os>-<arch>.tar.gz.sha256` - Checksum file
 
+## Tag Format
+
+Tags follow the pattern `{tool}-v{version}`:
+- Tag: `statusline-v0.1.0`
+- Release title: `statusline v0.1.0`
+
+This enables the self-update feature to find the correct release for each tool in the multi-tool repository.
+
 ## Verifying Downloads
 
 Users can verify download integrity:
@@ -94,3 +113,15 @@ Version is defined in three places, kept in sync by `bin/release`:
 - `VERSION.txt` - Source of truth
 - `shard.yml` - Crystal package version
 - `src/galaxy_statusline.cr` - `VERSION` constant
+
+## Self-Update
+
+Users can update to the latest version with:
+
+```bash
+galaxy-statusline update           # Update to latest
+galaxy-statusline update preview   # Preview without changes
+galaxy-statusline update force     # Reinstall even if current
+```
+
+The update command fetches releases from GitHub, filters for `statusline-v*` tags, and installs the latest matching release.

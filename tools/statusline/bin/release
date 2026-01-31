@@ -40,10 +40,10 @@ if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   exit 1
 fi
 
-TAG="v$VERSION"
+TAG="statusline-v$VERSION"
 ARTIFACT="$BINARY-$VERSION-darwin-arm64"
 
-echo "==> Releasing $TAG (from $VERSION_FILE)"
+echo "==> Releasing statusline $VERSION (from $VERSION_FILE)"
 
 # Check if tag already exists
 if git rev-parse "$TAG" >/dev/null 2>&1; then
@@ -85,7 +85,7 @@ cd ..
 if [ -n "$(git status --porcelain)" ]; then
   echo "==> Committing version $VERSION"
   git add VERSION.txt shard.yml src/galaxy_statusline.cr
-  git commit -m "Release $VERSION"
+  git commit -m "Release statusline $VERSION"
 fi
 
 # Create and push tag
@@ -97,7 +97,7 @@ git push origin "$TAG"
 # Create GitHub release with artifact
 echo "==> Creating GitHub release"
 gh release create "$TAG" \
-  --title "v$VERSION" \
+  --title "statusline v$VERSION" \
   --generate-notes \
   "$RELEASE_DIR/$ARTIFACT.tar.gz" \
   "$RELEASE_DIR/$ARTIFACT.tar.gz.sha256"
