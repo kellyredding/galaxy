@@ -1,0 +1,10 @@
+# macOS
+.DS_Store
+
+# Editor/IDE
+.idea/
+*.swp
+*~
+.vscode/
+
+# Tool-specific ignores are in each tool's .gitignore
