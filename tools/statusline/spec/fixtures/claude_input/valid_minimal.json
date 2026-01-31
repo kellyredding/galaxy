@@ -1,0 +1,6 @@
+{
+  "hook_event_name": "Status",
+  "workspace": {
+    "current_dir": "/tmp/test"
+  }
+}

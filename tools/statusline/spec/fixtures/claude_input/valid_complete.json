@@ -1,0 +1,24 @@
+{
+  "hook_event_name": "Status",
+  "session_id": "abc123",
+  "cwd": "/current/working/directory",
+  "model": {
+    "id": "claude-sonnet-4-20250514",
+    "display_name": "Sonnet"
+  },
+  "workspace": {
+    "current_dir": "/Users/kelly/projects/galaxc",
+    "project_dir": "/Users/kelly/projects/galaxc"
+  },
+  "version": "1.0.80",
+  "cost": {
+    "total_cost_usd": 0.42,
+    "total_lines_added": 45,
+    "total_lines_removed": 12
+  },
+  "context_window": {
+    "used_percentage": 45.2,
+    "total_input_tokens": 90400,
+    "context_window_size": 200000
+  }
+}

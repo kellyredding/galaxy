@@ -1,0 +1,31 @@
+{
+  "version": "0.0.1",
+  "colors": {
+    "directory": "bold:yellow",
+    "branch": "green",
+    "upstream_behind": "cyan",
+    "upstream_ahead": "cyan",
+    "upstream_synced": "green",
+    "dirty": "yellow",
+    "staged": "green",
+    "stashed": "red",
+    "context_normal": "green",
+    "context_warning": "yellow",
+    "context_critical": "red",
+    "model": "default",
+    "cost": "default"
+  },
+  "branch_style": "symbolic",
+  "context_thresholds": {
+    "warning": 60,
+    "critical": 80
+  },
+  "layout": {
+    "min_width": 60,
+    "context_bar_min_width": 10,
+    "context_bar_max_width": 20,
+    "show_cost": true,
+    "show_model": true,
+    "directory_style": "smart"
+  }
+}

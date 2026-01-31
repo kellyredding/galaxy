@@ -1,0 +1,14 @@
+name: galaxc-statusline
+version: 0.0.1
+description: Customizable status line for Claude Code sessions
+
+authors:
+  - Kelly Redding <kelly@kellyredding.com>
+
+targets:
+  galaxc-statusline:
+    main: src/galaxc_statusline.cr
+
+license: MIT
+
+crystal: ">= 1.0.0"
