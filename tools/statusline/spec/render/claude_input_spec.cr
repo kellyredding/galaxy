@@ -10,11 +10,12 @@ describe GalaxcStatusline::ClaudeInput do
       input.session_id.should eq("abc123")
     end
 
-    it "extracts workspace.current_dir" do
+    it "extracts cwd as current directory" do
       json = read_fixture("claude_input/valid_complete.json")
       input = GalaxcStatusline::ClaudeInput.parse(json)
 
-      input.current_directory.should eq("/Users/kelly/projects/galaxc")
+      # cwd is preferred over workspace.current_dir
+      input.current_directory.should eq("/current/working/directory")
     end
 
     it "extracts model.display_name" do
@@ -58,16 +59,16 @@ describe GalaxcStatusline::ClaudeInput do
   end
 
   describe "#current_directory" do
-    it "prefers workspace.current_dir over cwd" do
+    it "prefers cwd over workspace.current_dir" do
       json = read_fixture("claude_input/valid_complete.json")
       input = GalaxcStatusline::ClaudeInput.parse(json)
 
-      # workspace.current_dir should be preferred
-      input.current_directory.should eq("/Users/kelly/projects/galaxc")
+      # cwd should be preferred (actual working directory vs project root)
+      input.current_directory.should eq("/current/working/directory")
     end
 
-    it "falls back to cwd when workspace missing" do
-      json = %({"cwd": "/fallback/dir"})
+    it "falls back to workspace.current_dir when cwd missing" do
+      json = %({"workspace": {"current_dir": "/fallback/dir"}})
       input = GalaxcStatusline::ClaudeInput.parse(json)
 
       input.current_directory.should eq("/fallback/dir")

@@ -49,8 +49,8 @@ module GalaxcStatusline
         @context_normal = "green",
         @context_warning = "yellow",
         @context_critical = "red",
-        @model = "default",
-        @cost = "default",
+        @model = "bright_cyan",
+        @cost = "bright_green",
       )
       end
     end
@@ -77,8 +77,8 @@ module GalaxcStatusline
 
       def initialize(
         @min_width = 60,
-        @context_bar_min_width = 10,
-        @context_bar_max_width = 20,
+        @context_bar_min_width = 25,
+        @context_bar_max_width = 50,
         @show_cost = true,
         @show_model = true,
         @directory_style = "smart",

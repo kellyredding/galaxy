@@ -4,135 +4,216 @@ module GalaxcStatusline
     FILLED_BLOCK = "█"
     EMPTY_BLOCK  = "░"
 
+    # TIOCGWINSZ ioctl constant for macOS
+    TIOCGWINSZ = 0x40087468_u64
+
+    @[Link("c")]
+    lib TerminalLib
+      struct Winsize
+        ws_row : UInt16
+        ws_col : UInt16
+        ws_xpixel : UInt16
+        ws_ypixel : UInt16
+      end
+
+      fun ioctl(fd : Int32, request : UInt64, ...) : Int32
+    end
+
     @input : ClaudeInput
     @config : Config
     @git : Git
     @terminal_width : Int32
+    @max_status_width : Int32
 
     def initialize(@input : ClaudeInput, @config : Config)
       @git = Git.new(@input.current_directory)
       @terminal_width = get_terminal_width
+      @max_status_width = @terminal_width // 2  # Half of terminal, rounded down
     end
 
     def render : String
+      # Priority order for fitting (shrink first → last):
+      # 1. Context bar (shrink to min)
+      # 2. Cost (drop)
+      # 3. Model (drop)
+      # 4. Directory (shrink: full → abbreviated → basename → drop)
+      # 5. Git (drop - last resort)
+
+      # Get base content
+      dir_full = render_directory_full
+      git_part = render_git
+      model_part = render_model
+      cost_part = render_cost
+
+      # Calculate fixed widths
+      dir_full_width = strip_ansi(dir_full).size
+      git_width = strip_ansi(git_part).size
+      model_width = strip_ansi(model_part).size
+      cost_width = strip_ansi(cost_part).size
+
+      # Start with max context bar and all components
+      bar_width = @config.layout.context_bar_max_width
+      min_bar_width = @config.layout.context_bar_min_width
+      include_cost = @config.layout.show_cost && !cost_part.empty?
+      include_model = @config.layout.show_model && !model_part.empty?
+      include_git = @git.in_git_repo? && !git_part.empty?
+
+      # Calculate what directory display to use
+      dir_display = dir_full
+      dir_width = dir_full_width
+
+      # Iteratively shrink to fit
+      loop do
+        total = calculate_total_width(
+          dir_width: dir_width,
+          git_width: include_git ? git_width : 0,
+          model_width: include_model ? model_width : 0,
+          bar_width: bar_width,
+          cost_width: include_cost ? cost_width : 0,
+        )
+
+        break if total <= @max_status_width
+
+        # Step 1: Shrink context bar
+        if bar_width > min_bar_width
+          bar_width -= 1
+          next
+        end
+
+        # Step 2: Drop cost
+        if include_cost
+          include_cost = false
+          next
+        end
+
+        # Step 3: Drop model
+        if include_model
+          include_model = false
+          next
+        end
+
+        # Step 4: Shrink directory
+        if dir_width > 0
+          # Try abbreviated
+          abbrev = render_directory_abbreviated
+          abbrev_width = strip_ansi(abbrev).size
+          if dir_width > abbrev_width && abbrev_width > 0
+            dir_display = abbrev
+            dir_width = abbrev_width
+            next
+          end
+
+          # Try basename
+          base = render_directory_basename
+          base_width = strip_ansi(base).size
+          if dir_width > base_width && base_width > 0
+            dir_display = base
+            dir_width = base_width
+            next
+          end
+
+          # Drop directory entirely
+          dir_display = ""
+          dir_width = 0
+          next
+        end
+
+        # Step 5: Drop git (last resort)
+        if include_git
+          include_git = false
+          next
+        end
+
+        # Nothing left to shrink
+        break
+      end
+
+      # Build final output
       parts = [] of String
 
-      # Always try to add context percentage (never drop)
-      context_part = render_context
+      # Left side: directory + git (no separator between them)
+      left_side = ""
+      left_side += dir_display unless dir_display.empty?
+      left_side += git_part if include_git
+      parts << left_side unless left_side.empty?
 
-      # Calculate available width
-      available = @terminal_width - context_part.size - SEPARATOR.size
+      # Right side: model, context bar, cost
+      parts << model_part if include_model
+      parts << render_context_bar(bar_width)
+      parts << cost_part if include_cost
 
-      # Build parts from right to left priority
-      # Cost (first to drop)
-      cost_part = render_cost
-      model_part = render_model
-
-      # Directory and git
-      dir_part = render_directory
-      git_part = render_git
-
-      # Assemble based on available width
-      left_parts = [] of String
-      right_parts = [] of String
-
-      # Always include context
-      right_parts << context_part
-
-      # Try to include model
-      if @config.layout.show_model && !model_part.empty?
-        needed = strip_ansi(model_part).size + SEPARATOR.size
-        if available >= needed
-          right_parts.unshift(model_part)
-          available -= needed
-        end
-      end
-
-      # Try to include cost
-      if @config.layout.show_cost && !cost_part.empty?
-        needed = strip_ansi(cost_part).size + SEPARATOR.size
-        if available >= needed
-          right_parts.unshift(cost_part)
-          available -= needed
-        end
-      end
-
-      # Git status (rarely drop)
-      if @git.in_git_repo? && !git_part.empty?
-        needed = strip_ansi(git_part).size + SEPARATOR.size
-        if available >= needed
-          left_parts << git_part
-          available -= needed
-        end
-      end
-
-      # Directory (with progressive abbreviation)
-      if !dir_part.empty?
-        dir_display = fit_directory(dir_part, available)
-        unless dir_display.empty?
-          left_parts.unshift(dir_display)
-        end
-      end
-
-      # Combine parts
-      result = (left_parts + right_parts).join(SEPARATOR)
-      result
+      parts.join(SEPARATOR)
     end
 
-    private def render_directory : String
+    private def calculate_total_width(
+      dir_width : Int32,
+      git_width : Int32,
+      model_width : Int32,
+      bar_width : Int32,
+      cost_width : Int32,
+    ) : Int32
+      # Context bar width = bar chars + space + percentage (e.g., "100%")
+      context_width = bar_width + 1 + 4  # " 100%" = 5 chars max
+
+      parts_count = 0
+      total = 0
+
+      # Directory + git are combined (no separator between them)
+      left_width = dir_width + git_width
+      if left_width > 0
+        total += left_width
+        parts_count += 1
+      end
+
+      if model_width > 0
+        total += model_width
+        parts_count += 1
+      end
+
+      total += context_width
+      parts_count += 1
+
+      if cost_width > 0
+        total += cost_width
+        parts_count += 1
+      end
+
+      # Add separators
+      total += (parts_count - 1) * SEPARATOR.size if parts_count > 1
+
+      total
+    end
+
+    private def render_directory_full : String
       dir = @input.current_directory
       return "" unless dir
 
-      # Apply color
-      Colors.colorize(dir, @config.colors.directory)
+      home = Path.home.to_s
+      display_dir = dir.starts_with?(home) ? dir.sub(home, "~") : dir
+
+      Colors.colorize(display_dir, @config.colors.directory)
     end
 
-    private def fit_directory(colored_dir : String, available_width : Int32) : String
+    private def render_directory_abbreviated : String
       dir = @input.current_directory
       return "" unless dir
 
-      # Try progressively shorter versions based on directory_style
-      case @config.layout.directory_style
-      when "full"
-        # Only show full or nothing
-        if strip_ansi(colored_dir).size <= available_width
-          colored_dir
-        else
-          ""
-        end
-      when "smart"
-        # Try full, then abbreviated, then basename
-        if strip_ansi(colored_dir).size <= available_width
-          return colored_dir
-        end
+      home = Path.home.to_s
+      display_dir = dir.starts_with?(home) ? dir.sub(home, "~") : dir
 
-        abbrev = abbreviate_path(dir)
-        if abbrev.size <= available_width
-          return Colors.colorize(abbrev, @config.colors.directory)
-        end
+      abbrev = abbreviate_path(display_dir)
+      Colors.colorize(abbrev, @config.colors.directory)
+    end
 
-        base = File.basename(dir)
-        if base.size <= available_width
-          return Colors.colorize(base, @config.colors.directory)
-        end
+    private def render_directory_basename : String
+      dir = @input.current_directory
+      return "" unless dir
 
-        ""
-      when "basename"
-        base = File.basename(dir)
-        Colors.colorize(base, @config.colors.directory)
-      when "short"
-        abbrev = abbreviate_path(dir)
-        Colors.colorize(abbrev, @config.colors.directory)
-      else
-        colored_dir
-      end
+      base = File.basename(dir)
+      Colors.colorize(base, @config.colors.directory)
     end
 
     private def abbreviate_path(path : String) : String
-      # Replace home with ~
-      home = Path.home.to_s
-      path = path.sub(home, "~") if path.starts_with?(home)
-
       parts = path.split("/")
       return path if parts.size <= 2
 
@@ -208,19 +289,20 @@ module GalaxcStatusline
         parts << Colors.colorize("*", @config.colors.dirty)
       end
 
-      parts.join
+      "[#{parts.join}]"
     end
 
     private def render_minimal_branch(branch : String) : String
       colored_branch = Colors.colorize(branch, @config.colors.branch)
-      if @git.dirty || @git.staged
-        colored_branch + Colors.colorize("*", @config.colors.dirty)
-      else
-        colored_branch
-      end
+      inner = if @git.dirty || @git.staged
+                colored_branch + Colors.colorize("*", @config.colors.dirty)
+              else
+                colored_branch
+              end
+      "[#{inner}]"
     end
 
-    private def render_context : String
+    private def render_context_bar(bar_width : Int32) : String
       percentage = @input.context_percentage || 0.0
 
       # Determine color based on thresholds
@@ -231,9 +313,6 @@ module GalaxcStatusline
               else
                 @config.colors.context_normal
               end
-
-      # Calculate bar width based on terminal width
-      bar_width = calculate_bar_width
 
       # Render bar
       filled = ((percentage / 100.0) * bar_width).round.to_i
@@ -248,20 +327,6 @@ module GalaxcStatusline
       colored_pct = Colors.colorize(pct_str, color)
 
       "#{colored_bar} #{colored_pct}"
-    end
-
-    private def calculate_bar_width : Int32
-      min = @config.layout.context_bar_min_width
-      max = @config.layout.context_bar_max_width
-
-      # Scale based on terminal width
-      if @terminal_width >= 120
-        max
-      elsif @terminal_width >= 80
-        ((max + min) / 2).to_i
-      else
-        min
-      end
     end
 
     private def render_model : String
@@ -288,16 +353,20 @@ module GalaxcStatusline
     end
 
     private def get_terminal_width : Int32
-      # Try to get terminal width
+      # Open /dev/tty directly to get terminal width
+      # This works even when stdin/stdout/stderr are all piped
       begin
-        result = `tput cols 2>/dev/null`.strip
-        width = result.to_i?
-        return width if width && width > 0
+        File.open("/dev/tty", "r") do |tty|
+          ws = TerminalLib::Winsize.new
+          result = TerminalLib.ioctl(tty.fd, TIOCGWINSZ, pointerof(ws))
+          if result == 0 && ws.ws_col > 0
+            return ws.ws_col.to_i32
+          end
+        end
       rescue
+        # /dev/tty not available
       end
-
-      # Fallback
-      80
+      80  # Fallback
     end
 
     private def strip_ansi(text : String) : String

@@ -70,8 +70,9 @@ module GalaxcStatusline
     end
 
     # Helper methods for safe access
+    # Prefer cwd (actual current working directory) over workspace.current_dir (project root)
     def current_directory : String?
-      workspace.try(&.current_dir) || cwd
+      cwd || workspace.try(&.current_dir)
     end
 
     def model_name : String?
