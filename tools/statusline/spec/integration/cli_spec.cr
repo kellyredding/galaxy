@@ -71,9 +71,9 @@ describe "CLI Integration" do
       end
     end
 
-    describe "config --help" do
+    describe "config help" do
       it "outputs configuration documentation" do
-        result = run_binary(["config", "--help"])
+        result = run_binary(["config", "help"])
         result[:output].should contain("AVAILABLE SETTINGS")
         result[:output].should contain("branch_style")
         result[:output].should contain("colors")

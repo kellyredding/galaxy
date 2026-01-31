@@ -51,7 +51,7 @@ Add to `~/.claude/settings.json`:
 galaxc-statusline                    # If stdin has data -> render, else -> help
 galaxc-statusline render             # Explicit render (reads stdin JSON)
 galaxc-statusline config             # Show current config
-galaxc-statusline config --help      # Configuration documentation
+galaxc-statusline config help      # Configuration documentation
 galaxc-statusline config set KEY VAL # Set a config value
 galaxc-statusline config get KEY     # Get a config value
 galaxc-statusline config reset       # Reset to defaults
@@ -99,7 +99,7 @@ Colors can be set to:
 ### Configuration Reference
 
 ```bash
-galaxc-statusline config --help  # Full configuration documentation
+galaxc-statusline config help  # Full configuration documentation
 ```
 
 ### Example Configuration

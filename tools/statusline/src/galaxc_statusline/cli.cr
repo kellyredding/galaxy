@@ -25,21 +25,7 @@ module GalaxcStatusline
       # Parse and collect positional args
       positional_args = [] of String
       parser.unknown_args { |a| positional_args = a }
-
-      # If first arg is a subcommand, don't parse global flags after it
-      # This allows "config --help" to work correctly
-      first_positional_idx = args.index { |a| !a.starts_with?("-") }
-      if first_positional_idx && first_positional_idx > 0
-        # Parse only flags before the subcommand
-        parser.parse(args[0...first_positional_idx])
-        positional_args = args[first_positional_idx..]
-      elsif first_positional_idx == 0
-        # No flags before subcommand, just use as positional
-        positional_args = args
-      else
-        # All flags, no positional args
-        parser.parse(args)
-      end
+      parser.parse(args)
 
       # Handle help/version flags
       if show_help_flag
@@ -91,7 +77,7 @@ module GalaxcStatusline
       Commands:
         render              Render status line (reads JSON from stdin)
         config              Show current configuration
-        config --help       Configuration documentation
+        config help         Configuration documentation
         config set KEY VAL  Set a configuration value
         config get KEY      Get a configuration value
         config reset        Reset to defaults
@@ -145,7 +131,7 @@ module GalaxcStatusline
       rest = args[1..]? || [] of String
 
       case subcommand
-      when "--help", "-h"
+      when "help"
         show_config_help
       when "set"
         config_set(rest)
@@ -157,7 +143,7 @@ module GalaxcStatusline
         puts CONFIG_FILE
       else
         STDERR.puts "Error: Unknown config command '#{subcommand}'"
-        STDERR.puts "Run 'galaxc-statusline config --help' for usage"
+        STDERR.puts "Run 'galaxc-statusline config help' for usage"
         exit(1)
       end
     end
@@ -168,6 +154,7 @@ module GalaxcStatusline
 
       USAGE:
         galaxc-statusline config                    Show current configuration
+        galaxc-statusline config help               Configuration documentation
         galaxc-statusline config set KEY VALUE      Set a configuration value
         galaxc-statusline config get KEY            Get a configuration value
         galaxc-statusline config reset              Reset to defaults
