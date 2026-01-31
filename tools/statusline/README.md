@@ -13,20 +13,33 @@ A customizable status line for Claude Code sessions that displays working direct
 
 ## Installation
 
-### From Source
+Download the latest binary from [Releases](https://github.com/kellyredding/galaxy/releases) and place it in your PATH:
 
 ```bash
-cd tools/statusline
-make install
+# Download tarball and checksum (check Releases page for latest version)
+# Use darwin-arm64 for Apple Silicon, darwin-amd64 for Intel
+curl -LO https://github.com/kellyredding/galaxy/releases/download/statusline-vX.X.X/galaxy-statusline-X.X.X-darwin-arm64.tar.gz
+curl -LO https://github.com/kellyredding/galaxy/releases/download/statusline-vX.X.X/galaxy-statusline-X.X.X-darwin-arm64.tar.gz.sha256
+
+# Verify checksum (should say "OK")
+shasum -a 256 -c galaxy-statusline-X.X.X-darwin-arm64.tar.gz.sha256
+
+# Extract and install
+tar -xzf galaxy-statusline-X.X.X-darwin-arm64.tar.gz
+mkdir -p ~/.claude/galaxy/bin
+mv galaxy-statusline-X.X.X-darwin-arm64 ~/.claude/galaxy/bin/galaxy-statusline
+chmod +x ~/.claude/galaxy/bin/galaxy-statusline
+
+# Clean up
+rm galaxy-statusline-X.X.X-darwin-arm64.tar.gz galaxy-statusline-X.X.X-darwin-arm64.tar.gz.sha256
 ```
 
-This installs the binary to `~/.claude/galaxy/bin/galaxy-statusline`.
-
-### Manual Installation
+Or build from source (requires Crystal):
 
 ```bash
-make build
-cp build/galaxy-statusline ~/.claude/galaxy/bin/
+git clone https://github.com/kellyredding/galaxy.git
+cd galaxy/tools/statusline
+make install
 ```
 
 ## Claude Code Integration
@@ -51,11 +64,14 @@ Add to `~/.claude/settings.json`:
 galaxy-statusline                    # If stdin has data -> render, else -> help
 galaxy-statusline render             # Explicit render (reads stdin JSON)
 galaxy-statusline config             # Show current config
-galaxy-statusline config help      # Configuration documentation
+galaxy-statusline config help        # Configuration documentation
 galaxy-statusline config set KEY VAL # Set a config value
 galaxy-statusline config get KEY     # Get a config value
 galaxy-statusline config reset       # Reset to defaults
 galaxy-statusline config path        # Show config file location
+galaxy-statusline update             # Update to latest version
+galaxy-statusline update preview     # Preview update without changes
+galaxy-statusline update force       # Reinstall latest version
 galaxy-statusline version            # Show version
 galaxy-statusline help               # Show help
 ```
