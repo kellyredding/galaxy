@@ -1,4 +1,4 @@
-module GalaxcStatusline
+module GalaxyStatusline
   module Colors
     RESET = "\e[0m"
 

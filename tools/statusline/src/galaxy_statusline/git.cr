@@ -1,4 +1,4 @@
-module GalaxcStatusline
+module GalaxyStatusline
   class Git
     getter branch : String?
     getter ahead : Int32

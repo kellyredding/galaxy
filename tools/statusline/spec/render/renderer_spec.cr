@@ -4,7 +4,7 @@ def strip_ansi(text : String) : String
   text.gsub(/\e\[[0-9;]*m/, "")
 end
 
-describe GalaxcStatusline::Renderer do
+describe GalaxyStatusline::Renderer do
   describe "git branch styles all have brackets" do
     # Note: In spec context (no git repo), git info won't appear
     # These tests verify the render succeeds with each style

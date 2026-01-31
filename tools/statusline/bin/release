@@ -5,7 +5,7 @@ set -e
 # Usage: bin/release
 
 VERSION_FILE="VERSION.txt"
-BINARY="galaxc-statusline"
+BINARY="galaxy-statusline"
 BUILD_DIR="build"
 RELEASE_DIR="releases"
 
@@ -57,13 +57,13 @@ sed "s/^version: .*/version: $VERSION/" shard.yml > shard.yml.tmp && mv shard.ym
 
 # Sync version to source
 echo "==> Syncing version to source"
-sed "s/VERSION = \".*\"/VERSION = \"$VERSION\"/" src/galaxc_statusline.cr > src/galaxc_statusline.cr.tmp && mv src/galaxc_statusline.cr.tmp src/galaxc_statusline.cr
+sed "s/VERSION = \".*\"/VERSION = \"$VERSION\"/" src/galaxy_statusline.cr > src/galaxy_statusline.cr.tmp && mv src/galaxy_statusline.cr.tmp src/galaxy_statusline.cr
 
 # Build release binary
 echo "==> Building release binary"
 mkdir -p "$BUILD_DIR"
 shards install
-crystal build --release --no-debug -o "$BUILD_DIR/$BINARY" src/galaxc_statusline.cr
+crystal build --release --no-debug -o "$BUILD_DIR/$BINARY" src/galaxy_statusline.cr
 
 # Run specs
 echo "==> Running specs"
@@ -84,7 +84,7 @@ cd ..
 # Commit if there are changes
 if [ -n "$(git status --porcelain)" ]; then
   echo "==> Committing version $VERSION"
-  git add VERSION.txt shard.yml src/galaxc_statusline.cr
+  git add VERSION.txt shard.yml src/galaxy_statusline.cr
   git commit -m "Release $VERSION"
 fi
 
@@ -104,4 +104,4 @@ gh release create "$TAG" \
 
 echo ""
 echo "==> Released $TAG"
-echo "    https://github.com/kellyredding/galaxc/releases/tag/$TAG"
+echo "    https://github.com/kellyredding/galaxy/releases/tag/$TAG"

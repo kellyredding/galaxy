@@ -1,6 +1,6 @@
 require "json"
 
-module GalaxcStatusline
+module GalaxyStatusline
   # Parses the JSON input from Claude Code's status line hook
   class ClaudeInput
     include JSON::Serializable

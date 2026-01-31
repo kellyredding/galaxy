@@ -1,6 +1,6 @@
-# galaxc
+# galaxy
 
-**Galaxy Claude Code** - A toolkit of utilities for enhancing Claude Code sessions.
+**Galaxy** - A toolkit of utilities for enhancing Claude Code sessions.
 
 ## Tools
 
@@ -12,8 +12,8 @@
 
 ```bash
 # Clone and build
-git clone https://github.com/kellyredding/galaxc.git
-cd galaxc
+git clone https://github.com/kellyredding/galaxy.git
+cd galaxy
 
 # Build and install statusline
 make statusline-install
@@ -39,7 +39,7 @@ A customizable status line for Claude Code sessions that displays:
 
 **Example output:**
 ```
-~/projects/galaxc [main=*] | ████████████░░░░░░░░ 62% | Sonnet | $0.42
+~/projects/galaxy[main=*] | ████████████░░░░░░░░ 62% | Sonnet | $0.42
 ```
 
 See [tools/statusline/README.md](tools/statusline/README.md) for detailed documentation.
@@ -65,7 +65,7 @@ make statusline-check     # Lint + build + test statusline
 ### Project Structure
 
 ```
-galaxc/
+galaxy/
 ├── README.md                 # This file
 ├── LICENSE                   # MIT License
 ├── CONTRIBUTING.md           # Development guidelines

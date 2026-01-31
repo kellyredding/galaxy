@@ -1,6 +1,6 @@
 .PHONY: build install clean test lint format check dev
 
-PREFIX ?= $(HOME)/.claude/galaxc
+PREFIX ?= $(HOME)/.claude/galaxy
 BINDIR ?= $(PREFIX)/bin
 BUILDDIR ?= build
 
@@ -19,17 +19,17 @@ check: lint dev test
 
 dev:
 	@mkdir -p $(BUILDDIR)
-	crystal build -o $(BUILDDIR)/galaxc-statusline src/galaxc_statusline.cr
+	crystal build -o $(BUILDDIR)/galaxy-statusline src/galaxy_statusline.cr
 
 # Release
 build:
 	@mkdir -p $(BUILDDIR)
 	shards install
-	crystal build --release --no-debug -o $(BUILDDIR)/galaxc-statusline src/galaxc_statusline.cr
+	crystal build --release --no-debug -o $(BUILDDIR)/galaxy-statusline src/galaxy_statusline.cr
 
 install: build
 	install -d $(BINDIR)
-	install -m 755 $(BUILDDIR)/galaxc-statusline $(BINDIR)/galaxc-statusline
+	install -m 755 $(BUILDDIR)/galaxy-statusline $(BINDIR)/galaxy-statusline
 
 clean:
 	rm -rf $(BUILDDIR) lib .shards releases

@@ -1,4 +1,4 @@
-# galaxc-statusline
+# galaxy-statusline
 
 A customizable status line for Claude Code sessions that displays working directory, git status, context usage, and model information.
 
@@ -20,13 +20,13 @@ cd tools/statusline
 make install
 ```
 
-This installs the binary to `~/.claude/galaxc/bin/galaxc-statusline`.
+This installs the binary to `~/.claude/galaxy/bin/galaxy-statusline`.
 
 ### Manual Installation
 
 ```bash
 make build
-cp build/galaxc-statusline ~/.claude/galaxc/bin/
+cp build/galaxy-statusline ~/.claude/galaxy/bin/
 ```
 
 ## Claude Code Integration
@@ -37,7 +37,7 @@ Add to `~/.claude/settings.json`:
 {
   "statusLine": {
     "type": "command",
-    "command": "~/.claude/galaxc/bin/galaxc-statusline",
+    "command": "~/.claude/galaxy/bin/galaxy-statusline",
     "padding": 0
   }
 }
@@ -48,29 +48,29 @@ Add to `~/.claude/settings.json`:
 ### CLI Commands
 
 ```bash
-galaxc-statusline                    # If stdin has data -> render, else -> help
-galaxc-statusline render             # Explicit render (reads stdin JSON)
-galaxc-statusline config             # Show current config
-galaxc-statusline config help      # Configuration documentation
-galaxc-statusline config set KEY VAL # Set a config value
-galaxc-statusline config get KEY     # Get a config value
-galaxc-statusline config reset       # Reset to defaults
-galaxc-statusline config path        # Show config file location
-galaxc-statusline version            # Show version
-galaxc-statusline help               # Show help
+galaxy-statusline                    # If stdin has data -> render, else -> help
+galaxy-statusline render             # Explicit render (reads stdin JSON)
+galaxy-statusline config             # Show current config
+galaxy-statusline config help      # Configuration documentation
+galaxy-statusline config set KEY VAL # Set a config value
+galaxy-statusline config get KEY     # Get a config value
+galaxy-statusline config reset       # Reset to defaults
+galaxy-statusline config path        # Show config file location
+galaxy-statusline version            # Show version
+galaxy-statusline help               # Show help
 ```
 
 ### Example Output
 
 ```
 WIDE (120+ cols):
-~/projects/kajabi/kajabi-products [main=*] | ████████████████░░░░ 78% | Sonnet | $0.42
+~/projects/kajabi/kajabi-products[main=*] | ████████████████░░░░ 78% | Sonnet | $0.42
 
 MEDIUM (80-119 cols):
-~/p/k/kajabi-products [main=*] | ██████████░░░░ 78% | Sonnet
+~/p/k/kajabi-products[main=*] | ██████████░░░░ 78% | Sonnet
 
 NARROW (60-79 cols):
-kajabi-products [main=*] | ██████░░ 78% | Son
+kajabi-products[main=*] | ██████░░ 78% | Son
 
 VERY NARROW (<60 cols):
 [main=*] | ████░░ 78%
@@ -78,7 +78,7 @@ VERY NARROW (<60 cols):
 
 ## Configuration
 
-Configuration is stored at `~/.claude/galaxc/statusline/config.json`.
+Configuration is stored at `~/.claude/galaxy/statusline/config.json`.
 
 ### Branch Styles
 
@@ -99,7 +99,7 @@ Colors can be set to:
 ### Configuration Reference
 
 ```bash
-galaxc-statusline config help  # Full configuration documentation
+galaxy-statusline config help  # Full configuration documentation
 ```
 
 ### Example Configuration

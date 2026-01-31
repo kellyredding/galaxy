@@ -5,7 +5,7 @@ set -e
 # Usage: bin/release-add
 
 VERSION_FILE="VERSION.txt"
-BINARY="galaxc-statusline"
+BINARY="galaxy-statusline"
 BUILD_DIR="build"
 RELEASE_DIR="releases"
 
@@ -61,7 +61,7 @@ fi
 # Build release binary
 mkdir -p "$BUILD_DIR"
 shards install
-crystal build --release --no-debug -o "$BUILD_DIR/$BINARY" src/galaxc_statusline.cr
+crystal build --release --no-debug -o "$BUILD_DIR/$BINARY" src/galaxy_statusline.cr
 
 # Create releases directory
 mkdir -p "$RELEASE_DIR"

@@ -1,4 +1,4 @@
-module GalaxcStatusline
+module GalaxyStatusline
   class Renderer
     SEPARATOR    = " | "
     FILLED_BLOCK = "█"
@@ -28,7 +28,7 @@ module GalaxcStatusline
     def initialize(@input : ClaudeInput, @config : Config)
       @git = Git.new(@input.current_directory)
       @terminal_width = get_terminal_width
-      @max_status_width = @terminal_width // 2  # Half of terminal, rounded down
+      @max_status_width = @terminal_width // 2 # Half of terminal, rounded down
     end
 
     def render : String
@@ -153,7 +153,7 @@ module GalaxcStatusline
       cost_width : Int32,
     ) : Int32
       # Context bar width = bar chars + space + percentage (e.g., "100%")
-      context_width = bar_width + 1 + 4  # " 100%" = 5 chars max
+      context_width = bar_width + 1 + 4 # " 100%" = 5 chars max
 
       parts_count = 0
       total = 0
@@ -366,7 +366,7 @@ module GalaxcStatusline
       rescue
         # /dev/tty not available
       end
-      80  # Fallback
+      80 # Fallback
     end
 
     private def strip_ansi(text : String) : String

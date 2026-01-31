@@ -1,6 +1,6 @@
 require "option_parser"
 
-module GalaxcStatusline
+module GalaxyStatusline
   class CLI
     def self.run(args : Array(String))
       show_help_flag = false
@@ -17,7 +17,7 @@ module GalaxcStatusline
 
         p.invalid_option do |flag|
           STDERR.puts "Error: Unknown flag '#{flag}'"
-          STDERR.puts "Run 'galaxc-statusline --help' for usage"
+          STDERR.puts "Run 'galaxy-statusline --help' for usage"
           exit(1)
         end
       end
@@ -63,16 +63,16 @@ module GalaxcStatusline
         puts parser
       else
         STDERR.puts "Error: Unknown command '#{command}'"
-        STDERR.puts "Run 'galaxc-statusline --help' for usage"
+        STDERR.puts "Run 'galaxy-statusline --help' for usage"
         exit(1)
       end
     end
 
     private def self.build_banner : String
       <<-BANNER
-      galaxc-statusline - Customizable status line for Claude Code
+      galaxy-statusline - Customizable status line for Claude Code
 
-      Usage: galaxc-statusline [command] [options]
+      Usage: galaxy-statusline [command] [options]
 
       Commands:
         render              Render status line (reads JSON from stdin)
@@ -143,25 +143,25 @@ module GalaxcStatusline
         puts CONFIG_FILE
       else
         STDERR.puts "Error: Unknown config command '#{subcommand}'"
-        STDERR.puts "Run 'galaxc-statusline config help' for usage"
+        STDERR.puts "Run 'galaxy-statusline config help' for usage"
         exit(1)
       end
     end
 
     private def self.show_config_help
       puts <<-HELP
-      galaxc-statusline config - Manage status line configuration
+      galaxy-statusline config - Manage status line configuration
 
       USAGE:
-        galaxc-statusline config                    Show current configuration
-        galaxc-statusline config help               Configuration documentation
-        galaxc-statusline config set KEY VALUE      Set a configuration value
-        galaxc-statusline config get KEY            Get a configuration value
-        galaxc-statusline config reset              Reset to defaults
-        galaxc-statusline config path               Show config file location
+        galaxy-statusline config                    Show current configuration
+        galaxy-statusline config help               Configuration documentation
+        galaxy-statusline config set KEY VALUE      Set a configuration value
+        galaxy-statusline config get KEY            Get a configuration value
+        galaxy-statusline config reset              Reset to defaults
+        galaxy-statusline config path               Show config file location
 
       CONFIGURATION FILE:
-        ~/.claude/galaxc/statusline/config.json
+        ~/.claude/galaxy/statusline/config.json
 
       AVAILABLE SETTINGS:
 
@@ -207,17 +207,17 @@ module GalaxcStatusline
           layout.directory_style         full, smart, basename, short (default: smart)
 
       EXAMPLES:
-        galaxc-statusline config set branch_style arrows
-        galaxc-statusline config set context_thresholds.warning 50
-        galaxc-statusline config set colors.dirty red
-        galaxc-statusline config get branch_style
-        galaxc-statusline config reset
+        galaxy-statusline config set branch_style arrows
+        galaxy-statusline config set context_thresholds.warning 50
+        galaxy-statusline config set colors.dirty red
+        galaxy-statusline config get branch_style
+        galaxy-statusline config reset
       HELP
     end
 
     private def self.config_set(args : Array(String))
       if args.size < 2
-        STDERR.puts "Usage: galaxc-statusline config set KEY VALUE"
+        STDERR.puts "Usage: galaxy-statusline config set KEY VALUE"
         exit(1)
       end
 
@@ -237,7 +237,7 @@ module GalaxcStatusline
 
     private def self.config_get(args : Array(String))
       if args.empty?
-        STDERR.puts "Usage: galaxc-statusline config get KEY"
+        STDERR.puts "Usage: galaxy-statusline config get KEY"
         exit(1)
       end
 

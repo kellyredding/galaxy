@@ -1,4 +1,4 @@
-# Releasing galaxc-statusline
+# Releasing galaxy-statusline
 
 This document describes how to create releases and distribute binaries.
 
@@ -53,14 +53,14 @@ To add binaries for other platforms, run `bin/release-add` on each target machin
 ```bash
 git pull origin main
 bin/release-add
-# Uploads galaxc-statusline-X.Y.Z-darwin-amd64.tar.gz
+# Uploads galaxy-statusline-X.Y.Z-darwin-amd64.tar.gz
 ```
 
 **On a Linux x64 machine:**
 ```bash
 git pull origin main
 bin/release-add
-# Uploads galaxc-statusline-X.Y.Z-linux-amd64.tar.gz
+# Uploads galaxy-statusline-X.Y.Z-linux-amd64.tar.gz
 ```
 
 ## Platform Detection
@@ -77,15 +77,15 @@ The `bin/release-add` script auto-detects the current platform:
 ## Release Artifacts
 
 Each release includes:
-- `galaxc-statusline-X.Y.Z-<os>-<arch>.tar.gz` - Compressed binary
-- `galaxc-statusline-X.Y.Z-<os>-<arch>.tar.gz.sha256` - Checksum file
+- `galaxy-statusline-X.Y.Z-<os>-<arch>.tar.gz` - Compressed binary
+- `galaxy-statusline-X.Y.Z-<os>-<arch>.tar.gz.sha256` - Checksum file
 
 ## Verifying Downloads
 
 Users can verify download integrity:
 
 ```bash
-shasum -a 256 -c galaxc-statusline-0.1.0-darwin-arm64.tar.gz.sha256
+shasum -a 256 -c galaxy-statusline-0.1.0-darwin-arm64.tar.gz.sha256
 ```
 
 ## Version Locations
@@ -93,4 +93,4 @@ shasum -a 256 -c galaxc-statusline-0.1.0-darwin-arm64.tar.gz.sha256
 Version is defined in three places, kept in sync by `bin/release`:
 - `VERSION.txt` - Source of truth
 - `shard.yml` - Crystal package version
-- `src/galaxc_statusline.cr` - `VERSION` constant
+- `src/galaxy_statusline.cr` - `VERSION` constant

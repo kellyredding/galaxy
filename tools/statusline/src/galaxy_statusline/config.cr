@@ -1,6 +1,6 @@
 require "json"
 
-module GalaxcStatusline
+module GalaxyStatusline
   class Config
     include JSON::Serializable
 

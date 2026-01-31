@@ -1,6 +1,6 @@
-# Contributing to galaxc
+# Contributing to galaxy
 
-Thank you for your interest in contributing to galaxc!
+Thank you for your interest in contributing to galaxy!
 
 ## Development Setup
 
@@ -14,8 +14,8 @@ Thank you for your interest in contributing to galaxc!
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/kellyredding/galaxc.git
-   cd galaxc
+   git clone https://github.com/kellyredding/galaxy.git
+   cd galaxy
    ```
 
 2. Build and test a tool:

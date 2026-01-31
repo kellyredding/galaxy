@@ -1,4 +1,4 @@
-name: galaxc-statusline
+name: galaxy-statusline
 version: 0.0.1
 description: Customizable status line for Claude Code sessions
 
@@ -6,8 +6,8 @@ authors:
   - Kelly Redding <kelly@kellyredding.com>
 
 targets:
-  galaxc-statusline:
-    main: src/galaxc_statusline.cr
+  galaxy-statusline:
+    main: src/galaxy_statusline.cr
 
 license: MIT
 

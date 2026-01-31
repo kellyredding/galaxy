@@ -4,7 +4,7 @@ describe "CLI Integration" do
   describe "version subcommand" do
     it "outputs version" do
       result = run_binary(["version"])
-      result[:output].strip.should eq(GalaxcStatusline::VERSION)
+      result[:output].strip.should eq(GalaxyStatusline::VERSION)
       result[:status].should eq(0)
     end
   end
@@ -12,7 +12,7 @@ describe "CLI Integration" do
   describe "--version flag" do
     it "outputs version" do
       result = run_binary(["--version"])
-      result[:output].strip.should eq(GalaxcStatusline::VERSION)
+      result[:output].strip.should eq(GalaxyStatusline::VERSION)
       result[:status].should eq(0)
     end
   end
@@ -20,7 +20,7 @@ describe "CLI Integration" do
   describe "help subcommand" do
     it "outputs usage information" do
       result = run_binary(["help"])
-      result[:output].should contain("galaxc-statusline")
+      result[:output].should contain("galaxy-statusline")
       result[:output].should contain("Commands:")
       result[:status].should eq(0)
     end
@@ -29,7 +29,7 @@ describe "CLI Integration" do
   describe "--help flag" do
     it "outputs usage information" do
       result = run_binary(["--help"])
-      result[:output].should contain("galaxc-statusline")
+      result[:output].should contain("galaxy-statusline")
       result[:status].should eq(0)
     end
   end

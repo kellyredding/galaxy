@@ -2,17 +2,17 @@ require "spec"
 require "file_utils"
 
 # Set up test fixtures directory via environment variable
-# This must be set BEFORE requiring galaxc_statusline so CONFIG_DIR picks it up
+# This must be set BEFORE requiring galaxy_statusline so CONFIG_DIR picks it up
 SPEC_FIXTURES = Path[__DIR__] / "fixtures"
 
 # Use a temporary directory for config during tests
-SPEC_CONFIG_DIR = Path.new(Dir.tempdir) / "galaxc-statusline-test-#{Random.rand(100000)}"
-ENV["GALAXC_STATUSLINE_CONFIG_DIR"] = SPEC_CONFIG_DIR.to_s
+SPEC_CONFIG_DIR = Path.new(Dir.tempdir) / "galaxy-statusline-test-#{Random.rand(100000)}"
+ENV["GALAXY_STATUSLINE_CONFIG_DIR"] = SPEC_CONFIG_DIR.to_s
 
 # Skip CLI auto-run when loading module for specs
-ENV["GALAXC_STATUSLINE_SKIP_CLI"] = "1"
+ENV["GALAXY_STATUSLINE_SKIP_CLI"] = "1"
 
-require "../src/galaxc_statusline"
+require "../src/galaxy_statusline"
 
 # Helper to read fixture files
 def fixture_path(relative_path : String) : Path
@@ -25,7 +25,7 @@ end
 
 # Helper for running the binary in integration tests
 # __DIR__ is the spec/ directory, so we go up one level to find build/
-BINARY_PATH = Path[__DIR__].parent / "build" / "galaxc-statusline"
+BINARY_PATH = Path[__DIR__].parent / "build" / "galaxy-statusline"
 
 def run_binary(
   args : Array(String) = [] of String,
@@ -36,9 +36,9 @@ def run_binary(
   end
 
   # Set config dir env var for this process
-  ENV["GALAXC_STATUSLINE_CONFIG_DIR"] = SPEC_CONFIG_DIR.to_s
+  ENV["GALAXY_STATUSLINE_CONFIG_DIR"] = SPEC_CONFIG_DIR.to_s
   # Unset skip cli if it was set
-  ENV.delete("GALAXC_STATUSLINE_SKIP_CLI")
+  ENV.delete("GALAXY_STATUSLINE_SKIP_CLI")
 
   input_io : Process::Stdio = Process::Redirect::Close
   if stdin
