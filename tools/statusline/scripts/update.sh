@@ -13,6 +13,8 @@ REPO="kellyredding/galaxy"
 TOOL_NAME="statusline"
 BINARY_NAME="galaxy-statusline"
 TAG_PREFIX="${TOOL_NAME}-v"
+INSTALL_DIR="${HOME}/.claude/galaxy/bin"
+INSTALL_PATH="${INSTALL_DIR}/${BINARY_NAME}"
 BACKUP_DIR="${HOME}/.claude/galaxy/statusline/update-backup"
 GITHUB_API="https://api.github.com/repos/${REPO}/releases"
 GITHUB_RELEASES="https://github.com/${REPO}/releases/download"
@@ -112,25 +114,16 @@ restore_backup() {
 
 # Main update logic
 main() {
-  # Find install location
-  local install_path
-  install_path=$(which "$BINARY_NAME" 2>/dev/null || echo "")
+  # Use fixed install location
+  local install_path="$INSTALL_PATH"
 
-  if [[ -z "$install_path" ]]; then
-    echo -e "${RED}${BINARY_NAME} not found in PATH${NC}" >&2
-    exit 1
-  fi
-
-  # Resolve symlinks to get actual binary location
-  if command -v realpath &>/dev/null; then
-    install_path=$(realpath "$install_path")
-  elif command -v readlink &>/dev/null; then
-    install_path=$(readlink -f "$install_path" 2>/dev/null || echo "$install_path")
-  fi
-
-  # Get current version
+  # Get current version (or "not installed" if binary doesn't exist)
   local current_version
-  current_version=$("$install_path" version 2>/dev/null || echo "unknown")
+  if [[ -f "$install_path" ]]; then
+    current_version=$("$install_path" version 2>/dev/null || echo "unknown")
+  else
+    current_version="not installed"
+  fi
 
   # Fetch releases from GitHub API and find latest for this tool
   # Uses grep/sed instead of jq to avoid external dependencies
@@ -156,7 +149,8 @@ main() {
   platform=$(detect_platform)
 
   # Check if update is needed (skip for preview and force modes)
-  if [[ "$current_version" == "$latest_version" ]] && [[ "$FORCE" != true ]] && [[ "$PREVIEW" != true ]]; then
+  # Always proceed if not installed
+  if [[ "$current_version" != "not installed" ]] && [[ "$current_version" == "$latest_version" ]] && [[ "$FORCE" != true ]] && [[ "$PREVIEW" != true ]]; then
     echo -e "${GREEN}Already up to date (v${current_version})${NC}"
     exit 0
   fi
@@ -197,6 +191,9 @@ main() {
     exit 0
   fi
 
+  # Ensure install directory exists
+  mkdir -p "$INSTALL_DIR"
+
   # Check write permissions before starting
   if ! check_permissions "$install_path"; then
     echo -e "${RED}Update failed${NC}" >&2
@@ -206,15 +203,14 @@ main() {
     echo "" >&2
     echo "  Run with sudo:" >&2
     echo "    sudo galaxy-statusline update" >&2
-    echo "" >&2
-    echo "  Or reinstall to a user-writable location:" >&2
-    echo "    ~/.claude/galaxy/bin/galaxy-statusline" >&2
     exit 1
   fi
 
   # Perform update
   local action_word="Updating"
-  if [[ "$FORCE" == true ]] && [[ "$current_version" == "$latest_version" ]]; then
+  if [[ "$current_version" == "not installed" ]]; then
+    action_word="Installing"
+  elif [[ "$FORCE" == true ]] && [[ "$current_version" == "$latest_version" ]]; then
     action_word="Reinstalling"
   fi
 
@@ -278,16 +274,20 @@ main() {
   fi
   echo -e "${GREEN}done${NC}"
 
-  # Step 3: Backup current binary
-  echo -n "  [3/4] Backing up current binary... "
-  mkdir -p "$BACKUP_DIR"
-  if ! cp "$install_path" "${BACKUP_DIR}/${BINARY_NAME}.backup"; then
-    echo -e "${RED}failed${NC}"
-    echo "" >&2
-    echo "  Could not backup: ${install_path}" >&2
-    exit 1
+  # Step 3: Backup current binary (skip if fresh install)
+  if [[ -f "$install_path" ]]; then
+    echo -n "  [3/4] Backing up current binary... "
+    mkdir -p "$BACKUP_DIR"
+    if ! cp "$install_path" "${BACKUP_DIR}/${BINARY_NAME}.backup"; then
+      echo -e "${RED}failed${NC}"
+      echo "" >&2
+      echo "  Could not backup: ${install_path}" >&2
+      exit 1
+    fi
+    echo -e "${GREEN}done${NC}"
+  else
+    echo "  [3/4] Backing up current binary... skipped (fresh install)"
   fi
-  echo -e "${GREEN}done${NC}"
 
   # Step 4: Extract and install
   echo -n "  [4/4] Installing new binary... "
