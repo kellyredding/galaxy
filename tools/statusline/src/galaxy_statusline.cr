@@ -1,7 +1,7 @@
 require "./galaxy_statusline/*"
 
 module GalaxyStatusline
-  VERSION = "0.0.1"
+  VERSION = "0.1.0"
 
   # Allow override via environment variable for testing
   CONFIG_DIR = Path.new(
