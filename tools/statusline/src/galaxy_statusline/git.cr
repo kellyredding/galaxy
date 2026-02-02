@@ -73,8 +73,15 @@ module GalaxyStatusline
     end
 
     private def has_dirty?(dir : String) : Bool
-      result = run_git(dir, ["diff", "--quiet"])
-      !result[:success]
+      # Check for modified tracked files
+      diff_result = run_git(dir, ["diff", "--quiet"])
+      return true unless diff_result[:success]
+
+      # Check for untracked files
+      untracked_result = run_git(dir, ["ls-files", "--others", "--exclude-standard"])
+      return true unless untracked_result[:output].strip.empty?
+
+      false
     end
 
     private def has_staged?(dir : String) : Bool
