@@ -1,0 +1,360 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		39F805D1D863916C4F09874A /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 1073964FCAD353209A999D96 /* SwiftTerm */; };
+		55B40D3A946CA975D0705AB1 /* GalaxyPOCApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72EC4E43716950A0BE37D77C /* GalaxyPOCApp.swift */; };
+		5E5DFFA81979867CB14EE9B4 /* SessionSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B1B7D35B5D4C74109C71FEC /* SessionSidebar.swift */; };
+		603E236D1097E6B3B7B3B159 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 247448C70224193CE23BB32D /* ContentView.swift */; };
+		8B72EA39ED013A00DB1BCDD8 /* Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03E8CA49CFFD43B40F69A196 /* Session.swift */; };
+		A9DC3B126BE6650923ADEC46 /* SessionRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60AC35CE99CE6430CC623FF /* SessionRow.swift */; };
+		ADB1518FC56D3CBB7871F375 /* SessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E9581FAD7E28412EFFA4F2E /* SessionManager.swift */; };
+		DF11146BB2950E31FC746C90 /* TerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E559289BDC471021B08F5DD /* TerminalView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		03E8CA49CFFD43B40F69A196 /* Session.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Session.swift; sourceTree = "<group>"; };
+		247448C70224193CE23BB32D /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		2B1B7D35B5D4C74109C71FEC /* SessionSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionSidebar.swift; sourceTree = "<group>"; };
+		4E9581FAD7E28412EFFA4F2E /* SessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionManager.swift; sourceTree = "<group>"; };
+		72EC4E43716950A0BE37D77C /* GalaxyPOCApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxyPOCApp.swift; sourceTree = "<group>"; };
+		900F9D1F5C418789AE03F7FC /* GalaxyPOC.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GalaxyPOC.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		9E559289BDC471021B08F5DD /* TerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalView.swift; sourceTree = "<group>"; };
+		A60AC35CE99CE6430CC623FF /* SessionRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRow.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		F8ED6D08E9BBA2308FF3FC39 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				39F805D1D863916C4F09874A /* SwiftTerm in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		014CCC5175F711FA6EB75FFB /* GalaxyPOC */ = {
+			isa = PBXGroup;
+			children = (
+				247448C70224193CE23BB32D /* ContentView.swift */,
+				72EC4E43716950A0BE37D77C /* GalaxyPOCApp.swift */,
+				B7AAAAF347EA7046BF1FA163 /* Models */,
+				8A41C41A5210CDC374AB07E1 /* Views */,
+			);
+			path = GalaxyPOC;
+			sourceTree = "<group>";
+		};
+		23C2307643999768EF2B5FDA /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				900F9D1F5C418789AE03F7FC /* GalaxyPOC.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		8A41C41A5210CDC374AB07E1 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				A60AC35CE99CE6430CC623FF /* SessionRow.swift */,
+				2B1B7D35B5D4C74109C71FEC /* SessionSidebar.swift */,
+				9E559289BDC471021B08F5DD /* TerminalView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		B7AAAAF347EA7046BF1FA163 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				03E8CA49CFFD43B40F69A196 /* Session.swift */,
+				4E9581FAD7E28412EFFA4F2E /* SessionManager.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		F760C4E614A22CE7D1DE254B = {
+			isa = PBXGroup;
+			children = (
+				014CCC5175F711FA6EB75FFB /* GalaxyPOC */,
+				23C2307643999768EF2B5FDA /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		32285095F8E8A61687FCB501 /* GalaxyPOC */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 3F4EAEC70006427E381FCC44 /* Build configuration list for PBXNativeTarget "GalaxyPOC" */;
+			buildPhases = (
+				6B0FBB93D281CCC7BC5A2819 /* Sources */,
+				F8ED6D08E9BBA2308FF3FC39 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = GalaxyPOC;
+			packageProductDependencies = (
+				1073964FCAD353209A999D96 /* SwiftTerm */,
+			);
+			productName = GalaxyPOC;
+			productReference = 900F9D1F5C418789AE03F7FC /* GalaxyPOC.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		7FE3257F6C0F37262393D0A6 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1540;
+			};
+			buildConfigurationList = FF8278C0A58F3C5FDB2F8B9B /* Build configuration list for PBXProject "GalaxyPOC" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = F760C4E614A22CE7D1DE254B;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				8DB580497AED1921A42DAF58 /* XCRemoteSwiftPackageReference "SwiftTerm" */,
+			);
+			preferredProjectObjectVersion = 77;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				32285095F8E8A61687FCB501 /* GalaxyPOC */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		6B0FBB93D281CCC7BC5A2819 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				603E236D1097E6B3B7B3B159 /* ContentView.swift in Sources */,
+				55B40D3A946CA975D0705AB1 /* GalaxyPOCApp.swift in Sources */,
+				8B72EA39ED013A00DB1BCDD8 /* Session.swift in Sources */,
+				ADB1518FC56D3CBB7871F375 /* SessionManager.swift in Sources */,
+				A9DC3B126BE6650923ADEC46 /* SessionRow.swift in Sources */,
+				5E5DFFA81979867CB14EE9B4 /* SessionSidebar.swift in Sources */,
+				DF11146BB2950E31FC746C90 /* TerminalView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		04A5DD4CD5A08A3F038E1EAA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_VALUES = "CFBundleName=$(PRODUCT_NAME)\nCFBundleDisplayName=Galaxy POC\nCFBundleIdentifier=$(PRODUCT_BUNDLE_IDENTIFIER)\nCFBundleVersion=$(CURRENT_PROJECT_VERSION)\nCFBundleShortVersionString=$(MARKETING_VERSION)\nCFBundlePackageType=APPL\nCFBundleExecutable=$(EXECUTABLE_NAME)\nLSMinimumSystemVersion=$(MACOSX_DEPLOYMENT_TARGET)\nNSHighResolutionCapable=true\n";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kellyredding.GalaxyPOC;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.10;
+			};
+			name = Release;
+		};
+		1E774D42A6B60FF64EC73E83 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_VALUES = "CFBundleName=$(PRODUCT_NAME)\nCFBundleDisplayName=Galaxy POC\nCFBundleIdentifier=$(PRODUCT_BUNDLE_IDENTIFIER)\nCFBundleVersion=$(CURRENT_PROJECT_VERSION)\nCFBundleShortVersionString=$(MARKETING_VERSION)\nCFBundlePackageType=APPL\nCFBundleExecutable=$(EXECUTABLE_NAME)\nLSMinimumSystemVersion=$(MACOSX_DEPLOYMENT_TARGET)\nNSHighResolutionCapable=true\n";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kellyredding.GalaxyPOC;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.10;
+			};
+			name = Debug;
+		};
+		E43F74E054F65B66A34D6A83 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		EF8987CFEE0DBA49C1F9C8A6 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		3F4EAEC70006427E381FCC44 /* Build configuration list for PBXNativeTarget "GalaxyPOC" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1E774D42A6B60FF64EC73E83 /* Debug */,
+				04A5DD4CD5A08A3F038E1EAA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		FF8278C0A58F3C5FDB2F8B9B /* Build configuration list for PBXProject "GalaxyPOC" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EF8987CFEE0DBA49C1F9C8A6 /* Debug */,
+				E43F74E054F65B66A34D6A83 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		8DB580497AED1921A42DAF58 /* XCRemoteSwiftPackageReference "SwiftTerm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/migueldeicaza/SwiftTerm";
+			requirement = {
+				kind = exactVersion;
+				version = 1.2.5;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		1073964FCAD353209A999D96 /* SwiftTerm */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8DB580497AED1921A42DAF58 /* XCRemoteSwiftPackageReference "SwiftTerm" */;
+			productName = SwiftTerm;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 7FE3257F6C0F37262393D0A6 /* Project object */;
+}
