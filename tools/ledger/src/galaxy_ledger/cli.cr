@@ -55,6 +55,10 @@ module GalaxyLedger
         handle_session_command(rest)
       when "on-startup"
         handle_on_startup_command(rest)
+      when "on-stop"
+        handle_on_stop_command(rest)
+      when "on-session-start"
+        handle_on_session_start_command(rest)
       when "version"
         puts "galaxy-ledger #{VERSION}"
       when "help"
@@ -88,6 +92,8 @@ module GalaxyLedger
 
       Hook Commands (called by Claude Code hooks):
         on-startup          Fresh session startup (ledger awareness)
+        on-stop             Capture last exchange, check thresholds
+        on-session-start    Restore context after clear/compact
       BANNER
     end
 
@@ -388,6 +394,16 @@ module GalaxyLedger
 
     private def self.handle_on_startup_command(args : Array(String))
       handler = Hooks::OnStartup.new
+      handler.run
+    end
+
+    private def self.handle_on_stop_command(args : Array(String))
+      handler = Hooks::OnStop.new
+      handler.run
+    end
+
+    private def self.handle_on_session_start_command(args : Array(String))
+      handler = Hooks::OnSessionStart.new
       handler.run
     end
   end
