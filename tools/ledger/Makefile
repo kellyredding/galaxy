@@ -20,20 +20,20 @@ check: lint dev test
 
 dev:
 	@mkdir -p $(BUILDDIR)
-	crystal build -o $(BUILDDIR)/galaxy-statusline src/galaxy_statusline.cr
+	crystal build -o $(BUILDDIR)/galaxy-ledger src/galaxy_ledger.cr
 
 # Release
 build:
 	@mkdir -p $(BUILDDIR)
 	shards install
-	crystal build --release --no-debug -o $(BUILDDIR)/galaxy-statusline src/galaxy_statusline.cr
+	crystal build --release --no-debug -o $(BUILDDIR)/galaxy-ledger src/galaxy_ledger.cr
 
 install: build
 	install -d $(BINDIR)
-	install -m 755 $(BUILDDIR)/galaxy-statusline $(BINDIR)/galaxy-statusline
+	install -m 755 $(BUILDDIR)/galaxy-ledger $(BINDIR)/galaxy-ledger
 	@# Symlink to local bin for PATH access
 	@mkdir -p $(LOCAL_BINDIR)
-	@ln -sf $(BINDIR)/galaxy-statusline $(LOCAL_BINDIR)/galaxy-statusline
+	@ln -sf $(BINDIR)/galaxy-ledger $(LOCAL_BINDIR)/galaxy-ledger
 
 clean:
 	rm -rf $(BUILDDIR) lib .shards releases

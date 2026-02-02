@@ -15,8 +15,9 @@
 git clone https://github.com/kellyredding/galaxy.git
 cd galaxy
 
-# Build and install statusline
+# Build and install all tools
 make statusline-install
+make ledger-install
 ```
 
 Or build individual tools:
@@ -25,6 +26,10 @@ Or build individual tools:
 cd tools/statusline
 make install
 ```
+
+**Installation locations:**
+- Binaries: `~/.claude/galaxy/bin/`
+- Symlinks: `~/.bin/local/` (add to your PATH for easy access)
 
 ## Tool Overview
 

@@ -1,0 +1,14 @@
+name: galaxy-ledger
+version: 0.1.0
+description: Continuous context management for Claude Code sessions
+
+authors:
+  - Kelly Redding <kelly@kellyredding.com>
+
+targets:
+  galaxy-ledger:
+    main: src/galaxy_ledger.cr
+
+license: MIT
+
+crystal: ">= 1.0.0"

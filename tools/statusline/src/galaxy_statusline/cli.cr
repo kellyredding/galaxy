@@ -115,6 +115,9 @@ module GalaxyStatusline
 
         renderer = Renderer.new(claude_input, config)
         puts renderer.render
+
+        # Write context status bridge file for ledger integration
+        ContextStatus.write(claude_input)
       rescue ex : JSON::ParseException
         STDERR.puts "Error: Invalid JSON input - #{ex.message}"
         exit(1)

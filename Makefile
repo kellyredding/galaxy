@@ -1,6 +1,6 @@
-.PHONY: all clean statusline-build statusline-test statusline-check statusline-install statusline-clean
+.PHONY: all clean statusline-build statusline-test statusline-check statusline-install statusline-clean ledger-build ledger-test ledger-check ledger-install ledger-clean
 
-all: statusline-build
+all: statusline-build ledger-build
 
 # Statusline tool
 statusline-build:
@@ -21,8 +21,23 @@ statusline-install:
 statusline-clean:
 	$(MAKE) -C tools/statusline clean
 
-# Add more tools here as they're created
-# handoff-build:
-#	$(MAKE) -C tools/handoff build
+# Ledger tool
+ledger-build:
+	$(MAKE) -C tools/ledger build
 
-clean: statusline-clean
+ledger-dev:
+	$(MAKE) -C tools/ledger dev
+
+ledger-test:
+	$(MAKE) -C tools/ledger test
+
+ledger-check:
+	$(MAKE) -C tools/ledger check
+
+ledger-install:
+	$(MAKE) -C tools/ledger install
+
+ledger-clean:
+	$(MAKE) -C tools/ledger clean
+
+clean: statusline-clean ledger-clean

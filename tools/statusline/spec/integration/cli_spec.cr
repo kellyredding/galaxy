@@ -166,5 +166,31 @@ describe "CLI Integration" do
       result[:error].should contain("Invalid JSON")
       result[:status].should_not eq(0)
     end
+
+    it "writes context-status.json to session-specific directory" do
+      # The fixture has session_id "abc123"
+      session_id = "abc123"
+
+      # Remove any existing session directory
+      session_dir = GalaxyStatusline::ContextStatus.session_dir(session_id)
+      FileUtils.rm_rf(session_dir.to_s) if Dir.exists?(session_dir)
+
+      json = read_fixture("claude_input/valid_complete.json")
+      result = run_binary(["render"], stdin: json)
+      result[:status].should eq(0)
+
+      # Verify session directory was created
+      Dir.exists?(session_dir).should eq(true)
+
+      # Verify bridge file was written in session directory
+      bridge_file = GalaxyStatusline::ContextStatus.path_for_session(session_id)
+      File.exists?(bridge_file).should eq(true)
+
+      # Verify content (session_id is NOT stored - it's implicit from folder path)
+      content = JSON.parse(File.read(bridge_file))
+      content["percentage"].should eq(45.2)
+      content["model"].should eq("claude-sonnet-4-20250514")
+      content["timestamp"].as_i64.should be > 0
+    end
   end
 end
