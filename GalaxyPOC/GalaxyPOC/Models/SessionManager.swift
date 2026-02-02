@@ -4,6 +4,9 @@ import SwiftTerm
 import Combine
 
 class SessionManager: ObservableObject {
+    // Singleton instance for access from AppDelegate
+    static let shared = SessionManager()
+
     @Published var sessions: [Session] = []
     @Published var activeSessionId: UUID?
 
@@ -61,8 +64,9 @@ class SessionManager: ObservableObject {
     }
 
     @discardableResult
-    func createSession() -> Session {
-        let session = Session()
+    func createSession(workingDirectory: String? = nil) -> Session {
+        let directory = workingDirectory ?? NSHomeDirectory()
+        let session = Session(workingDirectory: directory)
 
         // Set up terminal delegate to track process termination
         // Store a strong reference in session so it doesn't get deallocated

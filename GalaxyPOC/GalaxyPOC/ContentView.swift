@@ -8,28 +8,36 @@ struct ContentView: View {
             SessionSidebar()
         } detail: {
             if sessionManager.sessions.isEmpty {
-                VStack(spacing: 16) {
-                    Image(systemName: "terminal")
-                        .font(.system(size: 64))
-                        .foregroundColor(.secondary)
-                    Text("No Sessions")
-                        .font(.title2)
-                        .foregroundColor(.secondary)
-                    Text("Press ⌘N to create a new Claude session")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    Button("New Session") {
-                        sessionManager.createSession()
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                EmptyStateView()
             } else {
                 TerminalContainerView()
             }
         }
         .navigationSplitViewStyle(.balanced)
         .frame(minWidth: 800, minHeight: 500)
+    }
+}
+
+struct EmptyStateView: View {
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "terminal")
+                .font(.system(size: 48))
+                .foregroundColor(.secondary)
+
+            Text("No Sessions")
+                .font(.title2)
+
+            Text("Run `galaxy` from any directory to start a session")
+                .foregroundColor(.secondary)
+
+            Text("cd ~/projects/my-app && galaxy")
+                .font(.system(.body, design: .monospaced))
+                .padding(8)
+                .background(Color(.windowBackgroundColor))
+                .cornerRadius(4)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
