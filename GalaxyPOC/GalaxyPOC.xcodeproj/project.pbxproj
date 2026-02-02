@@ -20,6 +20,7 @@
 /* Begin PBXFileReference section */
 		03E8CA49CFFD43B40F69A196 /* Session.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Session.swift; sourceTree = "<group>"; };
 		247448C70224193CE23BB32D /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		250F5A4BAD11EE41A4E51344 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		2B1B7D35B5D4C74109C71FEC /* SessionSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionSidebar.swift; sourceTree = "<group>"; };
 		4E9581FAD7E28412EFFA4F2E /* SessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionManager.swift; sourceTree = "<group>"; };
 		72EC4E43716950A0BE37D77C /* GalaxyPOCApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxyPOCApp.swift; sourceTree = "<group>"; };
@@ -45,6 +46,7 @@
 			children = (
 				247448C70224193CE23BB32D /* ContentView.swift */,
 				72EC4E43716950A0BE37D77C /* GalaxyPOCApp.swift */,
+				250F5A4BAD11EE41A4E51344 /* Info.plist */,
 				B7AAAAF347EA7046BF1FA163 /* Models */,
 				8A41C41A5210CDC374AB07E1 /* Views */,
 			);
@@ -163,8 +165,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_VALUES = "CFBundleName=$(PRODUCT_NAME)\nCFBundleDisplayName=Galaxy POC\nCFBundleIdentifier=$(PRODUCT_BUNDLE_IDENTIFIER)\nCFBundleVersion=$(CURRENT_PROJECT_VERSION)\nCFBundleShortVersionString=$(MARKETING_VERSION)\nCFBundlePackageType=APPL\nCFBundleExecutable=$(EXECUTABLE_NAME)\nLSMinimumSystemVersion=$(MACOSX_DEPLOYMENT_TARGET)\nNSHighResolutionCapable=true\n";
+				INFOPLIST_FILE = GalaxyPOC/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -182,8 +183,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_VALUES = "CFBundleName=$(PRODUCT_NAME)\nCFBundleDisplayName=Galaxy POC\nCFBundleIdentifier=$(PRODUCT_BUNDLE_IDENTIFIER)\nCFBundleVersion=$(CURRENT_PROJECT_VERSION)\nCFBundleShortVersionString=$(MARKETING_VERSION)\nCFBundlePackageType=APPL\nCFBundleExecutable=$(EXECUTABLE_NAME)\nLSMinimumSystemVersion=$(MACOSX_DEPLOYMENT_TARGET)\nNSHighResolutionCapable=true\n";
+				INFOPLIST_FILE = GalaxyPOC/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

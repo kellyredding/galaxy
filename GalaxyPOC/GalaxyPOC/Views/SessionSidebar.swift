@@ -23,13 +23,6 @@ struct SessionSidebar: View {
         }
         .listStyle(.sidebar)
         .frame(minWidth: 200)
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button(action: { sessionManager.createSession() }) {
-                    Image(systemName: "plus")
-                }
-                .help("New Session (⌘N)")
-            }
-        }
+        // Removed toolbar with + button - sessions are created via CLI
     }
 }

@@ -16,23 +16,28 @@ targets:
     platform: macOS
     sources:
       - GalaxyPOC
+    info:
+      path: GalaxyPOC/Info.plist
+      properties:
+        CFBundleName: $(PRODUCT_NAME)
+        CFBundleDisplayName: Galaxy POC
+        CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundlePackageType: APPL
+        CFBundleExecutable: $(EXECUTABLE_NAME)
+        LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
+        NSHighResolutionCapable: true
+        CFBundleURLTypes:
+          - CFBundleURLName: com.kellyredding.galaxy
+            CFBundleURLSchemes:
+              - galaxy
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.kellyredding.GalaxyPOC
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
-        INFOPLIST_VALUES: |
-          CFBundleName=$(PRODUCT_NAME)
-          CFBundleDisplayName=Galaxy POC
-          CFBundleIdentifier=$(PRODUCT_BUNDLE_IDENTIFIER)
-          CFBundleVersion=$(CURRENT_PROJECT_VERSION)
-          CFBundleShortVersionString=$(MARKETING_VERSION)
-          CFBundlePackageType=APPL
-          CFBundleExecutable=$(EXECUTABLE_NAME)
-          LSMinimumSystemVersion=$(MACOSX_DEPLOYMENT_TARGET)
-          NSHighResolutionCapable=true
         SWIFT_VERSION: "5.10"
-        GENERATE_INFOPLIST_FILE: YES
     dependencies:
       - package: SwiftTerm
         product: SwiftTerm

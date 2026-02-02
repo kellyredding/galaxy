@@ -11,18 +11,22 @@ class Session: Identifiable, ObservableObject {
 
     let terminalView: LocalProcessTerminalView
     let createdAt: Date
+    let workingDirectory: String
 
     private static var sessionCounter = 0
 
     // Keep a strong reference to the process handler so it doesn't get deallocated
     var processHandler: TerminalProcessHandler?
 
-    init() {
+    init(workingDirectory: String) {
         self.id = UUID()
         self.createdAt = Date()
+        self.workingDirectory = workingDirectory
 
+        // Generate session name from directory
         Session.sessionCounter += 1
-        self.name = "Session \(Session.sessionCounter)"
+        let dirName = (workingDirectory as NSString).lastPathComponent
+        self.name = dirName.isEmpty ? "Session \(Session.sessionCounter)" : dirName
 
         // Create terminal view with default configuration
         self.terminalView = LocalProcessTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
@@ -44,7 +48,7 @@ class Session: Identifiable, ObservableObject {
         }
     }
 
-    func startProcess(claudePath: String, workingDirectory: String? = nil) {
+    func startProcess(claudePath: String) {
         // Build environment as array of "KEY=VALUE" strings (SwiftTerm 1.2.5 format)
         var envArray: [String] = ProcessInfo.processInfo.environment.map { "\($0.key)=\($0.value)" }
 
@@ -58,11 +62,8 @@ class Session: Identifiable, ObservableObject {
         envArray.append("COLORTERM=truecolor")
         envArray.append("LANG=en_US.UTF-8")
 
-        // Determine working directory (default to home)
-        let cwd = workingDirectory ?? NSHomeDirectory()
-
         // Change to working directory first
-        FileManager.default.changeCurrentDirectoryPath(cwd)
+        FileManager.default.changeCurrentDirectoryPath(workingDirectory)
 
         // Start claude directly (not via shell) so SwiftTerm can properly monitor the process
         terminalView.startProcess(
@@ -73,7 +74,7 @@ class Session: Identifiable, ObservableObject {
         )
 
         isRunning = true
-        NSLog("Session: Started process for %@", name)
+        NSLog("Session: Started process for %@ in %@", name, workingDirectory)
     }
 
     func processDidExit(exitCode: Int32) {
