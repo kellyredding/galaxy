@@ -1,0 +1,12 @@
+# Crystal
+/lib/
+/.shards/
+/shard.lock
+
+# Build artifacts
+/build/
+/releases/*.tar.gz
+/releases/*.sha256
+
+# macOS
+.DS_Store

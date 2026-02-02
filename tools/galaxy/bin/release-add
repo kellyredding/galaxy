@@ -1,0 +1,87 @@
+#!/bin/bash
+set -e
+
+# Adds a platform binary to an existing release
+# Run this on each target platform after the initial release
+# Usage: bin/release-add
+
+VERSION_FILE="VERSION.txt"
+BINARY="galaxy"
+BUILD_DIR="build"
+RELEASE_DIR="releases"
+
+# Read version from file
+if [ ! -f "$VERSION_FILE" ]; then
+  echo "Error: $VERSION_FILE not found"
+  exit 1
+fi
+
+VERSION=$(cat "$VERSION_FILE" | tr -d '[:space:]')
+
+if [ -z "$VERSION" ]; then
+  echo "Error: $VERSION_FILE is empty"
+  exit 1
+fi
+
+TAG="galaxy-v$VERSION"
+
+# Detect platform
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+ARCH=$(uname -m)
+
+case "$OS" in
+  darwin) OS="darwin" ;;
+  linux) OS="linux" ;;
+  *)
+    echo "Error: Unsupported OS: $OS"
+    exit 1
+    ;;
+esac
+
+case "$ARCH" in
+  x86_64|amd64) ARCH="amd64" ;;
+  arm64|aarch64) ARCH="arm64" ;;
+  *)
+    echo "Error: Unsupported architecture: $ARCH"
+    exit 1
+    ;;
+esac
+
+PLATFORM="${OS}-${ARCH}"
+ARTIFACT="$BINARY-$VERSION-$PLATFORM"
+
+echo "==> Adding $PLATFORM binary to release $TAG"
+
+# Verify release exists
+if ! gh release view "$TAG" >/dev/null 2>&1; then
+  echo "Error: Release $TAG not found. Run bin/release first."
+  exit 1
+fi
+
+# Build release binary
+echo "==> Building release binary for $PLATFORM"
+mkdir -p "$BUILD_DIR"
+shards install
+crystal build --release --no-debug -o "$BUILD_DIR/$BINARY" src/galaxy.cr
+
+# Create releases directory
+mkdir -p "$RELEASE_DIR"
+
+# Copy and compress
+echo "==> Creating release artifact"
+cp "$BUILD_DIR/$BINARY" "$RELEASE_DIR/$ARTIFACT"
+cd "$RELEASE_DIR"
+tar -czf "$ARTIFACT.tar.gz" "$ARTIFACT"
+shasum -a 256 "$ARTIFACT.tar.gz" > "$ARTIFACT.tar.gz.sha256"
+rm "$ARTIFACT"
+cd ..
+
+# Upload to existing release
+echo "==> Uploading to release $TAG"
+gh release upload "$TAG" \
+  "$RELEASE_DIR/$ARTIFACT.tar.gz" \
+  "$RELEASE_DIR/$ARTIFACT.tar.gz.sha256"
+
+echo ""
+echo "==> Added $PLATFORM to $TAG"
+echo "    https://github.com/kellyredding/galaxy/releases/tag/$TAG"
