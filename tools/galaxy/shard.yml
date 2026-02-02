@@ -1,0 +1,14 @@
+name: galaxy
+version: 0.0.1
+description: Launch Galaxy sessions from the terminal
+
+authors:
+  - Kelly Redding <kelly@kellyredding.com>
+
+targets:
+  galaxy:
+    main: src/galaxy.cr
+
+license: MIT
+
+crystal: ">= 1.0.0"

@@ -1,0 +1,107 @@
+#!/bin/bash
+set -e
+
+# Reads version from VERSION.txt, builds, tags, and creates GitHub release
+# Usage: bin/release
+
+VERSION_FILE="VERSION.txt"
+BINARY="galaxy"
+BUILD_DIR="build"
+RELEASE_DIR="releases"
+
+# Verify we're on main branch
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+if [ "$CURRENT_BRANCH" != "main" ]; then
+  echo "Error: Releases must be created from the 'main' branch."
+  echo "Currently on: $CURRENT_BRANCH"
+  echo ""
+  echo "Switch to main first:"
+  echo "  git checkout main"
+  echo "  git pull origin main"
+  exit 1
+fi
+
+# Read version from file
+if [ ! -f "$VERSION_FILE" ]; then
+  echo "Error: $VERSION_FILE not found"
+  exit 1
+fi
+
+VERSION=$(cat "$VERSION_FILE" | tr -d '[:space:]')
+
+if [ -z "$VERSION" ]; then
+  echo "Error: $VERSION_FILE is empty"
+  exit 1
+fi
+
+# Validate version format
+if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "Error: Version '$VERSION' must be in format X.Y.Z"
+  exit 1
+fi
+
+TAG="galaxy-v$VERSION"
+ARTIFACT="$BINARY-$VERSION-darwin-arm64"
+
+echo "==> Releasing galaxy $VERSION (from $VERSION_FILE)"
+
+# Check if tag already exists
+if git rev-parse "$TAG" >/dev/null 2>&1; then
+  echo "Error: Tag $TAG already exists. Update $VERSION_FILE first."
+  exit 1
+fi
+
+# Sync version to shard.yml (portable sed - works on macOS and Linux)
+echo "==> Syncing version to shard.yml"
+sed "s/^version: .*/version: $VERSION/" shard.yml > shard.yml.tmp && mv shard.yml.tmp shard.yml
+
+# Sync version to source
+echo "==> Syncing version to source"
+sed "s/VERSION = \".*\"/VERSION = \"$VERSION\"/" src/galaxy.cr > src/galaxy.cr.tmp && mv src/galaxy.cr.tmp src/galaxy.cr
+
+# Build release binary
+echo "==> Building release binary"
+mkdir -p "$BUILD_DIR"
+shards install
+crystal build --release --no-debug -o "$BUILD_DIR/$BINARY" src/galaxy.cr
+
+# Run specs
+echo "==> Running specs"
+crystal spec
+
+# Create releases directory
+mkdir -p "$RELEASE_DIR"
+
+# Copy and compress
+echo "==> Creating release artifact"
+cp "$BUILD_DIR/$BINARY" "$RELEASE_DIR/$ARTIFACT"
+cd "$RELEASE_DIR"
+tar -czf "$ARTIFACT.tar.gz" "$ARTIFACT"
+shasum -a 256 "$ARTIFACT.tar.gz" > "$ARTIFACT.tar.gz.sha256"
+rm "$ARTIFACT"
+cd ..
+
+# Commit if there are changes
+if [ -n "$(git status --porcelain)" ]; then
+  echo "==> Committing version $VERSION"
+  git add VERSION.txt shard.yml src/galaxy.cr
+  git commit -m "Release galaxy $VERSION"
+fi
+
+# Create and push tag
+echo "==> Creating tag $TAG"
+git tag -a "$TAG" -m "Release $VERSION"
+git push origin main
+git push origin "$TAG"
+
+# Create GitHub release with artifact
+echo "==> Creating GitHub release"
+gh release create "$TAG" \
+  --title "galaxy v$VERSION" \
+  --generate-notes \
+  "$RELEASE_DIR/$ARTIFACT.tar.gz" \
+  "$RELEASE_DIR/$ARTIFACT.tar.gz.sha256"
+
+echo ""
+echo "==> Released $TAG"
+echo "    https://github.com/kellyredding/galaxy/releases/tag/$TAG"
