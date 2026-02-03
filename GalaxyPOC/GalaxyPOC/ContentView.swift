@@ -47,13 +47,36 @@ struct TerminalContainerView: View {
     var body: some View {
         ZStack {
             ForEach(sessionManager.sessions) { session in
-                FocusableTerminalView(
+                SessionContentView(
                     session: session,
-                    isActive: session.id == sessionManager.activeSessionId
+                    isActive: session.id == sessionManager.activeSessionId,
+                    onResume: { sessionManager.resumeSession(sessionId: session.id) }
                 )
-                .opacity(session.id == sessionManager.activeSessionId ? 1 : 0)
-                .allowsHitTesting(session.id == sessionManager.activeSessionId)
             }
         }
+    }
+}
+
+/// Wrapper view that observes individual session state changes
+struct SessionContentView: View {
+    @ObservedObject var session: Session
+    let isActive: Bool
+    let onResume: () -> Void
+
+    var body: some View {
+        Group {
+            if session.hasExited {
+                // Show stopped session UI
+                StoppedSessionView(session: session, onResume: onResume)
+            } else {
+                // Show terminal
+                FocusableTerminalView(
+                    session: session,
+                    isActive: isActive
+                )
+            }
+        }
+        .opacity(isActive ? 1 : 0)
+        .allowsHitTesting(isActive)
     }
 }

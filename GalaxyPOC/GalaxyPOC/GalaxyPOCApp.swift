@@ -4,12 +4,16 @@ import SwiftUI
 struct GalaxyPOCApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var sessionManager = SessionManager.shared
+    @StateObject private var settingsManager = SettingsManager.shared
+    @Environment(\.colorScheme) var systemColorScheme
 
     var body: some Scene {
         // Use Window (not WindowGroup) for single-window app
         Window("Galaxy", id: "main") {
             ContentView()
                 .environmentObject(sessionManager)
+                .environmentObject(settingsManager)
+                .preferredColorScheme(preferredScheme)
         }
         .windowStyle(.automatic)
         // Handle URL scheme events in this window
@@ -31,6 +35,23 @@ struct GalaxyPOCApp: App {
                     }
                 }
             }
+        }
+
+        // Settings window (⌘,)
+        Settings {
+            SettingsView()
+                .environmentObject(settingsManager)
+        }
+    }
+
+    private var preferredScheme: ColorScheme? {
+        switch settingsManager.settings.themePreference {
+        case .system:
+            return nil  // Use system default
+        case .light:
+            return .light
+        case .dark:
+            return .dark
         }
     }
 }

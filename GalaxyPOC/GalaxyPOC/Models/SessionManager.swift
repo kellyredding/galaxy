@@ -66,23 +66,14 @@ class SessionManager: ObservableObject {
     @discardableResult
     func createSession(workingDirectory: String? = nil) -> Session {
         let directory = workingDirectory ?? NSHomeDirectory()
-        let session = Session(workingDirectory: directory)
+        let sessionId = SessionIDGenerator.generate()
+        let session = Session(workingDirectory: directory, userSessionId: sessionId)
 
         // Set up terminal delegate to track process termination
         // Store a strong reference in session so it doesn't get deallocated
         let handler = TerminalProcessHandler(session: session, sessionManager: self)
         session.processHandler = handler
         session.terminalView.processDelegate = handler
-
-        // Observe hasExited to auto-remove session when it exits
-        let observer = session.$hasExited
-            .dropFirst() // Skip initial value
-            .filter { $0 == true }
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self, sessionId = session.id] _ in
-                self?.handleSessionExited(sessionId: sessionId)
-            }
-        exitObservers[session.id] = observer
 
         // Start the claude process
         session.startProcess(claudePath: claudePath)
@@ -96,35 +87,65 @@ class SessionManager: ObservableObject {
     func handleSessionExited(sessionId: UUID) {
         NSLog("SessionManager: handleSessionExited called for %@", sessionId.uuidString)
 
-        guard let index = sessions.firstIndex(where: { $0.id == sessionId }) else {
-            NSLog("SessionManager: Session not found in array!")
+        // Sessions are kept in sidebar when they exit (no removal)
+        // The session's hasExited flag is already set by the process handler
+
+        // Clean up the observer (no longer needed)
+        exitObservers.removeValue(forKey: sessionId)
+
+        // Force UI update by notifying observers
+        DispatchQueue.main.async {
+            self.objectWillChange.send()
+        }
+
+        NSLog("SessionManager: Session marked as exited, keeping in sidebar")
+    }
+
+    func stopSession(sessionId: UUID) {
+        guard let session = sessions.first(where: { $0.id == sessionId }) else {
+            NSLog("SessionManager: Cannot stop - session not found")
             return
         }
 
-        NSLog("SessionManager: Found session at index %d, removing...", index)
-
-        // Clean up the observer
-        exitObservers.removeValue(forKey: sessionId)
-
-        // Determine which session to select next
-        var nextActiveId: UUID? = nil
-        if sessions.count > 1 {
-            if index > 0 {
-                nextActiveId = sessions[index - 1].id
-            } else {
-                nextActiveId = sessions[index + 1].id
-            }
+        guard !session.hasExited else {
+            NSLog("SessionManager: Cannot stop - session already stopped")
+            return
         }
 
-        // Remove the exited session
-        sessions.remove(at: index)
+        NSLog("SessionManager: Stopping session %@", session.userSessionId)
 
-        // Update active session
-        if activeSessionId == sessionId {
-            activeSessionId = nextActiveId
+        // Terminate the process using our tracked PID (sends SIGTERM)
+        session.terminateProcess()
+    }
+
+    func resumeSession(sessionId: UUID) {
+        guard let session = sessions.first(where: { $0.id == sessionId }) else {
+            NSLog("SessionManager: Cannot resume - session not found")
+            return
         }
 
-        NSLog("SessionManager: Session removed, remaining: %d", sessions.count)
+        guard session.hasExited else {
+            NSLog("SessionManager: Cannot resume - session is still running")
+            return
+        }
+
+        NSLog("SessionManager: Resuming session %@", session.userSessionId)
+
+        // Reset session state
+        session.hasExited = false
+        session.exitCode = nil
+        session.isRunning = false
+
+        // Re-attach process handler
+        let handler = TerminalProcessHandler(session: session, sessionManager: self)
+        session.processHandler = handler
+        session.terminalView.processDelegate = handler
+
+        // Start claude with resume flag
+        session.startProcess(claudePath: claudePath, resume: true)
+
+        // Make this the active session
+        activeSessionId = session.id
     }
 
     func switchTo(sessionId: UUID) {
@@ -191,11 +212,8 @@ class TerminalProcessHandler: NSObject, LocalProcessTerminalViewDelegate {
         NSLog("TerminalProcessHandler: Notifying session %@ of exit", session.name)
         session.processDidExit(exitCode: exitCode ?? -1)
 
-        // Notify session manager to remove this session
-        DispatchQueue.main.async { [weak self] in
-            NSLog("TerminalProcessHandler: Calling handleSessionExited")
-            self?.sessionManager?.handleSessionExited(sessionId: session.id)
-        }
+        // Session stays in sidebar - no removal, just state update
+        NSLog("TerminalProcessHandler: Session marked as stopped, kept in sidebar")
     }
 
     func sizeChanged(source: SwiftTerm.LocalProcessTerminalView, newCols: Int, newRows: Int) {

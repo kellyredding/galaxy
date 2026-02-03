@@ -7,13 +7,18 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		21239774CA4778939E3173D4 /* SessionIDGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F3B435264DCD92610024B3A /* SessionIDGenerator.swift */; };
 		39F805D1D863916C4F09874A /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 1073964FCAD353209A999D96 /* SwiftTerm */; };
 		55B40D3A946CA975D0705AB1 /* GalaxyPOCApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72EC4E43716950A0BE37D77C /* GalaxyPOCApp.swift */; };
 		5E5DFFA81979867CB14EE9B4 /* SessionSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B1B7D35B5D4C74109C71FEC /* SessionSidebar.swift */; };
 		603E236D1097E6B3B7B3B159 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 247448C70224193CE23BB32D /* ContentView.swift */; };
+		63CF9F4484E453AB4FA8435D /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51B043580E281E4FEDD4B7C1 /* SettingsView.swift */; };
+		84957EABE2A6196BA1504DBF /* StatusLineService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5826E9442A7BE9F83CBB048F /* StatusLineService.swift */; };
 		8B72EA39ED013A00DB1BCDD8 /* Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03E8CA49CFFD43B40F69A196 /* Session.swift */; };
+		A3844F9D3AF997B73DB014B2 /* StoppedSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B20954B03FC9D94E6B00BA4 /* StoppedSessionView.swift */; };
 		A9DC3B126BE6650923ADEC46 /* SessionRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60AC35CE99CE6430CC623FF /* SessionRow.swift */; };
 		ADB1518FC56D3CBB7871F375 /* SessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E9581FAD7E28412EFFA4F2E /* SessionManager.swift */; };
+		DC800CD267FF155C7DD4AD19 /* SettingsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 852ED927CCD3E05ADBEE9191 /* SettingsManager.swift */; };
 		DF11146BB2950E31FC746C90 /* TerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E559289BDC471021B08F5DD /* TerminalView.swift */; };
 		DF5C8DA5432ED43321F51277 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FCA5CF5E95D054AAC80A090A /* Assets.xcassets */; };
 /* End PBXBuildFile section */
@@ -24,7 +29,12 @@
 		250F5A4BAD11EE41A4E51344 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		2B1B7D35B5D4C74109C71FEC /* SessionSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionSidebar.swift; sourceTree = "<group>"; };
 		4E9581FAD7E28412EFFA4F2E /* SessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionManager.swift; sourceTree = "<group>"; };
+		51B043580E281E4FEDD4B7C1 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		5826E9442A7BE9F83CBB048F /* StatusLineService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusLineService.swift; sourceTree = "<group>"; };
 		72EC4E43716950A0BE37D77C /* GalaxyPOCApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxyPOCApp.swift; sourceTree = "<group>"; };
+		7F3B435264DCD92610024B3A /* SessionIDGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionIDGenerator.swift; sourceTree = "<group>"; };
+		852ED927CCD3E05ADBEE9191 /* SettingsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsManager.swift; sourceTree = "<group>"; };
+		8B20954B03FC9D94E6B00BA4 /* StoppedSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoppedSessionView.swift; sourceTree = "<group>"; };
 		900F9D1F5C418789AE03F7FC /* GalaxyPOC.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GalaxyPOC.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9E559289BDC471021B08F5DD /* TerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalView.swift; sourceTree = "<group>"; };
 		A60AC35CE99CE6430CC623FF /* SessionRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRow.swift; sourceTree = "<group>"; };
@@ -69,6 +79,8 @@
 			children = (
 				A60AC35CE99CE6430CC623FF /* SessionRow.swift */,
 				2B1B7D35B5D4C74109C71FEC /* SessionSidebar.swift */,
+				51B043580E281E4FEDD4B7C1 /* SettingsView.swift */,
+				8B20954B03FC9D94E6B00BA4 /* StoppedSessionView.swift */,
 				9E559289BDC471021B08F5DD /* TerminalView.swift */,
 			);
 			path = Views;
@@ -78,7 +90,10 @@
 			isa = PBXGroup;
 			children = (
 				03E8CA49CFFD43B40F69A196 /* Session.swift */,
+				7F3B435264DCD92610024B3A /* SessionIDGenerator.swift */,
 				4E9581FAD7E28412EFFA4F2E /* SessionManager.swift */,
+				852ED927CCD3E05ADBEE9191 /* SettingsManager.swift */,
+				5826E9442A7BE9F83CBB048F /* StatusLineService.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -164,9 +179,14 @@
 				603E236D1097E6B3B7B3B159 /* ContentView.swift in Sources */,
 				55B40D3A946CA975D0705AB1 /* GalaxyPOCApp.swift in Sources */,
 				8B72EA39ED013A00DB1BCDD8 /* Session.swift in Sources */,
+				21239774CA4778939E3173D4 /* SessionIDGenerator.swift in Sources */,
 				ADB1518FC56D3CBB7871F375 /* SessionManager.swift in Sources */,
 				A9DC3B126BE6650923ADEC46 /* SessionRow.swift in Sources */,
 				5E5DFFA81979867CB14EE9B4 /* SessionSidebar.swift in Sources */,
+				DC800CD267FF155C7DD4AD19 /* SettingsManager.swift in Sources */,
+				63CF9F4484E453AB4FA8435D /* SettingsView.swift in Sources */,
+				84957EABE2A6196BA1504DBF /* StatusLineService.swift in Sources */,
+				A3844F9D3AF997B73DB014B2 /* StoppedSessionView.swift in Sources */,
 				DF11146BB2950E31FC746C90 /* TerminalView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
