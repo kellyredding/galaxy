@@ -3,11 +3,25 @@ require "./galaxy_ledger/*"
 module GalaxyLedger
   VERSION = "0.0.1"
 
+  # Claude config directory (can be overridden for testing)
+  # This is the base directory where Claude Code stores its configuration
+  # Default: ~/.claude
+  CLAUDE_CONFIG_DIR = Path.new(
+    ENV.fetch(
+      "GALAXY_CLAUDE_CONFIG_DIR",
+      (Path.home / ".claude").to_s
+    )
+  )
+
+  # Claude Code settings file (hooks are installed here)
+  SETTINGS_FILE = CLAUDE_CONFIG_DIR / "settings.json"
+
   # Galaxy-level directories (shared between tools)
+  # Can also be overridden directly for testing
   GALAXY_DIR = Path.new(
     ENV.fetch(
       "GALAXY_DIR",
-      (Path.home / ".claude" / "galaxy").to_s
+      (CLAUDE_CONFIG_DIR / "galaxy").to_s
     )
   )
 

@@ -197,3 +197,138 @@ describe "OnStop context threshold warnings" do
     File.delete(transcript_file.path)
   end
 end
+
+describe "OnStop buffer flush (Phase 5.1)" do
+  test_session_id = "stop-flush-test-#{Random.rand(10000)}"
+
+  before_each do
+    session_dir = GalaxyLedger.session_dir(test_session_id)
+    FileUtils.rm_rf(session_dir.to_s)
+    Dir.mkdir_p(session_dir)
+    GalaxyLedger::Database.ensure_database_exists
+  end
+
+  after_each do
+    session_dir = GalaxyLedger.session_dir(test_session_id)
+    FileUtils.rm_rf(session_dir.to_s)
+    # Clean up database entries for this session
+    GalaxyLedger::Database.open do |db|
+      db.exec("DELETE FROM ledger_entries WHERE session_id = ?", test_session_id)
+    end
+  end
+
+  it "triggers async buffer flush when buffer has entries" do
+    # Add some entries to the buffer
+    entry1 = GalaxyLedger::Buffer::Entry.new(
+      entry_type: "learning",
+      content: "Test learning for stop hook flush",
+      importance: "medium",
+      source: "assistant",
+    )
+    entry2 = GalaxyLedger::Buffer::Entry.new(
+      entry_type: "decision",
+      content: "Test decision for stop hook flush",
+      importance: "high",
+      source: "assistant",
+    )
+    GalaxyLedger::Buffer.append(test_session_id, entry1)
+    GalaxyLedger::Buffer.append(test_session_id, entry2)
+
+    # Verify buffer has entries
+    GalaxyLedger::Buffer.count(test_session_id).should eq(2)
+
+    # Create minimal transcript
+    transcript_file = File.tempfile("transcript", ".jsonl")
+    transcript_file.print(%|{"type": "user", "message": {"role": "user", "content": "Test"}}\n|)
+    transcript_file.print(%|{"type": "assistant", "message": {"role": "assistant", "content": "Response"}}\n|)
+    transcript_file.close
+
+    hook_input = {
+      "session_id"       => test_session_id,
+      "transcript_path"  => transcript_file.path,
+      "stop_hook_active" => false,
+    }.to_json
+
+    # Run on-stop hook
+    result = run_binary(["on-stop"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    # Wait for async flush to complete (it spawns a subprocess)
+    sleep 0.5.seconds
+
+    # Verify entries were flushed to database
+    entries = GalaxyLedger::Database.query_by_session(test_session_id)
+    entries.size.should eq(2)
+    entries.map(&.content).should contain("Test learning for stop hook flush")
+    entries.map(&.content).should contain("Test decision for stop hook flush")
+
+    # Buffer should be cleared after flush
+    GalaxyLedger::Buffer.exists?(test_session_id).should eq(false)
+
+    # Clean up
+    File.delete(transcript_file.path)
+  end
+
+  it "does not flush when buffer is empty" do
+    # No buffer entries - just verify no crash and no spurious database entries
+
+    # Create minimal transcript
+    transcript_file = File.tempfile("transcript", ".jsonl")
+    transcript_file.print(%|{"type": "user", "message": {"role": "user", "content": "Test"}}\n|)
+    transcript_file.print(%|{"type": "assistant", "message": {"role": "assistant", "content": "Response"}}\n|)
+    transcript_file.close
+
+    hook_input = {
+      "session_id"       => test_session_id,
+      "transcript_path"  => transcript_file.path,
+      "stop_hook_active" => false,
+    }.to_json
+
+    # Run on-stop hook
+    result = run_binary(["on-stop"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    # No database entries should exist
+    entries = GalaxyLedger::Database.query_by_session(test_session_id)
+    entries.size.should eq(0)
+
+    # Clean up
+    File.delete(transcript_file.path)
+  end
+
+  it "does not flush when stop_hook_active is true" do
+    # Add entry to buffer
+    entry = GalaxyLedger::Buffer::Entry.new(
+      entry_type: "learning",
+      content: "Should not be flushed",
+      importance: "medium",
+    )
+    GalaxyLedger::Buffer.append(test_session_id, entry)
+
+    # Create minimal transcript
+    transcript_file = File.tempfile("transcript", ".jsonl")
+    transcript_file.print(%|{"type": "user", "message": {"role": "user", "content": "Test"}}\n|)
+    transcript_file.close
+
+    hook_input = {
+      "session_id"       => test_session_id,
+      "transcript_path"  => transcript_file.path,
+      "stop_hook_active" => true, # Early return
+    }.to_json
+
+    # Run on-stop hook
+    result = run_binary(["on-stop"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    # Buffer should still exist (not flushed due to early return)
+    GalaxyLedger::Buffer.exists?(test_session_id).should eq(true)
+    GalaxyLedger::Buffer.count(test_session_id).should eq(1)
+
+    # No database entries
+    entries = GalaxyLedger::Database.query_by_session(test_session_id)
+    entries.size.should eq(0)
+
+    # Clean up
+    File.delete(transcript_file.path)
+  end
+end

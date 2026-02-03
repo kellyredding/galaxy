@@ -76,6 +76,16 @@ module GalaxyLedger
         handle_on_stop_command(rest)
       when "on-session-start"
         handle_on_session_start_command(rest)
+      when "on-post-tool-use"
+        handle_on_post_tool_use_command(rest)
+      when "on-user-prompt-submit"
+        handle_on_user_prompt_submit_command(rest)
+      when "on-pre-compact"
+        handle_on_pre_compact_command(rest)
+      when "on-session-end"
+        handle_on_session_end_command(rest)
+      when "hooks"
+        handle_hooks_command(rest)
       when "version"
         puts "galaxy-ledger #{VERSION}"
       when "help"
@@ -100,6 +110,7 @@ module GalaxyLedger
         config              Manage configuration
         session             Manage sessions
         buffer              Manage session buffers
+        hooks               Install/uninstall Claude Code hooks
         version             Show version
         help                Show this help
 
@@ -107,6 +118,10 @@ module GalaxyLedger
         on-startup          Fresh session startup (ledger awareness)
         on-stop             Capture last exchange, check thresholds
         on-session-start    Restore context after clear/compact
+        on-post-tool-use    Track file operations, detect guidelines
+        on-user-prompt-submit  Capture user directions/preferences
+        on-pre-compact      Sync flush before compaction
+        on-session-end      Sync flush on session end
 
       Run 'galaxy-ledger <command> --help' for detailed command usage.
       BANNER
@@ -1343,6 +1358,460 @@ module GalaxyLedger
           }
         }
       HELP
+    end
+
+    private def self.handle_on_post_tool_use_command(args : Array(String))
+      if args.first? == "-h" || args.first? == "--help"
+        show_on_post_tool_use_help
+        return
+      end
+      handler = Hooks::OnPostToolUse.new
+      handler.run
+    end
+
+    private def self.show_on_post_tool_use_help
+      puts <<-HELP
+      galaxy-ledger on-post-tool-use - Handle PostToolUse hook
+
+      USAGE:
+        galaxy-ledger on-post-tool-use
+
+      DESCRIPTION:
+        Called by Claude Code's PostToolUse hook after a tool completes.
+        This hook:
+        - Tracks file operations (Read, Edit, Write, Glob, Grep)
+        - Detects guideline files (**/agent-guidelines/**, **/*-style.md)
+        - Detects implementation plan files (**/implementation-plans/**)
+        - Buffers entries for later persistence to SQLite
+
+      INPUT (stdin):
+        JSON object with hook data:
+        {
+          "session_id": "abc123",
+          "transcript_path": "/path/to/transcript.jsonl",
+          "cwd": "/current/working/directory",
+          "hook_event_name": "PostToolUse",
+          "tool_name": "Read|Edit|Write|Grep|Glob",
+          "tool_input": {"file_path": "/path/to/file.rb"},
+          "tool_result": "File contents or operation result"
+        }
+
+      OUTPUT (stdout):
+        No output (async hook, non-blocking).
+
+      ENTRY TYPES CREATED:
+        - file_read: When a file is read (importance: low)
+        - file_edit: When a file is edited (importance: medium)
+        - file_write: When a file is created (importance: medium)
+        - search: When Glob/Grep is used (importance: low)
+        - guideline: When an agent-guideline or *-style.md is read (importance: medium)
+        - implementation_plan: When an implementation-plans file is read (importance: medium)
+
+      HOOK CONFIGURATION:
+        Add to ~/.claude/settings.json:
+        {
+          "hooks": {
+            "PostToolUse": [{
+              "matcher": "Edit|Write|Read|Grep|Glob",
+              "hooks": [{
+                "type": "command",
+                "command": "galaxy-ledger on-post-tool-use",
+                "async": true,
+                "timeout": 10
+              }]
+            }]
+          }
+        }
+      HELP
+    end
+
+    private def self.handle_on_user_prompt_submit_command(args : Array(String))
+      if args.first? == "-h" || args.first? == "--help"
+        show_on_user_prompt_submit_help
+        return
+      end
+      handler = Hooks::OnUserPromptSubmit.new
+      handler.run
+    end
+
+    private def self.show_on_user_prompt_submit_help
+      puts <<-HELP
+      galaxy-ledger on-user-prompt-submit - Handle UserPromptSubmit hook
+
+      USAGE:
+        galaxy-ledger on-user-prompt-submit
+
+      DESCRIPTION:
+        Called by Claude Code's UserPromptSubmit hook when the user submits a prompt.
+        This hook:
+        - Captures user messages for potential direction extraction
+        - Buffers messages for later processing (Phase 6 Claude CLI extraction)
+        - Runs async, non-blocking
+
+      INPUT (stdin):
+        JSON object with hook data:
+        {
+          "session_id": "abc123",
+          "transcript_path": "/path/to/transcript.jsonl",
+          "cwd": "/current/working/directory",
+          "hook_event_name": "UserPromptSubmit",
+          "prompt": "The user's message content"
+        }
+
+      OUTPUT (stdout):
+        No output (async hook, non-blocking).
+
+      BEHAVIOR:
+        - Skips empty prompts
+        - Skips very short prompts (<10 chars) like "yes", "ok", "continue"
+        - Buffers longer prompts as potential directions
+        - Actual extraction/classification happens in Phase 6
+
+      ENTRY TYPES CREATED:
+        - direction: User prompt (source: user, importance: medium)
+          Note: Will be properly classified in Phase 6 extraction
+
+      HOOK CONFIGURATION:
+        Add to ~/.claude/settings.json:
+        {
+          "hooks": {
+            "UserPromptSubmit": [{
+              "hooks": [{
+                "type": "command",
+                "command": "galaxy-ledger on-user-prompt-submit",
+                "async": true,
+                "timeout": 10
+              }]
+            }]
+          }
+        }
+      HELP
+    end
+
+    private def self.handle_on_pre_compact_command(args : Array(String))
+      if args.first? == "-h" || args.first? == "--help"
+        show_on_pre_compact_help
+        return
+      end
+      handler = Hooks::OnPreCompact.new
+      handler.run
+    end
+
+    private def self.show_on_pre_compact_help
+      puts <<-HELP
+      galaxy-ledger on-pre-compact - Handle PreCompact hook
+
+      USAGE:
+        galaxy-ledger on-pre-compact
+
+      DESCRIPTION:
+        Called by Claude Code's PreCompact hook before auto-compact or manual /compact.
+        This hook:
+        - Synchronously flushes all buffered entries to SQLite
+        - Ensures no data loss during compaction
+        - Blocking hook (Claude Code waits for completion)
+
+      INPUT (stdin):
+        JSON object with hook data:
+        {
+          "session_id": "abc123",
+          "transcript_path": "/path/to/transcript.jsonl",
+          "cwd": "/current/working/directory",
+          "hook_event_name": "PreCompact",
+          "source": "auto" | "manual"
+        }
+
+      OUTPUT (stdout):
+        No output on success.
+        Logs flush count to stderr for debugging.
+
+      HOOK CONFIGURATION:
+        Add to ~/.claude/settings.json:
+        {
+          "hooks": {
+            "PreCompact": [{
+              "matcher": "auto|manual",
+              "hooks": [{
+                "type": "command",
+                "command": "galaxy-ledger on-pre-compact",
+                "timeout": 60
+              }]
+            }]
+          }
+        }
+      HELP
+    end
+
+    private def self.handle_on_session_end_command(args : Array(String))
+      if args.first? == "-h" || args.first? == "--help"
+        show_on_session_end_help
+        return
+      end
+      handler = Hooks::OnSessionEnd.new
+      handler.run
+    end
+
+    private def self.show_on_session_end_help
+      puts <<-HELP
+      galaxy-ledger on-session-end - Handle SessionEnd hook
+
+      USAGE:
+        galaxy-ledger on-session-end
+
+      DESCRIPTION:
+        Called by Claude Code's SessionEnd hook when a session ends (e.g., /clear).
+        This hook:
+        - Synchronously flushes all buffered entries to SQLite
+        - Ensures data is persisted before session ends
+        - Blocking hook (Claude Code waits for completion)
+
+      INPUT (stdin):
+        JSON object with hook data:
+        {
+          "session_id": "abc123",
+          "transcript_path": "/path/to/transcript.jsonl",
+          "cwd": "/current/working/directory",
+          "hook_event_name": "SessionEnd",
+          "source": "clear"
+        }
+
+      OUTPUT (stdout):
+        No output on success.
+        Logs flush count to stderr for debugging.
+
+      HOOK CONFIGURATION:
+        Add to ~/.claude/settings.json:
+        {
+          "hooks": {
+            "SessionEnd": [{
+              "matcher": "clear",
+              "hooks": [{
+                "type": "command",
+                "command": "galaxy-ledger on-session-end",
+                "timeout": 30
+              }]
+            }]
+          }
+        }
+      HELP
+    end
+
+    # ========================================
+    # Hooks Management Commands
+    # ========================================
+
+    private def self.handle_hooks_command(args : Array(String))
+      if args.empty?
+        show_hooks_help
+        return
+      end
+
+      subcommand = args[0]
+      rest = args[1..]? || [] of String
+
+      case subcommand
+      when "install"
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_hooks_install_help
+        else
+          hooks_install
+        end
+      when "uninstall"
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_hooks_uninstall_help
+        else
+          hooks_uninstall
+        end
+      when "status"
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_hooks_status_help
+        else
+          hooks_status
+        end
+      when "help", "-h", "--help"
+        show_hooks_help
+      else
+        STDERR.puts "Error: Unknown hooks command '#{subcommand}'"
+        STDERR.puts "Run 'galaxy-ledger hooks --help' for usage"
+        exit(1)
+      end
+    end
+
+    private def self.show_hooks_help
+      puts <<-HELP
+      galaxy-ledger hooks - Manage Claude Code hook installation
+
+      USAGE:
+        galaxy-ledger hooks install     Install ledger hooks to settings.json
+        galaxy-ledger hooks uninstall   Remove ledger hooks from settings.json
+        galaxy-ledger hooks status      Check which hooks are installed
+        galaxy-ledger hooks help        Show this help
+
+      DESCRIPTION:
+        These commands manage the installation of Galaxy Ledger hooks into
+        Claude Code's settings.json file. Hooks enable automatic context
+        tracking, file operation logging, and context restoration.
+
+      SETTINGS FILE:
+        Default: ~/.claude/settings.json
+        Override: Set GALAXY_CLAUDE_CONFIG_DIR environment variable
+
+      INSTALLED HOOKS:
+        - UserPromptSubmit: Capture user directions/preferences
+        - PostToolUse: Track file operations, detect guidelines
+        - Stop: Capture last exchange, check context thresholds
+        - PreCompact: Sync flush before compaction
+        - SessionStart: Restore context after clear/compact, startup awareness
+        - SessionEnd: Sync flush on session end
+
+      EXAMPLES:
+        galaxy-ledger hooks status
+        galaxy-ledger hooks install
+        galaxy-ledger hooks uninstall
+
+      TESTING:
+        To test without affecting your live Claude Code configuration:
+        export GALAXY_CLAUDE_CONFIG_DIR=/tmp/test-claude
+        galaxy-ledger hooks install
+        cat /tmp/test-claude/settings.json
+      HELP
+    end
+
+    private def self.show_hooks_install_help
+      puts <<-HELP
+      galaxy-ledger hooks install - Install ledger hooks
+
+      USAGE:
+        galaxy-ledger hooks install
+
+      DESCRIPTION:
+        Installs all Galaxy Ledger hooks into Claude Code's settings.json file.
+        If hooks are already installed, they will be updated to the latest version.
+
+      SETTINGS FILE:
+        #{SETTINGS_FILE}
+        (Override with GALAXY_CLAUDE_CONFIG_DIR environment variable)
+
+      WHAT GETS INSTALLED:
+        - UserPromptSubmit hook (async): Captures user messages
+        - PostToolUse hook (async): Tracks file operations
+        - Stop hook: Captures last exchange, shows context warnings
+        - PreCompact hook: Flushes buffer before compaction
+        - SessionStart hooks: Context restoration and awareness
+        - SessionEnd hook: Flushes buffer on session end
+
+      SAFETY:
+        Existing non-ledger hooks are preserved.
+        To test first, use GALAXY_CLAUDE_CONFIG_DIR=/tmp/test-claude
+      HELP
+    end
+
+    private def self.show_hooks_uninstall_help
+      puts <<-HELP
+      galaxy-ledger hooks uninstall - Remove ledger hooks
+
+      USAGE:
+        galaxy-ledger hooks uninstall
+
+      DESCRIPTION:
+        Removes all Galaxy Ledger hooks from Claude Code's settings.json file.
+        Other hooks (non-ledger) are preserved.
+
+      SETTINGS FILE:
+        #{SETTINGS_FILE}
+        (Override with GALAXY_CLAUDE_CONFIG_DIR environment variable)
+
+      WHAT GETS REMOVED:
+        Any hook with a command containing "galaxy-ledger" is removed.
+      HELP
+    end
+
+    private def self.show_hooks_status_help
+      puts <<-HELP
+      galaxy-ledger hooks status - Check hook installation status
+
+      USAGE:
+        galaxy-ledger hooks status
+
+      DESCRIPTION:
+        Shows which Galaxy Ledger hooks are currently installed in
+        Claude Code's settings.json file.
+
+      SETTINGS FILE:
+        #{SETTINGS_FILE}
+        (Override with GALAXY_CLAUDE_CONFIG_DIR environment variable)
+
+      OUTPUT:
+        Lists each hook event type and whether ledger hooks are installed for it.
+      HELP
+    end
+
+    private def self.hooks_install
+      puts "Installing Galaxy Ledger hooks..."
+      puts "  Settings file: #{SETTINGS_FILE}"
+
+      if HooksManager.install
+        puts ""
+        puts "✅ Hooks installed successfully!"
+        puts ""
+        puts "Installed hooks:"
+        HooksManager::LEDGER_HOOKS.keys.each do |event|
+          puts "  - #{event}"
+        end
+        puts ""
+        puts "Restart Claude Code for hooks to take effect."
+      else
+        STDERR.puts "❌ Failed to install hooks"
+        exit(1)
+      end
+    end
+
+    private def self.hooks_uninstall
+      puts "Uninstalling Galaxy Ledger hooks..."
+      puts "  Settings file: #{SETTINGS_FILE}"
+
+      if HooksManager.uninstall
+        puts ""
+        puts "✅ Hooks uninstalled successfully!"
+        puts ""
+        puts "Restart Claude Code for changes to take effect."
+      else
+        STDERR.puts "❌ Failed to uninstall hooks"
+        exit(1)
+      end
+    end
+
+    private def self.hooks_status
+      status = HooksManager.status
+
+      puts "Galaxy Ledger Hook Status"
+      puts "========================="
+      puts ""
+      puts "Settings file: #{status.settings_path}"
+      puts ""
+
+      if status.installed
+        puts "Status: ✅ All hooks installed"
+      elsif status.hook_events.empty?
+        puts "Status: ❌ No hooks installed"
+      else
+        puts "Status: ⚠️  Partially installed (#{status.hook_events.size}/#{HooksManager::LEDGER_HOOKS.keys.size})"
+      end
+
+      puts ""
+      puts "Hook events:"
+      HooksManager::LEDGER_HOOKS.keys.each do |event|
+        if status.hook_events.includes?(event)
+          puts "  ✅ #{event}"
+        else
+          puts "  ❌ #{event}"
+        end
+      end
+
+      unless status.installed
+        puts ""
+        puts "Run 'galaxy-ledger hooks install' to install missing hooks."
+      end
     end
   end
 end
