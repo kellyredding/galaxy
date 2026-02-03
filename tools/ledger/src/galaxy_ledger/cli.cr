@@ -427,7 +427,7 @@ module GalaxyLedger
         file_read, file_edit, file_write, search,
         direction, preference, constraint,
         learning, decision, discovery,
-        guideline, reference
+        guideline, implementation_plan, reference
 
       EXAMPLES:
         galaxy-ledger buffer show abc123

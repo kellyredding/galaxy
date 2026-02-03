@@ -24,6 +24,7 @@ module GalaxyLedger
       "decision",
       "discovery",
       "guideline",
+      "implementation_plan",
       "reference",
     ]
 
