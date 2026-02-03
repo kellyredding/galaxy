@@ -173,7 +173,7 @@ describe GalaxyLedger::Transcript do
     it "skips entries without message content" do
       entries = [
         create_entry("user", "Question"),
-        create_entry_no_message("tool"),  # Tool events don't have message
+        create_entry_no_message("tool"), # Tool events don't have message
         create_entry("assistant", "Answer"),
       ]
 
@@ -218,7 +218,7 @@ describe GalaxyLedger::Transcript do
       last_exchange.user_timestamp.should eq("2026-02-01T10:00:00Z")
       last_exchange.full_content.should eq("First part\n\nSecond part")
       last_exchange.assistant_messages.size.should eq(2)
-      last_exchange.summary.should be_nil  # Summary is generated in Phase 6
+      last_exchange.summary.should be_nil # Summary is generated in Phase 6
     end
 
     it "handles empty assistant entries" do

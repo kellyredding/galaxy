@@ -1,5 +1,24 @@
 require "../spec_helper"
 
+# Helper to create a test session with buffer entries
+def create_test_session_with_buffer(session_id : String, entry_count : Int32 = 3)
+  session_dir = GalaxyLedger.session_dir(session_id)
+  Dir.mkdir_p(session_dir)
+
+  buffer_file = GalaxyLedger::Buffer.buffer_path(session_id)
+  File.open(buffer_file, "w") do |f|
+    entry_count.times do |i|
+      entry = {
+        entry_type: "learning",
+        content:    "Test learning #{i + 1}",
+        importance: "medium",
+        created_at: "2026-02-01T10:0#{i}:00Z",
+      }
+      f.puts(entry.to_json)
+    end
+  end
+end
+
 describe "CLI Integration" do
   describe "version subcommand" do
     it "outputs version" do
@@ -275,6 +294,201 @@ describe "CLI Integration" do
         result[:output].should contain("galaxy-ledger session")
         result[:output].should contain("USAGE")
         result[:status].should eq(0)
+      end
+    end
+  end
+
+  describe "buffer subcommand" do
+    describe "buffer (no args)" do
+      it "shows help when no subcommand provided" do
+        result = run_binary(["buffer"])
+        result[:output].should contain("galaxy-ledger buffer")
+        result[:output].should contain("USAGE")
+        result[:status].should eq(0)
+      end
+    end
+
+    describe "buffer help" do
+      it "shows buffer help" do
+        result = run_binary(["buffer", "help"])
+        result[:output].should contain("galaxy-ledger buffer")
+        result[:output].should contain("ENTRY TYPES")
+        result[:output].should contain("flush")
+        result[:status].should eq(0)
+      end
+    end
+
+    describe "buffer show SESSION_ID" do
+      it "shows buffer contents for session with entries" do
+        session_id = "buffer-show-test-#{Random.rand(100000)}"
+        create_test_session_with_buffer(session_id, 3)
+
+        begin
+          result = run_binary(["buffer", "show", session_id])
+          result[:status].should eq(0)
+          result[:output].should contain("Buffer entries for session")
+          result[:output].should contain("Count: 3")
+          result[:output].should contain("learning")
+          result[:output].should contain("Test learning")
+        ensure
+          FileUtils.rm_rf(GalaxyLedger.session_dir(session_id).to_s)
+        end
+      end
+
+      it "shows empty message when buffer is empty" do
+        session_id = "buffer-empty-test-#{Random.rand(100000)}"
+        session_dir = GalaxyLedger.session_dir(session_id)
+        Dir.mkdir_p(session_dir)
+
+        begin
+          result = run_binary(["buffer", "show", session_id])
+          result[:status].should eq(0)
+          result[:output].should contain("Buffer is empty")
+        ensure
+          FileUtils.rm_rf(session_dir.to_s)
+        end
+      end
+
+      it "outputs error for non-existent session" do
+        result = run_binary(["buffer", "show", "nonexistent-#{Random.rand(100000)}"])
+        result[:error].should contain("Session not found")
+        result[:status].should_not eq(0)
+      end
+
+      it "outputs error when session_id not provided" do
+        result = run_binary(["buffer", "show"])
+        result[:error].should contain("Usage")
+        result[:status].should_not eq(0)
+      end
+    end
+
+    describe "buffer flush SESSION_ID" do
+      it "flushes buffer and reports entries flushed" do
+        session_id = "buffer-flush-test-#{Random.rand(100000)}"
+        create_test_session_with_buffer(session_id, 5)
+
+        begin
+          result = run_binary(["buffer", "flush", session_id])
+          result[:status].should eq(0)
+          result[:output].should contain("Flush complete")
+          result[:output].should contain("Entries flushed: 5")
+
+          # Buffer should be cleared
+          GalaxyLedger::Buffer.exists?(session_id).should eq(false)
+        ensure
+          FileUtils.rm_rf(GalaxyLedger.session_dir(session_id).to_s)
+        end
+      end
+
+      it "handles empty buffer gracefully" do
+        session_id = "buffer-flush-empty-#{Random.rand(100000)}"
+        session_dir = GalaxyLedger.session_dir(session_id)
+        Dir.mkdir_p(session_dir)
+
+        begin
+          result = run_binary(["buffer", "flush", session_id])
+          result[:status].should eq(0)
+          result[:output].should contain("Flush complete")
+          result[:output].should contain("Entries flushed: 0")
+        ensure
+          FileUtils.rm_rf(session_dir.to_s)
+        end
+      end
+
+      it "outputs error for non-existent session" do
+        result = run_binary(["buffer", "flush", "nonexistent-#{Random.rand(100000)}"])
+        result[:error].should contain("Session not found")
+        result[:status].should_not eq(0)
+      end
+
+      it "outputs error when session_id not provided" do
+        result = run_binary(["buffer", "flush"])
+        result[:error].should contain("Usage")
+        result[:status].should_not eq(0)
+      end
+    end
+
+    describe "buffer flush-async SESSION_ID" do
+      it "starts async flush and returns immediately" do
+        session_id = "buffer-flush-async-#{Random.rand(100000)}"
+        create_test_session_with_buffer(session_id, 3)
+
+        begin
+          result = run_binary(["buffer", "flush-async", session_id])
+          result[:status].should eq(0)
+          result[:output].should contain("Async flush started")
+          result[:output].should contain("pid:")
+        ensure
+          # Give async process time to complete
+          sleep 100.milliseconds
+          FileUtils.rm_rf(GalaxyLedger.session_dir(session_id).to_s)
+        end
+      end
+
+      it "outputs error for non-existent session" do
+        result = run_binary(["buffer", "flush-async", "nonexistent-#{Random.rand(100000)}"])
+        result[:error].should contain("Session not found")
+        result[:status].should_not eq(0)
+      end
+
+      it "outputs error when session_id not provided" do
+        result = run_binary(["buffer", "flush-async"])
+        result[:error].should contain("Usage")
+        result[:status].should_not eq(0)
+      end
+    end
+
+    describe "buffer clear SESSION_ID" do
+      it "clears buffer and reports entries discarded" do
+        session_id = "buffer-clear-test-#{Random.rand(100000)}"
+        create_test_session_with_buffer(session_id, 4)
+
+        begin
+          result = run_binary(["buffer", "clear", session_id])
+          result[:status].should eq(0)
+          result[:output].should contain("Buffer cleared")
+          result[:output].should contain("Entries discarded: 4")
+
+          # Buffer should be gone
+          GalaxyLedger::Buffer.exists?(session_id).should eq(false)
+        ensure
+          FileUtils.rm_rf(GalaxyLedger.session_dir(session_id).to_s)
+        end
+      end
+
+      it "handles already empty buffer" do
+        session_id = "buffer-clear-empty-#{Random.rand(100000)}"
+        session_dir = GalaxyLedger.session_dir(session_id)
+        Dir.mkdir_p(session_dir)
+
+        begin
+          result = run_binary(["buffer", "clear", session_id])
+          result[:status].should eq(0)
+          result[:output].should contain("Buffer cleared")
+          result[:output].should contain("Entries discarded: 0")
+        ensure
+          FileUtils.rm_rf(session_dir.to_s)
+        end
+      end
+
+      it "outputs error for non-existent session" do
+        result = run_binary(["buffer", "clear", "nonexistent-#{Random.rand(100000)}"])
+        result[:error].should contain("Session not found")
+        result[:status].should_not eq(0)
+      end
+
+      it "outputs error when session_id not provided" do
+        result = run_binary(["buffer", "clear"])
+        result[:error].should contain("Usage")
+        result[:status].should_not eq(0)
+      end
+    end
+
+    describe "unknown buffer subcommand" do
+      it "outputs error for unknown subcommand" do
+        result = run_binary(["buffer", "unknown"])
+        result[:error].should contain("Unknown buffer command")
+        result[:status].should_not eq(0)
       end
     end
   end

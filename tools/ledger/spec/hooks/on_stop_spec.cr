@@ -87,7 +87,7 @@ describe "OnStop last exchange capture" do
     }.to_json
 
     result = run_binary(["on-stop"], stdin: hook_input)
-    result[:status].should eq(0)  # Should not crash
+    result[:status].should eq(0) # Should not crash
 
     # No exchange file created (no valid transcript)
     session_dir = GalaxyLedger.session_dir(test_session_id)

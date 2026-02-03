@@ -99,7 +99,7 @@ module GalaxyLedger
           if config.warnings.at_critical_threshold
             return build_critical_warning(percentage)
           end
-        # Check warning threshold (70% default)
+          # Check warning threshold (70% default)
         elsif percentage >= config.thresholds.warning
           if config.warnings.at_warning_threshold
             return build_warning(percentage)

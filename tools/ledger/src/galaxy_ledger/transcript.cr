@@ -106,7 +106,7 @@ module GalaxyLedger
         user_timestamp: extracted.user_timestamp,
         full_content: full_content,
         assistant_messages: assistant_messages,
-        summary: nil  # Generated in Phase 6
+        summary: nil # Generated in Phase 6
       )
     end
 

@@ -53,6 +53,8 @@ module GalaxyLedger
         handle_config_command(rest)
       when "session"
         handle_session_command(rest)
+      when "buffer"
+        handle_buffer_command(rest)
       when "on-startup"
         handle_on_startup_command(rest)
       when "on-stop"
@@ -86,6 +88,10 @@ module GalaxyLedger
         session list        List all sessions
         session show ID     Show session details
         session remove ID   Remove session and purge database entries
+        buffer show ID      Show buffer contents for session
+        buffer flush ID     Synchronously flush buffer to storage
+        buffer flush-async ID  Asynchronously flush buffer (forks)
+        buffer clear ID     Clear buffer without flushing
         on-startup          Handle SessionStart(startup) hook
         version             Show version
         help                Show this help
@@ -364,6 +370,203 @@ module GalaxyLedger
       puts "  SQLite purged: #{result.sqlite_purged ? "yes" : "no (not implemented yet)"}"
       if Config.load.storage.postgres_enabled
         puts "  PostgreSQL purged: #{result.postgres_purged ? "yes" : "no (not implemented yet)"}"
+      end
+    end
+
+    private def self.handle_buffer_command(args : Array(String))
+      if args.empty?
+        show_buffer_help
+        return
+      end
+
+      subcommand = args[0]
+      rest = args[1..]? || [] of String
+
+      case subcommand
+      when "show"
+        buffer_show(rest)
+      when "flush"
+        buffer_flush(rest)
+      when "flush-async"
+        buffer_flush_async(rest)
+      when "clear"
+        buffer_clear(rest)
+      when "help"
+        show_buffer_help
+      else
+        STDERR.puts "Error: Unknown buffer command '#{subcommand}'"
+        STDERR.puts "Run 'galaxy-ledger buffer help' for usage"
+        exit(1)
+      end
+    end
+
+    private def self.show_buffer_help
+      puts <<-HELP
+      galaxy-ledger buffer - Manage session buffers
+
+      USAGE:
+        galaxy-ledger buffer show SESSION_ID        Show buffer contents
+        galaxy-ledger buffer flush SESSION_ID       Synchronously flush to storage
+        galaxy-ledger buffer flush-async SESSION_ID Asynchronously flush (forks)
+        galaxy-ledger buffer clear SESSION_ID       Clear buffer without flushing
+        galaxy-ledger buffer help                   Show this help
+
+      DESCRIPTION:
+        Buffers temporarily store ledger entries before flushing to persistent
+        storage (SQLite/PostgreSQL). This allows non-blocking writes during
+        session activity.
+
+        Buffer files are stored per-session at:
+          ~/.claude/galaxy/sessions/{session_id}/ledger_buffer.jsonl
+
+        Flush operations:
+          - sync:  Blocks until all entries are persisted
+          - async: Forks a process and returns immediately
+
+      ENTRY TYPES:
+        file_read, file_edit, file_write, search,
+        direction, preference, constraint,
+        learning, decision, discovery,
+        guideline, reference
+
+      EXAMPLES:
+        galaxy-ledger buffer show abc123
+        galaxy-ledger buffer flush abc123
+        galaxy-ledger buffer flush-async abc123
+        galaxy-ledger buffer clear abc123
+      HELP
+    end
+
+    private def self.buffer_show(args : Array(String))
+      if args.empty?
+        STDERR.puts "Usage: galaxy-ledger buffer show SESSION_ID"
+        exit(1)
+      end
+
+      session_id = args[0]
+
+      unless Session.exists?(session_id)
+        STDERR.puts "Error: Session not found: #{session_id}"
+        STDERR.puts "  Path: #{SESSIONS_DIR / session_id}"
+        exit(1)
+      end
+
+      entries = Buffer.read(session_id)
+
+      if entries.empty?
+        puts "Buffer is empty for session: #{session_id}"
+        puts "  Buffer file: #{Buffer.buffer_path(session_id)}"
+        return
+      end
+
+      puts "Buffer entries for session: #{session_id}"
+      puts "  Count: #{entries.size}"
+      puts "  File: #{Buffer.buffer_path(session_id)}"
+      puts ""
+
+      entries.each_with_index do |entry, idx|
+        puts "[#{idx + 1}] #{entry.entry_type} (#{entry.importance})"
+        if source = entry.source
+          puts "    Source: #{source}"
+        end
+        puts "    Content: #{truncate(entry.content, 100)}"
+        puts "    Created: #{entry.created_at}"
+        puts ""
+      end
+    end
+
+    private def self.buffer_flush(args : Array(String))
+      if args.empty?
+        STDERR.puts "Usage: galaxy-ledger buffer flush SESSION_ID"
+        exit(1)
+      end
+
+      session_id = args[0]
+
+      unless Session.exists?(session_id)
+        STDERR.puts "Error: Session not found: #{session_id}"
+        STDERR.puts "  Path: #{SESSIONS_DIR / session_id}"
+        exit(1)
+      end
+
+      result = Buffer.flush_sync(session_id)
+
+      if result.success
+        puts "Flush complete for session: #{session_id}"
+        puts "  Entries flushed: #{result.entries_flushed}"
+        if reason = result.reason
+          puts "  Note: #{reason}"
+        end
+      else
+        STDERR.puts "Flush failed for session: #{session_id}"
+        if reason = result.reason
+          STDERR.puts "  Reason: #{reason}"
+        end
+        exit(1)
+      end
+    end
+
+    private def self.buffer_flush_async(args : Array(String))
+      if args.empty?
+        STDERR.puts "Usage: galaxy-ledger buffer flush-async SESSION_ID"
+        exit(1)
+      end
+
+      session_id = args[0]
+
+      unless Session.exists?(session_id)
+        STDERR.puts "Error: Session not found: #{session_id}"
+        STDERR.puts "  Path: #{SESSIONS_DIR / session_id}"
+        exit(1)
+      end
+
+      result = Buffer.flush_async(session_id)
+
+      if result.success
+        puts "Async flush started for session: #{session_id}"
+        if reason = result.reason
+          puts "  #{reason}"
+        end
+      else
+        STDERR.puts "Async flush failed for session: #{session_id}"
+        if reason = result.reason
+          STDERR.puts "  Reason: #{reason}"
+        end
+        exit(1)
+      end
+    end
+
+    private def self.buffer_clear(args : Array(String))
+      if args.empty?
+        STDERR.puts "Usage: galaxy-ledger buffer clear SESSION_ID"
+        exit(1)
+      end
+
+      session_id = args[0]
+
+      unless Session.exists?(session_id)
+        STDERR.puts "Error: Session not found: #{session_id}"
+        STDERR.puts "  Path: #{SESSIONS_DIR / session_id}"
+        exit(1)
+      end
+
+      count = Buffer.count(session_id)
+      success = Buffer.clear(session_id)
+
+      if success
+        puts "Buffer cleared for session: #{session_id}"
+        puts "  Entries discarded: #{count}"
+      else
+        STDERR.puts "Failed to clear buffer for session: #{session_id}"
+        exit(1)
+      end
+    end
+
+    private def self.truncate(text : String, max_length : Int32) : String
+      if text.size <= max_length
+        text.gsub("\n", "\\n")
+      else
+        text[0, max_length - 3].gsub("\n", "\\n") + "..."
       end
     end
 

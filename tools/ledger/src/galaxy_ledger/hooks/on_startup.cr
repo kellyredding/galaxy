@@ -61,20 +61,10 @@ module GalaxyLedger
         session_id = @session_id
         return unless session_id
 
-        session_dir = GalaxyLedger.session_dir(session_id)
-        return unless Dir.exists?(session_dir)
-
-        # Check for orphaned flushing file (from crashed flush)
-        flushing_file = session_dir / LEDGER_BUFFER_FLUSHING_FILENAME
-        if File.exists?(flushing_file)
-          begin
-            # TODO: In Phase 3, process this file (flush to database) before deleting
-            # For now, just delete the orphaned file
-            File.delete(flushing_file)
-          rescue
-            # Ignore errors during cleanup
-          end
-        end
+        # Use Buffer module to process orphaned flushing file
+        # This counts entries, logs recovery, and deletes the file
+        # In Phase 4, this will also persist entries to SQLite
+        Buffer.process_orphaned_flushing_file(session_id)
       end
 
       private def get_ledger_stats : NamedTuple(sessions: Int32, entries: Int32, last_session: String?)

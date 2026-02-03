@@ -82,7 +82,7 @@ module GalaxyLedger
       private def print_box_top(title : String)
         # ╭─ Title ──────────────────────────────────╮
         title_part = "#{BOX_HORIZONTAL} #{title} "
-        remaining = BOX_WIDTH - title_part.size - 2  # -2 for corners
+        remaining = BOX_WIDTH - title_part.size - 2 # -2 for corners
         remaining = 0 if remaining < 0
         puts "#{BOX_TOP_LEFT}#{title_part}#{BOX_HORIZONTAL * remaining}#{BOX_TOP_RIGHT}"
       end
@@ -94,7 +94,7 @@ module GalaxyLedger
 
       private def print_wrapped(text : String, indent : Int32)
         # Wrap text within the box
-        max_width = BOX_WIDTH - indent - 4  # -4 for box borders and padding
+        max_width = BOX_WIDTH - indent - 4 # -4 for box borders and padding
         lines = wrap_text(text, max_width)
 
         lines.each do |line|
