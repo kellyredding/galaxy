@@ -94,23 +94,12 @@ module GalaxyLedger
       Usage: galaxy-ledger [command] [options]
 
       Commands:
-        search "query"      Search entries using full-text search
+        search              Search entries using full-text search
         list                List recent entries
-        add TYPE "content"  Add an entry (learning, decision, direction)
-        config              Show current configuration
-        config help         Configuration documentation
-        config set KEY VAL  Set a configuration value
-        config get KEY      Get a configuration value
-        config reset        Reset to defaults
-        config path         Show config file location
-        session list        List all sessions
-        session show ID     Show session details
-        session remove ID   Remove session and purge database entries
-        buffer show ID      Show buffer contents for session
-        buffer flush ID     Synchronously flush buffer to storage
-        buffer flush-async ID  Asynchronously flush buffer (forks)
-        buffer clear ID     Clear buffer without flushing
-        on-startup          Handle SessionStart(startup) hook
+        add                 Add an entry (learning, decision, direction, etc.)
+        config              Manage configuration
+        session             Manage sessions
+        buffer              Manage session buffers
         version             Show version
         help                Show this help
 
@@ -118,6 +107,8 @@ module GalaxyLedger
         on-startup          Fresh session startup (ledger awareness)
         on-stop             Capture last exchange, check thresholds
         on-session-start    Restore context after clear/compact
+
+      Run 'galaxy-ledger <command> --help' for detailed command usage.
       BANNER
     end
 
@@ -133,19 +124,37 @@ module GalaxyLedger
       rest = args[1..]? || [] of String
 
       case subcommand
-      when "help"
+      when "help", "-h", "--help"
         show_config_help
       when "set"
-        config_set(rest)
+        # Check for help on subcommand
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_config_set_help
+        else
+          config_set(rest)
+        end
       when "get"
-        config_get(rest)
+        # Check for help on subcommand
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_config_get_help
+        else
+          config_get(rest)
+        end
       when "reset"
-        config_reset
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_config_reset_help
+        else
+          config_reset
+        end
       when "path"
-        puts CONFIG_FILE
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_config_path_help
+        else
+          puts CONFIG_FILE
+        end
       else
         STDERR.puts "Error: Unknown config command '#{subcommand}'"
-        STDERR.puts "Run 'galaxy-ledger config help' for usage"
+        STDERR.puts "Run 'galaxy-ledger config --help' for usage"
         exit(1)
       end
     end
@@ -197,6 +206,69 @@ module GalaxyLedger
         galaxy-ledger config set storage.postgres_enabled true
         galaxy-ledger config get thresholds.warning
         galaxy-ledger config reset
+      HELP
+    end
+
+    private def self.show_config_set_help
+      puts <<-HELP
+      galaxy-ledger config set - Set a configuration value
+
+      USAGE:
+        galaxy-ledger config set KEY VALUE
+
+      ARGUMENTS:
+        KEY     Configuration key using dot notation (e.g., thresholds.warning)
+        VALUE   Value to set (type is inferred: integer, boolean, or string)
+
+      EXAMPLES:
+        galaxy-ledger config set thresholds.warning 75
+        galaxy-ledger config set storage.postgres_enabled true
+        galaxy-ledger config set storage.openai_api_key_env_var MY_KEY
+
+      Run 'galaxy-ledger config --help' for all available settings.
+      HELP
+    end
+
+    private def self.show_config_get_help
+      puts <<-HELP
+      galaxy-ledger config get - Get a configuration value
+
+      USAGE:
+        galaxy-ledger config get KEY
+
+      ARGUMENTS:
+        KEY     Configuration key using dot notation (e.g., thresholds.warning)
+
+      EXAMPLES:
+        galaxy-ledger config get thresholds.warning
+        galaxy-ledger config get storage.postgres_enabled
+
+      Run 'galaxy-ledger config --help' for all available settings.
+      HELP
+    end
+
+    private def self.show_config_reset_help
+      puts <<-HELP
+      galaxy-ledger config reset - Reset configuration to defaults
+
+      USAGE:
+        galaxy-ledger config reset
+
+      DESCRIPTION:
+        Resets all configuration values to their defaults. This overwrites
+        the config file at #{CONFIG_FILE}.
+      HELP
+    end
+
+    private def self.show_config_path_help
+      puts <<-HELP
+      galaxy-ledger config path - Show config file location
+
+      USAGE:
+        galaxy-ledger config path
+
+      DESCRIPTION:
+        Prints the full path to the ledger configuration file.
       HELP
     end
 
@@ -256,16 +328,28 @@ module GalaxyLedger
 
       case subcommand
       when "list"
-        session_list
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_session_list_help
+        else
+          session_list
+        end
       when "show"
-        session_show(rest)
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_session_show_help
+        else
+          session_show(rest)
+        end
       when "remove"
-        session_remove(rest)
-      when "help"
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_session_remove_help
+        else
+          session_remove(rest)
+        end
+      when "help", "-h", "--help"
         show_session_help
       else
         STDERR.puts "Error: Unknown session command '#{subcommand}'"
-        STDERR.puts "Run 'galaxy-ledger session help' for usage"
+        STDERR.puts "Run 'galaxy-ledger session --help' for usage"
         exit(1)
       end
     end
@@ -298,6 +382,61 @@ module GalaxyLedger
         galaxy-ledger session list
         galaxy-ledger session show abc123-def456
         galaxy-ledger session remove abc123-def456
+      HELP
+    end
+
+    private def self.show_session_list_help
+      puts <<-HELP
+      galaxy-ledger session list - List all sessions
+
+      USAGE:
+        galaxy-ledger session list
+
+      DESCRIPTION:
+        Lists all sessions in #{SESSIONS_DIR}/.
+
+      OUTPUT:
+        For each session shows: session_id | context% | file count | size | age
+      HELP
+    end
+
+    private def self.show_session_show_help
+      puts <<-HELP
+      galaxy-ledger session show - Show session details
+
+      USAGE:
+        galaxy-ledger session show SESSION_ID
+
+      ARGUMENTS:
+        SESSION_ID    The session ID to show details for
+
+      DESCRIPTION:
+        Shows detailed information about a session including:
+        - Session path and file list
+        - Context status (if available)
+        - Buffer status
+        - Last exchange status
+      HELP
+    end
+
+    private def self.show_session_remove_help
+      puts <<-HELP
+      galaxy-ledger session remove - Remove a session completely
+
+      USAGE:
+        galaxy-ledger session remove SESSION_ID
+
+      ARGUMENTS:
+        SESSION_ID    The session ID to remove
+
+      DESCRIPTION:
+        Completely removes a session:
+        - Deletes the session folder and all its files
+        - Purges entries from SQLite database
+        - Purges entries from PostgreSQL (if enabled)
+
+      WARNING:
+        This action cannot be undone.
       HELP
     end
 
@@ -402,18 +541,34 @@ module GalaxyLedger
 
       case subcommand
       when "show"
-        buffer_show(rest)
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_buffer_show_help
+        else
+          buffer_show(rest)
+        end
       when "flush"
-        buffer_flush(rest)
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_buffer_flush_help
+        else
+          buffer_flush(rest)
+        end
       when "flush-async"
-        buffer_flush_async(rest)
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_buffer_flush_async_help
+        else
+          buffer_flush_async(rest)
+        end
       when "clear"
-        buffer_clear(rest)
-      when "help"
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_buffer_clear_help
+        else
+          buffer_clear(rest)
+        end
+      when "help", "-h", "--help"
         show_buffer_help
       else
         STDERR.puts "Error: Unknown buffer command '#{subcommand}'"
-        STDERR.puts "Run 'galaxy-ledger buffer help' for usage"
+        STDERR.puts "Run 'galaxy-ledger buffer --help' for usage"
         exit(1)
       end
     end
@@ -452,6 +607,72 @@ module GalaxyLedger
         galaxy-ledger buffer flush abc123
         galaxy-ledger buffer flush-async abc123
         galaxy-ledger buffer clear abc123
+      HELP
+    end
+
+    private def self.show_buffer_show_help
+      puts <<-HELP
+      galaxy-ledger buffer show - Show buffer contents
+
+      USAGE:
+        galaxy-ledger buffer show SESSION_ID
+
+      ARGUMENTS:
+        SESSION_ID    The session ID to show buffer for
+
+      DESCRIPTION:
+        Displays all entries currently in the session's buffer file.
+        These entries have not yet been flushed to persistent storage.
+      HELP
+    end
+
+    private def self.show_buffer_flush_help
+      puts <<-HELP
+      galaxy-ledger buffer flush - Synchronously flush buffer to storage
+
+      USAGE:
+        galaxy-ledger buffer flush SESSION_ID
+
+      ARGUMENTS:
+        SESSION_ID    The session ID to flush buffer for
+
+      DESCRIPTION:
+        Flushes all buffered entries to persistent storage (SQLite/PostgreSQL).
+        This operation blocks until all entries are persisted.
+      HELP
+    end
+
+    private def self.show_buffer_flush_async_help
+      puts <<-HELP
+      galaxy-ledger buffer flush-async - Asynchronously flush buffer
+
+      USAGE:
+        galaxy-ledger buffer flush-async SESSION_ID
+
+      ARGUMENTS:
+        SESSION_ID    The session ID to flush buffer for
+
+      DESCRIPTION:
+        Starts a background process to flush buffered entries to storage.
+        Returns immediately with the PID of the background process.
+      HELP
+    end
+
+    private def self.show_buffer_clear_help
+      puts <<-HELP
+      galaxy-ledger buffer clear - Clear buffer without flushing
+
+      USAGE:
+        galaxy-ledger buffer clear SESSION_ID
+
+      ARGUMENTS:
+        SESSION_ID    The session ID to clear buffer for
+
+      DESCRIPTION:
+        Discards all buffered entries without persisting them.
+
+      WARNING:
+        This action cannot be undone. Entries will be lost.
       HELP
     end
 
@@ -614,34 +835,25 @@ module GalaxyLedger
     end
 
     private def self.handle_search_command(args : Array(String))
-      if args.empty?
-        STDERR.puts "Usage: galaxy-ledger search \"query\" [options]"
-        STDERR.puts ""
-        STDERR.puts "Search the ledger using full-text search with prefix matching."
-        STDERR.puts ""
-        STDERR.puts "Options:"
-        STDERR.puts "  --type TYPE           Filter by entry type (learning, decision, guideline, etc.)"
-        STDERR.puts "  --importance LEVEL    Filter by importance (high, medium, low)"
-        STDERR.puts "  --exact               Disable prefix matching (exact word match only)"
-        STDERR.puts ""
-        STDERR.puts "Examples:"
-        STDERR.puts "  galaxy-ledger search \"JWT authentication\""
-        STDERR.puts "  galaxy-ledger search \"database\" --type learning"
-        STDERR.puts "  galaxy-ledger search \"Redis\" --importance high"
-        STDERR.puts "  galaxy-ledger search \"trail\" --exact"
-        exit(1)
+      # Check for help flag first (only if it's a standalone argument, not a value)
+      if args.empty? || args.first? == "-h" || args.first? == "--help"
+        show_search_help
+        return
       end
 
       # Parse options
       entry_type : String? = nil
       importance : String? = nil
       prefix_match = true
-      query_parts = [] of String
+      query : String? = nil
 
       i = 0
       while i < args.size
         arg = args[i]
-        if arg == "--type" && i + 1 < args.size
+        if arg == "--query" && i + 1 < args.size
+          query = args[i + 1]
+          i += 2
+        elsif arg == "--type" && i + 1 < args.size
           entry_type = args[i + 1]
           unless Buffer::ENTRY_TYPES.includes?(entry_type)
             STDERR.puts "Error: Invalid type '#{entry_type}'"
@@ -661,14 +873,16 @@ module GalaxyLedger
           prefix_match = false
           i += 1
         else
-          query_parts << arg
-          i += 1
+          # Unknown argument
+          STDERR.puts "Error: Unknown option '#{arg}'"
+          STDERR.puts "Run 'galaxy-ledger search --help' for usage"
+          exit(1)
         end
       end
 
-      query = query_parts.join(" ")
-      if query.empty?
-        STDERR.puts "Error: Search query is required"
+      unless query
+        STDERR.puts "Error: --query is required"
+        STDERR.puts "Run 'galaxy-ledger search --help' for usage"
         exit(1)
       end
 
@@ -707,7 +921,42 @@ module GalaxyLedger
       end
     end
 
+    private def self.show_search_help
+      puts <<-HELP
+      galaxy-ledger search - Search ledger entries
+
+      USAGE:
+        galaxy-ledger search --query "QUERY" [options]
+
+      REQUIRED:
+        --query QUERY         The search query (supports prefix matching by default)
+
+      OPTIONS:
+        --type TYPE           Filter by entry type
+        --importance LEVEL    Filter by importance (high, medium, low)
+        --exact               Disable prefix matching (exact word match only)
+        -h, --help            Show this help
+
+      ENTRY TYPES:
+        #{Buffer::ENTRY_TYPES.join(", ")}
+
+      EXAMPLES:
+        galaxy-ledger search --query "JWT authentication"
+        galaxy-ledger search --query "database" --type learning
+        galaxy-ledger search --query "Redis" --importance high
+        galaxy-ledger search --query "trail"          # Finds "trailing" (prefix match)
+        galaxy-ledger search --query "trail" --exact  # No match (exact only)
+        galaxy-ledger search --query "--help"         # Search for literal "--help"
+      HELP
+    end
+
     private def self.handle_list_command(args : Array(String))
+      # Check for help flag first (only if it's a standalone argument, not a value)
+      if args.first? == "-h" || args.first? == "--help"
+        show_list_help
+        return
+      end
+
       # Parse options
       limit = 20
       entry_type : String? = nil
@@ -732,9 +981,9 @@ module GalaxyLedger
             exit(1)
           end
           i += 2
-        elsif arg == "--help" || arg == "-h"
-          show_list_help
-          return
+        elsif arg == "--limit" && i + 1 < args.size
+          limit = args[i + 1].to_i? || 20
+          i += 2
         elsif arg.to_i? && arg.to_i > 0
           limit = arg.to_i
           i += 1
@@ -787,72 +1036,54 @@ module GalaxyLedger
       galaxy-ledger list - List recent ledger entries
 
       USAGE:
-        galaxy-ledger list [LIMIT] [options]
+        galaxy-ledger list [options]
 
       OPTIONS:
-        LIMIT                   Number of entries to show (default: 20)
+        --limit N               Number of entries to show (default: 20)
         --type TYPE             Filter by entry type
         --importance LEVEL      Filter by importance (high, medium, low)
-        --help, -h              Show this help
+        -h, --help              Show this help
 
       ENTRY TYPES:
         #{Buffer::ENTRY_TYPES.join(", ")}
 
       EXAMPLES:
         galaxy-ledger list
-        galaxy-ledger list 50
+        galaxy-ledger list --limit 50
         galaxy-ledger list --type guideline
         galaxy-ledger list --importance high
-        galaxy-ledger list 10 --type learning --importance medium
+        galaxy-ledger list --limit 10 --type learning --importance medium
       HELP
     end
 
     private def self.handle_add_command(args : Array(String))
-      if args.size < 2
-        STDERR.puts "Usage: galaxy-ledger add TYPE \"content\""
-        STDERR.puts ""
-        STDERR.puts "Add an entry to the ledger manually."
-        STDERR.puts ""
-        STDERR.puts "Types:"
-        STDERR.puts "  learning           - Key insight about the codebase"
-        STDERR.puts "  decision           - Choice made with rationale"
-        STDERR.puts "  direction          - Explicit instruction (always X, never Y)"
-        STDERR.puts "  preference         - Stated preference about style/approach"
-        STDERR.puts "  discovery          - Something learned during exploration"
-        STDERR.puts "  guideline          - Extracted guideline rule"
-        STDERR.puts "  implementation_plan - Implementation plan context"
-        STDERR.puts "  file_read/edit/write - File operations"
-        STDERR.puts "  search             - Search performed"
-        STDERR.puts "  constraint         - Limitation or requirement"
-        STDERR.puts "  reference          - URL/issue reference"
-        STDERR.puts ""
-        STDERR.puts "Options:"
-        STDERR.puts "  --importance high|medium|low  (default: medium)"
-        STDERR.puts "  --session SESSION_ID          (default: manual-{timestamp})"
-        STDERR.puts ""
-        STDERR.puts "Examples:"
-        STDERR.puts "  galaxy-ledger add learning \"JWT tokens expire after 15 minutes\""
-        STDERR.puts "  galaxy-ledger add decision \"Using Redis for caching\" --importance high"
-        exit(1)
-      end
-
-      entry_type = args[0]
-
-      unless Buffer::ENTRY_TYPES.includes?(entry_type)
-        STDERR.puts "Error: Invalid type '#{entry_type}'"
-        STDERR.puts "Valid types: #{Buffer::ENTRY_TYPES.join(", ")}"
-        exit(1)
+      # Check for help flag first (only if it's a standalone argument, not a value)
+      if args.empty? || args.first? == "-h" || args.first? == "--help"
+        show_add_help
+        return
       end
 
       # Parse options
+      entry_type : String? = nil
+      content : String? = nil
       importance = "medium"
       session_id = "manual-#{Time.utc.to_unix}"
-      content_parts = [] of String
 
-      i = 1
+      i = 0
       while i < args.size
         arg = args[i]
-        if arg == "--importance" && i + 1 < args.size
+        if arg == "--type" && i + 1 < args.size
+          entry_type = args[i + 1]
+          unless Buffer::ENTRY_TYPES.includes?(entry_type)
+            STDERR.puts "Error: Invalid type '#{entry_type}'"
+            STDERR.puts "Valid types: #{Buffer::ENTRY_TYPES.join(", ")}"
+            exit(1)
+          end
+          i += 2
+        elsif arg == "--content" && i + 1 < args.size
+          content = args[i + 1]
+          i += 2
+        elsif arg == "--importance" && i + 1 < args.size
           importance = args[i + 1]
           unless Buffer::IMPORTANCE_LEVELS.includes?(importance)
             STDERR.puts "Error: Invalid importance '#{importance}'"
@@ -864,14 +1095,22 @@ module GalaxyLedger
           session_id = args[i + 1]
           i += 2
         else
-          content_parts << arg
-          i += 1
+          # Unknown argument
+          STDERR.puts "Error: Unknown option '#{arg}'"
+          STDERR.puts "Run 'galaxy-ledger add --help' for usage"
+          exit(1)
         end
       end
 
-      content = content_parts.join(" ")
-      if content.empty?
-        STDERR.puts "Error: Content is required"
+      unless entry_type
+        STDERR.puts "Error: --type is required"
+        STDERR.puts "Run 'galaxy-ledger add --help' for usage"
+        exit(1)
+      end
+
+      unless content
+        STDERR.puts "Error: --content is required"
+        STDERR.puts "Run 'galaxy-ledger add --help' for usage"
         exit(1)
       end
 
@@ -896,19 +1135,214 @@ module GalaxyLedger
       end
     end
 
+    private def self.show_add_help
+      puts <<-HELP
+      galaxy-ledger add - Add an entry to the ledger
+
+      USAGE:
+        galaxy-ledger add --type TYPE --content "CONTENT" [options]
+
+      REQUIRED:
+        --type TYPE           Entry type (see ENTRY TYPES below)
+        --content CONTENT     The content/text of the entry
+
+      OPTIONS:
+        --importance LEVEL    Importance level: high, medium, low (default: medium)
+        --session SESSION_ID  Session ID (default: manual-{timestamp})
+        -h, --help            Show this help
+
+      ENTRY TYPES:
+        learning              Key insight about the codebase
+        decision              Choice made with rationale
+        direction             Explicit instruction (always X, never Y)
+        preference            Stated preference about style/approach
+        discovery             Something learned during exploration
+        guideline             Extracted guideline rule
+        implementation_plan   Implementation plan context
+        file_read             File read operation
+        file_edit             File edit operation
+        file_write            File write operation
+        search                Search performed
+        constraint            Limitation or requirement
+        reference             URL/issue reference
+
+      EXAMPLES:
+        galaxy-ledger add --type learning --content "JWT tokens expire after 15 minutes"
+        galaxy-ledger add --type decision --content "Using Redis for caching" --importance high
+        galaxy-ledger add --type direction --content "Always use trailing commas"
+        galaxy-ledger add --type learning --content "Test content" --session my-session-id
+      HELP
+    end
+
     private def self.handle_on_startup_command(args : Array(String))
+      if args.first? == "-h" || args.first? == "--help"
+        show_on_startup_help
+        return
+      end
       handler = Hooks::OnStartup.new
       handler.run
     end
 
+    private def self.show_on_startup_help
+      puts <<-HELP
+      galaxy-ledger on-startup - Handle SessionStart(startup) hook
+
+      USAGE:
+        galaxy-ledger on-startup
+
+      DESCRIPTION:
+        Called by Claude Code's SessionStart hook when a fresh session starts.
+        This hook:
+        - Creates the session folder if needed
+        - Cleans up any orphaned flushing files
+        - Injects ledger awareness into the agent context
+
+      INPUT (stdin):
+        JSON object with hook data:
+        {
+          "session_id": "abc123",
+          "transcript_path": "/path/to/transcript.jsonl",
+          "cwd": "/current/working/directory",
+          "hook_event_name": "SessionStart",
+          "source": "startup"
+        }
+
+      OUTPUT (stdout):
+        JSON object with context to inject:
+        {
+          "hookSpecificOutput": {
+            "hookEventName": "SessionStart",
+            "additionalContext": "## Galaxy Ledger Available\\n..."
+          }
+        }
+
+      HOOK CONFIGURATION:
+        Add to ~/.claude/settings.json:
+        {
+          "hooks": {
+            "SessionStart": [{
+              "matcher": "startup",
+              "hooks": [{
+                "type": "command",
+                "command": "galaxy-ledger on-startup",
+                "timeout": 10
+              }]
+            }]
+          }
+        }
+      HELP
+    end
+
     private def self.handle_on_stop_command(args : Array(String))
+      if args.first? == "-h" || args.first? == "--help"
+        show_on_stop_help
+        return
+      end
       handler = Hooks::OnStop.new
       handler.run
     end
 
+    private def self.show_on_stop_help
+      puts <<-HELP
+      galaxy-ledger on-stop - Handle Stop hook
+
+      USAGE:
+        galaxy-ledger on-stop
+
+      DESCRIPTION:
+        Called by Claude Code's Stop hook after the agent finishes responding.
+        This hook:
+        - Captures the last exchange (user message + assistant response)
+        - Checks context percentage thresholds
+        - Shows warnings at 70% and 85% context usage
+        - Spawns async extraction of learnings/decisions
+
+      INPUT (stdin):
+        JSON object with hook data:
+        {
+          "session_id": "abc123",
+          "transcript_path": "/path/to/transcript.jsonl",
+          "cwd": "/current/working/directory",
+          "hook_event_name": "Stop",
+          "stop_hook_active": false
+        }
+
+      OUTPUT (stdout):
+        Optional warning message if context threshold exceeded.
+
+      HOOK CONFIGURATION:
+        Add to ~/.claude/settings.json:
+        {
+          "hooks": {
+            "Stop": [{
+              "hooks": [{
+                "type": "command",
+                "command": "galaxy-ledger on-stop",
+                "timeout": 30
+              }]
+            }]
+          }
+        }
+      HELP
+    end
+
     private def self.handle_on_session_start_command(args : Array(String))
+      if args.first? == "-h" || args.first? == "--help"
+        show_on_session_start_help
+        return
+      end
       handler = Hooks::OnSessionStart.new
       handler.run
+    end
+
+    private def self.show_on_session_start_help
+      puts <<-HELP
+      galaxy-ledger on-session-start - Handle SessionStart(clear|compact) hook
+
+      USAGE:
+        galaxy-ledger on-session-start
+
+      DESCRIPTION:
+        Called by Claude Code's SessionStart hook after /clear or auto-compact.
+        This hook:
+        - Prints the last exchange to terminal for user visibility
+        - Queries the ledger for context to restore
+        - Injects restored context into the agent
+
+      INPUT (stdin):
+        JSON object with hook data:
+        {
+          "session_id": "abc123",
+          "transcript_path": "/path/to/transcript.jsonl",
+          "cwd": "/current/working/directory",
+          "hook_event_name": "SessionStart",
+          "source": "clear" | "compact"
+        }
+
+      OUTPUT (stdout):
+        JSON object with restored context:
+        {
+          "hookSpecificOutput": {
+            "hookEventName": "SessionStart",
+            "additionalContext": "## Restored Context\\n..."
+          }
+        }
+
+      HOOK CONFIGURATION:
+        Add to ~/.claude/settings.json:
+        {
+          "hooks": {
+            "SessionStart": [{
+              "matcher": "clear|compact",
+              "hooks": [{
+                "type": "command",
+                "command": "galaxy-ledger on-session-start",
+                "timeout": 30
+              }]
+            }]
+          }
+        }
+      HELP
     end
   end
 end

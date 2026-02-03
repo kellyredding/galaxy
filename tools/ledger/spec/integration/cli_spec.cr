@@ -500,28 +500,67 @@ describe "CLI Integration" do
       File.delete(db_path) if File.exists?(db_path)
     end
 
-    it "searches for entries" do
+    it "searches for entries with --query flag" do
       # Add entries via add command
-      run_binary(["add", "learning", "JWT tokens expire after 15 minutes"])
-      run_binary(["add", "decision", "Using Redis for session caching"])
+      run_binary(["add", "--type", "learning", "--content", "JWT tokens expire after 15 minutes"])
+      run_binary(["add", "--type", "decision", "--content", "Using Redis for session caching"])
 
-      result = run_binary(["search", "JWT"])
+      result = run_binary(["search", "--query", "JWT"])
       result[:status].should eq(0)
       result[:output].should contain("Search results")
       result[:output].should contain("JWT tokens")
     end
 
     it "shows no results message when nothing matches" do
-      run_binary(["add", "learning", "Something else entirely"])
+      run_binary(["add", "--type", "learning", "--content", "Something else entirely"])
 
-      result = run_binary(["search", "nonexistent"])
+      result = run_binary(["search", "--query", "nonexistent"])
       result[:status].should eq(0)
       result[:output].should contain("No results found")
     end
 
-    it "shows usage when no query provided" do
+    it "shows help when no arguments provided" do
       result = run_binary(["search"])
-      result[:error].should contain("Usage")
+      result[:status].should eq(0)
+      result[:output].should contain("USAGE")
+      result[:output].should contain("--query")
+    end
+
+    it "shows help with --help flag" do
+      result = run_binary(["search", "--help"])
+      result[:status].should eq(0)
+      result[:output].should contain("USAGE")
+      result[:output].should contain("--query QUERY")
+      result[:output].should contain("EXAMPLES")
+    end
+
+    it "shows help with -h flag" do
+      result = run_binary(["search", "-h"])
+      result[:status].should eq(0)
+      result[:output].should contain("USAGE")
+    end
+
+    it "shows error when --query is missing" do
+      result = run_binary(["search", "--type", "learning"])
+      result[:error].should contain("--query is required")
+      result[:status].should_not eq(0)
+    end
+
+    it "can search for literal --help with --query flag (does not show help)" do
+      # The key test here is that --query "--help" performs a search,
+      # not that it shows help documentation
+      result = run_binary(["search", "--query", "--help"])
+      result[:status].should eq(0)
+      # Should attempt search, not show help text
+      # Output will be "No results found" or "Search results" - either is fine
+      # It should NOT contain "USAGE:" which indicates help was shown
+      result[:output].should_not contain("USAGE:")
+      result[:output].should_not contain("REQUIRED:")
+    end
+
+    it "shows error for unknown option" do
+      result = run_binary(["search", "--unknown", "value"])
+      result[:error].should contain("Unknown option")
       result[:status].should_not eq(0)
     end
   end
@@ -534,8 +573,8 @@ describe "CLI Integration" do
     end
 
     it "lists recent entries" do
-      run_binary(["add", "learning", "First learning"])
-      run_binary(["add", "decision", "First decision"])
+      run_binary(["add", "--type", "learning", "--content", "First learning"])
+      run_binary(["add", "--type", "decision", "--content", "First decision"])
 
       result = run_binary(["list"])
       result[:status].should eq(0)
@@ -550,14 +589,38 @@ describe "CLI Integration" do
       result[:output].should contain("No entries in ledger")
     end
 
-    it "respects limit argument" do
+    it "respects --limit flag" do
       5.times do |i|
-        run_binary(["add", "learning", "Learning number #{i + 1}"])
+        run_binary(["add", "--type", "learning", "--content", "Learning number #{i + 1}"])
+      end
+
+      result = run_binary(["list", "--limit", "2"])
+      result[:status].should eq(0)
+      result[:output].should contain("showing 2 of 5")
+    end
+
+    it "respects positional limit argument for backwards compatibility" do
+      5.times do |i|
+        run_binary(["add", "--type", "learning", "--content", "Learning number #{i + 1}"])
       end
 
       result = run_binary(["list", "2"])
       result[:status].should eq(0)
       result[:output].should contain("showing 2 of 5")
+    end
+
+    it "shows help with --help flag" do
+      result = run_binary(["list", "--help"])
+      result[:status].should eq(0)
+      result[:output].should contain("USAGE")
+      result[:output].should contain("--limit N")
+      result[:output].should contain("--type TYPE")
+    end
+
+    it "shows help with -h flag" do
+      result = run_binary(["list", "-h"])
+      result[:status].should eq(0)
+      result[:output].should contain("USAGE")
     end
   end
 
@@ -568,59 +631,93 @@ describe "CLI Integration" do
       File.delete(db_path) if File.exists?(db_path)
     end
 
-    it "adds a learning entry" do
-      result = run_binary(["add", "learning", "Test learning content"])
+    it "adds a learning entry with --type and --content flags" do
+      result = run_binary(["add", "--type", "learning", "--content", "Test learning content"])
       result[:status].should eq(0)
       result[:output].should contain("Added learning to ledger")
       result[:output].should contain("Test learning content")
     end
 
     it "adds a decision entry" do
-      result = run_binary(["add", "decision", "We decided to use SQLite"])
+      result = run_binary(["add", "--type", "decision", "--content", "We decided to use SQLite"])
       result[:status].should eq(0)
       result[:output].should contain("Added decision to ledger")
     end
 
     it "adds a direction entry" do
-      result = run_binary(["add", "direction", "Always use trailing commas"])
+      result = run_binary(["add", "--type", "direction", "--content", "Always use trailing commas"])
       result[:status].should eq(0)
       result[:output].should contain("Added direction to ledger")
     end
 
     it "supports --importance flag" do
-      result = run_binary(["add", "learning", "Important learning", "--importance", "high"])
+      result = run_binary(["add", "--type", "learning", "--content", "Important learning", "--importance", "high"])
       result[:status].should eq(0)
       result[:output].should contain("Importance: high")
     end
 
     it "supports --session flag" do
-      result = run_binary(["add", "learning", "Session specific", "--session", "custom-session-123"])
+      result = run_binary(["add", "--type", "learning", "--content", "Session specific", "--session", "custom-session-123"])
       result[:status].should eq(0)
       result[:output].should contain("Session: custom-session-123")
     end
 
     it "detects duplicate content" do
-      run_binary(["add", "learning", "Duplicate test content"])
-      result = run_binary(["add", "learning", "Duplicate test content"])
+      run_binary(["add", "--type", "learning", "--content", "Duplicate test content"])
+      result = run_binary(["add", "--type", "learning", "--content", "Duplicate test content"])
       result[:status].should eq(0)
       result[:output].should contain("already exists")
     end
 
-    it "shows usage when type not provided" do
+    it "shows help when no arguments provided" do
       result = run_binary(["add"])
-      result[:error].should contain("Usage")
+      result[:status].should eq(0)
+      result[:output].should contain("USAGE")
+      result[:output].should contain("--type TYPE")
+      result[:output].should contain("--content CONTENT")
+    end
+
+    it "shows help with --help flag" do
+      result = run_binary(["add", "--help"])
+      result[:status].should eq(0)
+      result[:output].should contain("USAGE")
+      result[:output].should contain("ENTRY TYPES")
+      result[:output].should contain("EXAMPLES")
+    end
+
+    it "shows help with -h flag" do
+      result = run_binary(["add", "-h"])
+      result[:status].should eq(0)
+      result[:output].should contain("USAGE")
+    end
+
+    it "shows error when --type is missing" do
+      result = run_binary(["add", "--content", "Some content"])
+      result[:error].should contain("--type is required")
+      result[:status].should_not eq(0)
+    end
+
+    it "shows error when --content is missing" do
+      result = run_binary(["add", "--type", "learning"])
+      result[:error].should contain("--content is required")
       result[:status].should_not eq(0)
     end
 
     it "shows error for invalid type" do
-      result = run_binary(["add", "invalid_type", "Some content"])
+      result = run_binary(["add", "--type", "invalid_type", "--content", "Some content"])
       result[:error].should contain("Invalid type")
       result[:status].should_not eq(0)
     end
 
     it "shows error for invalid importance" do
-      result = run_binary(["add", "learning", "Test", "--importance", "invalid"])
+      result = run_binary(["add", "--type", "learning", "--content", "Test", "--importance", "invalid"])
       result[:error].should contain("Invalid importance")
+      result[:status].should_not eq(0)
+    end
+
+    it "shows error for unknown option" do
+      result = run_binary(["add", "--unknown", "value"])
+      result[:error].should contain("Unknown option")
       result[:status].should_not eq(0)
     end
   end
@@ -689,17 +786,17 @@ describe "CLI Integration" do
     end
 
     it "finds entries with prefix matching (default)" do
-      run_binary(["add", "guideline", "Use trailing commas on multiline structures"])
+      run_binary(["add", "--type", "guideline", "--content", "Use trailing commas on multiline structures"])
 
-      result = run_binary(["search", "trail"])
+      result = run_binary(["search", "--query", "trail"])
       result[:status].should eq(0)
       result[:output].should contain("trailing")
     end
 
     it "supports --exact flag for exact matching" do
-      run_binary(["add", "guideline", "Use trailing commas on multiline structures"])
+      run_binary(["add", "--type", "guideline", "--content", "Use trailing commas on multiline structures"])
 
-      result = run_binary(["search", "trail", "--exact"])
+      result = run_binary(["search", "--query", "trail", "--exact"])
       result[:status].should eq(0)
       result[:output].should contain("No results found")
     end
@@ -711,27 +808,27 @@ describe "CLI Integration" do
       File.delete(db_path) if File.exists?(db_path)
 
       # Add test data
-      run_binary(["add", "learning", "JWT tokens expire", "--importance", "high"])
-      run_binary(["add", "decision", "JWT storage in Redis", "--importance", "medium"])
-      run_binary(["add", "guideline", "JWT best practices", "--importance", "high"])
+      run_binary(["add", "--type", "learning", "--content", "JWT tokens expire", "--importance", "high"])
+      run_binary(["add", "--type", "decision", "--content", "JWT storage in Redis", "--importance", "medium"])
+      run_binary(["add", "--type", "guideline", "--content", "JWT best practices", "--importance", "high"])
     end
 
     it "filters by --type" do
-      result = run_binary(["search", "JWT", "--type", "learning"])
+      result = run_binary(["search", "--query", "JWT", "--type", "learning"])
       result[:status].should eq(0)
       result[:output].should contain("Found: 1 entries")
       result[:output].should contain("type=learning")
     end
 
     it "filters by --importance" do
-      result = run_binary(["search", "JWT", "--importance", "high"])
+      result = run_binary(["search", "--query", "JWT", "--importance", "high"])
       result[:status].should eq(0)
       result[:output].should contain("Found: 2 entries")
       result[:output].should contain("importance=high")
     end
 
     it "combines --type and --importance filters" do
-      result = run_binary(["search", "JWT", "--type", "guideline", "--importance", "high"])
+      result = run_binary(["search", "--query", "JWT", "--type", "guideline", "--importance", "high"])
       result[:status].should eq(0)
       result[:output].should contain("Found: 1 entries")
       result[:output].should contain("type=guideline")
@@ -739,13 +836,13 @@ describe "CLI Integration" do
     end
 
     it "shows error for invalid type filter" do
-      result = run_binary(["search", "JWT", "--type", "invalid"])
+      result = run_binary(["search", "--query", "JWT", "--type", "invalid"])
       result[:error].should contain("Invalid type")
       result[:status].should_not eq(0)
     end
 
     it "shows error for invalid importance filter" do
-      result = run_binary(["search", "JWT", "--importance", "invalid"])
+      result = run_binary(["search", "--query", "JWT", "--importance", "invalid"])
       result[:error].should contain("Invalid importance")
       result[:status].should_not eq(0)
     end
@@ -757,10 +854,10 @@ describe "CLI Integration" do
       File.delete(db_path) if File.exists?(db_path)
 
       # Add test data
-      run_binary(["add", "learning", "Learning 1", "--importance", "high"])
-      run_binary(["add", "learning", "Learning 2", "--importance", "medium"])
-      run_binary(["add", "decision", "Decision 1", "--importance", "high"])
-      run_binary(["add", "guideline", "Guideline 1", "--importance", "medium"])
+      run_binary(["add", "--type", "learning", "--content", "Learning 1", "--importance", "high"])
+      run_binary(["add", "--type", "learning", "--content", "Learning 2", "--importance", "medium"])
+      run_binary(["add", "--type", "decision", "--content", "Decision 1", "--importance", "high"])
+      run_binary(["add", "--type", "guideline", "--content", "Guideline 1", "--importance", "medium"])
     end
 
     it "filters by --type" do
@@ -782,7 +879,7 @@ describe "CLI Integration" do
     end
 
     it "combines limit with filters" do
-      result = run_binary(["list", "1", "--type", "learning"])
+      result = run_binary(["list", "--limit", "1", "--type", "learning"])
       result[:status].should eq(0)
       result[:output].should contain("showing 1)")
     end
@@ -798,6 +895,192 @@ describe "CLI Integration" do
       result = run_binary(["list", "--type", "invalid"])
       result[:error].should contain("Invalid type")
       result[:status].should_not eq(0)
+    end
+  end
+
+  describe "help flag coverage for all commands" do
+    describe "config --help" do
+      it "shows help with --help flag" do
+        result = run_binary(["config", "--help"])
+        result[:status].should eq(0)
+        result[:output].should contain("USAGE")
+        result[:output].should contain("AVAILABLE SETTINGS")
+      end
+
+      it "shows help with -h flag" do
+        result = run_binary(["config", "-h"])
+        result[:status].should eq(0)
+        result[:output].should contain("USAGE")
+      end
+
+      it "shows subcommand help for config set --help" do
+        result = run_binary(["config", "set", "--help"])
+        result[:status].should eq(0)
+        result[:output].should contain("config set")
+        result[:output].should contain("KEY")
+        result[:output].should contain("VALUE")
+      end
+
+      it "shows subcommand help for config get --help" do
+        result = run_binary(["config", "get", "--help"])
+        result[:status].should eq(0)
+        result[:output].should contain("config get")
+        result[:output].should contain("KEY")
+      end
+
+      it "shows subcommand help for config reset --help" do
+        result = run_binary(["config", "reset", "--help"])
+        result[:status].should eq(0)
+        result[:output].should contain("config reset")
+      end
+
+      it "shows subcommand help for config path --help" do
+        result = run_binary(["config", "path", "--help"])
+        result[:status].should eq(0)
+        result[:output].should contain("config path")
+      end
+    end
+
+    describe "session --help" do
+      it "shows help with --help flag" do
+        result = run_binary(["session", "--help"])
+        result[:status].should eq(0)
+        result[:output].should contain("USAGE")
+        result[:output].should contain("session list")
+        result[:output].should contain("session show")
+        result[:output].should contain("session remove")
+      end
+
+      it "shows help with -h flag" do
+        result = run_binary(["session", "-h"])
+        result[:status].should eq(0)
+        result[:output].should contain("USAGE")
+      end
+
+      it "shows subcommand help for session list --help" do
+        result = run_binary(["session", "list", "--help"])
+        result[:status].should eq(0)
+        result[:output].should contain("session list")
+      end
+
+      it "shows subcommand help for session show --help" do
+        result = run_binary(["session", "show", "--help"])
+        result[:status].should eq(0)
+        result[:output].should contain("session show")
+        result[:output].should contain("SESSION_ID")
+      end
+
+      it "shows subcommand help for session remove --help" do
+        result = run_binary(["session", "remove", "--help"])
+        result[:status].should eq(0)
+        result[:output].should contain("session remove")
+        result[:output].should contain("SESSION_ID")
+      end
+    end
+
+    describe "buffer --help" do
+      it "shows help with --help flag" do
+        result = run_binary(["buffer", "--help"])
+        result[:status].should eq(0)
+        result[:output].should contain("USAGE")
+        result[:output].should contain("buffer show")
+        result[:output].should contain("buffer flush")
+      end
+
+      it "shows help with -h flag" do
+        result = run_binary(["buffer", "-h"])
+        result[:status].should eq(0)
+        result[:output].should contain("USAGE")
+      end
+
+      it "shows subcommand help for buffer show --help" do
+        result = run_binary(["buffer", "show", "--help"])
+        result[:status].should eq(0)
+        result[:output].should contain("buffer show")
+        result[:output].should contain("SESSION_ID")
+      end
+
+      it "shows subcommand help for buffer flush --help" do
+        result = run_binary(["buffer", "flush", "--help"])
+        result[:status].should eq(0)
+        result[:output].should contain("buffer flush")
+        result[:output].should contain("SESSION_ID")
+      end
+
+      it "shows subcommand help for buffer flush-async --help" do
+        result = run_binary(["buffer", "flush-async", "--help"])
+        result[:status].should eq(0)
+        result[:output].should contain("buffer flush-async")
+        result[:output].should contain("SESSION_ID")
+      end
+
+      it "shows subcommand help for buffer clear --help" do
+        result = run_binary(["buffer", "clear", "--help"])
+        result[:status].should eq(0)
+        result[:output].should contain("buffer clear")
+        result[:output].should contain("SESSION_ID")
+      end
+    end
+
+    describe "hook commands --help" do
+      it "shows help for on-startup --help" do
+        result = run_binary(["on-startup", "--help"])
+        result[:status].should eq(0)
+        result[:output].should contain("on-startup")
+        result[:output].should contain("SessionStart")
+        result[:output].should contain("INPUT")
+        result[:output].should contain("OUTPUT")
+        result[:output].should contain("HOOK CONFIGURATION")
+      end
+
+      it "shows help for on-stop --help" do
+        result = run_binary(["on-stop", "--help"])
+        result[:status].should eq(0)
+        result[:output].should contain("on-stop")
+        result[:output].should contain("Stop hook")
+        result[:output].should contain("INPUT")
+        result[:output].should contain("OUTPUT")
+        result[:output].should contain("HOOK CONFIGURATION")
+      end
+
+      it "shows help for on-session-start --help" do
+        result = run_binary(["on-session-start", "--help"])
+        result[:status].should eq(0)
+        result[:output].should contain("on-session-start")
+        result[:output].should contain("clear|compact")
+        result[:output].should contain("INPUT")
+        result[:output].should contain("OUTPUT")
+        result[:output].should contain("HOOK CONFIGURATION")
+      end
+    end
+  end
+
+  describe "top-level help banner" do
+    it "lists all user-facing commands" do
+      result = run_binary(["--help"])
+      result[:status].should eq(0)
+      result[:output].should contain("search")
+      result[:output].should contain("list")
+      result[:output].should contain("add")
+      result[:output].should contain("config")
+      result[:output].should contain("session")
+      result[:output].should contain("buffer")
+    end
+
+    it "lists hook commands in separate section" do
+      result = run_binary(["--help"])
+      result[:status].should eq(0)
+      result[:output].should contain("Hook Commands")
+      result[:output].should contain("on-startup")
+      result[:output].should contain("on-stop")
+      result[:output].should contain("on-session-start")
+    end
+
+    it "includes discoverability hint" do
+      result = run_binary(["--help"])
+      result[:status].should eq(0)
+      result[:output].should contain("--help")
+      result[:output].should contain("detailed command usage")
     end
   end
 end
