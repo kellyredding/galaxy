@@ -41,9 +41,10 @@ module GalaxyLedger
         FileUtils.rm_rf(session_path.to_s)
       end
 
-      # Purge from SQLite (future: implement when SQLite is added in Phase 4)
+      # Purge from SQLite
       sqlite_purged = false
-      # TODO: DELETE FROM ledger_entries WHERE session_id = ?
+      deleted_count = Database.delete_session(session_id)
+      sqlite_purged = deleted_count > 0 || folder_existed # Mark as purged if we deleted entries or had folder
 
       # Purge from PostgreSQL if enabled (future: implement in Phase 8)
       postgres_purged = false

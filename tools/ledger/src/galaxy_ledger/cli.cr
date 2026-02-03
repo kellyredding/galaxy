@@ -6,26 +6,35 @@ module GalaxyLedger
       show_help_flag = false
       show_version_flag = false
 
+      # Manually extract -h/-v/--help/--version from the start of args only
+      # This allows subcommands to handle their own flags
+      remaining_args = args.dup
+
+      # Check for help/version flags at the start
+      if remaining_args.any?
+        first_arg = remaining_args.first
+        case first_arg
+        when "-h", "--help"
+          show_help_flag = true
+          remaining_args.shift
+        when "-v", "--version"
+          show_version_flag = true
+          remaining_args.shift
+        end
+      end
+
       parser = OptionParser.new do |p|
         p.banner = build_banner
 
         p.separator ""
         p.separator "Options:"
 
-        p.on("-h", "--help", "Show this help") { show_help_flag = true }
-        p.on("-v", "--version", "Show version") { show_version_flag = true }
-
-        p.invalid_option do |flag|
-          STDERR.puts "Error: Unknown flag '#{flag}'"
-          STDERR.puts "Run 'galaxy-ledger --help' for usage"
-          exit(1)
-        end
+        p.on("-h", "--help", "Show this help") { }
+        p.on("-v", "--version", "Show version") { }
       end
 
-      # Parse and collect positional args
-      positional_args = [] of String
-      parser.unknown_args { |a| positional_args = a }
-      parser.parse(args)
+      # positional_args are all remaining args after extracting top-level flags
+      positional_args = remaining_args
 
       # Handle help/version flags
       if show_help_flag
@@ -55,6 +64,12 @@ module GalaxyLedger
         handle_session_command(rest)
       when "buffer"
         handle_buffer_command(rest)
+      when "search"
+        handle_search_command(rest)
+      when "list"
+        handle_list_command(rest)
+      when "add"
+        handle_add_command(rest)
       when "on-startup"
         handle_on_startup_command(rest)
       when "on-stop"
@@ -79,6 +94,9 @@ module GalaxyLedger
       Usage: galaxy-ledger [command] [options]
 
       Commands:
+        search "query"      Search entries using full-text search
+        list                List recent entries
+        add TYPE "content"  Add an entry (learning, decision, direction)
         config              Show current configuration
         config help         Configuration documentation
         config set KEY VAL  Set a configuration value
@@ -367,7 +385,7 @@ module GalaxyLedger
 
       puts "Removed session: #{session_id}"
       puts "  Folder removed: #{result.folder_removed ? "yes" : "no"}"
-      puts "  SQLite purged: #{result.sqlite_purged ? "yes" : "no (not implemented yet)"}"
+      puts "  SQLite purged: #{result.sqlite_purged ? "yes" : "no"}"
       if Config.load.storage.postgres_enabled
         puts "  PostgreSQL purged: #{result.postgres_purged ? "yes" : "no (not implemented yet)"}"
       end
@@ -592,6 +610,289 @@ module GalaxyLedger
         "#{seconds // 3600}h ago"
       else
         "#{seconds // 86400}d ago"
+      end
+    end
+
+    private def self.handle_search_command(args : Array(String))
+      if args.empty?
+        STDERR.puts "Usage: galaxy-ledger search \"query\" [options]"
+        STDERR.puts ""
+        STDERR.puts "Search the ledger using full-text search with prefix matching."
+        STDERR.puts ""
+        STDERR.puts "Options:"
+        STDERR.puts "  --type TYPE           Filter by entry type (learning, decision, guideline, etc.)"
+        STDERR.puts "  --importance LEVEL    Filter by importance (high, medium, low)"
+        STDERR.puts "  --exact               Disable prefix matching (exact word match only)"
+        STDERR.puts ""
+        STDERR.puts "Examples:"
+        STDERR.puts "  galaxy-ledger search \"JWT authentication\""
+        STDERR.puts "  galaxy-ledger search \"database\" --type learning"
+        STDERR.puts "  galaxy-ledger search \"Redis\" --importance high"
+        STDERR.puts "  galaxy-ledger search \"trail\" --exact"
+        exit(1)
+      end
+
+      # Parse options
+      entry_type : String? = nil
+      importance : String? = nil
+      prefix_match = true
+      query_parts = [] of String
+
+      i = 0
+      while i < args.size
+        arg = args[i]
+        if arg == "--type" && i + 1 < args.size
+          entry_type = args[i + 1]
+          unless Buffer::ENTRY_TYPES.includes?(entry_type)
+            STDERR.puts "Error: Invalid type '#{entry_type}'"
+            STDERR.puts "Valid types: #{Buffer::ENTRY_TYPES.join(", ")}"
+            exit(1)
+          end
+          i += 2
+        elsif arg == "--importance" && i + 1 < args.size
+          importance = args[i + 1]
+          unless Buffer::IMPORTANCE_LEVELS.includes?(importance)
+            STDERR.puts "Error: Invalid importance '#{importance}'"
+            STDERR.puts "Valid levels: #{Buffer::IMPORTANCE_LEVELS.join(", ")}"
+            exit(1)
+          end
+          i += 2
+        elsif arg == "--exact"
+          prefix_match = false
+          i += 1
+        else
+          query_parts << arg
+          i += 1
+        end
+      end
+
+      query = query_parts.join(" ")
+      if query.empty?
+        STDERR.puts "Error: Search query is required"
+        exit(1)
+      end
+
+      entries = Database.search(query, entry_type: entry_type, importance: importance, prefix_match: prefix_match)
+
+      if entries.empty?
+        puts "No results found for: #{query}"
+        if entry_type || importance
+          filters = [] of String
+          filters << "type=#{entry_type}" if entry_type
+          filters << "importance=#{importance}" if importance
+          puts "  Filters: #{filters.join(", ")}"
+        end
+        return
+      end
+
+      puts "Search results for: #{query}"
+      if entry_type || importance
+        filters = [] of String
+        filters << "type=#{entry_type}" if entry_type
+        filters << "importance=#{importance}" if importance
+        puts "  Filters: #{filters.join(", ")}"
+      end
+      puts "  Found: #{entries.size} entries"
+      puts ""
+
+      entries.each_with_index do |entry, idx|
+        puts "[#{idx + 1}] #{entry.entry_type} (#{entry.importance})"
+        if source = entry.source
+          puts "    Source: #{source}"
+        end
+        puts "    Session: #{entry.session_id[0, 8]}..."
+        puts "    Content: #{truncate(entry.content, 100)}"
+        puts "    Created: #{entry.created_at}"
+        puts ""
+      end
+    end
+
+    private def self.handle_list_command(args : Array(String))
+      # Parse options
+      limit = 20
+      entry_type : String? = nil
+      importance : String? = nil
+
+      i = 0
+      while i < args.size
+        arg = args[i]
+        if arg == "--type" && i + 1 < args.size
+          entry_type = args[i + 1]
+          unless Buffer::ENTRY_TYPES.includes?(entry_type)
+            STDERR.puts "Error: Invalid type '#{entry_type}'"
+            STDERR.puts "Valid types: #{Buffer::ENTRY_TYPES.join(", ")}"
+            exit(1)
+          end
+          i += 2
+        elsif arg == "--importance" && i + 1 < args.size
+          importance = args[i + 1]
+          unless Buffer::IMPORTANCE_LEVELS.includes?(importance)
+            STDERR.puts "Error: Invalid importance '#{importance}'"
+            STDERR.puts "Valid levels: #{Buffer::IMPORTANCE_LEVELS.join(", ")}"
+            exit(1)
+          end
+          i += 2
+        elsif arg == "--help" || arg == "-h"
+          show_list_help
+          return
+        elsif arg.to_i? && arg.to_i > 0
+          limit = arg.to_i
+          i += 1
+        else
+          i += 1
+        end
+      end
+
+      entries = Database.query_recent_filtered(limit, entry_type, importance)
+
+      if entries.empty?
+        puts "No entries in ledger."
+        if entry_type || importance
+          filters = [] of String
+          filters << "type=#{entry_type}" if entry_type
+          filters << "importance=#{importance}" if importance
+          puts "  Filters: #{filters.join(", ")}"
+        end
+        puts "  Database: #{Database.database_path}"
+        return
+      end
+
+      total = Database.count
+      header = "Recent ledger entries (showing #{entries.size}"
+      header += " of #{total}" unless entry_type || importance
+      header += "):"
+      puts header
+      if entry_type || importance
+        filters = [] of String
+        filters << "type=#{entry_type}" if entry_type
+        filters << "importance=#{importance}" if importance
+        puts "  Filters: #{filters.join(", ")}"
+      end
+      puts ""
+
+      entries.each_with_index do |entry, idx|
+        puts "[#{idx + 1}] #{entry.entry_type} (#{entry.importance})"
+        if source = entry.source
+          puts "    Source: #{source}"
+        end
+        puts "    Session: #{entry.session_id[0, 8]}..."
+        puts "    Content: #{truncate(entry.content, 100)}"
+        puts "    Created: #{entry.created_at}"
+        puts ""
+      end
+    end
+
+    private def self.show_list_help
+      puts <<-HELP
+      galaxy-ledger list - List recent ledger entries
+
+      USAGE:
+        galaxy-ledger list [LIMIT] [options]
+
+      OPTIONS:
+        LIMIT                   Number of entries to show (default: 20)
+        --type TYPE             Filter by entry type
+        --importance LEVEL      Filter by importance (high, medium, low)
+        --help, -h              Show this help
+
+      ENTRY TYPES:
+        #{Buffer::ENTRY_TYPES.join(", ")}
+
+      EXAMPLES:
+        galaxy-ledger list
+        galaxy-ledger list 50
+        galaxy-ledger list --type guideline
+        galaxy-ledger list --importance high
+        galaxy-ledger list 10 --type learning --importance medium
+      HELP
+    end
+
+    private def self.handle_add_command(args : Array(String))
+      if args.size < 2
+        STDERR.puts "Usage: galaxy-ledger add TYPE \"content\""
+        STDERR.puts ""
+        STDERR.puts "Add an entry to the ledger manually."
+        STDERR.puts ""
+        STDERR.puts "Types:"
+        STDERR.puts "  learning           - Key insight about the codebase"
+        STDERR.puts "  decision           - Choice made with rationale"
+        STDERR.puts "  direction          - Explicit instruction (always X, never Y)"
+        STDERR.puts "  preference         - Stated preference about style/approach"
+        STDERR.puts "  discovery          - Something learned during exploration"
+        STDERR.puts "  guideline          - Extracted guideline rule"
+        STDERR.puts "  implementation_plan - Implementation plan context"
+        STDERR.puts "  file_read/edit/write - File operations"
+        STDERR.puts "  search             - Search performed"
+        STDERR.puts "  constraint         - Limitation or requirement"
+        STDERR.puts "  reference          - URL/issue reference"
+        STDERR.puts ""
+        STDERR.puts "Options:"
+        STDERR.puts "  --importance high|medium|low  (default: medium)"
+        STDERR.puts "  --session SESSION_ID          (default: manual-{timestamp})"
+        STDERR.puts ""
+        STDERR.puts "Examples:"
+        STDERR.puts "  galaxy-ledger add learning \"JWT tokens expire after 15 minutes\""
+        STDERR.puts "  galaxy-ledger add decision \"Using Redis for caching\" --importance high"
+        exit(1)
+      end
+
+      entry_type = args[0]
+
+      unless Buffer::ENTRY_TYPES.includes?(entry_type)
+        STDERR.puts "Error: Invalid type '#{entry_type}'"
+        STDERR.puts "Valid types: #{Buffer::ENTRY_TYPES.join(", ")}"
+        exit(1)
+      end
+
+      # Parse options
+      importance = "medium"
+      session_id = "manual-#{Time.utc.to_unix}"
+      content_parts = [] of String
+
+      i = 1
+      while i < args.size
+        arg = args[i]
+        if arg == "--importance" && i + 1 < args.size
+          importance = args[i + 1]
+          unless Buffer::IMPORTANCE_LEVELS.includes?(importance)
+            STDERR.puts "Error: Invalid importance '#{importance}'"
+            STDERR.puts "Valid levels: #{Buffer::IMPORTANCE_LEVELS.join(", ")}"
+            exit(1)
+          end
+          i += 2
+        elsif arg == "--session" && i + 1 < args.size
+          session_id = args[i + 1]
+          i += 2
+        else
+          content_parts << arg
+          i += 1
+        end
+      end
+
+      content = content_parts.join(" ")
+      if content.empty?
+        STDERR.puts "Error: Content is required"
+        exit(1)
+      end
+
+      # Create entry and insert directly into database
+      entry = Buffer::Entry.new(
+        entry_type: entry_type,
+        content: content,
+        importance: importance,
+        source: "user"
+      )
+
+      success = Database.insert(session_id, entry)
+
+      if success
+        puts "Added #{entry_type} to ledger"
+        puts "  Session: #{session_id}"
+        puts "  Importance: #{importance}"
+        puts "  Content: #{truncate(content, 80)}"
+      else
+        # May be a duplicate
+        puts "Entry already exists (duplicate content hash)"
       end
     end
 

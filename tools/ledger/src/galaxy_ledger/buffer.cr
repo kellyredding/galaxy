@@ -267,12 +267,22 @@ module GalaxyLedger
 
       entries_count = 0
       begin
-        # Read and count entries from the flushing file
+        # Read, parse, and persist entries from the flushing file
+        entries = [] of Entry
         File.each_line(flushing_file) do |line|
           next if line.strip.empty?
-          entries_count += 1
-          # Phase 3: Just count entries
-          # Phase 4: Will persist to SQLite here
+          begin
+            entry = Entry.from_json(line)
+            entries << entry if entry.valid?
+          rescue
+            # Skip malformed lines
+          end
+        end
+
+        # Persist to SQLite
+        if entries.any?
+          inserted = Database.insert_many(session_id, entries)
+          entries_count = inserted
         end
 
         # Log the recovery (to stderr so it doesn't interfere with JSON output)
@@ -344,11 +354,22 @@ module GalaxyLedger
         # Lock released here - new writes can now go to fresh buffer file
 
         # Process the flushing file (without lock)
+        # Read, parse, and persist entries to SQLite
+        entries = [] of Entry
         File.each_line(flushing_file) do |line|
           next if line.strip.empty?
-          entries_count += 1
-          # Phase 3: Just count entries and log
-          # Phase 4: Will persist to SQLite here
+          begin
+            entry = Entry.from_json(line)
+            entries << entry if entry.valid?
+          rescue
+            # Skip malformed lines
+          end
+        end
+
+        # Persist to SQLite
+        if entries.any?
+          inserted = Database.insert_many(session_id, entries)
+          entries_count = inserted
         end
 
         # Log the flush (to stderr so it doesn't interfere with JSON output)

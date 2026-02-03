@@ -11,6 +11,9 @@ module GalaxyLedger
     )
   )
 
+  # Data directory for databases (shared between tools)
+  DATA_DIR = GALAXY_DIR / "data"
+
   # Ledger-specific directories
   CONFIG_DIR = Path.new(
     ENV.fetch(

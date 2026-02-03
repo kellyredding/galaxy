@@ -77,12 +77,20 @@ module GalaxyLedger
           end
         end
 
-        # Phase 1: No SQLite yet, entries count is placeholder
-        # Future phases will query the actual database
+        # Query SQLite for entry stats
+        entry_count = Database.count
+        last_session : String? = nil
+
+        # Get last session from database stats
+        session_stats = Database.session_stats
+        if session_stats.any?
+          last_session = session_stats.first.last_entry
+        end
+
         {
           sessions:     session_count,
-          entries:      0,
-          last_session: nil,
+          entries:      entry_count,
+          last_session: last_session,
         }
       end
 

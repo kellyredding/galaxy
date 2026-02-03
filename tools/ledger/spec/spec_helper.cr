@@ -8,8 +8,11 @@ SPEC_FIXTURES = Path[__DIR__] / "fixtures"
 # Use a temporary directory for config during tests
 SPEC_CONFIG_DIR = Path.new(Dir.tempdir) / "galaxy-ledger-test-#{Random.rand(100000)}"
 SPEC_GALAXY_DIR = SPEC_CONFIG_DIR.parent
+SPEC_DATA_DIR = SPEC_GALAXY_DIR / "data"
+SPEC_DATABASE_PATH = SPEC_DATA_DIR / "ledger.db"
 ENV["GALAXY_LEDGER_CONFIG_DIR"] = SPEC_CONFIG_DIR.to_s
 ENV["GALAXY_DIR"] = SPEC_GALAXY_DIR.to_s
+ENV["GALAXY_LEDGER_DATABASE_PATH"] = SPEC_DATABASE_PATH.to_s
 
 # Skip CLI auto-run when loading module for specs
 ENV["GALAXY_LEDGER_SKIP_CLI"] = "1"

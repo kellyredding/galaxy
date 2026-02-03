@@ -492,4 +492,312 @@ describe "CLI Integration" do
       end
     end
   end
+
+  describe "search subcommand" do
+    before_each do
+      # Clean database for isolation
+      db_path = GalaxyLedger::Database.database_path
+      File.delete(db_path) if File.exists?(db_path)
+    end
+
+    it "searches for entries" do
+      # Add entries via add command
+      run_binary(["add", "learning", "JWT tokens expire after 15 minutes"])
+      run_binary(["add", "decision", "Using Redis for session caching"])
+
+      result = run_binary(["search", "JWT"])
+      result[:status].should eq(0)
+      result[:output].should contain("Search results")
+      result[:output].should contain("JWT tokens")
+    end
+
+    it "shows no results message when nothing matches" do
+      run_binary(["add", "learning", "Something else entirely"])
+
+      result = run_binary(["search", "nonexistent"])
+      result[:status].should eq(0)
+      result[:output].should contain("No results found")
+    end
+
+    it "shows usage when no query provided" do
+      result = run_binary(["search"])
+      result[:error].should contain("Usage")
+      result[:status].should_not eq(0)
+    end
+  end
+
+  describe "list subcommand" do
+    before_each do
+      # Clean database for isolation
+      db_path = GalaxyLedger::Database.database_path
+      File.delete(db_path) if File.exists?(db_path)
+    end
+
+    it "lists recent entries" do
+      run_binary(["add", "learning", "First learning"])
+      run_binary(["add", "decision", "First decision"])
+
+      result = run_binary(["list"])
+      result[:status].should eq(0)
+      result[:output].should contain("Recent ledger entries")
+      result[:output].should contain("learning")
+      result[:output].should contain("decision")
+    end
+
+    it "shows empty message when no entries" do
+      result = run_binary(["list"])
+      result[:status].should eq(0)
+      result[:output].should contain("No entries in ledger")
+    end
+
+    it "respects limit argument" do
+      5.times do |i|
+        run_binary(["add", "learning", "Learning number #{i + 1}"])
+      end
+
+      result = run_binary(["list", "2"])
+      result[:status].should eq(0)
+      result[:output].should contain("showing 2 of 5")
+    end
+  end
+
+  describe "add subcommand" do
+    before_each do
+      # Clean database for isolation
+      db_path = GalaxyLedger::Database.database_path
+      File.delete(db_path) if File.exists?(db_path)
+    end
+
+    it "adds a learning entry" do
+      result = run_binary(["add", "learning", "Test learning content"])
+      result[:status].should eq(0)
+      result[:output].should contain("Added learning to ledger")
+      result[:output].should contain("Test learning content")
+    end
+
+    it "adds a decision entry" do
+      result = run_binary(["add", "decision", "We decided to use SQLite"])
+      result[:status].should eq(0)
+      result[:output].should contain("Added decision to ledger")
+    end
+
+    it "adds a direction entry" do
+      result = run_binary(["add", "direction", "Always use trailing commas"])
+      result[:status].should eq(0)
+      result[:output].should contain("Added direction to ledger")
+    end
+
+    it "supports --importance flag" do
+      result = run_binary(["add", "learning", "Important learning", "--importance", "high"])
+      result[:status].should eq(0)
+      result[:output].should contain("Importance: high")
+    end
+
+    it "supports --session flag" do
+      result = run_binary(["add", "learning", "Session specific", "--session", "custom-session-123"])
+      result[:status].should eq(0)
+      result[:output].should contain("Session: custom-session-123")
+    end
+
+    it "detects duplicate content" do
+      run_binary(["add", "learning", "Duplicate test content"])
+      result = run_binary(["add", "learning", "Duplicate test content"])
+      result[:status].should eq(0)
+      result[:output].should contain("already exists")
+    end
+
+    it "shows usage when type not provided" do
+      result = run_binary(["add"])
+      result[:error].should contain("Usage")
+      result[:status].should_not eq(0)
+    end
+
+    it "shows error for invalid type" do
+      result = run_binary(["add", "invalid_type", "Some content"])
+      result[:error].should contain("Invalid type")
+      result[:status].should_not eq(0)
+    end
+
+    it "shows error for invalid importance" do
+      result = run_binary(["add", "learning", "Test", "--importance", "invalid"])
+      result[:error].should contain("Invalid importance")
+      result[:status].should_not eq(0)
+    end
+  end
+
+  describe "buffer flush persists to SQLite" do
+    before_each do
+      # Clean database for isolation
+      db_path = GalaxyLedger::Database.database_path
+      File.delete(db_path) if File.exists?(db_path)
+    end
+
+    it "persists entries to database after flush" do
+      session_id = "flush-persist-test-#{Random.rand(100000)}"
+      create_test_session_with_buffer(session_id, 3)
+
+      begin
+        # Verify entries are not in database yet
+        GalaxyLedger::Database.count.should eq(0)
+
+        # Flush buffer
+        result = run_binary(["buffer", "flush", session_id])
+        result[:status].should eq(0)
+
+        # Verify entries are now in database
+        GalaxyLedger::Database.count.should eq(3)
+        GalaxyLedger::Database.count_by_session(session_id).should eq(3)
+      ensure
+        FileUtils.rm_rf(GalaxyLedger.session_dir(session_id).to_s)
+      end
+    end
+  end
+
+  describe "session remove purges from SQLite" do
+    before_each do
+      # Clean database for isolation
+      db_path = GalaxyLedger::Database.database_path
+      File.delete(db_path) if File.exists?(db_path)
+    end
+
+    it "purges entries from database when session removed" do
+      session_id = "purge-test-#{Random.rand(100000)}"
+      create_test_session_with_buffer(session_id, 3)
+
+      begin
+        # Flush to persist entries
+        run_binary(["buffer", "flush", session_id])
+        GalaxyLedger::Database.count_by_session(session_id).should eq(3)
+
+        # Remove session
+        result = run_binary(["session", "remove", session_id])
+        result[:status].should eq(0)
+        result[:output].should contain("SQLite purged: yes")
+
+        # Verify entries are gone
+        GalaxyLedger::Database.count_by_session(session_id).should eq(0)
+      ensure
+        FileUtils.rm_rf(GalaxyLedger.session_dir(session_id).to_s)
+      end
+    end
+  end
+
+  describe "search with prefix matching" do
+    before_each do
+      db_path = GalaxyLedger::Database.database_path
+      File.delete(db_path) if File.exists?(db_path)
+    end
+
+    it "finds entries with prefix matching (default)" do
+      run_binary(["add", "guideline", "Use trailing commas on multiline structures"])
+
+      result = run_binary(["search", "trail"])
+      result[:status].should eq(0)
+      result[:output].should contain("trailing")
+    end
+
+    it "supports --exact flag for exact matching" do
+      run_binary(["add", "guideline", "Use trailing commas on multiline structures"])
+
+      result = run_binary(["search", "trail", "--exact"])
+      result[:status].should eq(0)
+      result[:output].should contain("No results found")
+    end
+  end
+
+  describe "search with filters" do
+    before_each do
+      db_path = GalaxyLedger::Database.database_path
+      File.delete(db_path) if File.exists?(db_path)
+
+      # Add test data
+      run_binary(["add", "learning", "JWT tokens expire", "--importance", "high"])
+      run_binary(["add", "decision", "JWT storage in Redis", "--importance", "medium"])
+      run_binary(["add", "guideline", "JWT best practices", "--importance", "high"])
+    end
+
+    it "filters by --type" do
+      result = run_binary(["search", "JWT", "--type", "learning"])
+      result[:status].should eq(0)
+      result[:output].should contain("Found: 1 entries")
+      result[:output].should contain("type=learning")
+    end
+
+    it "filters by --importance" do
+      result = run_binary(["search", "JWT", "--importance", "high"])
+      result[:status].should eq(0)
+      result[:output].should contain("Found: 2 entries")
+      result[:output].should contain("importance=high")
+    end
+
+    it "combines --type and --importance filters" do
+      result = run_binary(["search", "JWT", "--type", "guideline", "--importance", "high"])
+      result[:status].should eq(0)
+      result[:output].should contain("Found: 1 entries")
+      result[:output].should contain("type=guideline")
+      result[:output].should contain("importance=high")
+    end
+
+    it "shows error for invalid type filter" do
+      result = run_binary(["search", "JWT", "--type", "invalid"])
+      result[:error].should contain("Invalid type")
+      result[:status].should_not eq(0)
+    end
+
+    it "shows error for invalid importance filter" do
+      result = run_binary(["search", "JWT", "--importance", "invalid"])
+      result[:error].should contain("Invalid importance")
+      result[:status].should_not eq(0)
+    end
+  end
+
+  describe "list with filters" do
+    before_each do
+      db_path = GalaxyLedger::Database.database_path
+      File.delete(db_path) if File.exists?(db_path)
+
+      # Add test data
+      run_binary(["add", "learning", "Learning 1", "--importance", "high"])
+      run_binary(["add", "learning", "Learning 2", "--importance", "medium"])
+      run_binary(["add", "decision", "Decision 1", "--importance", "high"])
+      run_binary(["add", "guideline", "Guideline 1", "--importance", "medium"])
+    end
+
+    it "filters by --type" do
+      result = run_binary(["list", "--type", "learning"])
+      result[:status].should eq(0)
+      result[:output].should contain("Filters: type=learning")
+      result[:output].should contain("Learning 1")
+      result[:output].should contain("Learning 2")
+      result[:output].should_not contain("Decision 1")
+    end
+
+    it "filters by --importance" do
+      result = run_binary(["list", "--importance", "high"])
+      result[:status].should eq(0)
+      result[:output].should contain("Filters: importance=high")
+      result[:output].should contain("Learning 1")
+      result[:output].should contain("Decision 1")
+      result[:output].should_not contain("Learning 2")
+    end
+
+    it "combines limit with filters" do
+      result = run_binary(["list", "1", "--type", "learning"])
+      result[:status].should eq(0)
+      result[:output].should contain("showing 1)")
+    end
+
+    it "shows --help" do
+      result = run_binary(["list", "--help"])
+      result[:status].should eq(0)
+      result[:output].should contain("--type TYPE")
+      result[:output].should contain("--importance LEVEL")
+    end
+
+    it "shows error for invalid type filter" do
+      result = run_binary(["list", "--type", "invalid"])
+      result[:error].should contain("Invalid type")
+      result[:status].should_not eq(0)
+    end
+  end
 end
