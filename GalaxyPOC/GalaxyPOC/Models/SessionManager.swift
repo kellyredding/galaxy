@@ -136,6 +136,11 @@ class SessionManager: ObservableObject {
         session.exitCode = nil
         session.isRunning = false
 
+        // Clear the terminal buffer before resuming
+        // This prevents duplicate content when Claude redraws after resume
+        // ESC[2J = clear screen, ESC[3J = clear scrollback, ESC[H = cursor home
+        session.terminalView.feed(text: "\u{1b}[2J\u{1b}[3J\u{1b}[H")
+
         // Re-attach process handler
         let handler = TerminalProcessHandler(session: session, sessionManager: self)
         session.processHandler = handler

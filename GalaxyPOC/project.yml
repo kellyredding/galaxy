@@ -3,12 +3,11 @@ options:
   bundleIdPrefix: com.kellyredding
   deploymentTarget:
     macOS: "14.0"
-  xcodeVersion: "15.4"
+  xcodeVersion: "16.2"
 
 packages:
   SwiftTerm:
-    url: https://github.com/migueldeicaza/SwiftTerm
-    exactVersion: "1.2.5"
+    path: Vendor/SwiftTerm
 
 targets:
   GalaxyPOC:

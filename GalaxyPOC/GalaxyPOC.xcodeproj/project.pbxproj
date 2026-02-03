@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 56;
+	objectVersion = 77;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -38,6 +38,7 @@
 		900F9D1F5C418789AE03F7FC /* GalaxyPOC.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GalaxyPOC.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9E559289BDC471021B08F5DD /* TerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalView.swift; sourceTree = "<group>"; };
 		A60AC35CE99CE6430CC623FF /* SessionRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRow.swift; sourceTree = "<group>"; };
+		D39914021D8D4B9CE630E3F6 /* SwiftTerm */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SwiftTerm; path = Vendor/SwiftTerm; sourceTree = SOURCE_ROOT; };
 		FCA5CF5E95D054AAC80A090A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -64,6 +65,14 @@
 				8A41C41A5210CDC374AB07E1 /* Views */,
 			);
 			path = GalaxyPOC;
+			sourceTree = "<group>";
+		};
+		045CA77DFD80327135E14DAF /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				D39914021D8D4B9CE630E3F6 /* SwiftTerm */,
+			);
+			name = Packages;
 			sourceTree = "<group>";
 		};
 		23C2307643999768EF2B5FDA /* Products */ = {
@@ -102,6 +111,7 @@
 			isa = PBXGroup;
 			children = (
 				014CCC5175F711FA6EB75FFB /* GalaxyPOC */,
+				045CA77DFD80327135E14DAF /* Packages */,
 				23C2307643999768EF2B5FDA /* Products */,
 			);
 			sourceTree = "<group>";
@@ -136,7 +146,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
-				LastUpgradeCheck = 1540;
+				LastUpgradeCheck = 1620;
 			};
 			buildConfigurationList = FF8278C0A58F3C5FDB2F8B9B /* Build configuration list for PBXProject "GalaxyPOC" */;
 			compatibilityVersion = "Xcode 14.0";
@@ -149,7 +159,7 @@
 			mainGroup = F760C4E614A22CE7D1DE254B;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				8DB580497AED1921A42DAF58 /* XCRemoteSwiftPackageReference "SwiftTerm" */,
+				41DA32CE608BB847206B92E2 /* XCLocalSwiftPackageReference "Vendor/SwiftTerm" */,
 			);
 			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
@@ -372,21 +382,16 @@
 		};
 /* End XCConfigurationList section */
 
-/* Begin XCRemoteSwiftPackageReference section */
-		8DB580497AED1921A42DAF58 /* XCRemoteSwiftPackageReference "SwiftTerm" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/migueldeicaza/SwiftTerm";
-			requirement = {
-				kind = exactVersion;
-				version = 1.2.5;
-			};
+/* Begin XCLocalSwiftPackageReference section */
+		41DA32CE608BB847206B92E2 /* XCLocalSwiftPackageReference "Vendor/SwiftTerm" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Vendor/SwiftTerm;
 		};
-/* End XCRemoteSwiftPackageReference section */
+/* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		1073964FCAD353209A999D96 /* SwiftTerm */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 8DB580497AED1921A42DAF58 /* XCRemoteSwiftPackageReference "SwiftTerm" */;
 			productName = SwiftTerm;
 		};
 /* End XCSwiftPackageProductDependency section */
