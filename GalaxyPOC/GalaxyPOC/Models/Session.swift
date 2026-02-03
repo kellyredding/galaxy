@@ -60,7 +60,7 @@ class Session: Identifiable, ObservableObject {
     }
 
     func startProcess(claudePath: String, resume: Bool = false) {
-        // Build environment as array of "KEY=VALUE" strings (SwiftTerm 1.2.5 format)
+        // Build environment as array of "KEY=VALUE" strings
         var envArray: [String] = ProcessInfo.processInfo.environment.map { "\($0.key)=\($0.value)" }
 
         // Override terminal-related environment variables
@@ -72,9 +72,6 @@ class Session: Identifiable, ObservableObject {
         envArray.append("TERM=xterm-256color")
         envArray.append("COLORTERM=truecolor")
         envArray.append("LANG=en_US.UTF-8")
-
-        // Change to working directory first
-        FileManager.default.changeCurrentDirectoryPath(workingDirectory)
 
         // Build args
         var args: [String] = []
@@ -92,11 +89,13 @@ class Session: Identifiable, ObservableObject {
         }
 
         // Start claude directly (not via shell) so SwiftTerm can properly monitor the process
+        // SwiftTerm 1.10+ supports currentDirectory parameter directly
         terminalView.startProcess(
             executable: claudePath,
             args: args,
             environment: envArray,
-            execName: "claude"
+            execName: "claude",
+            currentDirectory: workingDirectory
         )
 
         isRunning = true
