@@ -15,6 +15,7 @@
 		A9DC3B126BE6650923ADEC46 /* SessionRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60AC35CE99CE6430CC623FF /* SessionRow.swift */; };
 		ADB1518FC56D3CBB7871F375 /* SessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E9581FAD7E28412EFFA4F2E /* SessionManager.swift */; };
 		DF11146BB2950E31FC746C90 /* TerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E559289BDC471021B08F5DD /* TerminalView.swift */; };
+		DF5C8DA5432ED43321F51277 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FCA5CF5E95D054AAC80A090A /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -27,6 +28,7 @@
 		900F9D1F5C418789AE03F7FC /* GalaxyPOC.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GalaxyPOC.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9E559289BDC471021B08F5DD /* TerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalView.swift; sourceTree = "<group>"; };
 		A60AC35CE99CE6430CC623FF /* SessionRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRow.swift; sourceTree = "<group>"; };
+		FCA5CF5E95D054AAC80A090A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -44,6 +46,7 @@
 		014CCC5175F711FA6EB75FFB /* GalaxyPOC */ = {
 			isa = PBXGroup;
 			children = (
+				FCA5CF5E95D054AAC80A090A /* Assets.xcassets */,
 				247448C70224193CE23BB32D /* ContentView.swift */,
 				72EC4E43716950A0BE37D77C /* GalaxyPOCApp.swift */,
 				250F5A4BAD11EE41A4E51344 /* Info.plist */,
@@ -96,6 +99,7 @@
 			buildConfigurationList = 3F4EAEC70006427E381FCC44 /* Build configuration list for PBXNativeTarget "GalaxyPOC" */;
 			buildPhases = (
 				6B0FBB93D281CCC7BC5A2819 /* Sources */,
+				65F89368891C9B6CC39994E7 /* Resources */,
 				F8ED6D08E9BBA2308FF3FC39 /* Frameworks */,
 			);
 			buildRules = (
@@ -140,6 +144,17 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		65F89368891C9B6CC39994E7 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DF5C8DA5432ED43321F51277 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		6B0FBB93D281CCC7BC5A2819 /* Sources */ = {
