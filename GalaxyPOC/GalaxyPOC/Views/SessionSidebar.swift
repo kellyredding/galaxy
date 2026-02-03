@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SessionSidebar: View {
     @EnvironmentObject var sessionManager: SessionManager
+    @ObservedObject var statusLineService = StatusLineService.shared
 
     var body: some View {
         List {
@@ -9,7 +10,11 @@ struct SessionSidebar: View {
                 ForEach(sessionManager.sessions) { session in
                     SessionRow(
                         session: session,
+                        statusLineService: statusLineService,
                         isSelected: session.id == sessionManager.activeSessionId,
+                        onStop: {
+                            sessionManager.stopSession(sessionId: session.id)
+                        },
                         onClose: {
                             sessionManager.closeSession(sessionId: session.id)
                         }
@@ -22,7 +27,19 @@ struct SessionSidebar: View {
             }
         }
         .listStyle(.sidebar)
-        .frame(minWidth: 200)
-        // Removed toolbar with + button - sessions are created via CLI
+        .frame(minWidth: 220)  // Slightly wider to accommodate git status
+        .onChange(of: sessionManager.sessions.count) { _ in
+            // Restart monitoring when sessions change
+            statusLineService.startMonitoring(sessions: sessionManager.sessions)
+        }
+        .onAppear {
+            // Start monitoring on appear
+            if !sessionManager.sessions.isEmpty {
+                statusLineService.startMonitoring(sessions: sessionManager.sessions)
+            }
+        }
+        .onDisappear {
+            statusLineService.stopMonitoring()
+        }
     }
 }
