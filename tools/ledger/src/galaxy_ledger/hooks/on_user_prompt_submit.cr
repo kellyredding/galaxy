@@ -4,7 +4,7 @@ module GalaxyLedger
   module Hooks
     # Handles the UserPromptSubmit hook
     # - Captures user message for potential direction extraction
-    # - Buffers for later processing by Claude CLI (Phase 6)
+    # - Spawns async extraction that writes directly to SQLite
     # - Async, non-blocking
     class OnUserPromptSubmit
       @session_id : String?

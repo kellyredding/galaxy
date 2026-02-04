@@ -62,8 +62,6 @@ module GalaxyLedger
         handle_config_command(rest)
       when "session"
         handle_session_command(rest)
-      when "buffer"
-        handle_buffer_command(rest)
       when "search"
         handle_search_command(rest)
       when "list"
@@ -80,10 +78,6 @@ module GalaxyLedger
         handle_on_post_tool_use_command(rest)
       when "on-user-prompt-submit"
         handle_on_user_prompt_submit_command(rest)
-      when "on-pre-compact"
-        handle_on_pre_compact_command(rest)
-      when "on-session-end"
-        handle_on_session_end_command(rest)
       when "hooks"
         handle_hooks_command(rest)
       when "extract-user"
@@ -115,7 +109,6 @@ module GalaxyLedger
         add                 Add an entry (learning, decision, direction, etc.)
         config              Manage configuration
         session             Manage sessions
-        buffer              Manage session buffers
         hooks               Install/uninstall Claude Code hooks
         version             Show version
         help                Show this help
@@ -126,8 +119,6 @@ module GalaxyLedger
         on-session-start    Restore context after clear/compact
         on-post-tool-use    Track file operations, detect guidelines
         on-user-prompt-submit  Capture user directions/preferences
-        on-pre-compact      Sync flush before compaction
-        on-session-end      Sync flush on session end
 
       Run 'galaxy-ledger <command> --help' for detailed command usage.
       BANNER
@@ -214,10 +205,6 @@ module GalaxyLedger
           storage.postgres_host_port      Host port for Postgres (default: 5433)
           storage.embeddings_enabled      Generate embeddings (default: false)
           storage.openai_api_key_env_var  Env var for OpenAI key (default: GALAXY_OPENAI_API_KEY)
-
-        buffer.*                     Buffer settings
-          buffer.flush_threshold          Entries before flush (default: 50)
-          buffer.flush_interval_seconds   Max seconds before flush (default: 300)
 
         restoration.*                Context restoration settings
           restoration.max_essential_tokens  Token budget for essentials (default: 2000)
@@ -389,8 +376,7 @@ module GalaxyLedger
         Sessions are stored in ~/.claude/galaxy/sessions/{session_id}/
 
         Each session folder contains:
-          - context-status.json     Context percentage (from statusline)
-          - ledger_buffer.jsonl     Buffered entries before flush
+          - context-status.json        Context percentage (from statusline)
           - ledger_last-exchange.json  Last user/assistant exchange
 
       REMOVE BEHAVIOR:
@@ -435,7 +421,7 @@ module GalaxyLedger
         Shows detailed information about a session including:
         - Session path and file list
         - Context status (if available)
-        - Buffer status
+        - Database entry count
         - Last exchange status
       HELP
     end
@@ -522,7 +508,6 @@ module GalaxyLedger
       if session.has_context_status && (pct = session.context_percentage)
         puts "    Percentage: #{pct.round(1)}%"
       end
-      puts "  Buffer: #{session.has_buffer ? "yes" : "no"}"
       puts "  Last exchange: #{session.has_last_exchange ? "yes" : "no"}"
     end
 
@@ -548,277 +533,6 @@ module GalaxyLedger
       puts "  SQLite purged: #{result.sqlite_purged ? "yes" : "no"}"
       if Config.load.storage.postgres_enabled
         puts "  PostgreSQL purged: #{result.postgres_purged ? "yes" : "no (not implemented yet)"}"
-      end
-    end
-
-    private def self.handle_buffer_command(args : Array(String))
-      if args.empty?
-        show_buffer_help
-        return
-      end
-
-      subcommand = args[0]
-      rest = args[1..]? || [] of String
-
-      case subcommand
-      when "show"
-        if rest.includes?("-h") || rest.includes?("--help")
-          show_buffer_show_help
-        else
-          buffer_show(rest)
-        end
-      when "flush"
-        if rest.includes?("-h") || rest.includes?("--help")
-          show_buffer_flush_help
-        else
-          buffer_flush(rest)
-        end
-      when "flush-async"
-        if rest.includes?("-h") || rest.includes?("--help")
-          show_buffer_flush_async_help
-        else
-          buffer_flush_async(rest)
-        end
-      when "clear"
-        if rest.includes?("-h") || rest.includes?("--help")
-          show_buffer_clear_help
-        else
-          buffer_clear(rest)
-        end
-      when "help", "-h", "--help"
-        show_buffer_help
-      else
-        STDERR.puts "Error: Unknown buffer command '#{subcommand}'"
-        STDERR.puts "Run 'galaxy-ledger buffer --help' for usage"
-        exit(1)
-      end
-    end
-
-    private def self.show_buffer_help
-      puts <<-HELP
-      galaxy-ledger buffer - Manage session buffers
-
-      USAGE:
-        galaxy-ledger buffer show SESSION_ID        Show buffer contents
-        galaxy-ledger buffer flush SESSION_ID       Synchronously flush to storage
-        galaxy-ledger buffer flush-async SESSION_ID Asynchronously flush (forks)
-        galaxy-ledger buffer clear SESSION_ID       Clear buffer without flushing
-        galaxy-ledger buffer help                   Show this help
-
-      DESCRIPTION:
-        Buffers temporarily store ledger entries before flushing to persistent
-        storage (SQLite/PostgreSQL). This allows non-blocking writes during
-        session activity.
-
-        Buffer files are stored per-session at:
-          ~/.claude/galaxy/sessions/{session_id}/ledger_buffer.jsonl
-
-        Flush operations:
-          - sync:  Blocks until all entries are persisted
-          - async: Forks a process and returns immediately
-
-      ENTRY TYPES:
-        file_read, file_edit, file_write, search,
-        direction, preference, constraint,
-        learning, decision, discovery,
-        guideline, implementation_plan, reference
-
-      EXAMPLES:
-        galaxy-ledger buffer show abc123
-        galaxy-ledger buffer flush abc123
-        galaxy-ledger buffer flush-async abc123
-        galaxy-ledger buffer clear abc123
-      HELP
-    end
-
-    private def self.show_buffer_show_help
-      puts <<-HELP
-      galaxy-ledger buffer show - Show buffer contents
-
-      USAGE:
-        galaxy-ledger buffer show SESSION_ID
-
-      ARGUMENTS:
-        SESSION_ID    The session ID to show buffer for
-
-      DESCRIPTION:
-        Displays all entries currently in the session's buffer file.
-        These entries have not yet been flushed to persistent storage.
-      HELP
-    end
-
-    private def self.show_buffer_flush_help
-      puts <<-HELP
-      galaxy-ledger buffer flush - Synchronously flush buffer to storage
-
-      USAGE:
-        galaxy-ledger buffer flush SESSION_ID
-
-      ARGUMENTS:
-        SESSION_ID    The session ID to flush buffer for
-
-      DESCRIPTION:
-        Flushes all buffered entries to persistent storage (SQLite/PostgreSQL).
-        This operation blocks until all entries are persisted.
-      HELP
-    end
-
-    private def self.show_buffer_flush_async_help
-      puts <<-HELP
-      galaxy-ledger buffer flush-async - Asynchronously flush buffer
-
-      USAGE:
-        galaxy-ledger buffer flush-async SESSION_ID
-
-      ARGUMENTS:
-        SESSION_ID    The session ID to flush buffer for
-
-      DESCRIPTION:
-        Starts a background process to flush buffered entries to storage.
-        Returns immediately with the PID of the background process.
-      HELP
-    end
-
-    private def self.show_buffer_clear_help
-      puts <<-HELP
-      galaxy-ledger buffer clear - Clear buffer without flushing
-
-      USAGE:
-        galaxy-ledger buffer clear SESSION_ID
-
-      ARGUMENTS:
-        SESSION_ID    The session ID to clear buffer for
-
-      DESCRIPTION:
-        Discards all buffered entries without persisting them.
-
-      WARNING:
-        This action cannot be undone. Entries will be lost.
-      HELP
-    end
-
-    private def self.buffer_show(args : Array(String))
-      if args.empty?
-        STDERR.puts "Usage: galaxy-ledger buffer show SESSION_ID"
-        exit(1)
-      end
-
-      session_id = args[0]
-
-      unless Session.exists?(session_id)
-        STDERR.puts "Error: Session not found: #{session_id}"
-        STDERR.puts "  Path: #{SESSIONS_DIR / session_id}"
-        exit(1)
-      end
-
-      entries = Buffer.read(session_id)
-
-      if entries.empty?
-        puts "Buffer is empty for session: #{session_id}"
-        puts "  Buffer file: #{Buffer.buffer_path(session_id)}"
-        return
-      end
-
-      puts "Buffer entries for session: #{session_id}"
-      puts "  Count: #{entries.size}"
-      puts "  File: #{Buffer.buffer_path(session_id)}"
-      puts ""
-
-      entries.each_with_index do |entry, idx|
-        puts "[#{idx + 1}] #{entry.entry_type} (#{entry.importance})"
-        if source = entry.source
-          puts "    Source: #{source}"
-        end
-        puts "    Content: #{truncate(entry.content, 100)}"
-        puts "    Created: #{entry.created_at}"
-        puts ""
-      end
-    end
-
-    private def self.buffer_flush(args : Array(String))
-      if args.empty?
-        STDERR.puts "Usage: galaxy-ledger buffer flush SESSION_ID"
-        exit(1)
-      end
-
-      session_id = args[0]
-
-      unless Session.exists?(session_id)
-        STDERR.puts "Error: Session not found: #{session_id}"
-        STDERR.puts "  Path: #{SESSIONS_DIR / session_id}"
-        exit(1)
-      end
-
-      result = Buffer.flush_sync(session_id)
-
-      if result.success
-        puts "Flush complete for session: #{session_id}"
-        puts "  Entries flushed: #{result.entries_flushed}"
-        if reason = result.reason
-          puts "  Note: #{reason}"
-        end
-      else
-        STDERR.puts "Flush failed for session: #{session_id}"
-        if reason = result.reason
-          STDERR.puts "  Reason: #{reason}"
-        end
-        exit(1)
-      end
-    end
-
-    private def self.buffer_flush_async(args : Array(String))
-      if args.empty?
-        STDERR.puts "Usage: galaxy-ledger buffer flush-async SESSION_ID"
-        exit(1)
-      end
-
-      session_id = args[0]
-
-      unless Session.exists?(session_id)
-        STDERR.puts "Error: Session not found: #{session_id}"
-        STDERR.puts "  Path: #{SESSIONS_DIR / session_id}"
-        exit(1)
-      end
-
-      result = Buffer.flush_async(session_id)
-
-      if result.success
-        puts "Async flush started for session: #{session_id}"
-        if reason = result.reason
-          puts "  #{reason}"
-        end
-      else
-        STDERR.puts "Async flush failed for session: #{session_id}"
-        if reason = result.reason
-          STDERR.puts "  Reason: #{reason}"
-        end
-        exit(1)
-      end
-    end
-
-    private def self.buffer_clear(args : Array(String))
-      if args.empty?
-        STDERR.puts "Usage: galaxy-ledger buffer clear SESSION_ID"
-        exit(1)
-      end
-
-      session_id = args[0]
-
-      unless Session.exists?(session_id)
-        STDERR.puts "Error: Session not found: #{session_id}"
-        STDERR.puts "  Path: #{SESSIONS_DIR / session_id}"
-        exit(1)
-      end
-
-      count = Buffer.count(session_id)
-      success = Buffer.clear(session_id)
-
-      if success
-        puts "Buffer cleared for session: #{session_id}"
-        puts "  Entries discarded: #{count}"
-      else
-        STDERR.puts "Failed to clear buffer for session: #{session_id}"
-        exit(1)
       end
     end
 
@@ -1388,7 +1102,7 @@ module GalaxyLedger
         - Tracks file operations (Read, Edit, Write, Glob, Grep)
         - Detects guideline files (**/agent-guidelines/**, **/*-style.md)
         - Detects implementation plan files (**/implementation-plans/**)
-        - Buffers entries for later persistence to SQLite
+        - Writes entries directly to SQLite
 
       INPUT (stdin):
         JSON object with hook data:
@@ -1451,7 +1165,7 @@ module GalaxyLedger
         Called by Claude Code's UserPromptSubmit hook when the user submits a prompt.
         This hook:
         - Captures user messages for potential direction extraction
-        - Buffers messages for later processing (Phase 6 Claude CLI extraction)
+        - Spawns async extraction process using Claude CLI
         - Runs async, non-blocking
 
       INPUT (stdin):
@@ -1470,8 +1184,8 @@ module GalaxyLedger
       BEHAVIOR:
         - Skips empty prompts
         - Skips very short prompts (<10 chars) like "yes", "ok", "continue"
-        - Buffers longer prompts as potential directions
-        - Actual extraction/classification happens in Phase 6
+        - Processes longer prompts through extraction
+        - Extraction uses Claude CLI to classify and persist learnings
 
       ENTRY TYPES CREATED:
         - direction: User prompt (source: user, importance: medium)
@@ -1487,114 +1201,6 @@ module GalaxyLedger
                 "command": "galaxy-ledger on-user-prompt-submit",
                 "async": true,
                 "timeout": 10
-              }]
-            }]
-          }
-        }
-      HELP
-    end
-
-    private def self.handle_on_pre_compact_command(args : Array(String))
-      if args.first? == "-h" || args.first? == "--help"
-        show_on_pre_compact_help
-        return
-      end
-      handler = Hooks::OnPreCompact.new
-      handler.run
-    end
-
-    private def self.show_on_pre_compact_help
-      puts <<-HELP
-      galaxy-ledger on-pre-compact - Handle PreCompact hook
-
-      USAGE:
-        galaxy-ledger on-pre-compact
-
-      DESCRIPTION:
-        Called by Claude Code's PreCompact hook before auto-compact or manual /compact.
-        This hook:
-        - Synchronously flushes all buffered entries to SQLite
-        - Ensures no data loss during compaction
-        - Blocking hook (Claude Code waits for completion)
-
-      INPUT (stdin):
-        JSON object with hook data:
-        {
-          "session_id": "abc123",
-          "transcript_path": "/path/to/transcript.jsonl",
-          "cwd": "/current/working/directory",
-          "hook_event_name": "PreCompact",
-          "source": "auto" | "manual"
-        }
-
-      OUTPUT (stdout):
-        No output on success.
-        Logs flush count to stderr for debugging.
-
-      HOOK CONFIGURATION:
-        Add to ~/.claude/settings.json:
-        {
-          "hooks": {
-            "PreCompact": [{
-              "matcher": "auto|manual",
-              "hooks": [{
-                "type": "command",
-                "command": "galaxy-ledger on-pre-compact",
-                "timeout": 60
-              }]
-            }]
-          }
-        }
-      HELP
-    end
-
-    private def self.handle_on_session_end_command(args : Array(String))
-      if args.first? == "-h" || args.first? == "--help"
-        show_on_session_end_help
-        return
-      end
-      handler = Hooks::OnSessionEnd.new
-      handler.run
-    end
-
-    private def self.show_on_session_end_help
-      puts <<-HELP
-      galaxy-ledger on-session-end - Handle SessionEnd hook
-
-      USAGE:
-        galaxy-ledger on-session-end
-
-      DESCRIPTION:
-        Called by Claude Code's SessionEnd hook when a session ends (e.g., /clear).
-        This hook:
-        - Synchronously flushes all buffered entries to SQLite
-        - Ensures data is persisted before session ends
-        - Blocking hook (Claude Code waits for completion)
-
-      INPUT (stdin):
-        JSON object with hook data:
-        {
-          "session_id": "abc123",
-          "transcript_path": "/path/to/transcript.jsonl",
-          "cwd": "/current/working/directory",
-          "hook_event_name": "SessionEnd",
-          "source": "clear"
-        }
-
-      OUTPUT (stdout):
-        No output on success.
-        Logs flush count to stderr for debugging.
-
-      HOOK CONFIGURATION:
-        Add to ~/.claude/settings.json:
-        {
-          "hooks": {
-            "SessionEnd": [{
-              "matcher": "clear",
-              "hooks": [{
-                "type": "command",
-                "command": "galaxy-ledger on-session-end",
-                "timeout": 30
               }]
             }]
           }
@@ -1702,9 +1308,9 @@ module GalaxyLedger
         - UserPromptSubmit hook (async): Captures user messages
         - PostToolUse hook (async): Tracks file operations
         - Stop hook: Captures last exchange, shows context warnings
-        - PreCompact hook: Flushes buffer before compaction
+        - PreCompact hook: Reserved for pre-compaction tasks
         - SessionStart hooks: Context restoration and awareness
-        - SessionEnd hook: Flushes buffer on session end
+        - SessionEnd hook: Reserved for session end tasks
 
       SAFETY:
         Existing non-ledger hooks are preserved.
@@ -1858,13 +1464,15 @@ module GalaxyLedger
       # Run extraction
       result = Extraction.extract_user_directions(prompt)
 
-      # Buffer any extracted entries
+      # Write extracted entries directly to database
       if result.extractions.any?
         entries = result.extractions.select(&.valid?).map do |e|
           e.to_buffer_entry(source: "user")
         end
-        Buffer.append_many(session_id, entries)
-        STDERR.puts "[galaxy-ledger] Extracted #{entries.size} user directions for session #{session_id[0, 8]}..."
+        inserted = Database.insert_many(session_id, entries)
+        if inserted > 0
+          STDERR.puts "[galaxy-ledger] Extracted #{inserted} user directions for session #{session_id[0, 8]}..."
+        end
       end
     end
 
@@ -1933,13 +1541,15 @@ module GalaxyLedger
         # Run extraction
         result = Extraction.extract_assistant_learnings(user_message, assistant_content)
 
-        # Buffer any extracted entries
+        # Write extracted entries directly to database
         if result.extractions.any?
           entries = result.extractions.select(&.valid?).map do |e|
             e.to_buffer_entry(source: "assistant")
           end
-          Buffer.append_many(session_id, entries)
-          STDERR.puts "[galaxy-ledger] Extracted #{entries.size} learnings for session #{session_id[0, 8]}..."
+          inserted = Database.insert_many(session_id, entries)
+          if inserted > 0
+            STDERR.puts "[galaxy-ledger] Extracted #{inserted} learnings for session #{session_id[0, 8]}..."
+          end
         end
 
         # Update last exchange with summary if we got one
@@ -2038,7 +1648,7 @@ module GalaxyLedger
                  exit(1)
                end
 
-      # Buffer any extracted entries
+      # Write extracted entries directly to database
       if result.extractions.any?
         entries = result.extractions.select(&.valid?).map do |e|
           # Add file path to metadata
@@ -2050,8 +1660,10 @@ module GalaxyLedger
             metadata: metadata,
           )
         end
-        Buffer.append_many(session_id, entries)
-        STDERR.puts "[galaxy-ledger] Extracted #{entries.size} #{extraction_type} entries from #{File.basename(file_path)}"
+        inserted = Database.insert_many(session_id, entries)
+        if inserted > 0
+          STDERR.puts "[galaxy-ledger] Extracted #{inserted} #{extraction_type} entries from #{File.basename(file_path)}"
+        end
       end
     end
 

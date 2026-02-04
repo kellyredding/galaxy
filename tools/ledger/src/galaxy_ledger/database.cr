@@ -36,6 +36,9 @@ module GalaxyLedger
         # Enable WAL mode for better concurrency
         db.exec("PRAGMA journal_mode=WAL")
         db.exec("PRAGMA foreign_keys=ON")
+        # Set busy timeout for concurrent write safety (5 seconds)
+        # This replaces buffer's lock-based concurrency with SQLite's built-in retry
+        db.exec("PRAGMA busy_timeout=5000")
         yield db
       end
     end

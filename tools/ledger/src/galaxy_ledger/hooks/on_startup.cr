@@ -4,7 +4,6 @@ module GalaxyLedger
   module Hooks
     # Handles the SessionStart(startup) hook
     # - Ensures session folder exists
-    # - Cleans up orphaned flushing file for current session only
     # - Injects ledger awareness prompt
     class OnStartup
       @session_id : String?
@@ -19,10 +18,7 @@ module GalaxyLedger
         # Ensure session folder exists for current session
         ensure_session_folder
 
-        # Clean up orphaned flushing file for current session only
-        cleanup_current_session_orphans
-
-        # Query ledger for stats (placeholder for Phase 1 - no SQLite yet)
+        # Query ledger for stats
         stats = get_ledger_stats
 
         # Build the awareness context
@@ -58,16 +54,6 @@ module GalaxyLedger
 
         session_dir = GalaxyLedger.session_dir(session_id)
         Dir.mkdir_p(session_dir) unless Dir.exists?(session_dir)
-      end
-
-      private def cleanup_current_session_orphans
-        session_id = @session_id
-        return unless session_id
-
-        # Use Buffer module to process orphaned flushing file
-        # This counts entries, logs recovery, and deletes the file
-        # In Phase 4, this will also persist entries to SQLite
-        Buffer.process_orphaned_flushing_file(session_id)
       end
 
       private def get_ledger_stats : NamedTuple(sessions: Int32, entries: Int32, last_session: String?)

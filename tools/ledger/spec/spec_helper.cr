@@ -66,9 +66,12 @@ def run_binary(
     output: Process::Redirect::Pipe,
     error: Process::Redirect::Pipe,
     env: {
-      "GALAXY_CLAUDE_CONFIG_DIR" => SPEC_CLAUDE_CONFIG_DIR.to_s,
-      "GALAXY_LEDGER_CONFIG_DIR" => SPEC_CONFIG_DIR.to_s,
-      "GALAXY_DIR"               => SPEC_GALAXY_DIR.to_s,
+      "GALAXY_CLAUDE_CONFIG_DIR"     => SPEC_CLAUDE_CONFIG_DIR.to_s,
+      "GALAXY_LEDGER_CONFIG_DIR"     => SPEC_CONFIG_DIR.to_s,
+      "GALAXY_DIR"                   => SPEC_GALAXY_DIR.to_s,
+      "GALAXY_LEDGER_DATABASE_PATH"  => SPEC_DATABASE_PATH.to_s,
+      "HOME"                         => ENV["HOME"],
+      "PATH"                         => ENV["PATH"],
     }
   )
 

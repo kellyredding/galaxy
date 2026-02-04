@@ -87,7 +87,6 @@ module GalaxyLedger
 
       # Check for specific ledger files
       has_context_status = File.exists?(session_path / CONTEXT_STATUS_FILENAME)
-      has_buffer = File.exists?(session_path / LEDGER_BUFFER_FILENAME)
       has_last_exchange = File.exists?(session_path / LEDGER_LAST_EXCHANGE_FILENAME)
 
       # Read context percentage if available
@@ -109,7 +108,6 @@ module GalaxyLedger
         total_size: total_size,
         last_modified: last_modified,
         has_context_status: has_context_status,
-        has_buffer: has_buffer,
         has_last_exchange: has_last_exchange,
         context_percentage: context_percentage
       )
@@ -123,7 +121,6 @@ module GalaxyLedger
       getter total_size : Int64
       getter last_modified : Time
       getter has_context_status : Bool
-      getter has_buffer : Bool
       getter has_last_exchange : Bool
       getter context_percentage : Float64?
 
@@ -134,7 +131,6 @@ module GalaxyLedger
         @total_size,
         @last_modified,
         @has_context_status,
-        @has_buffer,
         @has_last_exchange,
         @context_percentage,
       )

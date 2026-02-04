@@ -44,10 +44,7 @@ module GalaxyLedger
   CONTEXT_STATUS_FILENAME = "context-status.json"
 
   # Ledger-specific filenames within session folders
-  LEDGER_BUFFER_FILENAME          = "ledger_buffer.jsonl"
-  LEDGER_BUFFER_FLUSHING_FILENAME = "ledger_buffer.flushing.jsonl"
-  LEDGER_BUFFER_LOCK_FILENAME     = "ledger_buffer.lock"
-  LEDGER_LAST_EXCHANGE_FILENAME   = "ledger_last-exchange.json"
+  LEDGER_LAST_EXCHANGE_FILENAME = "ledger_last-exchange.json"
 
   # Helper to get session-specific context status file path
   def self.context_status_path(session_id : String) : Path

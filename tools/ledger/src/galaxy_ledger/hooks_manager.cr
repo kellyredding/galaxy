@@ -4,6 +4,7 @@ module GalaxyLedger
   # Manages installation and removal of ledger hooks in Claude Code settings.json
   module HooksManager
     # Hook definitions that will be installed
+    # Note: PreCompact and SessionEnd were removed in Phase 6.1 (direct DB writes)
     LEDGER_HOOKS = {
       "UserPromptSubmit" => [
         {
@@ -41,18 +42,6 @@ module GalaxyLedger
           ],
         },
       ],
-      "PreCompact" => [
-        {
-          "matcher" => "auto|manual",
-          "hooks"   => [
-            {
-              "type"    => "command",
-              "command" => "~/.claude/galaxy/bin/galaxy-ledger on-pre-compact",
-              "timeout" => 60,
-            },
-          ],
-        },
-      ],
       "SessionStart" => [
         {
           "matcher" => "clear|compact",
@@ -71,18 +60,6 @@ module GalaxyLedger
               "type"    => "command",
               "command" => "~/.claude/galaxy/bin/galaxy-ledger on-startup",
               "timeout" => 10,
-            },
-          ],
-        },
-      ],
-      "SessionEnd" => [
-        {
-          "matcher" => "clear",
-          "hooks"   => [
-            {
-              "type"    => "command",
-              "command" => "~/.claude/galaxy/bin/galaxy-ledger on-session-end",
-              "timeout" => 30,
             },
           ],
         },

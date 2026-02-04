@@ -5,7 +5,6 @@ module GalaxyLedger
     # Handles the Stop hook
     # - Parses transcript to capture last exchange
     # - Writes to ledger_last-exchange.json
-    # - Flushes buffer to SQLite (async) for data durability
     # - Checks context thresholds and shows warnings
     # - Spawns async extraction (Phase 6)
     class OnStop
@@ -27,11 +26,6 @@ module GalaxyLedger
 
         # Capture last exchange from transcript
         capture_last_exchange
-
-        # Flush buffer to SQLite (async) for data durability
-        # This ensures entries are persisted after each completed response,
-        # so if the user closes the terminal, only the current exchange is lost
-        flush_buffer_async
 
         # Check context thresholds and build warning message if needed
         warning = check_context_thresholds
@@ -64,17 +58,6 @@ module GalaxyLedger
         rescue
           # Silently ignore parse errors
         end
-      end
-
-      private def flush_buffer_async
-        session_id = @session_id
-        return unless session_id
-
-        # Only flush if there's actually a buffer to flush
-        return unless Buffer.exists?(session_id)
-
-        # Async flush - spawns detached subprocess that persists to SQLite
-        Buffer.flush_async(session_id)
       end
 
       private def capture_last_exchange

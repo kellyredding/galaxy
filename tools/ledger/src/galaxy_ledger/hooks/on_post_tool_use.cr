@@ -5,7 +5,7 @@ module GalaxyLedger
     # Handles the PostToolUse hook
     # - Tracks file operations (Read, Edit, Write, Glob, Grep)
     # - Detects guideline and implementation plan reads
-    # - Buffers entries for later persistence
+    # - Writes entries directly to SQLite
     class OnPostToolUse
       @session_id : String?
       @tool_name : String?
@@ -97,23 +97,23 @@ module GalaxyLedger
           # Phase 6: For guidelines and implementation plans, spawn extraction
           spawn_extraction_async(session_id, file_path, tool_response, special_type)
 
-          # Also buffer the file path as a marker that we read this file
+          # Also record the file path as a marker that we read this file
           entry = Buffer::Entry.new(
             entry_type: special_type,
             content: file_path,
             importance: "medium",
             metadata: JSON.parse({"tool" => "Read", "extraction_spawned" => true}.to_json)
           )
-          Buffer.append(session_id, entry)
+          Database.insert(session_id, entry)
         else
-          # Regular file read - just buffer the path
+          # Regular file read - just record the path
           entry = Buffer::Entry.new(
             entry_type: "file_read",
             content: file_path,
             importance: "low",
             metadata: JSON.parse({"tool" => "Read"}.to_json)
           )
-          Buffer.append(session_id, entry)
+          Database.insert(session_id, entry)
         end
       end
 
@@ -158,7 +158,7 @@ module GalaxyLedger
           metadata: JSON.parse({"tool" => "Edit"}.to_json)
         )
 
-        Buffer.append(session_id, entry)
+        Database.insert(session_id, entry)
       end
 
       private def process_write
@@ -176,7 +176,7 @@ module GalaxyLedger
           metadata: JSON.parse({"tool" => "Write"}.to_json)
         )
 
-        Buffer.append(session_id, entry)
+        Database.insert(session_id, entry)
       end
 
       private def process_search
@@ -200,7 +200,7 @@ module GalaxyLedger
           metadata: JSON.parse({"tool" => tool_name}.to_json)
         )
 
-        Buffer.append(session_id, entry)
+        Database.insert(session_id, entry)
       end
 
       private def detect_special_file_type(file_path : String) : String?

@@ -19,12 +19,13 @@ describe "OnPostToolUse GALAXY_SKIP_HOOKS" do
     result = run_binary(["on-post-tool-use"], stdin: input)
     result[:status].should eq(0)
 
-    # Buffer should remain empty (early return, no entry created)
-    entries = GalaxyLedger::Buffer.read(session_id)
+    # Database should remain empty (early return, no entry created)
+    entries = GalaxyLedger::Database.query_by_session(session_id)
     entries.size.should eq(0)
 
     # Clean up
     FileUtils.rm_rf(session_dir.to_s)
+    GalaxyLedger::Database.delete_session(session_id)
   ensure
     ENV.delete("GALAXY_SKIP_HOOKS")
   end
@@ -49,11 +50,15 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         result = run_binary(["on-post-tool-use"], stdin: input)
         result[:status].should eq(0)
 
-        entries = GalaxyLedger::Buffer.read(session_id)
+        entries = GalaxyLedger::Database.query_by_session(session_id)
         entries.size.should eq(1)
         entries.first.entry_type.should eq("file_read")
         entries.first.content.should eq("/path/to/some/file.rb")
         entries.first.importance.should eq("low")
+
+        # Clean up
+        FileUtils.rm_rf(session_dir.to_s)
+        GalaxyLedger::Database.delete_session(session_id)
       end
 
       it "creates a guideline entry for agent-guidelines files" do
@@ -72,10 +77,14 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         result = run_binary(["on-post-tool-use"], stdin: input)
         result[:status].should eq(0)
 
-        entries = GalaxyLedger::Buffer.read(session_id)
+        entries = GalaxyLedger::Database.query_by_session(session_id)
         entries.size.should eq(1)
         entries.first.entry_type.should eq("guideline")
         entries.first.importance.should eq("medium")
+
+        # Clean up
+        FileUtils.rm_rf(session_dir.to_s)
+        GalaxyLedger::Database.delete_session(session_id)
       end
 
       it "creates a guideline entry for *-style.md files" do
@@ -94,9 +103,13 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         result = run_binary(["on-post-tool-use"], stdin: input)
         result[:status].should eq(0)
 
-        entries = GalaxyLedger::Buffer.read(session_id)
+        entries = GalaxyLedger::Database.query_by_session(session_id)
         entries.size.should eq(1)
         entries.first.entry_type.should eq("guideline")
+
+        # Clean up
+        FileUtils.rm_rf(session_dir.to_s)
+        GalaxyLedger::Database.delete_session(session_id)
       end
 
       it "creates an implementation_plan entry for implementation-plans files" do
@@ -115,10 +128,14 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         result = run_binary(["on-post-tool-use"], stdin: input)
         result[:status].should eq(0)
 
-        entries = GalaxyLedger::Buffer.read(session_id)
+        entries = GalaxyLedger::Database.query_by_session(session_id)
         entries.size.should eq(1)
         entries.first.entry_type.should eq("implementation_plan")
         entries.first.importance.should eq("medium")
+
+        # Clean up
+        FileUtils.rm_rf(session_dir.to_s)
+        GalaxyLedger::Database.delete_session(session_id)
       end
     end
 
@@ -143,11 +160,15 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         result = run_binary(["on-post-tool-use"], stdin: input)
         result[:status].should eq(0)
 
-        entries = GalaxyLedger::Buffer.read(session_id)
+        entries = GalaxyLedger::Database.query_by_session(session_id)
         entries.size.should eq(1)
         entries.first.entry_type.should eq("file_edit")
         entries.first.content.should eq("/path/to/file.rb")
         entries.first.importance.should eq("medium")
+
+        # Clean up
+        FileUtils.rm_rf(session_dir.to_s)
+        GalaxyLedger::Database.delete_session(session_id)
       end
     end
 
@@ -171,11 +192,15 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         result = run_binary(["on-post-tool-use"], stdin: input)
         result[:status].should eq(0)
 
-        entries = GalaxyLedger::Buffer.read(session_id)
+        entries = GalaxyLedger::Database.query_by_session(session_id)
         entries.size.should eq(1)
         entries.first.entry_type.should eq("file_write")
         entries.first.content.should eq("/path/to/new_file.rb")
         entries.first.importance.should eq("medium")
+
+        # Clean up
+        FileUtils.rm_rf(session_dir.to_s)
+        GalaxyLedger::Database.delete_session(session_id)
       end
     end
 
@@ -199,11 +224,15 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         result = run_binary(["on-post-tool-use"], stdin: input)
         result[:status].should eq(0)
 
-        entries = GalaxyLedger::Buffer.read(session_id)
+        entries = GalaxyLedger::Database.query_by_session(session_id)
         entries.size.should eq(1)
         entries.first.entry_type.should eq("search")
         entries.first.content.should eq("def authenticate in /app/models")
         entries.first.importance.should eq("low")
+
+        # Clean up
+        FileUtils.rm_rf(session_dir.to_s)
+        GalaxyLedger::Database.delete_session(session_id)
       end
     end
 
@@ -227,10 +256,14 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         result = run_binary(["on-post-tool-use"], stdin: input)
         result[:status].should eq(0)
 
-        entries = GalaxyLedger::Buffer.read(session_id)
+        entries = GalaxyLedger::Database.query_by_session(session_id)
         entries.size.should eq(1)
         entries.first.entry_type.should eq("search")
         entries.first.content.should eq("**/*.rb in /app")
+
+        # Clean up
+        FileUtils.rm_rf(session_dir.to_s)
+        GalaxyLedger::Database.delete_session(session_id)
       end
     end
 
@@ -272,8 +305,11 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         result[:status].should eq(0)
 
         # No entry should be created
-        entries = GalaxyLedger::Buffer.read(session_id)
+        entries = GalaxyLedger::Database.query_by_session(session_id)
         entries.size.should eq(0)
+
+        # Clean up
+        FileUtils.rm_rf(session_dir.to_s)
       end
     end
   end

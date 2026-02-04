@@ -17,9 +17,10 @@ describe GalaxyLedger::HooksManager do
       hooks.has_key?("UserPromptSubmit").should be_true
       hooks.has_key?("PostToolUse").should be_true
       hooks.has_key?("Stop").should be_true
-      hooks.has_key?("PreCompact").should be_true
       hooks.has_key?("SessionStart").should be_true
-      hooks.has_key?("SessionEnd").should be_true
+      # PreCompact and SessionEnd were removed in Phase 6.1 (direct DB writes)
+      hooks.has_key?("PreCompact").should be_false
+      hooks.has_key?("SessionEnd").should be_false
     end
 
     it "preserves existing non-ledger hooks" do
