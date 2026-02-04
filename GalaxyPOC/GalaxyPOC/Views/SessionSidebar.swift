@@ -5,8 +5,8 @@ struct SessionSidebar: View {
     @ObservedObject var statusLineService = StatusLineService.shared
 
     var body: some View {
-        List {
-            Section("Sessions") {
+        ScrollView {
+            LazyVStack(spacing: 0) {
                 ForEach(sessionManager.sessions) { session in
                     SessionRow(
                         session: session,
@@ -27,8 +27,7 @@ struct SessionSidebar: View {
                 }
             }
         }
-        .listStyle(.sidebar)
-        .frame(minWidth: 220)  // Slightly wider to accommodate git status
+        .frame(minWidth: 220)
         .onChange(of: sessionManager.sessions.count) { _ in
             // Restart monitoring when sessions change
             statusLineService.startMonitoring(sessions: sessionManager.sessions)
