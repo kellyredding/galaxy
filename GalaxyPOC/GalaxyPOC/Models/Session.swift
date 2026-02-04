@@ -15,6 +15,13 @@ class Session: Identifiable, ObservableObject {
     @Published var hasUnreadBell: Bool = false
     @Published var visualBellActive: Bool = false
 
+    /// Current terminal font size for this session (transient, not persisted)
+    @Published var terminalFontSize: CGFloat {
+        didSet {
+            applyTerminalFontSize()
+        }
+    }
+
     let terminalView: GalaxyTerminalView
     let createdAt: Date
     let workingDirectory: String
@@ -35,6 +42,9 @@ class Session: Identifiable, ObservableObject {
         let dirName = (workingDirectory as NSString).lastPathComponent
         self.name = dirName.isEmpty ? "~" : dirName
 
+        // Initialize terminal font size from settings default
+        self.terminalFontSize = SettingsManager.shared.settings.defaultTerminalFontSize
+
         // Create terminal view with default configuration
         self.terminalView = GalaxyTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
 
@@ -42,13 +52,45 @@ class Session: Identifiable, ObservableObject {
     }
 
     private func configureTerminal() {
-        // Set font
-        if let font = NSFont(name: "SF Mono", size: 13) ?? NSFont(name: "Menlo", size: 13) {
-            terminalView.font = font
-        }
+        // Apply initial font size
+        applyTerminalFontSize()
 
         // Terminal colors are controlled by Claude Code's own settings
         // We don't override them here - let Claude Code manage its appearance
+    }
+
+    /// Apply the current terminal font size to the terminal view
+    private func applyTerminalFontSize() {
+        if let font = NSFont(name: "SF Mono", size: terminalFontSize) ?? NSFont(name: "Menlo", size: terminalFontSize) {
+            terminalView.font = font
+        }
+    }
+
+    /// Increase terminal font size by one step
+    func increaseTerminalFontSize() {
+        let newSize = min(terminalFontSize + AppSettings.terminalFontSizeStep, AppSettings.terminalFontSizeRange.upperBound)
+        terminalFontSize = newSize
+    }
+
+    /// Decrease terminal font size by one step
+    func decreaseTerminalFontSize() {
+        let newSize = max(terminalFontSize - AppSettings.terminalFontSizeStep, AppSettings.terminalFontSizeRange.lowerBound)
+        terminalFontSize = newSize
+    }
+
+    /// Check if terminal font size can be increased
+    var canIncreaseTerminalFontSize: Bool {
+        terminalFontSize < AppSettings.terminalFontSizeRange.upperBound
+    }
+
+    /// Check if terminal font size can be decreased
+    var canDecreaseTerminalFontSize: Bool {
+        terminalFontSize > AppSettings.terminalFontSizeRange.lowerBound
+    }
+
+    /// Reset terminal font size to the default from settings
+    func resetTerminalFontSize() {
+        terminalFontSize = SettingsManager.shared.settings.defaultTerminalFontSize
     }
 
     /// Claude's session ID (UUID string) for --session-id / --resume flags

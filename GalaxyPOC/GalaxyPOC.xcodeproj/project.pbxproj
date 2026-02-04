@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1CHROME1BUILD2FILE34567 /* ChromeFontScaling.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CHROME1A2B3C4D5E6F789 /* ChromeFontScaling.swift */; };
 		21239774CA4778939E3173D4 /* SessionIDGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F3B435264DCD92610024B3A /* SessionIDGenerator.swift */; };
 		292F105BBD71D22049B26499 /* GalaxyTerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7762E064FA44E2E83ED9213F /* GalaxyTerminalView.swift */; };
 		39F805D1D863916C4F09874A /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 1073964FCAD353209A999D96 /* SwiftTerm */; };
@@ -26,6 +27,7 @@
 
 /* Begin PBXFileReference section */
 		03E8CA49CFFD43B40F69A196 /* Session.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Session.swift; sourceTree = "<group>"; };
+		1CHROME1A2B3C4D5E6F789 /* ChromeFontScaling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChromeFontScaling.swift; sourceTree = "<group>"; };
 		247448C70224193CE23BB32D /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		250F5A4BAD11EE41A4E51344 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		2B1B7D35B5D4C74109C71FEC /* SessionSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionSidebar.swift; sourceTree = "<group>"; };
@@ -88,6 +90,7 @@
 		8A41C41A5210CDC374AB07E1 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				1CHROME1A2B3C4D5E6F789 /* ChromeFontScaling.swift */,
 				7762E064FA44E2E83ED9213F /* GalaxyTerminalView.swift */,
 				A60AC35CE99CE6430CC623FF /* SessionRow.swift */,
 				2B1B7D35B5D4C74109C71FEC /* SessionSidebar.swift */,
@@ -189,6 +192,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1CHROME1BUILD2FILE34567 /* ChromeFontScaling.swift in Sources */,
 				603E236D1097E6B3B7B3B159 /* ContentView.swift in Sources */,
 				55B40D3A946CA975D0705AB1 /* GalaxyPOCApp.swift in Sources */,
 				292F105BBD71D22049B26499 /* GalaxyTerminalView.swift in Sources */,

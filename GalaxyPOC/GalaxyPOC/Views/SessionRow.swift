@@ -8,7 +8,10 @@ struct SessionRow: View {
     var onStop: () -> Void   // Stop a running session
     var onClose: () -> Void  // Remove a stopped session from list
 
+    @Environment(\.chromeFontSize) private var chromeFontSize
     @State private var isHovered = false
+
+    private var fontSize: ChromeFontSize { ChromeFontSize(chromeFontSize) }
 
     private var statusInfo: StatusLineService.SessionStatusInfo? {
         statusLineService.statusInfo[session.id]
@@ -26,8 +29,7 @@ struct SessionRow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     // User session ID (human-readable)
                     Text(session.userSessionId)
-                        .font(.system(.caption, design: .monospaced))
-                        .fontWeight(.medium)
+                        .chromeFontMono(size: fontSize.caption2, weight: .medium)
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .foregroundColor(isSelected ? .white : .primary)
@@ -35,13 +37,13 @@ struct SessionRow: View {
                     // Directory name + git status
                     HStack(spacing: 4) {
                         Text(session.name)
-                            .font(.system(size: 10, design: .monospaced))
+                            .chromeFontMono(size: fontSize.caption)
                             .lineLimit(1)
                             .truncationMode(.tail)
 
                         if let info = statusInfo, !info.gitStatusDisplay.isEmpty {
                             Text(info.gitStatusDisplay)
-                                .font(.system(size: 10, design: .monospaced))
+                                .chromeFontMono(size: fontSize.caption)
                                 .foregroundColor(gitStatusColor(info: info, isSelected: isSelected))
                         }
                     }

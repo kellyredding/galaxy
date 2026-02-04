@@ -5,28 +5,30 @@ struct StoppedSessionView: View {
     @ObservedObject var session: Session
     var onResume: () -> Void
 
+    @Environment(\.chromeFontSize) private var chromeFontSize
     @State private var showCopied = false
+
+    private var fontSize: ChromeFontSize { ChromeFontSize(chromeFontSize) }
 
     var body: some View {
         VStack(spacing: 20) {
             // Icon
             Image(systemName: "stop.circle")
-                .font(.system(size: 64))
+                .chromeFont(size: fontSize.iconXLarge)
                 .foregroundColor(.red.opacity(0.7))
 
             // Session info
             VStack(spacing: 8) {
                 Text("Session Stopped")
-                    .font(.title2)
-                    .fontWeight(.semibold)
+                    .chromeFont(size: fontSize.title2, weight: .semibold)
 
                 Text(session.userSessionId)
-                    .font(.system(.title3, design: .monospaced))
+                    .chromeFontMono(size: fontSize.title3)
                     .foregroundColor(.secondary)
 
                 if let exitCode = session.exitCode {
                     Text("Exit code: \(exitCode)")
-                        .font(.caption)
+                        .chromeFont(size: fontSize.caption)
                         .foregroundColor(.secondary)
                 }
             }
@@ -37,7 +39,7 @@ struct StoppedSessionView: View {
             // Resume instructions
             VStack(spacing: 12) {
                 Text("Resume this session")
-                    .font(.headline)
+                    .chromeFont(size: fontSize.headline, weight: .semibold)
 
                 // Resume button
                 Button(action: onResume) {
@@ -45,6 +47,7 @@ struct StoppedSessionView: View {
                         Image(systemName: "play.fill")
                         Text("Resume Session")
                     }
+                    .chromeFont(size: fontSize.body)
                     .padding(.horizontal, 20)
                     .padding(.vertical, 10)
                 }
@@ -52,19 +55,19 @@ struct StoppedSessionView: View {
                 .controlSize(.large)
 
                 Text("or use the CLI:")
-                    .font(.caption)
+                    .chromeFont(size: fontSize.caption)
                     .foregroundColor(.secondary)
 
                 // CLI command with copy button
                 HStack(spacing: 8) {
                     Text(session.resumeCommand)
-                        .font(.system(size: 11, design: .monospaced))
+                        .chromeFontMono(size: fontSize.caption2)
                         .lineLimit(1)
                         .truncationMode(.middle)
 
                     Button(action: copyCommand) {
                         Image(systemName: showCopied ? "checkmark" : "doc.on.doc")
-                            .font(.system(size: 12))
+                            .chromeFont(size: fontSize.iconSmall)
                             .foregroundColor(showCopied ? .green : .secondary)
                     }
                     .buttonStyle(.plain)
