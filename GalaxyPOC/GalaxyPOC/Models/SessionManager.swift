@@ -1,7 +1,6 @@
 import Foundation
 import AppKit
 import SwiftTerm
-import Combine
 
 class SessionManager: ObservableObject {
     // Singleton instance for access from AppDelegate
@@ -21,9 +20,6 @@ class SessionManager: ObservableObject {
 
     // Path to claude binary - detected at init
     let claudePath: String
-
-    // Track subscriptions for session exit observation
-    private var exitObservers: [UUID: AnyCancellable] = [:]
 
     var activeSession: Session? {
         sessions.first { $0.id == activeSessionId }
@@ -133,9 +129,6 @@ class SessionManager: ObservableObject {
 
         // Sessions are kept in sidebar when they exit (no removal)
         // The session's hasExited flag is already set by the process handler
-
-        // Clean up the observer (no longer needed)
-        exitObservers.removeValue(forKey: sessionId)
 
         // Update menu state
         DispatchQueue.main.async {
@@ -277,9 +270,6 @@ class SessionManager: ObservableObject {
 
         NSLog("SessionManager: closeSession called for session %@", sessionId.uuidString)
 
-        // Clean up the observer
-        exitObservers.removeValue(forKey: sessionId)
-
         // Determine next session to select
         var nextActiveId: UUID? = nil
         if sessions.count > 1 {
@@ -299,12 +289,6 @@ class SessionManager: ObservableObject {
         }
 
         NSLog("SessionManager: Session removed, remaining count: %d", sessions.count)
-    }
-
-    func switchToSessionByIndex(_ index: Int) {
-        if index >= 0 && index < sessions.count {
-            activeSessionId = sessions[index].id
-        }
     }
 
     /// Switch to the previous session in the list (wraps around)

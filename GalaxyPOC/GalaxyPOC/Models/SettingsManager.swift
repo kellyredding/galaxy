@@ -185,18 +185,6 @@ class SettingsManager: ObservableObject {
         }
     }
 
-    /// Returns the effective color scheme based on settings and system preference
-    func effectiveColorScheme(systemScheme: ColorScheme) -> ColorScheme {
-        switch settings.themePreference {
-        case .system:
-            return systemScheme
-        case .light:
-            return .light
-        case .dark:
-            return .dark
-        }
-    }
-
     /// Handle terminal bell based on user preference
     func handleBell() {
         let preference = settings.bellPreference
