@@ -1,0 +1,6 @@
+{
+  "description": "PR-based implementation plan - should extract progress from PRs",
+  "expected_count_min": 1,
+  "expected_types": ["implementation_plan"],
+  "should_identify_current_pr": true
+}

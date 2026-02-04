@@ -1,0 +1,3 @@
+While investigating the issue, I discovered that the User#authenticate method is deprecated. The codebase has moved to User#authenticate_with_token which handles both password and token-based authentication.
+
+I also found that the soft_delete concern uses the paranoia gem, not acts_as_paranoid like some other projects. This means deleted records have a deleted_at timestamp rather than a deleted boolean.

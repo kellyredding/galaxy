@@ -1,0 +1,1 @@
+How does the authentication system work? What pattern does it use?

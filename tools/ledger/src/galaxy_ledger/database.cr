@@ -373,7 +373,7 @@ module GalaxyLedger
       def initialize(
         @entry_type : String? = nil,
         @importance : String? = nil,
-        @prefix_match : Bool = true
+        @prefix_match : Bool = true,
       )
       end
     end
@@ -384,7 +384,7 @@ module GalaxyLedger
       limit : Int32 = 50,
       entry_type : String? = nil,
       importance : String? = nil,
-      prefix_match : Bool = true
+      prefix_match : Bool = true,
     ) : Array(LedgerEntry)
       return [] of LedgerEntry if query.strip.empty?
 
@@ -431,7 +431,7 @@ module GalaxyLedger
       limit : Int32 = 50,
       entry_type : String? = nil,
       importance : String? = nil,
-      prefix_match : Bool = true
+      prefix_match : Bool = true,
     ) : Array(LedgerEntry)
       return [] of LedgerEntry if session_id.empty?
       return [] of LedgerEntry if query.strip.empty?
@@ -505,7 +505,7 @@ module GalaxyLedger
     def self.query_recent_filtered(
       limit : Int32 = 100,
       entry_type : String? = nil,
-      importance : String? = nil
+      importance : String? = nil,
     ) : Array(LedgerEntry)
       entries = [] of LedgerEntry
       begin
@@ -639,7 +639,7 @@ module GalaxyLedger
       session_id : String,
       learnings_limit : Int32 = 5,
       file_edits_limit : Int32 = 10,
-      decisions_limit : Int32 = 5
+      decisions_limit : Int32 = 5,
     ) : Tier2Result
       learnings = [] of LedgerEntry
       file_edits = [] of LedgerEntry
@@ -720,7 +720,7 @@ module GalaxyLedger
       tier1_decision_limit : Int32 = 10,
       tier2_learnings_limit : Int32 = 5,
       tier2_file_edits_limit : Int32 = 10,
-      tier2_decisions_limit : Int32 = 5
+      tier2_decisions_limit : Int32 = 5,
     ) : RestorationResult
       tier1 = query_tier1(session_id, tier1_decision_limit)
       tier2 = query_tier2(session_id, tier2_learnings_limit, tier2_file_edits_limit, tier2_decisions_limit)
@@ -748,7 +748,7 @@ module GalaxyLedger
         @content_hash,
         @metadata,
         @importance,
-        @created_at
+        @created_at,
       )
       end
 

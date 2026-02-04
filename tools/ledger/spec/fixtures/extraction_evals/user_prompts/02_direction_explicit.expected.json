@@ -1,0 +1,5 @@
+{
+  "description": "Explicit directions with always/never - should extract 2 directions",
+  "expected_count": 2,
+  "expected_types": ["direction", "direction"]
+}

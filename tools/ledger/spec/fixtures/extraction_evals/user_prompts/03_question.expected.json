@@ -1,0 +1,5 @@
+{
+  "description": "Questions without directions - should extract nothing",
+  "expected_count": 0,
+  "expected_types": []
+}

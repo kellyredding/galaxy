@@ -1,0 +1,5 @@
+{
+  "description": "Architectural learnings about codebase - should extract learnings",
+  "expected_count_min": 2,
+  "expected_types": ["learning"]
+}

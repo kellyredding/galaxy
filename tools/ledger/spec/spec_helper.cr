@@ -8,10 +8,10 @@ SPEC_FIXTURES = Path[__DIR__] / "fixtures"
 # Use a temporary directory for config during tests
 # SPEC_CLAUDE_CONFIG_DIR simulates ~/.claude for testing hooks install/uninstall
 SPEC_CLAUDE_CONFIG_DIR = Path.new(Dir.tempdir) / "galaxy-ledger-test-#{Random.rand(100000)}"
-SPEC_GALAXY_DIR = SPEC_CLAUDE_CONFIG_DIR / "galaxy"
-SPEC_CONFIG_DIR = SPEC_GALAXY_DIR / "ledger"
-SPEC_DATA_DIR = SPEC_GALAXY_DIR / "data"
-SPEC_DATABASE_PATH = SPEC_DATA_DIR / "ledger.db"
+SPEC_GALAXY_DIR        = SPEC_CLAUDE_CONFIG_DIR / "galaxy"
+SPEC_CONFIG_DIR        = SPEC_GALAXY_DIR / "ledger"
+SPEC_DATA_DIR          = SPEC_GALAXY_DIR / "data"
+SPEC_DATABASE_PATH     = SPEC_DATA_DIR / "ledger.db"
 
 # Set all environment variables BEFORE requiring the module
 ENV["GALAXY_CLAUDE_CONFIG_DIR"] = SPEC_CLAUDE_CONFIG_DIR.to_s
@@ -66,9 +66,9 @@ def run_binary(
     output: Process::Redirect::Pipe,
     error: Process::Redirect::Pipe,
     env: {
-      "GALAXY_CLAUDE_CONFIG_DIR"  => SPEC_CLAUDE_CONFIG_DIR.to_s,
-      "GALAXY_LEDGER_CONFIG_DIR"  => SPEC_CONFIG_DIR.to_s,
-      "GALAXY_DIR"                => SPEC_GALAXY_DIR.to_s,
+      "GALAXY_CLAUDE_CONFIG_DIR" => SPEC_CLAUDE_CONFIG_DIR.to_s,
+      "GALAXY_LEDGER_CONFIG_DIR" => SPEC_CONFIG_DIR.to_s,
+      "GALAXY_DIR"               => SPEC_GALAXY_DIR.to_s,
     }
   )
 

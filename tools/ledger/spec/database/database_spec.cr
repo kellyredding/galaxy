@@ -328,7 +328,7 @@ describe GalaxyLedger::Database do
       entries = GalaxyLedger::Database.query_by_session("test-session")
 
       entries.size.should eq(2)
-      entries[0].content.should eq("Second")  # Most recent first
+      entries[0].content.should eq("Second") # Most recent first
       entries[1].content.should eq("First")
     end
 

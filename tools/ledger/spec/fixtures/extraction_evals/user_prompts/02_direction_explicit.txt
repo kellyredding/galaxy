@@ -1,0 +1,1 @@
+Always use trailing commas in multiline arrays and hashes. Never use single quotes for strings.

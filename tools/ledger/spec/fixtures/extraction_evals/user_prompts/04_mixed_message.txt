@@ -1,0 +1,1 @@
+That looks good. For future reference, always add specs when adding new interactions, and prefer using let! for database records in RSpec.

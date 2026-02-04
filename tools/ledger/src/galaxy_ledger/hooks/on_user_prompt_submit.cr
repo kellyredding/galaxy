@@ -11,6 +11,9 @@ module GalaxyLedger
       @prompt : String?
 
       def run
+        # Skip if GALAXY_SKIP_HOOKS is set (prevents recursion from extraction subprocesses)
+        return if ENV["GALAXY_SKIP_HOOKS"]? == "1"
+
         # Parse hook input from stdin
         parse_hook_input
 
@@ -26,19 +29,26 @@ module GalaxyLedger
         session_dir = GalaxyLedger.session_dir(session_id)
         Dir.mkdir_p(session_dir) unless Dir.exists?(session_dir)
 
-        # Buffer the user prompt for potential direction extraction
-        # Actual extraction via Claude CLI happens in Phase 6
-        # For now, we just record that a user prompt was submitted
-        # This allows Phase 6 to process accumulated prompts
-        entry = Buffer::Entry.new(
-          entry_type: "direction",  # Will be classified properly in Phase 6
-          content: prompt,
-          importance: "medium",
-          source: "user",
-          metadata: JSON.parse({"raw_prompt" => true}.to_json)
-        )
+        # Phase 6: Spawn async extraction for user directions
+        # Instead of buffering raw prompts, we extract actual directions/preferences/constraints
+        spawn_extraction_async(session_id, prompt)
+      end
 
-        Buffer.append(session_id, entry)
+      private def spawn_extraction_async(session_id : String, prompt : String)
+        begin
+          binary = Process.executable_path || "galaxy-ledger"
+
+          # Pass the prompt via stdin
+          Process.new(
+            binary,
+            args: ["extract-user", "--session", session_id],
+            input: IO::Memory.new(prompt),
+            output: Process::Redirect::Close,
+            error: Process::Redirect::Close,
+          )
+        rescue
+          # Silently fail - extraction is best-effort
+        end
       end
 
       private def parse_hook_input

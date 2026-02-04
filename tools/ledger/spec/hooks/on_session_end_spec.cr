@@ -1,5 +1,42 @@
 require "../spec_helper"
 
+describe "OnSessionEnd GALAXY_SKIP_HOOKS" do
+  it "returns early when GALAXY_SKIP_HOOKS=1 is set" do
+    ENV["GALAXY_SKIP_HOOKS"] = "1"
+
+    session_id = "skip-hooks-test-#{rand(100000)}"
+    session_dir = GalaxyLedger::SESSIONS_DIR / session_id
+    Dir.mkdir_p(session_dir)
+
+    # Add entry to buffer
+    entry = GalaxyLedger::Buffer::Entry.new(
+      entry_type: "direction",
+      content: "Should not be flushed",
+      importance: "medium",
+      source: "user"
+    )
+    GalaxyLedger::Buffer.append(session_id, entry)
+
+    input = {
+      "session_id"      => session_id,
+      "source"          => "clear",
+      "hook_event_name" => "SessionEnd",
+    }.to_json
+
+    result = run_binary(["on-session-end"], stdin: input)
+    result[:status].should eq(0)
+
+    # Buffer should NOT be flushed (early return)
+    buffer_entries = GalaxyLedger::Buffer.read(session_id)
+    buffer_entries.size.should eq(1)
+
+    # Clean up
+    FileUtils.rm_rf(session_dir.to_s)
+  ensure
+    ENV.delete("GALAXY_SKIP_HOOKS")
+  end
+end
+
 describe GalaxyLedger::Hooks::OnSessionEnd do
   describe "#run" do
     it "flushes buffered entries to SQLite" do

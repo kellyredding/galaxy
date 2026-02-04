@@ -1,5 +1,35 @@
 require "../spec_helper"
 
+describe "OnPostToolUse GALAXY_SKIP_HOOKS" do
+  it "returns early when GALAXY_SKIP_HOOKS=1 is set" do
+    ENV["GALAXY_SKIP_HOOKS"] = "1"
+
+    session_id = "skip-hooks-test-#{rand(100000)}"
+    session_dir = GalaxyLedger::SESSIONS_DIR / session_id
+    Dir.mkdir_p(session_dir)
+
+    input = {
+      "session_id"      => session_id,
+      "tool_name"       => "Read",
+      "tool_input"      => {"file_path" => "/path/to/file.rb"},
+      "tool_response"   => "file contents",
+      "hook_event_name" => "PostToolUse",
+    }.to_json
+
+    result = run_binary(["on-post-tool-use"], stdin: input)
+    result[:status].should eq(0)
+
+    # Buffer should remain empty (early return, no entry created)
+    entries = GalaxyLedger::Buffer.read(session_id)
+    entries.size.should eq(0)
+
+    # Clean up
+    FileUtils.rm_rf(session_dir.to_s)
+  ensure
+    ENV.delete("GALAXY_SKIP_HOOKS")
+  end
+end
+
 describe GalaxyLedger::Hooks::OnPostToolUse do
   describe "#run" do
     describe "with Read tool" do
@@ -12,7 +42,7 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
           "session_id"      => session_id,
           "tool_name"       => "Read",
           "tool_input"      => {"file_path" => "/path/to/some/file.rb"},
-          "tool_result"     => "file contents",
+          "tool_response"   => "file contents",
           "hook_event_name" => "PostToolUse",
         }.to_json
 
@@ -35,7 +65,7 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
           "session_id"      => session_id,
           "tool_name"       => "Read",
           "tool_input"      => {"file_path" => "/home/user/agent-guidelines/ruby-style.md"},
-          "tool_result"     => "guideline contents",
+          "tool_response"   => "guideline contents",
           "hook_event_name" => "PostToolUse",
         }.to_json
 
@@ -57,7 +87,7 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
           "session_id"      => session_id,
           "tool_name"       => "Read",
           "tool_input"      => {"file_path" => "/home/user/docs/rspec-style.md"},
-          "tool_result"     => "style guide",
+          "tool_response"   => "style guide",
           "hook_event_name" => "PostToolUse",
         }.to_json
 
@@ -78,7 +108,7 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
           "session_id"      => session_id,
           "tool_name"       => "Read",
           "tool_input"      => {"file_path" => "/home/user/implementation-plans/feature-x.md"},
-          "tool_result"     => "plan contents",
+          "tool_response"   => "plan contents",
           "hook_event_name" => "PostToolUse",
         }.to_json
 
@@ -99,14 +129,14 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         Dir.mkdir_p(session_dir)
 
         input = {
-          "session_id"      => session_id,
-          "tool_name"       => "Edit",
-          "tool_input"      => {
+          "session_id" => session_id,
+          "tool_name"  => "Edit",
+          "tool_input" => {
             "file_path"  => "/path/to/file.rb",
             "old_string" => "old",
             "new_string" => "new",
           },
-          "tool_result"     => "success",
+          "tool_response"   => "success",
           "hook_event_name" => "PostToolUse",
         }.to_json
 
@@ -128,13 +158,13 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         Dir.mkdir_p(session_dir)
 
         input = {
-          "session_id"      => session_id,
-          "tool_name"       => "Write",
-          "tool_input"      => {
+          "session_id" => session_id,
+          "tool_name"  => "Write",
+          "tool_input" => {
             "file_path" => "/path/to/new_file.rb",
             "content"   => "file content",
           },
-          "tool_result"     => "success",
+          "tool_response"   => "success",
           "hook_event_name" => "PostToolUse",
         }.to_json
 
@@ -156,13 +186,13 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         Dir.mkdir_p(session_dir)
 
         input = {
-          "session_id"      => session_id,
-          "tool_name"       => "Grep",
-          "tool_input"      => {
+          "session_id" => session_id,
+          "tool_name"  => "Grep",
+          "tool_input" => {
             "pattern" => "def authenticate",
             "path"    => "/app/models",
           },
-          "tool_result"     => "matches",
+          "tool_response"   => "matches",
           "hook_event_name" => "PostToolUse",
         }.to_json
 
@@ -184,13 +214,13 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         Dir.mkdir_p(session_dir)
 
         input = {
-          "session_id"      => session_id,
-          "tool_name"       => "Glob",
-          "tool_input"      => {
+          "session_id" => session_id,
+          "tool_name"  => "Glob",
+          "tool_input" => {
             "pattern" => "**/*.rb",
             "path"    => "/app",
           },
-          "tool_result"     => "files",
+          "tool_response"   => "files",
           "hook_event_name" => "PostToolUse",
         }.to_json
 
@@ -217,9 +247,9 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
 
       it "handles missing session_id gracefully" do
         input = {
-          "tool_name"   => "Read",
-          "tool_input"  => {"file_path" => "/path/to/file.rb"},
-          "tool_result" => "contents",
+          "tool_name"     => "Read",
+          "tool_input"    => {"file_path" => "/path/to/file.rb"},
+          "tool_response" => "contents",
         }.to_json
 
         result = run_binary(["on-post-tool-use"], stdin: input)
@@ -232,10 +262,10 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         Dir.mkdir_p(session_dir)
 
         input = {
-          "session_id"  => session_id,
-          "tool_name"   => "UnsupportedTool",
-          "tool_input"  => {"dummy" => "value"},
-          "tool_result" => "result",
+          "session_id"    => session_id,
+          "tool_name"     => "UnsupportedTool",
+          "tool_input"    => {"dummy" => "value"},
+          "tool_response" => "result",
         }.to_json
 
         result = run_binary(["on-post-tool-use"], stdin: input)

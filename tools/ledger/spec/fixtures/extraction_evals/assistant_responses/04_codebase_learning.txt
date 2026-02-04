@@ -1,0 +1,8 @@
+I've analyzed the codebase structure. The application follows a clean architecture pattern:
+
+- All business logic is encapsulated in Interactions (app/interactions/)
+- Jobs use a specific pattern with input, on_perform, and logged_params methods
+- Database queries use distribute_reads for read-only operations to hit replicas
+- The API follows RESTful conventions with versioned endpoints (/api/v1/)
+
+The authentication flow is interesting - it uses a custom middleware that injects the current user into the request context, making it available to all downstream handlers without explicitly passing it.

@@ -1,0 +1,1 @@
+Don't modify the authentication code - it's been audited and any changes need security review. Also, this PR must not exceed 500 lines of changes.

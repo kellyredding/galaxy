@@ -1,0 +1,6 @@
+{
+  "description": "Phased implementation plan with progress markers - should extract progress and decisions",
+  "expected_count_min": 2,
+  "expected_types": ["implementation_plan"],
+  "should_identify_current_phase": true
+}

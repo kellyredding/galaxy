@@ -1,5 +1,39 @@
 require "../spec_helper"
 
+describe "OnSessionStart GALAXY_SKIP_HOOKS" do
+  it "returns early when GALAXY_SKIP_HOOKS=1 is set" do
+    ENV["GALAXY_SKIP_HOOKS"] = "1"
+
+    test_session_id = "skip-hooks-test-#{Random.rand(10000)}"
+    session_dir = GalaxyLedger.session_dir(test_session_id)
+    Dir.mkdir_p(session_dir)
+
+    # Create last exchange file (would normally be displayed)
+    exchange = GalaxyLedger::Exchange::LastExchange.new(
+      user_message: "Test message",
+      full_content: "Test response",
+      assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
+    )
+    GalaxyLedger::Exchange.write(test_session_id, exchange)
+
+    hook_input = {
+      "session_id" => test_session_id,
+      "source"     => "clear",
+    }.to_json
+
+    result = run_binary(["on-session-start"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    # Should return empty output (no terminal display, no hookSpecificOutput)
+    result[:output].strip.should eq("")
+
+    # Clean up
+    FileUtils.rm_rf(session_dir.to_s)
+  ensure
+    ENV.delete("GALAXY_SKIP_HOOKS")
+  end
+end
+
 describe GalaxyLedger::Hooks::OnSessionStart do
   describe "#run" do
     it "creates instance successfully" do

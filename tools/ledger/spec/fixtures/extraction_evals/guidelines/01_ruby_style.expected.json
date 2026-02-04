@@ -1,0 +1,5 @@
+{
+  "description": "Ruby style guidelines - should extract multiple guidelines",
+  "expected_count_min": 4,
+  "expected_types": ["guideline"]
+}

@@ -1,0 +1,6 @@
+{
+  "description": "Decision with clear rationale - should extract decision",
+  "expected_count_min": 1,
+  "expected_types": ["decision"],
+  "should_have_summary": true
+}

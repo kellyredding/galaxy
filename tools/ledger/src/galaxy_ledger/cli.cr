@@ -86,6 +86,12 @@ module GalaxyLedger
         handle_on_session_end_command(rest)
       when "hooks"
         handle_hooks_command(rest)
+      when "extract-user"
+        handle_extract_user_command(rest)
+      when "extract-assistant"
+        handle_extract_assistant_command(rest)
+      when "extract-file"
+        handle_extract_file_command(rest)
       when "version"
         puts "galaxy-ledger #{VERSION}"
       when "help"
@@ -1812,6 +1818,260 @@ module GalaxyLedger
         puts ""
         puts "Run 'galaxy-ledger hooks install' to install missing hooks."
       end
+    end
+
+    # ========================================
+    # Extraction Commands (called by hooks)
+    # ========================================
+
+    private def self.handle_extract_user_command(args : Array(String))
+      if args.first? == "-h" || args.first? == "--help"
+        show_extract_user_help
+        return
+      end
+
+      # Parse args
+      session_id : String? = nil
+      i = 0
+      while i < args.size
+        arg = args[i]
+        if arg == "--session" && i + 1 < args.size
+          session_id = args[i + 1]
+          i += 2
+        else
+          i += 1
+        end
+      end
+
+      unless session_id
+        STDERR.puts "Error: --session is required"
+        exit(1)
+      end
+
+      # Read prompt from stdin
+      prompt = STDIN.gets_to_end
+
+      if prompt.strip.empty?
+        return # Nothing to extract
+      end
+
+      # Run extraction
+      result = Extraction.extract_user_directions(prompt)
+
+      # Buffer any extracted entries
+      if result.extractions.any?
+        entries = result.extractions.select(&.valid?).map do |e|
+          e.to_buffer_entry(source: "user")
+        end
+        Buffer.append_many(session_id, entries)
+        STDERR.puts "[galaxy-ledger] Extracted #{entries.size} user directions for session #{session_id[0, 8]}..."
+      end
+    end
+
+    private def self.show_extract_user_help
+      puts <<-HELP
+      galaxy-ledger extract-user - Extract directions from user prompt
+
+      USAGE:
+        galaxy-ledger extract-user --session SESSION_ID < prompt.txt
+
+      DESCRIPTION:
+        Called by hooks to extract directions, preferences, and constraints
+        from a user prompt using Claude CLI.
+
+        This is an internal command used by the UserPromptSubmit hook.
+      HELP
+    end
+
+    private def self.handle_extract_assistant_command(args : Array(String))
+      if args.first? == "-h" || args.first? == "--help"
+        show_extract_assistant_help
+        return
+      end
+
+      # Parse args
+      session_id : String? = nil
+      input_file : String? = nil
+      i = 0
+      while i < args.size
+        arg = args[i]
+        if arg == "--session" && i + 1 < args.size
+          session_id = args[i + 1]
+          i += 2
+        elsif arg == "--input-file" && i + 1 < args.size
+          input_file = args[i + 1]
+          i += 2
+        else
+          i += 1
+        end
+      end
+
+      unless session_id
+        STDERR.puts "Error: --session is required"
+        exit(1)
+      end
+
+      unless input_file
+        STDERR.puts "Error: --input-file is required"
+        exit(1)
+      end
+
+      # Read input file
+      begin
+        input_json = File.read(input_file)
+        json = JSON.parse(input_json)
+        user_message = json["user_message"]?.try(&.as_s?) || ""
+        assistant_content = json["assistant_content"]?.try(&.as_s?) || ""
+
+        # Clean up temp file
+        File.delete(input_file) if File.exists?(input_file)
+
+        if user_message.strip.empty? || assistant_content.strip.empty?
+          return # Nothing to extract
+        end
+
+        # Run extraction
+        result = Extraction.extract_assistant_learnings(user_message, assistant_content)
+
+        # Buffer any extracted entries
+        if result.extractions.any?
+          entries = result.extractions.select(&.valid?).map do |e|
+            e.to_buffer_entry(source: "assistant")
+          end
+          Buffer.append_many(session_id, entries)
+          STDERR.puts "[galaxy-ledger] Extracted #{entries.size} learnings for session #{session_id[0, 8]}..."
+        end
+
+        # Update last exchange with summary if we got one
+        if summary = result.summary
+          last_exchange = Exchange.read(session_id)
+          if last_exchange
+            # Create updated exchange with summary
+            updated = Exchange::LastExchange.new(
+              user_message: last_exchange.user_message,
+              full_content: last_exchange.full_content,
+              assistant_messages: last_exchange.assistant_messages,
+              user_timestamp: last_exchange.user_timestamp,
+              summary: summary,
+            )
+            Exchange.write(session_id, updated)
+            STDERR.puts "[galaxy-ledger] Updated last exchange with summary"
+          end
+        end
+      rescue ex
+        STDERR.puts "[galaxy-ledger] Extract assistant error: #{ex.message}"
+      end
+    end
+
+    private def self.show_extract_assistant_help
+      puts <<-HELP
+      galaxy-ledger extract-assistant - Extract learnings from assistant response
+
+      USAGE:
+        galaxy-ledger extract-assistant --session SESSION_ID --input-file FILE
+
+      DESCRIPTION:
+        Called by hooks to extract learnings, decisions, and discoveries
+        from an assistant response using Claude CLI.
+
+        This is an internal command used by the Stop hook.
+      HELP
+    end
+
+    private def self.handle_extract_file_command(args : Array(String))
+      if args.first? == "-h" || args.first? == "--help"
+        show_extract_file_help
+        return
+      end
+
+      # Parse args
+      session_id : String? = nil
+      extraction_type : String? = nil
+      file_path : String? = nil
+      i = 0
+      while i < args.size
+        arg = args[i]
+        if arg == "--session" && i + 1 < args.size
+          session_id = args[i + 1]
+          i += 2
+        elsif arg == "--type" && i + 1 < args.size
+          extraction_type = args[i + 1]
+          i += 2
+        elsif arg == "--path" && i + 1 < args.size
+          file_path = args[i + 1]
+          i += 2
+        else
+          i += 1
+        end
+      end
+
+      unless session_id
+        STDERR.puts "Error: --session is required"
+        exit(1)
+      end
+
+      unless extraction_type
+        STDERR.puts "Error: --type is required"
+        exit(1)
+      end
+
+      unless file_path
+        STDERR.puts "Error: --path is required"
+        exit(1)
+      end
+
+      # Read content from stdin
+      content = STDIN.gets_to_end
+
+      if content.strip.empty?
+        return # Nothing to extract
+      end
+
+      # Run appropriate extraction
+      result = case extraction_type
+               when "guideline"
+                 Extraction.extract_guidelines(file_path, content)
+               when "implementation_plan"
+                 Extraction.extract_implementation_plan(file_path, content)
+               else
+                 STDERR.puts "Error: Unknown extraction type '#{extraction_type}'"
+                 exit(1)
+               end
+
+      # Buffer any extracted entries
+      if result.extractions.any?
+        entries = result.extractions.select(&.valid?).map do |e|
+          # Add file path to metadata
+          metadata = JSON.parse({"source_file" => file_path}.to_json)
+          Buffer::Entry.new(
+            entry_type: e.entry_type,
+            content: e.content,
+            importance: e.importance,
+            metadata: metadata,
+          )
+        end
+        Buffer.append_many(session_id, entries)
+        STDERR.puts "[galaxy-ledger] Extracted #{entries.size} #{extraction_type} entries from #{File.basename(file_path)}"
+      end
+    end
+
+    private def self.show_extract_file_help
+      puts <<-HELP
+      galaxy-ledger extract-file - Extract from guideline/implementation plan
+
+      USAGE:
+        galaxy-ledger extract-file --session SESSION_ID --type TYPE --path PATH < content
+
+      DESCRIPTION:
+        Called by hooks to extract rules or context from special files
+        using Claude CLI.
+
+        This is an internal command used by the PostToolUse hook.
+
+      TYPES:
+        guideline           Extract coding guidelines and rules
+        implementation_plan Extract project context and progress
+      HELP
     end
   end
 end

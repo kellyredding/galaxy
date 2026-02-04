@@ -1,0 +1,6 @@
+{
+  "description": "Explicit constraints - should extract constraints",
+  "expected_count_min": 1,
+  "expected_count_max": 2,
+  "expected_types": ["constraint"]
+}

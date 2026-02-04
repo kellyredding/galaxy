@@ -11,6 +11,9 @@ module GalaxyLedger
       @source : String?
 
       def run
+        # Skip if GALAXY_SKIP_HOOKS is set (prevents recursion from extraction subprocesses)
+        return if ENV["GALAXY_SKIP_HOOKS"]? == "1"
+
         # Parse hook input from stdin
         parse_hook_input
 

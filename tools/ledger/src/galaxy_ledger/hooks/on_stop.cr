@@ -14,6 +14,9 @@ module GalaxyLedger
       @stop_hook_active : Bool = false
 
       def run
+        # Skip if GALAXY_SKIP_HOOKS is set (prevents recursion from extraction subprocesses)
+        return if ENV["GALAXY_SKIP_HOOKS"]? == "1"
+
         # Parse hook input from stdin
         parse_hook_input
 
@@ -38,8 +41,8 @@ module GalaxyLedger
           puts warning
         end
 
-        # TODO Phase 6: Spawn async extraction process here
-        # spawn_extraction_process
+        # Phase 6: Spawn async extraction process for learnings/decisions/summary
+        spawn_extraction_async
       end
 
       private def parse_hook_input
@@ -135,6 +138,49 @@ module GalaxyLedger
         lines << "🚨 Context at #{percentage.round.to_i}%. Please /clear now."
         lines << "   Auto-compact will trigger at 95% and may lose important context."
         lines.join("\n")
+      end
+
+      private def spawn_extraction_async
+        session_id = @session_id
+        transcript_path = @transcript_path
+
+        return unless session_id && transcript_path
+
+        # Check if extraction is enabled in config
+        config = Config.load
+        return unless config.extraction.on_stop
+
+        # Read the last exchange that was just captured
+        last_exchange = Exchange.read(session_id)
+        return unless last_exchange
+
+        user_message = last_exchange.user_message
+        assistant_content = last_exchange.full_content
+
+        return if user_message.strip.empty? || assistant_content.strip.empty?
+
+        # Spawn async extraction process
+        begin
+          binary = Process.executable_path || "galaxy-ledger"
+
+          # Pass the content via a temp file to avoid stdin issues with large content
+          temp_file = File.tempfile("extraction", ".json")
+          temp_file.puts({
+            "user_message"      => user_message,
+            "assistant_content" => assistant_content,
+          }.to_json)
+          temp_file.close
+
+          Process.new(
+            binary,
+            args: ["extract-assistant", "--session", session_id, "--input-file", temp_file.path],
+            input: Process::Redirect::Close,
+            output: Process::Redirect::Close,
+            error: Process::Redirect::Close,
+          )
+        rescue
+          # Silently fail - extraction is best-effort
+        end
       end
     end
   end

@@ -1,0 +1,6 @@
+{
+  "description": "Mixed acknowledgment with durable directions - should extract directions only",
+  "expected_count_min": 1,
+  "expected_count_max": 2,
+  "expected_types": ["direction", "preference"]
+}

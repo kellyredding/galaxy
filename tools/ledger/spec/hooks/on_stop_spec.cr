@@ -1,5 +1,40 @@
 require "../spec_helper"
 
+describe "OnStop GALAXY_SKIP_HOOKS" do
+  it "returns early when GALAXY_SKIP_HOOKS=1 is set" do
+    ENV["GALAXY_SKIP_HOOKS"] = "1"
+
+    test_session_id = "skip-hooks-test-#{Random.rand(10000)}"
+    session_dir = GalaxyLedger.session_dir(test_session_id)
+    Dir.mkdir_p(session_dir)
+
+    # Create test transcript file
+    transcript_file = File.tempfile("transcript", ".jsonl")
+    transcript_file.print(%|{"type": "user", "timestamp": "2026-02-01T10:00:00Z", "message": {"role": "user", "content": "Test"}}\n|)
+    transcript_file.print(%|{"type": "assistant", "timestamp": "2026-02-01T10:01:00Z", "message": {"role": "assistant", "content": "Response"}}\n|)
+    transcript_file.close
+
+    hook_input = {
+      "session_id"       => test_session_id,
+      "transcript_path"  => transcript_file.path,
+      "stop_hook_active" => false,
+    }.to_json
+
+    result = run_binary(["on-stop"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    # Exchange file should NOT be created (early return)
+    exchange_file = session_dir / GalaxyLedger::LEDGER_LAST_EXCHANGE_FILENAME
+    File.exists?(exchange_file).should eq(false)
+
+    # Clean up
+    File.delete(transcript_file.path)
+    FileUtils.rm_rf(session_dir.to_s)
+  ensure
+    ENV.delete("GALAXY_SKIP_HOOKS")
+  end
+end
+
 describe GalaxyLedger::Hooks::OnStop do
   describe "#run" do
     it "creates instance successfully" do

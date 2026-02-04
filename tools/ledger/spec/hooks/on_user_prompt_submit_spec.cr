@@ -1,8 +1,35 @@
 require "../spec_helper"
 
+describe "OnUserPromptSubmit GALAXY_SKIP_HOOKS" do
+  it "returns early when GALAXY_SKIP_HOOKS=1 is set" do
+    ENV["GALAXY_SKIP_HOOKS"] = "1"
+
+    session_id = "skip-hooks-test-#{rand(100000)}"
+
+    input = {
+      "session_id"      => session_id,
+      "prompt"          => "Always use trailing commas in multiline structures",
+      "hook_event_name" => "UserPromptSubmit",
+    }.to_json
+
+    result = run_binary(["on-user-prompt-submit"], stdin: input)
+    result[:status].should eq(0)
+
+    # Session folder should NOT be created (early return)
+    session_dir = GalaxyLedger::SESSIONS_DIR / session_id
+    Dir.exists?(session_dir).should eq(false)
+  ensure
+    ENV.delete("GALAXY_SKIP_HOOKS")
+  end
+end
+
 describe GalaxyLedger::Hooks::OnUserPromptSubmit do
   describe "#run" do
-    it "buffers user prompts as direction entries" do
+    # Phase 6: on-user-prompt-submit now spawns async extraction
+    # The hook itself doesn't buffer - it spawns a subprocess that calls Claude CLI
+    # These tests verify the hook runs without error and spawns correctly
+
+    it "runs without error for valid prompts" do
       session_id = "user-prompt-test-#{rand(100000)}"
       session_dir = GalaxyLedger::SESSIONS_DIR / session_id
       Dir.mkdir_p(session_dir)
@@ -16,12 +43,8 @@ describe GalaxyLedger::Hooks::OnUserPromptSubmit do
       result = run_binary(["on-user-prompt-submit"], stdin: input)
       result[:status].should eq(0)
 
-      entries = GalaxyLedger::Buffer.read(session_id)
-      entries.size.should eq(1)
-      entries.first.entry_type.should eq("direction")
-      entries.first.content.should eq("Always use trailing commas in multiline structures")
-      entries.first.source.should eq("user")
-      entries.first.importance.should eq("medium")
+      # Session folder should be created
+      Dir.exists?(session_dir).should be_true
     end
 
     it "skips empty prompts" do
@@ -38,6 +61,7 @@ describe GalaxyLedger::Hooks::OnUserPromptSubmit do
       result = run_binary(["on-user-prompt-submit"], stdin: input)
       result[:status].should eq(0)
 
+      # Buffer should remain empty (no extraction spawned for empty prompt)
       entries = GalaxyLedger::Buffer.read(session_id)
       entries.size.should eq(0)
     end
@@ -77,26 +101,28 @@ describe GalaxyLedger::Hooks::OnUserPromptSubmit do
         result[:status].should eq(0)
       end
 
+      # Buffer should remain empty (no extraction for short prompts)
       entries = GalaxyLedger::Buffer.read(session_id)
       entries.size.should eq(0)
     end
 
-    it "accepts prompts with exactly 10 characters" do
+    it "accepts prompts with exactly 10 characters and spawns extraction" do
       session_id = "user-prompt-test-#{rand(100000)}"
       session_dir = GalaxyLedger::SESSIONS_DIR / session_id
       Dir.mkdir_p(session_dir)
 
       input = {
         "session_id"      => session_id,
-        "prompt"          => "1234567890",  # Exactly 10 chars
+        "prompt"          => "1234567890", # Exactly 10 chars
         "hook_event_name" => "UserPromptSubmit",
       }.to_json
 
       result = run_binary(["on-user-prompt-submit"], stdin: input)
       result[:status].should eq(0)
 
-      entries = GalaxyLedger::Buffer.read(session_id)
-      entries.size.should eq(1)
+      # Hook runs without error - extraction happens async
+      # We can't easily verify the subprocess was spawned in unit tests
+      # The integration/eval tests will verify actual extraction
     end
 
     it "creates session folder if it doesn't exist" do
@@ -117,9 +143,6 @@ describe GalaxyLedger::Hooks::OnUserPromptSubmit do
 
       # Session dir should now exist
       Dir.exists?(session_dir).should be_true
-
-      entries = GalaxyLedger::Buffer.read(session_id)
-      entries.size.should eq(1)
     end
 
     describe "with missing or invalid input" do

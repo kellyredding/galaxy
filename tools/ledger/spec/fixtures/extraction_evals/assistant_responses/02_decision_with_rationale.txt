@@ -1,0 +1,12 @@
+I've implemented JWT authentication for the API. I chose JWT over session-based authentication because:
+
+1. The API is stateless and needs to scale horizontally
+2. Mobile clients will be consuming this API
+3. We need to support token refresh for long-lived sessions
+
+I set the token expiry to 15 minutes with a separate refresh token that lasts 7 days. The refresh token is stored in an httpOnly cookie for security.
+
+Files modified:
+- app/controllers/api/auth_controller.rb
+- app/models/user.rb
+- config/initializers/jwt.rb

@@ -10,6 +10,9 @@ module GalaxyLedger
       @session_id : String?
 
       def run
+        # Skip if GALAXY_SKIP_HOOKS is set (prevents recursion from extraction subprocesses)
+        return if ENV["GALAXY_SKIP_HOOKS"]? == "1"
+
         # Parse hook input from stdin to get session_id
         parse_hook_input
 

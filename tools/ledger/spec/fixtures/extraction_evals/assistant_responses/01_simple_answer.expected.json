@@ -1,0 +1,5 @@
+{
+  "description": "Simple factual answer - minimal or no extractions",
+  "expected_count_max": 1,
+  "expected_types": []
+}
