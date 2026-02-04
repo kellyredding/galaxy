@@ -3,6 +3,12 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject var sessionManager: SessionManager
 
+    /// The currently active session (for terminal font control)
+    private var activeSession: Session? {
+        guard let activeId = sessionManager.activeSessionId else { return nil }
+        return sessionManager.sessions.first { $0.id == activeId }
+    }
+
     var body: some View {
         NavigationSplitView {
             SessionSidebar()
@@ -19,20 +25,25 @@ struct ContentView: View {
 }
 
 struct EmptyStateView: View {
+    @Environment(\.chromeFontSize) private var chromeFontSize
+
+    private var fontSize: ChromeFontSize { ChromeFontSize(chromeFontSize) }
+
     var body: some View {
         VStack(spacing: 16) {
             Image(systemName: "terminal")
-                .font(.system(size: 48))
+                .chromeFont(size: fontSize.iconLarge)
                 .foregroundColor(.secondary)
 
             Text("No Sessions")
-                .font(.title2)
+                .chromeFont(size: fontSize.title2)
 
             Text("Run `galaxy` from any directory to start a session")
+                .chromeFont(size: fontSize.body)
                 .foregroundColor(.secondary)
 
             Text("cd ~/projects/my-app && galaxy")
-                .font(.system(.body, design: .monospaced))
+                .chromeFontMono(size: fontSize.body)
                 .padding(8)
                 .background(Color(.windowBackgroundColor))
                 .cornerRadius(4)

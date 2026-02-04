@@ -7,12 +7,19 @@ struct GalaxyPOCApp: App {
     @StateObject private var settingsManager = SettingsManager.shared
     @Environment(\.colorScheme) var systemColorScheme
 
+    /// The currently active session (for menu commands)
+    private var activeSession: Session? {
+        guard let activeId = sessionManager.activeSessionId else { return nil }
+        return sessionManager.sessions.first { $0.id == activeId }
+    }
+
     var body: some Scene {
         // Use Window (not WindowGroup) for single-window app
         Window("Galaxy", id: "main") {
             ContentView()
                 .environmentObject(sessionManager)
                 .environmentObject(settingsManager)
+                .environment(\.chromeFontSize, settingsManager.settings.chromeFontSize)
                 .preferredColorScheme(preferredScheme)
         }
         .windowStyle(.automatic)
@@ -34,6 +41,60 @@ struct GalaxyPOCApp: App {
                         .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
                     }
                 }
+            }
+
+            // Add font size controls to the existing View menu
+            CommandGroup(after: .toolbar) {
+                Divider()
+
+                // Terminal font size
+                Button("Default Terminal Font Size") {
+                    activeSession?.resetTerminalFontSize()
+                }
+                .keyboardShortcut("0", modifiers: .command)
+                .disabled(activeSession == nil || activeSession?.hasExited == true)
+
+                Button("Bigger") {
+                    activeSession?.increaseTerminalFontSize()
+                }
+                .keyboardShortcut("=", modifiers: .command)
+                .disabled(activeSession == nil || activeSession?.hasExited == true || activeSession?.canIncreaseTerminalFontSize == false)
+
+                Button("Smaller") {
+                    activeSession?.decreaseTerminalFontSize()
+                }
+                .keyboardShortcut("-", modifiers: .command)
+                .disabled(activeSession == nil || activeSession?.hasExited == true || activeSession?.canDecreaseTerminalFontSize == false)
+
+                Divider()
+
+                // Chrome font size
+                Button("Default Chrome Font Size") {
+                    settingsManager.settings.chromeFontSize = 13.0
+                }
+                .keyboardShortcut("0", modifiers: [.command, .shift])
+
+                Button("Bigger") {
+                    let newSize = min(
+                        settingsManager.settings.chromeFontSize + AppSettings.chromeFontSizeStep,
+                        AppSettings.chromeFontSizeRange.upperBound
+                    )
+                    settingsManager.settings.chromeFontSize = newSize
+                }
+                .keyboardShortcut("=", modifiers: [.command, .shift])
+                .disabled(settingsManager.settings.chromeFontSize >= AppSettings.chromeFontSizeRange.upperBound)
+
+                Button("Smaller") {
+                    let newSize = max(
+                        settingsManager.settings.chromeFontSize - AppSettings.chromeFontSizeStep,
+                        AppSettings.chromeFontSizeRange.lowerBound
+                    )
+                    settingsManager.settings.chromeFontSize = newSize
+                }
+                .keyboardShortcut("-", modifiers: [.command, .shift])
+                .disabled(settingsManager.settings.chromeFontSize <= AppSettings.chromeFontSizeRange.lowerBound)
+
+                Divider()
             }
         }
 

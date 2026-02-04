@@ -64,6 +64,16 @@ struct AppSettings: Codable {
     var bellPreference: BellPreference = .system
     var showBellBadge: Bool = true
 
+    // Font size settings
+    var chromeFontSize: CGFloat = 13.0  // Base font size for app chrome (sidebar, labels, etc.)
+    var defaultTerminalFontSize: CGFloat = 13.0  // Default font size for new terminal sessions
+
+    // Font size constraints
+    static let chromeFontSizeRange: ClosedRange<CGFloat> = 8...24
+    static let chromeFontSizeStep: CGFloat = 2
+    static let terminalFontSizeRange: ClosedRange<CGFloat> = 10...24
+    static let terminalFontSizeStep: CGFloat = 1
+
     static let `default` = AppSettings()
 
     // Custom decoder to handle missing keys gracefully when adding new settings
@@ -72,6 +82,8 @@ struct AppSettings: Codable {
         themePreference = try container.decodeIfPresent(ThemePreference.self, forKey: .themePreference) ?? .system
         bellPreference = try container.decodeIfPresent(BellPreference.self, forKey: .bellPreference) ?? .system
         showBellBadge = try container.decodeIfPresent(Bool.self, forKey: .showBellBadge) ?? true
+        chromeFontSize = try container.decodeIfPresent(CGFloat.self, forKey: .chromeFontSize) ?? 13.0
+        defaultTerminalFontSize = try container.decodeIfPresent(CGFloat.self, forKey: .defaultTerminalFontSize) ?? 13.0
     }
 
     init() {

@@ -51,9 +51,31 @@ struct SettingsView: View {
             } header: {
                 Text("Bell")
             }
+
+            Section {
+                HStack {
+                    Text("Default Terminal Font Size")
+                    Spacer()
+                    Stepper(
+                        value: $settingsManager.settings.defaultTerminalFontSize,
+                        in: AppSettings.terminalFontSizeRange,
+                        step: AppSettings.terminalFontSizeStep
+                    ) {
+                        Text("\(Int(settingsManager.settings.defaultTerminalFontSize)) pt")
+                            .font(.system(.body, design: .monospaced))
+                            .frame(width: 50, alignment: .trailing)
+                    }
+                }
+
+                Text("New sessions will start with this font size. Each session can be adjusted individually.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } header: {
+                Text("Terminal")
+            }
         }
         .formStyle(.grouped)
-        .frame(minWidth: 450, minHeight: 250)
+        .frame(minWidth: 450, minHeight: 300)
         .fixedSize(horizontal: false, vertical: true)
     }
 

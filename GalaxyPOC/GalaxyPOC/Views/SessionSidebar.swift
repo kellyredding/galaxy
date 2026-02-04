@@ -5,24 +5,26 @@ struct SessionSidebar: View {
     @ObservedObject var statusLineService = StatusLineService.shared
 
     var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 0) {
-                ForEach(sessionManager.sessions) { session in
-                    SessionRow(
-                        session: session,
-                        statusLineService: statusLineService,
-                        isSelected: session.id == sessionManager.activeSessionId,
-                        isWindowFocused: sessionManager.isWindowFocused,
-                        onStop: {
-                            sessionManager.stopSession(sessionId: session.id)
-                        },
-                        onClose: {
-                            sessionManager.closeSession(sessionId: session.id)
+        VStack(spacing: 0) {
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(sessionManager.sessions) { session in
+                        SessionRow(
+                            session: session,
+                            statusLineService: statusLineService,
+                            isSelected: session.id == sessionManager.activeSessionId,
+                            isWindowFocused: sessionManager.isWindowFocused,
+                            onStop: {
+                                sessionManager.stopSession(sessionId: session.id)
+                            },
+                            onClose: {
+                                sessionManager.closeSession(sessionId: session.id)
+                            }
+                        )
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            sessionManager.switchTo(sessionId: session.id)
                         }
-                    )
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        sessionManager.switchTo(sessionId: session.id)
                     }
                 }
             }
