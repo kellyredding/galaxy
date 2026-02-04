@@ -79,6 +79,33 @@ struct GalaxyPOCApp: App {
 
                 Divider()
 
+                // Session switching - ⌘j/k (vim-style) and ⌘↑/↓ (arrow-style)
+                Button("Previous Session") {
+                    sessionManager.switchToPreviousSession()
+                }
+                .keyboardShortcut("k", modifiers: .command)
+                .disabled(sessionManager.sessions.count < 2)
+
+                Button("Previous Session") {
+                    sessionManager.switchToPreviousSession()
+                }
+                .keyboardShortcut(.upArrow, modifiers: .command)
+                .disabled(sessionManager.sessions.count < 2)
+
+                Button("Next Session") {
+                    sessionManager.switchToNextSession()
+                }
+                .keyboardShortcut("j", modifiers: .command)
+                .disabled(sessionManager.sessions.count < 2)
+
+                Button("Next Session") {
+                    sessionManager.switchToNextSession()
+                }
+                .keyboardShortcut(.downArrow, modifiers: .command)
+                .disabled(sessionManager.sessions.count < 2)
+
+                Divider()
+
                 // Terminal font size
                 Button("Default Terminal Font Size") {
                     activeSession?.resetTerminalFontSize()

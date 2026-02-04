@@ -307,6 +307,26 @@ class SessionManager: ObservableObject {
         }
     }
 
+    /// Switch to the previous session in the list (wraps around)
+    func switchToPreviousSession() {
+        guard sessions.count > 1 else { return }
+        guard let currentId = activeSessionId,
+              let currentIndex = sessions.firstIndex(where: { $0.id == currentId }) else { return }
+
+        let previousIndex = currentIndex > 0 ? currentIndex - 1 : sessions.count - 1
+        switchTo(sessionId: sessions[previousIndex].id)
+    }
+
+    /// Switch to the next session in the list (wraps around)
+    func switchToNextSession() {
+        guard sessions.count > 1 else { return }
+        guard let currentId = activeSessionId,
+              let currentIndex = sessions.firstIndex(where: { $0.id == currentId }) else { return }
+
+        let nextIndex = currentIndex < sessions.count - 1 ? currentIndex + 1 : 0
+        switchTo(sessionId: sessions[nextIndex].id)
+    }
+
     /// Trigger visual bell with 3 flashes, each shorter than the last
     private func triggerVisualBell(for session: Session) {
         // Flash durations: 3 flashes at 375ms each
