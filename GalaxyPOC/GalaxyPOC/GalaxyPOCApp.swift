@@ -41,6 +41,16 @@ struct GalaxyPOCApp: App {
                         .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
                     }
                 }
+
+                // Resume: only show when active session is stopped
+                // This way ⌘R passes through to terminal when session is running
+                if sessionManager.activeSessionCanResume, let active = activeSession {
+                    Divider()
+                    Button("Resume Session") {
+                        sessionManager.resumeSession(sessionId: active.id)
+                    }
+                    .keyboardShortcut("r", modifiers: .command)
+                }
             }
 
             // Add font size controls to the existing View menu
