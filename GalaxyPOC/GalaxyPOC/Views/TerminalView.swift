@@ -13,8 +13,12 @@ struct FocusableTerminalView: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: TerminalHostView, context: Context) {
-        // Update session reference for drag-drop state checking
+        // Update session reference and active state for drag-drop filtering
         nsView.session = session
+        nsView.isActive = isActive  // This triggers updateDragRegistration via didSet
+
+        // Also update drag registration when session state changes (e.g., session stopped)
+        nsView.refreshDragRegistration()
 
         if isActive {
             nsView.requestFocus()
@@ -26,6 +30,14 @@ struct FocusableTerminalView: NSViewRepresentable {
 class TerminalHostView: NSView {
     let terminalView: LocalProcessTerminalView
     var session: Session
+    // Track if this is the active session - controls drag-drop registration
+    var isActive: Bool = false {
+        didSet {
+            if isActive != oldValue {
+                updateDragRegistration()
+            }
+        }
+    }
     private var isSetUp = false
 
     // Drag highlight overlay (drawn on top of terminal)
@@ -43,9 +55,22 @@ class TerminalHostView: NSView {
         self.session = session
         super.init(frame: .zero)
         wantsLayer = true
+        // Note: Don't register for drags here - done dynamically via updateDragRegistration()
+    }
 
-        // Register for file URL drags
-        registerForDraggedTypes([.fileURL])
+    /// Register or unregister for drag types based on active state.
+    /// Only the active session should be a drop target.
+    private func updateDragRegistration() {
+        if isActive && session.isRunning && !session.hasExited {
+            registerForDraggedTypes([.fileURL])
+        } else {
+            unregisterDraggedTypes()
+        }
+    }
+
+    /// Called from updateNSView to refresh drag registration when session state changes
+    func refreshDragRegistration() {
+        updateDragRegistration()
     }
 
     required init?(coder: NSCoder) {
@@ -119,9 +144,9 @@ class TerminalHostView: NSView {
 
     // MARK: - Drag and Drop
 
-    /// Check if the session can accept drops (must be running)
+    /// Check if the session can accept drops (must be running AND active)
     private var canAcceptDrop: Bool {
-        return session.isRunning && !session.hasExited
+        return isActive && session.isRunning && !session.hasExited
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
@@ -173,6 +198,10 @@ class TerminalHostView: NSView {
             return false
         }
 
+        // Focus the window and activate the app when a file is dropped
+        NSApp.activate(ignoringOtherApps: true)
+        window?.makeKeyAndOrderFront(nil)
+
         // Extract file URLs from the pasteboard
         guard let urls = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [
             .urlReadingFileURLsOnly: true
@@ -191,12 +220,10 @@ class TerminalHostView: NSView {
             }
         }
 
-        NSLog("TerminalHostView: performDragOperation called with %d URLs (%d unique)", urls.count, uniqueUrls.count)
-
-        // Build the text to insert: @'/escaped/path' for each file
+        // Build the text to insert: @'/escaped/path' for each file, with trailing space
         let pathsText = uniqueUrls.map { url -> String in
             return "@" + escapePathForShell(url.path)
-        }.joined(separator: " ")
+        }.joined(separator: " ") + " "
 
         // Send to terminal with bracketed paste mode
         sendTextToTerminal(pathsText, asPaste: true)
