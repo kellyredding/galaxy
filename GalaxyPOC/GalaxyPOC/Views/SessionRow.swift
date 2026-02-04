@@ -15,7 +15,7 @@ struct SessionRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             // Status indicator
             Circle()
                 .fill(statusColor)
@@ -29,6 +29,7 @@ struct SessionRow: View {
                         .font(.system(.caption, design: .monospaced))
                         .fontWeight(.medium)
                         .lineLimit(1)
+                        .truncationMode(.tail)
                         .foregroundColor(isSelected ? .white : .primary)
 
                     // Directory name + git status
@@ -36,6 +37,7 @@ struct SessionRow: View {
                         Text(session.name)
                             .font(.system(size: 10, design: .monospaced))
                             .lineLimit(1)
+                            .truncationMode(.tail)
 
                         if let info = statusInfo, !info.gitStatusDisplay.isEmpty {
                             Text(info.gitStatusDisplay)
@@ -55,11 +57,27 @@ struct SessionRow: View {
                     .offset(x: -10, y: -2)  // Tight to top-left corner
                     .opacity(session.hasUnreadBell ? 1 : 0)
             }
+        }
+        .padding(.vertical, 6)
+        .padding(.leading, 4)
+        .padding(.trailing, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .clipped()
+        .background(
+            ZStack {
+                // Base selection background (full-width, no rounded corners)
+                Rectangle()
+                    .fill(isSelected ? Color.accentColor : Color.clear)
 
-            Spacer()
-
-            // Hover button - different action based on session state
-            // Both buttons are white and larger for consistency and visibility
+                // Visual bell pulse overlay (only for selected session)
+                if isSelected && session.visualBellActive {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.4))
+                }
+            }
+        )
+        .overlay(alignment: .trailing) {
+            // Hover buttons float over content on the right
             if isHovered {
                 if session.hasExited {
                     // Stopped session: show Close button to remove from list
@@ -71,6 +89,7 @@ struct SessionRow: View {
                     .buttonStyle(.plain)
                     .help("Remove session")
                     .transition(.opacity)
+                    .padding(.trailing, 2)
                 } else {
                     // Running session: show Stop button
                     Button(action: onStop) {
@@ -81,24 +100,10 @@ struct SessionRow: View {
                     .buttonStyle(.plain)
                     .help("Stop session")
                     .transition(.opacity)
+                    .padding(.trailing, 2)
                 }
             }
         }
-        .padding(.vertical, 6)
-        .padding(.horizontal, 8)
-        .background(
-            ZStack {
-                // Base selection background
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(isSelected ? Color.accentColor : Color.clear)
-
-                // Visual bell pulse overlay (only for selected session)
-                if isSelected && session.visualBellActive {
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(Color.white.opacity(0.4))
-                }
-            }
-        )
         .animation(.easeOut(duration: 0.5), value: session.visualBellActive)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.15)) {
