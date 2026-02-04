@@ -3,11 +3,12 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 77;
+	objectVersion = 56;
 	objects = {
 
 /* Begin PBXBuildFile section */
 		21239774CA4778939E3173D4 /* SessionIDGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F3B435264DCD92610024B3A /* SessionIDGenerator.swift */; };
+		292F105BBD71D22049B26499 /* GalaxyTerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7762E064FA44E2E83ED9213F /* GalaxyTerminalView.swift */; };
 		39F805D1D863916C4F09874A /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 1073964FCAD353209A999D96 /* SwiftTerm */; };
 		55B40D3A946CA975D0705AB1 /* GalaxyPOCApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72EC4E43716950A0BE37D77C /* GalaxyPOCApp.swift */; };
 		5E5DFFA81979867CB14EE9B4 /* SessionSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B1B7D35B5D4C74109C71FEC /* SessionSidebar.swift */; };
@@ -32,6 +33,7 @@
 		51B043580E281E4FEDD4B7C1 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		5826E9442A7BE9F83CBB048F /* StatusLineService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusLineService.swift; sourceTree = "<group>"; };
 		72EC4E43716950A0BE37D77C /* GalaxyPOCApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxyPOCApp.swift; sourceTree = "<group>"; };
+		7762E064FA44E2E83ED9213F /* GalaxyTerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxyTerminalView.swift; sourceTree = "<group>"; };
 		7F3B435264DCD92610024B3A /* SessionIDGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionIDGenerator.swift; sourceTree = "<group>"; };
 		852ED927CCD3E05ADBEE9191 /* SettingsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsManager.swift; sourceTree = "<group>"; };
 		8B20954B03FC9D94E6B00BA4 /* StoppedSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoppedSessionView.swift; sourceTree = "<group>"; };
@@ -86,6 +88,7 @@
 		8A41C41A5210CDC374AB07E1 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				7762E064FA44E2E83ED9213F /* GalaxyTerminalView.swift */,
 				A60AC35CE99CE6430CC623FF /* SessionRow.swift */,
 				2B1B7D35B5D4C74109C71FEC /* SessionSidebar.swift */,
 				51B043580E281E4FEDD4B7C1 /* SettingsView.swift */,
@@ -188,6 +191,7 @@
 			files = (
 				603E236D1097E6B3B7B3B159 /* ContentView.swift in Sources */,
 				55B40D3A946CA975D0705AB1 /* GalaxyPOCApp.swift in Sources */,
+				292F105BBD71D22049B26499 /* GalaxyTerminalView.swift in Sources */,
 				8B72EA39ED013A00DB1BCDD8 /* Session.swift in Sources */,
 				21239774CA4778939E3173D4 /* SessionIDGenerator.swift in Sources */,
 				ADB1518FC56D3CBB7871F375 /* SessionManager.swift in Sources */,

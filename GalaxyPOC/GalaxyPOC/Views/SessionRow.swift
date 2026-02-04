@@ -4,6 +4,7 @@ struct SessionRow: View {
     @ObservedObject var session: Session
     @ObservedObject var statusLineService: StatusLineService
     let isSelected: Bool
+    let isWindowFocused: Bool  // Need this to know when to fade indicator
     var onStop: () -> Void   // Stop a running session
     var onClose: () -> Void  // Remove a stopped session from list
 
@@ -20,39 +21,52 @@ struct SessionRow: View {
                 .fill(statusColor)
                 .frame(width: 8, height: 8)
 
-            VStack(alignment: .leading, spacing: 2) {
-                // User session ID (human-readable)
-                Text(session.userSessionId)
-                    .font(.system(.caption, design: .monospaced))
-                    .fontWeight(.medium)
-                    .lineLimit(1)
-                    .foregroundColor(isSelected ? .white : .primary)
-
-                // Directory name + git status
-                HStack(spacing: 4) {
-                    Text(session.name)
-                        .font(.system(size: 10, design: .monospaced))
+            // Session info with bell indicator overlay
+            ZStack(alignment: .topLeading) {
+                VStack(alignment: .leading, spacing: 2) {
+                    // User session ID (human-readable)
+                    Text(session.userSessionId)
+                        .font(.system(.caption, design: .monospaced))
+                        .fontWeight(.medium)
                         .lineLimit(1)
+                        .foregroundColor(isSelected ? .white : .primary)
 
-                    if let info = statusInfo, !info.gitStatusDisplay.isEmpty {
-                        Text(info.gitStatusDisplay)
+                    // Directory name + git status
+                    HStack(spacing: 4) {
+                        Text(session.name)
                             .font(.system(size: 10, design: .monospaced))
-                            .foregroundColor(gitStatusColor(info: info, isSelected: isSelected))
+                            .lineLimit(1)
+
+                        if let info = statusInfo, !info.gitStatusDisplay.isEmpty {
+                            Text(info.gitStatusDisplay)
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundColor(gitStatusColor(info: info, isSelected: isSelected))
+                        }
                     }
+                    .foregroundColor(isSelected ? .white.opacity(0.8) : .secondary)
                 }
-                .foregroundColor(isSelected ? .white.opacity(0.8) : .secondary)
+
+                // Unread bell indicator - bright red dot, tight to top-left corner
+                // Shows instantly, fades out over 3 seconds (animation applied via withAnimation when clearing)
+                Circle()
+                    .fill(Color(red: 1.0, green: 0.2, blue: 0.2))  // Bright, saturated red
+                    .frame(width: 8, height: 8)
+                    .shadow(color: Color.red.opacity(0.6), radius: 3, x: 0, y: 0)  // Subtle glow
+                    .offset(x: -10, y: -2)  // Tight to top-left corner
+                    .opacity(session.hasUnreadBell ? 1 : 0)
             }
 
             Spacer()
 
             // Hover button - different action based on session state
+            // Both buttons are white and larger for consistency and visibility
             if isHovered {
                 if session.hasExited {
                     // Stopped session: show Close button to remove from list
                     Button(action: onClose) {
                         Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(isSelected ? .white.opacity(0.7) : .secondary)
-                            .font(.system(size: 14))
+                            .foregroundColor(.white.opacity(0.85))
+                            .font(.system(size: 18))
                     }
                     .buttonStyle(.plain)
                     .help("Remove session")
@@ -61,8 +75,8 @@ struct SessionRow: View {
                     // Running session: show Stop button
                     Button(action: onStop) {
                         Image(systemName: "stop.circle.fill")
-                            .foregroundColor(isSelected ? .white.opacity(0.7) : .red.opacity(0.8))
-                            .font(.system(size: 14))
+                            .foregroundColor(.white.opacity(0.85))
+                            .font(.system(size: 18))
                     }
                     .buttonStyle(.plain)
                     .help("Stop session")
@@ -73,12 +87,49 @@ struct SessionRow: View {
         .padding(.vertical, 6)
         .padding(.horizontal, 8)
         .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(isSelected ? Color.accentColor : Color.clear)
+            ZStack {
+                // Base selection background
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isSelected ? Color.accentColor : Color.clear)
+
+                // Visual bell pulse overlay (only for selected session)
+                if isSelected && session.visualBellActive {
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.white.opacity(0.4))
+                }
+            }
         )
+        .animation(.easeOut(duration: 0.5), value: session.visualBellActive)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.15)) {
                 isHovered = hovering
+            }
+        }
+        .onChange(of: isSelected) { _, newValue in
+            // When session becomes selected and window is focused, clear the indicator (with fade)
+            if newValue && isWindowFocused && session.hasUnreadBell {
+                withAnimation(.easeOut(duration: 3.0)) {
+                    session.hasUnreadBell = false
+                }
+            }
+        }
+        .onChange(of: isWindowFocused) { _, newValue in
+            // When window becomes focused and this session is selected, clear the indicator (with fade)
+            if newValue && isSelected && session.hasUnreadBell {
+                withAnimation(.easeOut(duration: 3.0)) {
+                    session.hasUnreadBell = false
+                }
+            }
+        }
+        .onChange(of: session.hasUnreadBell) { _, newValue in
+            // When bell indicator appears and session is already selected + focused, start fade
+            // Small delay lets the indicator render at full opacity before fading
+            if newValue && isSelected && isWindowFocused {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    withAnimation(.easeOut(duration: 3.0)) {
+                        session.hasUnreadBell = false
+                    }
+                }
             }
         }
     }

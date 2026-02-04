@@ -56,8 +56,33 @@ struct GalaxyPOCApp: App {
     }
 }
 
-// App Delegate to handle URL scheme
+// App Delegate to handle URL scheme and window focus
 class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Observe window focus changes
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowDidBecomeKey),
+            name: NSWindow.didBecomeKeyNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowDidResignKey),
+            name: NSWindow.didResignKeyNotification,
+            object: nil
+        )
+    }
+
+    @objc private func windowDidBecomeKey(_ notification: Notification) {
+        SessionManager.shared.isWindowFocused = true
+        // Note: SessionRow handles clearing hasUnreadBell with fade animation
+    }
+
+    @objc private func windowDidResignKey(_ notification: Notification) {
+        SessionManager.shared.isWindowFocused = false
+    }
+
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
             handleGalaxyURL(url)

@@ -19,9 +19,45 @@ struct SettingsView: View {
             } header: {
                 Text("Theme")
             }
+
+            Section {
+                Picker("Terminal Bell", selection: $settingsManager.settings.bellPreference) {
+                    Text(BellPreference.system.displayName).tag(BellPreference.system)
+                    Text(BellPreference.visualBell.displayName).tag(BellPreference.visualBell)
+                    Text(BellPreference.none.displayName).tag(BellPreference.none)
+
+                    Divider()
+
+                    ForEach(BellPreference.allCases.filter { $0.isSound }, id: \.self) { pref in
+                        Text(pref.displayName).tag(pref)
+                    }
+                }
+
+                HStack {
+                    Text("Plays when Claude Code needs your attention.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    Spacer()
+
+                    Button("Preview") {
+                        previewBell()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+
+                Toggle("Show unread indicator", isOn: $settingsManager.settings.showBellBadge)
+            } header: {
+                Text("Bell")
+            }
         }
         .formStyle(.grouped)
-        .frame(width: 400, height: 150)
-        .navigationTitle("Settings")
+        .frame(minWidth: 450, minHeight: 250)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func previewBell() {
+        settingsManager.handleBell()
     }
 }
