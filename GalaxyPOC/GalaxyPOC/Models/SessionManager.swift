@@ -16,6 +16,9 @@ class SessionManager: ObservableObject {
     // Track sidebar visibility (for View menu toggle)
     @Published var isSidebarVisible: Bool = true
 
+    // Track if active session can be resumed (for menu updates)
+    @Published var activeSessionCanResume: Bool = false
+
     // Path to claude binary - detected at init
     let claudePath: String
 
@@ -24,6 +27,14 @@ class SessionManager: ObservableObject {
 
     var activeSession: Session? {
         sessions.first { $0.id == activeSessionId }
+    }
+
+    /// Update the activeSessionCanResume flag based on current state
+    private func updateActiveSessionCanResume() {
+        let canResume = activeSession?.hasExited ?? false
+        if activeSessionCanResume != canResume {
+            activeSessionCanResume = canResume
+        }
     }
 
     init() {
@@ -126,9 +137,9 @@ class SessionManager: ObservableObject {
         // Clean up the observer (no longer needed)
         exitObservers.removeValue(forKey: sessionId)
 
-        // Force UI update by notifying observers
+        // Update menu state
         DispatchQueue.main.async {
-            self.objectWillChange.send()
+            self.updateActiveSessionCanResume()
         }
 
         NSLog("SessionManager: Session marked as exited, keeping in sidebar")
@@ -162,7 +173,14 @@ class SessionManager: ObservableObject {
             return
         }
 
-        NSLog("SessionManager: Resuming session %@", session.userSessionId)
+        // Check if Claude has this session saved on disk
+        let canResume = claudeSessionExists(sessionId: session.claudeSessionId, workingDirectory: session.workingDirectory)
+
+        if canResume {
+            NSLog("SessionManager: Resuming session %@ (found in Claude storage)", session.userSessionId)
+        } else {
+            NSLog("SessionManager: Session %@ not found in Claude storage, starting fresh", session.userSessionId)
+        }
 
         // Reset session state
         session.hasExited = false
@@ -206,17 +224,51 @@ class SessionManager: ObservableObject {
             }
         }
 
-        // Start claude with resume flag
-        session.startProcess(claudePath: claudePath, resume: true)
+        // Start claude: --resume if session exists in Claude storage, --session-id if not
+        session.startProcess(claudePath: claudePath, resume: canResume)
 
         // Make this the active session
         activeSessionId = session.id
+
+        // Update menu state (session is now running, not resumable)
+        updateActiveSessionCanResume()
+    }
+
+    /// Check if Claude has a session saved on disk for the given session ID and working directory
+    private func claudeSessionExists(sessionId: String, workingDirectory: String) -> Bool {
+        // Claude stores sessions in ~/.claude/projects/<escaped-path>/sessions-index.json
+        // Path escaping: /Users/foo/bar becomes -Users-foo-bar
+        let escapedPath = workingDirectory.replacingOccurrences(of: "/", with: "-")
+        let claudeDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude/projects")
+            .appendingPathComponent(escapedPath)
+        let indexFile = claudeDir.appendingPathComponent("sessions-index.json")
+
+        guard FileManager.default.fileExists(atPath: indexFile.path) else {
+            NSLog("SessionManager: Claude sessions index not found at %@", indexFile.path)
+            return false
+        }
+
+        do {
+            let data = try Data(contentsOf: indexFile)
+            // Quick string search - faster than full JSON parse for this check
+            let content = String(data: data, encoding: .utf8) ?? ""
+            let exists = content.contains(sessionId)
+            NSLog("SessionManager: Session %@ %@ in Claude storage", sessionId, exists ? "found" : "not found")
+            return exists
+        } catch {
+            NSLog("SessionManager: Error reading Claude sessions index: %@", error.localizedDescription)
+            return false
+        }
     }
 
     func switchTo(sessionId: UUID) {
         if sessions.contains(where: { $0.id == sessionId }) {
             activeSessionId = sessionId
             // Note: SessionRow handles clearing hasUnreadBell with fade animation
+
+            // Update menu state for the newly active session
+            updateActiveSessionCanResume()
         }
     }
 
@@ -305,7 +357,9 @@ class TerminalProcessHandler: NSObject, LocalProcessTerminalViewDelegate {
         NSLog("TerminalProcessHandler: Notifying session %@ of exit", session.name)
         session.processDidExit(exitCode: exitCode ?? -1)
 
-        // Session stays in sidebar - no removal, just state update
+        // Notify SessionManager to update menu state
+        sessionManager?.handleSessionExited(sessionId: session.id)
+
         NSLog("TerminalProcessHandler: Session marked as stopped, kept in sidebar")
     }
 
