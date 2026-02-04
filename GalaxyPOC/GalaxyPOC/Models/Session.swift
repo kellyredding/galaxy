@@ -12,8 +12,10 @@ class Session: Identifiable, ObservableObject {
     @Published var isRunning: Bool = false
     @Published var hasExited: Bool = false
     @Published var exitCode: Int32?
+    @Published var hasUnreadBell: Bool = false
+    @Published var visualBellActive: Bool = false
 
-    let terminalView: LocalProcessTerminalView
+    let terminalView: GalaxyTerminalView
     let createdAt: Date
     let workingDirectory: String
 
@@ -34,7 +36,7 @@ class Session: Identifiable, ObservableObject {
         self.name = dirName.isEmpty ? "~" : dirName
 
         // Create terminal view with default configuration
-        self.terminalView = LocalProcessTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        self.terminalView = GalaxyTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
 
         configureTerminal()
     }

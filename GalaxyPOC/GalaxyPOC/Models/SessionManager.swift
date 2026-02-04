@@ -10,6 +10,9 @@ class SessionManager: ObservableObject {
     @Published var sessions: [Session] = []
     @Published var activeSessionId: UUID?
 
+    // Track whether the main window is focused (for bell indicator logic)
+    @Published var isWindowFocused: Bool = true
+
     // Path to claude binary - detected at init
     let claudePath: String
 
@@ -74,6 +77,36 @@ class SessionManager: ObservableObject {
         let handler = TerminalProcessHandler(session: session, sessionManager: self)
         session.processHandler = handler
         session.terminalView.processDelegate = handler
+
+        // Set up bell callback
+        session.terminalView.onBell = { [weak session] in
+            guard let session = session else { return }
+            DispatchQueue.main.async {
+                let preference = SettingsManager.shared.settings.bellPreference
+
+                switch preference {
+                case .visualBell:
+                    // Trigger visual bell (sidebar pulse) - 0.5s duration
+                    session.visualBellActive = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        session.visualBellActive = false
+                    }
+                case .none:
+                    // Do nothing
+                    break
+                default:
+                    // Sound-based (system or custom)
+                    SettingsManager.shared.handleBell()
+                }
+
+                // Always show unread indicator on bell (if setting is enabled)
+                // SessionRow handles clearing it when session is selected + focused
+                let showBadge = SettingsManager.shared.settings.showBellBadge
+                if showBadge {
+                    session.hasUnreadBell = true
+                }
+            }
+        }
 
         // Start the claude process
         session.startProcess(claudePath: claudePath)
@@ -146,6 +179,36 @@ class SessionManager: ObservableObject {
         session.processHandler = handler
         session.terminalView.processDelegate = handler
 
+        // Set up bell callback
+        session.terminalView.onBell = { [weak session] in
+            guard let session = session else { return }
+            DispatchQueue.main.async {
+                let preference = SettingsManager.shared.settings.bellPreference
+
+                switch preference {
+                case .visualBell:
+                    // Trigger visual bell (sidebar pulse) - 0.5s duration
+                    session.visualBellActive = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        session.visualBellActive = false
+                    }
+                case .none:
+                    // Do nothing
+                    break
+                default:
+                    // Sound-based (system or custom)
+                    SettingsManager.shared.handleBell()
+                }
+
+                // Always show unread indicator on bell (if setting is enabled)
+                // SessionRow handles clearing it when session is selected + focused
+                let showBadge = SettingsManager.shared.settings.showBellBadge
+                if showBadge {
+                    session.hasUnreadBell = true
+                }
+            }
+        }
+
         // Start claude with resume flag
         session.startProcess(claudePath: claudePath, resume: true)
 
@@ -156,6 +219,7 @@ class SessionManager: ObservableObject {
     func switchTo(sessionId: UUID) {
         if sessions.contains(where: { $0.id == sessionId }) {
             activeSessionId = sessionId
+            // Note: SessionRow handles clearing hasUnreadBell with fade animation
         }
     }
 

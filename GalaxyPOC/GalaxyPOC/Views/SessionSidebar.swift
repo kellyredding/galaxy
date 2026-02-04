@@ -12,6 +12,7 @@ struct SessionSidebar: View {
                         session: session,
                         statusLineService: statusLineService,
                         isSelected: session.id == sessionManager.activeSessionId,
+                        isWindowFocused: sessionManager.isWindowFocused,
                         onStop: {
                             sessionManager.stopSession(sessionId: session.id)
                         },

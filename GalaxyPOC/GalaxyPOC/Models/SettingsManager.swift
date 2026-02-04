@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import Combine
+import AVFoundation
 
 /// Theme preference options
 enum ThemePreference: String, Codable, CaseIterable {
@@ -17,11 +18,65 @@ enum ThemePreference: String, Codable, CaseIterable {
     }
 }
 
+/// Bell notification preference
+enum BellPreference: String, Codable, CaseIterable {
+    case system = "system"
+    case visualBell = "visualBell"
+    case none = "none"
+    // macOS system sounds
+    case basso = "Basso"
+    case blow = "Blow"
+    case bottle = "Bottle"
+    case frog = "Frog"
+    case funk = "Funk"
+    case glass = "Glass"
+    case hero = "Hero"
+    case morse = "Morse"
+    case ping = "Ping"
+    case pop = "Pop"
+    case purr = "Purr"
+    case sosumi = "Sosumi"
+    case submarine = "Submarine"
+    case tink = "Tink"
+
+    var displayName: String {
+        switch self {
+        case .system: return "System Beep"
+        case .visualBell: return "Visual Bell"
+        case .none: return "None"
+        default: return rawValue
+        }
+    }
+
+    var isSound: Bool {
+        switch self {
+        case .system, .visualBell, .none:
+            return false
+        default:
+            return true
+        }
+    }
+}
+
 /// Persistent settings for the Galaxy app
 struct AppSettings: Codable {
     var themePreference: ThemePreference = .system
+    var bellPreference: BellPreference = .system
+    var showBellBadge: Bool = true
 
     static let `default` = AppSettings()
+
+    // Custom decoder to handle missing keys gracefully when adding new settings
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        themePreference = try container.decodeIfPresent(ThemePreference.self, forKey: .themePreference) ?? .system
+        bellPreference = try container.decodeIfPresent(BellPreference.self, forKey: .bellPreference) ?? .system
+        showBellBadge = try container.decodeIfPresent(Bool.self, forKey: .showBellBadge) ?? true
+    }
+
+    init() {
+        // Use defaults
+    }
 }
 
 /// Manages app settings with persistence to disk
@@ -35,6 +90,7 @@ class SettingsManager: ObservableObject {
     }
 
     private let settingsURL: URL
+    private var audioPlayer: AVAudioPlayer?
 
     private init() {
         // Set up settings directory and file path
@@ -59,7 +115,32 @@ class SettingsManager: ObservableObject {
 
         do {
             let data = try Data(contentsOf: url)
-            let settings = try JSONDecoder().decode(AppSettings.self, from: data)
+
+            // Merge approach: read existing as dictionary, merge with defaults, then decode
+            // This ensures existing settings are never lost when adding new fields
+            guard var existingDict = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                NSLog("SettingsManager: Settings file is not a valid JSON object")
+                return nil
+            }
+
+            // Get defaults as dictionary
+            let defaultSettings = AppSettings.default
+            let defaultData = try JSONEncoder().encode(defaultSettings)
+            guard let defaultDict = try JSONSerialization.jsonObject(with: defaultData) as? [String: Any] else {
+                return nil
+            }
+
+            // Merge: only add keys from defaults that don't exist in saved settings
+            for (key, value) in defaultDict {
+                if existingDict[key] == nil {
+                    existingDict[key] = value
+                    NSLog("SettingsManager: Added missing setting '%@' with default value", key)
+                }
+            }
+
+            // Convert merged dictionary back to data and decode
+            let mergedData = try JSONSerialization.data(withJSONObject: existingDict)
+            let settings = try JSONDecoder().decode(AppSettings.self, from: mergedData)
             return settings
         } catch {
             NSLog("SettingsManager: Failed to load settings: %@", error.localizedDescription)
@@ -86,6 +167,30 @@ class SettingsManager: ObservableObject {
             return .light
         case .dark:
             return .dark
+        }
+    }
+
+    /// Handle terminal bell based on user preference
+    func handleBell() {
+        let preference = settings.bellPreference
+
+        switch preference {
+        case .system:
+            NSSound.beep()
+        case .visualBell, .none:
+            // Handled elsewhere or disabled
+            break
+        default:
+            // Play custom sound
+            let soundPath = "/System/Library/Sounds/\(preference.rawValue).aiff"
+            let url = URL(fileURLWithPath: soundPath)
+            do {
+                audioPlayer = try AVAudioPlayer(contentsOf: url)
+                audioPlayer?.play()
+            } catch {
+                NSLog("SettingsManager: Failed to play sound: %@", error.localizedDescription)
+                NSSound.beep()  // Fallback
+            }
         }
     }
 }
