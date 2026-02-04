@@ -6,6 +6,21 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section {
+                Picker("Sessions Panel", selection: $settingsManager.settings.sidebarPosition) {
+                    ForEach(SidebarPosition.allCases, id: \.self) { position in
+                        Text(position.displayName).tag(position)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Text("Position of the sessions list panel.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } header: {
+                Text("Layout")
+            }
+
+            Section {
                 Picker("Appearance", selection: $settingsManager.settings.themePreference) {
                     ForEach(ThemePreference.allCases, id: \.self) { preference in
                         Text(preference.displayName).tag(preference)
@@ -13,7 +28,7 @@ struct SettingsView: View {
                 }
                 .pickerStyle(.segmented)
 
-                Text("Controls the Galaxy app appearance. Claude Code uses its own theme settings.")
+                Text("Controls the app appearance. Claude Code uses its own theme settings.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             } header: {
