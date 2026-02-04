@@ -86,11 +86,8 @@ class SessionManager: ObservableObject {
 
                 switch preference {
                 case .visualBell:
-                    // Trigger visual bell (sidebar pulse) - 0.5s duration
-                    session.visualBellActive = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        session.visualBellActive = false
-                    }
+                    // Trigger visual bell (3 flashes, each shorter)
+                    self.triggerVisualBell(for: session)
                 case .none:
                     // Do nothing
                     break
@@ -187,11 +184,8 @@ class SessionManager: ObservableObject {
 
                 switch preference {
                 case .visualBell:
-                    // Trigger visual bell (sidebar pulse) - 0.5s duration
-                    session.visualBellActive = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        session.visualBellActive = false
-                    }
+                    // Trigger visual bell (3 flashes, each shorter)
+                    self.triggerVisualBell(for: session)
                 case .none:
                     // Do nothing
                     break
@@ -255,6 +249,33 @@ class SessionManager: ObservableObject {
     func switchToSessionByIndex(_ index: Int) {
         if index >= 0 && index < sessions.count {
             activeSessionId = sessions[index].id
+        }
+    }
+
+    /// Trigger visual bell with 3 flashes, each shorter than the last
+    private func triggerVisualBell(for session: Session) {
+        // Flash durations: 3 flashes at 375ms each
+        // Gap between flashes: 100ms
+        let flashDurations = [0.375, 0.375, 0.375]
+        let gap = 0.1
+
+        var delay = 0.0
+        for (index, duration) in flashDurations.enumerated() {
+            // Turn on
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                session.visualBellActive = true
+            }
+            delay += duration
+
+            // Turn off
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                session.visualBellActive = false
+            }
+
+            // Add gap before next flash (except after last flash)
+            if index < flashDurations.count - 1 {
+                delay += gap
+            }
         }
     }
 }

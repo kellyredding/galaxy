@@ -104,7 +104,7 @@ struct SessionRow: View {
                 }
             }
         }
-        .animation(.easeOut(duration: 0.5), value: session.visualBellActive)
+        .animation(.easeInOut(duration: 0.08), value: session.visualBellActive)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.15)) {
                 isHovered = hovering
