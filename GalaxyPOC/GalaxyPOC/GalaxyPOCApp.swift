@@ -35,7 +35,7 @@ struct GalaxyPOCApp: App {
             CommandMenu("Sessions") {
                 ForEach(Array(sessionManager.sessions.enumerated()), id: \.element.id) { index, session in
                     if index < 9 {
-                        Button(session.name) {
+                        Button(session.userSessionId) {
                             sessionManager.switchTo(sessionId: session.id)
                         }
                         .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
