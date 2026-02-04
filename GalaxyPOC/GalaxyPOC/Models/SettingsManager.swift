@@ -3,6 +3,19 @@ import SwiftUI
 import Combine
 import AVFoundation
 
+/// Sidebar position preference
+enum SidebarPosition: String, Codable, CaseIterable {
+    case left = "left"
+    case right = "right"
+
+    var displayName: String {
+        switch self {
+        case .left: return "Left"
+        case .right: return "Right"
+        }
+    }
+}
+
 /// Theme preference options
 enum ThemePreference: String, Codable, CaseIterable {
     case system = "system"
@@ -60,6 +73,7 @@ enum BellPreference: String, Codable, CaseIterable {
 
 /// Persistent settings for the Galaxy app
 struct AppSettings: Codable {
+    var sidebarPosition: SidebarPosition = .left
     var themePreference: ThemePreference = .system
     var bellPreference: BellPreference = .system
     var showBellBadge: Bool = true
@@ -79,6 +93,7 @@ struct AppSettings: Codable {
     // Custom decoder to handle missing keys gracefully when adding new settings
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        sidebarPosition = try container.decodeIfPresent(SidebarPosition.self, forKey: .sidebarPosition) ?? .left
         themePreference = try container.decodeIfPresent(ThemePreference.self, forKey: .themePreference) ?? .system
         bellPreference = try container.decodeIfPresent(BellPreference.self, forKey: .bellPreference) ?? .system
         showBellBadge = try container.decodeIfPresent(Bool.self, forKey: .showBellBadge) ?? true

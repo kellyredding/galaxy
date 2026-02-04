@@ -13,6 +13,9 @@ class SessionManager: ObservableObject {
     // Track whether the main window is focused (for bell indicator logic)
     @Published var isWindowFocused: Bool = true
 
+    // Track sidebar visibility (for View menu toggle)
+    @Published var isSidebarVisible: Bool = true
+
     // Path to claude binary - detected at init
     let claudePath: String
 

@@ -15,7 +15,7 @@ struct GalaxyPOCApp: App {
 
     var body: some Scene {
         // Use Window (not WindowGroup) for single-window app
-        Window("Galaxy", id: "main") {
+        Window("", id: "main") {
             ContentView()
                 .environmentObject(sessionManager)
                 .environmentObject(settingsManager)
@@ -45,6 +45,28 @@ struct GalaxyPOCApp: App {
 
             // Add font size controls to the existing View menu
             CommandGroup(after: .toolbar) {
+                // Sessions panel toggle - shortcuts based on panel position
+                // ⌘[ = action toward left, ⌘] = action toward right
+                let panelOnLeft = settingsManager.settings.sidebarPosition == .left
+
+                // Hide Sessions: ⌘[ if panel on left, ⌘] if panel on right
+                Button("Hide Sessions") {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        sessionManager.isSidebarVisible = false
+                    }
+                }
+                .keyboardShortcut(panelOnLeft ? "[" : "]", modifiers: .command)
+                .disabled(!sessionManager.isSidebarVisible)
+
+                // Show Sessions: ⌘] if panel on left, ⌘[ if panel on right
+                Button("Show Sessions") {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        sessionManager.isSidebarVisible = true
+                    }
+                }
+                .keyboardShortcut(panelOnLeft ? "]" : "[", modifiers: .command)
+                .disabled(sessionManager.isSidebarVisible)
+
                 Divider()
 
                 // Terminal font size
