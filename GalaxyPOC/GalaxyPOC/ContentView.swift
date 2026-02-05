@@ -277,12 +277,14 @@ class ResizeHandleNSView: NSView {
     }
 
     override func mouseEntered(with event: NSEvent) {
-        NSCursor.resizeLeftRight.push()
+        if !isDragging {
+            NSCursor.resizeLeftRight.set()
+        }
     }
 
     override func mouseExited(with event: NSEvent) {
         if !isDragging {
-            NSCursor.pop()
+            NSCursor.arrow.set()
         }
     }
 
@@ -290,11 +292,12 @@ class ResizeHandleNSView: NSView {
         isDragging = true
         dragStartX = NSEvent.mouseLocation.x
         dragStartWidth = currentWidth
-        NSCursor.resizeLeftRight.push()
+        NSCursor.closedHand.set()  // Grabbing cursor
     }
 
     override func mouseDragged(with event: NSEvent) {
         guard isDragging else { return }
+        NSCursor.closedHand.set()  // Reinforce cursor during drag
 
         let currentX = NSEvent.mouseLocation.x
         let delta = currentX - dragStartX
@@ -317,7 +320,7 @@ class ResizeHandleNSView: NSView {
     override func mouseUp(with event: NSEvent) {
         guard isDragging else { return }
         isDragging = false
-        NSCursor.pop()
+        NSCursor.arrow.set()  // Reset cursor, tracking area will update if still hovering
 
         // Calculate final width
         let currentX = NSEvent.mouseLocation.x
