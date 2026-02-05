@@ -1,7 +1,11 @@
 require "./galaxy_ledger/*"
 
 module GalaxyLedger
-  VERSION = "0.0.1"
+  # Version is read from version.txt at compile time
+  # This version is used for:
+  # - CLI --version output
+  # - Database and config schema versioning (see migrations.cr)
+  VERSION = {{ read_file("#{__DIR__}/../version.txt").strip }}
 
   # Claude config directory (can be overridden for testing)
   # This is the base directory where Claude Code stores its configuration

@@ -16,8 +16,6 @@ describe GalaxyLedger::Config do
       config.storage.postgres_host_port.should eq(5433)
       config.storage.embeddings_enabled.should eq(false)
       config.storage.openai_api_key_env_var.should eq("GALAXY_OPENAI_API_KEY")
-      config.buffer.flush_threshold.should eq(50)
-      config.buffer.flush_interval_seconds.should eq(300)
       config.restoration.max_essential_tokens.should eq(2000)
       config.restoration.tier1_limits.high_importance_decisions.should eq(10)
       config.restoration.tier2_limits.learnings.should eq(5)
@@ -70,15 +68,6 @@ describe GalaxyLedger::Config do
       config.get("storage.openai_api_key_env_var").should eq("MY_KEY")
     end
 
-    it "sets and gets buffer values" do
-      config = GalaxyLedger::Config.default
-      config.set("buffer.flush_threshold", "100")
-      config.get("buffer.flush_threshold").should eq("100")
-
-      config.set("buffer.flush_interval_seconds", "600")
-      config.get("buffer.flush_interval_seconds").should eq("600")
-    end
-
     it "sets and gets restoration values" do
       config = GalaxyLedger::Config.default
       config.set("restoration.max_essential_tokens", "3000")
@@ -107,13 +96,6 @@ describe GalaxyLedger::Config do
       config = GalaxyLedger::Config.default
       expect_raises(Exception, /between 0 and 100/) do
         config.set("thresholds.warning", "150")
-      end
-    end
-
-    it "validates positive buffer values" do
-      config = GalaxyLedger::Config.default
-      expect_raises(Exception, /must be positive/) do
-        config.set("buffer.flush_threshold", "0")
       end
     end
 

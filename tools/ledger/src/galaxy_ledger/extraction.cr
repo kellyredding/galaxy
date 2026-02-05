@@ -27,6 +27,7 @@ module GalaxyLedger
     end
 
     # A single extracted entry
+    # Phase 6.2: Enhanced with category, keywords, applies_when, source_file
     class ExtractedEntry
       include JSON::Serializable
 
@@ -43,29 +44,56 @@ module GalaxyLedger
       # Optional metadata
       property metadata : JSON::Any?
 
+      # Phase 6.2: Category/domain for filtering (e.g., "ruby-style", "rspec")
+      property category : String?
+
+      # Phase 6.2: Searchable keywords (nilable for JSON compatibility)
+      property keywords : Array(String)?
+
+      # Phase 6.2: When this entry applies
+      @[JSON::Field(key: "applies_when")]
+      property applies_when : String?
+
+      # Phase 6.2: Source file basename
+      @[JSON::Field(key: "source_file")]
+      property source_file : String?
+
       def initialize(
         @entry_type : String,
         @content : String,
         @importance : String = "medium",
         @metadata : JSON::Any? = nil,
+        @category : String? = nil,
+        @keywords : Array(String)? = nil,
+        @applies_when : String? = nil,
+        @source_file : String? = nil,
       )
       end
 
-      # Convert to Buffer::Entry
-      def to_buffer_entry(source : String? = nil) : Buffer::Entry
-        Buffer::Entry.new(
+      # Helper to get keywords as non-nil array
+      def keywords_array : Array(String)
+        keywords || [] of String
+      end
+
+      # Convert to Entry
+      def to_entry(source : String? = nil) : Entry
+        Entry.new(
           entry_type: entry_type,
           content: content,
           importance: importance,
           source: source,
           metadata: metadata,
+          category: category,
+          keywords: keywords,
+          applies_when: applies_when,
+          source_file: source_file,
         )
       end
 
       # Validate the entry type and importance
       def valid? : Bool
-        return false unless Buffer::ENTRY_TYPES.includes?(entry_type)
-        return false unless Buffer::IMPORTANCE_LEVELS.includes?(importance)
+        return false unless ENTRY_TYPES.includes?(entry_type)
+        return false unless IMPORTANCE_LEVELS.includes?(importance)
         return false if content.empty?
         true
       end
@@ -108,6 +136,7 @@ module GalaxyLedger
     end
 
     # Extract guidelines from a guideline file
+    # Phase 6.2: Passes source_file for auto-keyword generation
     def self.extract_guidelines(file_path : String, content : String) : Result
       return Result.new if content.strip.empty?
 
@@ -118,10 +147,11 @@ module GalaxyLedger
 
       return Result.new if output.nil?
 
-      parse_extraction_result(output)
+      parse_extraction_result(output, source_file: file_path)
     end
 
     # Extract context from an implementation plan file
+    # Phase 6.2: Passes source_file for auto-keyword generation
     def self.extract_implementation_plan(file_path : String, content : String) : Result
       return Result.new if content.strip.empty?
 
@@ -132,16 +162,21 @@ module GalaxyLedger
 
       return Result.new if output.nil?
 
-      parse_extraction_result(output)
+      parse_extraction_result(output, source_file: file_path)
     end
 
     # Parse the JSON output from Claude CLI
+    # Phase 6.2: Enhanced to extract category, keywords, applies_when
     private def self.parse_extraction_result(
       output : String,
       include_summary : Bool = false,
+      source_file : String? = nil,
     ) : Result
       begin
         json = JSON.parse(output)
+
+        # Phase 6.2: Auto-extract source file basename
+        source_file_basename = source_file.try { |sf| File.basename(sf) }
 
         # Parse extractions array
         extractions = [] of ExtractedEntry
@@ -151,6 +186,24 @@ module GalaxyLedger
             content = entry_json["content"]?.try(&.as_s?) || ""
             importance = entry_json["importance"]?.try(&.as_s?) || "medium"
 
+            # Phase 6.2: Parse new fields
+            category = entry_json["category"]?.try(&.as_s?)
+            applies_when = entry_json["applies_when"]?.try(&.as_s?)
+
+            # Parse keywords array
+            keywords : Array(String)? = nil
+            if keywords_json = entry_json["keywords"]?.try(&.as_a?)
+              keywords = keywords_json.compact_map(&.as_s?)
+            end
+
+            # Auto-add source file stem to keywords if not already present
+            if source_file_basename
+              file_stem = source_file_basename.gsub(/\.(md|txt|markdown)$/i, "")
+              kw = keywords || [] of String
+              kw << file_stem unless kw.includes?(file_stem)
+              keywords = kw
+            end
+
             # Skip empty content
             next if content.strip.empty?
 
@@ -158,6 +211,10 @@ module GalaxyLedger
               entry_type: entry_type,
               content: content,
               importance: importance,
+              category: category,
+              keywords: keywords,
+              applies_when: applies_when,
+              source_file: source_file_basename,
             )
             extractions << entry if entry.valid?
           end

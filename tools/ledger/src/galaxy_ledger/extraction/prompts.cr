@@ -101,9 +101,15 @@ module GalaxyLedger
       end
 
       # Prompt for extracting rules from a guideline file
+      # Phase 6.2: Enhanced schema with category, keywords, applies_when
       def self.guideline_extraction(file_path : String) : String
+        # Extract category from file name (e.g., "ruby-style.md" -> "ruby-style")
+        file_basename = File.basename(file_path)
+        file_stem = file_basename.gsub(/\.(md|txt|markdown)$/i, "")
+
         <<-PROMPT
         This is a guideline file for coding conventions.
+        File: #{file_basename}
 
         ## Extract actionable rules and patterns:
         - Code style rules
@@ -121,6 +127,18 @@ module GalaxyLedger
         - Good: "Use let! for database records; use let for simple values"
         - Bad: Splitting into "Use let!" and "Use let for simple values" (loses context)
 
+        ## Category inference:
+        Based on the file name "#{file_stem}", infer a category for all extractions.
+        Examples: "ruby-style", "rspec", "git-workflow", "testing", "architecture"
+
+        ## Keywords:
+        For each extraction, generate 3-5 searchable keywords that would help find this rule.
+        Include the file stem "#{file_stem}" and related technology/concept keywords.
+        Example for a Ruby string quote rule: ["ruby-style", "strings", "quotes", "ruby", "formatting"]
+
+        ## Applies when:
+        Describe when this rule should be applied (e.g., "Writing Ruby code", "Writing RSpec tests")
+
         ## Importance levels:
         - **high**: Rules that differ significantly from defaults, security-related, architectural
         - **medium**: Style preferences, testing patterns, naming conventions
@@ -132,21 +150,29 @@ module GalaxyLedger
             {
               "type": "guideline",
               "content": "Brief, actionable rule",
-              "importance": "high|medium|low"
+              "importance": "high|medium|low",
+              "category": "#{file_stem}",
+              "keywords": ["keyword1", "keyword2", "keyword3"],
+              "applies_when": "When writing/reviewing X code"
             }
           ]
         }
 
         Focus on rules that are specific and actionable, not general descriptions.
         Output ONLY valid JSON, no explanation or markdown.
-        The file path is: #{file_path}
         PROMPT
       end
 
       # Prompt for extracting context from an implementation plan file
+      # Phase 6.2: Enhanced schema with category, keywords, applies_when
       def self.implementation_plan_extraction(file_path : String) : String
+        # Extract category from file name
+        file_basename = File.basename(file_path)
+        file_stem = file_basename.gsub(/\.(md|txt|markdown)$/i, "")
+
         <<-PROMPT
         This is an implementation plan for a multi-step development effort.
+        File: #{file_basename}
 
         ## Extract key context:
         - Overall goal/purpose of the effort
@@ -160,6 +186,19 @@ module GalaxyLedger
         - Captures decisions that affect future work
         - Notes implementation details that future steps depend on
 
+        ## Category inference:
+        Infer a category based on the project/feature being implemented.
+        Use the file stem "#{file_stem}" or extract from the plan title.
+        Examples: "galaxy-ledger", "authentication", "api-v2", "performance"
+
+        ## Keywords:
+        For each extraction, generate 3-5 searchable keywords.
+        Include the project name, technologies, and key concepts.
+        Example: ["galaxy-ledger", "phase-6", "extraction", "sqlite", "context"]
+
+        ## Applies when:
+        Describe when this context is relevant (e.g., "Working on Galaxy Ledger", "Implementing Phase 6")
+
         ## Importance levels:
         - **high**: Progress status, blocking dependencies, architectural decisions
         - **medium**: Implementation details, design rationale
@@ -171,14 +210,16 @@ module GalaxyLedger
             {
               "type": "implementation_plan",
               "content": "Brief, contextual information",
-              "importance": "high|medium|low"
+              "importance": "high|medium|low",
+              "category": "project-name",
+              "keywords": ["keyword1", "keyword2", "keyword3"],
+              "applies_when": "Working on X feature/project"
             }
           ]
         }
 
         Focus on context that helps maintain continuity across sessions.
         Output ONLY valid JSON, no explanation or markdown.
-        The file path is: #{file_path}
         PROMPT
       end
     end

@@ -131,7 +131,7 @@ module GalaxyLedger
           binary = Process.executable_path || "galaxy-ledger"
 
           # Spawn a detached subprocess to run the extraction
-          # The subprocess will handle the actual Claude CLI call and buffer append
+          # The subprocess will handle the actual Claude CLI call and database insert
           process = Process.new(
             binary,
             args: ["extract-async", "--session", session_id, "--type", extraction_type],

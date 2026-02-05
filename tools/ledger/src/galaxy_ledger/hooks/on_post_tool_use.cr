@@ -98,7 +98,7 @@ module GalaxyLedger
           spawn_extraction_async(session_id, file_path, tool_response, special_type)
 
           # Also record the file path as a marker that we read this file
-          entry = Buffer::Entry.new(
+          entry = Entry.new(
             entry_type: special_type,
             content: file_path,
             importance: "medium",
@@ -107,7 +107,7 @@ module GalaxyLedger
           Database.insert(session_id, entry)
         else
           # Regular file read - just record the path
-          entry = Buffer::Entry.new(
+          entry = Entry.new(
             entry_type: "file_read",
             content: file_path,
             importance: "low",
@@ -151,7 +151,7 @@ module GalaxyLedger
         file_path = tool_input["file_path"]?.try(&.as_s?)
         return unless file_path
 
-        entry = Buffer::Entry.new(
+        entry = Entry.new(
           entry_type: "file_edit",
           content: file_path,
           importance: "medium",
@@ -169,7 +169,7 @@ module GalaxyLedger
         file_path = tool_input["file_path"]?.try(&.as_s?)
         return unless file_path
 
-        entry = Buffer::Entry.new(
+        entry = Entry.new(
           entry_type: "file_write",
           content: file_path,
           importance: "medium",
@@ -193,7 +193,7 @@ module GalaxyLedger
         content = "#{pattern}"
         content += " in #{path}" if path
 
-        entry = Buffer::Entry.new(
+        entry = Entry.new(
           entry_type: "search",
           content: content,
           importance: "low",

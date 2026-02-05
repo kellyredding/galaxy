@@ -6,7 +6,7 @@ def create_test_session_with_entries(session_id : String, entry_count : Int32 = 
   Dir.mkdir_p(session_dir)
 
   entry_count.times do |i|
-    entry = GalaxyLedger::Buffer::Entry.new(
+    entry = GalaxyLedger::Entry.new(
       entry_type: "learning",
       content: "Test learning #{i + 1}",
       importance: "medium",

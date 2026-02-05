@@ -124,7 +124,7 @@ describe GalaxyLedger::Database do
 
   describe ".insert" do
     it "inserts a valid entry" do
-      entry = GalaxyLedger::Buffer::Entry.new(
+      entry = GalaxyLedger::Entry.new(
         entry_type: "learning",
         content: "Test learning content",
         importance: "medium",
@@ -138,7 +138,7 @@ describe GalaxyLedger::Database do
     end
 
     it "returns false for empty session_id" do
-      entry = GalaxyLedger::Buffer::Entry.new(
+      entry = GalaxyLedger::Entry.new(
         entry_type: "learning",
         content: "Test content"
       )
@@ -148,7 +148,7 @@ describe GalaxyLedger::Database do
     end
 
     it "returns false for invalid entry" do
-      entry = GalaxyLedger::Buffer::Entry.new(
+      entry = GalaxyLedger::Entry.new(
         entry_type: "invalid_type",
         content: "Test content"
       )
@@ -158,7 +158,7 @@ describe GalaxyLedger::Database do
     end
 
     it "prevents duplicate entries with same content_hash" do
-      entry = GalaxyLedger::Buffer::Entry.new(
+      entry = GalaxyLedger::Entry.new(
         entry_type: "learning",
         content: "Duplicate test content",
         importance: "medium"
@@ -173,7 +173,7 @@ describe GalaxyLedger::Database do
     end
 
     it "allows same content in different sessions" do
-      entry = GalaxyLedger::Buffer::Entry.new(
+      entry = GalaxyLedger::Entry.new(
         entry_type: "learning",
         content: "Same content different session"
       )
@@ -188,7 +188,7 @@ describe GalaxyLedger::Database do
 
     it "stores metadata as JSON" do
       metadata = JSON.parse(%({"source_file": "test.rb", "line": 42}))
-      entry = GalaxyLedger::Buffer::Entry.new(
+      entry = GalaxyLedger::Entry.new(
         entry_type: "learning",
         content: "Test with metadata",
         metadata: metadata
@@ -207,9 +207,9 @@ describe GalaxyLedger::Database do
   describe ".insert_many" do
     it "inserts multiple entries" do
       entries = [
-        GalaxyLedger::Buffer::Entry.new(entry_type: "learning", content: "Learning 1"),
-        GalaxyLedger::Buffer::Entry.new(entry_type: "decision", content: "Decision 1"),
-        GalaxyLedger::Buffer::Entry.new(entry_type: "discovery", content: "Discovery 1"),
+        GalaxyLedger::Entry.new(entry_type: "learning", content: "Learning 1"),
+        GalaxyLedger::Entry.new(entry_type: "decision", content: "Decision 1"),
+        GalaxyLedger::Entry.new(entry_type: "discovery", content: "Discovery 1"),
       ]
 
       count = GalaxyLedger::Database.insert_many("test-session", entries)
@@ -219,9 +219,9 @@ describe GalaxyLedger::Database do
 
     it "skips invalid entries" do
       entries = [
-        GalaxyLedger::Buffer::Entry.new(entry_type: "learning", content: "Valid"),
-        GalaxyLedger::Buffer::Entry.new(entry_type: "invalid", content: "Invalid"),
-        GalaxyLedger::Buffer::Entry.new(entry_type: "decision", content: "Valid 2"),
+        GalaxyLedger::Entry.new(entry_type: "learning", content: "Valid"),
+        GalaxyLedger::Entry.new(entry_type: "invalid", content: "Invalid"),
+        GalaxyLedger::Entry.new(entry_type: "decision", content: "Valid 2"),
       ]
 
       count = GalaxyLedger::Database.insert_many("test-session", entries)
@@ -230,9 +230,9 @@ describe GalaxyLedger::Database do
 
     it "skips duplicates" do
       entries = [
-        GalaxyLedger::Buffer::Entry.new(entry_type: "learning", content: "Same content"),
-        GalaxyLedger::Buffer::Entry.new(entry_type: "learning", content: "Same content"),
-        GalaxyLedger::Buffer::Entry.new(entry_type: "learning", content: "Different content"),
+        GalaxyLedger::Entry.new(entry_type: "learning", content: "Same content"),
+        GalaxyLedger::Entry.new(entry_type: "learning", content: "Same content"),
+        GalaxyLedger::Entry.new(entry_type: "learning", content: "Different content"),
       ]
 
       count = GalaxyLedger::Database.insert_many("test-session", entries)
@@ -240,13 +240,13 @@ describe GalaxyLedger::Database do
     end
 
     it "returns 0 for empty session_id" do
-      entries = [GalaxyLedger::Buffer::Entry.new(entry_type: "learning", content: "Test")]
+      entries = [GalaxyLedger::Entry.new(entry_type: "learning", content: "Test")]
       count = GalaxyLedger::Database.insert_many("", entries)
       count.should eq(0)
     end
 
     it "returns 0 for empty entries array" do
-      count = GalaxyLedger::Database.insert_many("test-session", [] of GalaxyLedger::Buffer::Entry)
+      count = GalaxyLedger::Database.insert_many("test-session", [] of GalaxyLedger::Entry)
       count.should eq(0)
     end
   end
@@ -254,11 +254,11 @@ describe GalaxyLedger::Database do
   describe ".delete_session" do
     it "deletes all entries for a session" do
       entries = [
-        GalaxyLedger::Buffer::Entry.new(entry_type: "learning", content: "L1"),
-        GalaxyLedger::Buffer::Entry.new(entry_type: "decision", content: "D1"),
+        GalaxyLedger::Entry.new(entry_type: "learning", content: "L1"),
+        GalaxyLedger::Entry.new(entry_type: "decision", content: "D1"),
       ]
       GalaxyLedger::Database.insert_many("session-to-delete", entries)
-      GalaxyLedger::Database.insert("other-session", GalaxyLedger::Buffer::Entry.new(entry_type: "learning", content: "Keep"))
+      GalaxyLedger::Database.insert("other-session", GalaxyLedger::Entry.new(entry_type: "learning", content: "Keep"))
 
       deleted = GalaxyLedger::Database.delete_session("session-to-delete")
 
@@ -281,9 +281,9 @@ describe GalaxyLedger::Database do
 
   describe ".count" do
     it "returns total entry count" do
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "learning", content: "L1"))
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "decision", content: "D1"))
-      GalaxyLedger::Database.insert("s2", GalaxyLedger::Buffer::Entry.new(entry_type: "learning", content: "L2"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "L1"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "decision", content: "D1"))
+      GalaxyLedger::Database.insert("s2", GalaxyLedger::Entry.new(entry_type: "learning", content: "L2"))
 
       GalaxyLedger::Database.count.should eq(3)
     end
@@ -296,9 +296,9 @@ describe GalaxyLedger::Database do
 
   describe ".count_by_session" do
     it "returns count for specific session" do
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "learning", content: "L1"))
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "decision", content: "D1"))
-      GalaxyLedger::Database.insert("s2", GalaxyLedger::Buffer::Entry.new(entry_type: "learning", content: "L2"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "L1"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "decision", content: "D1"))
+      GalaxyLedger::Database.insert("s2", GalaxyLedger::Entry.new(entry_type: "learning", content: "L2"))
 
       GalaxyLedger::Database.count_by_session("s1").should eq(2)
       GalaxyLedger::Database.count_by_session("s2").should eq(1)
@@ -312,12 +312,12 @@ describe GalaxyLedger::Database do
   describe ".query_by_session" do
     it "returns entries for a session ordered by created_at DESC" do
       # Insert with different timestamps
-      entry1 = GalaxyLedger::Buffer::Entry.new(
+      entry1 = GalaxyLedger::Entry.new(
         entry_type: "learning",
         content: "First",
         created_at: "2026-01-01T10:00:00Z"
       )
-      entry2 = GalaxyLedger::Buffer::Entry.new(
+      entry2 = GalaxyLedger::Entry.new(
         entry_type: "decision",
         content: "Second",
         created_at: "2026-01-01T11:00:00Z"
@@ -334,7 +334,7 @@ describe GalaxyLedger::Database do
 
     it "respects limit parameter" do
       5.times do |i|
-        entry = GalaxyLedger::Buffer::Entry.new(entry_type: "learning", content: "Entry #{i}")
+        entry = GalaxyLedger::Entry.new(entry_type: "learning", content: "Entry #{i}")
         GalaxyLedger::Database.insert("test-session", entry)
       end
 
@@ -349,9 +349,9 @@ describe GalaxyLedger::Database do
 
   describe ".query_by_type" do
     it "returns entries of specific type" do
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "learning", content: "L1"))
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "decision", content: "D1"))
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "learning", content: "L2"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "L1"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "decision", content: "D1"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "L2"))
 
       entries = GalaxyLedger::Database.query_by_type("s1", "learning")
 
@@ -362,9 +362,9 @@ describe GalaxyLedger::Database do
 
   describe ".query_by_importance" do
     it "returns entries of specific importance" do
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "learning", content: "L1", importance: "high"))
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "decision", content: "D1", importance: "medium"))
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "learning", content: "L2", importance: "high"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "L1", importance: "high"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "decision", content: "D1", importance: "medium"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "L2", importance: "high"))
 
       entries = GalaxyLedger::Database.query_by_importance("s1", "high")
 
@@ -375,9 +375,9 @@ describe GalaxyLedger::Database do
 
   describe ".query_recent" do
     it "returns recent entries across all sessions" do
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "learning", content: "L1"))
-      GalaxyLedger::Database.insert("s2", GalaxyLedger::Buffer::Entry.new(entry_type: "decision", content: "D1"))
-      GalaxyLedger::Database.insert("s3", GalaxyLedger::Buffer::Entry.new(entry_type: "discovery", content: "Disc1"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "L1"))
+      GalaxyLedger::Database.insert("s2", GalaxyLedger::Entry.new(entry_type: "decision", content: "D1"))
+      GalaxyLedger::Database.insert("s3", GalaxyLedger::Entry.new(entry_type: "discovery", content: "Disc1"))
 
       entries = GalaxyLedger::Database.query_recent
       entries.size.should eq(3)
@@ -385,7 +385,7 @@ describe GalaxyLedger::Database do
 
     it "respects limit parameter" do
       5.times do |i|
-        entry = GalaxyLedger::Buffer::Entry.new(entry_type: "learning", content: "Entry #{i}")
+        entry = GalaxyLedger::Entry.new(entry_type: "learning", content: "Entry #{i}")
         GalaxyLedger::Database.insert("session-#{i}", entry)
       end
 
@@ -396,9 +396,9 @@ describe GalaxyLedger::Database do
 
   describe ".search" do
     it "finds entries matching query" do
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "learning", content: "JWT authentication tokens expire"))
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "decision", content: "Using Redis for caching"))
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "learning", content: "Database connection pooling"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "JWT authentication tokens expire"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "decision", content: "Using Redis for caching"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "Database connection pooling"))
 
       entries = GalaxyLedger::Database.search("JWT authentication")
 
@@ -407,7 +407,7 @@ describe GalaxyLedger::Database do
     end
 
     it "returns empty for no matches" do
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "learning", content: "Something else"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "Something else"))
 
       entries = GalaxyLedger::Database.search("nonexistent term")
       entries.should be_empty
@@ -419,8 +419,8 @@ describe GalaxyLedger::Database do
     end
 
     it "searches across all sessions" do
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "learning", content: "JWT in session 1"))
-      GalaxyLedger::Database.insert("s2", GalaxyLedger::Buffer::Entry.new(entry_type: "learning", content: "JWT in session 2"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "JWT in session 1"))
+      GalaxyLedger::Database.insert("s2", GalaxyLedger::Entry.new(entry_type: "learning", content: "JWT in session 2"))
 
       entries = GalaxyLedger::Database.search("JWT")
       entries.size.should eq(2)
@@ -429,8 +429,8 @@ describe GalaxyLedger::Database do
 
   describe ".search_in_session" do
     it "searches within a specific session" do
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "learning", content: "JWT in session 1"))
-      GalaxyLedger::Database.insert("s2", GalaxyLedger::Buffer::Entry.new(entry_type: "learning", content: "JWT in session 2"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "JWT in session 1"))
+      GalaxyLedger::Database.insert("s2", GalaxyLedger::Entry.new(entry_type: "learning", content: "JWT in session 2"))
 
       entries = GalaxyLedger::Database.search_in_session("s1", "JWT")
 
@@ -445,9 +445,9 @@ describe GalaxyLedger::Database do
 
   describe ".session_stats" do
     it "returns stats for all sessions" do
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "learning", content: "L1"))
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "decision", content: "D1"))
-      GalaxyLedger::Database.insert("s2", GalaxyLedger::Buffer::Entry.new(entry_type: "learning", content: "L2"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "L1"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "decision", content: "D1"))
+      GalaxyLedger::Database.insert("s2", GalaxyLedger::Entry.new(entry_type: "learning", content: "L2"))
 
       stats = GalaxyLedger::Database.session_stats
 
@@ -458,11 +458,11 @@ describe GalaxyLedger::Database do
     end
   end
 
-  describe GalaxyLedger::Database::LedgerEntry do
-    describe "#to_buffer_entry" do
-      it "converts to Buffer::Entry" do
+  describe GalaxyLedger::Database::StoredEntry do
+    describe "#to_entry" do
+      it "converts to Entry" do
         # First insert an entry
-        original = GalaxyLedger::Buffer::Entry.new(
+        original = GalaxyLedger::Entry.new(
           entry_type: "learning",
           content: "Test content",
           importance: "high",
@@ -475,7 +475,7 @@ describe GalaxyLedger::Database do
         ledger_entry = entries[0]
 
         # Convert back to buffer entry
-        buffer_entry = ledger_entry.to_buffer_entry
+        buffer_entry = ledger_entry.to_entry
 
         buffer_entry.entry_type.should eq("learning")
         buffer_entry.content.should eq("Test content")
@@ -514,7 +514,7 @@ describe GalaxyLedger::Database do
 
   describe ".search with prefix matching" do
     it "finds entries with prefix matching enabled" do
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "guideline", content: "Use trailing commas on multiline structures"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "guideline", content: "Use trailing commas on multiline structures"))
 
       # "trail" should match "trailing" with prefix matching
       entries = GalaxyLedger::Database.search("trail")
@@ -523,7 +523,7 @@ describe GalaxyLedger::Database do
     end
 
     it "respects prefix_match: false for exact matching" do
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "guideline", content: "Use trailing commas"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "guideline", content: "Use trailing commas"))
 
       # "trail" should NOT match "trailing" with exact matching
       entries = GalaxyLedger::Database.search("trail", prefix_match: false)
@@ -533,9 +533,9 @@ describe GalaxyLedger::Database do
 
   describe ".search with filters" do
     before_each do
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "learning", content: "JWT tokens expire", importance: "high"))
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "decision", content: "JWT storage in Redis", importance: "medium"))
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "guideline", content: "JWT best practices", importance: "high"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "JWT tokens expire", importance: "high"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "decision", content: "JWT storage in Redis", importance: "medium"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "guideline", content: "JWT best practices", importance: "high"))
     end
 
     it "filters by entry_type" do
@@ -560,10 +560,10 @@ describe GalaxyLedger::Database do
 
   describe ".query_recent_filtered" do
     before_each do
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "learning", content: "L1", importance: "high"))
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "decision", content: "D1", importance: "medium"))
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "learning", content: "L2", importance: "low"))
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "guideline", content: "G1", importance: "high"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "L1", importance: "high"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "decision", content: "D1", importance: "medium"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "L2", importance: "low"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "guideline", content: "G1", importance: "high"))
     end
 
     it "returns all entries with no filters" do
@@ -593,13 +593,13 @@ describe GalaxyLedger::Database do
   describe ".query_tier1" do
     before_each do
       # Tier 1 entries
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "guideline", content: "G1", importance: "high"))
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "guideline", content: "G2", importance: "medium"))
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "implementation_plan", content: "IP1", importance: "high"))
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "decision", content: "D1 high", importance: "high"))
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "decision", content: "D2 medium", importance: "medium"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "guideline", content: "G1", importance: "high"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "guideline", content: "G2", importance: "medium"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "implementation_plan", content: "IP1", importance: "high"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "decision", content: "D1 high", importance: "high"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "decision", content: "D2 medium", importance: "medium"))
       # Non-tier1 entries
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "learning", content: "L1", importance: "medium"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "L1", importance: "medium"))
     end
 
     it "returns guidelines for the session" do
@@ -621,7 +621,7 @@ describe GalaxyLedger::Database do
     it "respects decision limit" do
       # Add more high-importance decisions
       5.times do |i|
-        GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "decision", content: "Extra D#{i}", importance: "high"))
+        GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "decision", content: "Extra D#{i}", importance: "high"))
       end
 
       result = GalaxyLedger::Database.query_tier1("s1", decision_limit: 3)
@@ -642,11 +642,11 @@ describe GalaxyLedger::Database do
   describe ".query_tier2" do
     before_each do
       # Tier 2 entries
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "learning", content: "L1", importance: "high"))
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "learning", content: "L2", importance: "medium"))
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "file_edit", content: "FE1", importance: "medium"))
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "decision", content: "D1 medium", importance: "medium"))
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "decision", content: "D2 high", importance: "high"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "L1", importance: "high"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "L2", importance: "medium"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "file_edit", content: "FE1", importance: "medium"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "decision", content: "D1 medium", importance: "medium"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "decision", content: "D2 high", importance: "high"))
     end
 
     it "returns learnings for the session" do
@@ -668,7 +668,7 @@ describe GalaxyLedger::Database do
     it "respects limits" do
       # Add more learnings
       5.times do |i|
-        GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "learning", content: "Extra L#{i}", importance: "medium"))
+        GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "Extra L#{i}", importance: "medium"))
       end
 
       result = GalaxyLedger::Database.query_tier2("s1", learnings_limit: 3)
@@ -684,12 +684,12 @@ describe GalaxyLedger::Database do
   describe ".query_for_restoration" do
     before_each do
       # Mix of tier 1 and tier 2 entries
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "guideline", content: "G1", importance: "high"))
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "implementation_plan", content: "IP1", importance: "high"))
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "decision", content: "D1 high", importance: "high"))
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "decision", content: "D2 medium", importance: "medium"))
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "learning", content: "L1", importance: "medium"))
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Buffer::Entry.new(entry_type: "file_edit", content: "FE1", importance: "medium"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "guideline", content: "G1", importance: "high"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "implementation_plan", content: "IP1", importance: "high"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "decision", content: "D1 high", importance: "high"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "decision", content: "D2 medium", importance: "medium"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "L1", importance: "medium"))
+      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "file_edit", content: "FE1", importance: "medium"))
     end
 
     it "returns both tier1 and tier2 results" do
@@ -721,6 +721,182 @@ describe GalaxyLedger::Database do
       result.tier2.learnings.size.should eq(0)
       result.tier2.file_edits.size.should eq(0)
       result.tier2.medium_decisions.size.should eq(0)
+    end
+  end
+
+  # ============================================================
+  # Phase 6.2: Enhanced Schema Tests
+  # ============================================================
+
+  describe "Phase 6.2 Enhanced Schema" do
+    describe ".insert with enhanced fields" do
+      it "stores category, keywords, applies_when, source_file" do
+        entry = GalaxyLedger::Entry.new(
+          entry_type: "guideline",
+          content: "Always use double-quotes for strings",
+          importance: "medium",
+          category: "ruby-style",
+          keywords: ["ruby", "strings", "quotes"],
+          applies_when: "Writing Ruby code",
+          source_file: "ruby-style.md"
+        )
+
+        GalaxyLedger::Database.insert("s1", entry).should be_true
+
+        entries = GalaxyLedger::Database.query_by_session("s1")
+        entries.size.should eq(1)
+        entries[0].category.should eq("ruby-style")
+        entries[0].keywords.should eq("[\"ruby\",\"strings\",\"quotes\"]")
+        entries[0].keywords_array.should eq(["ruby", "strings", "quotes"])
+        entries[0].applies_when.should eq("Writing Ruby code")
+        entries[0].source_file.should eq("ruby-style.md")
+      end
+
+      it "handles nil enhanced fields" do
+        entry = GalaxyLedger::Entry.new(
+          entry_type: "learning",
+          content: "Test learning",
+          importance: "medium"
+        )
+
+        GalaxyLedger::Database.insert("s1", entry).should be_true
+
+        entries = GalaxyLedger::Database.query_by_session("s1")
+        entries.size.should eq(1)
+        entries[0].category.should be_nil
+        entries[0].keywords.should be_nil
+        entries[0].keywords_array.should eq([] of String)
+        entries[0].applies_when.should be_nil
+        entries[0].source_file.should be_nil
+      end
+    end
+
+    describe ".search with enhanced FTS" do
+      before_each do
+        # Create entries with enhanced schema fields
+        entry1 = GalaxyLedger::Entry.new(
+          entry_type: "guideline",
+          content: "Always use double-quotes for strings",
+          importance: "medium",
+          category: "ruby-style",
+          keywords: ["ruby", "strings", "quotes", "formatting"],
+          applies_when: "Writing Ruby code",
+          source_file: "ruby-style.md"
+        )
+        entry2 = GalaxyLedger::Entry.new(
+          entry_type: "guideline",
+          content: "Use let! for database records",
+          importance: "medium",
+          category: "rspec",
+          keywords: ["rspec", "testing", "let", "database"],
+          applies_when: "Writing RSpec tests",
+          source_file: "rspec-style.md"
+        )
+        GalaxyLedger::Database.insert("s1", entry1)
+        GalaxyLedger::Database.insert("s1", entry2)
+      end
+
+      it "searches across keywords" do
+        # "formatting" is only in keywords, not content
+        entries = GalaxyLedger::Database.search("formatting")
+        entries.size.should eq(1)
+        entries[0].content.should contain("double-quotes")
+      end
+
+      it "searches across source_file with prefix match" do
+        # FTS5 tokenizes on hyphens, so "rspec-style.md" becomes tokens ["rspec", "style", "md"]
+        # Prefix matching "rspec" should find it
+        entries = GalaxyLedger::Database.search("rspec")
+        # Should find the rspec entry (source_file contains "rspec")
+        rspec_entries = entries.select { |e| e.content.includes?("let!") }
+        rspec_entries.size.should eq(1)
+      end
+
+      it "searches across category with prefix match" do
+        # FTS5 tokenizes "ruby-style" as ["ruby", "style"]
+        # Search for "ruby" should find it
+        entries = GalaxyLedger::Database.search("ruby")
+        ruby_entries = entries.select { |e| e.category == "ruby-style" }
+        ruby_entries.size.should eq(1)
+      end
+
+      it "filters by category" do
+        # Search for something in content and filter by category
+        all_entries = GalaxyLedger::Database.search("use")
+        all_entries.size.should eq(2)
+
+        filtered_entries = GalaxyLedger::Database.search("use", category: "ruby-style")
+        filtered_entries.size.should eq(1)
+        filtered_entries[0].category.should eq("ruby-style")
+      end
+    end
+
+    describe ".query_recent_filtered with category" do
+      before_each do
+        entry1 = GalaxyLedger::Entry.new(
+          entry_type: "guideline",
+          content: "Ruby rule 1",
+          importance: "medium",
+          category: "ruby-style"
+        )
+        entry2 = GalaxyLedger::Entry.new(
+          entry_type: "guideline",
+          content: "RSpec rule 1",
+          importance: "medium",
+          category: "rspec"
+        )
+        entry3 = GalaxyLedger::Entry.new(
+          entry_type: "guideline",
+          content: "Ruby rule 2",
+          importance: "high",
+          category: "ruby-style"
+        )
+        GalaxyLedger::Database.insert("s1", entry1)
+        GalaxyLedger::Database.insert("s1", entry2)
+        GalaxyLedger::Database.insert("s1", entry3)
+      end
+
+      it "filters by category alone" do
+        entries = GalaxyLedger::Database.query_recent_filtered(100, category: "ruby-style")
+        entries.size.should eq(2)
+        entries.all? { |e| e.category == "ruby-style" }.should be_true
+      end
+
+      it "filters by category and importance" do
+        entries = GalaxyLedger::Database.query_recent_filtered(100, category: "ruby-style", importance: "high")
+        entries.size.should eq(1)
+        entries[0].category.should eq("ruby-style")
+        entries[0].importance.should eq("high")
+      end
+
+      it "filters by category and type" do
+        entries = GalaxyLedger::Database.query_recent_filtered(100, entry_type: "guideline", category: "rspec")
+        entries.size.should eq(1)
+        entries[0].category.should eq("rspec")
+      end
+    end
+
+    describe "StoredEntry#to_entry preserves enhanced fields" do
+      it "converts with all enhanced fields" do
+        entry = GalaxyLedger::Entry.new(
+          entry_type: "guideline",
+          content: "Test rule",
+          importance: "medium",
+          category: "test-category",
+          keywords: ["key1", "key2"],
+          applies_when: "Testing",
+          source_file: "test.md"
+        )
+        GalaxyLedger::Database.insert("s1", entry)
+
+        ledger_entry = GalaxyLedger::Database.query_by_session("s1").first
+        buffer_entry = ledger_entry.to_entry
+
+        buffer_entry.category.should eq("test-category")
+        buffer_entry.keywords_array.should eq(["key1", "key2"])
+        buffer_entry.applies_when.should eq("Testing")
+        buffer_entry.source_file.should eq("test.md")
+      end
     end
   end
 end

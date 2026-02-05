@@ -4,12 +4,17 @@ module GalaxyLedger
   class Config
     include JSON::Serializable
 
+    # Schema version for config migration tracking
+    # This tracks which version of the schema this config was written with
+    @[JSON::Field(key: "_schema_version")]
+    property schema_version : String
+
+    # CLI version (for display purposes)
     property version : String
     property thresholds : Thresholds
     property warnings : Warnings
     property extraction : Extraction
     property storage : Storage
-    property buffer : Buffer
     property restoration : Restoration
 
     class Thresholds
@@ -78,22 +83,6 @@ module GalaxyLedger
       end
     end
 
-    class Buffer
-      include JSON::Serializable
-
-      @[JSON::Field(key: "flush_threshold")]
-      property flush_threshold : Int32
-
-      @[JSON::Field(key: "flush_interval_seconds")]
-      property flush_interval_seconds : Int32
-
-      def initialize(
-        @flush_threshold = 50,
-        @flush_interval_seconds = 300,
-      )
-      end
-    end
-
     class Restoration
       include JSON::Serializable
 
@@ -144,12 +133,12 @@ module GalaxyLedger
     end
 
     def initialize(
+      @schema_version = VERSION,
       @version = VERSION,
       @thresholds = Thresholds.new,
       @warnings = Warnings.new,
       @extraction = Extraction.new,
       @storage = Storage.new,
-      @buffer = Buffer.new,
       @restoration = Restoration.new,
     )
     end
@@ -168,10 +157,24 @@ module GalaxyLedger
       end
 
       begin
-        json = File.read(CONFIG_FILE)
-        config = Config.from_json(json)
-        # Ensure version is current
+        json_str = File.read(CONFIG_FILE)
+        json = JSON.parse(json_str)
+
+        # Run migrations if needed
+        migrated_json, changed = Migrations.migrate_config(json)
+
+        # Parse the (possibly migrated) config
+        config = Config.from_json(migrated_json.to_json)
+
+        # Ensure versions are current
         config.version = VERSION
+        config.schema_version = VERSION
+
+        # Save if migrations changed anything or if schema_version was missing
+        if changed || json["_schema_version"]?.nil?
+          config.save
+        end
+
         config
       rescue ex
         STDERR.puts "Warning: Could not parse config, using defaults: #{ex.message}"
@@ -202,8 +205,6 @@ module GalaxyLedger
         set_extraction(parts[1]?, value)
       when "storage"
         set_storage(parts[1]?, value)
-      when "buffer"
-        set_buffer(parts[1]?, value)
       when "restoration"
         set_restoration(parts[1]?, parts[2]?, value)
       else
@@ -225,8 +226,6 @@ module GalaxyLedger
         get_extraction(parts[1]?)
       when "storage"
         get_storage(parts[1]?)
-      when "buffer"
-        get_buffer(parts[1]?)
       when "restoration"
         get_restoration(parts[1]?, parts[2]?)
       else
@@ -337,34 +336,6 @@ module GalaxyLedger
       when "openai_api_key_env_var" then storage.openai_api_key_env_var
       else
         raise "Unknown storage field: storage.#{field}"
-      end
-    end
-
-    private def set_buffer(field : String?, value : String)
-      raise "Missing buffer field (e.g., buffer.flush_threshold)" unless field
-
-      int_value = value.to_i? || raise "Invalid buffer value: #{value} (must be integer)"
-
-      case field
-      when "flush_threshold"
-        raise "flush_threshold must be positive" if int_value < 1
-        buffer.flush_threshold = int_value
-      when "flush_interval_seconds"
-        raise "flush_interval_seconds must be positive" if int_value < 1
-        buffer.flush_interval_seconds = int_value
-      else
-        raise "Unknown buffer field: buffer.#{field}"
-      end
-    end
-
-    private def get_buffer(field : String?) : String
-      raise "Missing buffer field (e.g., buffer.flush_threshold)" unless field
-
-      case field
-      when "flush_threshold"        then buffer.flush_threshold.to_s
-      when "flush_interval_seconds" then buffer.flush_interval_seconds.to_s
-      else
-        raise "Unknown buffer field: buffer.#{field}"
       end
     end
 

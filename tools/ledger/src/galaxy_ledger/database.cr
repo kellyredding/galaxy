@@ -37,8 +37,9 @@ module GalaxyLedger
         db.exec("PRAGMA journal_mode=WAL")
         db.exec("PRAGMA foreign_keys=ON")
         # Set busy timeout for concurrent write safety (5 seconds)
-        # This replaces buffer's lock-based concurrency with SQLite's built-in retry
         db.exec("PRAGMA busy_timeout=5000")
+        # Run migrations if needed (checks version, runs migrations, updates version)
+        Migrations.migrate_database(db)
         yield db
       end
     end
@@ -58,15 +59,27 @@ module GalaxyLedger
     end
 
     # Create database schema
+    # This creates a fresh database with the latest schema and stamps it with the current version.
+    # For migrations from older versions, see the Migrations module.
     def self.create_schema
       db_path = database_path
       data_dir = db_path.parent
       Dir.mkdir_p(data_dir) unless Dir.exists?(data_dir)
 
       DB.open("sqlite3://#{db_path}") do |db|
+        # Schema version tracking table
+        db.exec(<<-SQL)
+          CREATE TABLE IF NOT EXISTS schema_info (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+          )
+        SQL
+
+        # Main ledger entries table
         db.exec(<<-SQL)
           CREATE TABLE IF NOT EXISTS ledger_entries (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT DEFAULT (datetime('now')),
             session_id TEXT NOT NULL,
             entry_type TEXT NOT NULL,
             source TEXT,
@@ -74,7 +87,10 @@ module GalaxyLedger
             content_hash TEXT NOT NULL,
             metadata TEXT,
             importance TEXT DEFAULT 'medium',
-            created_at TEXT DEFAULT (datetime('now'))
+            category TEXT,
+            keywords TEXT,
+            applies_when TEXT,
+            source_file TEXT
           )
         SQL
 
@@ -84,61 +100,118 @@ module GalaxyLedger
         db.exec("CREATE INDEX IF NOT EXISTS idx_source ON ledger_entries(source)")
         db.exec("CREATE INDEX IF NOT EXISTS idx_created ON ledger_entries(created_at)")
         db.exec("CREATE INDEX IF NOT EXISTS idx_importance ON ledger_entries(importance)")
+        db.exec("CREATE INDEX IF NOT EXISTS idx_category ON ledger_entries(category)")
 
         # Unique constraint for deduplication
         db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_content_dedup ON ledger_entries(session_id, entry_type, content_hash)")
 
-        # Full-text search virtual table
-        db.exec(<<-SQL)
-          CREATE VIRTUAL TABLE IF NOT EXISTS ledger_fts USING fts5(
-            content,
-            entry_type,
-            content='ledger_entries',
-            content_rowid='id'
-          )
-        SQL
+        # Phase 6.2: Enhanced FTS with category, keywords, and source_file for better search
+        # Check if we need to recreate FTS (if schema changed)
+        recreate_fts_if_needed(db)
 
-        # Triggers to keep FTS in sync
+        # Triggers to keep FTS in sync (including new fields)
         db.exec(<<-SQL)
           CREATE TRIGGER IF NOT EXISTS ledger_ai AFTER INSERT ON ledger_entries BEGIN
-            INSERT INTO ledger_fts(rowid, content, entry_type)
-            VALUES (new.id, new.content, new.entry_type);
+            INSERT INTO ledger_fts(rowid, content, entry_type, category, keywords, source_file)
+            VALUES (new.id, new.content, new.entry_type, new.category, new.keywords, new.source_file);
           END
         SQL
 
         db.exec(<<-SQL)
           CREATE TRIGGER IF NOT EXISTS ledger_ad AFTER DELETE ON ledger_entries BEGIN
-            INSERT INTO ledger_fts(ledger_fts, rowid, content, entry_type)
-            VALUES('delete', old.id, old.content, old.entry_type);
+            INSERT INTO ledger_fts(ledger_fts, rowid, content, entry_type, category, keywords, source_file)
+            VALUES('delete', old.id, old.content, old.entry_type, old.category, old.keywords, old.source_file);
           END
         SQL
 
         db.exec(<<-SQL)
           CREATE TRIGGER IF NOT EXISTS ledger_au AFTER UPDATE ON ledger_entries BEGIN
-            INSERT INTO ledger_fts(ledger_fts, rowid, content, entry_type)
-            VALUES('delete', old.id, old.content, old.entry_type);
-            INSERT INTO ledger_fts(rowid, content, entry_type)
-            VALUES (new.id, new.content, new.entry_type);
+            INSERT INTO ledger_fts(ledger_fts, rowid, content, entry_type, category, keywords, source_file)
+            VALUES('delete', old.id, old.content, old.entry_type, old.category, old.keywords, old.source_file);
+            INSERT INTO ledger_fts(rowid, content, entry_type, category, keywords, source_file)
+            VALUES (new.id, new.content, new.entry_type, new.category, new.keywords, new.source_file);
           END
         SQL
+
+        # Stamp with current version (fresh installs get latest schema)
+        Migrations.set_database_version(db, GalaxyLedger::VERSION)
       end
     end
 
-    # Insert a buffer entry into the database
+    # Recreate FTS table if schema changed (Phase 6.2)
+    private def self.recreate_fts_if_needed(db)
+      # Check if ledger_fts exists
+      fts_exists = db.scalar(<<-SQL).as(Int64) > 0
+        SELECT COUNT(*) FROM sqlite_master
+        WHERE type='table' AND name='ledger_fts'
+      SQL
+
+      if fts_exists
+        # Check if FTS has the new columns by looking at its structure
+        # FTS5 stores column info in the fts table itself
+        has_new_columns = false
+        begin
+          # Try to query with new columns - if it works, we have them
+          db.exec("SELECT category, keywords, source_file FROM ledger_fts LIMIT 0")
+          has_new_columns = true
+        rescue
+          has_new_columns = false
+        end
+
+        unless has_new_columns
+          # Drop old FTS and triggers, then recreate
+          db.exec("DROP TRIGGER IF EXISTS ledger_ai")
+          db.exec("DROP TRIGGER IF EXISTS ledger_ad")
+          db.exec("DROP TRIGGER IF EXISTS ledger_au")
+          db.exec("DROP TABLE IF EXISTS ledger_fts")
+        end
+      end
+
+      # Create FTS table with all columns (including Phase 6.2 additions)
+      db.exec(<<-SQL)
+        CREATE VIRTUAL TABLE IF NOT EXISTS ledger_fts USING fts5(
+          content,
+          entry_type,
+          category,
+          keywords,
+          source_file,
+          content='ledger_entries',
+          content_rowid='id'
+        )
+      SQL
+
+      # If FTS was recreated, rebuild index from existing entries
+      if fts_exists
+        # Check if FTS is empty but entries exist
+        fts_count = db.scalar("SELECT COUNT(*) FROM ledger_fts").as(Int64)
+        entries_count = db.scalar("SELECT COUNT(*) FROM ledger_entries").as(Int64)
+        if fts_count == 0 && entries_count > 0
+          # Rebuild FTS from entries
+          db.exec(<<-SQL)
+            INSERT INTO ledger_fts(rowid, content, entry_type, category, keywords, source_file)
+            SELECT id, content, entry_type, category, keywords, source_file FROM ledger_entries
+          SQL
+        end
+      end
+    end
+
+    # Insert an entry into the database
     # Returns true if inserted, false if duplicate (content_hash conflict)
-    def self.insert(session_id : String, entry : Buffer::Entry) : Bool
+    def self.insert(session_id : String, entry : Entry) : Bool
       return false if session_id.empty?
       return false unless entry.valid?
 
       hash = content_hash(entry.entry_type, entry.content)
       metadata_json = entry.metadata.try(&.to_json)
+      kw = entry.keywords_array
+      keywords_json = kw.empty? ? nil : kw.to_json
 
       begin
         open do |db|
           result = db.exec(
             <<-SQL,
-              INSERT INTO ledger_entries (session_id, entry_type, source, content, content_hash, metadata, importance, created_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+              INSERT INTO ledger_entries (session_id, entry_type, source, content, content_hash, metadata, importance, created_at, category, keywords, applies_when, source_file)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
               ON CONFLICT (session_id, entry_type, content_hash) DO NOTHING
             SQL
             session_id,
@@ -148,7 +221,11 @@ module GalaxyLedger
             hash,
             metadata_json,
             entry.importance,
-            entry.created_at
+            entry.created_at,
+            entry.category,
+            keywords_json,
+            entry.applies_when,
+            entry.source_file
           )
           result.rows_affected > 0
         end
@@ -159,7 +236,7 @@ module GalaxyLedger
 
     # Insert multiple entries (batch insert)
     # Returns count of entries actually inserted (excludes duplicates)
-    def self.insert_many(session_id : String, entries : Array(Buffer::Entry)) : Int32
+    def self.insert_many(session_id : String, entries : Array(Entry)) : Int32
       return 0 if session_id.empty?
       return 0 if entries.empty?
 
@@ -171,11 +248,13 @@ module GalaxyLedger
 
             hash = content_hash(entry.entry_type, entry.content)
             metadata_json = entry.metadata.try(&.to_json)
+            kw = entry.keywords_array
+            keywords_json = kw.empty? ? nil : kw.to_json
 
             result = db.exec(
               <<-SQL,
-                INSERT INTO ledger_entries (session_id, entry_type, source, content, content_hash, metadata, importance, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO ledger_entries (session_id, entry_type, source, content, content_hash, metadata, importance, created_at, category, keywords, applies_when, source_file)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (session_id, entry_type, content_hash) DO NOTHING
               SQL
               session_id,
@@ -185,7 +264,11 @@ module GalaxyLedger
               hash,
               metadata_json,
               entry.importance,
-              entry.created_at
+              entry.created_at,
+              entry.category,
+              keywords_json,
+              entry.applies_when,
+              entry.source_file
             )
             inserted += 1 if result.rows_affected > 0
           end
@@ -236,15 +319,15 @@ module GalaxyLedger
     end
 
     # Query entries by session (most recent first)
-    def self.query_by_session(session_id : String, limit : Int32 = 100) : Array(LedgerEntry)
-      return [] of LedgerEntry if session_id.empty?
+    def self.query_by_session(session_id : String, limit : Int32 = 100) : Array(StoredEntry)
+      return [] of StoredEntry if session_id.empty?
 
-      entries = [] of LedgerEntry
+      entries = [] of StoredEntry
       begin
         open do |db|
           db.query(
             <<-SQL,
-              SELECT id, session_id, entry_type, source, content, content_hash, metadata, importance, created_at
+              SELECT id, created_at, session_id, entry_type, source, content, content_hash, metadata, importance, category, keywords, applies_when, source_file
               FROM ledger_entries
               WHERE session_id = ?
               ORDER BY created_at DESC
@@ -254,7 +337,7 @@ module GalaxyLedger
             limit
           ) do |rs|
             rs.each do
-              entries << LedgerEntry.from_row(rs)
+              entries << StoredEntry.from_row(rs)
             end
           end
         end
@@ -265,15 +348,15 @@ module GalaxyLedger
     end
 
     # Query entries by type for a session
-    def self.query_by_type(session_id : String, entry_type : String, limit : Int32 = 100) : Array(LedgerEntry)
-      return [] of LedgerEntry if session_id.empty?
+    def self.query_by_type(session_id : String, entry_type : String, limit : Int32 = 100) : Array(StoredEntry)
+      return [] of StoredEntry if session_id.empty?
 
-      entries = [] of LedgerEntry
+      entries = [] of StoredEntry
       begin
         open do |db|
           db.query(
             <<-SQL,
-              SELECT id, session_id, entry_type, source, content, content_hash, metadata, importance, created_at
+              SELECT id, created_at, session_id, entry_type, source, content, content_hash, metadata, importance, category, keywords, applies_when, source_file
               FROM ledger_entries
               WHERE session_id = ? AND entry_type = ?
               ORDER BY created_at DESC
@@ -284,7 +367,7 @@ module GalaxyLedger
             limit
           ) do |rs|
             rs.each do
-              entries << LedgerEntry.from_row(rs)
+              entries << StoredEntry.from_row(rs)
             end
           end
         end
@@ -295,15 +378,15 @@ module GalaxyLedger
     end
 
     # Query entries by importance for a session
-    def self.query_by_importance(session_id : String, importance : String, limit : Int32 = 100) : Array(LedgerEntry)
-      return [] of LedgerEntry if session_id.empty?
+    def self.query_by_importance(session_id : String, importance : String, limit : Int32 = 100) : Array(StoredEntry)
+      return [] of StoredEntry if session_id.empty?
 
-      entries = [] of LedgerEntry
+      entries = [] of StoredEntry
       begin
         open do |db|
           db.query(
             <<-SQL,
-              SELECT id, session_id, entry_type, source, content, content_hash, metadata, importance, created_at
+              SELECT id, created_at, session_id, entry_type, source, content, content_hash, metadata, importance, category, keywords, applies_when, source_file
               FROM ledger_entries
               WHERE session_id = ? AND importance = ?
               ORDER BY created_at DESC
@@ -314,7 +397,7 @@ module GalaxyLedger
             limit
           ) do |rs|
             rs.each do
-              entries << LedgerEntry.from_row(rs)
+              entries << StoredEntry.from_row(rs)
             end
           end
         end
@@ -325,13 +408,13 @@ module GalaxyLedger
     end
 
     # Query most recent entries across all sessions
-    def self.query_recent(limit : Int32 = 100) : Array(LedgerEntry)
-      entries = [] of LedgerEntry
+    def self.query_recent(limit : Int32 = 100) : Array(StoredEntry)
+      entries = [] of StoredEntry
       begin
         open do |db|
           db.query(
             <<-SQL,
-              SELECT id, session_id, entry_type, source, content, content_hash, metadata, importance, created_at
+              SELECT id, created_at, session_id, entry_type, source, content, content_hash, metadata, importance, category, keywords, applies_when, source_file
               FROM ledger_entries
               ORDER BY created_at DESC
               LIMIT ?
@@ -339,7 +422,7 @@ module GalaxyLedger
             limit
           ) do |rs|
             rs.each do
-              entries << LedgerEntry.from_row(rs)
+              entries << StoredEntry.from_row(rs)
             end
           end
         end
@@ -371,41 +454,46 @@ module GalaxyLedger
     struct SearchOptions
       getter entry_type : String?
       getter importance : String?
+      getter category : String?
       getter prefix_match : Bool
 
       def initialize(
         @entry_type : String? = nil,
         @importance : String? = nil,
+        @category : String? = nil,
         @prefix_match : Bool = true,
       )
       end
     end
 
     # Full-text search across all entries with optional filters
+    # Phase 6.2: FTS now searches across content, keywords, category, and source_file
     def self.search(
       query : String,
       limit : Int32 = 50,
       entry_type : String? = nil,
       importance : String? = nil,
+      category : String? = nil,
       prefix_match : Bool = true,
-    ) : Array(LedgerEntry)
-      return [] of LedgerEntry if query.strip.empty?
+    ) : Array(StoredEntry)
+      return [] of StoredEntry if query.strip.empty?
 
       fts_query = prepare_fts_query(query, prefix_match)
-      entries = [] of LedgerEntry
+      entries = [] of StoredEntry
 
       begin
         open do |db|
           # Build query with optional filters
           sql = String.build do |s|
             s << <<-SQL
-              SELECT e.id, e.session_id, e.entry_type, e.source, e.content, e.content_hash, e.metadata, e.importance, e.created_at
+              SELECT e.id, e.created_at, e.session_id, e.entry_type, e.source, e.content, e.content_hash, e.metadata, e.importance, e.category, e.keywords, e.applies_when, e.source_file
               FROM ledger_entries e
               JOIN ledger_fts f ON e.id = f.rowid
               WHERE ledger_fts MATCH ?
             SQL
             s << " AND e.entry_type = ?" if entry_type
             s << " AND e.importance = ?" if importance
+            s << " AND e.category = ?" if category
             s << " ORDER BY rank LIMIT ?"
           end
 
@@ -413,11 +501,12 @@ module GalaxyLedger
           args = [fts_query] of DB::Any
           args << entry_type if entry_type
           args << importance if importance
+          args << category if category
           args << limit
 
           db.query(sql, args: args) do |rs|
             rs.each do
-              entries << LedgerEntry.from_row(rs)
+              entries << StoredEntry.from_row(rs)
             end
           end
         end
@@ -428,32 +517,35 @@ module GalaxyLedger
     end
 
     # Full-text search within a session with optional filters
+    # Phase 6.2: FTS now searches across content, keywords, category, and source_file
     def self.search_in_session(
       session_id : String,
       query : String,
       limit : Int32 = 50,
       entry_type : String? = nil,
       importance : String? = nil,
+      category : String? = nil,
       prefix_match : Bool = true,
-    ) : Array(LedgerEntry)
-      return [] of LedgerEntry if session_id.empty?
-      return [] of LedgerEntry if query.strip.empty?
+    ) : Array(StoredEntry)
+      return [] of StoredEntry if session_id.empty?
+      return [] of StoredEntry if query.strip.empty?
 
       fts_query = prepare_fts_query(query, prefix_match)
-      entries = [] of LedgerEntry
+      entries = [] of StoredEntry
 
       begin
         open do |db|
           # Build query with optional filters
           sql = String.build do |s|
             s << <<-SQL
-              SELECT e.id, e.session_id, e.entry_type, e.source, e.content, e.content_hash, e.metadata, e.importance, e.created_at
+              SELECT e.id, e.created_at, e.session_id, e.entry_type, e.source, e.content, e.content_hash, e.metadata, e.importance, e.category, e.keywords, e.applies_when, e.source_file
               FROM ledger_entries e
               JOIN ledger_fts f ON e.id = f.rowid
               WHERE e.session_id = ? AND ledger_fts MATCH ?
             SQL
             s << " AND e.entry_type = ?" if entry_type
             s << " AND e.importance = ?" if importance
+            s << " AND e.category = ?" if category
             s << " ORDER BY rank LIMIT ?"
           end
 
@@ -461,11 +553,12 @@ module GalaxyLedger
           args = [session_id, fts_query] of DB::Any
           args << entry_type if entry_type
           args << importance if importance
+          args << category if category
           args << limit
 
           db.query(sql, args: args) do |rs|
             rs.each do
-              entries << LedgerEntry.from_row(rs)
+              entries << StoredEntry.from_row(rs)
             end
           end
         end
@@ -503,35 +596,39 @@ module GalaxyLedger
       stats
     end
 
-    # Query recent entries with optional type and importance filters
+    # Query recent entries with optional type, importance, and category filters
     # Used by list command with filters
+    # Phase 6.2: Added category filter
     def self.query_recent_filtered(
       limit : Int32 = 100,
       entry_type : String? = nil,
       importance : String? = nil,
-    ) : Array(LedgerEntry)
-      entries = [] of LedgerEntry
+      category : String? = nil,
+    ) : Array(StoredEntry)
+      entries = [] of StoredEntry
       begin
         open do |db|
           sql = String.build do |s|
             s << <<-SQL
-              SELECT id, session_id, entry_type, source, content, content_hash, metadata, importance, created_at
+              SELECT id, created_at, session_id, entry_type, source, content, content_hash, metadata, importance, category, keywords, applies_when, source_file
               FROM ledger_entries
               WHERE 1=1
             SQL
             s << " AND entry_type = ?" if entry_type
             s << " AND importance = ?" if importance
+            s << " AND category = ?" if category
             s << " ORDER BY created_at DESC LIMIT ?"
           end
 
           args = [] of DB::Any
           args << entry_type if entry_type
           args << importance if importance
+          args << category if category
           args << limit
 
           db.query(sql, args: args) do |rs|
             rs.each do
-              entries << LedgerEntry.from_row(rs)
+              entries << StoredEntry.from_row(rs)
             end
           end
         end
@@ -550,9 +647,9 @@ module GalaxyLedger
     # - Implementation plans (extracted from implementation plan files)
     # - High-importance decisions
     struct Tier1Result
-      getter guidelines : Array(LedgerEntry)
-      getter implementation_plans : Array(LedgerEntry)
-      getter high_importance_decisions : Array(LedgerEntry)
+      getter guidelines : Array(StoredEntry)
+      getter implementation_plans : Array(StoredEntry)
+      getter high_importance_decisions : Array(StoredEntry)
 
       def initialize(@guidelines, @implementation_plans, @high_importance_decisions)
       end
@@ -564,9 +661,9 @@ module GalaxyLedger
 
     # Query Tier 1 essentials for a session
     def self.query_tier1(session_id : String, decision_limit : Int32 = 10) : Tier1Result
-      guidelines = [] of LedgerEntry
-      impl_plans = [] of LedgerEntry
-      decisions = [] of LedgerEntry
+      guidelines = [] of StoredEntry
+      impl_plans = [] of StoredEntry
+      decisions = [] of StoredEntry
 
       return Tier1Result.new(guidelines, impl_plans, decisions) if session_id.empty?
 
@@ -575,33 +672,33 @@ module GalaxyLedger
           # All guidelines for this session
           db.query(
             <<-SQL,
-              SELECT id, session_id, entry_type, source, content, content_hash, metadata, importance, created_at
+              SELECT id, created_at, session_id, entry_type, source, content, content_hash, metadata, importance, category, keywords, applies_when, source_file
               FROM ledger_entries
               WHERE session_id = ? AND entry_type = 'guideline'
               ORDER BY created_at DESC
             SQL
             session_id
           ) do |rs|
-            rs.each { guidelines << LedgerEntry.from_row(rs) }
+            rs.each { guidelines << StoredEntry.from_row(rs) }
           end
 
           # All implementation plans for this session
           db.query(
             <<-SQL,
-              SELECT id, session_id, entry_type, source, content, content_hash, metadata, importance, created_at
+              SELECT id, created_at, session_id, entry_type, source, content, content_hash, metadata, importance, category, keywords, applies_when, source_file
               FROM ledger_entries
               WHERE session_id = ? AND entry_type = 'implementation_plan'
               ORDER BY created_at DESC
             SQL
             session_id
           ) do |rs|
-            rs.each { impl_plans << LedgerEntry.from_row(rs) }
+            rs.each { impl_plans << StoredEntry.from_row(rs) }
           end
 
           # High-importance decisions (limited)
           db.query(
             <<-SQL,
-              SELECT id, session_id, entry_type, source, content, content_hash, metadata, importance, created_at
+              SELECT id, created_at, session_id, entry_type, source, content, content_hash, metadata, importance, category, keywords, applies_when, source_file
               FROM ledger_entries
               WHERE session_id = ? AND entry_type = 'decision' AND importance = 'high'
               ORDER BY created_at DESC
@@ -610,7 +707,7 @@ module GalaxyLedger
             session_id,
             decision_limit
           ) do |rs|
-            rs.each { decisions << LedgerEntry.from_row(rs) }
+            rs.each { decisions << StoredEntry.from_row(rs) }
           end
         end
       rescue
@@ -625,9 +722,9 @@ module GalaxyLedger
     # - Recent file edits
     # - Medium-importance decisions
     struct Tier2Result
-      getter learnings : Array(LedgerEntry)
-      getter file_edits : Array(LedgerEntry)
-      getter medium_decisions : Array(LedgerEntry)
+      getter learnings : Array(StoredEntry)
+      getter file_edits : Array(StoredEntry)
+      getter medium_decisions : Array(StoredEntry)
 
       def initialize(@learnings, @file_edits, @medium_decisions)
       end
@@ -644,9 +741,9 @@ module GalaxyLedger
       file_edits_limit : Int32 = 10,
       decisions_limit : Int32 = 5,
     ) : Tier2Result
-      learnings = [] of LedgerEntry
-      file_edits = [] of LedgerEntry
-      decisions = [] of LedgerEntry
+      learnings = [] of StoredEntry
+      file_edits = [] of StoredEntry
+      decisions = [] of StoredEntry
 
       return Tier2Result.new(learnings, file_edits, decisions) if session_id.empty?
 
@@ -655,7 +752,7 @@ module GalaxyLedger
           # Recent learnings (all importance levels)
           db.query(
             <<-SQL,
-              SELECT id, session_id, entry_type, source, content, content_hash, metadata, importance, created_at
+              SELECT id, created_at, session_id, entry_type, source, content, content_hash, metadata, importance, category, keywords, applies_when, source_file
               FROM ledger_entries
               WHERE session_id = ? AND entry_type = 'learning'
               ORDER BY created_at DESC
@@ -664,13 +761,13 @@ module GalaxyLedger
             session_id,
             learnings_limit
           ) do |rs|
-            rs.each { learnings << LedgerEntry.from_row(rs) }
+            rs.each { learnings << StoredEntry.from_row(rs) }
           end
 
           # Recent file edits
           db.query(
             <<-SQL,
-              SELECT id, session_id, entry_type, source, content, content_hash, metadata, importance, created_at
+              SELECT id, created_at, session_id, entry_type, source, content, content_hash, metadata, importance, category, keywords, applies_when, source_file
               FROM ledger_entries
               WHERE session_id = ? AND entry_type = 'file_edit'
               ORDER BY created_at DESC
@@ -679,13 +776,13 @@ module GalaxyLedger
             session_id,
             file_edits_limit
           ) do |rs|
-            rs.each { file_edits << LedgerEntry.from_row(rs) }
+            rs.each { file_edits << StoredEntry.from_row(rs) }
           end
 
           # Medium-importance decisions
           db.query(
             <<-SQL,
-              SELECT id, session_id, entry_type, source, content, content_hash, metadata, importance, created_at
+              SELECT id, created_at, session_id, entry_type, source, content, content_hash, metadata, importance, category, keywords, applies_when, source_file
               FROM ledger_entries
               WHERE session_id = ? AND entry_type = 'decision' AND importance = 'medium'
               ORDER BY created_at DESC
@@ -694,7 +791,7 @@ module GalaxyLedger
             session_id,
             decisions_limit
           ) do |rs|
-            rs.each { decisions << LedgerEntry.from_row(rs) }
+            rs.each { decisions << StoredEntry.from_row(rs) }
           end
         end
       rescue
@@ -731,8 +828,9 @@ module GalaxyLedger
     end
 
     # A ledger entry from the database
-    struct LedgerEntry
+    struct StoredEntry
       getter id : Int64
+      getter created_at : String
       getter session_id : String
       getter entry_type : String
       getter source : String?
@@ -740,10 +838,15 @@ module GalaxyLedger
       getter content_hash : String
       getter metadata : String?
       getter importance : String
-      getter created_at : String
+      # Phase 6.2: Enhanced schema fields
+      getter category : String?
+      getter keywords : String?    # JSON array stored as text
+      getter applies_when : String?
+      getter source_file : String?
 
       def initialize(
         @id,
+        @created_at,
         @session_id,
         @entry_type,
         @source,
@@ -751,13 +854,17 @@ module GalaxyLedger
         @content_hash,
         @metadata,
         @importance,
-        @created_at,
+        @category = nil,
+        @keywords = nil,
+        @applies_when = nil,
+        @source_file = nil,
       )
       end
 
-      def self.from_row(rs) : LedgerEntry
-        LedgerEntry.new(
+      def self.from_row(rs) : StoredEntry
+        StoredEntry.new(
           id: rs.read(Int64),
+          created_at: rs.read(String),
           session_id: rs.read(String),
           entry_type: rs.read(String),
           source: rs.read(String?),
@@ -765,25 +872,45 @@ module GalaxyLedger
           content_hash: rs.read(String),
           metadata: rs.read(String?),
           importance: rs.read(String),
-          created_at: rs.read(String)
+          category: rs.read(String?),
+          keywords: rs.read(String?),
+          applies_when: rs.read(String?),
+          source_file: rs.read(String?)
         )
       end
 
-      # Convert to Buffer::Entry for compatibility
-      def to_buffer_entry : Buffer::Entry
+      # Parse keywords from JSON string to array
+      def keywords_array : Array(String)
+        if kw = keywords
+          begin
+            JSON.parse(kw).as_a.map(&.as_s)
+          rescue
+            [] of String
+          end
+        else
+          [] of String
+        end
+      end
+
+      # Convert to Entry for compatibility
+      def to_entry : Entry
         metadata_any = if m = metadata
                          JSON.parse(m)
                        else
                          nil
                        end
 
-        Buffer::Entry.new(
+        Entry.new(
           entry_type: entry_type,
           content: content,
           importance: importance,
           source: source,
           metadata: metadata_any,
-          created_at: created_at
+          created_at: created_at,
+          category: category,
+          keywords: keywords_array,
+          applies_when: applies_when,
+          source_file: source_file
         )
       end
     end

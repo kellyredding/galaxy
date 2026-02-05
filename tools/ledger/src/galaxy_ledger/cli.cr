@@ -579,6 +579,7 @@ module GalaxyLedger
       # Parse options
       entry_type : String? = nil
       importance : String? = nil
+      category : String? = nil
       prefix_match = true
       query : String? = nil
 
@@ -590,19 +591,22 @@ module GalaxyLedger
           i += 2
         elsif arg == "--type" && i + 1 < args.size
           entry_type = args[i + 1]
-          unless Buffer::ENTRY_TYPES.includes?(entry_type)
+          unless ENTRY_TYPES.includes?(entry_type)
             STDERR.puts "Error: Invalid type '#{entry_type}'"
-            STDERR.puts "Valid types: #{Buffer::ENTRY_TYPES.join(", ")}"
+            STDERR.puts "Valid types: #{ENTRY_TYPES.join(", ")}"
             exit(1)
           end
           i += 2
         elsif arg == "--importance" && i + 1 < args.size
           importance = args[i + 1]
-          unless Buffer::IMPORTANCE_LEVELS.includes?(importance)
+          unless IMPORTANCE_LEVELS.includes?(importance)
             STDERR.puts "Error: Invalid importance '#{importance}'"
-            STDERR.puts "Valid levels: #{Buffer::IMPORTANCE_LEVELS.join(", ")}"
+            STDERR.puts "Valid levels: #{IMPORTANCE_LEVELS.join(", ")}"
             exit(1)
           end
+          i += 2
+        elsif arg == "--category" && i + 1 < args.size
+          category = args[i + 1]
           i += 2
         elsif arg == "--exact"
           prefix_match = false
@@ -621,36 +625,47 @@ module GalaxyLedger
         exit(1)
       end
 
-      entries = Database.search(query, entry_type: entry_type, importance: importance, prefix_match: prefix_match)
+      entries = Database.search(query, entry_type: entry_type, importance: importance, category: category, prefix_match: prefix_match)
 
       if entries.empty?
         puts "No results found for: #{query}"
-        if entry_type || importance
+        if entry_type || importance || category
           filters = [] of String
           filters << "type=#{entry_type}" if entry_type
           filters << "importance=#{importance}" if importance
+          filters << "category=#{category}" if category
           puts "  Filters: #{filters.join(", ")}"
         end
         return
       end
 
       puts "Search results for: #{query}"
-      if entry_type || importance
+      if entry_type || importance || category
         filters = [] of String
         filters << "type=#{entry_type}" if entry_type
         filters << "importance=#{importance}" if importance
+        filters << "category=#{category}" if category
         puts "  Filters: #{filters.join(", ")}"
       end
       puts "  Found: #{entries.size} entries"
       puts ""
 
       entries.each_with_index do |entry, idx|
-        puts "[#{idx + 1}] #{entry.entry_type} (#{entry.importance})"
+        # Phase 6.2: Show category in header if present
+        header = "[#{idx + 1}] #{entry.entry_type} (#{entry.importance})"
+        header += " [#{entry.category}]" if entry.category
+        puts header
         if source = entry.source
           puts "    Source: #{source}"
         end
+        if source_file = entry.source_file
+          puts "    File: #{source_file}"
+        end
         puts "    Session: #{entry.session_id[0, 8]}..."
         puts "    Content: #{truncate(entry.content, 100)}"
+        # Phase 6.2: Show keywords if present
+        keywords = entry.keywords_array
+        puts "    Keywords: #{keywords.join(", ")}" if keywords.any?
         puts "    Created: #{entry.created_at}"
         puts ""
       end
@@ -665,20 +680,23 @@ module GalaxyLedger
 
       REQUIRED:
         --query QUERY         The search query (supports prefix matching by default)
+                              Searches across content, keywords, category, and source file
 
       OPTIONS:
         --type TYPE           Filter by entry type
         --importance LEVEL    Filter by importance (high, medium, low)
+        --category CATEGORY   Filter by category (e.g., ruby-style, rspec, git-workflow)
         --exact               Disable prefix matching (exact word match only)
         -h, --help            Show this help
 
       ENTRY TYPES:
-        #{Buffer::ENTRY_TYPES.join(", ")}
+        #{ENTRY_TYPES.join(", ")}
 
       EXAMPLES:
         galaxy-ledger search --query "JWT authentication"
         galaxy-ledger search --query "database" --type learning
         galaxy-ledger search --query "Redis" --importance high
+        galaxy-ledger search --query "trailing" --category ruby-style
         galaxy-ledger search --query "trail"          # Finds "trailing" (prefix match)
         galaxy-ledger search --query "trail" --exact  # No match (exact only)
         galaxy-ledger search --query "--help"         # Search for literal "--help"
@@ -702,17 +720,17 @@ module GalaxyLedger
         arg = args[i]
         if arg == "--type" && i + 1 < args.size
           entry_type = args[i + 1]
-          unless Buffer::ENTRY_TYPES.includes?(entry_type)
+          unless ENTRY_TYPES.includes?(entry_type)
             STDERR.puts "Error: Invalid type '#{entry_type}'"
-            STDERR.puts "Valid types: #{Buffer::ENTRY_TYPES.join(", ")}"
+            STDERR.puts "Valid types: #{ENTRY_TYPES.join(", ")}"
             exit(1)
           end
           i += 2
         elsif arg == "--importance" && i + 1 < args.size
           importance = args[i + 1]
-          unless Buffer::IMPORTANCE_LEVELS.includes?(importance)
+          unless IMPORTANCE_LEVELS.includes?(importance)
             STDERR.puts "Error: Invalid importance '#{importance}'"
-            STDERR.puts "Valid levels: #{Buffer::IMPORTANCE_LEVELS.join(", ")}"
+            STDERR.puts "Valid levels: #{IMPORTANCE_LEVELS.join(", ")}"
             exit(1)
           end
           i += 2
@@ -755,12 +773,21 @@ module GalaxyLedger
       puts ""
 
       entries.each_with_index do |entry, idx|
-        puts "[#{idx + 1}] #{entry.entry_type} (#{entry.importance})"
+        # Phase 6.2: Show category in header if present
+        header = "[#{idx + 1}] #{entry.entry_type} (#{entry.importance})"
+        header += " [#{entry.category}]" if entry.category
+        puts header
         if source = entry.source
           puts "    Source: #{source}"
         end
+        if source_file = entry.source_file
+          puts "    File: #{source_file}"
+        end
         puts "    Session: #{entry.session_id[0, 8]}..."
         puts "    Content: #{truncate(entry.content, 100)}"
+        # Phase 6.2: Show keywords if present
+        keywords = entry.keywords_array
+        puts "    Keywords: #{keywords.join(", ")}" if keywords.any?
         puts "    Created: #{entry.created_at}"
         puts ""
       end
@@ -780,7 +807,7 @@ module GalaxyLedger
         -h, --help              Show this help
 
       ENTRY TYPES:
-        #{Buffer::ENTRY_TYPES.join(", ")}
+        #{ENTRY_TYPES.join(", ")}
 
       EXAMPLES:
         galaxy-ledger list
@@ -809,9 +836,9 @@ module GalaxyLedger
         arg = args[i]
         if arg == "--type" && i + 1 < args.size
           entry_type = args[i + 1]
-          unless Buffer::ENTRY_TYPES.includes?(entry_type)
+          unless ENTRY_TYPES.includes?(entry_type)
             STDERR.puts "Error: Invalid type '#{entry_type}'"
-            STDERR.puts "Valid types: #{Buffer::ENTRY_TYPES.join(", ")}"
+            STDERR.puts "Valid types: #{ENTRY_TYPES.join(", ")}"
             exit(1)
           end
           i += 2
@@ -820,9 +847,9 @@ module GalaxyLedger
           i += 2
         elsif arg == "--importance" && i + 1 < args.size
           importance = args[i + 1]
-          unless Buffer::IMPORTANCE_LEVELS.includes?(importance)
+          unless IMPORTANCE_LEVELS.includes?(importance)
             STDERR.puts "Error: Invalid importance '#{importance}'"
-            STDERR.puts "Valid levels: #{Buffer::IMPORTANCE_LEVELS.join(", ")}"
+            STDERR.puts "Valid levels: #{IMPORTANCE_LEVELS.join(", ")}"
             exit(1)
           end
           i += 2
@@ -850,7 +877,7 @@ module GalaxyLedger
       end
 
       # Create entry and insert directly into database
-      entry = Buffer::Entry.new(
+      entry = Entry.new(
         entry_type: entry_type,
         content: content,
         importance: importance,
@@ -1467,7 +1494,7 @@ module GalaxyLedger
       # Write extracted entries directly to database
       if result.extractions.any?
         entries = result.extractions.select(&.valid?).map do |e|
-          e.to_buffer_entry(source: "user")
+          e.to_entry(source: "user")
         end
         inserted = Database.insert_many(session_id, entries)
         if inserted > 0
@@ -1544,7 +1571,7 @@ module GalaxyLedger
         # Write extracted entries directly to database
         if result.extractions.any?
           entries = result.extractions.select(&.valid?).map do |e|
-            e.to_buffer_entry(source: "assistant")
+            e.to_entry(source: "assistant")
           end
           inserted = Database.insert_many(session_id, entries)
           if inserted > 0
@@ -1649,16 +1676,10 @@ module GalaxyLedger
                end
 
       # Write extracted entries directly to database
+      # Phase 6.2: Entries now include category, keywords, applies_when, source_file
       if result.extractions.any?
         entries = result.extractions.select(&.valid?).map do |e|
-          # Add file path to metadata
-          metadata = JSON.parse({"source_file" => file_path}.to_json)
-          Buffer::Entry.new(
-            entry_type: e.entry_type,
-            content: e.content,
-            importance: e.importance,
-            metadata: metadata,
-          )
+          e.to_entry
         end
         inserted = Database.insert_many(session_id, entries)
         if inserted > 0

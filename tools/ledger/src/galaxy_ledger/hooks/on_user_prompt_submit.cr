@@ -30,7 +30,7 @@ module GalaxyLedger
         Dir.mkdir_p(session_dir) unless Dir.exists?(session_dir)
 
         # Phase 6: Spawn async extraction for user directions
-        # Instead of buffering raw prompts, we extract actual directions/preferences/constraints
+        # Extract actual directions/preferences/constraints and write to database
         spawn_extraction_async(session_id, prompt)
       end
 
