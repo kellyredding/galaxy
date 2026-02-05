@@ -74,6 +74,7 @@ enum BellPreference: String, Codable, CaseIterable {
 /// Persistent settings for the Galaxy app
 struct AppSettings: Codable {
     var sidebarPosition: SidebarPosition = .left
+    var sidebarWidth: CGFloat = 220.0  // Width of sessions panel
     var themePreference: ThemePreference = .system
     var bellPreference: BellPreference = .system
     var showBellBadge: Bool = true
@@ -81,6 +82,9 @@ struct AppSettings: Codable {
     // Font size settings
     var chromeFontSize: CGFloat = 13.0  // Base font size for app chrome (sidebar, labels, etc.)
     var defaultTerminalFontSize: CGFloat = 13.0  // Default font size for new terminal sessions
+
+    // Sidebar width constraints
+    static let sidebarWidthRange: ClosedRange<CGFloat> = 150...500
 
     // Font size constraints
     static let chromeFontSizeRange: ClosedRange<CGFloat> = 8...24
@@ -94,6 +98,7 @@ struct AppSettings: Codable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         sidebarPosition = try container.decodeIfPresent(SidebarPosition.self, forKey: .sidebarPosition) ?? .left
+        sidebarWidth = try container.decodeIfPresent(CGFloat.self, forKey: .sidebarWidth) ?? 220.0
         themePreference = try container.decodeIfPresent(ThemePreference.self, forKey: .themePreference) ?? .system
         bellPreference = try container.decodeIfPresent(BellPreference.self, forKey: .bellPreference) ?? .system
         showBellBadge = try container.decodeIfPresent(Bool.self, forKey: .showBellBadge) ?? true
