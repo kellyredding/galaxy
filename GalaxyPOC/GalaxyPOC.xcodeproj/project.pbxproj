@@ -23,6 +23,10 @@
 		DC800CD267FF155C7DD4AD19 /* SettingsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 852ED927CCD3E05ADBEE9191 /* SettingsManager.swift */; };
 		DF11146BB2950E31FC746C90 /* TerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E559289BDC471021B08F5DD /* TerminalView.swift */; };
 		DF5C8DA5432ED43321F51277 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FCA5CF5E95D054AAC80A090A /* Assets.xcassets */; };
+		MAINMENU1BUILD2FILE34567 /* MainMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = MAINMENU1A2B3C4D5E6F789 /* MainMenu.swift */; };
+		MAINWINC1BUILD2FILE34567 /* MainWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = MAINWINC1A2B3C4D5E6F789 /* MainWindowController.swift */; };
+		PREFSWIN1BUILD2FILE34567 /* PreferencesWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = PREFSWIN1A2B3C4D5E6F789 /* PreferencesWindowController.swift */; };
+		MAINSWFT1BUILD2FILE34567 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = MAINSWFT1A2B3C4D5E6F789 /* main.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -44,6 +48,10 @@
 		A60AC35CE99CE6430CC623FF /* SessionRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRow.swift; sourceTree = "<group>"; };
 		D39914021D8D4B9CE630E3F6 /* SwiftTerm */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SwiftTerm; path = Vendor/SwiftTerm; sourceTree = SOURCE_ROOT; };
 		FCA5CF5E95D054AAC80A090A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		MAINMENU1A2B3C4D5E6F789 /* MainMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainMenu.swift; sourceTree = "<group>"; };
+		MAINWINC1A2B3C4D5E6F789 /* MainWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowController.swift; sourceTree = "<group>"; };
+		PREFSWIN1A2B3C4D5E6F789 /* PreferencesWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesWindowController.swift; sourceTree = "<group>"; };
+		MAINSWFT1A2B3C4D5E6F789 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -65,6 +73,10 @@
 				247448C70224193CE23BB32D /* ContentView.swift */,
 				72EC4E43716950A0BE37D77C /* GalaxyPOCApp.swift */,
 				250F5A4BAD11EE41A4E51344 /* Info.plist */,
+				MAINSWFT1A2B3C4D5E6F789 /* main.swift */,
+				MAINMENU1A2B3C4D5E6F789 /* MainMenu.swift */,
+				MAINWINC1A2B3C4D5E6F789 /* MainWindowController.swift */,
+				PREFSWIN1A2B3C4D5E6F789 /* PreferencesWindowController.swift */,
 				B7AAAAF347EA7046BF1FA163 /* Models */,
 				8A41C41A5210CDC374AB07E1 /* Views */,
 			);
@@ -196,6 +208,10 @@
 				603E236D1097E6B3B7B3B159 /* ContentView.swift in Sources */,
 				55B40D3A946CA975D0705AB1 /* GalaxyPOCApp.swift in Sources */,
 				292F105BBD71D22049B26499 /* GalaxyTerminalView.swift in Sources */,
+				MAINSWFT1BUILD2FILE34567 /* main.swift in Sources */,
+				MAINMENU1BUILD2FILE34567 /* MainMenu.swift in Sources */,
+				MAINWINC1BUILD2FILE34567 /* MainWindowController.swift in Sources */,
+				PREFSWIN1BUILD2FILE34567 /* PreferencesWindowController.swift in Sources */,
 				8B72EA39ED013A00DB1BCDD8 /* Session.swift in Sources */,
 				21239774CA4778939E3173D4 /* SessionIDGenerator.swift in Sources */,
 				ADB1518FC56D3CBB7871F375 /* SessionManager.swift in Sources */,
