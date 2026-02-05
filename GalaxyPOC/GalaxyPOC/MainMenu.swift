@@ -231,30 +231,31 @@ class MainMenu: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        // Session switching - vim style (⌘k/j)
-        let hasSessions = sessionManager.sessions.count >= 2
+        // Session switching - vim style (⌘k/j) - no wrap, disable at boundaries
+        let canGoPrev = sessionManager.canSwitchToPreviousSession
+        let canGoNext = sessionManager.canSwitchToNextSession
 
         let prevItem = NSMenuItem(title: "Previous session", action: #selector(MenuActions.previousSession(_:)), keyEquivalent: "k")
         prevItem.target = MenuActions.shared
-        prevItem.isEnabled = hasSessions
+        prevItem.isEnabled = canGoPrev
         menu.addItem(prevItem)
 
         let prevArrowItem = NSMenuItem(title: "Previous session", action: #selector(MenuActions.previousSession(_:)), keyEquivalent: String(UnicodeScalar(NSUpArrowFunctionKey)!))
         prevArrowItem.target = MenuActions.shared
         prevArrowItem.keyEquivalentModifierMask = .command
-        prevArrowItem.isEnabled = hasSessions
+        prevArrowItem.isEnabled = canGoPrev
         prevArrowItem.isAlternate = true
         menu.addItem(prevArrowItem)
 
         let nextItem = NSMenuItem(title: "Next session", action: #selector(MenuActions.nextSession(_:)), keyEquivalent: "j")
         nextItem.target = MenuActions.shared
-        nextItem.isEnabled = hasSessions
+        nextItem.isEnabled = canGoNext
         menu.addItem(nextItem)
 
         let nextArrowItem = NSMenuItem(title: "Next session", action: #selector(MenuActions.nextSession(_:)), keyEquivalent: String(UnicodeScalar(NSDownArrowFunctionKey)!))
         nextArrowItem.target = MenuActions.shared
         nextArrowItem.keyEquivalentModifierMask = .command
-        nextArrowItem.isEnabled = hasSessions
+        nextArrowItem.isEnabled = canGoNext
         nextArrowItem.isAlternate = true
         menu.addItem(nextArrowItem)
 
