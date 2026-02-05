@@ -24,7 +24,6 @@ struct SessionSidebar: View {
                             ForEach(Array(sessionManager.sessions.enumerated()), id: \.element.id) { index, session in
                                 SessionRow(
                                     session: session,
-                                    statusLineService: statusLineService,
                                     isSelected: session.id == sessionManager.activeSessionId,
                                     isWindowFocused: sessionManager.isWindowFocused,
                                     onStop: {
@@ -36,7 +35,8 @@ struct SessionSidebar: View {
                                     isPlaceholder: dragCoordinator.draggedSessionId == session.id,
                                     rowIndex: index,
                                     showDragHandle: showDragHandles,
-                                    dragCoordinator: dragCoordinator
+                                    isDragging: dragCoordinator.isDragging,
+                                    statusInfo: statusLineService.statusInfo[session.id]
                                 )
                                 .id(session.id)
                                 .animation(.easeInOut(duration: 0.2), value: showDragHandles)
@@ -47,6 +47,7 @@ struct SessionSidebar: View {
                                 .animation(.easeInOut(duration: 0.15), value: index)
                             }
                         }
+                        .environmentObject(dragCoordinator)  // Inject for SessionRowDragHandle
 
                         // Drag preview - inside scroll content, positioned with offset
                         if dragCoordinator.isDragging,
@@ -57,7 +58,6 @@ struct SessionSidebar: View {
 
                             SessionRow(
                                 session: session,
-                                statusLineService: statusLineService,
                                 isSelected: session.id == sessionManager.activeSessionId,
                                 isWindowFocused: sessionManager.isWindowFocused,
                                 onStop: {},
@@ -65,8 +65,10 @@ struct SessionSidebar: View {
                                 isPlaceholder: false,
                                 rowIndex: currentIndex,
                                 showDragHandle: true,
-                                dragCoordinator: dragCoordinator
+                                isDragging: true,
+                                statusInfo: statusLineService.statusInfo[session.id]
                             )
+                            .environmentObject(dragCoordinator)  // Inject for SessionRowDragHandle
                             .background(Color(NSColor.windowBackgroundColor))
                             .overlay(
                                 Rectangle()

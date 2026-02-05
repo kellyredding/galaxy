@@ -86,4 +86,16 @@ extension MainWindowController: NSWindowDelegate {
         // Window is closing - we could persist state here if needed
         NSLog("MainWindowController: Window will close")
     }
+
+    // MARK: - Live Resize Performance Optimization
+
+    func windowWillStartLiveResize(_ notification: Notification) {
+        // Pause status line updates during resize to reduce re-render lag
+        StatusLineService.shared.pauseUpdates()
+    }
+
+    func windowDidEndLiveResize(_ notification: Notification) {
+        // Resume status line updates after resize completes
+        StatusLineService.shared.resumeUpdates()
+    }
 }

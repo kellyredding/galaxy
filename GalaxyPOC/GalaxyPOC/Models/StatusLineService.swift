@@ -8,6 +8,10 @@ class StatusLineService: ObservableObject {
     // Published status info keyed by session ID
     @Published var statusInfo: [UUID: SessionStatusInfo] = [:]
 
+    // Pause publishing during drag operations for performance
+    private var isPaused: Bool = false
+    private var pendingStatusInfo: [UUID: SessionStatusInfo]?
+
     private var timer: Timer?
     private let updateInterval: TimeInterval = 5.0  // 5 seconds
 
@@ -62,6 +66,21 @@ class StatusLineService: ObservableObject {
         timer = nil
     }
 
+    /// Pause publishing updates during drag operations for performance
+    func pauseUpdates() {
+        isPaused = true
+    }
+
+    /// Resume publishing updates after drag operations complete
+    func resumeUpdates() {
+        isPaused = false
+        // Apply any pending updates
+        if let pending = pendingStatusInfo {
+            statusInfo = pending
+            pendingStatusInfo = nil
+        }
+    }
+
     func updateAllSessions(_ sessions: [Session]) {
         DispatchQueue.global(qos: .utility).async { [weak self] in
             var newStatusInfo: [UUID: SessionStatusInfo] = [:]
@@ -72,7 +91,13 @@ class StatusLineService: ObservableObject {
             }
 
             DispatchQueue.main.async {
-                self?.statusInfo = newStatusInfo
+                guard let self = self else { return }
+                if self.isPaused {
+                    // Store for later when resumed
+                    self.pendingStatusInfo = newStatusInfo
+                } else {
+                    self.statusInfo = newStatusInfo
+                }
             }
         }
     }

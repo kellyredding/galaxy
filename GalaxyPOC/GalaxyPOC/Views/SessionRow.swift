@@ -3,7 +3,6 @@ import AppKit
 
 struct SessionRow: View {
     @ObservedObject var session: Session
-    @ObservedObject var statusLineService: StatusLineService
     let isSelected: Bool
     let isWindowFocused: Bool  // Need this to know when to fade indicator
     var onStop: () -> Void   // Stop a running session
@@ -13,16 +12,15 @@ struct SessionRow: View {
     let isPlaceholder: Bool  // Show as gray rectangle during drag
     let rowIndex: Int
     let showDragHandle: Bool  // Only show when multiple sessions exist
-    @ObservedObject var dragCoordinator: SessionDragCoordinator
+    let isDragging: Bool      // Whether any drag is in progress (disables hover)
+
+    // Status info passed from SessionSidebar (not observed to prevent mass re-renders)
+    let statusInfo: StatusLineService.SessionStatusInfo?
 
     @Environment(\.chromeFontSize) private var chromeFontSize
     @State private var isHovered = false
 
     private var fontSize: ChromeFontSize { ChromeFontSize(chromeFontSize) }
-
-    private var statusInfo: StatusLineService.SessionStatusInfo? {
-        statusLineService.statusInfo[session.id]
-    }
 
     var body: some View {
         HStack(spacing: 6) {
@@ -30,8 +28,7 @@ struct SessionRow: View {
             if showDragHandle {
                 SessionRowDragHandle(
                     sessionId: session.id,
-                    sessionIndex: rowIndex,
-                    coordinator: dragCoordinator
+                    sessionIndex: rowIndex
                 )
                 .frame(width: 18, height: 32)  // Larger hit area, icon stays centered
                 .transition(.opacity.combined(with: .scale(scale: 0.8)))
@@ -101,7 +98,7 @@ struct SessionRow: View {
         )
         .overlay(alignment: .trailing) {
             // Hover buttons float over content on the right (disabled during drag)
-            if isHovered && !dragCoordinator.isDragging {
+            if isHovered && !isDragging {
                 if session.hasExited {
                     // Stopped session: show Close button to remove from list
                     Button(action: onClose) {

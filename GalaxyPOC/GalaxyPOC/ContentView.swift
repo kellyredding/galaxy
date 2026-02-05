@@ -175,14 +175,21 @@ struct EmptyStateView: View {
 struct TerminalContainerView: View {
     @EnvironmentObject var sessionManager: SessionManager
 
+    // Only render active terminal to avoid N simultaneous SwiftTerm resize operations
+    private var activeSession: Session? {
+        guard let activeId = sessionManager.activeSessionId else { return nil }
+        return sessionManager.sessions.first { $0.id == activeId }
+    }
+
     var body: some View {
         ZStack {
-            ForEach(sessionManager.sessions) { session in
+            if let session = activeSession {
                 SessionContentView(
                     session: session,
-                    isActive: session.id == sessionManager.activeSessionId,
+                    isActive: true,
                     onResume: { sessionManager.resumeSession(sessionId: session.id) }
                 )
+                .id(session.id)  // Force view recreation when session changes
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -293,6 +300,7 @@ class ResizeHandleNSView: NSView {
         dragStartX = NSEvent.mouseLocation.x
         dragStartWidth = currentWidth
         NSCursor.closedHand.set()  // Grabbing cursor
+        StatusLineService.shared.pauseUpdates()  // Pause for performance
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -321,6 +329,7 @@ class ResizeHandleNSView: NSView {
         guard isDragging else { return }
         isDragging = false
         NSCursor.arrow.set()  // Reset cursor, tracking area will update if still hovering
+        StatusLineService.shared.resumeUpdates()  // Resume after drag
 
         // Calculate final width
         let currentX = NSEvent.mouseLocation.x
