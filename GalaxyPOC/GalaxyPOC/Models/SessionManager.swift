@@ -311,6 +311,13 @@ class SessionManager: ObservableObject {
         switchTo(sessionId: sessions[nextIndex].id)
     }
 
+    /// Swap two sessions in the array (used during drag-to-reorder)
+    func swapSessions(_ indexA: Int, _ indexB: Int) {
+        guard indexA >= 0 && indexA < sessions.count else { return }
+        guard indexB >= 0 && indexB < sessions.count else { return }
+        sessions.swapAt(indexA, indexB)
+    }
+
     /// Trigger visual bell with 3 flashes, each shorter than the last
     private func triggerVisualBell(for session: Session) {
         // Flash durations: 3 flashes at 375ms each
