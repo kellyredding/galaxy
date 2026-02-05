@@ -3,6 +3,12 @@ import AppKit
 import SwiftTerm
 
 class Session: Identifiable, ObservableObject {
+    /// Delay between sending command text and CR when invoking slash commands.
+    /// Without this delay, the text and CR can get batched together, causing
+    /// Ink (Claude Code's TUI framework) to not recognize the CR as a submit action.
+    /// Tuned experimentally - shorter values may fail on loaded systems.
+    private static let commandSubmitDelay: TimeInterval = 0.001  // 1ms - testing
+
     /// UUID used for SwiftUI Identifiable AND as Claude's session ID
     let id: UUID
 
@@ -96,6 +102,28 @@ class Session: Identifiable, ObservableObject {
     /// Claude's session ID (UUID string) for --session-id / --resume flags
     var claudeSessionId: String {
         id.uuidString.lowercased()
+    }
+
+    /// Send a slash command to the terminal (e.g., "/clear", "/compact")
+    /// Only works when session is running
+    func sendCommand(_ command: String) {
+        guard isRunning && !hasExited else {
+            NSLog("Session: Cannot send command - session not running")
+            return
+        }
+
+        NSLog("Session: Sending command: %@", command)
+
+        // Send command text first
+        terminalView.send(txt: command)
+
+        // Small delay to ensure text is processed before CR
+        // Without delay, the CR arrives before text is fully processed
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.commandSubmitDelay) { [weak self] in
+            guard let self = self else { return }
+            // Send CR (0x0D) - same byte as keyboard Return
+            self.terminalView.send([0x0D])
+        }
     }
 
     /// Returns the CLI command to resume this session
