@@ -50,11 +50,14 @@ struct SessionSidebar: View {
                         .environmentObject(dragCoordinator)  // Inject for SessionRowDragHandle
 
                         // Drag preview - inside scroll content, positioned with offset
+                        // APPROACH 2: Position based on dragStartIndex (fixed) + mouse offset
+                        // This decouples preview position from array swaps for smooth dragging
                         if dragCoordinator.isDragging,
                            let draggedId = dragCoordinator.draggedSessionId,
                            let session = sessionManager.sessions.first(where: { $0.id == draggedId }) {
 
-                            let currentIndex = sessionManager.sessions.firstIndex(where: { $0.id == draggedId }) ?? 0
+                            // Use currentArrayIndex for rowIndex display, but position based on dragStartIndex
+                            let displayIndex = dragCoordinator.currentArrayIndex
 
                             SessionRow(
                                 session: session,
@@ -63,7 +66,7 @@ struct SessionSidebar: View {
                                 onStop: {},
                                 onClose: {},
                                 isPlaceholder: false,
-                                rowIndex: currentIndex,
+                                rowIndex: displayIndex,
                                 showDragHandle: true,
                                 isDragging: true,
                                 statusInfo: statusLineService.statusInfo[session.id]
@@ -74,7 +77,8 @@ struct SessionSidebar: View {
                                 Rectangle()
                                     .stroke(Color.secondary.opacity(0.5), lineWidth: 1)
                             )
-                            .offset(y: CGFloat(currentIndex) * rowHeight + dragCoordinator.dragOffsetY)
+                            // Position preview at: startPosition + mouseOffset (independent of swaps)
+                            .offset(y: CGFloat(dragCoordinator.dragStartIndex) * rowHeight + dragCoordinator.dragOffsetY)
                             .zIndex(1000)  // Above all other content
                             .allowsHitTesting(false)
                         }
@@ -88,12 +92,22 @@ struct SessionSidebar: View {
                         }
                     }
                 }
+                .onAppear {
+                    // Set up auto-scroll callback (captures scrollProxy)
+                    dragCoordinator.onScrollToSession = { sessionId in
+                        withAnimation(.easeOut(duration: 0.1)) {
+                            scrollProxy.scrollTo(sessionId, anchor: .center)
+                        }
+                    }
+                }
             }
         }
         // Width is controlled by ContentView via settingsManager.settings.sidebarWidth
+        // Note: sidebar frame for auto-scroll is captured by DragHandleNSView during drag
         .onChange(of: sessionManager.sessions.count) { _, newCount in
-            // Update drag coordinator with new count
+            // Update drag coordinator with new count and session IDs
             dragCoordinator.totalSessionCount = newCount
+            dragCoordinator.sessionIds = sessionManager.sessions.map { $0.id }
             // Restart monitoring when sessions change
             statusLineService.startMonitoring(sessions: sessionManager.sessions)
         }
@@ -101,6 +115,7 @@ struct SessionSidebar: View {
             // Configure drag coordinator
             dragCoordinator.rowHeight = rowHeight
             dragCoordinator.totalSessionCount = sessionManager.sessions.count
+            dragCoordinator.sessionIds = sessionManager.sessions.map { $0.id }
             dragCoordinator.onSwapNeeded = { fromIndex, toIndex in
                 sessionManager.swapSessions(fromIndex, toIndex)
             }

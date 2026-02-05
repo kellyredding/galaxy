@@ -31,5 +31,8 @@ struct SessionRowDragHandle: NSViewRepresentable {
         nsView.onDragEnd = { [weak coordinator] in
             coordinator?.endDrag()
         }
+        nsView.onSidebarFrameUpdate = { [weak coordinator] (frame: CGRect) in
+            coordinator?.sidebarScreenFrame = frame
+        }
     }
 }

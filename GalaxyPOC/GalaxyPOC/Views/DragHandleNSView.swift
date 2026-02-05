@@ -8,6 +8,7 @@ class DragHandleNSView: NSView {
     var onDragStart: ((UUID, Int, CGFloat) -> Void)?
     var onDragUpdate: ((CGFloat) -> Void)?
     var onDragEnd: (() -> Void)?
+    var onSidebarFrameUpdate: ((CGRect) -> Void)?
 
     private var isDragging = false
     private var isHovered = false
@@ -95,6 +96,17 @@ class DragHandleNSView: NSView {
         NSCursor.closedHand.set()  // Reinforce cursor during drag
 
         let screenY = NSEvent.mouseLocation.y
+
+        // Update sidebar frame for auto-scroll edge detection
+        // Use the enclosing scroll view's frame if available, otherwise estimate from window
+        if let scrollView = enclosingScrollView {
+            let scrollBoundsInWindow = scrollView.convert(scrollView.bounds, to: nil)
+            if let window = scrollView.window {
+                let screenFrame = window.convertToScreen(scrollBoundsInWindow)
+                onSidebarFrameUpdate?(screenFrame)
+            }
+        }
+
         onDragUpdate?(screenY)
     }
 
