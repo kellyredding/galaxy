@@ -1,199 +1,32 @@
-import SwiftUI
+import AppKit
+import Combine
 
-@main
-struct GalaxyPOCApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @StateObject private var sessionManager = SessionManager.shared
-    @StateObject private var settingsManager = SettingsManager.shared
-    @Environment(\.colorScheme) var systemColorScheme
-
-    /// The currently active session (for menu commands)
-    private var activeSession: Session? {
-        guard let activeId = sessionManager.activeSessionId else { return nil }
-        return sessionManager.sessions.first { $0.id == activeId }
-    }
-
-    var body: some Scene {
-        // Use Window (not WindowGroup) for single-window app
-        Window("", id: "main") {
-            ContentView()
-                .environmentObject(sessionManager)
-                .environmentObject(settingsManager)
-                .environment(\.chromeFontSize, settingsManager.settings.chromeFontSize)
-                .preferredColorScheme(preferredScheme)
-        }
-        .windowStyle(.automatic)
-        // Handle URL scheme events in this window
-        .handlesExternalEvents(matching: ["galaxy"])
-        .commands {
-            // Remove the default "New" menu item - sessions are created via CLI
-            CommandGroup(replacing: .newItem) { }
-
-            // Remove "New Window" from File menu
-            CommandGroup(replacing: .singleWindowList) { }
-
-            CommandMenu("Sessions") {
-                ForEach(Array(sessionManager.sessions.enumerated()), id: \.element.id) { index, session in
-                    if index < 9 {
-                        Button(session.userSessionId) {
-                            sessionManager.switchTo(sessionId: session.id)
-                        }
-                        .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
-                    }
-                }
-
-                // Resume: only show when active session is stopped
-                // This way ⌘R passes through to terminal when session is running
-                if sessionManager.activeSessionCanResume, let active = activeSession {
-                    Divider()
-                    Button("Resume Session") {
-                        sessionManager.resumeSession(sessionId: active.id)
-                    }
-                    .keyboardShortcut("r", modifiers: .command)
-                }
-
-                // Clear/Compact: only show when active session is running
-                // These send slash commands directly to Claude Code
-                if let active = activeSession, active.isRunning && !active.hasExited {
-                    Divider()
-                    Button("Clear Session") {
-                        active.sendCommand("/clear")
-                    }
-                    .keyboardShortcut(.delete, modifiers: [.command, .shift])
-
-                    Button("Compact Session") {
-                        active.sendCommand("/compact")
-                    }
-                    .keyboardShortcut(.delete, modifiers: [.command, .control])
-                }
-            }
-
-            // Add font size controls to the existing View menu
-            CommandGroup(after: .toolbar) {
-                // Sessions panel toggle - shortcuts based on panel position
-                // ⌘[ = action toward left, ⌘] = action toward right
-                let panelOnLeft = settingsManager.settings.sidebarPosition == .left
-
-                // Hide Sessions: ⌘[ if panel on left, ⌘] if panel on right
-                Button("Hide Sessions") {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        sessionManager.isSidebarVisible = false
-                    }
-                }
-                .keyboardShortcut(panelOnLeft ? "[" : "]", modifiers: .command)
-                .disabled(!sessionManager.isSidebarVisible)
-
-                // Show Sessions: ⌘] if panel on left, ⌘[ if panel on right
-                Button("Show Sessions") {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        sessionManager.isSidebarVisible = true
-                    }
-                }
-                .keyboardShortcut(panelOnLeft ? "]" : "[", modifiers: .command)
-                .disabled(sessionManager.isSidebarVisible)
-
-                Divider()
-
-                // Session switching - ⌘j/k (vim-style) and ⌘↑/↓ (arrow-style)
-                Button("Previous Session") {
-                    sessionManager.switchToPreviousSession()
-                }
-                .keyboardShortcut("k", modifiers: .command)
-                .disabled(sessionManager.sessions.count < 2)
-
-                Button("Previous Session") {
-                    sessionManager.switchToPreviousSession()
-                }
-                .keyboardShortcut(.upArrow, modifiers: .command)
-                .disabled(sessionManager.sessions.count < 2)
-
-                Button("Next Session") {
-                    sessionManager.switchToNextSession()
-                }
-                .keyboardShortcut("j", modifiers: .command)
-                .disabled(sessionManager.sessions.count < 2)
-
-                Button("Next Session") {
-                    sessionManager.switchToNextSession()
-                }
-                .keyboardShortcut(.downArrow, modifiers: .command)
-                .disabled(sessionManager.sessions.count < 2)
-
-                Divider()
-
-                // Terminal font size
-                Button("Default Terminal Font Size") {
-                    activeSession?.resetTerminalFontSize()
-                }
-                .keyboardShortcut("0", modifiers: .command)
-                .disabled(activeSession == nil || activeSession?.hasExited == true)
-
-                Button("Bigger") {
-                    activeSession?.increaseTerminalFontSize()
-                }
-                .keyboardShortcut("=", modifiers: .command)
-                .disabled(activeSession == nil || activeSession?.hasExited == true || activeSession?.canIncreaseTerminalFontSize == false)
-
-                Button("Smaller") {
-                    activeSession?.decreaseTerminalFontSize()
-                }
-                .keyboardShortcut("-", modifiers: .command)
-                .disabled(activeSession == nil || activeSession?.hasExited == true || activeSession?.canDecreaseTerminalFontSize == false)
-
-                Divider()
-
-                // Chrome font size
-                Button("Default Chrome Font Size") {
-                    settingsManager.settings.chromeFontSize = 13.0
-                }
-                .keyboardShortcut("0", modifiers: [.command, .shift])
-
-                Button("Bigger") {
-                    let newSize = min(
-                        settingsManager.settings.chromeFontSize + AppSettings.chromeFontSizeStep,
-                        AppSettings.chromeFontSizeRange.upperBound
-                    )
-                    settingsManager.settings.chromeFontSize = newSize
-                }
-                .keyboardShortcut("=", modifiers: [.command, .shift])
-                .disabled(settingsManager.settings.chromeFontSize >= AppSettings.chromeFontSizeRange.upperBound)
-
-                Button("Smaller") {
-                    let newSize = max(
-                        settingsManager.settings.chromeFontSize - AppSettings.chromeFontSizeStep,
-                        AppSettings.chromeFontSizeRange.lowerBound
-                    )
-                    settingsManager.settings.chromeFontSize = newSize
-                }
-                .keyboardShortcut("-", modifiers: [.command, .shift])
-                .disabled(settingsManager.settings.chromeFontSize <= AppSettings.chromeFontSizeRange.lowerBound)
-
-                Divider()
-            }
-        }
-
-        // Settings window (⌘,)
-        Settings {
-            SettingsView()
-                .environmentObject(settingsManager)
-        }
-    }
-
-    private var preferredScheme: ColorScheme? {
-        switch settingsManager.settings.themePreference {
-        case .system:
-            return nil  // Use system default
-        case .light:
-            return .light
-        case .dark:
-            return .dark
-        }
-    }
-}
-
-// App Delegate to handle URL scheme and window focus
+/// Main entry point for the application.
+/// Uses AppKit for the shell (menus, window management) and SwiftUI for content views.
 class AppDelegate: NSObject, NSApplicationDelegate {
+    private var mainWindowController: MainWindowController?
+    private var mainMenu: MainMenu?
+    private var cancellables = Set<AnyCancellable>()
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Set up the main menu
+        mainMenu = MainMenu()
+        NSApp.mainMenu = mainMenu?.createMainMenu()
+
+        // Create and show the main window
+        mainWindowController = MainWindowController()
+        mainWindowController?.showWindow(nil)
+        mainWindowController?.window?.makeKeyAndOrderFront(nil)
+
+        // Observe preferences notification
+        NotificationCenter.default.addObserver(
+            forName: .showPreferences,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.showPreferences()
+        }
+
         // Observe window focus changes
         NotificationCenter.default.addObserver(
             self,
@@ -207,16 +40,37 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             name: NSWindow.didResignKeyNotification,
             object: nil
         )
+
+        // Observe settings changes that affect color scheme
+        SettingsManager.shared.$settings
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.mainWindowController?.updateColorScheme()
+            }
+            .store(in: &cancellables)
+
+        NSLog("AppDelegate: Application launched")
     }
 
-    @objc private func windowDidBecomeKey(_ notification: Notification) {
-        SessionManager.shared.isWindowFocused = true
-        // Note: SessionRow handles clearing hasUnreadBell with fade animation
+    func applicationWillTerminate(_ notification: Notification) {
+        NSLog("AppDelegate: Application will terminate")
     }
 
-    @objc private func windowDidResignKey(_ notification: Notification) {
-        SessionManager.shared.isWindowFocused = false
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        // Keep app running even when window is closed
+        // User must explicitly quit with ⌘Q
+        return false
     }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        // Show the main window when clicking dock icon
+        if !flag {
+            mainWindowController?.showWindow(nil)
+        }
+        return true
+    }
+
+    // MARK: - URL Handling
 
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
@@ -225,6 +79,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Bring app to front when receiving URL
         NSApp.activate(ignoringOtherApps: true)
+
+        // Show window if hidden
+        mainWindowController?.showWindow(nil)
     }
 
     private func handleGalaxyURL(_ url: URL) {
@@ -245,5 +102,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         default:
             NSLog("AppDelegate: Unknown galaxy URL action: %@", url.host ?? "nil")
         }
+    }
+
+    // MARK: - Window Focus
+
+    @objc private func windowDidBecomeKey(_ notification: Notification) {
+        SessionManager.shared.isWindowFocused = true
+    }
+
+    @objc private func windowDidResignKey(_ notification: Notification) {
+        SessionManager.shared.isWindowFocused = false
+    }
+
+    // MARK: - Preferences
+
+    private func showPreferences() {
+        PreferencesWindowController.showPreferences()
     }
 }
