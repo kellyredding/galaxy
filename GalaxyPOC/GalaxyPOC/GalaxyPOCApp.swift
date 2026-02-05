@@ -51,6 +51,21 @@ struct GalaxyPOCApp: App {
                     }
                     .keyboardShortcut("r", modifiers: .command)
                 }
+
+                // Clear/Compact: only show when active session is running
+                // These send slash commands directly to Claude Code
+                if let active = activeSession, active.isRunning && !active.hasExited {
+                    Divider()
+                    Button("Clear Session") {
+                        active.sendCommand("/clear")
+                    }
+                    .keyboardShortcut(.delete, modifiers: [.command, .shift])
+
+                    Button("Compact Session") {
+                        active.sendCommand("/compact")
+                    }
+                    .keyboardShortcut(.delete, modifiers: [.command, .control])
+                }
             }
 
             // Add font size controls to the existing View menu
