@@ -220,27 +220,13 @@ class TerminalHostView: NSView {
             }
         }
 
-        // Build the text to insert: @'/escaped/path' for each file, with trailing space
-        let pathsText = uniqueUrls.map { url -> String in
-            return "@" + escapePathForShell(url.path)
-        }.joined(separator: " ") + " "
+        // Send raw paths (like Cmd+V paste) so Claude Code shows gray box treatment
+        let pathsText = uniqueUrls.map { $0.path }.joined(separator: " ") + " "
 
         // Send to terminal with bracketed paste mode
         sendTextToTerminal(pathsText, asPaste: true)
 
         return true
-    }
-
-    // MARK: - Path Escaping
-
-    /// Escape a file path for safe shell/terminal usage using single quotes.
-    /// Single quotes preserve everything literally except single quotes themselves.
-    /// Strategy: wrap in single quotes, escape any internal single quotes as '\''
-    private func escapePathForShell(_ path: String) -> String {
-        // If path contains single quotes, we need to escape them
-        // The pattern: replace ' with '\'' (end quote, escaped quote, start quote)
-        let escaped = path.replacingOccurrences(of: "'", with: "'\\''")
-        return "'\(escaped)'"
     }
 
     // MARK: - Terminal Text Injection
@@ -251,10 +237,10 @@ class TerminalHostView: NSView {
         let bracketedMode = terminalView.terminal.bracketedPasteMode
 
         if asPaste && bracketedMode {
-            // Send bracketed paste sequences manually:
-            // 1. Start sequence
+            // Send bracketed paste sequences:
+            // 1. Start sequence (ESC[200~)
             // 2. Text content
-            // 3. End sequence
+            // 3. End sequence (ESC[201~)
             terminalView.send(Array(EscapeSequences.bracketedPasteStart))
             terminalView.send(txt: text)
             terminalView.send(Array(EscapeSequences.bracketedPasteEnd))
