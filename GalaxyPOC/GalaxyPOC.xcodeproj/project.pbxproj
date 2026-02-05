@@ -9,6 +9,9 @@
 /* Begin PBXBuildFile section */
 		1CHROME1BUILD2FILE34567 /* ChromeFontScaling.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CHROME1A2B3C4D5E6F789 /* ChromeFontScaling.swift */; };
 		21239774CA4778939E3173D4 /* SessionIDGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F3B435264DCD92610024B3A /* SessionIDGenerator.swift */; };
+		DRAGCRDB1A2B3C4D5E6F789 /* SessionDragCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = DRAGCORD1A2B3C4D5E6F789 /* SessionDragCoordinator.swift */; };
+		DRAGHBLD1A2B3C4D5E6F789 /* DragHandleNSView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DRAGHNDL1A2B3C4D5E6F789 /* DragHandleNSView.swift */; };
+		DRAGRHBD1A2B3C4D5E6F789 /* SessionRowDragHandle.swift in Sources */ = {isa = PBXBuildFile; fileRef = DRAGROWH1A2B3C4D5E6F789 /* SessionRowDragHandle.swift */; };
 		292F105BBD71D22049B26499 /* GalaxyTerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7762E064FA44E2E83ED9213F /* GalaxyTerminalView.swift */; };
 		39F805D1D863916C4F09874A /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 1073964FCAD353209A999D96 /* SwiftTerm */; };
 		55B40D3A946CA975D0705AB1 /* GalaxyPOCApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72EC4E43716950A0BE37D77C /* GalaxyPOCApp.swift */; };
@@ -32,6 +35,9 @@
 /* Begin PBXFileReference section */
 		03E8CA49CFFD43B40F69A196 /* Session.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Session.swift; sourceTree = "<group>"; };
 		1CHROME1A2B3C4D5E6F789 /* ChromeFontScaling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChromeFontScaling.swift; sourceTree = "<group>"; };
+		DRAGCORD1A2B3C4D5E6F789 /* SessionDragCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionDragCoordinator.swift; sourceTree = "<group>"; };
+		DRAGHNDL1A2B3C4D5E6F789 /* DragHandleNSView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragHandleNSView.swift; sourceTree = "<group>"; };
+		DRAGROWH1A2B3C4D5E6F789 /* SessionRowDragHandle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRowDragHandle.swift; sourceTree = "<group>"; };
 		247448C70224193CE23BB32D /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		250F5A4BAD11EE41A4E51344 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		2B1B7D35B5D4C74109C71FEC /* SessionSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionSidebar.swift; sourceTree = "<group>"; };
@@ -103,8 +109,11 @@
 			isa = PBXGroup;
 			children = (
 				1CHROME1A2B3C4D5E6F789 /* ChromeFontScaling.swift */,
+				DRAGHNDL1A2B3C4D5E6F789 /* DragHandleNSView.swift */,
 				7762E064FA44E2E83ED9213F /* GalaxyTerminalView.swift */,
+				DRAGCORD1A2B3C4D5E6F789 /* SessionDragCoordinator.swift */,
 				A60AC35CE99CE6430CC623FF /* SessionRow.swift */,
+				DRAGROWH1A2B3C4D5E6F789 /* SessionRowDragHandle.swift */,
 				2B1B7D35B5D4C74109C71FEC /* SessionSidebar.swift */,
 				51B043580E281E4FEDD4B7C1 /* SettingsView.swift */,
 				8B20954B03FC9D94E6B00BA4 /* StoppedSessionView.swift */,
@@ -206,6 +215,7 @@
 			files = (
 				1CHROME1BUILD2FILE34567 /* ChromeFontScaling.swift in Sources */,
 				603E236D1097E6B3B7B3B159 /* ContentView.swift in Sources */,
+				DRAGHBLD1A2B3C4D5E6F789 /* DragHandleNSView.swift in Sources */,
 				55B40D3A946CA975D0705AB1 /* GalaxyPOCApp.swift in Sources */,
 				292F105BBD71D22049B26499 /* GalaxyTerminalView.swift in Sources */,
 				MAINSWFT1BUILD2FILE34567 /* main.swift in Sources */,
@@ -213,9 +223,11 @@
 				MAINWINC1BUILD2FILE34567 /* MainWindowController.swift in Sources */,
 				PREFSWIN1BUILD2FILE34567 /* PreferencesWindowController.swift in Sources */,
 				8B72EA39ED013A00DB1BCDD8 /* Session.swift in Sources */,
+				DRAGCRDB1A2B3C4D5E6F789 /* SessionDragCoordinator.swift in Sources */,
 				21239774CA4778939E3173D4 /* SessionIDGenerator.swift in Sources */,
 				ADB1518FC56D3CBB7871F375 /* SessionManager.swift in Sources */,
 				A9DC3B126BE6650923ADEC46 /* SessionRow.swift in Sources */,
+				DRAGRHBD1A2B3C4D5E6F789 /* SessionRowDragHandle.swift in Sources */,
 				5E5DFFA81979867CB14EE9B4 /* SessionSidebar.swift in Sources */,
 				DC800CD267FF155C7DD4AD19 /* SettingsManager.swift in Sources */,
 				63CF9F4484E453AB4FA8435D /* SettingsView.swift in Sources */,

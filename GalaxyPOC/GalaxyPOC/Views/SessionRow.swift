@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct SessionRow: View {
     @ObservedObject var session: Session
@@ -7,6 +8,12 @@ struct SessionRow: View {
     let isWindowFocused: Bool  // Need this to know when to fade indicator
     var onStop: () -> Void   // Stop a running session
     var onClose: () -> Void  // Remove a stopped session from list
+
+    // Drag-to-reorder support
+    let isPlaceholder: Bool  // Show as gray rectangle during drag
+    let rowIndex: Int
+    let showDragHandle: Bool  // Only show when multiple sessions exist
+    @ObservedObject var dragCoordinator: SessionDragCoordinator
 
     @Environment(\.chromeFontSize) private var chromeFontSize
     @State private var isHovered = false
@@ -19,6 +26,17 @@ struct SessionRow: View {
 
     var body: some View {
         HStack(spacing: 6) {
+            // Drag handle (before status dot) - only show when multiple sessions
+            if showDragHandle {
+                SessionRowDragHandle(
+                    sessionId: session.id,
+                    sessionIndex: rowIndex,
+                    coordinator: dragCoordinator
+                )
+                .frame(width: 18, height: 32)  // Larger hit area, icon stays centered
+                .transition(.opacity.combined(with: .scale(scale: 0.8)))
+            }
+
             // Status indicator
             Circle()
                 .fill(statusColor)
@@ -65,22 +83,25 @@ struct SessionRow: View {
         .padding(.trailing, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .clipped()
+        .opacity(isPlaceholder ? 0 : 1)  // Hide content when placeholder (during drag)
         .background(
             ZStack {
-                // Base selection background (full-width, no rounded corners)
+                // Base background: panel background during drag (placeholder), selection color otherwise
                 Rectangle()
-                    .fill(isSelected ? Color.accentColor : Color.clear)
+                    .fill(isPlaceholder
+                        ? Color(NSColor.windowBackgroundColor)
+                        : (isSelected ? Color.accentColor : Color.clear))
 
-                // Visual bell pulse overlay (only for selected session)
-                if isSelected && session.visualBellActive {
+                // Visual bell pulse overlay (only for selected session, not during drag)
+                if !isPlaceholder && isSelected && session.visualBellActive {
                     Rectangle()
                         .fill(Color.white.opacity(0.4))
                 }
             }
         )
         .overlay(alignment: .trailing) {
-            // Hover buttons float over content on the right
-            if isHovered {
+            // Hover buttons float over content on the right (disabled during drag)
+            if isHovered && !dragCoordinator.isDragging {
                 if session.hasExited {
                     // Stopped session: show Close button to remove from list
                     Button(action: onClose) {
