@@ -5,8 +5,13 @@ require "file_utils"
 # This must be set BEFORE requiring galaxy_statusline so CONFIG_DIR picks it up
 SPEC_FIXTURES = Path[__DIR__] / "fixtures"
 
-# Use a temporary directory for config during tests
-SPEC_CONFIG_DIR = Path.new(Dir.tempdir) / "galaxy-statusline-test-#{Random.rand(100000)}"
+# Use a temporary directory for all Galaxy data during tests
+# This isolates sessions, config, and all other data from live Claude sessions
+SPEC_GALAXY_DIR = Path.new(Dir.tempdir) / "galaxy-statusline-test-#{Random.rand(100000)}"
+ENV["GALAXY_DIR"] = SPEC_GALAXY_DIR.to_s
+
+# Config dir is derived from GALAXY_DIR, but we can also set it explicitly
+SPEC_CONFIG_DIR = SPEC_GALAXY_DIR / "statusline"
 ENV["GALAXY_STATUSLINE_CONFIG_DIR"] = SPEC_CONFIG_DIR.to_s
 
 # Skip CLI auto-run when loading module for specs
@@ -35,9 +40,10 @@ def run_binary(
     raise "Binary not found at #{BINARY_PATH}. Run 'make dev' first."
   end
 
-  # Set config dir env var for this process
+  # Set env vars for isolated testing - they'll be inherited by subprocess
+  ENV["GALAXY_DIR"] = SPEC_GALAXY_DIR.to_s
   ENV["GALAXY_STATUSLINE_CONFIG_DIR"] = SPEC_CONFIG_DIR.to_s
-  # Unset skip cli if it was set
+  # Unset skip cli so the binary runs normally
   ENV.delete("GALAXY_STATUSLINE_SKIP_CLI")
 
   input_io : Process::Stdio = Process::Redirect::Close
@@ -66,7 +72,7 @@ def run_binary(
   }
 end
 
-# Clean up test config directory after all specs
+# Clean up test Galaxy directory after all specs (includes sessions, config, etc.)
 Spec.after_suite do
-  FileUtils.rm_rf(SPEC_CONFIG_DIR.to_s) if Dir.exists?(SPEC_CONFIG_DIR)
+  FileUtils.rm_rf(SPEC_GALAXY_DIR.to_s) if Dir.exists?(SPEC_GALAXY_DIR)
 end

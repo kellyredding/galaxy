@@ -88,7 +88,7 @@ def run_binary(
   }
 end
 
-# Clean up test config directory after all specs
+# Clean up entire test directory after all specs (includes sessions, config, data, etc.)
 Spec.after_suite do
-  FileUtils.rm_rf(SPEC_CONFIG_DIR.to_s) if Dir.exists?(SPEC_CONFIG_DIR)
+  FileUtils.rm_rf(SPEC_CLAUDE_CONFIG_DIR.to_s) if Dir.exists?(SPEC_CLAUDE_CONFIG_DIR)
 end

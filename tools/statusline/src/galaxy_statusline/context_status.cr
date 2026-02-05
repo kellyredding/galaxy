@@ -2,15 +2,70 @@ require "json"
 
 module GalaxyStatusline
   # Writes context status to a session-specific bridge file for other Galaxy tools (e.g., ledger)
-  # Note: session_id is NOT stored in the file - it's implicit from the folder path
+  # Contains full Claude Code payload for rich cross-tool integration
   class ContextStatus
     include JSON::Serializable
 
-    property percentage : Float64?
+    property session_id : String?
     property timestamp : Int64
-    property model : String?
+    property cwd : String?
+    property workspace : Workspace?
+    property model : Model?
+    property claude_version : String?
+    property context : Context?
+    property cost : Cost?
 
-    def initialize(@percentage, @model)
+    class Workspace
+      include JSON::Serializable
+
+      property current_dir : String?
+      property project_dir : String?
+
+      def initialize(@current_dir, @project_dir)
+      end
+    end
+
+    class Model
+      include JSON::Serializable
+
+      property id : String?
+      property display_name : String?
+
+      def initialize(@id, @display_name)
+      end
+    end
+
+    class Context
+      include JSON::Serializable
+
+      property percentage : Float64?
+      property tokens_used : Int64?
+      property tokens_max : Int64?
+
+      def initialize(@percentage, @tokens_used, @tokens_max)
+      end
+    end
+
+    class Cost
+      include JSON::Serializable
+
+      property usd : Float64?
+      property lines_added : Int32?
+      property lines_removed : Int32?
+
+      def initialize(@usd, @lines_added, @lines_removed)
+      end
+    end
+
+    def initialize(
+      @session_id : String?,
+      @cwd : String?,
+      @workspace : Workspace?,
+      @model : Model?,
+      @claude_version : String?,
+      @context : Context?,
+      @cost : Cost?
+    )
       @timestamp = Time.utc.to_unix
     end
 
@@ -21,9 +76,34 @@ module GalaxyStatusline
       session_id = input.session_id
       return unless session_id
 
+      # Build workspace object if available
+      workspace = if ws = input.workspace
+                    Workspace.new(ws.current_dir, ws.project_dir)
+                  end
+
+      # Build model object if available
+      model = if m = input.model
+                Model.new(m.id, m.display_name)
+              end
+
+      # Build context object from context_window
+      context = if cw = input.context_window
+                  Context.new(cw.used_percentage, cw.total_input_tokens, cw.context_window_size)
+                end
+
+      # Build cost object if available
+      cost = if c = input.cost
+               Cost.new(c.total_cost_usd, c.total_lines_added, c.total_lines_removed)
+             end
+
       status = new(
-        percentage: input.context_percentage,
-        model: input.model.try(&.id)
+        session_id: session_id,
+        cwd: input.cwd,
+        workspace: workspace,
+        model: model,
+        claude_version: input.version,
+        context: context,
+        cost: cost
       )
 
       begin

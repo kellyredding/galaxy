@@ -186,11 +186,26 @@ describe "CLI Integration" do
       bridge_file = GalaxyStatusline::ContextStatus.path_for_session(session_id)
       File.exists?(bridge_file).should eq(true)
 
-      # Verify content (session_id is NOT stored - it's implicit from folder path)
+      # Verify content (new enhanced format)
       content = JSON.parse(File.read(bridge_file))
-      content["percentage"].should eq(45.2)
-      content["model"].should eq("claude-sonnet-4-20250514")
+      content["session_id"].should eq("abc123")
       content["timestamp"].as_i64.should be > 0
+      content["cwd"].should eq("/current/working/directory")
+      content["claude_version"].should eq("1.0.80")
+
+      # Nested model object
+      content["model"]["id"].should eq("claude-sonnet-4-20250514")
+      content["model"]["display_name"].should eq("Sonnet")
+
+      # Nested context object
+      content["context"]["percentage"].should eq(45.2)
+      content["context"]["tokens_used"].should eq(90400)
+      content["context"]["tokens_max"].should eq(200000)
+
+      # Nested cost object
+      content["cost"]["usd"].should eq(0.42)
+      content["cost"]["lines_added"].should eq(45)
+      content["cost"]["lines_removed"].should eq(12)
     end
   end
 end
