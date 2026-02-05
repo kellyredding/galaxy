@@ -126,8 +126,19 @@ struct SessionRow: View {
         }
         .animation(.easeInOut(duration: 0.08), value: session.visualBellActive)
         .onHover { hovering in
+            // Ignore hover events during drag (prevents stale states on rows dragged over)
+            guard !isDragging else { return }
             withAnimation(.easeInOut(duration: 0.15)) {
                 isHovered = hovering
+            }
+        }
+        .onChange(of: isDragging) { oldValue, newValue in
+            if newValue && !isPlaceholder {
+                // Drag started: clear hover on non-dragged rows
+                isHovered = false
+            } else if oldValue && !newValue && isPlaceholder {
+                // Drag ended: this was the dragged row, mouse is likely still over it
+                isHovered = true
             }
         }
         .onChange(of: isSelected) { _, newValue in
