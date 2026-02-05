@@ -1,14 +1,22 @@
 import SwiftUI
+import AppKit
 
 struct ContentView: View {
     @EnvironmentObject var sessionManager: SessionManager
     @EnvironmentObject var settingsManager: SettingsManager
 
-    private let sidebarWidth: CGFloat = 220
+    // Track width during drag (nil when not dragging, uses settings value)
+    @State private var draggingWidth: CGFloat? = nil
+
     private let toolbarHeight: CGFloat = 28
 
     private var isSidebarVisible: Bool {
         sessionManager.isSidebarVisible
+    }
+
+    private var sidebarWidth: CGFloat {
+        // Use live dragging width if actively dragging, otherwise use persisted setting
+        draggingWidth ?? settingsManager.settings.sidebarWidth
     }
 
     /// The currently active session (for terminal font control)
@@ -30,9 +38,11 @@ struct ContentView: View {
             HStack(spacing: 0) {
                 if sidebarOnLeft {
                     sidebarSection
+                    resizeHandle
                     detailSection
                 } else {
                     detailSection
+                    resizeHandle
                     sidebarSection
                 }
             }
@@ -74,7 +84,38 @@ struct ContentView: View {
         if isSidebarVisible {
             SessionSidebar()
                 .frame(width: sidebarWidth)
+                .transaction { t in
+                    // Disable animations during drag for smooth tracking
+                    if draggingWidth != nil {
+                        t.animation = nil
+                    }
+                }
                 .transition(.move(edge: sidebarOnLeft ? .leading : .trailing))
+        }
+    }
+
+    @ViewBuilder
+    private var resizeHandle: some View {
+        if isSidebarVisible {
+            // Visual separator line with invisible drag handle overlay
+            Rectangle()
+                .fill(Color(NSColor.separatorColor))
+                .frame(width: 1)
+                .overlay(
+                    SidebarResizeHandle(
+                        currentWidth: sidebarWidth,
+                        sidebarOnLeft: sidebarOnLeft,
+                        onWidthChange: { newWidth in
+                            draggingWidth = newWidth
+                        },
+                        onDragEnd: { finalWidth in
+                            settingsManager.settings.sidebarWidth = finalWidth
+                            draggingWidth = nil
+                        }
+                    )
+                    .frame(width: 9)  // Wider hit area
+                )
+                .zIndex(100)  // Ensure resize handle is above terminal view
         }
     }
 
@@ -170,5 +211,125 @@ struct SessionContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .opacity(isActive ? 1 : 0)
         .allowsHitTesting(isActive)
+    }
+}
+
+// MARK: - Sidebar Resize Handle (AppKit-based for smooth dragging)
+
+/// NSViewRepresentable wrapper for smooth mouse-tracked sidebar resizing.
+/// Uses AppKit's direct mouse events instead of SwiftUI's DragGesture for better performance.
+struct SidebarResizeHandle: NSViewRepresentable {
+    let currentWidth: CGFloat
+    let sidebarOnLeft: Bool
+    let onWidthChange: (CGFloat) -> Void
+    let onDragEnd: (CGFloat) -> Void
+
+    func makeNSView(context: Context) -> ResizeHandleNSView {
+        let view = ResizeHandleNSView()
+        view.sidebarOnLeft = sidebarOnLeft
+        view.onWidthChange = onWidthChange
+        view.onDragEnd = onDragEnd
+        return view
+    }
+
+    func updateNSView(_ nsView: ResizeHandleNSView, context: Context) {
+        nsView.currentWidth = currentWidth
+        nsView.sidebarOnLeft = sidebarOnLeft
+        nsView.onWidthChange = onWidthChange
+        nsView.onDragEnd = onDragEnd
+    }
+}
+
+/// AppKit NSView that handles mouse events directly for smooth resize dragging.
+/// This view is transparent - SwiftUI handles the visual separator line.
+class ResizeHandleNSView: NSView {
+    var currentWidth: CGFloat = 220
+    var sidebarOnLeft: Bool = true
+    var onWidthChange: ((CGFloat) -> Void)?
+    var onDragEnd: ((CGFloat) -> Void)?
+
+    private var isDragging = false
+    private var dragStartX: CGFloat = 0
+    private var dragStartWidth: CGFloat = 0
+    private var trackingArea: NSTrackingArea?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        // Transparent - no visual, just mouse handling
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let existing = trackingArea {
+            removeTrackingArea(existing)
+        }
+        trackingArea = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInActiveApp],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(trackingArea!)
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        NSCursor.resizeLeftRight.push()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        if !isDragging {
+            NSCursor.pop()
+        }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        isDragging = true
+        dragStartX = NSEvent.mouseLocation.x
+        dragStartWidth = currentWidth
+        NSCursor.resizeLeftRight.push()
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard isDragging else { return }
+
+        let currentX = NSEvent.mouseLocation.x
+        let delta = currentX - dragStartX
+
+        // When sidebar is on left, dragging right increases width
+        // When sidebar is on right, dragging left increases width
+        let newWidth: CGFloat
+        if sidebarOnLeft {
+            newWidth = dragStartWidth + delta
+        } else {
+            newWidth = dragStartWidth - delta
+        }
+
+        // Clamp to allowed range
+        let clamped = min(max(newWidth, AppSettings.sidebarWidthRange.lowerBound),
+                          AppSettings.sidebarWidthRange.upperBound)
+        onWidthChange?(clamped)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard isDragging else { return }
+        isDragging = false
+        NSCursor.pop()
+
+        // Calculate final width
+        let currentX = NSEvent.mouseLocation.x
+        let delta = currentX - dragStartX
+        let newWidth: CGFloat
+        if sidebarOnLeft {
+            newWidth = dragStartWidth + delta
+        } else {
+            newWidth = dragStartWidth - delta
+        }
+        let clamped = min(max(newWidth, AppSettings.sidebarWidthRange.lowerBound),
+                          AppSettings.sidebarWidthRange.upperBound)
+        onDragEnd?(clamped)
     }
 }

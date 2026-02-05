@@ -29,7 +29,7 @@ struct SessionSidebar: View {
                 }
             }
         }
-        .frame(minWidth: 220)
+        // Width is controlled by ContentView via settingsManager.settings.sidebarWidth
         .onChange(of: sessionManager.sessions.count) { _ in
             // Restart monitoring when sessions change
             statusLineService.startMonitoring(sessions: sessionManager.sessions)
