@@ -291,24 +291,38 @@ class SessionManager: ObservableObject {
         NSLog("SessionManager: Session removed, remaining count: %d", sessions.count)
     }
 
-    /// Switch to the previous session in the list (wraps around)
-    func switchToPreviousSession() {
-        guard sessions.count > 1 else { return }
-        guard let currentId = activeSessionId,
-              let currentIndex = sessions.firstIndex(where: { $0.id == currentId }) else { return }
-
-        let previousIndex = currentIndex > 0 ? currentIndex - 1 : sessions.count - 1
-        switchTo(sessionId: sessions[previousIndex].id)
+    /// Whether there's a previous session to switch to (not at top of list)
+    var canSwitchToPreviousSession: Bool {
+        guard sessions.count > 1,
+              let currentId = activeSessionId,
+              let currentIndex = sessions.firstIndex(where: { $0.id == currentId }) else { return false }
+        return currentIndex > 0
     }
 
-    /// Switch to the next session in the list (wraps around)
-    func switchToNextSession() {
-        guard sessions.count > 1 else { return }
-        guard let currentId = activeSessionId,
+    /// Whether there's a next session to switch to (not at bottom of list)
+    var canSwitchToNextSession: Bool {
+        guard sessions.count > 1,
+              let currentId = activeSessionId,
+              let currentIndex = sessions.firstIndex(where: { $0.id == currentId }) else { return false }
+        return currentIndex < sessions.count - 1
+    }
+
+    /// Switch to the previous session in the list (no wrap)
+    func switchToPreviousSession() {
+        guard canSwitchToPreviousSession,
+              let currentId = activeSessionId,
               let currentIndex = sessions.firstIndex(where: { $0.id == currentId }) else { return }
 
-        let nextIndex = currentIndex < sessions.count - 1 ? currentIndex + 1 : 0
-        switchTo(sessionId: sessions[nextIndex].id)
+        switchTo(sessionId: sessions[currentIndex - 1].id)
+    }
+
+    /// Switch to the next session in the list (no wrap)
+    func switchToNextSession() {
+        guard canSwitchToNextSession,
+              let currentId = activeSessionId,
+              let currentIndex = sessions.firstIndex(where: { $0.id == currentId }) else { return }
+
+        switchTo(sessionId: sessions[currentIndex + 1].id)
     }
 
     /// Swap two sessions in the array (used during drag-to-reorder)
