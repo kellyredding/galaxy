@@ -50,12 +50,54 @@ class TerminalHostView: NSView {
         }
     }
 
+    // Event monitor for Ctrl+Arrow key interception
+    private var keyEventMonitor: Any?
+
     init(terminalView: LocalProcessTerminalView, session: Session) {
         self.terminalView = terminalView
         self.session = session
         super.init(frame: .zero)
         wantsLayer = true
         // Note: Don't register for drags here - done dynamically via updateDragRegistration()
+
+        // Set up key event monitor for Ctrl+Arrow → line navigation
+        setupKeyEventMonitor()
+    }
+
+    deinit {
+        if let monitor = keyEventMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+    }
+
+    /// Set up local event monitor to intercept Ctrl+Arrow for line navigation.
+    /// Translates Ctrl+Left → Ctrl+A (beginning of line) and Ctrl+Right → Ctrl+E (end of line).
+    /// This matches Terminal.app's configurable keyboard shortcuts behavior.
+    private func setupKeyEventMonitor() {
+        keyEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self = self else { return event }
+
+            // Only handle if our terminal is the first responder
+            guard self.window?.firstResponder === self.terminalView else { return event }
+
+            // Only intercept when Control is pressed without Option or Command
+            let controlOnly = event.modifierFlags.intersection([.control, .option, .command]) == .control
+
+            if controlOnly {
+                switch event.keyCode {
+                case 123: // Left arrow → beginning of line (Ctrl+A = 0x01)
+                    self.terminalView.send([0x01])
+                    return nil  // Consume the event
+                case 124: // Right arrow → end of line (Ctrl+E = 0x05)
+                    self.terminalView.send([0x05])
+                    return nil  // Consume the event
+                default:
+                    break
+                }
+            }
+
+            return event  // Pass through unhandled events
+        }
     }
 
     /// Register or unregister for drag types based on active state.
