@@ -153,7 +153,7 @@ struct EmptyStateView: View {
                 .chromeFont(size: fontSize.iconLarge)
                 .foregroundColor(.secondary)
 
-            Text("No Sessions")
+            Text("No sessions")
                 .chromeFont(size: fontSize.title2)
                 .foregroundColor(terminalForeground)
 

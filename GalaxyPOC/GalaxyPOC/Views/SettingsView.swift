@@ -69,7 +69,7 @@ struct SettingsView: View {
 
             Section {
                 HStack {
-                    Text("Default Terminal Font Size")
+                    Text("Default terminal font size")
                     Spacer()
                     Stepper(
                         value: $settingsManager.settings.defaultTerminalFontSize,

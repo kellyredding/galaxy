@@ -19,7 +19,7 @@ struct StoppedSessionView: View {
 
             // Session info
             VStack(spacing: 8) {
-                Text("Session Stopped")
+                Text("Session stopped")
                     .chromeFont(size: fontSize.title2, weight: .semibold)
 
                 Text(session.userSessionId)
@@ -45,7 +45,7 @@ struct StoppedSessionView: View {
                 Button(action: onResume) {
                     HStack {
                         Image(systemName: "play.fill")
-                        Text("Resume Session")
+                        Text("Resume session")
                     }
                     .chromeFont(size: fontSize.body)
                     .padding(.horizontal, 20)
