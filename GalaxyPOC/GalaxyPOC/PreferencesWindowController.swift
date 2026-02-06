@@ -1,10 +1,12 @@
 import AppKit
 import SwiftUI
+import Combine
 
 /// NSWindowController that hosts the SettingsView, replacing SwiftUI's Settings scene.
 /// This allows the preferences window to be opened via menu action with ⌘,
 class PreferencesWindowController: NSWindowController {
     private static var shared: PreferencesWindowController?
+    private var themeObserver: AnyCancellable?
 
     /// Shows the preferences window, creating it if necessary
     static func showPreferences() {
@@ -12,9 +14,18 @@ class PreferencesWindowController: NSWindowController {
             shared = PreferencesWindowController()
         }
 
+        shared?.updateContent(theme: SettingsManager.shared.settings.themePreference)
         shared?.showWindow(nil)
         shared?.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func preferredScheme(for theme: ThemePreference) -> ColorScheme? {
+        switch theme {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
+        }
     }
 
     private init() {
@@ -31,9 +42,30 @@ class PreferencesWindowController: NSWindowController {
 
         super.init(window: window)
 
-        // Create SwiftUI settings view
+        // Set window delegate
+        window.delegate = self
+
+        // Initial content
+        updateContent(theme: SettingsManager.shared.settings.themePreference)
+
+        // Observe theme changes to update appearance
+        // Note: @Published fires with the NEW value before the property is set,
+        // so we must use the value passed to sink, not re-read from the instance
+        themeObserver = SettingsManager.shared.$settings
+            .map(\.themePreference)
+            .removeDuplicates()
+            .sink { [weak self] newTheme in
+                self?.updateContent(theme: newTheme)
+            }
+    }
+
+    private func updateContent(theme: ThemePreference) {
+        guard let window = window else { return }
+
+        // Create SwiftUI settings view with theme applied
         let settingsView = SettingsView()
             .environmentObject(SettingsManager.shared)
+            .preferredColorScheme(preferredScheme(for: theme))
 
         // Wrap in NSHostingView
         let hostingView = NSHostingView(rootView: settingsView)
@@ -46,11 +78,10 @@ class PreferencesWindowController: NSWindowController {
         let fittingSize = hostingView.fittingSize
         window.setContentSize(fittingSize)
 
-        // Center the window
-        window.center()
-
-        // Set window delegate
-        window.delegate = self
+        // Center only on first show
+        if !window.isVisible {
+            window.center()
+        }
     }
 
     required init?(coder: NSCoder) {
