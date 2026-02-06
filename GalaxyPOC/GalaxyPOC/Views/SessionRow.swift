@@ -49,19 +49,21 @@ struct SessionRow: View {
                         .truncationMode(.tail)
                         .foregroundColor(isSelected ? .white : .primary)
 
-                    // Directory name + git status
+                    // Directory name + git status (single line, truncates if needed)
                     HStack(spacing: 4) {
                         Text(session.name)
                             .chromeFontMono(size: fontSize.caption)
                             .lineLimit(1)
-                            .truncationMode(.tail)
 
                         if let info = statusInfo, !info.gitStatusDisplay.isEmpty {
                             Text(info.gitStatusDisplay)
                                 .chromeFontMono(size: fontSize.caption)
                                 .foregroundColor(gitStatusColor(info: info, isSelected: isSelected))
+                                .lineLimit(1)
                         }
                     }
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                     .foregroundColor(isSelected ? .white.opacity(0.8) : .secondary)
                 }
 
