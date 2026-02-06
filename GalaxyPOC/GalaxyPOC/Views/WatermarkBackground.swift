@@ -7,16 +7,29 @@ struct WatermarkBackground: View {
 
     /// Opacity varies by theme
     private var watermarkOpacity: Double {
-        colorScheme == .dark ? 0.08 : 0.06
+        colorScheme == .dark ? 0.08 : 0.12
     }
 
     var body: some View {
         Image("GalaxyWatermark")
             .resizable()
             .saturation(0)  // Desaturate to grayscale
+            .colorInvert(colorScheme == .light)  // Invert for light mode
             .opacity(watermarkOpacity)
             .aspectRatio(contentMode: .fit)
             .scaleEffect(1.75)  // Scale up from center
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+extension View {
+    /// Conditionally apply color invert
+    @ViewBuilder
+    func colorInvert(_ active: Bool) -> some View {
+        if active {
+            self.colorInvert()
+        } else {
+            self
+        }
     }
 }
