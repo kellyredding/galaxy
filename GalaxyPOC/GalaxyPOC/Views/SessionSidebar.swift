@@ -102,6 +102,7 @@ struct SessionSidebar: View {
                 }
             }
         }
+        .background(Color(NSColor.windowBackgroundColor))  // Solid background to prevent watermark bleed
         // Width is controlled by ContentView via settingsManager.settings.sidebarWidth
         // Note: sidebar frame for auto-scroll is captured by DragHandleNSView during drag
         .onChange(of: sessionManager.sessions.count) { _, newCount in
