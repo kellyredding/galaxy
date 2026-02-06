@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "galaxy-icon.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

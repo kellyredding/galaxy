@@ -11,76 +11,83 @@ struct StoppedSessionView: View {
     private var fontSize: ChromeFontSize { ChromeFontSize(chromeFontSize) }
 
     var body: some View {
-        VStack(spacing: 20) {
-            // Icon
-            Image(systemName: "stop.circle")
-                .chromeFont(size: fontSize.iconXLarge)
-                .foregroundColor(.red.opacity(0.7))
+        ZStack {
+            // Background with watermark
+            Color(.textBackgroundColor)
+            WatermarkBackground()
 
-            // Session info
-            VStack(spacing: 8) {
-                Text("Session stopped")
-                    .chromeFont(size: fontSize.title2, weight: .semibold)
+            // Content
+            VStack(spacing: 20) {
+                // Icon
+                Image(systemName: "stop.circle")
+                    .chromeFont(size: fontSize.iconXLarge)
+                    .foregroundColor(.red.opacity(0.7))
 
-                Text(session.userSessionId)
-                    .chromeFontMono(size: fontSize.title3)
-                    .foregroundColor(.secondary)
+                // Session info
+                VStack(spacing: 8) {
+                    Text("Session stopped")
+                        .chromeFont(size: fontSize.title2, weight: .semibold)
 
-                if let exitCode = session.exitCode {
-                    Text("Exit code: \(exitCode)")
+                    Text(session.userSessionId)
+                        .chromeFontMono(size: fontSize.title3)
+                        .foregroundColor(.secondary)
+
+                    if let exitCode = session.exitCode {
+                        Text("Exit code: \(exitCode)")
+                            .chromeFont(size: fontSize.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                Divider()
+                    .frame(maxWidth: 400)
+
+                // Resume instructions
+                VStack(spacing: 12) {
+                    Text("Resume this session")
+                        .chromeFont(size: fontSize.headline, weight: .semibold)
+
+                    // Resume button
+                    Button(action: onResume) {
+                        HStack {
+                            Image(systemName: "play.fill")
+                            Text("Resume session")
+                        }
+                        .chromeFont(size: fontSize.body)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+
+                    Text("or use the CLI:")
                         .chromeFont(size: fontSize.caption)
                         .foregroundColor(.secondary)
-                }
-            }
 
-            Divider()
-                .frame(maxWidth: 400)
+                    // CLI command with copy button
+                    HStack(spacing: 8) {
+                        Text(session.resumeCommand)
+                            .chromeFontMono(size: fontSize.caption2)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
 
-            // Resume instructions
-            VStack(spacing: 12) {
-                Text("Resume this session")
-                    .chromeFont(size: fontSize.headline, weight: .semibold)
-
-                // Resume button
-                Button(action: onResume) {
-                    HStack {
-                        Image(systemName: "play.fill")
-                        Text("Resume session")
+                        Button(action: copyCommand) {
+                            Image(systemName: showCopied ? "checkmark" : "doc.on.doc")
+                                .chromeFont(size: fontSize.iconSmall)
+                                .foregroundColor(showCopied ? .green : .secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Copy command to clipboard")
                     }
-                    .chromeFont(size: fontSize.body)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 10)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Color(.windowBackgroundColor))
+                    .cornerRadius(6)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-
-                Text("or use the CLI:")
-                    .chromeFont(size: fontSize.caption)
-                    .foregroundColor(.secondary)
-
-                // CLI command with copy button
-                HStack(spacing: 8) {
-                    Text(session.resumeCommand)
-                        .chromeFontMono(size: fontSize.caption2)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-
-                    Button(action: copyCommand) {
-                        Image(systemName: showCopied ? "checkmark" : "doc.on.doc")
-                            .chromeFont(size: fontSize.iconSmall)
-                            .foregroundColor(showCopied ? .green : .secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Copy command to clipboard")
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Color(.windowBackgroundColor))
-                .cornerRadius(6)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.textBackgroundColor))
+        .clipped()  // Clip watermark to content area bounds
     }
 
     private func copyCommand() {

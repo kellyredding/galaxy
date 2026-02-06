@@ -148,27 +148,34 @@ struct EmptyStateView: View {
     }
 
     var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "terminal")
-                .chromeFont(size: fontSize.iconLarge)
-                .foregroundColor(.secondary)
+        ZStack {
+            // Background with watermark
+            terminalBackground
+            WatermarkBackground()
 
-            Text("No sessions")
-                .chromeFont(size: fontSize.title2)
-                .foregroundColor(terminalForeground)
+            // Content
+            VStack(spacing: 16) {
+                Image(systemName: "terminal")
+                    .chromeFont(size: fontSize.iconLarge)
+                    .foregroundColor(.secondary)
 
-            Text("Run `galaxy` from any directory to start a session")
-                .chromeFont(size: fontSize.body)
-                .foregroundColor(.secondary)
+                Text("No sessions")
+                    .chromeFont(size: fontSize.title2)
+                    .foregroundColor(terminalForeground)
 
-            Text("cd ~/projects/my-app && galaxy")
-                .chromeFontMono(size: fontSize.body)
-                .padding(8)
-                .background(Color(.windowBackgroundColor))
-                .cornerRadius(4)
+                Text("Run `galaxy` from any directory to start a session")
+                    .chromeFont(size: fontSize.body)
+                    .foregroundColor(.secondary)
+
+                Text("cd ~/projects/my-app && galaxy")
+                    .chromeFontMono(size: fontSize.body)
+                    .padding(8)
+                    .background(Color(.windowBackgroundColor))
+                    .cornerRadius(4)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(terminalBackground)
+        .clipped()  // Clip watermark to content area bounds
     }
 }
 
