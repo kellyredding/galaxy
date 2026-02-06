@@ -229,30 +229,21 @@ class SessionManager: ObservableObject {
 
     /// Check if Claude has a session saved on disk for the given session ID and working directory
     private func claudeSessionExists(sessionId: String, workingDirectory: String) -> Bool {
-        // Claude stores sessions in ~/.claude/projects/<escaped-path>/sessions-index.json
-        // Path escaping: /Users/foo/bar becomes -Users-foo-bar
-        let escapedPath = workingDirectory.replacingOccurrences(of: "/", with: "-")
+        // Claude stores session data in ~/.claude/projects/<escaped-path>/<session-id>.jsonl
+        // Path escaping: /Users/foo.bar/baz becomes -Users-foo-bar-baz (slashes AND dots become dashes)
+        let escapedPath = workingDirectory
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ".", with: "-")
         let claudeDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/projects")
             .appendingPathComponent(escapedPath)
-        let indexFile = claudeDir.appendingPathComponent("sessions-index.json")
 
-        guard FileManager.default.fileExists(atPath: indexFile.path) else {
-            NSLog("SessionManager: Claude sessions index not found at %@", indexFile.path)
-            return false
-        }
+        // Check for the actual session data file (not just the index)
+        let sessionFile = claudeDir.appendingPathComponent("\(sessionId).jsonl")
+        let exists = FileManager.default.fileExists(atPath: sessionFile.path)
 
-        do {
-            let data = try Data(contentsOf: indexFile)
-            // Quick string search - faster than full JSON parse for this check
-            let content = String(data: data, encoding: .utf8) ?? ""
-            let exists = content.contains(sessionId)
-            NSLog("SessionManager: Session %@ %@ in Claude storage", sessionId, exists ? "found" : "not found")
-            return exists
-        } catch {
-            NSLog("SessionManager: Error reading Claude sessions index: %@", error.localizedDescription)
-            return false
-        }
+        NSLog("SessionManager: Session file %@.jsonl %@ at %@", sessionId, exists ? "found" : "not found", claudeDir.path)
+        return exists
     }
 
     func switchTo(sessionId: UUID) {
