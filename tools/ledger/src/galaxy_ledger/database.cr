@@ -105,7 +105,6 @@ module GalaxyLedger
         # Unique constraint for deduplication
         db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_content_dedup ON ledger_entries(session_id, entry_type, content_hash)")
 
-        # Phase 6.2: Enhanced FTS with category, keywords, and source_file for better search
         # Check if we need to recreate FTS (if schema changed)
         recreate_fts_if_needed(db)
 
@@ -138,7 +137,7 @@ module GalaxyLedger
       end
     end
 
-    # Recreate FTS table if schema changed (Phase 6.2)
+    # Recreate FTS table if schema changed
     private def self.recreate_fts_if_needed(db)
       # Check if ledger_fts exists
       fts_exists = db.scalar(<<-SQL).as(Int64) > 0
@@ -167,7 +166,7 @@ module GalaxyLedger
         end
       end
 
-      # Create FTS table with all columns (including Phase 6.2 additions)
+      # Create FTS table with all searchable columns
       db.exec(<<-SQL)
         CREATE VIRTUAL TABLE IF NOT EXISTS ledger_fts USING fts5(
           content,
@@ -442,7 +441,7 @@ module GalaxyLedger
     end
 
     # Full-text search across all entries with optional filters
-    # Phase 6.2: FTS now searches across content, keywords, category, and source_file
+    # FTS searches across content, keywords, category, and source_file
     def self.search(
       query : String,
       limit : Int32 = 50,
@@ -492,7 +491,7 @@ module GalaxyLedger
     end
 
     # Full-text search within a session with optional filters
-    # Phase 6.2: FTS now searches across content, keywords, category, and source_file
+    # FTS searches across content, keywords, category, and source_file
     def self.search_in_session(
       session_id : String,
       query : String,
@@ -573,8 +572,6 @@ module GalaxyLedger
 
     # Query recent entries with optional type, importance, category, and session filters
     # Used by list command with filters
-    # Phase 6.2: Added category filter
-    # Phase 6.4: Added session_id filter for session-scoped queries
     def self.query_recent_filtered(
       limit : Int32 = 100,
       entry_type : String? = nil,
@@ -618,7 +615,7 @@ module GalaxyLedger
     end
 
     # ============================================================
-    # Tiered Restoration Queries (for Phase 7 context restoration)
+    # Tiered Restoration Queries (for context restoration)
     # ============================================================
 
     # Tier 1: Essential context that should always be restored
@@ -817,7 +814,7 @@ module GalaxyLedger
       getter content_hash : String
       getter metadata : String?
       getter importance : String
-      # Phase 6.2: Enhanced schema fields
+      # Enhanced schema fields
       getter category : String?
       getter keywords : String? # JSON array stored as text
       getter applies_when : String?

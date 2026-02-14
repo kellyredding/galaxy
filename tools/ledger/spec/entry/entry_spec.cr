@@ -194,10 +194,10 @@ describe "GalaxyLedger constants" do
 end
 
 # ============================================================
-# Phase 6.2: Enhanced Schema Tests
+# Enhanced Schema Tests
 # ============================================================
 
-describe "GalaxyLedger::Entry Phase 6.2 Enhanced Schema" do
+describe "GalaxyLedger::Entry Enhanced Schema" do
   describe "Entry with enhanced fields" do
     it "creates entry with category, keywords, applies_when, source_file" do
       entry = GalaxyLedger::Entry.new(

@@ -106,16 +106,14 @@ module GalaxyLedger
         user_timestamp: extracted.user_timestamp,
         full_content: full_content,
         assistant_messages: assistant_messages,
-        summary: nil # Generated in Phase 6
+        summary: nil # Generated via Claude CLI extraction
       )
     end
 
     # Extract tool uses from a transcript entry
-    # This is a simplified extraction - actual tool use tracking comes in Phase 5
+    # Simplified extraction — returns empty for now
     private def self.extract_tool_uses(entry : TranscriptEntry) : Array(String)
-      # For now, return empty array
-      # Full tool use extraction will be implemented in Phase 5 when we have
-      # access to the full tool use events in the transcript
+      # TODO: Implement full tool use extraction from transcript events
       [] of String
     end
 

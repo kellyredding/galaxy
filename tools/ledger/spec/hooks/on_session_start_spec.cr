@@ -189,7 +189,7 @@ describe "OnSessionStart context restoration" do
     result[:output].should contain("more lines")
   end
 
-  it "uses summary when available (Phase 6 feature)" do
+  it "uses summary when available" do
     exchange = GalaxyLedger::Exchange::LastExchange.new(
       user_message: "Add feature",
       full_content: "Full response content here...",

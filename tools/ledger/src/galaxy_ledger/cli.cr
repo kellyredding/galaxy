@@ -663,7 +663,7 @@ module GalaxyLedger
       puts ""
 
       entries.each_with_index do |entry, idx|
-        # Phase 6.2: Show category in header if present
+        # Show category in header if present
         header = "[#{idx + 1}] #{entry.entry_type} (#{entry.importance})"
         header += " [#{entry.category}]" if entry.category
         puts header
@@ -675,7 +675,7 @@ module GalaxyLedger
         end
         puts "    Session: #{entry.session_id[0, 8]}..."
         puts "    Content: #{truncate(entry.content, 100)}"
-        # Phase 6.2: Show keywords if present
+        # Show keywords if present
         keywords = entry.keywords_array
         puts "    Keywords: #{keywords.join(", ")}" if keywords.any?
         puts "    Created: #{entry.created_at}"
@@ -783,7 +783,7 @@ module GalaxyLedger
       puts ""
 
       entries.each_with_index do |entry, idx|
-        # Phase 6.2: Show category in header if present
+        # Show category in header if present
         header = "[#{idx + 1}] #{entry.entry_type} (#{entry.importance})"
         header += " [#{entry.category}]" if entry.category
         puts header
@@ -795,7 +795,7 @@ module GalaxyLedger
         end
         puts "    Session: #{entry.session_id[0, 8]}..."
         puts "    Content: #{truncate(entry.content, 100)}"
-        # Phase 6.2: Show keywords if present
+        # Show keywords if present
         keywords = entry.keywords_array
         puts "    Keywords: #{keywords.join(", ")}" if keywords.any?
         puts "    Created: #{entry.created_at}"
@@ -1229,7 +1229,7 @@ module GalaxyLedger
 
       ENTRY TYPES CREATED:
         - direction: User prompt (source: user, importance: medium)
-          Note: Will be properly classified in Phase 6 extraction
+          Note: Classified by extraction into specific types
 
       HOOK CONFIGURATION:
         Add to ~/.claude/settings.json:
@@ -1689,7 +1689,6 @@ module GalaxyLedger
                end
 
       # Write extracted entries directly to database
-      # Phase 6.2: Entries now include category, keywords, applies_when, source_file
       if result.extractions.any?
         entries = result.extractions.select(&.valid?).map do |e|
           e.to_entry

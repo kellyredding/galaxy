@@ -101,7 +101,6 @@ module GalaxyLedger
       end
 
       # Prompt for extracting rules from a guideline file
-      # Phase 6.2: Enhanced schema with category, keywords, applies_when
       def self.guideline_extraction(file_path : String) : String
         # Extract category from file name (e.g., "ruby-style.md" -> "ruby-style")
         file_basename = File.basename(file_path)
@@ -164,7 +163,6 @@ module GalaxyLedger
       end
 
       # Prompt for extracting context from an implementation plan file
-      # Phase 6.2: Enhanced schema with category, keywords, applies_when
       def self.implementation_plan_extraction(file_path : String) : String
         # Extract category from file name
         file_basename = File.basename(file_path)
@@ -197,7 +195,7 @@ module GalaxyLedger
         Example: ["galaxy-ledger", "phase-6", "extraction", "sqlite", "context"]
 
         ## Applies when:
-        Describe when this context is relevant (e.g., "Working on Galaxy Ledger", "Implementing Phase 6")
+        Describe when this context is relevant (e.g., "Working on Galaxy Ledger", "Implementing JWT auth")
 
         ## Importance levels:
         - **high**: Progress status, blocking dependencies, architectural decisions

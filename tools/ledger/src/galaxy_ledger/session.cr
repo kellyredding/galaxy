@@ -46,7 +46,7 @@ module GalaxyLedger
       deleted_count = Database.delete_session(session_id)
       sqlite_purged = deleted_count > 0 || folder_existed # Mark as purged if we deleted entries or had folder
 
-      # Purge from PostgreSQL if enabled (future: implement in Phase 8)
+      # Purge from PostgreSQL if enabled (future)
       postgres_purged = false
       config = Config.load
       if config.storage.postgres_enabled

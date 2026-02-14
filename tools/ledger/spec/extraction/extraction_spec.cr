@@ -74,8 +74,7 @@ describe GalaxyLedger::Extraction do
       end
     end
 
-    # Phase 6.2: Enhanced schema tests
-    describe "Phase 6.2 enhanced fields" do
+    describe "enhanced schema fields" do
       it "supports category" do
         entry = GalaxyLedger::Extraction::ExtractedEntry.new(
           entry_type: "guideline",
@@ -181,7 +180,7 @@ describe GalaxyLedger::Extraction do
         file_path = "/path/to/ruby-style.md"
         prompt = GalaxyLedger::Extraction::Prompts.guideline_extraction(file_path)
         prompt.should_not be_empty
-        # Phase 6.2: Prompt now uses basename and file stem for category/keywords
+        # Prompt uses basename and file stem for category/keywords
         prompt.should contain("ruby-style.md")
         prompt.should contain("ruby-style")
         prompt.should contain("guideline")
@@ -197,7 +196,7 @@ describe GalaxyLedger::Extraction do
         file_path = "/path/to/plan.md"
         prompt = GalaxyLedger::Extraction::Prompts.implementation_plan_extraction(file_path)
         prompt.should_not be_empty
-        # Phase 6.2: Prompt now uses basename
+        # Prompt uses basename
         prompt.should contain("plan.md")
         prompt.should contain("implementation_plan")
         # Should mention various progress markers (per user feedback)

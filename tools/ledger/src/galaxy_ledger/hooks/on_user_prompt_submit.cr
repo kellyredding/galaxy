@@ -29,7 +29,7 @@ module GalaxyLedger
         session_dir = GalaxyLedger.session_dir(session_id)
         Dir.mkdir_p(session_dir) unless Dir.exists?(session_dir)
 
-        # Phase 6: Spawn async extraction for user directions
+        # Spawn async extraction for user directions
         # Extract actual directions/preferences/constraints and write to database
         spawn_extraction_async(session_id, prompt)
       end

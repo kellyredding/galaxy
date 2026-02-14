@@ -48,21 +48,17 @@ module GalaxyLedger
     property created_at : String
 
     # Category/domain for filtering (e.g., "ruby-style", "rspec", "testing")
-    # Phase 6.2: Enhanced extraction schema
     property category : String?
 
     # Searchable keywords for FTS (e.g., ["ruby", "strings", "quotes"])
-    # Phase 6.2: Enhanced extraction schema
     # Store as nilable to handle JSON without keywords field; code should handle nil as empty array
     property keywords : Array(String)?
 
     # When this entry applies (e.g., "Writing Ruby code")
-    # Phase 6.2: Enhanced extraction schema
     @[JSON::Field(key: "applies_when")]
     property applies_when : String?
 
     # Source file basename (e.g., "ruby-style.md")
-    # Phase 6.2: Enhanced extraction schema
     @[JSON::Field(key: "source_file")]
     property source_file : String?
 

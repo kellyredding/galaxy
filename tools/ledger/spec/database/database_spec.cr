@@ -704,10 +704,10 @@ describe GalaxyLedger::Database do
   end
 
   # ============================================================
-  # Phase 6.2: Enhanced Schema Tests
+  # Enhanced Schema Tests
   # ============================================================
 
-  describe "Phase 6.2 Enhanced Schema" do
+  describe "Enhanced Schema" do
     describe ".insert with enhanced fields" do
       it "stores category, keywords, applies_when, source_file" do
         entry = GalaxyLedger::Entry.new(

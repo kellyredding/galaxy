@@ -177,7 +177,7 @@ module GalaxyLedger
           lines << "**You asked**: #{last_exchange.user_message}"
           lines << ""
 
-          # If we have a summary (Phase 6), use it
+          # If we have a summary, use it
           if summary = last_exchange.summary
             lines << "**I responded**: #{summary.assistant_response}"
             lines << ""
@@ -188,7 +188,7 @@ module GalaxyLedger
               lines << "**Key actions**: #{summary.key_actions.join(", ")}"
             end
           else
-            # No summary yet (Phase 2), use truncated full_content
+            # No summary available, use truncated full_content
             preview = last_exchange.full_content[0, 300]? || last_exchange.full_content
             if last_exchange.full_content.size > 300
               preview += "..."

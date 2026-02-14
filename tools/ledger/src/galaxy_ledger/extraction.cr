@@ -2,7 +2,6 @@ require "json"
 require "./extraction/*"
 
 module GalaxyLedger
-  # Extraction module for Phase 6
   # Handles Claude CLI one-shot calls to extract learnings, directions, and summaries
   module Extraction
     # Result of an extraction operation
@@ -27,7 +26,6 @@ module GalaxyLedger
     end
 
     # A single extracted entry
-    # Phase 6.2: Enhanced with category, keywords, applies_when, source_file
     class ExtractedEntry
       include JSON::Serializable
 
@@ -44,17 +42,17 @@ module GalaxyLedger
       # Optional metadata
       property metadata : JSON::Any?
 
-      # Phase 6.2: Category/domain for filtering (e.g., "ruby-style", "rspec")
+      # Category/domain for filtering (e.g., "ruby-style", "rspec")
       property category : String?
 
-      # Phase 6.2: Searchable keywords (nilable for JSON compatibility)
+      # Searchable keywords (nilable for JSON compatibility)
       property keywords : Array(String)?
 
-      # Phase 6.2: When this entry applies
+      # When this entry applies
       @[JSON::Field(key: "applies_when")]
       property applies_when : String?
 
-      # Phase 6.2: Source file basename
+      # Source file basename
       @[JSON::Field(key: "source_file")]
       property source_file : String?
 
@@ -136,7 +134,6 @@ module GalaxyLedger
     end
 
     # Extract guidelines from a guideline file
-    # Phase 6.2: Passes source_file for auto-keyword generation
     def self.extract_guidelines(file_path : String, content : String) : Result
       return Result.new if content.strip.empty?
 
@@ -151,7 +148,6 @@ module GalaxyLedger
     end
 
     # Extract context from an implementation plan file
-    # Phase 6.2: Passes source_file for auto-keyword generation
     def self.extract_implementation_plan(file_path : String, content : String) : Result
       return Result.new if content.strip.empty?
 
@@ -166,7 +162,6 @@ module GalaxyLedger
     end
 
     # Parse the JSON output from Claude CLI
-    # Phase 6.2: Enhanced to extract category, keywords, applies_when
     private def self.parse_extraction_result(
       output : String,
       include_summary : Bool = false,
@@ -175,7 +170,7 @@ module GalaxyLedger
       begin
         json = JSON.parse(output)
 
-        # Phase 6.2: Auto-extract source file basename
+        # Auto-extract source file basename
         source_file_basename = source_file.try { |sf| File.basename(sf) }
 
         # Parse extractions array
@@ -186,7 +181,7 @@ module GalaxyLedger
             content = entry_json["content"]?.try(&.as_s?) || ""
             importance = entry_json["importance"]?.try(&.as_s?) || "medium"
 
-            # Phase 6.2: Parse new fields
+            # Parse enhanced schema fields
             category = entry_json["category"]?.try(&.as_s?)
             applies_when = entry_json["applies_when"]?.try(&.as_s?)
 

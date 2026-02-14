@@ -94,7 +94,7 @@ module GalaxyLedger
         special_type = detect_special_file_type(file_path)
 
         if special_type && tool_response && !tool_response.empty?
-          # Phase 6: For guidelines and implementation plans, spawn extraction
+          # For guidelines and implementation plans, spawn extraction
           spawn_extraction_async(session_id, file_path, tool_response, special_type)
 
           # Also record the file path as a marker that we read this file

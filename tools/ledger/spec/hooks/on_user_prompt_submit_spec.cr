@@ -25,8 +25,7 @@ end
 
 describe GalaxyLedger::Hooks::OnUserPromptSubmit do
   describe "#run" do
-    # Phase 6: on-user-prompt-submit now spawns async extraction
-    # The hook itself doesn't buffer - it spawns a subprocess that calls Claude CLI
+    # on-user-prompt-submit spawns async extraction via Claude CLI subprocess
     # These tests verify the hook runs without error and spawns correctly
 
     it "runs without error for valid prompts" do

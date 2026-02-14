@@ -6,7 +6,7 @@ module GalaxyLedger
     # - Parses transcript to capture last exchange
     # - Writes to ledger_last-exchange.json
     # - Checks context thresholds and shows warnings
-    # - Spawns async extraction (Phase 6)
+    # - Spawns async extraction for learnings/decisions/summary
     class OnStop
       @session_id : String?
       @transcript_path : String?
@@ -35,7 +35,7 @@ module GalaxyLedger
           puts warning
         end
 
-        # Phase 6: Spawn async extraction process for learnings/decisions/summary
+        # Spawn async extraction process for learnings/decisions/summary
         spawn_extraction_async
       end
 

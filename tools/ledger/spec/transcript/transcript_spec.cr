@@ -218,7 +218,7 @@ describe GalaxyLedger::Transcript do
       last_exchange.user_timestamp.should eq("2026-02-01T10:00:00Z")
       last_exchange.full_content.should eq("First part\n\nSecond part")
       last_exchange.assistant_messages.size.should eq(2)
-      last_exchange.summary.should be_nil # Summary is generated in Phase 6
+      last_exchange.summary.should be_nil # Summary generated via Claude CLI extraction
     end
 
     it "handles empty assistant entries" do
