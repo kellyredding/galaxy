@@ -25,6 +25,15 @@ Dir.mkdir_p(SPEC_GALAXY_DIR)
 Dir.mkdir_p(SPEC_CONFIG_DIR)
 Dir.mkdir_p(SPEC_DATA_DIR)
 
+# Disable extraction in test config to prevent real Claude CLI calls.
+# Extraction logic is covered by stubbed pipeline specs and eval specs.
+File.write(SPEC_CONFIG_DIR / "config.json", {
+  "extraction" => {
+    "on_stop"           => false,
+    "on_guideline_read" => false,
+  },
+}.to_json)
+
 # Skip CLI auto-run when loading module for specs
 ENV["GALAXY_LEDGER_SKIP_CLI"] = "1"
 

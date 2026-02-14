@@ -353,6 +353,236 @@ describe GalaxyLedger::Database do
     end
   end
 
+  describe ".mark_entries_stale" do
+    it "marks entries with matching source_file as stale" do
+      entry = GalaxyLedger::Entry.new(
+        entry_type: "guideline",
+        content: "/path/to/agent-guidelines/ruby-style.md",
+        source_file: "ruby-style.md",
+      )
+      GalaxyLedger::Database.insert("sess-stale", entry)
+
+      count = GalaxyLedger::Database.mark_entries_stale("sess-stale", "ruby-style.md")
+      count.should eq(1)
+    end
+
+    it "marks multiple entries for the same source_file" do
+      marker = GalaxyLedger::Entry.new(
+        entry_type: "guideline",
+        content: "/path/to/agent-guidelines/ruby-style.md",
+        source_file: "ruby-style.md",
+      )
+      extracted = GalaxyLedger::Entry.new(
+        entry_type: "guideline",
+        content: "Always use double-quotes for strings",
+        source_file: "ruby-style.md",
+      )
+      GalaxyLedger::Database.insert("sess-stale2", marker)
+      GalaxyLedger::Database.insert("sess-stale2", extracted)
+
+      count = GalaxyLedger::Database.mark_entries_stale("sess-stale2", "ruby-style.md")
+      count.should eq(2)
+    end
+
+    it "does not mark entries from other sessions" do
+      entry = GalaxyLedger::Entry.new(
+        entry_type: "guideline",
+        content: "/path/to/agent-guidelines/ruby-style.md",
+        source_file: "ruby-style.md",
+      )
+      GalaxyLedger::Database.insert("sess-other", entry)
+
+      count = GalaxyLedger::Database.mark_entries_stale("sess-mine", "ruby-style.md")
+      count.should eq(0)
+    end
+
+    it "does not mark entries with different source_file" do
+      entry = GalaxyLedger::Entry.new(
+        entry_type: "guideline",
+        content: "/path/to/agent-guidelines/rspec-style.md",
+        source_file: "rspec-style.md",
+      )
+      GalaxyLedger::Database.insert("sess-stale3", entry)
+
+      count = GalaxyLedger::Database.mark_entries_stale("sess-stale3", "ruby-style.md")
+      count.should eq(0)
+    end
+
+    it "returns 0 for empty inputs" do
+      GalaxyLedger::Database.mark_entries_stale("", "ruby-style.md").should eq(0)
+      GalaxyLedger::Database.mark_entries_stale("sess", "").should eq(0)
+    end
+  end
+
+  describe ".stale_entries" do
+    it "returns stale marker entries with full path" do
+      # Insert marker entry (content is full path, starts with /)
+      marker = GalaxyLedger::Entry.new(
+        entry_type: "guideline",
+        content: "/home/user/agent-guidelines/ruby-style.md",
+        source_file: "ruby-style.md",
+      )
+      GalaxyLedger::Database.insert("sess-stale-q", marker)
+
+      # Mark it stale
+      GalaxyLedger::Database.mark_entries_stale("sess-stale-q", "ruby-style.md")
+
+      results = GalaxyLedger::Database.stale_entries("sess-stale-q")
+      results.size.should eq(1)
+      results[0][:source_file].should eq("ruby-style.md")
+      results[0][:full_path].should eq("/home/user/agent-guidelines/ruby-style.md")
+      results[0][:entry_type].should eq("guideline")
+    end
+
+    it "returns implementation_plan stale entries" do
+      marker = GalaxyLedger::Entry.new(
+        entry_type: "implementation_plan",
+        content: "/home/user/implementation-plans/feature.md",
+        source_file: "feature.md",
+      )
+      GalaxyLedger::Database.insert("sess-stale-ip", marker)
+      GalaxyLedger::Database.mark_entries_stale("sess-stale-ip", "feature.md")
+
+      results = GalaxyLedger::Database.stale_entries("sess-stale-ip")
+      results.size.should eq(1)
+      results[0][:entry_type].should eq("implementation_plan")
+    end
+
+    it "excludes extracted entries (content is rule text, not a path)" do
+      marker = GalaxyLedger::Entry.new(
+        entry_type: "guideline",
+        content: "/home/user/agent-guidelines/ruby-style.md",
+        source_file: "ruby-style.md",
+      )
+      extracted = GalaxyLedger::Entry.new(
+        entry_type: "guideline",
+        content: "Always use double-quotes for strings",
+        source_file: "ruby-style.md",
+      )
+      GalaxyLedger::Database.insert("sess-stale-ex", marker)
+      GalaxyLedger::Database.insert("sess-stale-ex", extracted)
+      GalaxyLedger::Database.mark_entries_stale("sess-stale-ex", "ruby-style.md")
+
+      results = GalaxyLedger::Database.stale_entries("sess-stale-ex")
+      # Only the marker (full path) should be returned
+      results.size.should eq(1)
+      results[0][:full_path].should eq("/home/user/agent-guidelines/ruby-style.md")
+    end
+
+    it "returns empty when nothing is stale" do
+      marker = GalaxyLedger::Entry.new(
+        entry_type: "guideline",
+        content: "/home/user/agent-guidelines/ruby-style.md",
+        source_file: "ruby-style.md",
+      )
+      GalaxyLedger::Database.insert("sess-fresh", marker)
+
+      # Not marked stale
+      results = GalaxyLedger::Database.stale_entries("sess-fresh")
+      results.should be_empty
+    end
+
+    it "returns empty for empty session_id" do
+      GalaxyLedger::Database.stale_entries("").should be_empty
+    end
+
+    it "does not return entries from other sessions" do
+      marker = GalaxyLedger::Entry.new(
+        entry_type: "guideline",
+        content: "/home/user/agent-guidelines/ruby-style.md",
+        source_file: "ruby-style.md",
+      )
+      GalaxyLedger::Database.insert("sess-other-stale", marker)
+      GalaxyLedger::Database.mark_entries_stale("sess-other-stale", "ruby-style.md")
+
+      results = GalaxyLedger::Database.stale_entries("sess-different")
+      results.should be_empty
+    end
+  end
+
+  describe ".delete_entries_by_source_file" do
+    it "deletes all guideline entries for a source file" do
+      marker = GalaxyLedger::Entry.new(
+        entry_type: "guideline",
+        content: "/home/user/agent-guidelines/ruby-style.md",
+        source_file: "ruby-style.md",
+      )
+      extracted = GalaxyLedger::Entry.new(
+        entry_type: "guideline",
+        content: "Always use double-quotes",
+        source_file: "ruby-style.md",
+      )
+      GalaxyLedger::Database.insert("sess-del", marker)
+      GalaxyLedger::Database.insert("sess-del", extracted)
+
+      deleted = GalaxyLedger::Database.delete_entries_by_source_file("sess-del", "ruby-style.md")
+      deleted.should eq(2)
+
+      # Verify they're gone
+      GalaxyLedger::Database.has_extracted_source_file?("sess-del", "ruby-style.md").should be_false
+    end
+
+    it "does not delete entries with different source_file" do
+      entry1 = GalaxyLedger::Entry.new(
+        entry_type: "guideline",
+        content: "/home/user/agent-guidelines/ruby-style.md",
+        source_file: "ruby-style.md",
+      )
+      entry2 = GalaxyLedger::Entry.new(
+        entry_type: "guideline",
+        content: "/home/user/agent-guidelines/rspec-style.md",
+        source_file: "rspec-style.md",
+      )
+      GalaxyLedger::Database.insert("sess-del2", entry1)
+      GalaxyLedger::Database.insert("sess-del2", entry2)
+
+      deleted = GalaxyLedger::Database.delete_entries_by_source_file("sess-del2", "ruby-style.md")
+      deleted.should eq(1)
+
+      # rspec-style.md should still exist
+      GalaxyLedger::Database.has_extracted_source_file?("sess-del2", "rspec-style.md").should be_true
+    end
+
+    it "does not delete non-guideline/implementation_plan entries" do
+      guideline = GalaxyLedger::Entry.new(
+        entry_type: "guideline",
+        content: "/home/user/agent-guidelines/ruby-style.md",
+        source_file: "ruby-style.md",
+      )
+      learning = GalaxyLedger::Entry.new(
+        entry_type: "learning",
+        content: "Something about ruby-style.md",
+        source_file: "ruby-style.md",
+      )
+      GalaxyLedger::Database.insert("sess-del3", guideline)
+      GalaxyLedger::Database.insert("sess-del3", learning)
+
+      deleted = GalaxyLedger::Database.delete_entries_by_source_file("sess-del3", "ruby-style.md")
+      deleted.should eq(1) # Only the guideline
+
+      GalaxyLedger::Database.count_by_session("sess-del3").should eq(1) # Learning survives
+    end
+
+    it "does not delete entries from other sessions" do
+      entry = GalaxyLedger::Entry.new(
+        entry_type: "guideline",
+        content: "/home/user/agent-guidelines/ruby-style.md",
+        source_file: "ruby-style.md",
+      )
+      GalaxyLedger::Database.insert("sess-keep", entry)
+
+      deleted = GalaxyLedger::Database.delete_entries_by_source_file("sess-other", "ruby-style.md")
+      deleted.should eq(0)
+
+      GalaxyLedger::Database.has_extracted_source_file?("sess-keep", "ruby-style.md").should be_true
+    end
+
+    it "returns 0 for empty inputs" do
+      GalaxyLedger::Database.delete_entries_by_source_file("", "ruby-style.md").should eq(0)
+      GalaxyLedger::Database.delete_entries_by_source_file("sess", "").should eq(0)
+    end
+  end
+
   describe ".query_by_session" do
     it "returns entries for a session ordered by created_at DESC" do
       # Insert with different timestamps

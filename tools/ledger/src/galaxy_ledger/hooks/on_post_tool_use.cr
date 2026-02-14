@@ -170,6 +170,9 @@ module GalaxyLedger
         )
 
         Database.insert(session_id, entry)
+
+        # Mark extracted entries stale if this is a special file
+        check_stale_extraction(session_id, file_path)
       end
 
       private def process_write
@@ -188,6 +191,20 @@ module GalaxyLedger
         )
 
         Database.insert(session_id, entry)
+
+        # Mark extracted entries stale if this is a special file
+        check_stale_extraction(session_id, file_path)
+      end
+
+      # When a guideline or implementation plan file is edited/written,
+      # mark its extracted entries as stale so the Stop hook knows to
+      # re-extract fresh content from disk.
+      private def check_stale_extraction(session_id : String, file_path : String)
+        special_type = detect_special_file_type(file_path)
+        return unless special_type
+
+        source_file = File.basename(file_path)
+        Database.mark_entries_stale(session_id, source_file)
       end
 
       private def process_search

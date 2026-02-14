@@ -784,6 +784,174 @@ describe "CLI Integration" do
     end
   end
 
+  describe "stale extraction end-to-end flow" do
+    # Tests the full cycle: read → extract marker → edit → mark stale → verify
+    # We can't test the async re-extraction subprocess, but we verify the
+    # database state at each step of the pipeline.
+
+    it "full cycle: read guideline, edit it, verify stale, prune, verify clean" do
+      session_id = "e2e-stale-#{Random.rand(100000)}"
+      session_dir = GalaxyLedger::SESSIONS_DIR / session_id
+      Dir.mkdir_p(session_dir)
+
+      begin
+        # Step 1: Read a guideline file → creates marker entry
+        read_input = {
+          "session_id"      => session_id,
+          "tool_name"       => "Read",
+          "tool_input"      => {"file_path" => "/home/user/agent-guidelines/ruby-style.md"},
+          "tool_response"   => "# Ruby Style\n- Use double quotes\n- Trailing commas",
+          "hook_event_name" => "PostToolUse",
+        }.to_json
+
+        result = run_binary(["on-post-tool-use"], stdin: read_input)
+        result[:status].should eq(0)
+
+        # Verify: marker entry exists, not stale
+        GalaxyLedger::Database.has_extracted_source_file?(session_id, "ruby-style.md").should be_true
+        GalaxyLedger::Database.stale_entries(session_id).should be_empty
+
+        # Step 2: Edit the same guideline file → marks entries stale
+        edit_input = {
+          "session_id" => session_id,
+          "tool_name"  => "Edit",
+          "tool_input" => {
+            "file_path"  => "/home/user/agent-guidelines/ruby-style.md",
+            "old_string" => "Use double quotes",
+            "new_string" => "Use single quotes",
+          },
+          "tool_response"   => "success",
+          "hook_event_name" => "PostToolUse",
+        }.to_json
+
+        result = run_binary(["on-post-tool-use"], stdin: edit_input)
+        result[:status].should eq(0)
+
+        # Verify: marker is now stale
+        stale = GalaxyLedger::Database.stale_entries(session_id)
+        stale.size.should eq(1)
+        stale[0][:source_file].should eq("ruby-style.md")
+        stale[0][:full_path].should eq("/home/user/agent-guidelines/ruby-style.md")
+        stale[0][:entry_type].should eq("guideline")
+
+        # Step 3: Simulate what on-stop does — prune stale entries
+        GalaxyLedger::Database.delete_entries_by_source_file(session_id, "ruby-style.md")
+
+        # Verify: entries are pruned, ready for re-extraction
+        GalaxyLedger::Database.has_extracted_source_file?(session_id, "ruby-style.md").should be_false
+        GalaxyLedger::Database.stale_entries(session_id).should be_empty
+      ensure
+        FileUtils.rm_rf(session_dir.to_s)
+        GalaxyLedger::Database.delete_session(session_id)
+      end
+    end
+
+    it "handles multiple stale files in same session" do
+      session_id = "e2e-multi-stale-#{Random.rand(100000)}"
+      session_dir = GalaxyLedger::SESSIONS_DIR / session_id
+      Dir.mkdir_p(session_dir)
+
+      begin
+        # Read two guideline files
+        ["ruby-style.md", "rspec-style.md"].each do |filename|
+          read_input = {
+            "session_id"      => session_id,
+            "tool_name"       => "Read",
+            "tool_input"      => {"file_path" => "/home/user/agent-guidelines/#{filename}"},
+            "tool_response"   => "contents of #{filename}",
+            "hook_event_name" => "PostToolUse",
+          }.to_json
+          run_binary(["on-post-tool-use"], stdin: read_input)
+        end
+
+        # Edit only one of them
+        edit_input = {
+          "session_id" => session_id,
+          "tool_name"  => "Edit",
+          "tool_input" => {
+            "file_path"  => "/home/user/agent-guidelines/ruby-style.md",
+            "old_string" => "old",
+            "new_string" => "new",
+          },
+          "tool_response"   => "success",
+          "hook_event_name" => "PostToolUse",
+        }.to_json
+        run_binary(["on-post-tool-use"], stdin: edit_input)
+
+        # Only ruby-style should be stale
+        stale = GalaxyLedger::Database.stale_entries(session_id)
+        stale.size.should eq(1)
+        stale[0][:source_file].should eq("ruby-style.md")
+
+        # rspec-style should be untouched
+        GalaxyLedger::Database.has_extracted_source_file?(session_id, "rspec-style.md").should be_true
+
+        # Prune only the stale one
+        GalaxyLedger::Database.delete_entries_by_source_file(session_id, "ruby-style.md")
+
+        # rspec-style still present, ruby-style gone
+        GalaxyLedger::Database.has_extracted_source_file?(session_id, "rspec-style.md").should be_true
+        GalaxyLedger::Database.has_extracted_source_file?(session_id, "ruby-style.md").should be_false
+      ensure
+        FileUtils.rm_rf(session_dir.to_s)
+        GalaxyLedger::Database.delete_session(session_id)
+      end
+    end
+
+    it "mixed types: guideline and implementation_plan stale independently" do
+      session_id = "e2e-mixed-stale-#{Random.rand(100000)}"
+      session_dir = GalaxyLedger::SESSIONS_DIR / session_id
+      Dir.mkdir_p(session_dir)
+
+      begin
+        # Read a guideline
+        read_gl = {
+          "session_id"      => session_id,
+          "tool_name"       => "Read",
+          "tool_input"      => {"file_path" => "/home/user/agent-guidelines/ruby-style.md"},
+          "tool_response"   => "guideline content",
+          "hook_event_name" => "PostToolUse",
+        }.to_json
+        run_binary(["on-post-tool-use"], stdin: read_gl)
+
+        # Read an implementation plan
+        read_ip = {
+          "session_id"      => session_id,
+          "tool_name"       => "Read",
+          "tool_input"      => {"file_path" => "/home/user/implementation-plans/feature.md"},
+          "tool_response"   => "plan content",
+          "hook_event_name" => "PostToolUse",
+        }.to_json
+        run_binary(["on-post-tool-use"], stdin: read_ip)
+
+        # Edit only the implementation plan
+        write_ip = {
+          "session_id" => session_id,
+          "tool_name"  => "Write",
+          "tool_input" => {
+            "file_path" => "/home/user/implementation-plans/feature.md",
+            "content"   => "updated plan",
+          },
+          "tool_response"   => "success",
+          "hook_event_name" => "PostToolUse",
+        }.to_json
+        run_binary(["on-post-tool-use"], stdin: write_ip)
+
+        # Only the plan should be stale
+        stale = GalaxyLedger::Database.stale_entries(session_id)
+        stale.size.should eq(1)
+        stale[0][:source_file].should eq("feature.md")
+        stale[0][:entry_type].should eq("implementation_plan")
+
+        # Guideline should be fresh
+        GalaxyLedger::Database.has_extracted_source_file?(session_id, "ruby-style.md").should be_true
+      ensure
+        FileUtils.rm_rf(session_dir.to_s)
+        GalaxyLedger::Database.delete_session(session_id)
+      end
+    end
+  end
+
   describe "top-level help banner" do
     it "lists all user-facing commands" do
       result = run_binary(["--help"])

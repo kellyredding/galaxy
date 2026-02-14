@@ -90,7 +90,8 @@ module GalaxyLedger
             category TEXT,
             keywords TEXT,
             applies_when TEXT,
-            source_file TEXT
+            source_file TEXT,
+            stale INTEGER DEFAULT 0
           )
         SQL
 
@@ -132,8 +133,22 @@ module GalaxyLedger
           END
         SQL
 
+        # Add stale column if not present (supports existing databases)
+        add_stale_column_if_needed(db)
+
         # Stamp with current version (fresh installs get latest schema)
         Migrations.set_database_version(db, GalaxyLedger::VERSION)
+      end
+    end
+
+    # Add stale column to ledger_entries if it doesn't exist yet.
+    # Uses try/catch pattern since SQLite ALTER TABLE ADD COLUMN
+    # doesn't support IF NOT EXISTS.
+    private def self.add_stale_column_if_needed(db)
+      begin
+        db.exec("SELECT stale FROM ledger_entries LIMIT 0")
+      rescue
+        db.exec("ALTER TABLE ledger_entries ADD COLUMN stale INTEGER DEFAULT 0")
       end
     end
 
@@ -338,6 +353,88 @@ module GalaxyLedger
         end
       rescue
         false
+      end
+    end
+
+    # Mark all entries for a source file as stale within a session.
+    # Called when a guideline or implementation plan file is edited, so
+    # the Stop hook knows to re-extract fresh content from disk.
+    def self.mark_entries_stale(session_id : String, source_file : String) : Int32
+      return 0 if session_id.empty? || source_file.empty?
+
+      begin
+        open do |db|
+          db.exec(
+            <<-SQL,
+              UPDATE ledger_entries SET stale = 1
+              WHERE session_id = ? AND source_file = ?
+            SQL
+            session_id,
+            source_file,
+          )
+          db.scalar("SELECT changes()").as(Int64).to_i
+        end
+      rescue
+        0
+      end
+    end
+
+    # Find source files with stale extracted entries in a session.
+    # Returns the marker entries (whose content is the full file path)
+    # so the Stop hook can read from disk and re-extract.
+    def self.stale_entries(session_id : String) : Array(NamedTuple(source_file: String, full_path: String, entry_type: String))
+      results = [] of NamedTuple(source_file: String, full_path: String, entry_type: String)
+      return results if session_id.empty?
+
+      begin
+        open do |db|
+          db.query(
+            <<-SQL,
+              SELECT DISTINCT source_file, content, entry_type
+              FROM ledger_entries
+              WHERE session_id = ? AND stale = 1
+                AND source_file IS NOT NULL
+                AND entry_type IN ('guideline', 'implementation_plan')
+                AND content LIKE '/%'
+            SQL
+            session_id,
+          ) do |rs|
+            rs.each do
+              results << {
+                source_file: rs.read(String),
+                full_path:   rs.read(String),
+                entry_type:  rs.read(String),
+              }
+            end
+          end
+        end
+      rescue
+        # Return empty on error
+      end
+
+      results
+    end
+
+    # Delete all guideline/implementation_plan entries for a source file
+    # in a session. Used to prune stale entries before re-extraction.
+    def self.delete_entries_by_source_file(session_id : String, source_file : String) : Int32
+      return 0 if session_id.empty? || source_file.empty?
+
+      begin
+        open do |db|
+          db.exec(
+            <<-SQL,
+              DELETE FROM ledger_entries
+              WHERE session_id = ? AND source_file = ?
+                AND entry_type IN ('guideline', 'implementation_plan')
+            SQL
+            session_id,
+            source_file,
+          )
+          db.scalar("SELECT changes()").as(Int64).to_i
+        end
+      rescue
+        0
       end
     end
 

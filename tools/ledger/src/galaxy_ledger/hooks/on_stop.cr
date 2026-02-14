@@ -37,6 +37,10 @@ module GalaxyLedger
 
         # Spawn async extraction process for learnings/decisions/summary
         spawn_extraction_async
+
+        # Re-extract any guideline/implementation plan files that were
+        # edited during this session (stale entries)
+        re_extract_stale_files
       end
 
       private def parse_hook_input
@@ -163,6 +167,47 @@ module GalaxyLedger
           )
         rescue
           # Silently fail - extraction is best-effort
+        end
+      end
+
+      # Re-extract guideline/implementation plan files that were edited
+      # during this session. Reads fresh content from disk, prunes stale
+      # DB entries, and spawns async extract-file subprocesses.
+      private def re_extract_stale_files
+        session_id = @session_id
+        return unless session_id
+
+        stale = Database.stale_entries(session_id)
+        return if stale.empty?
+
+        binary = Process.executable_path || "galaxy-ledger"
+
+        stale.each do |entry|
+          # Read fresh content from disk; skip if file is gone
+          next unless File.exists?(entry[:full_path])
+
+          content = begin
+            File.read(entry[:full_path])
+          rescue
+            next
+          end
+
+          next if content.strip.empty?
+
+          # Prune stale entries, then spawn re-extraction with fresh content
+          Database.delete_entries_by_source_file(session_id, entry[:source_file])
+
+          begin
+            Process.new(
+              binary,
+              args: ["extract-file", "--session", session_id, "--type", entry[:entry_type], "--path", entry[:full_path]],
+              input: IO::Memory.new(content),
+              output: Process::Redirect::Close,
+              error: Process::Redirect::Close,
+            )
+          rescue
+            # Silently fail - re-extraction is best-effort
+          end
         end
       end
     end

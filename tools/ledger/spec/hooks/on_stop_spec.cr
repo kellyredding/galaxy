@@ -233,6 +233,130 @@ describe "OnStop context threshold warnings" do
   end
 end
 
+describe "OnStop stale re-extraction" do
+  test_session_id = "stale-reextract-#{Random.rand(10000)}"
+
+  before_each do
+    session_dir = GalaxyLedger.session_dir(test_session_id)
+    FileUtils.rm_rf(session_dir.to_s)
+    Dir.mkdir_p(session_dir)
+    # Clean DB
+    GalaxyLedger::Database.delete_session(test_session_id)
+  end
+
+  after_each do
+    session_dir = GalaxyLedger.session_dir(test_session_id)
+    FileUtils.rm_rf(session_dir.to_s)
+    GalaxyLedger::Database.delete_session(test_session_id)
+  end
+
+  it "prunes stale entries when on-stop runs with stale guideline" do
+    # Simulate: read a guideline, then edit it, then on-stop fires.
+    # We can't test the async re-extraction subprocess easily,
+    # but we can verify that stale entries get pruned.
+
+    # Create marker + extracted entries
+    marker = GalaxyLedger::Entry.new(
+      entry_type: "guideline",
+      content: "/home/user/agent-guidelines/ruby-style.md",
+      source_file: "ruby-style.md",
+    )
+    extracted = GalaxyLedger::Entry.new(
+      entry_type: "guideline",
+      content: "Always use double-quotes for strings",
+      source_file: "ruby-style.md",
+    )
+    GalaxyLedger::Database.insert(test_session_id, marker)
+    GalaxyLedger::Database.insert(test_session_id, extracted)
+
+    # Mark them stale (simulates edit detection)
+    GalaxyLedger::Database.mark_entries_stale(test_session_id, "ruby-style.md")
+
+    # Verify stale
+    stale = GalaxyLedger::Database.stale_entries(test_session_id)
+    stale.size.should eq(1)
+
+    # Now prune (simulates what on-stop does before spawning re-extraction)
+    GalaxyLedger::Database.delete_entries_by_source_file(test_session_id, "ruby-style.md")
+
+    # Entries should be gone
+    GalaxyLedger::Database.has_extracted_source_file?(test_session_id, "ruby-style.md").should be_false
+    GalaxyLedger::Database.stale_entries(test_session_id).should be_empty
+  end
+
+  it "preserves non-stale entries when pruning stale ones" do
+    # Non-stale guideline
+    fresh_entry = GalaxyLedger::Entry.new(
+      entry_type: "guideline",
+      content: "/home/user/agent-guidelines/rspec-style.md",
+      source_file: "rspec-style.md",
+    )
+    # Stale guideline
+    stale_entry = GalaxyLedger::Entry.new(
+      entry_type: "guideline",
+      content: "/home/user/agent-guidelines/ruby-style.md",
+      source_file: "ruby-style.md",
+    )
+    # Learning (should never be affected)
+    learning = GalaxyLedger::Entry.new(
+      entry_type: "learning",
+      content: "Learned something important",
+    )
+
+    GalaxyLedger::Database.insert(test_session_id, fresh_entry)
+    GalaxyLedger::Database.insert(test_session_id, stale_entry)
+    GalaxyLedger::Database.insert(test_session_id, learning)
+
+    # Mark only ruby-style as stale
+    GalaxyLedger::Database.mark_entries_stale(test_session_id, "ruby-style.md")
+
+    # Prune stale entries
+    GalaxyLedger::Database.delete_entries_by_source_file(test_session_id, "ruby-style.md")
+
+    # Fresh guideline and learning should survive
+    GalaxyLedger::Database.has_extracted_source_file?(test_session_id, "rspec-style.md").should be_true
+    entries = GalaxyLedger::Database.query_by_session(test_session_id)
+    entries.size.should eq(2)
+    entry_types = entries.map(&.entry_type)
+    entry_types.should contain("guideline")
+    entry_types.should contain("learning")
+  end
+
+  it "handles no stale entries gracefully" do
+    # Insert a fresh (non-stale) entry
+    entry = GalaxyLedger::Entry.new(
+      entry_type: "guideline",
+      content: "/home/user/agent-guidelines/ruby-style.md",
+      source_file: "ruby-style.md",
+    )
+    GalaxyLedger::Database.insert(test_session_id, entry)
+
+    # No stale entries
+    GalaxyLedger::Database.stale_entries(test_session_id).should be_empty
+
+    # Running on-stop should not affect anything
+    transcript_file = File.tempfile("transcript", ".jsonl")
+    transcript_file.print(%|{"type": "user", "timestamp": "2026-02-01T10:00:00Z", "message": {"role": "user", "content": "Test"}}\n|)
+    transcript_file.print(%|{"type": "assistant", "timestamp": "2026-02-01T10:01:00Z", "message": {"role": "assistant", "content": "Response"}}\n|)
+    transcript_file.close
+
+    hook_input = {
+      "session_id"       => test_session_id,
+      "transcript_path"  => transcript_file.path,
+      "stop_hook_active" => false,
+    }.to_json
+
+    result = run_binary(["on-stop"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    # Entry should still exist
+    GalaxyLedger::Database.has_extracted_source_file?(test_session_id, "ruby-style.md").should be_true
+
+    # Clean up
+    File.delete(transcript_file.path)
+  end
+end
+
 describe "OnStop CLI help" do
   it "shows help with -h flag" do
     result = run_binary(["on-stop", "-h"])

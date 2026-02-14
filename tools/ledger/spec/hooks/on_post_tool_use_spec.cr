@@ -326,6 +326,139 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
       end
     end
 
+    describe "stale extraction marking" do
+      it "marks guideline entries stale when editing a guideline file" do
+        session_id = "post-tool-stale-#{rand(100000)}"
+        session_dir = GalaxyLedger::SESSIONS_DIR / session_id
+        Dir.mkdir_p(session_dir)
+
+        # First: read the guideline to create marker entry
+        read_input = {
+          "session_id"      => session_id,
+          "tool_name"       => "Read",
+          "tool_input"      => {"file_path" => "/home/user/agent-guidelines/ruby-style.md"},
+          "tool_response"   => "guideline contents",
+          "hook_event_name" => "PostToolUse",
+        }.to_json
+
+        result = run_binary(["on-post-tool-use"], stdin: read_input)
+        result[:status].should eq(0)
+
+        # Verify marker exists and is not stale
+        GalaxyLedger::Database.has_extracted_source_file?(session_id, "ruby-style.md").should be_true
+        GalaxyLedger::Database.stale_entries(session_id).should be_empty
+
+        # Second: edit the guideline file
+        edit_input = {
+          "session_id" => session_id,
+          "tool_name"  => "Edit",
+          "tool_input" => {
+            "file_path"  => "/home/user/agent-guidelines/ruby-style.md",
+            "old_string" => "old",
+            "new_string" => "new",
+          },
+          "tool_response"   => "success",
+          "hook_event_name" => "PostToolUse",
+        }.to_json
+
+        result = run_binary(["on-post-tool-use"], stdin: edit_input)
+        result[:status].should eq(0)
+
+        # Marker should now be stale
+        stale = GalaxyLedger::Database.stale_entries(session_id)
+        stale.size.should eq(1)
+        stale[0][:source_file].should eq("ruby-style.md")
+        stale[0][:entry_type].should eq("guideline")
+
+        # Clean up
+        FileUtils.rm_rf(session_dir.to_s)
+        GalaxyLedger::Database.delete_session(session_id)
+      end
+
+      it "marks implementation_plan entries stale when writing a plan file" do
+        session_id = "post-tool-stale-#{rand(100000)}"
+        session_dir = GalaxyLedger::SESSIONS_DIR / session_id
+        Dir.mkdir_p(session_dir)
+
+        # First: read the plan to create marker entry
+        read_input = {
+          "session_id"      => session_id,
+          "tool_name"       => "Read",
+          "tool_input"      => {"file_path" => "/home/user/implementation-plans/feature.md"},
+          "tool_response"   => "plan contents",
+          "hook_event_name" => "PostToolUse",
+        }.to_json
+
+        result = run_binary(["on-post-tool-use"], stdin: read_input)
+        result[:status].should eq(0)
+
+        # Second: write to the plan file
+        write_input = {
+          "session_id" => session_id,
+          "tool_name"  => "Write",
+          "tool_input" => {
+            "file_path" => "/home/user/implementation-plans/feature.md",
+            "content"   => "updated plan",
+          },
+          "tool_response"   => "success",
+          "hook_event_name" => "PostToolUse",
+        }.to_json
+
+        result = run_binary(["on-post-tool-use"], stdin: write_input)
+        result[:status].should eq(0)
+
+        # Marker should now be stale
+        stale = GalaxyLedger::Database.stale_entries(session_id)
+        stale.size.should eq(1)
+        stale[0][:source_file].should eq("feature.md")
+        stale[0][:entry_type].should eq("implementation_plan")
+
+        # Clean up
+        FileUtils.rm_rf(session_dir.to_s)
+        GalaxyLedger::Database.delete_session(session_id)
+      end
+
+      it "does not mark entries stale when editing a regular file" do
+        session_id = "post-tool-stale-#{rand(100000)}"
+        session_dir = GalaxyLedger::SESSIONS_DIR / session_id
+        Dir.mkdir_p(session_dir)
+
+        # Read a guideline first
+        read_input = {
+          "session_id"      => session_id,
+          "tool_name"       => "Read",
+          "tool_input"      => {"file_path" => "/home/user/agent-guidelines/ruby-style.md"},
+          "tool_response"   => "guideline contents",
+          "hook_event_name" => "PostToolUse",
+        }.to_json
+
+        run_binary(["on-post-tool-use"], stdin: read_input)
+
+        # Edit a regular file (not a guideline)
+        edit_input = {
+          "session_id" => session_id,
+          "tool_name"  => "Edit",
+          "tool_input" => {
+            "file_path"  => "/home/user/src/app.rb",
+            "old_string" => "old",
+            "new_string" => "new",
+          },
+          "tool_response"   => "success",
+          "hook_event_name" => "PostToolUse",
+        }.to_json
+
+        result = run_binary(["on-post-tool-use"], stdin: edit_input)
+        result[:status].should eq(0)
+
+        # Nothing should be stale
+        GalaxyLedger::Database.stale_entries(session_id).should be_empty
+
+        # Clean up
+        FileUtils.rm_rf(session_dir.to_s)
+        GalaxyLedger::Database.delete_session(session_id)
+      end
+    end
+
     describe "with Grep tool" do
       it "creates a search entry" do
         session_id = "post-tool-test-#{rand(100000)}"
