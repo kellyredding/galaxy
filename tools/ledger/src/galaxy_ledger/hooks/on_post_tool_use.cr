@@ -15,7 +15,6 @@ module GalaxyLedger
       # Patterns for detecting guideline files (Tier 1)
       GUIDELINE_PATTERNS = [
         %r{/agent-guidelines/},
-        %r{-style\.md$},
       ]
 
       # Patterns for detecting implementation plan files (Tier 1)

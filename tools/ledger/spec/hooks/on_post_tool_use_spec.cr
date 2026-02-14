@@ -87,7 +87,7 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         GalaxyLedger::Database.delete_session(session_id)
       end
 
-      it "creates a guideline entry for *-style.md files" do
+      it "creates a guideline entry for any file in agent-guidelines" do
         session_id = "post-tool-test-#{rand(100000)}"
         session_dir = GalaxyLedger::SESSIONS_DIR / session_id
         Dir.mkdir_p(session_dir)
@@ -95,8 +95,8 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         input = {
           "session_id"      => session_id,
           "tool_name"       => "Read",
-          "tool_input"      => {"file_path" => "/home/user/docs/rspec-style.md"},
-          "tool_response"   => "style guide",
+          "tool_input"      => {"file_path" => "/home/user/agent-guidelines/git-workflow.md"},
+          "tool_response"   => "workflow guide",
           "hook_event_name" => "PostToolUse",
         }.to_json
 
@@ -463,18 +463,13 @@ describe GalaxyLedger::Hooks::OnPostToolUse, "pattern matching" do
     it "matches /agent-guidelines/ paths" do
       patterns.any?(&.matches?("/home/user/agent-guidelines/ruby-style.md")).should be_true
       patterns.any?(&.matches?("/project/agent-guidelines/test.md")).should be_true
+      patterns.any?(&.matches?("/project/agent-guidelines/l.md")).should be_true
     end
 
-    it "matches *-style.md files" do
-      patterns.any?(&.matches?("/docs/ruby-style.md")).should be_true
-      patterns.any?(&.matches?("/project/rspec-style.md")).should be_true
-      patterns.any?(&.matches?("/kajabi-style.md")).should be_true
-    end
-
-    it "does not match regular files" do
+    it "does not match files outside agent-guidelines" do
       patterns.any?(&.matches?("/path/to/regular.md")).should be_false
       patterns.any?(&.matches?("/path/to/file.rb")).should be_false
-      patterns.any?(&.matches?("/path/style/file.md")).should be_false
+      patterns.any?(&.matches?("/docs/ruby-style.md")).should be_false
     end
   end
 
