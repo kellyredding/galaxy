@@ -407,31 +407,6 @@ module GalaxyLedger
       entries
     end
 
-    # Query most recent entries across all sessions
-    def self.query_recent(limit : Int32 = 100) : Array(StoredEntry)
-      entries = [] of StoredEntry
-      begin
-        open do |db|
-          db.query(
-            <<-SQL,
-              SELECT id, created_at, session_id, entry_type, source, content, content_hash, metadata, importance, category, keywords, applies_when, source_file
-              FROM ledger_entries
-              ORDER BY created_at DESC
-              LIMIT ?
-            SQL
-            limit
-          ) do |rs|
-            rs.each do
-              entries << StoredEntry.from_row(rs)
-            end
-          end
-        end
-      rescue
-        # Return empty on error
-      end
-      entries
-    end
-
     # Prepare FTS5 query with prefix matching
     # Adds * suffix to each word for prefix matching
     # Example: "trailing comma" -> "trailing* comma*"

@@ -373,27 +373,6 @@ describe GalaxyLedger::Database do
     end
   end
 
-  describe ".query_recent" do
-    it "returns recent entries across all sessions" do
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "L1"))
-      GalaxyLedger::Database.insert("s2", GalaxyLedger::Entry.new(entry_type: "decision", content: "D1"))
-      GalaxyLedger::Database.insert("s3", GalaxyLedger::Entry.new(entry_type: "discovery", content: "Disc1"))
-
-      entries = GalaxyLedger::Database.query_recent
-      entries.size.should eq(3)
-    end
-
-    it "respects limit parameter" do
-      5.times do |i|
-        entry = GalaxyLedger::Entry.new(entry_type: "learning", content: "Entry #{i}")
-        GalaxyLedger::Database.insert("session-#{i}", entry)
-      end
-
-      entries = GalaxyLedger::Database.query_recent(limit: 2)
-      entries.size.should eq(2)
-    end
-  end
-
   describe ".search" do
     it "finds entries matching query" do
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "JWT authentication tokens expire"))
