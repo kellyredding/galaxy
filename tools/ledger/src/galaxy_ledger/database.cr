@@ -571,14 +571,16 @@ module GalaxyLedger
       stats
     end
 
-    # Query recent entries with optional type, importance, and category filters
+    # Query recent entries with optional type, importance, category, and session filters
     # Used by list command with filters
     # Phase 6.2: Added category filter
+    # Phase 6.4: Added session_id filter for session-scoped queries
     def self.query_recent_filtered(
       limit : Int32 = 100,
       entry_type : String? = nil,
       importance : String? = nil,
       category : String? = nil,
+      session_id : String? = nil,
     ) : Array(StoredEntry)
       entries = [] of StoredEntry
       begin
@@ -589,6 +591,7 @@ module GalaxyLedger
               FROM ledger_entries
               WHERE 1=1
             SQL
+            s << " AND session_id = ?" if session_id
             s << " AND entry_type = ?" if entry_type
             s << " AND importance = ?" if importance
             s << " AND category = ?" if category
@@ -596,6 +599,7 @@ module GalaxyLedger
           end
 
           args = [] of DB::Any
+          args << session_id if session_id
           args << entry_type if entry_type
           args << importance if importance
           args << category if category

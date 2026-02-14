@@ -536,6 +536,20 @@ module GalaxyLedger
       end
     end
 
+    private def self.build_filter_summary(
+      entry_type : String?,
+      importance : String?,
+      category : String?,
+      session_id : String? = nil,
+    ) : Array(String)
+      filters = [] of String
+      filters << "session=#{session_id[0, 8]}..." if session_id
+      filters << "type=#{entry_type}" if entry_type
+      filters << "importance=#{importance}" if importance
+      filters << "category=#{category}" if category
+      filters
+    end
+
     private def self.truncate(text : String, max_length : Int32) : String
       if text.size <= max_length
         text.gsub("\n", "\\n")
@@ -580,6 +594,7 @@ module GalaxyLedger
       entry_type : String? = nil
       importance : String? = nil
       category : String? = nil
+      session_id : String? = nil
       prefix_match = true
       query : String? = nil
 
@@ -608,6 +623,9 @@ module GalaxyLedger
         elsif arg == "--category" && i + 1 < args.size
           category = args[i + 1]
           i += 2
+        elsif arg == "--session" && i + 1 < args.size
+          session_id = args[i + 1]
+          i += 2
         elsif arg == "--exact"
           prefix_match = false
           i += 1
@@ -625,28 +643,22 @@ module GalaxyLedger
         exit(1)
       end
 
-      entries = Database.search(query, entry_type: entry_type, importance: importance, category: category, prefix_match: prefix_match)
+      entries = if sid = session_id
+                  Database.search_in_session(sid, query, entry_type: entry_type, importance: importance, category: category, prefix_match: prefix_match)
+                else
+                  Database.search(query, entry_type: entry_type, importance: importance, category: category, prefix_match: prefix_match)
+                end
 
       if entries.empty?
         puts "No results found for: #{query}"
-        if entry_type || importance || category
-          filters = [] of String
-          filters << "type=#{entry_type}" if entry_type
-          filters << "importance=#{importance}" if importance
-          filters << "category=#{category}" if category
-          puts "  Filters: #{filters.join(", ")}"
-        end
+        filters = build_filter_summary(entry_type, importance, category, session_id)
+        puts "  Filters: #{filters.join(", ")}" if filters.any?
         return
       end
 
       puts "Search results for: #{query}"
-      if entry_type || importance || category
-        filters = [] of String
-        filters << "type=#{entry_type}" if entry_type
-        filters << "importance=#{importance}" if importance
-        filters << "category=#{category}" if category
-        puts "  Filters: #{filters.join(", ")}"
-      end
+      filters = build_filter_summary(entry_type, importance, category, session_id)
+      puts "  Filters: #{filters.join(", ")}" if filters.any?
       puts "  Found: #{entries.size} entries"
       puts ""
 
@@ -683,6 +695,7 @@ module GalaxyLedger
                               Searches across content, keywords, category, and source file
 
       OPTIONS:
+        --session ID          Scope search to a specific session
         --type TYPE           Filter by entry type
         --importance LEVEL    Filter by importance (high, medium, low)
         --category CATEGORY   Filter by category (e.g., ruby-style, rspec, git-workflow)
@@ -700,6 +713,7 @@ module GalaxyLedger
         galaxy-ledger search --query "trail"          # Finds "trailing" (prefix match)
         galaxy-ledger search --query "trail" --exact  # No match (exact only)
         galaxy-ledger search --query "--help"         # Search for literal "--help"
+        galaxy-ledger search --query "auth" --session abc123  # Session-scoped search
       HELP
     end
 
@@ -714,6 +728,7 @@ module GalaxyLedger
       limit = 20
       entry_type : String? = nil
       importance : String? = nil
+      session_id : String? = nil
 
       i = 0
       while i < args.size
@@ -734,6 +749,9 @@ module GalaxyLedger
             exit(1)
           end
           i += 2
+        elsif arg == "--session" && i + 1 < args.size
+          session_id = args[i + 1]
+          i += 2
         elsif arg == "--limit" && i + 1 < args.size
           limit = args[i + 1].to_i? || 20
           i += 2
@@ -745,31 +763,23 @@ module GalaxyLedger
         end
       end
 
-      entries = Database.query_recent_filtered(limit, entry_type, importance)
+      entries = Database.query_recent_filtered(limit, entry_type, importance, session_id: session_id)
 
       if entries.empty?
         puts "No entries in ledger."
-        if entry_type || importance
-          filters = [] of String
-          filters << "type=#{entry_type}" if entry_type
-          filters << "importance=#{importance}" if importance
-          puts "  Filters: #{filters.join(", ")}"
-        end
+        filters = build_filter_summary(entry_type, importance, nil, session_id)
+        puts "  Filters: #{filters.join(", ")}" if filters.any?
         puts "  Database: #{Database.database_path}"
         return
       end
 
       total = Database.count
       header = "Recent ledger entries (showing #{entries.size}"
-      header += " of #{total}" unless entry_type || importance
+      header += " of #{total}" unless entry_type || importance || session_id
       header += "):"
       puts header
-      if entry_type || importance
-        filters = [] of String
-        filters << "type=#{entry_type}" if entry_type
-        filters << "importance=#{importance}" if importance
-        puts "  Filters: #{filters.join(", ")}"
-      end
+      filters = build_filter_summary(entry_type, importance, nil, session_id)
+      puts "  Filters: #{filters.join(", ")}" if filters.any?
       puts ""
 
       entries.each_with_index do |entry, idx|
@@ -801,6 +811,7 @@ module GalaxyLedger
         galaxy-ledger list [options]
 
       OPTIONS:
+        --session ID            Scope listing to a specific session
         --limit N               Number of entries to show (default: 20)
         --type TYPE             Filter by entry type
         --importance LEVEL      Filter by importance (high, medium, low)
@@ -815,6 +826,8 @@ module GalaxyLedger
         galaxy-ledger list --type guideline
         galaxy-ledger list --importance high
         galaxy-ledger list --limit 10 --type learning --importance medium
+        galaxy-ledger list --session abc123                    # Session-scoped listing
+        galaxy-ledger list --session abc123 --type learning    # Session + type filter
       HELP
     end
 
@@ -1336,7 +1349,7 @@ module GalaxyLedger
         - PostToolUse hook (async): Tracks file operations
         - Stop hook: Captures last exchange, shows context warnings
         - PreCompact hook: Reserved for pre-compaction tasks
-        - SessionStart hooks: Context restoration and awareness
+        - SessionStart hooks: Context restoration and startup awareness
         - SessionEnd hook: Reserved for session end tasks
 
       SAFETY:

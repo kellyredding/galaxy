@@ -161,9 +161,16 @@ module GalaxyLedger
       end
 
       private def build_additional_context(last_exchange : Exchange::LastExchange?) : String
+        session_id = @session_id
+
         lines = [] of String
         lines << "## Restored Context"
         lines << ""
+
+        if session_id
+          lines << "**Session ID**: `#{session_id}`"
+          lines << ""
+        end
 
         if last_exchange
           lines << "### Last Interaction"
@@ -194,7 +201,12 @@ module GalaxyLedger
 
         lines << ""
         lines << "---"
-        lines << "📚 Full session history available: `galaxy-ledger search \"query\"`"
+        if session_id
+          lines << "📚 Search this session: `galaxy-ledger search --query \"QUERY\" --session #{session_id}`"
+          lines << "📋 List this session: `galaxy-ledger list --session #{session_id}`"
+        else
+          lines << "📚 Full session history available: `galaxy-ledger search --query \"QUERY\"`"
+        end
 
         lines.join("\n")
       end

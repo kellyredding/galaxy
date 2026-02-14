@@ -84,9 +84,17 @@ module GalaxyLedger
       end
 
       private def build_awareness_context(stats : NamedTuple(sessions: Int32, entries: Int32, last_session: String?)) : String
+        session_id = @session_id
+
         lines = [] of String
         lines << "## Galaxy Ledger Available"
         lines << ""
+
+        if session_id
+          lines << "**Session ID**: `#{session_id}`"
+          lines << ""
+        end
+
         lines << "You have access to a persistent context ledger that tracks learnings, decisions, and file interactions across sessions."
         lines << ""
         lines << "The ledger automatically:"
@@ -108,7 +116,23 @@ module GalaxyLedger
           lines << ""
         end
 
-        lines << "Use `galaxy-ledger search \"query\"` to search the ledger."
+        if session_id
+          lines << "### Querying the Ledger"
+          lines << ""
+          lines << "Search this session's entries:"
+          lines << "```"
+          lines << "galaxy-ledger search --query \"QUERY\" --session #{session_id}"
+          lines << "```"
+          lines << ""
+          lines << "List this session's recent entries:"
+          lines << "```"
+          lines << "galaxy-ledger list --session #{session_id}"
+          lines << "```"
+          lines << ""
+          lines << "Add optional filters: `--type TYPE`, `--importance LEVEL`, `--category CATEGORY`"
+        else
+          lines << "Use `galaxy-ledger search --query \"QUERY\"` to search the ledger."
+        end
 
         lines.join("\n")
       end
