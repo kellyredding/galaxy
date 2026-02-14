@@ -159,7 +159,7 @@ describe "OnStop context threshold warnings" do
     # Create context status file at 75%
     session_dir = GalaxyLedger.session_dir(test_session_id)
     status_file = GalaxyLedger.context_status_path(test_session_id)
-    File.write(status_file, %|{"percentage": 75.0}|)
+    File.write(status_file, %|{"context": {"percentage": 75.0}}|)
 
     # Create minimal transcript
     transcript_file = File.tempfile("transcript", ".jsonl")
@@ -185,7 +185,7 @@ describe "OnStop context threshold warnings" do
     # Create context status file at 90%
     session_dir = GalaxyLedger.session_dir(test_session_id)
     status_file = GalaxyLedger.context_status_path(test_session_id)
-    File.write(status_file, %|{"percentage": 90.0}|)
+    File.write(status_file, %|{"context": {"percentage": 90.0}}|)
 
     # Create minimal transcript
     transcript_file = File.tempfile("transcript", ".jsonl")
@@ -211,7 +211,7 @@ describe "OnStop context threshold warnings" do
     # Create context status file at 50%
     session_dir = GalaxyLedger.session_dir(test_session_id)
     status_file = GalaxyLedger.context_status_path(test_session_id)
-    File.write(status_file, %|{"percentage": 50.0}|)
+    File.write(status_file, %|{"context": {"percentage": 50.0}}|)
 
     # Create minimal transcript
     transcript_file = File.tempfile("transcript", ".jsonl")

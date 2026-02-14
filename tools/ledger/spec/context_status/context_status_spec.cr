@@ -1,11 +1,11 @@
 require "../spec_helper"
 
 describe GalaxyLedger::ContextStatus do
-  describe ".read with new enhanced format" do
+  describe ".read" do
     it "reads full context status from session-specific file" do
-      session_id = "test-ledger-new-format-#{Random.rand(100000)}"
+      session_id = "test-ledger-read-#{Random.rand(100000)}"
 
-      # Create session directory and write a new format test file
+      # Create session directory and write a test file
       session_dir = GalaxyLedger.session_dir(session_id)
       Dir.mkdir_p(session_dir)
 
@@ -67,63 +67,10 @@ describe GalaxyLedger::ContextStatus do
       s.lines_added.should eq(45)
       s.lines_removed.should eq(12)
 
-      # Enhanced format detection
-      s.enhanced_format?.should eq(true)
-
       # Clean up
       FileUtils.rm_rf(session_dir.to_s)
     end
-  end
 
-  describe ".read with old legacy format" do
-    it "reads legacy context status maintaining backward compatibility" do
-      session_id = "test-ledger-old-format-#{Random.rand(100000)}"
-
-      # Create session directory and write an old format test file
-      session_dir = GalaxyLedger.session_dir(session_id)
-      Dir.mkdir_p(session_dir)
-
-      status_file = GalaxyLedger.context_status_path(session_id)
-      File.write(status_file, %|{
-        "percentage": 72.5,
-        "timestamp": 1234567890,
-        "model": "claude-sonnet-4"
-      }|)
-
-      # Read it back
-      status = GalaxyLedger::ContextStatus.read(session_id)
-      status.should_not be_nil
-
-      s = status.not_nil!
-      s.timestamp.should eq(1234567890)
-
-      # Percentage should work via legacy field
-      s.percentage.should eq(72.5)
-      s.legacy_percentage.should eq(72.5)
-
-      # Model as string should still be accessible
-      s.model_id.should eq("claude-sonnet-4")
-      s.model_display_name.should be_nil # Not available in old format
-      s.model.should_not be_nil
-      s.model.not_nil!.id.should eq("claude-sonnet-4")
-
-      # New fields should be nil
-      s.session_id.should be_nil
-      s.cwd.should be_nil
-      s.workspace.should be_nil
-      s.claude_version.should be_nil
-      s.context.should be_nil
-      s.cost.should be_nil
-
-      # Enhanced format detection
-      s.enhanced_format?.should eq(false)
-
-      # Clean up
-      FileUtils.rm_rf(session_dir.to_s)
-    end
-  end
-
-  describe ".read edge cases" do
     it "returns nil when session directory doesn't exist" do
       session_id = "nonexistent-ledger-session-#{Random.rand(100000)}"
 
@@ -174,10 +121,10 @@ describe GalaxyLedger::ContextStatus do
       FileUtils.rm_rf(session_dir.to_s)
     end
 
-    it "handles partial new format gracefully" do
+    it "handles partial format gracefully" do
       session_id = "partial-ledger-session-#{Random.rand(100000)}"
 
-      # Create session directory and write partial new format
+      # Create session directory and write partial format
       session_dir = GalaxyLedger.session_dir(session_id)
       Dir.mkdir_p(session_dir)
 
@@ -201,7 +148,6 @@ describe GalaxyLedger::ContextStatus do
       s.model_id.should be_nil
       s.workspace.should be_nil
       s.cost.should be_nil
-      s.enhanced_format?.should eq(true)
 
       # Clean up
       FileUtils.rm_rf(session_dir.to_s)
