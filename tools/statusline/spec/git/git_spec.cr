@@ -23,7 +23,6 @@ private def cleanup_temp_dir(dir : String)
 end
 
 describe GalaxyStatusline::Git do
-
   describe "#in_git_repo?" do
     it "returns true for a git repository" do
       dir = create_temp_git_repo

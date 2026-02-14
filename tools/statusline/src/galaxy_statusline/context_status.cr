@@ -64,7 +64,7 @@ module GalaxyStatusline
       @model : Model?,
       @claude_version : String?,
       @context : Context?,
-      @cost : Cost?
+      @cost : Cost?,
     )
       @timestamp = Time.utc.to_unix
     end
