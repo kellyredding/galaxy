@@ -309,6 +309,50 @@ describe GalaxyLedger::Database do
     end
   end
 
+  describe ".has_extracted_source_file?" do
+    it "returns true when source_file entries exist for the session" do
+      entry = GalaxyLedger::Entry.new(
+        entry_type: "guideline",
+        content: "/path/to/ruby-style.md",
+        source_file: "ruby-style.md",
+      )
+      GalaxyLedger::Database.insert("sess-dedup", entry)
+
+      GalaxyLedger::Database.has_extracted_source_file?("sess-dedup", "ruby-style.md").should be_true
+    end
+
+    it "returns false when no source_file entries exist for the session" do
+      GalaxyLedger::Database.has_extracted_source_file?("sess-empty", "ruby-style.md").should be_false
+    end
+
+    it "does not match entries from other sessions" do
+      entry = GalaxyLedger::Entry.new(
+        entry_type: "guideline",
+        content: "/path/to/ruby-style.md",
+        source_file: "ruby-style.md",
+      )
+      GalaxyLedger::Database.insert("sess-other", entry)
+
+      GalaxyLedger::Database.has_extracted_source_file?("sess-mine", "ruby-style.md").should be_false
+    end
+
+    it "does not match non-extraction entry types" do
+      entry = GalaxyLedger::Entry.new(
+        entry_type: "file_read",
+        content: "/path/to/ruby-style.md",
+        source_file: "ruby-style.md",
+      )
+      GalaxyLedger::Database.insert("sess-filetype", entry)
+
+      GalaxyLedger::Database.has_extracted_source_file?("sess-filetype", "ruby-style.md").should be_false
+    end
+
+    it "returns false for empty inputs" do
+      GalaxyLedger::Database.has_extracted_source_file?("", "ruby-style.md").should be_false
+      GalaxyLedger::Database.has_extracted_source_file?("sess", "").should be_false
+    end
+  end
+
   describe ".query_by_session" do
     it "returns entries for a session ordered by created_at DESC" do
       # Insert with different timestamps

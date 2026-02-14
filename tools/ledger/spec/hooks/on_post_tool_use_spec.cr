@@ -139,6 +139,128 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
       end
     end
 
+    describe "extraction deduplication" do
+      it "skips extraction on second read of same guideline file" do
+        session_id = "post-tool-dedup-#{rand(100000)}"
+        session_dir = GalaxyLedger::SESSIONS_DIR / session_id
+        Dir.mkdir_p(session_dir)
+
+        input = {
+          "session_id"      => session_id,
+          "tool_name"       => "Read",
+          "tool_input"      => {"file_path" => "/home/user/agent-guidelines/ruby-style.md"},
+          "tool_response"   => "guideline contents",
+          "hook_event_name" => "PostToolUse",
+        }.to_json
+
+        # First read — should create marker entry with source_file set
+        result = run_binary(["on-post-tool-use"], stdin: input)
+        result[:status].should eq(0)
+
+        entries_after_first = GalaxyLedger::Database.query_by_session(session_id)
+        first_marker = entries_after_first.find { |e| e.entry_type == "guideline" }
+        first_marker.should_not be_nil
+        first_marker.not_nil!.source_file.should eq("ruby-style.md")
+
+        # Pre-flight check should now return true
+        GalaxyLedger::Database.has_extracted_source_file?(session_id, "ruby-style.md").should be_true
+
+        # First marker should have extraction_spawned: true
+        meta = JSON.parse(first_marker.not_nil!.metadata.not_nil!)
+        meta["extraction_spawned"]?.try(&.as_bool?).should be_true
+
+        # Second read — entry count shouldn't increase (unique index + pre-flight)
+        result = run_binary(["on-post-tool-use"], stdin: input)
+        result[:status].should eq(0)
+
+        entries_after_second = GalaxyLedger::Database.query_by_session(session_id)
+        guideline_count = entries_after_second.count { |e| e.entry_type == "guideline" }
+        guideline_count.should eq(1) # No new marker entry (same content_hash)
+
+        # Clean up
+        FileUtils.rm_rf(session_dir.to_s)
+        GalaxyLedger::Database.delete_session(session_id)
+      end
+
+      it "skips extraction on second read of same implementation plan" do
+        session_id = "post-tool-dedup-#{rand(100000)}"
+        session_dir = GalaxyLedger::SESSIONS_DIR / session_id
+        Dir.mkdir_p(session_dir)
+
+        input = {
+          "session_id"      => session_id,
+          "tool_name"       => "Read",
+          "tool_input"      => {"file_path" => "/home/user/implementation-plans/feature.md"},
+          "tool_response"   => "plan contents",
+          "hook_event_name" => "PostToolUse",
+        }.to_json
+
+        # First read
+        result = run_binary(["on-post-tool-use"], stdin: input)
+        result[:status].should eq(0)
+
+        GalaxyLedger::Database.has_extracted_source_file?(session_id, "feature.md").should be_true
+
+        # Second read — no new entries
+        result = run_binary(["on-post-tool-use"], stdin: input)
+        result[:status].should eq(0)
+
+        entries = GalaxyLedger::Database.query_by_session(session_id)
+        plan_count = entries.count { |e| e.entry_type == "implementation_plan" }
+        plan_count.should eq(1)
+
+        # Clean up
+        FileUtils.rm_rf(session_dir.to_s)
+        GalaxyLedger::Database.delete_session(session_id)
+      end
+
+      it "allows extraction for different guideline files in same session" do
+        session_id = "post-tool-dedup-#{rand(100000)}"
+        session_dir = GalaxyLedger::SESSIONS_DIR / session_id
+        Dir.mkdir_p(session_dir)
+
+        # Read first guideline
+        input1 = {
+          "session_id"      => session_id,
+          "tool_name"       => "Read",
+          "tool_input"      => {"file_path" => "/home/user/agent-guidelines/ruby-style.md"},
+          "tool_response"   => "ruby style contents",
+          "hook_event_name" => "PostToolUse",
+        }.to_json
+
+        result = run_binary(["on-post-tool-use"], stdin: input1)
+        result[:status].should eq(0)
+
+        # Read different guideline
+        input2 = {
+          "session_id"      => session_id,
+          "tool_name"       => "Read",
+          "tool_input"      => {"file_path" => "/home/user/agent-guidelines/rspec-style.md"},
+          "tool_response"   => "rspec style contents",
+          "hook_event_name" => "PostToolUse",
+        }.to_json
+
+        result = run_binary(["on-post-tool-use"], stdin: input2)
+        result[:status].should eq(0)
+
+        entries = GalaxyLedger::Database.query_by_session(session_id)
+        guideline_entries = entries.select { |e| e.entry_type == "guideline" }
+
+        # Both should have spawned extraction
+        metadata_values = guideline_entries.map do |e|
+          if meta = e.metadata
+            JSON.parse(meta)["extraction_spawned"]?.try(&.as_bool?)
+          end
+        end
+
+        metadata_values.all? { |v| v == true }.should be_true
+
+        # Clean up
+        FileUtils.rm_rf(session_dir.to_s)
+        GalaxyLedger::Database.delete_session(session_id)
+      end
+    end
+
     describe "with Edit tool" do
       it "creates a file_edit entry" do
         session_id = "post-tool-test-#{rand(100000)}"

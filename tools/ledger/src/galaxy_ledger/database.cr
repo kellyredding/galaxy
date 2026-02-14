@@ -317,6 +317,30 @@ module GalaxyLedger
       end
     end
 
+    # Check if extracted entries already exist for a source file in a session.
+    # Used to skip redundant LLM extraction when the same file is read
+    # multiple times in a single session.
+    def self.has_extracted_source_file?(session_id : String, source_file : String) : Bool
+      return false if session_id.empty? || source_file.empty?
+
+      begin
+        open do |db|
+          db.scalar(
+            <<-SQL,
+              SELECT COUNT(*) FROM ledger_entries
+              WHERE session_id = ? AND source_file = ?
+              AND entry_type IN ('guideline', 'implementation_plan')
+              LIMIT 1
+            SQL
+            session_id,
+            source_file,
+          ).as(Int64) > 0
+        end
+      rescue
+        false
+      end
+    end
+
     # Query entries by session (most recent first)
     def self.query_by_session(session_id : String, limit : Int32 = 100) : Array(StoredEntry)
       return [] of StoredEntry if session_id.empty?

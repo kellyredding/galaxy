@@ -94,15 +94,27 @@ module GalaxyLedger
         special_type = detect_special_file_type(file_path)
 
         if special_type && tool_response && !tool_response.empty?
-          # For guidelines and implementation plans, spawn extraction
-          spawn_extraction_async(session_id, file_path, tool_response, special_type)
+          source_file_basename = File.basename(file_path)
 
-          # Also record the file path as a marker that we read this file
+          # Skip extraction if we already have entries for this source file in this session.
+          # The LLM produces unique output each time, so the content-hash unique index
+          # can't catch these — we need to check by source_file instead.
+          already_extracted = Database.has_extracted_source_file?(session_id, source_file_basename)
+
+          unless already_extracted
+            # For guidelines and implementation plans, spawn extraction
+            spawn_extraction_async(session_id, file_path, tool_response, special_type)
+          end
+
+          # Always record the file path as a marker that we read this file.
+          # Set source_file so the pre-flight check catches subsequent reads
+          # immediately (before the async extraction subprocess finishes).
           entry = Entry.new(
             entry_type: special_type,
             content: file_path,
             importance: "medium",
-            metadata: JSON.parse({"tool" => "Read", "extraction_spawned" => true}.to_json)
+            metadata: JSON.parse({"tool" => "Read", "extraction_spawned" => !already_extracted}.to_json),
+            source_file: source_file_basename,
           )
           Database.insert(session_id, entry)
         else
