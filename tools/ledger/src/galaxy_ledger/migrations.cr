@@ -19,19 +19,19 @@
 #
 # 2. For DATABASE changes, add an entry to DATABASE_MIGRATIONS:
 #
-#    ```crystal
-#    DATABASE_MIGRATIONS = {
-#      "0.2.0" => ->(db : DB::Database) {
-#        # Add your migration SQL here
-#        # This runs when upgrading TO version 0.2.0
-#        db.exec("ALTER TABLE ledger_entries ADD COLUMN new_field TEXT")
-#      },
-#    }
+#    ```
+# DATABASE_MIGRATIONS = {
+#   "0.2.0" => ->(db : DB::Database) {
+#     # Add your migration SQL here
+#     # This runs when upgrading TO version 0.2.0
+#     db.exec("ALTER TABLE ledger_entries ADD COLUMN new_field TEXT")
+#   },
+# }
 #    ```
 #
 # 3. For CONFIG changes, add an entry to CONFIG_MIGRATIONS:
 #
-#    ```crystal
+#    ```
 #    CONFIG_MIGRATIONS = {
 #      "0.2.0" => ->(config_json : JSON::Any) -> JSON::Any {
 #        # Transform the config JSON and return the new version
@@ -131,7 +131,7 @@ module GalaxyLedger
     def self.migrations_between(
       migrations : Hash(String, T),
       from_version : String,
-      to_version : String
+      to_version : String,
     ) : Array(String) forall T
       migrations.keys.select do |v|
         version_greater_than?(v, from_version) && !version_greater_than?(v, to_version)

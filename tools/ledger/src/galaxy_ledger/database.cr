@@ -840,7 +840,7 @@ module GalaxyLedger
       getter importance : String
       # Phase 6.2: Enhanced schema fields
       getter category : String?
-      getter keywords : String?    # JSON array stored as text
+      getter keywords : String? # JSON array stored as text
       getter applies_when : String?
       getter source_file : String?
 
