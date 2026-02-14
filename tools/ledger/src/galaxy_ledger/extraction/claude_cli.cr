@@ -6,6 +6,14 @@ module GalaxyLedger
       # Default timeout for Claude CLI calls (60 seconds)
       DEFAULT_TIMEOUT = 60.seconds
 
+      # Test stub: when set, run() returns this instead of calling Claude CLI.
+      # Used by specs to test the extraction pipeline without live subprocess calls.
+      @@test_response : String? = nil
+
+      def self.test_response=(response : String?)
+        @@test_response = response
+      end
+
       # Run a Claude CLI one-shot command
       # Returns the JSON output string, or nil on error
       def self.run(
@@ -15,6 +23,7 @@ module GalaxyLedger
       ) : String?
         return nil if content.strip.empty?
         return nil if prompt.strip.empty?
+        return @@test_response if @@test_response
 
         begin
           # Build the full prompt with content embedded

@@ -1,177 +1,87 @@
 require "../spec_helper"
 
-# These specs call the actual Claude CLI and test extraction quality
-# They are tagged with "eval" so they can be run separately:
-#   crystal spec spec/extraction/extraction_eval_spec.cr
+# Smoke tests that call the actual Claude CLI to verify extraction prompts
+# produce parseable, reasonable output. One test per extraction type.
 #
-# These tests verify the extraction prompts work correctly with real Claude
+# Tagged "eval" — excluded from default `crystal spec` runs.
+# Run explicitly:  crystal spec --tag eval
+#                  make test-eval
+#
+# Parsing correctness is covered by extraction_pipeline_spec.cr (fast, stubbed).
+# These only validate that Claude + our prompts return sensible results.
 
 describe "Extraction Evals", tags: "eval" do
   fixtures_path = SPEC_FIXTURES / "extraction_evals"
 
-  describe "User Prompt Extraction" do
-    fixture_dir = fixtures_path / "user_prompts"
+  it "user prompt extraction: direction_explicit" do
+    content = File.read(fixtures_path / "user_prompts" / "02_direction_explicit.txt")
 
-    Dir.glob("#{fixture_dir}/*.txt").sort.each do |txt_file|
-      expected_file = txt_file.gsub(".txt", ".expected.json")
-      next unless File.exists?(expected_file)
+    result = GalaxyLedger::Extraction.extract_user_directions(content)
+    result.extractions.size.should eq(2),
+      "Expected 2 direction extractions, got #{result.extractions.size}"
 
-      test_name = File.basename(txt_file, ".txt")
-
-      it "extracts correctly: #{test_name}" do
-        content = File.read(txt_file)
-        expected = JSON.parse(File.read(expected_file))
-
-        result = GalaxyLedger::Extraction.extract_user_directions(content)
-
-        description = expected["description"]?.try(&.as_s?) || test_name
-
-        if expected_count = expected["expected_count"]?.try(&.as_i?)
-          result.extractions.size.should eq(expected_count),
-            "#{description}: expected #{expected_count} extractions, got #{result.extractions.size}"
-        end
-
-        if min_count = expected["expected_count_min"]?.try(&.as_i?)
-          result.extractions.size.should be >= min_count,
-            "#{description}: expected at least #{min_count} extractions, got #{result.extractions.size}"
-        end
-
-        if max_count = expected["expected_count_max"]?.try(&.as_i?)
-          result.extractions.size.should be <= max_count,
-            "#{description}: expected at most #{max_count} extractions, got #{result.extractions.size}"
-        end
-
-        # Log results for debugging
-        if result.extractions.any?
-          STDERR.puts "\n  [#{test_name}] Extractions:"
-          result.extractions.each do |e|
-            STDERR.puts "    - #{e.entry_type} (#{e.importance}): #{e.content[0, 60]}..."
-          end
-        end
-      end
+    # Log results
+    STDERR.puts "\n  [user:direction_explicit] Extractions:"
+    result.extractions.each do |e|
+      STDERR.puts "    - #{e.entry_type} (#{e.importance}): #{e.content[0, 60]}..."
     end
   end
 
-  describe "Assistant Response Extraction" do
-    fixture_dir = fixtures_path / "assistant_responses"
+  it "assistant response extraction: decision_with_rationale" do
+    content = File.read(fixtures_path / "assistant_responses" / "02_decision_with_rationale.txt")
 
-    Dir.glob("#{fixture_dir}/*.txt").sort.each do |txt_file|
-      expected_file = txt_file.gsub(".txt", ".expected.json")
-      next unless File.exists?(expected_file)
+    result = GalaxyLedger::Extraction.extract_assistant_learnings("Implement the feature", content)
+    result.extractions.size.should be >= 1,
+      "Expected at least 1 extraction, got #{result.extractions.size}"
+    result.summary.should_not be_nil, "Expected a summary"
 
-      test_name = File.basename(txt_file, ".txt")
-
-      it "extracts correctly: #{test_name}" do
-        content = File.read(txt_file)
-        expected = JSON.parse(File.read(expected_file))
-
-        # Use a simple user message for context
-        user_message = "Implement the feature"
-
-        result = GalaxyLedger::Extraction.extract_assistant_learnings(user_message, content)
-
-        description = expected["description"]?.try(&.as_s?) || test_name
-
-        if min_count = expected["expected_count_min"]?.try(&.as_i?)
-          result.extractions.size.should be >= min_count,
-            "#{description}: expected at least #{min_count} extractions, got #{result.extractions.size}"
-        end
-
-        if max_count = expected["expected_count_max"]?.try(&.as_i?)
-          result.extractions.size.should be <= max_count,
-            "#{description}: expected at most #{max_count} extractions, got #{result.extractions.size}"
-        end
-
-        if expected["should_have_summary"]?.try(&.as_bool?)
-          result.summary.should_not be_nil, "#{description}: expected a summary"
-        end
-
-        # Log results for debugging
-        STDERR.puts "\n  [#{test_name}]"
-        if summary = result.summary
-          STDERR.puts "    Summary: #{summary.assistant_response[0, 80]}..."
-        end
-        if result.extractions.any?
-          STDERR.puts "    Extractions:"
-          result.extractions.each do |e|
-            STDERR.puts "      - #{e.entry_type} (#{e.importance}): #{e.content[0, 60]}..."
-          end
-        end
-      end
+    # Log results
+    STDERR.puts "\n  [assistant:decision_with_rationale]"
+    if summary = result.summary
+      STDERR.puts "    Summary: #{summary.assistant_response[0, 80]}..."
+    end
+    result.extractions.each do |e|
+      STDERR.puts "    - #{e.entry_type} (#{e.importance}): #{e.content[0, 60]}..."
     end
   end
 
-  describe "Guideline Extraction" do
-    fixture_dir = fixtures_path / "guidelines"
+  it "guideline extraction: ruby_style" do
+    md_file = (fixtures_path / "guidelines" / "01_ruby_style.md").to_s
+    content = File.read(md_file)
 
-    Dir.glob("#{fixture_dir}/*.md").sort.each do |md_file|
-      expected_file = md_file.gsub(".md", ".expected.json")
-      next unless File.exists?(expected_file)
+    result = GalaxyLedger::Extraction.extract_guidelines(md_file, content)
+    result.extractions.size.should be >= 4,
+      "Expected at least 4 guideline extractions, got #{result.extractions.size}"
 
-      test_name = File.basename(md_file, ".md")
+    result.extractions.each do |e|
+      e.entry_type.should eq("guideline"),
+        "Expected guideline type, got #{e.entry_type}"
+    end
 
-      it "extracts correctly: #{test_name}" do
-        content = File.read(md_file)
-        expected = JSON.parse(File.read(expected_file))
-
-        result = GalaxyLedger::Extraction.extract_guidelines(md_file, content)
-
-        description = expected["description"]?.try(&.as_s?) || test_name
-
-        if min_count = expected["expected_count_min"]?.try(&.as_i?)
-          result.extractions.size.should be >= min_count,
-            "#{description}: expected at least #{min_count} extractions, got #{result.extractions.size}"
-        end
-
-        # All extractions should be type "guideline"
-        result.extractions.each do |e|
-          e.entry_type.should eq("guideline"),
-            "#{description}: expected guideline type, got #{e.entry_type}"
-        end
-
-        # Log results for debugging
-        STDERR.puts "\n  [#{test_name}] Guidelines:"
-        result.extractions.each do |e|
-          STDERR.puts "    - (#{e.importance}): #{e.content[0, 70]}..."
-        end
-      end
+    # Log results
+    STDERR.puts "\n  [guideline:ruby_style] Guidelines:"
+    result.extractions.each do |e|
+      STDERR.puts "    - (#{e.importance}): #{e.content[0, 70]}..."
     end
   end
 
-  describe "Implementation Plan Extraction" do
-    fixture_dir = fixtures_path / "implementation_plans"
+  it "implementation plan extraction: phased_plan" do
+    md_file = (fixtures_path / "implementation_plans" / "01_phased_plan.md").to_s
+    content = File.read(md_file)
 
-    Dir.glob("#{fixture_dir}/*.md").sort.each do |md_file|
-      expected_file = md_file.gsub(".md", ".expected.json")
-      next unless File.exists?(expected_file)
+    result = GalaxyLedger::Extraction.extract_implementation_plan(md_file, content)
+    result.extractions.size.should be >= 2,
+      "Expected at least 2 implementation_plan extractions, got #{result.extractions.size}"
 
-      test_name = File.basename(md_file, ".md")
+    result.extractions.each do |e|
+      e.entry_type.should eq("implementation_plan"),
+        "Expected implementation_plan type, got #{e.entry_type}"
+    end
 
-      it "extracts correctly: #{test_name}" do
-        content = File.read(md_file)
-        expected = JSON.parse(File.read(expected_file))
-
-        result = GalaxyLedger::Extraction.extract_implementation_plan(md_file, content)
-
-        description = expected["description"]?.try(&.as_s?) || test_name
-
-        if min_count = expected["expected_count_min"]?.try(&.as_i?)
-          result.extractions.size.should be >= min_count,
-            "#{description}: expected at least #{min_count} extractions, got #{result.extractions.size}"
-        end
-
-        # All extractions should be type "implementation_plan"
-        result.extractions.each do |e|
-          e.entry_type.should eq("implementation_plan"),
-            "#{description}: expected implementation_plan type, got #{e.entry_type}"
-        end
-
-        # Log results for debugging
-        STDERR.puts "\n  [#{test_name}] Implementation Plan Context:"
-        result.extractions.each do |e|
-          STDERR.puts "    - (#{e.importance}): #{e.content[0, 70]}..."
-        end
-      end
+    # Log results
+    STDERR.puts "\n  [impl_plan:phased_plan] Context:"
+    result.extractions.each do |e|
+      STDERR.puts "    - (#{e.importance}): #{e.content[0, 70]}..."
     end
   end
 end

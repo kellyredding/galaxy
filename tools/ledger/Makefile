@@ -1,4 +1,4 @@
-.PHONY: build install clean test lint format check dev
+.PHONY: build install clean test test-eval test-all lint format check dev
 
 PREFIX ?= $(HOME)/.claude/galaxy
 BINDIR ?= $(PREFIX)/bin
@@ -7,6 +7,12 @@ BUILDDIR ?= build
 
 # Development
 test:
+	crystal spec --tag '~eval'
+
+test-eval:
+	crystal spec --tag eval
+
+test-all:
 	crystal spec
 
 lint:
@@ -28,7 +34,7 @@ build:
 	shards install
 	crystal build --release --no-debug -o $(BUILDDIR)/galaxy-ledger src/galaxy_ledger.cr
 
-install: build
+install: check test-eval build
 	install -d $(BINDIR)
 	install -m 755 $(BUILDDIR)/galaxy-ledger $(BINDIR)/galaxy-ledger
 	@# Symlink to local bin for PATH access
