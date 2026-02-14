@@ -118,15 +118,11 @@ module GalaxyLedger
 
       property learnings : Int32
 
-      @[JSON::Field(key: "file_edits")]
-      property file_edits : Int32
-
       @[JSON::Field(key: "medium_importance_decisions")]
       property medium_importance_decisions : Int32
 
       def initialize(
         @learnings = 5,
-        @file_edits = 10,
         @medium_importance_decisions = 5,
       )
       end
@@ -379,8 +375,6 @@ module GalaxyLedger
       case field
       when "learnings"
         restoration.tier2_limits.learnings = int_value
-      when "file_edits"
-        restoration.tier2_limits.file_edits = int_value
       when "medium_importance_decisions"
         restoration.tier2_limits.medium_importance_decisions = int_value
       else
@@ -420,8 +414,6 @@ module GalaxyLedger
       case field
       when "learnings"
         restoration.tier2_limits.learnings.to_s
-      when "file_edits"
-        restoration.tier2_limits.file_edits.to_s
       when "medium_importance_decisions"
         restoration.tier2_limits.medium_importance_decisions.to_s
       else

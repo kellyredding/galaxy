@@ -4,11 +4,12 @@ module GalaxyLedger
   module Hooks
     # Handles the Stop hook
     # - Parses transcript to capture last exchange
-    # - Writes to ledger_last-exchange.json
+    # - Writes last interaction to DB session record
     # - Checks context thresholds and shows warnings
+    # - Persists session metrics to DB
     # - Spawns async extraction for learnings/decisions/summary
     class OnStop
-      @session_id : String?
+      @session_identifier : String?
       @transcript_path : String?
       @stop_hook_active : Bool = false
 
@@ -56,7 +57,7 @@ module GalaxyLedger
           return if input.empty?
 
           json = JSON.parse(input)
-          @session_id = json["session_id"]?.try(&.as_s?)
+          @session_identifier = json["session_id"]?.try(&.as_s?)
           @transcript_path = json["transcript_path"]?.try(&.as_s?)
           @stop_hook_active = json["stop_hook_active"]?.try(&.as_bool?) || false
         rescue
@@ -65,13 +66,13 @@ module GalaxyLedger
       end
 
       private def capture_last_exchange
-        session_id = @session_id
+        session_identifier = @session_identifier
         transcript_path = @transcript_path
 
-        return unless session_id && transcript_path
+        return unless session_identifier && transcript_path
 
         # Ensure session folder exists
-        session_dir = GalaxyLedger.session_dir(session_id)
+        session_dir = GalaxyLedger.session_dir(session_identifier)
         Dir.mkdir_p(session_dir) unless Dir.exists?(session_dir)
 
         # Parse transcript
@@ -82,18 +83,21 @@ module GalaxyLedger
         extracted = Transcript.extract_last_exchange(entries)
         return unless extracted
 
-        # Convert to LastExchange format and write
+        # Convert to LastExchange format and write to DB
         last_exchange = Transcript.to_last_exchange(extracted)
-        Exchange.write(session_id, last_exchange)
+        Database.update_session_last_interaction(session_identifier, last_exchange.to_pretty_json)
       end
 
       private def check_context_thresholds : String?
-        session_id = @session_id
-        return nil unless session_id
+        session_identifier = @session_identifier
+        return nil unless session_identifier
 
         # Read context status (from statusline bridge)
-        status = ContextStatus.read(session_id)
+        status = ContextStatus.read(session_identifier)
         return nil unless status
+
+        # Persist metrics to session record in DB
+        Database.update_session_metrics(session_identifier, status)
 
         percentage = status.percentage
         return nil unless percentage
@@ -128,18 +132,27 @@ module GalaxyLedger
       end
 
       private def spawn_extraction_async
-        session_id = @session_id
+        session_identifier = @session_identifier
         transcript_path = @transcript_path
 
-        return unless session_id && transcript_path
+        return unless session_identifier && transcript_path
 
         # Check if extraction is enabled in config
         config = Config.load
         return unless config.extraction.on_stop
 
-        # Read the last exchange that was just captured
-        last_exchange = Exchange.read(session_id)
-        return unless last_exchange
+        # Read the last exchange from the DB session record
+        session_record = Database.get_session(session_identifier)
+        return unless session_record
+
+        json_str = session_record.last_interaction
+        return unless json_str
+
+        last_exchange = begin
+          Exchange::LastExchange.from_json(json_str)
+        rescue
+          return
+        end
 
         user_message = last_exchange.user_message
         assistant_content = last_exchange.full_content
@@ -160,7 +173,7 @@ module GalaxyLedger
 
           Process.new(
             binary,
-            args: ["extract-assistant", "--session", session_id, "--input-file", temp_file.path],
+            args: ["extract-assistant", "--session", session_identifier, "--input-file", temp_file.path],
             input: Process::Redirect::Close,
             output: Process::Redirect::Close,
             error: Process::Redirect::Close,
@@ -174,10 +187,10 @@ module GalaxyLedger
       # during this session. Reads fresh content from disk, prunes stale
       # DB entries, and spawns async extract-file subprocesses.
       private def re_extract_stale_files
-        session_id = @session_id
-        return unless session_id
+        session_identifier = @session_identifier
+        return unless session_identifier
 
-        stale = Database.stale_entries(session_id)
+        stale = Database.stale_entries(session_identifier)
         return if stale.empty?
 
         binary = Process.executable_path || "galaxy-ledger"
@@ -195,12 +208,12 @@ module GalaxyLedger
           next if content.strip.empty?
 
           # Prune stale entries, then spawn re-extraction with fresh content
-          Database.delete_entries_by_source_file(session_id, entry[:source_file])
+          Database.delete_entries_by_source_file(session_identifier, entry[:source_file])
 
           begin
             Process.new(
               binary,
-              args: ["extract-file", "--session", session_id, "--type", entry[:entry_type], "--path", entry[:full_path]],
+              args: ["extract-file", "--session", session_identifier, "--type", entry[:entry_type], "--path", entry[:full_path]],
               input: IO::Memory.new(content),
               output: Process::Redirect::Close,
               error: Process::Redirect::Close,

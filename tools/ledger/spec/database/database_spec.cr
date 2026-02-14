@@ -60,6 +60,18 @@ describe GalaxyLedger::Database do
   end
 
   describe ".create_schema" do
+    it "creates ledger_sessions table" do
+      GalaxyLedger::Database.create_schema
+
+      GalaxyLedger::Database.open do |db|
+        result = db.scalar(<<-SQL).as(Int64)
+          SELECT COUNT(*) FROM sqlite_master
+          WHERE type='table' AND name='ledger_sessions'
+        SQL
+        result.should eq(1)
+      end
+    end
+
     it "creates ledger_entries table" do
       GalaxyLedger::Database.create_schema
 
@@ -67,6 +79,18 @@ describe GalaxyLedger::Database do
         result = db.scalar(<<-SQL).as(Int64)
           SELECT COUNT(*) FROM sqlite_master
           WHERE type='table' AND name='ledger_entries'
+        SQL
+        result.should eq(1)
+      end
+    end
+
+    it "creates ledger_session_files table" do
+      GalaxyLedger::Database.create_schema
+
+      GalaxyLedger::Database.open do |db|
+        result = db.scalar(<<-SQL).as(Int64)
+          SELECT COUNT(*) FROM sqlite_master
+          WHERE type='table' AND name='ledger_session_files'
         SQL
         result.should eq(1)
       end
@@ -95,12 +119,22 @@ describe GalaxyLedger::Database do
           end
         end
 
-        indexes.should contain("idx_session")
-        indexes.should contain("idx_session_type")
-        indexes.should contain("idx_source")
-        indexes.should contain("idx_created")
-        indexes.should contain("idx_importance")
+        # ledger_sessions indexes
+        indexes.should contain("idx_sessions_identifier")
+
+        # ledger_entries indexes
+        indexes.should contain("idx_entries_session")
+        indexes.should contain("idx_entries_session_type")
+        indexes.should contain("idx_entries_source")
+        indexes.should contain("idx_entries_created")
+        indexes.should contain("idx_entries_importance")
+        indexes.should contain("idx_entries_category")
+        indexes.should contain("idx_entries_ledger_session")
         indexes.should contain("idx_content_dedup")
+
+        # ledger_session_files indexes
+        indexes.should contain("idx_files_session")
+        indexes.should contain("idx_files_ledger_session")
       end
     end
 
@@ -131,6 +165,7 @@ describe GalaxyLedger::Database do
         source: "assistant"
       )
 
+      GalaxyLedger::Database.upsert_session("test-session")
       result = GalaxyLedger::Database.insert("test-session", entry)
       result.should be_true
 
@@ -153,6 +188,7 @@ describe GalaxyLedger::Database do
         content: "Test content"
       )
 
+      GalaxyLedger::Database.upsert_session("test-session")
       result = GalaxyLedger::Database.insert("test-session", entry)
       result.should be_false
     end
@@ -164,6 +200,7 @@ describe GalaxyLedger::Database do
         importance: "medium"
       )
 
+      GalaxyLedger::Database.upsert_session("test-session")
       result1 = GalaxyLedger::Database.insert("test-session", entry)
       result2 = GalaxyLedger::Database.insert("test-session", entry)
 
@@ -178,6 +215,8 @@ describe GalaxyLedger::Database do
         content: "Same content different session"
       )
 
+      GalaxyLedger::Database.upsert_session("session-1")
+      GalaxyLedger::Database.upsert_session("session-2")
       result1 = GalaxyLedger::Database.insert("session-1", entry)
       result2 = GalaxyLedger::Database.insert("session-2", entry)
 
@@ -194,6 +233,7 @@ describe GalaxyLedger::Database do
         metadata: metadata
       )
 
+      GalaxyLedger::Database.upsert_session("test-session")
       GalaxyLedger::Database.insert("test-session", entry)
 
       entries = GalaxyLedger::Database.query_by_session("test-session")
@@ -212,6 +252,7 @@ describe GalaxyLedger::Database do
         GalaxyLedger::Entry.new(entry_type: "discovery", content: "Discovery 1"),
       ]
 
+      GalaxyLedger::Database.upsert_session("test-session")
       count = GalaxyLedger::Database.insert_many("test-session", entries)
       count.should eq(3)
       GalaxyLedger::Database.count.should eq(3)
@@ -224,6 +265,7 @@ describe GalaxyLedger::Database do
         GalaxyLedger::Entry.new(entry_type: "decision", content: "Valid 2"),
       ]
 
+      GalaxyLedger::Database.upsert_session("test-session")
       count = GalaxyLedger::Database.insert_many("test-session", entries)
       count.should eq(2)
     end
@@ -235,6 +277,7 @@ describe GalaxyLedger::Database do
         GalaxyLedger::Entry.new(entry_type: "learning", content: "Different content"),
       ]
 
+      GalaxyLedger::Database.upsert_session("test-session")
       count = GalaxyLedger::Database.insert_many("test-session", entries)
       count.should eq(2)
     end
@@ -257,6 +300,8 @@ describe GalaxyLedger::Database do
         GalaxyLedger::Entry.new(entry_type: "learning", content: "L1"),
         GalaxyLedger::Entry.new(entry_type: "decision", content: "D1"),
       ]
+      GalaxyLedger::Database.upsert_session("session-to-delete")
+      GalaxyLedger::Database.upsert_session("other-session")
       GalaxyLedger::Database.insert_many("session-to-delete", entries)
       GalaxyLedger::Database.insert("other-session", GalaxyLedger::Entry.new(entry_type: "learning", content: "Keep"))
 
@@ -281,6 +326,8 @@ describe GalaxyLedger::Database do
 
   describe ".count" do
     it "returns total entry count" do
+      GalaxyLedger::Database.upsert_session("s1")
+      GalaxyLedger::Database.upsert_session("s2")
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "L1"))
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "decision", content: "D1"))
       GalaxyLedger::Database.insert("s2", GalaxyLedger::Entry.new(entry_type: "learning", content: "L2"))
@@ -296,6 +343,8 @@ describe GalaxyLedger::Database do
 
   describe ".count_by_session" do
     it "returns count for specific session" do
+      GalaxyLedger::Database.upsert_session("s1")
+      GalaxyLedger::Database.upsert_session("s2")
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "L1"))
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "decision", content: "D1"))
       GalaxyLedger::Database.insert("s2", GalaxyLedger::Entry.new(entry_type: "learning", content: "L2"))
@@ -316,6 +365,7 @@ describe GalaxyLedger::Database do
         content: "/path/to/ruby-style.md",
         source_file: "ruby-style.md",
       )
+      GalaxyLedger::Database.upsert_session("sess-dedup")
       GalaxyLedger::Database.insert("sess-dedup", entry)
 
       GalaxyLedger::Database.has_extracted_source_file?("sess-dedup", "ruby-style.md").should be_true
@@ -331,6 +381,7 @@ describe GalaxyLedger::Database do
         content: "/path/to/ruby-style.md",
         source_file: "ruby-style.md",
       )
+      GalaxyLedger::Database.upsert_session("sess-other")
       GalaxyLedger::Database.insert("sess-other", entry)
 
       GalaxyLedger::Database.has_extracted_source_file?("sess-mine", "ruby-style.md").should be_false
@@ -338,10 +389,11 @@ describe GalaxyLedger::Database do
 
     it "does not match non-extraction entry types" do
       entry = GalaxyLedger::Entry.new(
-        entry_type: "file_read",
+        entry_type: "learning",
         content: "/path/to/ruby-style.md",
         source_file: "ruby-style.md",
       )
+      GalaxyLedger::Database.upsert_session("sess-filetype")
       GalaxyLedger::Database.insert("sess-filetype", entry)
 
       GalaxyLedger::Database.has_extracted_source_file?("sess-filetype", "ruby-style.md").should be_false
@@ -360,6 +412,7 @@ describe GalaxyLedger::Database do
         content: "/path/to/agent-guidelines/ruby-style.md",
         source_file: "ruby-style.md",
       )
+      GalaxyLedger::Database.upsert_session("sess-stale")
       GalaxyLedger::Database.insert("sess-stale", entry)
 
       count = GalaxyLedger::Database.mark_entries_stale("sess-stale", "ruby-style.md")
@@ -377,6 +430,7 @@ describe GalaxyLedger::Database do
         content: "Always use double-quotes for strings",
         source_file: "ruby-style.md",
       )
+      GalaxyLedger::Database.upsert_session("sess-stale2")
       GalaxyLedger::Database.insert("sess-stale2", marker)
       GalaxyLedger::Database.insert("sess-stale2", extracted)
 
@@ -390,6 +444,7 @@ describe GalaxyLedger::Database do
         content: "/path/to/agent-guidelines/ruby-style.md",
         source_file: "ruby-style.md",
       )
+      GalaxyLedger::Database.upsert_session("sess-other")
       GalaxyLedger::Database.insert("sess-other", entry)
 
       count = GalaxyLedger::Database.mark_entries_stale("sess-mine", "ruby-style.md")
@@ -402,6 +457,7 @@ describe GalaxyLedger::Database do
         content: "/path/to/agent-guidelines/rspec-style.md",
         source_file: "rspec-style.md",
       )
+      GalaxyLedger::Database.upsert_session("sess-stale3")
       GalaxyLedger::Database.insert("sess-stale3", entry)
 
       count = GalaxyLedger::Database.mark_entries_stale("sess-stale3", "ruby-style.md")
@@ -422,6 +478,7 @@ describe GalaxyLedger::Database do
         content: "/home/user/agent-guidelines/ruby-style.md",
         source_file: "ruby-style.md",
       )
+      GalaxyLedger::Database.upsert_session("sess-stale-q")
       GalaxyLedger::Database.insert("sess-stale-q", marker)
 
       # Mark it stale
@@ -440,6 +497,7 @@ describe GalaxyLedger::Database do
         content: "/home/user/implementation-plans/feature.md",
         source_file: "feature.md",
       )
+      GalaxyLedger::Database.upsert_session("sess-stale-ip")
       GalaxyLedger::Database.insert("sess-stale-ip", marker)
       GalaxyLedger::Database.mark_entries_stale("sess-stale-ip", "feature.md")
 
@@ -459,6 +517,7 @@ describe GalaxyLedger::Database do
         content: "Always use double-quotes for strings",
         source_file: "ruby-style.md",
       )
+      GalaxyLedger::Database.upsert_session("sess-stale-ex")
       GalaxyLedger::Database.insert("sess-stale-ex", marker)
       GalaxyLedger::Database.insert("sess-stale-ex", extracted)
       GalaxyLedger::Database.mark_entries_stale("sess-stale-ex", "ruby-style.md")
@@ -475,6 +534,7 @@ describe GalaxyLedger::Database do
         content: "/home/user/agent-guidelines/ruby-style.md",
         source_file: "ruby-style.md",
       )
+      GalaxyLedger::Database.upsert_session("sess-fresh")
       GalaxyLedger::Database.insert("sess-fresh", marker)
 
       # Not marked stale
@@ -492,6 +552,7 @@ describe GalaxyLedger::Database do
         content: "/home/user/agent-guidelines/ruby-style.md",
         source_file: "ruby-style.md",
       )
+      GalaxyLedger::Database.upsert_session("sess-other-stale")
       GalaxyLedger::Database.insert("sess-other-stale", marker)
       GalaxyLedger::Database.mark_entries_stale("sess-other-stale", "ruby-style.md")
 
@@ -512,6 +573,7 @@ describe GalaxyLedger::Database do
         content: "Always use double-quotes",
         source_file: "ruby-style.md",
       )
+      GalaxyLedger::Database.upsert_session("sess-del")
       GalaxyLedger::Database.insert("sess-del", marker)
       GalaxyLedger::Database.insert("sess-del", extracted)
 
@@ -533,6 +595,7 @@ describe GalaxyLedger::Database do
         content: "/home/user/agent-guidelines/rspec-style.md",
         source_file: "rspec-style.md",
       )
+      GalaxyLedger::Database.upsert_session("sess-del2")
       GalaxyLedger::Database.insert("sess-del2", entry1)
       GalaxyLedger::Database.insert("sess-del2", entry2)
 
@@ -554,6 +617,7 @@ describe GalaxyLedger::Database do
         content: "Something about ruby-style.md",
         source_file: "ruby-style.md",
       )
+      GalaxyLedger::Database.upsert_session("sess-del3")
       GalaxyLedger::Database.insert("sess-del3", guideline)
       GalaxyLedger::Database.insert("sess-del3", learning)
 
@@ -569,6 +633,7 @@ describe GalaxyLedger::Database do
         content: "/home/user/agent-guidelines/ruby-style.md",
         source_file: "ruby-style.md",
       )
+      GalaxyLedger::Database.upsert_session("sess-keep")
       GalaxyLedger::Database.insert("sess-keep", entry)
 
       deleted = GalaxyLedger::Database.delete_entries_by_source_file("sess-other", "ruby-style.md")
@@ -596,6 +661,7 @@ describe GalaxyLedger::Database do
         content: "Second",
         created_at: "2026-01-01T11:00:00Z"
       )
+      GalaxyLedger::Database.upsert_session("test-session")
       GalaxyLedger::Database.insert("test-session", entry1)
       GalaxyLedger::Database.insert("test-session", entry2)
 
@@ -607,6 +673,7 @@ describe GalaxyLedger::Database do
     end
 
     it "respects limit parameter" do
+      GalaxyLedger::Database.upsert_session("test-session")
       5.times do |i|
         entry = GalaxyLedger::Entry.new(entry_type: "learning", content: "Entry #{i}")
         GalaxyLedger::Database.insert("test-session", entry)
@@ -623,6 +690,7 @@ describe GalaxyLedger::Database do
 
   describe ".query_by_type" do
     it "returns entries of specific type" do
+      GalaxyLedger::Database.upsert_session("s1")
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "L1"))
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "decision", content: "D1"))
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "L2"))
@@ -636,6 +704,7 @@ describe GalaxyLedger::Database do
 
   describe ".query_by_importance" do
     it "returns entries of specific importance" do
+      GalaxyLedger::Database.upsert_session("s1")
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "L1", importance: "high"))
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "decision", content: "D1", importance: "medium"))
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "L2", importance: "high"))
@@ -649,6 +718,7 @@ describe GalaxyLedger::Database do
 
   describe ".search" do
     it "finds entries matching query" do
+      GalaxyLedger::Database.upsert_session("s1")
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "JWT authentication tokens expire"))
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "decision", content: "Using Redis for caching"))
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "Database connection pooling"))
@@ -660,6 +730,7 @@ describe GalaxyLedger::Database do
     end
 
     it "returns empty for no matches" do
+      GalaxyLedger::Database.upsert_session("s1")
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "Something else"))
 
       entries = GalaxyLedger::Database.search("nonexistent term")
@@ -672,6 +743,8 @@ describe GalaxyLedger::Database do
     end
 
     it "searches across all sessions" do
+      GalaxyLedger::Database.upsert_session("s1")
+      GalaxyLedger::Database.upsert_session("s2")
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "JWT in session 1"))
       GalaxyLedger::Database.insert("s2", GalaxyLedger::Entry.new(entry_type: "learning", content: "JWT in session 2"))
 
@@ -682,13 +755,15 @@ describe GalaxyLedger::Database do
 
   describe ".search_in_session" do
     it "searches within a specific session" do
+      GalaxyLedger::Database.upsert_session("s1")
+      GalaxyLedger::Database.upsert_session("s2")
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "JWT in session 1"))
       GalaxyLedger::Database.insert("s2", GalaxyLedger::Entry.new(entry_type: "learning", content: "JWT in session 2"))
 
       entries = GalaxyLedger::Database.search_in_session("s1", "JWT")
 
       entries.size.should eq(1)
-      entries[0].session_id.should eq("s1")
+      entries[0].session_identifier.should eq("s1")
     end
 
     it "returns empty for empty session_id" do
@@ -698,6 +773,8 @@ describe GalaxyLedger::Database do
 
   describe ".session_stats" do
     it "returns stats for all sessions" do
+      GalaxyLedger::Database.upsert_session("s1")
+      GalaxyLedger::Database.upsert_session("s2")
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "L1"))
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "decision", content: "D1"))
       GalaxyLedger::Database.insert("s2", GalaxyLedger::Entry.new(entry_type: "learning", content: "L2"))
@@ -705,7 +782,7 @@ describe GalaxyLedger::Database do
       stats = GalaxyLedger::Database.session_stats
 
       stats.size.should eq(2)
-      s1_stat = stats.find { |s| s.session_id == "s1" }
+      s1_stat = stats.find { |s| s.session_identifier == "s1" }
       s1_stat.should_not be_nil
       s1_stat.not_nil!.entry_count.should eq(2)
     end
@@ -721,6 +798,7 @@ describe GalaxyLedger::Database do
           importance: "high",
           source: "assistant"
         )
+        GalaxyLedger::Database.upsert_session("test-session")
         GalaxyLedger::Database.insert("test-session", original)
 
         # Query it back
@@ -767,6 +845,7 @@ describe GalaxyLedger::Database do
 
   describe ".search with prefix matching" do
     it "finds entries with prefix matching enabled" do
+      GalaxyLedger::Database.upsert_session("s1")
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "guideline", content: "Use trailing commas on multiline structures"))
 
       # "trail" should match "trailing" with prefix matching
@@ -776,6 +855,7 @@ describe GalaxyLedger::Database do
     end
 
     it "respects prefix_match: false for exact matching" do
+      GalaxyLedger::Database.upsert_session("s1")
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "guideline", content: "Use trailing commas"))
 
       # "trail" should NOT match "trailing" with exact matching
@@ -786,6 +866,7 @@ describe GalaxyLedger::Database do
 
   describe ".search with filters" do
     before_each do
+      GalaxyLedger::Database.upsert_session("s1")
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "JWT tokens expire", importance: "high"))
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "decision", content: "JWT storage in Redis", importance: "medium"))
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "guideline", content: "JWT best practices", importance: "high"))
@@ -813,6 +894,7 @@ describe GalaxyLedger::Database do
 
   describe ".query_recent_filtered" do
     before_each do
+      GalaxyLedger::Database.upsert_session("s1")
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "L1", importance: "high"))
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "decision", content: "D1", importance: "medium"))
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "L2", importance: "low"))
@@ -845,6 +927,7 @@ describe GalaxyLedger::Database do
 
   describe ".query_tier1" do
     before_each do
+      GalaxyLedger::Database.upsert_session("s1")
       # Tier 1 entries
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "guideline", content: "G1", importance: "high"))
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "guideline", content: "G2", importance: "medium"))
@@ -894,10 +977,10 @@ describe GalaxyLedger::Database do
 
   describe ".query_tier2" do
     before_each do
+      GalaxyLedger::Database.upsert_session("s1")
       # Tier 2 entries
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "L1", importance: "high"))
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "L2", importance: "medium"))
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "file_edit", content: "FE1", importance: "medium"))
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "decision", content: "D1 medium", importance: "medium"))
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "decision", content: "D2 high", importance: "high"))
     end
@@ -905,11 +988,6 @@ describe GalaxyLedger::Database do
     it "returns learnings for the session" do
       result = GalaxyLedger::Database.query_tier2("s1")
       result.learnings.size.should eq(2)
-    end
-
-    it "returns file edits for the session" do
-      result = GalaxyLedger::Database.query_tier2("s1")
-      result.file_edits.size.should eq(1)
     end
 
     it "returns only medium-importance decisions" do
@@ -930,19 +1008,19 @@ describe GalaxyLedger::Database do
 
     it "returns total count" do
       result = GalaxyLedger::Database.query_tier2("s1")
-      result.total_count.should eq(4) # 2 learnings + 1 file_edit + 1 medium decision
+      result.total_count.should eq(3) # 2 learnings + 1 medium decision
     end
   end
 
   describe ".query_for_restoration" do
     before_each do
+      GalaxyLedger::Database.upsert_session("s1")
       # Mix of tier 1 and tier 2 entries
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "guideline", content: "G1", importance: "high"))
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "implementation_plan", content: "IP1", importance: "high"))
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "decision", content: "D1 high", importance: "high"))
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "decision", content: "D2 medium", importance: "medium"))
       GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "learning", content: "L1", importance: "medium"))
-      GalaxyLedger::Database.insert("s1", GalaxyLedger::Entry.new(entry_type: "file_edit", content: "FE1", importance: "medium"))
     end
 
     it "returns both tier1 and tier2 results" do
@@ -953,13 +1031,12 @@ describe GalaxyLedger::Database do
       result.tier1.high_importance_decisions.size.should eq(1)
 
       result.tier2.learnings.size.should eq(1)
-      result.tier2.file_edits.size.should eq(1)
       result.tier2.medium_decisions.size.should eq(1)
     end
 
     it "returns combined total count" do
       result = GalaxyLedger::Database.query_for_restoration("s1")
-      result.total_count.should eq(6)
+      result.total_count.should eq(5)
     end
 
     it "respects all limits" do
@@ -967,12 +1044,10 @@ describe GalaxyLedger::Database do
         "s1",
         tier1_decision_limit: 0,
         tier2_learnings_limit: 0,
-        tier2_file_edits_limit: 0,
         tier2_decisions_limit: 0
       )
       result.tier1.high_importance_decisions.size.should eq(0)
       result.tier2.learnings.size.should eq(0)
-      result.tier2.file_edits.size.should eq(0)
       result.tier2.medium_decisions.size.should eq(0)
     end
   end
@@ -994,6 +1069,7 @@ describe GalaxyLedger::Database do
           source_file: "ruby-style.md"
         )
 
+        GalaxyLedger::Database.upsert_session("s1")
         GalaxyLedger::Database.insert("s1", entry).should be_true
 
         entries = GalaxyLedger::Database.query_by_session("s1")
@@ -1012,6 +1088,7 @@ describe GalaxyLedger::Database do
           importance: "medium"
         )
 
+        GalaxyLedger::Database.upsert_session("s1")
         GalaxyLedger::Database.insert("s1", entry).should be_true
 
         entries = GalaxyLedger::Database.query_by_session("s1")
@@ -1026,6 +1103,7 @@ describe GalaxyLedger::Database do
 
     describe ".search with enhanced FTS" do
       before_each do
+        GalaxyLedger::Database.upsert_session("s1")
         # Create entries with enhanced schema fields
         entry1 = GalaxyLedger::Entry.new(
           entry_type: "guideline",
@@ -1086,6 +1164,7 @@ describe GalaxyLedger::Database do
 
     describe ".query_recent_filtered with category" do
       before_each do
+        GalaxyLedger::Database.upsert_session("s1")
         entry1 = GalaxyLedger::Entry.new(
           entry_type: "guideline",
           content: "Ruby rule 1",
@@ -1140,6 +1219,7 @@ describe GalaxyLedger::Database do
           applies_when: "Testing",
           source_file: "test.md"
         )
+        GalaxyLedger::Database.upsert_session("s1")
         GalaxyLedger::Database.insert("s1", entry)
 
         ledger_entry = GalaxyLedger::Database.query_by_session("s1").first
@@ -1150,6 +1230,352 @@ describe GalaxyLedger::Database do
         buffer_entry.applies_when.should eq("Testing")
         buffer_entry.source_file.should eq("test.md")
       end
+    end
+  end
+
+  # ============================================================
+  # Session Record Operations
+  # ============================================================
+
+  describe ".upsert_session" do
+    it "creates a new session record and returns the PK" do
+      id = GalaxyLedger::Database.upsert_session("sess-upsert-1")
+
+      id.should be > 0_i64
+    end
+
+    it "returns the same PK on subsequent calls (idempotent)" do
+      id1 = GalaxyLedger::Database.upsert_session("sess-upsert-2")
+      id2 = GalaxyLedger::Database.upsert_session("sess-upsert-2")
+
+      id1.should eq(id2)
+    end
+
+    it "stores optional cwd, project_dir, git_branch" do
+      GalaxyLedger::Database.upsert_session(
+        "sess-upsert-3",
+        cwd: "/home/user/project1",
+        project_dir: "/home/user/project1",
+        git_branch: "main",
+      )
+
+      session = GalaxyLedger::Database.get_session("sess-upsert-3")
+      session.should_not be_nil
+      session.not_nil!.cwd.should eq("/home/user/project1")
+      session.not_nil!.project_dir.should eq("/home/user/project1")
+      session.not_nil!.git_branch.should eq("main")
+    end
+
+    it "preserves existing values when upserting with nil fields" do
+      GalaxyLedger::Database.upsert_session(
+        "sess-upsert-4",
+        cwd: "/home/user/project1",
+        project_dir: "/home/user/project1",
+      )
+      # Upsert again with nil cwd — should keep old value
+      GalaxyLedger::Database.upsert_session("sess-upsert-4")
+
+      session = GalaxyLedger::Database.get_session("sess-upsert-4")
+      session.should_not be_nil
+      session.not_nil!.cwd.should eq("/home/user/project1")
+    end
+
+    it "returns 0 for empty session_identifier" do
+      id = GalaxyLedger::Database.upsert_session("")
+      id.should eq(0_i64)
+    end
+  end
+
+  describe ".update_session_metrics" do
+    it "updates metrics from a ContextStatus object" do
+      GalaxyLedger::Database.upsert_session("sess-metrics-1")
+
+      status_json = %({"session_id":"sess-metrics-1","timestamp":1000,"model":{"id":"claude-opus-4-6","display_name":"Claude Opus 4.6"},"claude_version":"1.0.20","context":{"percentage":42.5,"tokens_used":50000,"tokens_max":200000},"cost":{"usd":0.15,"lines_added":100,"lines_removed":25}})
+      status = GalaxyLedger::ContextStatus.from_json(status_json)
+
+      result = GalaxyLedger::Database.update_session_metrics("sess-metrics-1", status)
+      result.should be_true
+
+      session = GalaxyLedger::Database.get_session("sess-metrics-1")
+      session.should_not be_nil
+      s = session.not_nil!
+      s.model_id.should eq("claude-opus-4-6")
+      s.model_display_name.should eq("Claude Opus 4.6")
+      s.claude_version.should eq("1.0.20")
+      s.context_percentage.should eq(42.5)
+      s.tokens_used.should eq(50000_i64)
+      s.tokens_max.should eq(200000_i64)
+      s.cost_usd.should eq(0.15)
+      s.lines_added.should eq(100_i64)
+      s.lines_removed.should eq(25_i64)
+    end
+
+    it "returns false for empty session_identifier" do
+      status_json = %({"session_id":"x"})
+      status = GalaxyLedger::ContextStatus.from_json(status_json)
+
+      result = GalaxyLedger::Database.update_session_metrics("", status)
+      result.should be_false
+    end
+  end
+
+  describe ".merge_session_context" do
+    it "adds a key to the session context JSON" do
+      GalaxyLedger::Database.upsert_session("sess-ctx-1")
+
+      result = GalaxyLedger::Database.merge_session_context("sess-ctx-1", "initial_task", "Fix the bug")
+      result.should be_true
+
+      session = GalaxyLedger::Database.get_session("sess-ctx-1")
+      session.should_not be_nil
+      ctx = JSON.parse(session.not_nil!.context)
+      ctx["initial_task"].as_s.should eq("Fix the bug")
+    end
+
+    it "merges multiple keys into context" do
+      GalaxyLedger::Database.upsert_session("sess-ctx-2")
+
+      GalaxyLedger::Database.merge_session_context("sess-ctx-2", "key1", "value1")
+      GalaxyLedger::Database.merge_session_context("sess-ctx-2", "key2", "value2")
+
+      session = GalaxyLedger::Database.get_session("sess-ctx-2")
+      ctx = JSON.parse(session.not_nil!.context)
+      ctx["key1"].as_s.should eq("value1")
+      ctx["key2"].as_s.should eq("value2")
+    end
+
+    it "overwrites existing key when write_once is false" do
+      GalaxyLedger::Database.upsert_session("sess-ctx-3")
+
+      GalaxyLedger::Database.merge_session_context("sess-ctx-3", "key1", "original")
+      GalaxyLedger::Database.merge_session_context("sess-ctx-3", "key1", "updated", write_once: false)
+
+      session = GalaxyLedger::Database.get_session("sess-ctx-3")
+      ctx = JSON.parse(session.not_nil!.context)
+      ctx["key1"].as_s.should eq("updated")
+    end
+
+    it "does not overwrite existing key when write_once is true" do
+      GalaxyLedger::Database.upsert_session("sess-ctx-4")
+
+      GalaxyLedger::Database.merge_session_context("sess-ctx-4", "key1", "original")
+      GalaxyLedger::Database.merge_session_context("sess-ctx-4", "key1", "should-not-appear", write_once: true)
+
+      session = GalaxyLedger::Database.get_session("sess-ctx-4")
+      ctx = JSON.parse(session.not_nil!.context)
+      ctx["key1"].as_s.should eq("original")
+    end
+
+    it "returns false for empty session_identifier" do
+      result = GalaxyLedger::Database.merge_session_context("", "key", "value")
+      result.should be_false
+    end
+  end
+
+  describe ".update_session_last_interaction" do
+    it "stores JSON string as last_interaction" do
+      GalaxyLedger::Database.upsert_session("sess-li-1")
+
+      json = %({"type":"tool_use","tool":"Read","timestamp":1234567890})
+      result = GalaxyLedger::Database.update_session_last_interaction("sess-li-1", json)
+      result.should be_true
+
+      session = GalaxyLedger::Database.get_session("sess-li-1")
+      session.should_not be_nil
+      session.not_nil!.last_interaction.should eq(json)
+    end
+
+    it "returns false for empty session_identifier" do
+      result = GalaxyLedger::Database.update_session_last_interaction("", "{}")
+      result.should be_false
+    end
+  end
+
+  # ============================================================
+  # Session File Operations
+  # ============================================================
+
+  describe ".upsert_session_file" do
+    it "inserts a file read record" do
+      GalaxyLedger::Database.upsert_session("sess-file-1")
+
+      result = GalaxyLedger::Database.upsert_session_file("sess-file-1", "/path/to/file.cr", :read)
+      result.should be_true
+
+      files = GalaxyLedger::Database.session_files("sess-file-1")
+      files.size.should eq(1)
+      files[0].file_path.should eq("/path/to/file.cr")
+      files[0].is_read.should be_true
+      files[0].is_edited.should be_false
+      files[0].is_written.should be_false
+      files[0].is_searched.should be_false
+      files[0].access_count.should eq(1_i64)
+    end
+
+    it "inserts a file edit record" do
+      GalaxyLedger::Database.upsert_session("sess-file-2")
+
+      result = GalaxyLedger::Database.upsert_session_file("sess-file-2", "/path/to/file.cr", :edit)
+      result.should be_true
+
+      files = GalaxyLedger::Database.session_files("sess-file-2")
+      files.size.should eq(1)
+      files[0].is_edited.should be_true
+    end
+
+    it "inserts a file write record" do
+      GalaxyLedger::Database.upsert_session("sess-file-3")
+
+      result = GalaxyLedger::Database.upsert_session_file("sess-file-3", "/path/to/file.cr", :write)
+      result.should be_true
+
+      files = GalaxyLedger::Database.session_files("sess-file-3")
+      files.size.should eq(1)
+      files[0].is_written.should be_true
+    end
+
+    it "inserts a search record with pattern" do
+      GalaxyLedger::Database.upsert_session("sess-file-4")
+
+      result = GalaxyLedger::Database.upsert_session_file("sess-file-4", "/path/to/dir", :search, search_pattern: "TODO")
+      result.should be_true
+
+      files = GalaxyLedger::Database.session_files("sess-file-4")
+      files.size.should eq(1)
+      files[0].is_searched.should be_true
+      files[0].search_pattern.should eq("TODO")
+    end
+
+    it "deduplicates on (session_identifier, file_path, search_pattern) and increments access_count" do
+      GalaxyLedger::Database.upsert_session("sess-file-5")
+
+      GalaxyLedger::Database.upsert_session_file("sess-file-5", "/path/to/file.cr", :read)
+      GalaxyLedger::Database.upsert_session_file("sess-file-5", "/path/to/file.cr", :read)
+
+      files = GalaxyLedger::Database.session_files("sess-file-5")
+      files.size.should eq(1)
+      files[0].access_count.should eq(2_i64)
+    end
+
+    it "accumulates operation flags across upserts" do
+      GalaxyLedger::Database.upsert_session("sess-file-6")
+
+      GalaxyLedger::Database.upsert_session_file("sess-file-6", "/path/to/file.cr", :read)
+      GalaxyLedger::Database.upsert_session_file("sess-file-6", "/path/to/file.cr", :edit)
+
+      files = GalaxyLedger::Database.session_files("sess-file-6")
+      files.size.should eq(1)
+      files[0].is_read.should be_true
+      files[0].is_edited.should be_true
+    end
+
+    it "returns false for empty session_identifier" do
+      result = GalaxyLedger::Database.upsert_session_file("", "/path/to/file.cr", :read)
+      result.should be_false
+    end
+
+    it "returns false for empty file_path" do
+      GalaxyLedger::Database.upsert_session("sess-file-7")
+      result = GalaxyLedger::Database.upsert_session_file("sess-file-7", "", :read)
+      result.should be_false
+    end
+  end
+
+  describe ".get_session" do
+    it "returns the session record when found" do
+      GalaxyLedger::Database.upsert_session("sess-get-1", cwd: "/home/user/proj1")
+
+      session = GalaxyLedger::Database.get_session("sess-get-1")
+      session.should_not be_nil
+      session.not_nil!.session_identifier.should eq("sess-get-1")
+      session.not_nil!.cwd.should eq("/home/user/proj1")
+    end
+
+    it "returns nil when session does not exist" do
+      session = GalaxyLedger::Database.get_session("non-existent-session")
+      session.should be_nil
+    end
+
+    it "returns nil for empty session_identifier" do
+      session = GalaxyLedger::Database.get_session("")
+      session.should be_nil
+    end
+  end
+
+  describe ".list_sessions" do
+    it "returns all sessions" do
+      GalaxyLedger::Database.upsert_session("sess-list-1")
+      GalaxyLedger::Database.upsert_session("sess-list-2")
+      GalaxyLedger::Database.upsert_session("sess-list-3")
+
+      sessions = GalaxyLedger::Database.list_sessions
+      sessions.size.should eq(3)
+      identifiers = sessions.map(&.session_identifier)
+      identifiers.should contain("sess-list-1")
+      identifiers.should contain("sess-list-2")
+      identifiers.should contain("sess-list-3")
+    end
+
+    it "respects limit parameter" do
+      5.times do |i|
+        GalaxyLedger::Database.upsert_session("sess-limit-#{i}")
+      end
+
+      sessions = GalaxyLedger::Database.list_sessions(limit: 3)
+      sessions.size.should eq(3)
+    end
+
+    it "returns empty array when no sessions exist" do
+      GalaxyLedger::Database.ensure_database_exists
+      sessions = GalaxyLedger::Database.list_sessions
+      sessions.should be_empty
+    end
+  end
+
+  describe ".session_files" do
+    it "returns file records for a session" do
+      GalaxyLedger::Database.upsert_session("sess-files-1")
+      GalaxyLedger::Database.upsert_session_file("sess-files-1", "/path/to/file1.cr", :read)
+      GalaxyLedger::Database.upsert_session_file("sess-files-1", "/path/to/file2.cr", :edit)
+
+      files = GalaxyLedger::Database.session_files("sess-files-1")
+      files.size.should eq(2)
+      file_paths = files.map(&.file_path)
+      file_paths.should contain("/path/to/file1.cr")
+      file_paths.should contain("/path/to/file2.cr")
+    end
+
+    it "returns empty array for empty session_identifier" do
+      files = GalaxyLedger::Database.session_files("")
+      files.should be_empty
+    end
+
+    it "returns empty array when no files tracked" do
+      GalaxyLedger::Database.upsert_session("sess-files-2")
+      files = GalaxyLedger::Database.session_files("sess-files-2")
+      files.should be_empty
+    end
+  end
+
+  describe ".delete_session cascade" do
+    it "cascade deletes session_files along with entries" do
+      GalaxyLedger::Database.upsert_session("sess-cascade-1")
+      GalaxyLedger::Database.insert("sess-cascade-1", GalaxyLedger::Entry.new(entry_type: "learning", content: "L1"))
+      GalaxyLedger::Database.upsert_session_file("sess-cascade-1", "/path/to/file.cr", :read)
+
+      # Verify data exists before delete
+      GalaxyLedger::Database.count_by_session("sess-cascade-1").should eq(1)
+      GalaxyLedger::Database.session_files("sess-cascade-1").size.should eq(1)
+
+      deleted = GalaxyLedger::Database.delete_session("sess-cascade-1")
+      deleted.should eq(1)
+
+      # Verify cascade: entries gone
+      GalaxyLedger::Database.count_by_session("sess-cascade-1").should eq(0)
+      # Verify cascade: files gone
+      GalaxyLedger::Database.session_files("sess-cascade-1").should be_empty
+      # Verify cascade: session record gone
+      GalaxyLedger::Database.get_session("sess-cascade-1").should be_nil
     end
   end
 end

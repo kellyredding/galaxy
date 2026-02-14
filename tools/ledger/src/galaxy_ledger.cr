@@ -47,17 +47,14 @@ module GalaxyLedger
   # Context status filename (read from each session's folder, written by statusline)
   CONTEXT_STATUS_FILENAME = "context-status.json"
 
-  # Ledger-specific filenames within session folders
-  LEDGER_LAST_EXCHANGE_FILENAME = "ledger_last-exchange.json"
-
   # Helper to get session-specific context status file path
-  def self.context_status_path(session_id : String) : Path
-    SESSIONS_DIR / session_id / CONTEXT_STATUS_FILENAME
+  def self.context_status_path(session_identifier : String) : Path
+    SESSIONS_DIR / session_identifier / CONTEXT_STATUS_FILENAME
   end
 
   # Helper to get session directory path
-  def self.session_dir(session_id : String) : Path
-    SESSIONS_DIR / session_id
+  def self.session_dir(session_identifier : String) : Path
+    SESSIONS_DIR / session_identifier
   end
 end
 

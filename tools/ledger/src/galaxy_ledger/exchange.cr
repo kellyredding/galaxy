@@ -1,50 +1,10 @@
 require "json"
 
 module GalaxyLedger
-  # Manages the last exchange (user prompt + assistant response) for a session
-  # Stored in ledger_last-exchange.json within each session folder
+  # DTO classes for last exchange data (user prompt + assistant response).
+  # Previously stored in ledger_last-exchange.json files; now persisted as JSON
+  # in the ledger_sessions.last_interaction column.
   module Exchange
-    # Read last exchange for a specific session
-    # Returns nil if session folder or file doesn't exist (graceful degradation)
-    def self.read(session_id : String) : LastExchange?
-      return nil if session_id.empty?
-
-      begin
-        exchange_file = GalaxyLedger.session_dir(session_id) / LEDGER_LAST_EXCHANGE_FILENAME
-        return nil unless File.exists?(exchange_file)
-
-        json = File.read(exchange_file)
-        LastExchange.from_json(json)
-      rescue
-        # Silently fail - return nil if we can't read or parse
-        nil
-      end
-    end
-
-    # Write last exchange for a specific session
-    # Creates session directory if it doesn't exist
-    # Returns true on success, false on failure
-    def self.write(session_id : String, exchange : LastExchange) : Bool
-      return false if session_id.empty?
-
-      begin
-        session_dir = GalaxyLedger.session_dir(session_id)
-        Dir.mkdir_p(session_dir) unless Dir.exists?(session_dir)
-
-        exchange_file = session_dir / LEDGER_LAST_EXCHANGE_FILENAME
-        File.write(exchange_file, exchange.to_pretty_json)
-        true
-      rescue
-        false
-      end
-    end
-
-    # Check if last exchange exists for a session
-    def self.exists?(session_id : String) : Bool
-      return false if session_id.empty?
-      File.exists?(GalaxyLedger.session_dir(session_id) / LEDGER_LAST_EXCHANGE_FILENAME)
-    end
-
     # The last exchange between user and assistant
     class LastExchange
       include JSON::Serializable

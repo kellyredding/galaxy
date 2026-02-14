@@ -5,6 +5,9 @@ def create_test_session_with_entries(session_id : String, entry_count : Int32 = 
   session_dir = GalaxyLedger.session_dir(session_id)
   Dir.mkdir_p(session_dir)
 
+  # Create session record first to satisfy FK constraint on ledger_entries
+  GalaxyLedger::Database.upsert_session(session_id)
+
   entry_count.times do |i|
     entry = GalaxyLedger::Entry.new(
       entry_type: "learning",
@@ -793,6 +796,7 @@ describe "CLI Integration" do
       session_id = "e2e-stale-#{Random.rand(100000)}"
       session_dir = GalaxyLedger::SESSIONS_DIR / session_id
       Dir.mkdir_p(session_dir)
+      GalaxyLedger::Database.upsert_session(session_id)
 
       begin
         # Step 1: Read a guideline file → creates marker entry
@@ -850,6 +854,7 @@ describe "CLI Integration" do
       session_id = "e2e-multi-stale-#{Random.rand(100000)}"
       session_dir = GalaxyLedger::SESSIONS_DIR / session_id
       Dir.mkdir_p(session_dir)
+      GalaxyLedger::Database.upsert_session(session_id)
 
       begin
         # Read two guideline files
@@ -902,6 +907,7 @@ describe "CLI Integration" do
       session_id = "e2e-mixed-stale-#{Random.rand(100000)}"
       session_dir = GalaxyLedger::SESSIONS_DIR / session_id
       Dir.mkdir_p(session_dir)
+      GalaxyLedger::Database.upsert_session(session_id)
 
       begin
         # Read a guideline
@@ -977,6 +983,85 @@ describe "CLI Integration" do
       result[:status].should eq(0)
       result[:output].should contain("--help")
       result[:output].should contain("detailed command usage")
+    end
+  end
+
+  describe "update-session-metrics subcommand" do
+    before_each do
+      db_path = GalaxyLedger::Database.database_path
+      File.delete(db_path) if File.exists?(db_path)
+    end
+
+    it "updates session metrics from stdin JSON" do
+      session_id = "metrics-test-#{Random.rand(100000)}"
+
+      # Create the session record first
+      GalaxyLedger::Database.upsert_session(session_id)
+
+      metrics_json = {
+        "session_id" => session_id,
+        "timestamp"  => 1234567890,
+        "context"    => {
+          "percentage"  => 45.2,
+          "tokens_used" => 50000,
+          "tokens_max"  => 200000,
+        },
+        "cost" => {
+          "usd" => 0.15,
+        },
+        "model" => {
+          "id"           => "claude-opus-4-6",
+          "display_name" => "Claude Opus 4.6",
+        },
+      }.to_json
+
+      result = run_binary(
+        ["update-session-metrics", "--session", session_id],
+        stdin: metrics_json,
+      )
+      result[:status].should eq(0)
+
+      # Verify metrics were persisted
+      session = GalaxyLedger::Database.get_session(session_id)
+      session.should_not be_nil
+      if s = session
+        s.context_percentage.should eq(45.2)
+        s.tokens_used.should eq(50000)
+        s.tokens_max.should eq(200000)
+        s.cost_usd.should eq(0.15)
+        s.model_id.should eq("claude-opus-4-6")
+        s.model_display_name.should eq("Claude Opus 4.6")
+      end
+    end
+
+    it "exits non-zero when --session is missing" do
+      metrics_json = {"context" => {"percentage" => 10.0}}.to_json
+      result = run_binary(["update-session-metrics"], stdin: metrics_json)
+      result[:status].should_not eq(0)
+      result[:error].should contain("--session is required")
+    end
+
+    it "exits non-zero when no JSON provided on stdin" do
+      session_id = "metrics-empty-#{Random.rand(100000)}"
+      GalaxyLedger::Database.upsert_session(session_id)
+
+      result = run_binary(["update-session-metrics", "--session", session_id])
+      result[:status].should_not eq(0)
+      result[:error].should contain("no JSON provided")
+    end
+
+    it "shows help with --help flag" do
+      result = run_binary(["update-session-metrics", "--help"])
+      result[:status].should eq(0)
+      result[:output].should contain("update-session-metrics")
+      result[:output].should contain("--session SESSION_ID")
+      result[:output].should contain("ContextStatus")
+    end
+
+    it "shows help with -h flag" do
+      result = run_binary(["update-session-metrics", "-h"])
+      result[:status].should eq(0)
+      result[:output].should contain("update-session-metrics")
     end
   end
 end

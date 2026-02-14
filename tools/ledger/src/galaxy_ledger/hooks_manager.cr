@@ -4,7 +4,6 @@ module GalaxyLedger
   # Manages installation and removal of ledger hooks in Claude Code settings.json
   module HooksManager
     # Hook definitions that will be installed
-    # Note: PreCompact and SessionEnd hooks are not used (direct DB writes)
     LEDGER_HOOKS = {
       "UserPromptSubmit" => [
         {

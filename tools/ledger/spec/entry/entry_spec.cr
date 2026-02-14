@@ -79,7 +79,7 @@ describe GalaxyLedger::Entry do
 
     it "returns true with nil source" do
       entry = GalaxyLedger::Entry.new(
-        entry_type: "file_read",
+        entry_type: "discovery",
         content: "app/models/user.rb",
         importance: "low",
         source: nil
@@ -125,7 +125,7 @@ describe GalaxyLedger::Entry do
 
     it "handles optional metadata" do
       json = %|{
-        "entry_type": "file_edit",
+        "entry_type": "learning",
         "content": "app/models/user.rb",
         "importance": "low",
         "created_at": "2026-02-01T10:00:00Z",
@@ -183,9 +183,6 @@ describe "GalaxyLedger constants" do
     GalaxyLedger::ENTRY_TYPES.should contain("learning")
     GalaxyLedger::ENTRY_TYPES.should contain("decision")
     GalaxyLedger::ENTRY_TYPES.should contain("guideline")
-    GalaxyLedger::ENTRY_TYPES.should contain("file_read")
-    GalaxyLedger::ENTRY_TYPES.should contain("file_edit")
-    GalaxyLedger::ENTRY_TYPES.should contain("file_write")
   end
 
   it "IMPORTANCE_LEVELS includes expected levels" do

@@ -76,19 +76,7 @@ module GalaxyLedger
     #     db.exec("ALTER TABLE ledger_entries ADD COLUMN new_field TEXT")
     #   },
     #
-    DATABASE_MIGRATIONS = {
-      "0.1.1" => ->(db : DB::Database) {
-        # Add stale column for tracking edited guideline/implementation plan files.
-        # When these files are edited mid-session, their extracted entries become
-        # stale and need re-extraction at session stop.
-        begin
-          db.exec("SELECT stale FROM ledger_entries LIMIT 0")
-        rescue
-          db.exec("ALTER TABLE ledger_entries ADD COLUMN stale INTEGER DEFAULT 0")
-        end
-        nil
-      },
-    }
+    DATABASE_MIGRATIONS = {} of String => Proc(DB::Database, Nil)
 
     # ==========================================================================
     # CONFIG MIGRATIONS

@@ -8,6 +8,9 @@ describe "OnStop GALAXY_SKIP_HOOKS" do
     session_dir = GalaxyLedger.session_dir(test_session_id)
     Dir.mkdir_p(session_dir)
 
+    # Ensure session record exists for FK constraints
+    GalaxyLedger::Database.upsert_session(test_session_id)
+
     # Create test transcript file
     transcript_file = File.tempfile("transcript", ".jsonl")
     transcript_file.print(%|{"type": "user", "timestamp": "2026-02-01T10:00:00Z", "message": {"role": "user", "content": "Test"}}\n|)
@@ -23,13 +26,14 @@ describe "OnStop GALAXY_SKIP_HOOKS" do
     result = run_binary(["on-stop"], stdin: hook_input)
     result[:status].should eq(0)
 
-    # Exchange file should NOT be created (early return)
-    exchange_file = session_dir / GalaxyLedger::LEDGER_LAST_EXCHANGE_FILENAME
-    File.exists?(exchange_file).should eq(false)
+    # Last interaction should NOT be written to DB (early return)
+    session_record = GalaxyLedger::Database.get_session(test_session_id)
+    session_record.try(&.last_interaction).should be_nil
 
     # Clean up
     File.delete(transcript_file.path)
     FileUtils.rm_rf(session_dir.to_s)
+    GalaxyLedger::Database.delete_session(test_session_id)
   ensure
     ENV.delete("GALAXY_SKIP_HOOKS")
   end
@@ -50,11 +54,15 @@ describe "OnStop last exchange capture" do
   before_each do
     session_dir = GalaxyLedger.session_dir(test_session_id)
     FileUtils.rm_rf(session_dir.to_s)
+    GalaxyLedger::Database.delete_session(test_session_id)
+    # Ensure session record exists for FK constraints
+    GalaxyLedger::Database.upsert_session(test_session_id)
   end
 
   after_each do
     session_dir = GalaxyLedger.session_dir(test_session_id)
     FileUtils.rm_rf(session_dir.to_s)
+    GalaxyLedger::Database.delete_session(test_session_id)
   end
 
   it "captures last exchange from transcript" do
@@ -74,16 +82,15 @@ describe "OnStop last exchange capture" do
     result = run_binary(["on-stop"], stdin: hook_input)
     result[:status].should eq(0)
 
-    # Verify last exchange file was created
-    session_dir = GalaxyLedger.session_dir(test_session_id)
-    exchange_file = session_dir / GalaxyLedger::LEDGER_LAST_EXCHANGE_FILENAME
-    File.exists?(exchange_file).should eq(true)
+    # Verify last interaction was written to DB
+    session_record = GalaxyLedger::Database.get_session(test_session_id)
+    session_record.should_not be_nil
+    json_str = session_record.not_nil!.last_interaction
+    json_str.should_not be_nil
 
-    # Verify content
-    exchange = GalaxyLedger::Exchange.read(test_session_id)
-    exchange.should_not be_nil
-    exchange.not_nil!.user_message.should eq("Add authentication")
-    exchange.not_nil!.full_content.should contain("I'll help you add authentication")
+    exchange = GalaxyLedger::Exchange::LastExchange.from_json(json_str.not_nil!)
+    exchange.user_message.should eq("Add authentication")
+    exchange.full_content.should contain("I'll help you add authentication")
 
     # Clean up
     File.delete(transcript_file.path)
@@ -105,10 +112,9 @@ describe "OnStop last exchange capture" do
     result = run_binary(["on-stop"], stdin: hook_input)
     result[:status].should eq(0)
 
-    # Exchange file should NOT be created (early return)
-    session_dir = GalaxyLedger.session_dir(test_session_id)
-    exchange_file = session_dir / GalaxyLedger::LEDGER_LAST_EXCHANGE_FILENAME
-    File.exists?(exchange_file).should eq(false)
+    # Last interaction should NOT be written to DB (early return)
+    session_record = GalaxyLedger::Database.get_session(test_session_id)
+    session_record.try(&.last_interaction).should be_nil
 
     # Clean up
     File.delete(transcript_file.path)
@@ -124,10 +130,9 @@ describe "OnStop last exchange capture" do
     result = run_binary(["on-stop"], stdin: hook_input)
     result[:status].should eq(0) # Should not crash
 
-    # No exchange file created (no valid transcript)
-    session_dir = GalaxyLedger.session_dir(test_session_id)
-    exchange_file = session_dir / GalaxyLedger::LEDGER_LAST_EXCHANGE_FILENAME
-    File.exists?(exchange_file).should eq(false)
+    # No last interaction written to DB (no valid transcript)
+    session_record = GalaxyLedger::Database.get_session(test_session_id)
+    session_record.try(&.last_interaction).should be_nil
   end
 
   it "handles empty stdin gracefully" do
@@ -148,11 +153,15 @@ describe "OnStop context threshold warnings" do
     session_dir = GalaxyLedger.session_dir(test_session_id)
     FileUtils.rm_rf(session_dir.to_s)
     Dir.mkdir_p(session_dir)
+    GalaxyLedger::Database.delete_session(test_session_id)
+    # Ensure session record exists for FK constraints
+    GalaxyLedger::Database.upsert_session(test_session_id)
   end
 
   after_each do
     session_dir = GalaxyLedger.session_dir(test_session_id)
     FileUtils.rm_rf(session_dir.to_s)
+    GalaxyLedger::Database.delete_session(test_session_id)
   end
 
   it "outputs warning when context exceeds warning threshold" do
@@ -240,8 +249,9 @@ describe "OnStop stale re-extraction" do
     session_dir = GalaxyLedger.session_dir(test_session_id)
     FileUtils.rm_rf(session_dir.to_s)
     Dir.mkdir_p(session_dir)
-    # Clean DB
     GalaxyLedger::Database.delete_session(test_session_id)
+    # Ensure session record exists for FK constraints
+    GalaxyLedger::Database.upsert_session(test_session_id)
   end
 
   after_each do

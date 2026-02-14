@@ -3,10 +3,6 @@ require "json"
 module GalaxyLedger
   # Entry types that can be stored in the ledger
   ENTRY_TYPES = [
-    "file_read",
-    "file_edit",
-    "file_write",
-    "search",
     "direction",
     "preference",
     "constraint",
@@ -27,11 +23,11 @@ module GalaxyLedger
   class Entry
     include JSON::Serializable
 
-    # Entry type (file_read, learning, decision, etc.)
+    # Entry type (direction, learning, decision, etc.)
     @[JSON::Field(key: "entry_type")]
     property entry_type : String
 
-    # Source: "user" or "assistant" (nil for file operations)
+    # Source: "user" or "assistant" (nil for extracted entries)
     property source : String?
 
     # The content of the entry

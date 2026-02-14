@@ -4,9 +4,10 @@ module GalaxyLedger
   module Hooks
     # Handles the SessionStart(startup) hook
     # - Ensures session folder exists
+    # - Upserts session record in DB
     # - Injects ledger awareness prompt
     class OnStartup
-      @session_id : String?
+      @session_identifier : String?
 
       def run
         # Skip if GALAXY_SKIP_HOOKS is set (prevents recursion from extraction subprocesses)
@@ -18,11 +19,22 @@ module GalaxyLedger
         # Ensure session folder exists for current session
         ensure_session_folder
 
+        # Upsert session record in database (creates if new, touches updated_at if existing)
+        session_identifier = @session_identifier
+        if session_identifier
+          Database.upsert_session(session_identifier, cwd: Dir.current)
+        end
+
         # Query ledger for stats
         stats = get_ledger_stats
 
         # Build the awareness context
         context = build_awareness_context(stats)
+
+        # Persist injected context to session record
+        if session_identifier
+          Database.merge_session_context(session_identifier, "injected_context", context)
+        end
 
         # Output JSON with additionalContext
         output = {
@@ -42,17 +54,17 @@ module GalaxyLedger
           return if input.empty?
 
           json = JSON.parse(input)
-          @session_id = json["session_id"]?.try(&.as_s?)
+          @session_identifier = json["session_id"]?.try(&.as_s?)
         rescue
-          # Silently ignore parse errors - we'll continue without session_id
+          # Silently ignore parse errors - we'll continue without session_identifier
         end
       end
 
       private def ensure_session_folder
-        session_id = @session_id
-        return unless session_id
+        session_identifier = @session_identifier
+        return unless session_identifier
 
-        session_dir = GalaxyLedger.session_dir(session_id)
+        session_dir = GalaxyLedger.session_dir(session_identifier)
         Dir.mkdir_p(session_dir) unless Dir.exists?(session_dir)
       end
 
@@ -84,14 +96,14 @@ module GalaxyLedger
       end
 
       private def build_awareness_context(stats : NamedTuple(sessions: Int32, entries: Int32, last_session: String?)) : String
-        session_id = @session_id
+        session_identifier = @session_identifier
 
         lines = [] of String
         lines << "## Galaxy Ledger Available"
         lines << ""
 
-        if session_id
-          lines << "**Session ID**: `#{session_id}`"
+        if session_identifier
+          lines << "**Session ID**: `#{session_identifier}`"
           lines << ""
         end
 
@@ -116,17 +128,17 @@ module GalaxyLedger
           lines << ""
         end
 
-        if session_id
+        if session_identifier
           lines << "### Querying the Ledger"
           lines << ""
           lines << "Search this session's entries:"
           lines << "```"
-          lines << "galaxy-ledger search --query \"QUERY\" --session #{session_id}"
+          lines << "galaxy-ledger search --query \"QUERY\" --session #{session_identifier}"
           lines << "```"
           lines << ""
           lines << "List this session's recent entries:"
           lines << "```"
-          lines << "galaxy-ledger list --session #{session_id}"
+          lines << "galaxy-ledger list --session #{session_identifier}"
           lines << "```"
           lines << ""
           lines << "Add optional filters: `--type TYPE`, `--importance LEVEL`, `--category CATEGORY`"

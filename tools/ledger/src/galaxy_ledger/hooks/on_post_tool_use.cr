@@ -3,11 +3,11 @@ require "json"
 module GalaxyLedger
   module Hooks
     # Handles the PostToolUse hook
-    # - Tracks file operations (Read, Edit, Write, Glob, Grep)
-    # - Detects guideline and implementation plan reads
-    # - Writes entries directly to SQLite
+    # - Tracks file operations (Read, Edit, Write, Glob, Grep) via session_files DB table
+    # - Detects guideline and implementation plan reads for extraction
+    # - Writes extraction entries directly to SQLite
     class OnPostToolUse
-      @session_id : String?
+      @session_identifier : String?
       @tool_name : String?
       @tool_input : JSON::Any?
       @tool_response : String?
@@ -29,12 +29,12 @@ module GalaxyLedger
         # Parse hook input from stdin
         parse_hook_input
 
-        session_id = @session_id
+        session_identifier = @session_identifier
         tool_name = @tool_name
-        return unless session_id && tool_name
+        return unless session_identifier && tool_name
 
         # Ensure session folder exists
-        session_dir = GalaxyLedger.session_dir(session_id)
+        session_dir = GalaxyLedger.session_dir(session_identifier)
         Dir.mkdir_p(session_dir) unless Dir.exists?(session_dir)
 
         # Process based on tool type
@@ -64,7 +64,7 @@ module GalaxyLedger
           return if input.empty?
 
           json = JSON.parse(input)
-          @session_id = json["session_id"]?.try(&.as_s?)
+          @session_identifier = json["session_id"]?.try(&.as_s?)
           @tool_name = json["tool_name"]?.try(&.as_s?)
           @tool_input = json["tool_input"]?
 
@@ -81,10 +81,10 @@ module GalaxyLedger
       end
 
       private def process_read
-        session_id = @session_id
+        session_identifier = @session_identifier
         tool_input = @tool_input
         tool_response = @tool_response
-        return unless session_id && tool_input
+        return unless session_identifier && tool_input
 
         file_path = tool_input["file_path"]?.try(&.as_s?)
         return unless file_path
@@ -98,11 +98,11 @@ module GalaxyLedger
           # Skip extraction if we already have entries for this source file in this session.
           # The LLM produces unique output each time, so the content-hash unique index
           # can't catch these — we need to check by source_file instead.
-          already_extracted = Database.has_extracted_source_file?(session_id, source_file_basename)
+          already_extracted = Database.has_extracted_source_file?(session_identifier, source_file_basename)
 
           unless already_extracted
             # For guidelines and implementation plans, spawn extraction
-            spawn_extraction_async(session_id, file_path, tool_response, special_type)
+            spawn_extraction_async(session_identifier, file_path, tool_response, special_type)
           end
 
           # Always record the file path as a marker that we read this file.
@@ -115,21 +115,15 @@ module GalaxyLedger
             metadata: JSON.parse({"tool" => "Read", "extraction_spawned" => !already_extracted}.to_json),
             source_file: source_file_basename,
           )
-          Database.insert(session_id, entry)
+          Database.insert(session_identifier, entry)
         else
-          # Regular file read - just record the path
-          entry = Entry.new(
-            entry_type: "file_read",
-            content: file_path,
-            importance: "low",
-            metadata: JSON.parse({"tool" => "Read"}.to_json)
-          )
-          Database.insert(session_id, entry)
+          # Regular file read - record in session_files table
+          Database.upsert_session_file(session_identifier, file_path, :read)
         end
       end
 
       private def spawn_extraction_async(
-        session_id : String,
+        session_identifier : String,
         file_path : String,
         content : String,
         extraction_type : String,
@@ -144,7 +138,7 @@ module GalaxyLedger
           # Pass content via stdin
           Process.new(
             binary,
-            args: ["extract-file", "--session", session_id, "--type", extraction_type, "--path", file_path],
+            args: ["extract-file", "--session", session_identifier, "--type", extraction_type, "--path", file_path],
             input: IO::Memory.new(content),
             output: Process::Redirect::Close,
             error: Process::Redirect::Close,
@@ -155,80 +149,60 @@ module GalaxyLedger
       end
 
       private def process_edit
-        session_id = @session_id
+        session_identifier = @session_identifier
         tool_input = @tool_input
-        return unless session_id && tool_input
+        return unless session_identifier && tool_input
 
         file_path = tool_input["file_path"]?.try(&.as_s?)
         return unless file_path
 
-        entry = Entry.new(
-          entry_type: "file_edit",
-          content: file_path,
-          importance: "medium",
-          metadata: JSON.parse({"tool" => "Edit"}.to_json)
-        )
-
-        Database.insert(session_id, entry)
+        # Record in session_files table
+        Database.upsert_session_file(session_identifier, file_path, :edit)
 
         # Mark extracted entries stale if this is a special file
-        check_stale_extraction(session_id, file_path)
+        check_stale_extraction(session_identifier, file_path)
       end
 
       private def process_write
-        session_id = @session_id
+        session_identifier = @session_identifier
         tool_input = @tool_input
-        return unless session_id && tool_input
+        return unless session_identifier && tool_input
 
         file_path = tool_input["file_path"]?.try(&.as_s?)
         return unless file_path
 
-        entry = Entry.new(
-          entry_type: "file_write",
-          content: file_path,
-          importance: "medium",
-          metadata: JSON.parse({"tool" => "Write"}.to_json)
-        )
-
-        Database.insert(session_id, entry)
+        # Record in session_files table
+        Database.upsert_session_file(session_identifier, file_path, :write)
 
         # Mark extracted entries stale if this is a special file
-        check_stale_extraction(session_id, file_path)
+        check_stale_extraction(session_identifier, file_path)
       end
 
       # When a guideline or implementation plan file is edited/written,
       # mark its extracted entries as stale so the Stop hook knows to
       # re-extract fresh content from disk.
-      private def check_stale_extraction(session_id : String, file_path : String)
+      private def check_stale_extraction(session_identifier : String, file_path : String)
         special_type = detect_special_file_type(file_path)
         return unless special_type
 
         source_file = File.basename(file_path)
-        Database.mark_entries_stale(session_id, source_file)
+        Database.mark_entries_stale(session_identifier, source_file)
       end
 
       private def process_search
-        session_id = @session_id
+        session_identifier = @session_identifier
         tool_name = @tool_name
         tool_input = @tool_input
-        return unless session_id && tool_name && tool_input
+        return unless session_identifier && tool_name && tool_input
 
         # Extract search pattern
         pattern = tool_input["pattern"]?.try(&.as_s?)
-        path = tool_input["path"]?.try(&.as_s?)
         return unless pattern
 
-        content = "#{pattern}"
-        content += " in #{path}" if path
+        search_path = tool_input["path"]?.try(&.as_s?) || ""
 
-        entry = Entry.new(
-          entry_type: "search",
-          content: content,
-          importance: "low",
-          metadata: JSON.parse({"tool" => tool_name}.to_json)
-        )
-
-        Database.insert(session_id, entry)
+        # Record in session_files table
+        Database.upsert_session_file(session_identifier, search_path, :search, search_pattern: pattern)
       end
 
       private def detect_special_file_type(file_path : String) : String?

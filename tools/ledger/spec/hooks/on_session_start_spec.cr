@@ -8,13 +8,14 @@ describe "OnSessionStart GALAXY_SKIP_HOOKS" do
     session_dir = GalaxyLedger.session_dir(test_session_id)
     Dir.mkdir_p(session_dir)
 
-    # Create last exchange file (would normally be displayed)
+    # Ensure session record exists and write last interaction to DB
+    GalaxyLedger::Database.upsert_session(test_session_id)
     exchange = GalaxyLedger::Exchange::LastExchange.new(
       user_message: "Test message",
       full_content: "Test response",
       assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
     )
-    GalaxyLedger::Exchange.write(test_session_id, exchange)
+    GalaxyLedger::Database.update_session_last_interaction(test_session_id, exchange.to_pretty_json)
 
     hook_input = {
       "session_id" => test_session_id,
@@ -29,6 +30,7 @@ describe "OnSessionStart GALAXY_SKIP_HOOKS" do
 
     # Clean up
     FileUtils.rm_rf(session_dir.to_s)
+    GalaxyLedger::Database.delete_session(test_session_id)
   ensure
     ENV.delete("GALAXY_SKIP_HOOKS")
   end
@@ -50,15 +52,19 @@ describe "OnSessionStart context restoration" do
     session_dir = GalaxyLedger.session_dir(test_session_id)
     FileUtils.rm_rf(session_dir.to_s)
     Dir.mkdir_p(session_dir)
+    GalaxyLedger::Database.delete_session(test_session_id)
+    # Ensure session record exists for FK constraints
+    GalaxyLedger::Database.upsert_session(test_session_id)
   end
 
   after_each do
     session_dir = GalaxyLedger.session_dir(test_session_id)
     FileUtils.rm_rf(session_dir.to_s)
+    GalaxyLedger::Database.delete_session(test_session_id)
   end
 
   it "displays last exchange when available" do
-    # Create last exchange file
+    # Write last interaction to DB
     exchange = GalaxyLedger::Exchange::LastExchange.new(
       user_message: "Add user authentication",
       full_content: "I'll help you implement user authentication. First, let me create the auth controller...",
@@ -70,7 +76,7 @@ describe "OnSessionStart context restoration" do
       ],
       user_timestamp: "2026-02-01T09:59:00Z"
     )
-    GalaxyLedger::Exchange.write(test_session_id, exchange)
+    GalaxyLedger::Database.update_session_last_interaction(test_session_id, exchange.to_pretty_json)
 
     hook_input = {
       "session_id" => test_session_id,
@@ -88,13 +94,13 @@ describe "OnSessionStart context restoration" do
   end
 
   it "outputs JSON with additionalContext" do
-    # Create last exchange file
+    # Write last interaction to DB
     exchange = GalaxyLedger::Exchange::LastExchange.new(
       user_message: "Fix the bug",
       full_content: "I found the issue in the config file.",
       assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
     )
-    GalaxyLedger::Exchange.write(test_session_id, exchange)
+    GalaxyLedger::Database.update_session_last_interaction(test_session_id, exchange.to_pretty_json)
 
     hook_input = {
       "session_id" => test_session_id,
@@ -112,7 +118,7 @@ describe "OnSessionStart context restoration" do
   end
 
   it "handles missing last exchange gracefully" do
-    # Don't create any exchange file
+    # Don't write any last interaction to DB
 
     hook_input = {
       "session_id" => test_session_id,
@@ -155,7 +161,7 @@ describe "OnSessionStart context restoration" do
       full_content: "Response",
       assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
     )
-    GalaxyLedger::Exchange.write(test_session_id, exchange)
+    GalaxyLedger::Database.update_session_last_interaction(test_session_id, exchange.to_pretty_json)
 
     hook_input = {
       "session_id" => test_session_id,
@@ -175,7 +181,7 @@ describe "OnSessionStart context restoration" do
       full_content: long_content,
       assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
     )
-    GalaxyLedger::Exchange.write(test_session_id, exchange)
+    GalaxyLedger::Database.update_session_last_interaction(test_session_id, exchange.to_pretty_json)
 
     hook_input = {
       "session_id" => test_session_id,
@@ -201,7 +207,7 @@ describe "OnSessionStart context restoration" do
         key_actions: ["Created feature class", "Added test coverage"]
       )
     )
-    GalaxyLedger::Exchange.write(test_session_id, exchange)
+    GalaxyLedger::Database.update_session_last_interaction(test_session_id, exchange.to_pretty_json)
 
     hook_input = {
       "session_id" => test_session_id,
@@ -224,11 +230,15 @@ describe "OnSessionStart box formatting" do
     session_dir = GalaxyLedger.session_dir(test_session_id)
     FileUtils.rm_rf(session_dir.to_s)
     Dir.mkdir_p(session_dir)
+    GalaxyLedger::Database.delete_session(test_session_id)
+    # Ensure session record exists for FK constraints
+    GalaxyLedger::Database.upsert_session(test_session_id)
   end
 
   after_each do
     session_dir = GalaxyLedger.session_dir(test_session_id)
     FileUtils.rm_rf(session_dir.to_s)
+    GalaxyLedger::Database.delete_session(test_session_id)
   end
 
   it "uses box drawing characters" do
@@ -237,7 +247,7 @@ describe "OnSessionStart box formatting" do
       full_content: "Response",
       assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
     )
-    GalaxyLedger::Exchange.write(test_session_id, exchange)
+    GalaxyLedger::Database.update_session_last_interaction(test_session_id, exchange.to_pretty_json)
 
     hook_input = {
       "session_id" => test_session_id,

@@ -3,11 +3,11 @@ require "json"
 module GalaxyLedger
   module Hooks
     # Handles the SessionStart(clear|compact) hook
-    # - Reads last exchange from ledger_last-exchange.json
+    # - Reads last interaction from the session DB record
     # - Prints formatted terminal output showing what was happening before clear/compact
     # - Returns additionalContext with condensed summary for agent restoration
     class OnSessionStart
-      @session_id : String?
+      @session_identifier : String?
       @source : String?
 
       # Box drawing constants for terminal output
@@ -26,11 +26,14 @@ module GalaxyLedger
         # Parse hook input from stdin
         parse_hook_input
 
-        session_id = @session_id
-        return output_empty unless session_id
+        session_identifier = @session_identifier
+        return output_empty unless session_identifier
 
-        # Read last exchange
-        last_exchange = Exchange.read(session_id)
+        # Upsert session record (idempotent, touches updated_at)
+        Database.upsert_session(session_identifier)
+
+        # Read last interaction from the session DB record
+        last_exchange = read_last_exchange_from_db(session_identifier)
 
         # Print terminal output (visible to user)
         print_terminal_output(last_exchange)
@@ -52,10 +55,24 @@ module GalaxyLedger
           return if input.empty?
 
           json = JSON.parse(input)
-          @session_id = json["session_id"]?.try(&.as_s?)
+          @session_identifier = json["session_id"]?.try(&.as_s?)
           @source = json["source"]?.try(&.as_s?)
         rescue
           # Silently ignore parse errors
+        end
+      end
+
+      private def read_last_exchange_from_db(session_identifier : String) : Exchange::LastExchange?
+        session_record = Database.get_session(session_identifier)
+        return nil unless session_record
+
+        json_str = session_record.last_interaction
+        return nil unless json_str
+
+        begin
+          Exchange::LastExchange.from_json(json_str)
+        rescue
+          nil
         end
       end
 
@@ -161,14 +178,14 @@ module GalaxyLedger
       end
 
       private def build_additional_context(last_exchange : Exchange::LastExchange?) : String
-        session_id = @session_id
+        session_identifier = @session_identifier
 
         lines = [] of String
         lines << "## Restored Context"
         lines << ""
 
-        if session_id
-          lines << "**Session ID**: `#{session_id}`"
+        if session_identifier
+          lines << "**Session ID**: `#{session_identifier}`"
           lines << ""
         end
 
@@ -201,9 +218,9 @@ module GalaxyLedger
 
         lines << ""
         lines << "---"
-        if session_id
-          lines << "📚 Search this session: `galaxy-ledger search --query \"QUERY\" --session #{session_id}`"
-          lines << "📋 List this session: `galaxy-ledger list --session #{session_id}`"
+        if session_identifier
+          lines << "📚 Search this session: `galaxy-ledger search --query \"QUERY\" --session #{session_identifier}`"
+          lines << "📋 List this session: `galaxy-ledger list --session #{session_identifier}`"
         else
           lines << "📚 Full session history available: `galaxy-ledger search --query \"QUERY\"`"
         end

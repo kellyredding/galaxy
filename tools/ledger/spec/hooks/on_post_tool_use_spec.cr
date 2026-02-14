@@ -34,10 +34,11 @@ end
 describe GalaxyLedger::Hooks::OnPostToolUse do
   describe "#run" do
     describe "with Read tool" do
-      it "creates a file_read entry for regular files" do
+      it "creates a session file record for regular files" do
         session_id = "post-tool-test-#{rand(100000)}"
         session_dir = GalaxyLedger::SESSIONS_DIR / session_id
         Dir.mkdir_p(session_dir)
+        GalaxyLedger::Database.upsert_session(session_id)
 
         input = {
           "session_id"      => session_id,
@@ -50,11 +51,18 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         result = run_binary(["on-post-tool-use"], stdin: input)
         result[:status].should eq(0)
 
+        # No entry records should be created for regular file reads
         entries = GalaxyLedger::Database.query_by_session(session_id)
-        entries.size.should eq(1)
-        entries.first.entry_type.should eq("file_read")
-        entries.first.content.should eq("/path/to/some/file.rb")
-        entries.first.importance.should eq("low")
+        entries.size.should eq(0)
+
+        # Should have a session_file record instead
+        files = GalaxyLedger::Database.session_files(session_id)
+        files.size.should eq(1)
+        files.first.file_path.should eq("/path/to/some/file.rb")
+        files.first.is_read.should be_true
+        files.first.is_edited.should be_false
+        files.first.is_written.should be_false
+        files.first.is_searched.should be_false
 
         # Clean up
         FileUtils.rm_rf(session_dir.to_s)
@@ -65,6 +73,7 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         session_id = "post-tool-test-#{rand(100000)}"
         session_dir = GalaxyLedger::SESSIONS_DIR / session_id
         Dir.mkdir_p(session_dir)
+        GalaxyLedger::Database.upsert_session(session_id)
 
         input = {
           "session_id"      => session_id,
@@ -91,6 +100,7 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         session_id = "post-tool-test-#{rand(100000)}"
         session_dir = GalaxyLedger::SESSIONS_DIR / session_id
         Dir.mkdir_p(session_dir)
+        GalaxyLedger::Database.upsert_session(session_id)
 
         input = {
           "session_id"      => session_id,
@@ -116,6 +126,7 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         session_id = "post-tool-test-#{rand(100000)}"
         session_dir = GalaxyLedger::SESSIONS_DIR / session_id
         Dir.mkdir_p(session_dir)
+        GalaxyLedger::Database.upsert_session(session_id)
 
         input = {
           "session_id"      => session_id,
@@ -144,6 +155,7 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         session_id = "post-tool-dedup-#{rand(100000)}"
         session_dir = GalaxyLedger::SESSIONS_DIR / session_id
         Dir.mkdir_p(session_dir)
+        GalaxyLedger::Database.upsert_session(session_id)
 
         input = {
           "session_id"      => session_id,
@@ -186,6 +198,7 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         session_id = "post-tool-dedup-#{rand(100000)}"
         session_dir = GalaxyLedger::SESSIONS_DIR / session_id
         Dir.mkdir_p(session_dir)
+        GalaxyLedger::Database.upsert_session(session_id)
 
         input = {
           "session_id"      => session_id,
@@ -218,6 +231,7 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         session_id = "post-tool-dedup-#{rand(100000)}"
         session_dir = GalaxyLedger::SESSIONS_DIR / session_id
         Dir.mkdir_p(session_dir)
+        GalaxyLedger::Database.upsert_session(session_id)
 
         # Read first guideline
         input1 = {
@@ -262,10 +276,11 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
     end
 
     describe "with Edit tool" do
-      it "creates a file_edit entry" do
+      it "creates a session file record" do
         session_id = "post-tool-test-#{rand(100000)}"
         session_dir = GalaxyLedger::SESSIONS_DIR / session_id
         Dir.mkdir_p(session_dir)
+        GalaxyLedger::Database.upsert_session(session_id)
 
         input = {
           "session_id" => session_id,
@@ -282,11 +297,18 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         result = run_binary(["on-post-tool-use"], stdin: input)
         result[:status].should eq(0)
 
+        # No entry records should be created for file edits
         entries = GalaxyLedger::Database.query_by_session(session_id)
-        entries.size.should eq(1)
-        entries.first.entry_type.should eq("file_edit")
-        entries.first.content.should eq("/path/to/file.rb")
-        entries.first.importance.should eq("medium")
+        entries.size.should eq(0)
+
+        # Should have a session_file record instead
+        files = GalaxyLedger::Database.session_files(session_id)
+        files.size.should eq(1)
+        files.first.file_path.should eq("/path/to/file.rb")
+        files.first.is_edited.should be_true
+        files.first.is_read.should be_false
+        files.first.is_written.should be_false
+        files.first.is_searched.should be_false
 
         # Clean up
         FileUtils.rm_rf(session_dir.to_s)
@@ -295,10 +317,11 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
     end
 
     describe "with Write tool" do
-      it "creates a file_write entry" do
+      it "creates a session file record" do
         session_id = "post-tool-test-#{rand(100000)}"
         session_dir = GalaxyLedger::SESSIONS_DIR / session_id
         Dir.mkdir_p(session_dir)
+        GalaxyLedger::Database.upsert_session(session_id)
 
         input = {
           "session_id" => session_id,
@@ -314,11 +337,18 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         result = run_binary(["on-post-tool-use"], stdin: input)
         result[:status].should eq(0)
 
+        # No entry records should be created for file writes
         entries = GalaxyLedger::Database.query_by_session(session_id)
-        entries.size.should eq(1)
-        entries.first.entry_type.should eq("file_write")
-        entries.first.content.should eq("/path/to/new_file.rb")
-        entries.first.importance.should eq("medium")
+        entries.size.should eq(0)
+
+        # Should have a session_file record instead
+        files = GalaxyLedger::Database.session_files(session_id)
+        files.size.should eq(1)
+        files.first.file_path.should eq("/path/to/new_file.rb")
+        files.first.is_written.should be_true
+        files.first.is_read.should be_false
+        files.first.is_edited.should be_false
+        files.first.is_searched.should be_false
 
         # Clean up
         FileUtils.rm_rf(session_dir.to_s)
@@ -331,6 +361,7 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         session_id = "post-tool-stale-#{rand(100000)}"
         session_dir = GalaxyLedger::SESSIONS_DIR / session_id
         Dir.mkdir_p(session_dir)
+        GalaxyLedger::Database.upsert_session(session_id)
 
         # First: read the guideline to create marker entry
         read_input = {
@@ -379,6 +410,7 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         session_id = "post-tool-stale-#{rand(100000)}"
         session_dir = GalaxyLedger::SESSIONS_DIR / session_id
         Dir.mkdir_p(session_dir)
+        GalaxyLedger::Database.upsert_session(session_id)
 
         # First: read the plan to create marker entry
         read_input = {
@@ -422,6 +454,7 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         session_id = "post-tool-stale-#{rand(100000)}"
         session_dir = GalaxyLedger::SESSIONS_DIR / session_id
         Dir.mkdir_p(session_dir)
+        GalaxyLedger::Database.upsert_session(session_id)
 
         # Read a guideline first
         read_input = {
@@ -460,10 +493,11 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
     end
 
     describe "with Grep tool" do
-      it "creates a search entry" do
+      it "creates a session file record with search pattern" do
         session_id = "post-tool-test-#{rand(100000)}"
         session_dir = GalaxyLedger::SESSIONS_DIR / session_id
         Dir.mkdir_p(session_dir)
+        GalaxyLedger::Database.upsert_session(session_id)
 
         input = {
           "session_id" => session_id,
@@ -479,11 +513,19 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         result = run_binary(["on-post-tool-use"], stdin: input)
         result[:status].should eq(0)
 
+        # No entry records should be created for searches
         entries = GalaxyLedger::Database.query_by_session(session_id)
-        entries.size.should eq(1)
-        entries.first.entry_type.should eq("search")
-        entries.first.content.should eq("def authenticate in /app/models")
-        entries.first.importance.should eq("low")
+        entries.size.should eq(0)
+
+        # Should have a session_file record with search pattern
+        files = GalaxyLedger::Database.session_files(session_id)
+        files.size.should eq(1)
+        files.first.file_path.should eq("/app/models")
+        files.first.search_pattern.should eq("def authenticate")
+        files.first.is_searched.should be_true
+        files.first.is_read.should be_false
+        files.first.is_edited.should be_false
+        files.first.is_written.should be_false
 
         # Clean up
         FileUtils.rm_rf(session_dir.to_s)
@@ -492,10 +534,11 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
     end
 
     describe "with Glob tool" do
-      it "creates a search entry" do
+      it "creates a session file record with search pattern" do
         session_id = "post-tool-test-#{rand(100000)}"
         session_dir = GalaxyLedger::SESSIONS_DIR / session_id
         Dir.mkdir_p(session_dir)
+        GalaxyLedger::Database.upsert_session(session_id)
 
         input = {
           "session_id" => session_id,
@@ -511,10 +554,19 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         result = run_binary(["on-post-tool-use"], stdin: input)
         result[:status].should eq(0)
 
+        # No entry records should be created for searches
         entries = GalaxyLedger::Database.query_by_session(session_id)
-        entries.size.should eq(1)
-        entries.first.entry_type.should eq("search")
-        entries.first.content.should eq("**/*.rb in /app")
+        entries.size.should eq(0)
+
+        # Should have a session_file record with search pattern
+        files = GalaxyLedger::Database.session_files(session_id)
+        files.size.should eq(1)
+        files.first.file_path.should eq("/app")
+        files.first.search_pattern.should eq("**/*.rb")
+        files.first.is_searched.should be_true
+        files.first.is_read.should be_false
+        files.first.is_edited.should be_false
+        files.first.is_written.should be_false
 
         # Clean up
         FileUtils.rm_rf(session_dir.to_s)

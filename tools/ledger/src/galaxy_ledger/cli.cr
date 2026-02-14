@@ -86,6 +86,8 @@ module GalaxyLedger
         handle_extract_assistant_command(rest)
       when "extract-file"
         handle_extract_file_command(rest)
+      when "update-session-metrics"
+        handle_update_session_metrics_command(rest)
       when "version"
         puts "galaxy-ledger #{VERSION}"
       when "help"
@@ -119,6 +121,9 @@ module GalaxyLedger
         on-session-start    Restore context after clear/compact
         on-post-tool-use    Track file operations, detect guidelines
         on-user-prompt-submit  Capture user directions/preferences
+
+      Session Metrics:
+        update-session-metrics  Update session metrics from stdin JSON
 
       Run 'galaxy-ledger <command> --help' for detailed command usage.
       BANNER
@@ -377,7 +382,6 @@ module GalaxyLedger
 
         Each session folder contains:
           - context-status.json        Context percentage (from statusline)
-          - ledger_last-exchange.json  Last user/assistant exchange
 
       REMOVE BEHAVIOR:
         The 'remove' command completely removes a session:
@@ -422,7 +426,6 @@ module GalaxyLedger
         - Session path and file list
         - Context status (if available)
         - Database entry count
-        - Last exchange status
       HELP
     end
 
@@ -462,7 +465,7 @@ module GalaxyLedger
       sessions.each do |session|
         # Format: SESSION_ID | 72% | 3 files | 2.5 KB | 5 min ago
         parts = [] of String
-        parts << session.session_id
+        parts << session.session_identifier
 
         if pct = session.context_percentage
           parts << "#{pct.round.to_i}%"
@@ -491,7 +494,7 @@ module GalaxyLedger
         exit(1)
       end
 
-      puts "Session: #{session.session_id}"
+      puts "Session: #{session.session_identifier}"
       puts "  Path: #{session.path}"
       puts "  Last modified: #{format_time_ago(session.last_modified)}"
       puts "  Total size: #{format_size(session.total_size)}"
@@ -508,7 +511,6 @@ module GalaxyLedger
       if session.has_context_status && (pct = session.context_percentage)
         puts "    Percentage: #{pct.round(1)}%"
       end
-      puts "  Last exchange: #{session.has_last_exchange ? "yes" : "no"}"
     end
 
     private def self.session_remove(args : Array(String))
@@ -673,7 +675,7 @@ module GalaxyLedger
         if source_file = entry.source_file
           puts "    File: #{source_file}"
         end
-        puts "    Session: #{entry.session_id[0, 8]}..."
+        puts "    Session: #{entry.session_identifier[0, 8]}..."
         puts "    Content: #{truncate(entry.content, 100)}"
         # Show keywords if present
         keywords = entry.keywords_array
@@ -763,7 +765,7 @@ module GalaxyLedger
         end
       end
 
-      entries = Database.query_recent_filtered(limit, entry_type, importance, session_id: session_id)
+      entries = Database.query_recent_filtered(limit, entry_type, importance, session_identifier: session_id)
 
       if entries.empty?
         puts "No entries in ledger."
@@ -793,7 +795,7 @@ module GalaxyLedger
         if source_file = entry.source_file
           puts "    File: #{source_file}"
         end
-        puts "    Session: #{entry.session_id[0, 8]}..."
+        puts "    Session: #{entry.session_identifier[0, 8]}..."
         puts "    Content: #{truncate(entry.content, 100)}"
         # Show keywords if present
         keywords = entry.keywords_array
@@ -889,6 +891,9 @@ module GalaxyLedger
         exit(1)
       end
 
+      # Ensure session record exists (FK constraint)
+      Database.upsert_session(session_id)
+
       # Create entry and insert directly into database
       entry = Entry.new(
         entry_type: entry_type,
@@ -934,10 +939,6 @@ module GalaxyLedger
         discovery             Something learned during exploration
         guideline             Extracted guideline rule
         implementation_plan   Implementation plan context
-        file_read             File read operation
-        file_edit             File edit operation
-        file_write            File write operation
-        search                Search performed
         constraint            Limitation or requirement
         reference             URL/issue reference
 
@@ -969,7 +970,6 @@ module GalaxyLedger
         Called by Claude Code's SessionStart hook when a fresh session starts.
         This hook:
         - Creates the session folder if needed
-        - Cleans up any orphaned flushing files
         - Injects ledger awareness into the agent context
 
       INPUT (stdin):
@@ -1159,11 +1159,11 @@ module GalaxyLedger
       OUTPUT (stdout):
         No output (async hook, non-blocking).
 
+      FILE TRACKING:
+        File operations (Read, Edit, Write, Glob, Grep) are tracked in the
+        session_files table for deduplication and context awareness.
+
       ENTRY TYPES CREATED:
-        - file_read: When a file is read (importance: low)
-        - file_edit: When a file is edited (importance: medium)
-        - file_write: When a file is created (importance: medium)
-        - search: When Glob/Grep is used (importance: low)
         - guideline: When an agent-guideline or *-style.md is read (importance: medium)
         - implementation_plan: When an implementation-plans file is read (importance: medium)
 
@@ -1312,9 +1312,7 @@ module GalaxyLedger
         - UserPromptSubmit: Capture user directions/preferences
         - PostToolUse: Track file operations, detect guidelines
         - Stop: Capture last exchange, check context thresholds
-        - PreCompact: Sync flush before compaction
         - SessionStart: Restore context after clear/compact, startup awareness
-        - SessionEnd: Sync flush on session end
 
       EXAMPLES:
         galaxy-ledger hooks status
@@ -1348,9 +1346,7 @@ module GalaxyLedger
         - UserPromptSubmit hook (async): Captures user messages
         - PostToolUse hook (async): Tracks file operations
         - Stop hook: Captures last exchange, shows context warnings
-        - PreCompact hook: Reserved for pre-compaction tasks
         - SessionStart hooks: Context restoration and startup awareness
-        - SessionEnd hook: Reserved for session end tasks
 
       SAFETY:
         Existing non-ledger hooks are preserved.
@@ -1592,20 +1588,25 @@ module GalaxyLedger
           end
         end
 
-        # Update last exchange with summary if we got one
+        # Update last interaction with summary if we got one
         if summary = result.summary
-          last_exchange = Exchange.read(session_id)
-          if last_exchange
-            # Create updated exchange with summary
-            updated = Exchange::LastExchange.new(
-              user_message: last_exchange.user_message,
-              full_content: last_exchange.full_content,
-              assistant_messages: last_exchange.assistant_messages,
-              user_timestamp: last_exchange.user_timestamp,
-              summary: summary,
-            )
-            Exchange.write(session_id, updated)
-            STDERR.puts "[galaxy-ledger] Updated last exchange with summary"
+          session_record = Database.get_session(session_id)
+          if session_record && (li_json = session_record.last_interaction)
+            begin
+              last_exchange = Exchange::LastExchange.from_json(li_json)
+              # Create updated exchange with summary
+              updated = Exchange::LastExchange.new(
+                user_message: last_exchange.user_message,
+                full_content: last_exchange.full_content,
+                assistant_messages: last_exchange.assistant_messages,
+                user_timestamp: last_exchange.user_timestamp,
+                summary: summary,
+              )
+              Database.update_session_last_interaction(session_id, updated.to_pretty_json)
+              STDERR.puts "[galaxy-ledger] Updated last interaction with summary"
+            rescue
+              # Ignore parse errors on last_interaction
+            end
           end
         end
       rescue ex
@@ -1698,6 +1699,88 @@ module GalaxyLedger
           STDERR.puts "[galaxy-ledger] Extracted #{inserted} #{extraction_type} entries from #{File.basename(file_path)}"
         end
       end
+    end
+
+    # ========================================
+    # Session Metrics Command
+    # ========================================
+
+    private def self.handle_update_session_metrics_command(args : Array(String))
+      if args.first? == "-h" || args.first? == "--help"
+        show_update_session_metrics_help
+        return
+      end
+
+      # Parse args
+      session_id : String? = nil
+      i = 0
+      while i < args.size
+        arg = args[i]
+        if arg == "--session" && i + 1 < args.size
+          session_id = args[i + 1]
+          i += 2
+        else
+          i += 1
+        end
+      end
+
+      unless session_id
+        STDERR.puts "Error: --session is required"
+        exit(1)
+      end
+
+      # Read JSON from stdin
+      begin
+        json_str = STDIN.gets_to_end
+        if json_str.strip.empty?
+          STDERR.puts "Error: no JSON provided on stdin"
+          exit(1)
+        end
+
+        status = ContextStatus.from_json(json_str)
+        success = Database.update_session_metrics(session_id, status)
+
+        unless success
+          exit(1)
+        end
+      rescue ex
+        STDERR.puts "Error: #{ex.message}"
+        exit(1)
+      end
+    end
+
+    private def self.show_update_session_metrics_help
+      puts <<-HELP
+      galaxy-ledger update-session-metrics - Update session metrics from stdin
+
+      USAGE:
+        galaxy-ledger update-session-metrics --session SESSION_ID < metrics.json
+
+      REQUIRED:
+        --session SESSION_ID    The session to update metrics for
+
+      DESCRIPTION:
+        Reads a ContextStatus JSON object from stdin and updates the session
+        metrics in the database. This is called by external tools (e.g.,
+        statusline) to sync context percentage, token usage, and cost data.
+
+        Silent on success (exit 0). Non-zero exit on failure.
+
+      INPUT (stdin):
+        A ContextStatus JSON object, e.g.:
+        {
+          "session_id": "abc123",
+          "timestamp": 1234567890,
+          "context": {
+            "percentage": 45.2,
+            "tokens_used": 50000,
+            "tokens_max": 200000
+          },
+          "cost": {
+            "usd": 0.15
+          }
+        }
+      HELP
     end
 
     private def self.show_extract_file_help

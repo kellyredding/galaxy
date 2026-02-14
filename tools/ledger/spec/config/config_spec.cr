@@ -19,7 +19,6 @@ describe GalaxyLedger::Config do
       config.restoration.max_essential_tokens.should eq(2000)
       config.restoration.tier1_limits.high_importance_decisions.should eq(10)
       config.restoration.tier2_limits.learnings.should eq(5)
-      config.restoration.tier2_limits.file_edits.should eq(10)
       config.restoration.tier2_limits.medium_importance_decisions.should eq(5)
     end
   end
@@ -84,9 +83,6 @@ describe GalaxyLedger::Config do
       config = GalaxyLedger::Config.default
       config.set("restoration.tier2_limits.learnings", "10")
       config.get("restoration.tier2_limits.learnings").should eq("10")
-
-      config.set("restoration.tier2_limits.file_edits", "20")
-      config.get("restoration.tier2_limits.file_edits").should eq("20")
 
       config.set("restoration.tier2_limits.medium_importance_decisions", "8")
       config.get("restoration.tier2_limits.medium_importance_decisions").should eq("8")
