@@ -96,6 +96,13 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         meta = JSON.parse(entries.first.metadata.not_nil!)
         meta["extraction_type"]?.try(&.as_s?).should eq("guideline")
 
+        # Should also have a session_file record (regression: special files
+        # must be tracked in session_files, not just extraction markers)
+        files = GalaxyLedger::Database.session_files(session_id)
+        files.size.should eq(1)
+        files.first.file_path.should eq("/home/user/agent-guidelines/ruby-style.md")
+        files.first.is_read.should be_true
+
         # Clean up
         FileUtils.rm_rf(session_dir.to_s)
         GalaxyLedger::Database.delete_session(session_id)
@@ -152,6 +159,13 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         # Metadata should contain implementation_plan as extraction type
         meta = JSON.parse(entries.first.metadata.not_nil!)
         meta["extraction_type"]?.try(&.as_s?).should eq("implementation_plan")
+
+        # Should also have a session_file record (regression: special files
+        # must be tracked in session_files, not just extraction markers)
+        files = GalaxyLedger::Database.session_files(session_id)
+        files.size.should eq(1)
+        files.first.file_path.should eq("/home/user/implementation-plans/feature-x.md")
+        files.first.is_read.should be_true
 
         # Clean up
         FileUtils.rm_rf(session_dir.to_s)

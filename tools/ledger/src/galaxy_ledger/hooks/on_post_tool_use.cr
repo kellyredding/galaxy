@@ -92,6 +92,9 @@ module GalaxyLedger
         # Determine entry type based on file path
         special_type = detect_special_file_type(file_path)
 
+        # Track every read in session_files, regardless of file type
+        Database.upsert_session_file(session_identifier, file_path, :read)
+
         if special_type && tool_response && !tool_response.empty?
           # Skip extraction if we already have a marker for this source file in this session.
           # The LLM produces unique output each time, so the content-hash unique index
@@ -115,9 +118,6 @@ module GalaxyLedger
             source_file: file_path,
           )
           Database.insert(session_identifier, entry)
-        else
-          # Regular file read - record in session_files table
-          Database.upsert_session_file(session_identifier, file_path, :read)
         end
       end
 
