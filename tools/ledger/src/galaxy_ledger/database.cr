@@ -18,6 +18,19 @@ module GalaxyLedger
     # Database file path
     DATABASE_PATH = GalaxyLedger::GALAXY_DIR / "data" / "ledger.db"
 
+    # Internal entry types excluded from all public-facing queries (list, search, count, etc.).
+    # These are used for internal tracking only and should never be exposed to CLI users.
+    INTERNAL_ENTRY_TYPES = [
+      "extraction_marker",
+    ]
+
+    # SQL fragments for excluding internal types from queries.
+    # Pre-built at compile time for use in query strings.
+    # Use the aliased version when the query uses a table alias (e.g., "e.entry_type").
+    private INTERNAL_TYPES_LIST               = INTERNAL_ENTRY_TYPES.map { |t| "'#{t}'" }.join(", ")
+    INTERNAL_TYPE_EXCLUSION_SQL       = "AND entry_type NOT IN (#{INTERNAL_TYPES_LIST})"
+    INTERNAL_TYPE_EXCLUSION_ALIAS_SQL = "AND e.entry_type NOT IN (#{INTERNAL_TYPES_LIST})"
+
     # Get database path (allows override via env for testing)
     def self.database_path : Path
       if custom = ENV["GALAXY_LEDGER_DATABASE_PATH"]?
@@ -627,31 +640,31 @@ module GalaxyLedger
       end
     end
 
-    # Count all entries
+    # Count all entries (excludes internal entry types)
     def self.count : Int32
       begin
         open do |db|
-          db.scalar("SELECT COUNT(*) FROM ledger_entries").as(Int64).to_i
+          db.scalar("SELECT COUNT(*) FROM ledger_entries WHERE 1=1 #{INTERNAL_TYPE_EXCLUSION_SQL}").as(Int64).to_i
         end
       rescue
         0
       end
     end
 
-    # Count entries for a session
+    # Count entries for a session (excludes internal entry types)
     def self.count_by_session(session_identifier : String) : Int32
       return 0 if session_identifier.empty?
 
       begin
         open do |db|
-          db.scalar("SELECT COUNT(*) FROM ledger_entries WHERE session_identifier = ?", session_identifier).as(Int64).to_i
+          db.scalar("SELECT COUNT(*) FROM ledger_entries WHERE session_identifier = ? #{INTERNAL_TYPE_EXCLUSION_SQL}", session_identifier).as(Int64).to_i
         end
       rescue
         0
       end
     end
 
-    # Check if extracted entries already exist for a source file in a session.
+    # Check if an extraction marker already exists for a source file in a session.
     def self.has_extracted_source_file?(session_identifier : String, source_file : String) : Bool
       return false if session_identifier.empty? || source_file.empty?
 
@@ -661,7 +674,7 @@ module GalaxyLedger
             <<-SQL,
               SELECT COUNT(*) FROM ledger_entries
               WHERE session_identifier = ? AND source_file = ?
-              AND entry_type IN ('guideline', 'implementation_plan')
+              AND entry_type = 'extraction_marker'
               LIMIT 1
             SQL
             session_identifier,
@@ -694,7 +707,9 @@ module GalaxyLedger
       end
     end
 
-    # Find source files with stale extracted entries in a session.
+    # Find source files with stale extraction markers in a session.
+    # Returns the full path (from source_file) and the original extraction type
+    # (from metadata) for each stale marker.
     def self.stale_entries(session_identifier : String) : Array(NamedTuple(source_file: String, full_path: String, entry_type: String))
       results = [] of NamedTuple(source_file: String, full_path: String, entry_type: String)
       return results if session_identifier.empty?
@@ -703,20 +718,36 @@ module GalaxyLedger
         open do |db|
           db.query(
             <<-SQL,
-              SELECT DISTINCT source_file, content, entry_type
+              SELECT DISTINCT source_file, content, metadata
               FROM ledger_entries
               WHERE session_identifier = ? AND stale = 1
                 AND source_file IS NOT NULL
-                AND entry_type IN ('guideline', 'implementation_plan')
-                AND content LIKE '/%'
+                AND entry_type = 'extraction_marker'
             SQL
             session_identifier,
           ) do |rs|
             rs.each do
+              source_file = rs.read(String)
+              full_path = rs.read(String)
+              metadata_str = rs.read(String | Nil)
+
+              # Recover the original extraction type from metadata
+              extraction_type = "guideline" # default fallback
+              if metadata_str
+                begin
+                  meta = JSON.parse(metadata_str)
+                  if et = meta["extraction_type"]?.try(&.as_s?)
+                    extraction_type = et
+                  end
+                rescue
+                  # Use default
+                end
+              end
+
               results << {
-                source_file: rs.read(String),
-                full_path:   rs.read(String),
-                entry_type:  rs.read(String),
+                source_file: source_file,
+                full_path:   full_path,
+                entry_type:  extraction_type,
               }
             end
           end
@@ -728,7 +759,7 @@ module GalaxyLedger
       results
     end
 
-    # Delete all guideline/implementation_plan entries for a source file in a session.
+    # Delete all guideline/implementation_plan/extraction_marker entries for a source file in a session.
     def self.delete_entries_by_source_file(session_identifier : String, source_file : String) : Int32
       return 0 if session_identifier.empty? || source_file.empty?
 
@@ -738,7 +769,7 @@ module GalaxyLedger
             <<-SQL,
               DELETE FROM ledger_entries
               WHERE session_identifier = ? AND source_file = ?
-                AND entry_type IN ('guideline', 'implementation_plan')
+                AND entry_type IN ('guideline', 'implementation_plan', 'extraction_marker')
             SQL
             session_identifier,
             source_file,
@@ -754,7 +785,7 @@ module GalaxyLedger
     # Query Operations
     # ============================================================
 
-    # Query entries by session (most recent first)
+    # Query entries by session (most recent first, excludes internal entry types)
     def self.query_by_session(session_identifier : String, limit : Int32 = 100) : Array(StoredEntry)
       return [] of StoredEntry if session_identifier.empty?
 
@@ -765,7 +796,7 @@ module GalaxyLedger
             <<-SQL,
               SELECT id, created_at, session_identifier, entry_type, source, content, content_hash, metadata, importance, category, keywords, applies_when, source_file
               FROM ledger_entries
-              WHERE session_identifier = ?
+              WHERE session_identifier = ? #{INTERNAL_TYPE_EXCLUSION_SQL}
               ORDER BY created_at DESC
               LIMIT ?
             SQL
@@ -824,7 +855,7 @@ module GalaxyLedger
             <<-SQL,
               SELECT id, created_at, session_identifier, entry_type, source, content, content_hash, metadata, importance, category, keywords, applies_when, source_file
               FROM ledger_entries
-              WHERE session_identifier = ? AND importance = ?
+              WHERE session_identifier = ? AND importance = ? #{INTERNAL_TYPE_EXCLUSION_SQL}
               ORDER BY created_at DESC
               LIMIT ?
             SQL
@@ -874,6 +905,7 @@ module GalaxyLedger
     end
 
     # Full-text search across all entries with optional filters
+    # Excludes internal entry types unless explicitly requested via entry_type filter.
     def self.search(
       query : String,
       limit : Int32 = 50,
@@ -896,7 +928,7 @@ module GalaxyLedger
               JOIN ledger_fts f ON e.id = f.rowid
               WHERE ledger_fts MATCH ?
             SQL
-            s << " AND e.entry_type = ?" if entry_type
+            s << (entry_type ? " AND e.entry_type = ?" : " #{INTERNAL_TYPE_EXCLUSION_ALIAS_SQL}")
             s << " AND e.importance = ?" if importance
             s << " AND e.category = ?" if category
             s << " ORDER BY rank LIMIT ?"
@@ -921,6 +953,7 @@ module GalaxyLedger
     end
 
     # Full-text search within a session with optional filters
+    # (excludes internal entry types)
     def self.search_in_session(
       session_identifier : String,
       query : String,
@@ -945,7 +978,8 @@ module GalaxyLedger
               JOIN ledger_fts f ON e.id = f.rowid
               WHERE e.session_identifier = ? AND ledger_fts MATCH ?
             SQL
-            s << " AND e.entry_type = ?" if entry_type
+            s << (entry_type ? " AND e.entry_type = ?" : " #{INTERNAL_TYPE_EXCLUSION_ALIAS_SQL}")
+
             s << " AND e.importance = ?" if importance
             s << " AND e.category = ?" if category
             s << " ORDER BY rank LIMIT ?"
@@ -978,6 +1012,7 @@ module GalaxyLedger
             <<-SQL
               SELECT session_identifier, COUNT(*) as entry_count, MAX(created_at) as last_entry
               FROM ledger_entries
+              WHERE 1=1 #{INTERNAL_TYPE_EXCLUSION_SQL}
               GROUP BY session_identifier
               ORDER BY last_entry DESC
             SQL
@@ -1015,7 +1050,7 @@ module GalaxyLedger
               WHERE 1=1
             SQL
             s << " AND session_identifier = ?" if session_identifier
-            s << " AND entry_type = ?" if entry_type
+            s << (entry_type ? " AND entry_type = ?" : " #{INTERNAL_TYPE_EXCLUSION_SQL}")
             s << " AND importance = ?" if importance
             s << " AND category = ?" if category
             s << " ORDER BY created_at DESC LIMIT ?"

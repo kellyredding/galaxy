@@ -69,7 +69,7 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         GalaxyLedger::Database.delete_session(session_id)
       end
 
-      it "creates a guideline entry for agent-guidelines files" do
+      it "creates an extraction_marker entry for agent-guidelines files" do
         session_id = "post-tool-test-#{rand(100000)}"
         session_dir = GalaxyLedger::SESSIONS_DIR / session_id
         Dir.mkdir_p(session_dir)
@@ -86,17 +86,22 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         result = run_binary(["on-post-tool-use"], stdin: input)
         result[:status].should eq(0)
 
-        entries = GalaxyLedger::Database.query_by_session(session_id)
+        entries = GalaxyLedger::Database.query_by_type(session_id, "extraction_marker")
         entries.size.should eq(1)
-        entries.first.entry_type.should eq("guideline")
+        entries.first.entry_type.should eq("extraction_marker")
         entries.first.importance.should eq("medium")
+        entries.first.source_file.should eq("/home/user/agent-guidelines/ruby-style.md")
+
+        # Metadata should contain the original extraction type
+        meta = JSON.parse(entries.first.metadata.not_nil!)
+        meta["extraction_type"]?.try(&.as_s?).should eq("guideline")
 
         # Clean up
         FileUtils.rm_rf(session_dir.to_s)
         GalaxyLedger::Database.delete_session(session_id)
       end
 
-      it "creates a guideline entry for any file in agent-guidelines" do
+      it "creates an extraction_marker entry for any file in agent-guidelines" do
         session_id = "post-tool-test-#{rand(100000)}"
         session_dir = GalaxyLedger::SESSIONS_DIR / session_id
         Dir.mkdir_p(session_dir)
@@ -113,16 +118,16 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         result = run_binary(["on-post-tool-use"], stdin: input)
         result[:status].should eq(0)
 
-        entries = GalaxyLedger::Database.query_by_session(session_id)
+        entries = GalaxyLedger::Database.query_by_type(session_id, "extraction_marker")
         entries.size.should eq(1)
-        entries.first.entry_type.should eq("guideline")
+        entries.first.entry_type.should eq("extraction_marker")
 
         # Clean up
         FileUtils.rm_rf(session_dir.to_s)
         GalaxyLedger::Database.delete_session(session_id)
       end
 
-      it "creates an implementation_plan entry for implementation-plans files" do
+      it "creates an extraction_marker entry for implementation-plans files" do
         session_id = "post-tool-test-#{rand(100000)}"
         session_dir = GalaxyLedger::SESSIONS_DIR / session_id
         Dir.mkdir_p(session_dir)
@@ -139,10 +144,14 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         result = run_binary(["on-post-tool-use"], stdin: input)
         result[:status].should eq(0)
 
-        entries = GalaxyLedger::Database.query_by_session(session_id)
+        entries = GalaxyLedger::Database.query_by_type(session_id, "extraction_marker")
         entries.size.should eq(1)
-        entries.first.entry_type.should eq("implementation_plan")
+        entries.first.entry_type.should eq("extraction_marker")
         entries.first.importance.should eq("medium")
+
+        # Metadata should contain implementation_plan as extraction type
+        meta = JSON.parse(entries.first.metadata.not_nil!)
+        meta["extraction_type"]?.try(&.as_s?).should eq("implementation_plan")
 
         # Clean up
         FileUtils.rm_rf(session_dir.to_s)
@@ -165,29 +174,28 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
           "hook_event_name" => "PostToolUse",
         }.to_json
 
-        # First read — should create marker entry with source_file set
+        # First read — should create extraction_marker entry with full path source_file
         result = run_binary(["on-post-tool-use"], stdin: input)
         result[:status].should eq(0)
 
-        entries_after_first = GalaxyLedger::Database.query_by_session(session_id)
-        first_marker = entries_after_first.find { |e| e.entry_type == "guideline" }
-        first_marker.should_not be_nil
-        first_marker.not_nil!.source_file.should eq("ruby-style.md")
+        markers = GalaxyLedger::Database.query_by_type(session_id, "extraction_marker")
+        markers.size.should eq(1)
+        markers.first.source_file.should eq("/home/user/agent-guidelines/ruby-style.md")
 
         # Pre-flight check should now return true
-        GalaxyLedger::Database.has_extracted_source_file?(session_id, "ruby-style.md").should be_true
+        GalaxyLedger::Database.has_extracted_source_file?(session_id, "/home/user/agent-guidelines/ruby-style.md").should be_true
 
-        # First marker should have extraction_spawned: true
-        meta = JSON.parse(first_marker.not_nil!.metadata.not_nil!)
+        # First marker should have extraction_spawned: true and extraction_type: guideline
+        meta = JSON.parse(markers.first.metadata.not_nil!)
         meta["extraction_spawned"]?.try(&.as_bool?).should be_true
+        meta["extraction_type"]?.try(&.as_s?).should eq("guideline")
 
         # Second read — entry count shouldn't increase (unique index + pre-flight)
         result = run_binary(["on-post-tool-use"], stdin: input)
         result[:status].should eq(0)
 
-        entries_after_second = GalaxyLedger::Database.query_by_session(session_id)
-        guideline_count = entries_after_second.count { |e| e.entry_type == "guideline" }
-        guideline_count.should eq(1) # No new marker entry (same content_hash)
+        markers_after = GalaxyLedger::Database.query_by_type(session_id, "extraction_marker")
+        markers_after.size.should eq(1) # No new marker entry (same content_hash)
 
         # Clean up
         FileUtils.rm_rf(session_dir.to_s)
@@ -212,15 +220,14 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         result = run_binary(["on-post-tool-use"], stdin: input)
         result[:status].should eq(0)
 
-        GalaxyLedger::Database.has_extracted_source_file?(session_id, "feature.md").should be_true
+        GalaxyLedger::Database.has_extracted_source_file?(session_id, "/home/user/implementation-plans/feature.md").should be_true
 
         # Second read — no new entries
         result = run_binary(["on-post-tool-use"], stdin: input)
         result[:status].should eq(0)
 
-        entries = GalaxyLedger::Database.query_by_session(session_id)
-        plan_count = entries.count { |e| e.entry_type == "implementation_plan" }
-        plan_count.should eq(1)
+        markers = GalaxyLedger::Database.query_by_type(session_id, "extraction_marker")
+        markers.size.should eq(1)
 
         # Clean up
         FileUtils.rm_rf(session_dir.to_s)
@@ -257,11 +264,11 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         result = run_binary(["on-post-tool-use"], stdin: input2)
         result[:status].should eq(0)
 
-        entries = GalaxyLedger::Database.query_by_session(session_id)
-        guideline_entries = entries.select { |e| e.entry_type == "guideline" }
+        markers = GalaxyLedger::Database.query_by_type(session_id, "extraction_marker")
+        markers.size.should eq(2)
 
         # Both should have spawned extraction
-        metadata_values = guideline_entries.map do |e|
+        metadata_values = markers.map do |e|
           if meta = e.metadata
             JSON.parse(meta)["extraction_spawned"]?.try(&.as_bool?)
           end
@@ -357,13 +364,13 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
     end
 
     describe "stale extraction marking" do
-      it "marks guideline entries stale when editing a guideline file" do
+      it "marks extraction_marker entries stale when editing a guideline file" do
         session_id = "post-tool-stale-#{rand(100000)}"
         session_dir = GalaxyLedger::SESSIONS_DIR / session_id
         Dir.mkdir_p(session_dir)
         GalaxyLedger::Database.upsert_session(session_id)
 
-        # First: read the guideline to create marker entry
+        # First: read the guideline to create extraction_marker entry
         read_input = {
           "session_id"      => session_id,
           "tool_name"       => "Read",
@@ -376,7 +383,7 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         result[:status].should eq(0)
 
         # Verify marker exists and is not stale
-        GalaxyLedger::Database.has_extracted_source_file?(session_id, "ruby-style.md").should be_true
+        GalaxyLedger::Database.has_extracted_source_file?(session_id, "/home/user/agent-guidelines/ruby-style.md").should be_true
         GalaxyLedger::Database.stale_entries(session_id).should be_empty
 
         # Second: edit the guideline file
@@ -398,7 +405,7 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         # Marker should now be stale
         stale = GalaxyLedger::Database.stale_entries(session_id)
         stale.size.should eq(1)
-        stale[0][:source_file].should eq("ruby-style.md")
+        stale[0][:source_file].should eq("/home/user/agent-guidelines/ruby-style.md")
         stale[0][:entry_type].should eq("guideline")
 
         # Clean up
@@ -406,13 +413,13 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         GalaxyLedger::Database.delete_session(session_id)
       end
 
-      it "marks implementation_plan entries stale when writing a plan file" do
+      it "marks extraction_marker entries stale when writing a plan file" do
         session_id = "post-tool-stale-#{rand(100000)}"
         session_dir = GalaxyLedger::SESSIONS_DIR / session_id
         Dir.mkdir_p(session_dir)
         GalaxyLedger::Database.upsert_session(session_id)
 
-        # First: read the plan to create marker entry
+        # First: read the plan to create extraction_marker entry
         read_input = {
           "session_id"      => session_id,
           "tool_name"       => "Read",
@@ -442,7 +449,7 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         # Marker should now be stale
         stale = GalaxyLedger::Database.stale_entries(session_id)
         stale.size.should eq(1)
-        stale[0][:source_file].should eq("feature.md")
+        stale[0][:source_file].should eq("/home/user/implementation-plans/feature.md")
         stale[0][:entry_type].should eq("implementation_plan")
 
         # Clean up

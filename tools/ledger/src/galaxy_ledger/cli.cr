@@ -1164,8 +1164,9 @@ module GalaxyLedger
         session_files table for deduplication and context awareness.
 
       ENTRY TYPES CREATED:
-        - guideline: When an agent-guideline or *-style.md is read (importance: medium)
-        - implementation_plan: When an implementation-plans file is read (importance: medium)
+        - extraction_marker: Marker entry when a guideline or implementation plan is read.
+          Stores the full file path in source_file and the original extraction type
+          (guideline or implementation_plan) in metadata. (importance: medium)
 
       HOOK CONFIGURATION:
         Add to ~/.claude/settings.json:

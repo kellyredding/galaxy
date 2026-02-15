@@ -799,7 +799,7 @@ describe "CLI Integration" do
       GalaxyLedger::Database.upsert_session(session_id)
 
       begin
-        # Step 1: Read a guideline file → creates marker entry
+        # Step 1: Read a guideline file → creates extraction_marker entry
         read_input = {
           "session_id"      => session_id,
           "tool_name"       => "Read",
@@ -811,8 +811,8 @@ describe "CLI Integration" do
         result = run_binary(["on-post-tool-use"], stdin: read_input)
         result[:status].should eq(0)
 
-        # Verify: marker entry exists, not stale
-        GalaxyLedger::Database.has_extracted_source_file?(session_id, "ruby-style.md").should be_true
+        # Verify: extraction_marker entry exists, not stale
+        GalaxyLedger::Database.has_extracted_source_file?(session_id, "/home/user/agent-guidelines/ruby-style.md").should be_true
         GalaxyLedger::Database.stale_entries(session_id).should be_empty
 
         # Step 2: Edit the same guideline file → marks entries stale
@@ -834,15 +834,15 @@ describe "CLI Integration" do
         # Verify: marker is now stale
         stale = GalaxyLedger::Database.stale_entries(session_id)
         stale.size.should eq(1)
-        stale[0][:source_file].should eq("ruby-style.md")
+        stale[0][:source_file].should eq("/home/user/agent-guidelines/ruby-style.md")
         stale[0][:full_path].should eq("/home/user/agent-guidelines/ruby-style.md")
         stale[0][:entry_type].should eq("guideline")
 
         # Step 3: Simulate what on-stop does — prune stale entries
-        GalaxyLedger::Database.delete_entries_by_source_file(session_id, "ruby-style.md")
+        GalaxyLedger::Database.delete_entries_by_source_file(session_id, "/home/user/agent-guidelines/ruby-style.md")
 
         # Verify: entries are pruned, ready for re-extraction
-        GalaxyLedger::Database.has_extracted_source_file?(session_id, "ruby-style.md").should be_false
+        GalaxyLedger::Database.has_extracted_source_file?(session_id, "/home/user/agent-guidelines/ruby-style.md").should be_false
         GalaxyLedger::Database.stale_entries(session_id).should be_empty
       ensure
         FileUtils.rm_rf(session_dir.to_s)
@@ -886,17 +886,17 @@ describe "CLI Integration" do
         # Only ruby-style should be stale
         stale = GalaxyLedger::Database.stale_entries(session_id)
         stale.size.should eq(1)
-        stale[0][:source_file].should eq("ruby-style.md")
+        stale[0][:source_file].should eq("/home/user/agent-guidelines/ruby-style.md")
 
         # rspec-style should be untouched
-        GalaxyLedger::Database.has_extracted_source_file?(session_id, "rspec-style.md").should be_true
+        GalaxyLedger::Database.has_extracted_source_file?(session_id, "/home/user/agent-guidelines/rspec-style.md").should be_true
 
         # Prune only the stale one
-        GalaxyLedger::Database.delete_entries_by_source_file(session_id, "ruby-style.md")
+        GalaxyLedger::Database.delete_entries_by_source_file(session_id, "/home/user/agent-guidelines/ruby-style.md")
 
         # rspec-style still present, ruby-style gone
-        GalaxyLedger::Database.has_extracted_source_file?(session_id, "rspec-style.md").should be_true
-        GalaxyLedger::Database.has_extracted_source_file?(session_id, "ruby-style.md").should be_false
+        GalaxyLedger::Database.has_extracted_source_file?(session_id, "/home/user/agent-guidelines/rspec-style.md").should be_true
+        GalaxyLedger::Database.has_extracted_source_file?(session_id, "/home/user/agent-guidelines/ruby-style.md").should be_false
       ensure
         FileUtils.rm_rf(session_dir.to_s)
         GalaxyLedger::Database.delete_session(session_id)
@@ -946,11 +946,11 @@ describe "CLI Integration" do
         # Only the plan should be stale
         stale = GalaxyLedger::Database.stale_entries(session_id)
         stale.size.should eq(1)
-        stale[0][:source_file].should eq("feature.md")
+        stale[0][:source_file].should eq("/home/user/implementation-plans/feature.md")
         stale[0][:entry_type].should eq("implementation_plan")
 
         # Guideline should be fresh
-        GalaxyLedger::Database.has_extracted_source_file?(session_id, "ruby-style.md").should be_true
+        GalaxyLedger::Database.has_extracted_source_file?(session_id, "/home/user/agent-guidelines/ruby-style.md").should be_true
       ensure
         FileUtils.rm_rf(session_dir.to_s)
         GalaxyLedger::Database.delete_session(session_id)

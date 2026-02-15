@@ -183,6 +183,7 @@ describe "GalaxyLedger constants" do
     GalaxyLedger::ENTRY_TYPES.should contain("learning")
     GalaxyLedger::ENTRY_TYPES.should contain("decision")
     GalaxyLedger::ENTRY_TYPES.should contain("guideline")
+    GalaxyLedger::ENTRY_TYPES.should contain("extraction_marker")
   end
 
   it "IMPORTANCE_LEVELS includes expected levels" do

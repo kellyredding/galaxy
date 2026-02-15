@@ -322,8 +322,8 @@ describe "Extraction Pipeline" do
         "/path/to/rspec-style.md",
         "# RSpec Style\n..."
       )
-      # source_file should be the basename
-      result.extractions[0].source_file.should eq("rspec-style.md")
+      # source_file should be the full path
+      result.extractions[0].source_file.should eq("/path/to/rspec-style.md")
       # file stem "rspec-style" should be auto-added to keywords
       result.extractions[0].keywords.not_nil!.should contain("rspec-style")
     end
@@ -409,7 +409,7 @@ describe "Extraction Pipeline" do
         "/plans/2026-01-15_feature.md",
         "plan content"
       )
-      result.extractions[0].source_file.should eq("2026-01-15_feature.md")
+      result.extractions[0].source_file.should eq("/plans/2026-01-15_feature.md")
       result.extractions[0].keywords.not_nil!.should contain("2026-01-15_feature")
     end
   end

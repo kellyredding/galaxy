@@ -52,7 +52,7 @@ module GalaxyLedger
       @[JSON::Field(key: "applies_when")]
       property applies_when : String?
 
-      # Source file basename
+      # Source file path (full path for extracted guideline/implementation_plan entries)
       @[JSON::Field(key: "source_file")]
       property source_file : String?
 
@@ -170,8 +170,8 @@ module GalaxyLedger
       begin
         json = JSON.parse(output)
 
-        # Auto-extract source file basename
-        source_file_basename = source_file.try { |sf| File.basename(sf) }
+        # Use source file path as-is (full path) for entries
+        source_file_path = source_file
 
         # Parse extractions array
         extractions = [] of ExtractedEntry
@@ -192,8 +192,8 @@ module GalaxyLedger
             end
 
             # Auto-add source file stem to keywords if not already present
-            if source_file_basename
-              file_stem = source_file_basename.gsub(/\.(md|txt|markdown)$/i, "")
+            if source_file_path
+              file_stem = File.basename(source_file_path).gsub(/\.(md|txt|markdown)$/i, "")
               kw = keywords || [] of String
               kw << file_stem unless kw.includes?(file_stem)
               keywords = kw
@@ -209,7 +209,7 @@ module GalaxyLedger
               category: category,
               keywords: keywords,
               applies_when: applies_when,
-              source_file: source_file_basename,
+              source_file: source_file_path,
             )
             extractions << entry if entry.valid?
           end

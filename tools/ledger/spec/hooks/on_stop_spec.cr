@@ -265,47 +265,50 @@ describe "OnStop stale re-extraction" do
     # We can't test the async re-extraction subprocess easily,
     # but we can verify that stale entries get pruned.
 
-    # Create marker + extracted entries
+    # Create extraction_marker + extracted entries
     marker = GalaxyLedger::Entry.new(
-      entry_type: "guideline",
+      entry_type: "extraction_marker",
       content: "/home/user/agent-guidelines/ruby-style.md",
-      source_file: "ruby-style.md",
+      source_file: "/home/user/agent-guidelines/ruby-style.md",
+      metadata: JSON.parse({"extraction_type" => "guideline"}.to_json),
     )
     extracted = GalaxyLedger::Entry.new(
       entry_type: "guideline",
       content: "Always use double-quotes for strings",
-      source_file: "ruby-style.md",
+      source_file: "/home/user/agent-guidelines/ruby-style.md",
     )
     GalaxyLedger::Database.insert(test_session_id, marker)
     GalaxyLedger::Database.insert(test_session_id, extracted)
 
     # Mark them stale (simulates edit detection)
-    GalaxyLedger::Database.mark_entries_stale(test_session_id, "ruby-style.md")
+    GalaxyLedger::Database.mark_entries_stale(test_session_id, "/home/user/agent-guidelines/ruby-style.md")
 
     # Verify stale
     stale = GalaxyLedger::Database.stale_entries(test_session_id)
     stale.size.should eq(1)
 
     # Now prune (simulates what on-stop does before spawning re-extraction)
-    GalaxyLedger::Database.delete_entries_by_source_file(test_session_id, "ruby-style.md")
+    GalaxyLedger::Database.delete_entries_by_source_file(test_session_id, "/home/user/agent-guidelines/ruby-style.md")
 
     # Entries should be gone
-    GalaxyLedger::Database.has_extracted_source_file?(test_session_id, "ruby-style.md").should be_false
+    GalaxyLedger::Database.has_extracted_source_file?(test_session_id, "/home/user/agent-guidelines/ruby-style.md").should be_false
     GalaxyLedger::Database.stale_entries(test_session_id).should be_empty
   end
 
   it "preserves non-stale entries when pruning stale ones" do
-    # Non-stale guideline
+    # Non-stale extraction_marker
     fresh_entry = GalaxyLedger::Entry.new(
-      entry_type: "guideline",
+      entry_type: "extraction_marker",
       content: "/home/user/agent-guidelines/rspec-style.md",
-      source_file: "rspec-style.md",
+      source_file: "/home/user/agent-guidelines/rspec-style.md",
+      metadata: JSON.parse({"extraction_type" => "guideline"}.to_json),
     )
-    # Stale guideline
+    # Stale extraction_marker
     stale_entry = GalaxyLedger::Entry.new(
-      entry_type: "guideline",
+      entry_type: "extraction_marker",
       content: "/home/user/agent-guidelines/ruby-style.md",
-      source_file: "ruby-style.md",
+      source_file: "/home/user/agent-guidelines/ruby-style.md",
+      metadata: JSON.parse({"extraction_type" => "guideline"}.to_json),
     )
     # Learning (should never be affected)
     learning = GalaxyLedger::Entry.new(
@@ -318,26 +321,28 @@ describe "OnStop stale re-extraction" do
     GalaxyLedger::Database.insert(test_session_id, learning)
 
     # Mark only ruby-style as stale
-    GalaxyLedger::Database.mark_entries_stale(test_session_id, "ruby-style.md")
+    GalaxyLedger::Database.mark_entries_stale(test_session_id, "/home/user/agent-guidelines/ruby-style.md")
 
     # Prune stale entries
-    GalaxyLedger::Database.delete_entries_by_source_file(test_session_id, "ruby-style.md")
+    GalaxyLedger::Database.delete_entries_by_source_file(test_session_id, "/home/user/agent-guidelines/ruby-style.md")
 
-    # Fresh guideline and learning should survive
-    GalaxyLedger::Database.has_extracted_source_file?(test_session_id, "rspec-style.md").should be_true
+    # Fresh extraction_marker should survive
+    markers = GalaxyLedger::Database.query_by_type(test_session_id, "extraction_marker")
+    markers.size.should eq(1)
+
+    # Learning should survive
     entries = GalaxyLedger::Database.query_by_session(test_session_id)
-    entries.size.should eq(2)
-    entry_types = entries.map(&.entry_type)
-    entry_types.should contain("guideline")
-    entry_types.should contain("learning")
+    entries.size.should eq(1)
+    entries[0].entry_type.should eq("learning")
   end
 
   it "handles no stale entries gracefully" do
-    # Insert a fresh (non-stale) entry
+    # Insert a fresh (non-stale) extraction_marker entry
     entry = GalaxyLedger::Entry.new(
-      entry_type: "guideline",
+      entry_type: "extraction_marker",
       content: "/home/user/agent-guidelines/ruby-style.md",
-      source_file: "ruby-style.md",
+      source_file: "/home/user/agent-guidelines/ruby-style.md",
+      metadata: JSON.parse({"extraction_type" => "guideline"}.to_json),
     )
     GalaxyLedger::Database.insert(test_session_id, entry)
 
@@ -360,7 +365,7 @@ describe "OnStop stale re-extraction" do
     result[:status].should eq(0)
 
     # Entry should still exist
-    GalaxyLedger::Database.has_extracted_source_file?(test_session_id, "ruby-style.md").should be_true
+    GalaxyLedger::Database.has_extracted_source_file?(test_session_id, "/home/user/agent-guidelines/ruby-style.md").should be_true
 
     # Clean up
     File.delete(transcript_file.path)

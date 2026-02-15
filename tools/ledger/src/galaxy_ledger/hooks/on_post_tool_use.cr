@@ -93,27 +93,26 @@ module GalaxyLedger
         special_type = detect_special_file_type(file_path)
 
         if special_type && tool_response && !tool_response.empty?
-          source_file_basename = File.basename(file_path)
-
-          # Skip extraction if we already have entries for this source file in this session.
+          # Skip extraction if we already have a marker for this source file in this session.
           # The LLM produces unique output each time, so the content-hash unique index
           # can't catch these — we need to check by source_file instead.
-          already_extracted = Database.has_extracted_source_file?(session_identifier, source_file_basename)
+          already_extracted = Database.has_extracted_source_file?(session_identifier, file_path)
 
           unless already_extracted
             # For guidelines and implementation plans, spawn extraction
             spawn_extraction_async(session_identifier, file_path, tool_response, special_type)
           end
 
-          # Always record the file path as a marker that we read this file.
-          # Set source_file so the pre-flight check catches subsequent reads
-          # immediately (before the async extraction subprocess finishes).
+          # Always record a marker entry that we read this file.
+          # Uses a dedicated extraction_marker type so markers don't pollute
+          # guideline/implementation_plan queries or FTS search results.
+          # Stores the original extraction type in metadata for re-extraction.
           entry = Entry.new(
-            entry_type: special_type,
+            entry_type: "extraction_marker",
             content: file_path,
             importance: "medium",
-            metadata: JSON.parse({"tool" => "Read", "extraction_spawned" => !already_extracted}.to_json),
-            source_file: source_file_basename,
+            metadata: JSON.parse({"tool" => "Read", "extraction_type" => special_type, "extraction_spawned" => !already_extracted}.to_json),
+            source_file: file_path,
           )
           Database.insert(session_identifier, entry)
         else
@@ -185,8 +184,7 @@ module GalaxyLedger
         special_type = detect_special_file_type(file_path)
         return unless special_type
 
-        source_file = File.basename(file_path)
-        Database.mark_entries_stale(session_identifier, source_file)
+        Database.mark_entries_stale(session_identifier, file_path)
       end
 
       private def process_search

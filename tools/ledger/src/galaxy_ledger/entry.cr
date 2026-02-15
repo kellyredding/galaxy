@@ -12,6 +12,7 @@ module GalaxyLedger
     "guideline",
     "implementation_plan",
     "reference",
+    "extraction_marker",
   ]
 
   # Importance levels for entries
@@ -54,7 +55,7 @@ module GalaxyLedger
     @[JSON::Field(key: "applies_when")]
     property applies_when : String?
 
-    # Source file basename (e.g., "ruby-style.md")
+    # Source file path (e.g., "/home/user/agent-guidelines/ruby-style.md")
     @[JSON::Field(key: "source_file")]
     property source_file : String?
 
