@@ -1461,6 +1461,8 @@ describe GalaxyLedger::Database do
       s.tokens_used.should eq(50000_i64)
       s.tokens_max.should eq(200000_i64)
       s.cost_usd.should eq(0.15)
+      s.cumulative_tokens_used.should eq(50000_i64)
+      s.cumulative_cost_usd.should eq(0.15)
       s.lines_added.should eq(100_i64)
       s.lines_removed.should eq(25_i64)
     end

@@ -109,7 +109,7 @@ module GalaxyLedger
             tokens_max INTEGER DEFAULT 0,
             cost_usd REAL DEFAULT 0.0,
             cumulative_tokens_used INTEGER DEFAULT 0,
-            cumulative_cost_usd INTEGER DEFAULT 0,
+            cumulative_cost_usd REAL DEFAULT 0.0,
             lines_added INTEGER DEFAULT 0,
             lines_removed INTEGER DEFAULT 0,
             context TEXT NOT NULL DEFAULT '{}',
@@ -282,6 +282,8 @@ module GalaxyLedger
                 tokens_used = COALESCE(?, tokens_used),
                 tokens_max = COALESCE(?, tokens_max),
                 cost_usd = COALESCE(?, cost_usd),
+                cumulative_tokens_used = COALESCE(?, cumulative_tokens_used),
+                cumulative_cost_usd = COALESCE(?, cumulative_cost_usd),
                 lines_added = COALESCE(?, lines_added),
                 lines_removed = COALESCE(?, lines_removed)
               WHERE session_identifier = ?
@@ -295,6 +297,8 @@ module GalaxyLedger
             status.percentage,
             status.tokens_used,
             status.tokens_max,
+            status.cost_usd,
+            status.tokens_used,
             status.cost_usd,
             status.lines_added,
             status.lines_removed,
@@ -1261,7 +1265,7 @@ module GalaxyLedger
       getter tokens_max : Int64
       getter cost_usd : Float64
       getter cumulative_tokens_used : Int64
-      getter cumulative_cost_usd : Int64
+      getter cumulative_cost_usd : Float64
       getter lines_added : Int64
       getter lines_removed : Int64
       getter context : String
@@ -1294,7 +1298,7 @@ module GalaxyLedger
           tokens_max: rs.read(Int64),
           cost_usd: rs.read(Float64),
           cumulative_tokens_used: rs.read(Int64),
-          cumulative_cost_usd: rs.read(Int64),
+          cumulative_cost_usd: rs.read(Float64),
           lines_added: rs.read(Int64),
           lines_removed: rs.read(Int64),
           context: rs.read(String),
