@@ -1,13 +1,16 @@
 require "json"
 
 module GalaxyLedger
-  # Reads context status from session-specific bridge files (written by statusline)
+  # Parses context status JSON received via stdin from the statusline tool.
+  # Contains session metrics (context percentage, tokens, cost, model, etc.)
+  # used by the update-session-metrics CLI command.
   class ContextStatus
     include JSON::Serializable
 
     property session_id : String?
     property timestamp : Int64?
     property cwd : String?
+    property git_branch : String?
     property workspace : Workspace?
     property model : Model?
     property claude_version : String?
@@ -77,23 +80,8 @@ module GalaxyLedger
       model.try(&.display_name)
     end
 
-    # Read context status for a specific session
-    def self.read(session_id : String) : ContextStatus?
-      return nil if session_id.empty?
-
-      begin
-        status_file = GalaxyLedger.context_status_path(session_id)
-        return nil unless File.exists?(status_file)
-
-        ContextStatus.from_json(File.read(status_file))
-      rescue
-        nil
-      end
-    end
-
-    def self.exists?(session_id : String) : Bool
-      return false if session_id.empty?
-      File.exists?(GalaxyLedger.context_status_path(session_id))
+    def project_dir : String?
+      workspace.try(&.project_dir)
     end
   end
 end

@@ -92,15 +92,12 @@ module GalaxyLedger
         session_identifier = @session_identifier
         return nil unless session_identifier
 
-        # Read context status (from statusline bridge)
-        status = ContextStatus.read(session_identifier)
-        return nil unless status
+        # Read context percentage from DB (written by statusline → update-session-metrics)
+        session_record = Database.get_session(session_identifier)
+        return nil unless session_record
 
-        # Persist metrics to session record in DB
-        Database.update_session_metrics(session_identifier, status)
-
-        percentage = status.percentage
-        return nil unless percentage
+        percentage = session_record.context_percentage
+        return nil if percentage <= 0.0
 
         # Load config for thresholds
         config = Config.load

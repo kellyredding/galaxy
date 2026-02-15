@@ -85,19 +85,12 @@ module GalaxyLedger
       # Get last modified time from directory
       last_modified = File.info(session_path).modification_time
 
-      # Check for specific ledger files
-      has_context_status = File.exists?(session_path / CONTEXT_STATUS_FILENAME)
-
-      # Read context percentage if available
+      # Read context percentage from DB (written by statusline → update-session-metrics)
       context_percentage : Float64? = nil
-      if has_context_status
-        begin
-          json = File.read(session_path / CONTEXT_STATUS_FILENAME)
-          parsed = JSON.parse(json)
-          context_percentage = parsed["percentage"]?.try(&.as_f?)
-        rescue
-          # Ignore parse errors
-        end
+      session_record = Database.get_session(session_identifier)
+      if session_record
+        pct = session_record.context_percentage
+        context_percentage = pct if pct > 0.0
       end
 
       SessionInfo.new(
@@ -106,7 +99,6 @@ module GalaxyLedger
         files: files,
         total_size: total_size,
         last_modified: last_modified,
-        has_context_status: has_context_status,
         context_percentage: context_percentage
       )
     end
@@ -118,7 +110,6 @@ module GalaxyLedger
       getter files : Array(String)
       getter total_size : Int64
       getter last_modified : Time
-      getter has_context_status : Bool
       getter context_percentage : Float64?
 
       def initialize(
@@ -127,7 +118,6 @@ module GalaxyLedger
         @files,
         @total_size,
         @last_modified,
-        @has_context_status,
         @context_percentage,
       )
       end

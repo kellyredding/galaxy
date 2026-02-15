@@ -167,45 +167,15 @@ describe "CLI Integration" do
       result[:status].should_not eq(0)
     end
 
-    it "writes context-status.json to session-specific directory" do
-      # The fixture has session_id "abc123"
-      session_id = "abc123"
-
-      # Remove any existing session directory
-      session_dir = GalaxyStatusline::ContextStatus.session_dir(session_id)
-      FileUtils.rm_rf(session_dir.to_s) if Dir.exists?(session_dir)
-
+    it "does not write context-status.json bridge file (removed in Phase 6.5)" do
       json = read_fixture("claude_input/valid_complete.json")
       result = run_binary(["render"], stdin: json)
       result[:status].should eq(0)
 
-      # Verify session directory was created
-      Dir.exists?(session_dir).should eq(true)
-
-      # Verify bridge file was written in session directory
-      bridge_file = GalaxyStatusline::ContextStatus.path_for_session(session_id)
-      File.exists?(bridge_file).should eq(true)
-
-      # Verify content (new enhanced format)
-      content = JSON.parse(File.read(bridge_file))
-      content["session_id"].should eq("abc123")
-      content["timestamp"].as_i64.should be > 0
-      content["cwd"].should eq("/current/working/directory")
-      content["claude_version"].should eq("1.0.80")
-
-      # Nested model object
-      content["model"]["id"].should eq("claude-sonnet-4-20250514")
-      content["model"]["display_name"].should eq("Sonnet")
-
-      # Nested context object
-      content["context"]["percentage"].should eq(45.2)
-      content["context"]["tokens_used"].should eq(90400)
-      content["context"]["tokens_max"].should eq(200000)
-
-      # Nested cost object
-      content["cost"]["usd"].should eq(0.42)
-      content["cost"]["lines_added"].should eq(45)
-      content["cost"]["lines_removed"].should eq(12)
+      # Bridge file should NOT be created (metrics now sent directly to ledger)
+      session_dir = GalaxyStatusline::GALAXY_DIR / "sessions" / "abc123"
+      bridge_file = session_dir / "context-status.json"
+      File.exists?(bridge_file).should eq(false)
     end
   end
 end

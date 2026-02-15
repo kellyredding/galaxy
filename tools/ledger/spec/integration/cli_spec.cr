@@ -1034,6 +1034,41 @@ describe "CLI Integration" do
       end
     end
 
+    it "updates cwd, project_dir, and git_branch from stdin JSON" do
+      session_id = "metrics-branch-#{Random.rand(100000)}"
+
+      # Create the session record first
+      GalaxyLedger::Database.upsert_session(session_id)
+
+      metrics_json = {
+        "session_id" => session_id,
+        "cwd"        => "/home/user/project/subdir",
+        "git_branch" => "kr/feature-01",
+        "workspace"  => {
+          "project_dir" => "/home/user/project",
+        },
+        "context" => {
+          "percentage" => 30.0,
+        },
+      }.to_json
+
+      result = run_binary(
+        ["update-session-metrics", "--session", session_id],
+        stdin: metrics_json,
+      )
+      result[:status].should eq(0)
+
+      # Verify cwd, project_dir, and git_branch were persisted
+      session = GalaxyLedger::Database.get_session(session_id)
+      session.should_not be_nil
+      if s = session
+        s.cwd.should eq("/home/user/project/subdir")
+        s.project_dir.should eq("/home/user/project")
+        s.git_branch.should eq("kr/feature-01")
+        s.context_percentage.should eq(30.0)
+      end
+    end
+
     it "exits non-zero when --session is missing" do
       metrics_json = {"context" => {"percentage" => 10.0}}.to_json
       result = run_binary(["update-session-metrics"], stdin: metrics_json)

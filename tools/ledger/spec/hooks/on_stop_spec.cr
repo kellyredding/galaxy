@@ -165,10 +165,9 @@ describe "OnStop context threshold warnings" do
   end
 
   it "outputs warning when context exceeds warning threshold" do
-    # Create context status file at 75%
-    session_dir = GalaxyLedger.session_dir(test_session_id)
-    status_file = GalaxyLedger.context_status_path(test_session_id)
-    File.write(status_file, %|{"context": {"percentage": 75.0}}|)
+    # Write context percentage to DB (simulates statusline → update-session-metrics)
+    status = GalaxyLedger::ContextStatus.from_json(%|{"context": {"percentage": 75.0}}|)
+    GalaxyLedger::Database.update_session_metrics(test_session_id, status)
 
     # Create minimal transcript
     transcript_file = File.tempfile("transcript", ".jsonl")
@@ -191,10 +190,9 @@ describe "OnStop context threshold warnings" do
   end
 
   it "outputs critical warning when context exceeds critical threshold" do
-    # Create context status file at 90%
-    session_dir = GalaxyLedger.session_dir(test_session_id)
-    status_file = GalaxyLedger.context_status_path(test_session_id)
-    File.write(status_file, %|{"context": {"percentage": 90.0}}|)
+    # Write context percentage to DB (simulates statusline → update-session-metrics)
+    status = GalaxyLedger::ContextStatus.from_json(%|{"context": {"percentage": 90.0}}|)
+    GalaxyLedger::Database.update_session_metrics(test_session_id, status)
 
     # Create minimal transcript
     transcript_file = File.tempfile("transcript", ".jsonl")
@@ -217,10 +215,31 @@ describe "OnStop context threshold warnings" do
   end
 
   it "outputs no warning when context is below threshold" do
-    # Create context status file at 50%
-    session_dir = GalaxyLedger.session_dir(test_session_id)
-    status_file = GalaxyLedger.context_status_path(test_session_id)
-    File.write(status_file, %|{"context": {"percentage": 50.0}}|)
+    # Write context percentage to DB (simulates statusline → update-session-metrics)
+    status = GalaxyLedger::ContextStatus.from_json(%|{"context": {"percentage": 50.0}}|)
+    GalaxyLedger::Database.update_session_metrics(test_session_id, status)
+
+    # Create minimal transcript
+    transcript_file = File.tempfile("transcript", ".jsonl")
+    transcript_file.print(%|{"type": "user", "message": {"role": "user", "content": "Test"}}\n|)
+    transcript_file.close
+
+    hook_input = {
+      "session_id"       => test_session_id,
+      "transcript_path"  => transcript_file.path,
+      "stop_hook_active" => false,
+    }.to_json
+
+    result = run_binary(["on-stop"], stdin: hook_input)
+    result[:output].should_not contain("⚠️")
+    result[:output].should_not contain("🚨")
+
+    # Clean up
+    File.delete(transcript_file.path)
+  end
+
+  it "outputs no warning when no metrics have been written" do
+    # Session exists but no metrics written (context_percentage defaults to 0.0)
 
     # Create minimal transcript
     transcript_file = File.tempfile("transcript", ".jsonl")

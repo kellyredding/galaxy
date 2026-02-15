@@ -1,19 +1,13 @@
 require "../spec_helper"
 
 describe GalaxyLedger::ContextStatus do
-  describe ".read" do
-    it "reads full context status from session-specific file" do
-      session_id = "test-ledger-read-#{Random.rand(100000)}"
-
-      # Create session directory and write a test file
-      session_dir = GalaxyLedger.session_dir(session_id)
-      Dir.mkdir_p(session_dir)
-
-      status_file = GalaxyLedger.context_status_path(session_id)
-      File.write(status_file, %|{
-        "session_id": "#{session_id}",
+  describe "JSON parsing" do
+    it "parses full context status JSON" do
+      json = %|{
+        "session_id": "test-session",
         "timestamp": 1234567890,
         "cwd": "/test/working/dir",
+        "git_branch": "main",
         "workspace": {
           "current_dir": "/test/current",
           "project_dir": "/test/project"
@@ -33,167 +27,88 @@ describe GalaxyLedger::ContextStatus do
           "lines_added": 45,
           "lines_removed": 12
         }
-      }|)
+      }|
 
-      # Read it back
-      status = GalaxyLedger::ContextStatus.read(session_id)
-      status.should_not be_nil
+      status = GalaxyLedger::ContextStatus.from_json(json)
 
-      s = status.not_nil!
-      s.session_id.should eq(session_id)
-      s.timestamp.should eq(1234567890)
-      s.cwd.should eq("/test/working/dir")
-      s.claude_version.should eq("1.0.80")
+      status.session_id.should eq("test-session")
+      status.timestamp.should eq(1234567890)
+      status.cwd.should eq("/test/working/dir")
+      status.git_branch.should eq("main")
+      status.claude_version.should eq("1.0.80")
 
       # Workspace
-      s.workspace.should_not be_nil
-      s.workspace.not_nil!.current_dir.should eq("/test/current")
-      s.workspace.not_nil!.project_dir.should eq("/test/project")
+      status.workspace.should_not be_nil
+      status.workspace.not_nil!.current_dir.should eq("/test/current")
+      status.workspace.not_nil!.project_dir.should eq("/test/project")
+      status.project_dir.should eq("/test/project")
 
       # Model
-      s.model_id.should eq("claude-sonnet-4-20250514")
-      s.model_display_name.should eq("Sonnet")
-      s.model.should_not be_nil
-      s.model.not_nil!.id.should eq("claude-sonnet-4-20250514")
-      s.model.not_nil!.display_name.should eq("Sonnet")
+      status.model_id.should eq("claude-sonnet-4-20250514")
+      status.model_display_name.should eq("Sonnet")
 
       # Context
-      s.percentage.should eq(72.5)
-      s.tokens_used.should eq(145000)
-      s.tokens_max.should eq(200000)
+      status.percentage.should eq(72.5)
+      status.tokens_used.should eq(145000)
+      status.tokens_max.should eq(200000)
 
       # Cost
-      s.cost_usd.should eq(0.42)
-      s.lines_added.should eq(45)
-      s.lines_removed.should eq(12)
-
-      # Clean up
-      FileUtils.rm_rf(session_dir.to_s)
+      status.cost_usd.should eq(0.42)
+      status.lines_added.should eq(45)
+      status.lines_removed.should eq(12)
     end
 
-    it "returns nil when session directory doesn't exist" do
-      session_id = "nonexistent-ledger-session-#{Random.rand(100000)}"
-
-      # Ensure it doesn't exist
-      session_dir = GalaxyLedger.session_dir(session_id)
-      FileUtils.rm_rf(session_dir.to_s) if Dir.exists?(session_dir)
-
-      # Read should return nil
-      status = GalaxyLedger::ContextStatus.read(session_id)
-      status.should be_nil
-    end
-
-    it "returns nil when file doesn't exist in session directory" do
-      session_id = "empty-ledger-session-#{Random.rand(100000)}"
-
-      # Create empty session directory
-      session_dir = GalaxyLedger.session_dir(session_id)
-      Dir.mkdir_p(session_dir)
-
-      # Read should return nil (no file)
-      status = GalaxyLedger::ContextStatus.read(session_id)
-      status.should be_nil
-
-      # Clean up
-      FileUtils.rm_rf(session_dir.to_s)
-    end
-
-    it "returns nil for empty session_id" do
-      status = GalaxyLedger::ContextStatus.read("")
-      status.should be_nil
-    end
-
-    it "returns nil for malformed JSON" do
-      session_id = "malformed-ledger-session-#{Random.rand(100000)}"
-
-      # Create session directory and write malformed file
-      session_dir = GalaxyLedger.session_dir(session_id)
-      Dir.mkdir_p(session_dir)
-
-      status_file = GalaxyLedger.context_status_path(session_id)
-      File.write(status_file, "not valid json {{{")
-
-      # Read should return nil (graceful degradation)
-      status = GalaxyLedger::ContextStatus.read(session_id)
-      status.should be_nil
-
-      # Clean up
-      FileUtils.rm_rf(session_dir.to_s)
-    end
-
-    it "handles partial format gracefully" do
-      session_id = "partial-ledger-session-#{Random.rand(100000)}"
-
-      # Create session directory and write partial format
-      session_dir = GalaxyLedger.session_dir(session_id)
-      Dir.mkdir_p(session_dir)
-
-      status_file = GalaxyLedger.context_status_path(session_id)
-      File.write(status_file, %|{
-        "session_id": "#{session_id}",
+    it "parses minimal JSON with only context" do
+      json = %|{
+        "session_id": "minimal",
         "timestamp": 1234567890,
         "context": {
           "percentage": 50.0
         }
-      }|)
+      }|
 
-      status = GalaxyLedger::ContextStatus.read(session_id)
-      status.should_not be_nil
-
-      s = status.not_nil!
-      s.session_id.should eq(session_id)
-      s.percentage.should eq(50.0)
-      s.tokens_used.should be_nil
-      s.tokens_max.should be_nil
-      s.model_id.should be_nil
-      s.workspace.should be_nil
-      s.cost.should be_nil
-
-      # Clean up
-      FileUtils.rm_rf(session_dir.to_s)
-    end
-  end
-
-  describe ".exists?" do
-    it "returns true when file exists" do
-      session_id = "exists-test-#{Random.rand(100000)}"
-
-      # Create session directory and write a test file
-      session_dir = GalaxyLedger.session_dir(session_id)
-      Dir.mkdir_p(session_dir)
-
-      status_file = GalaxyLedger.context_status_path(session_id)
-      File.write(status_file, "{}")
-
-      GalaxyLedger::ContextStatus.exists?(session_id).should eq(true)
-
-      # Clean up
-      FileUtils.rm_rf(session_dir.to_s)
+      status = GalaxyLedger::ContextStatus.from_json(json)
+      status.session_id.should eq("minimal")
+      status.percentage.should eq(50.0)
+      status.tokens_used.should be_nil
+      status.tokens_max.should be_nil
+      status.model_id.should be_nil
+      status.workspace.should be_nil
+      status.cost.should be_nil
+      status.git_branch.should be_nil
+      status.project_dir.should be_nil
     end
 
-    it "returns false when session directory doesn't exist" do
-      session_id = "not-exists-test-#{Random.rand(100000)}"
-      FileUtils.rm_rf(GalaxyLedger.session_dir(session_id).to_s)
-
-      GalaxyLedger::ContextStatus.exists?(session_id).should eq(false)
+    it "handles nil git_branch" do
+      json = %|{"session_id": "no-branch"}|
+      status = GalaxyLedger::ContextStatus.from_json(json)
+      status.git_branch.should be_nil
     end
 
-    it "returns false for empty session_id" do
-      GalaxyLedger::ContextStatus.exists?("").should eq(false)
+    it "handles git_branch with slashes" do
+      json = %|{"session_id": "branch-test", "git_branch": "kr/galaxy-ledger01-foundation"}|
+      status = GalaxyLedger::ContextStatus.from_json(json)
+      status.git_branch.should eq("kr/galaxy-ledger01-foundation")
+    end
+
+    it "exposes project_dir convenience accessor" do
+      json = %|{
+        "session_id": "project-dir-test",
+        "workspace": {"project_dir": "/path/to/project"}
+      }|
+      status = GalaxyLedger::ContextStatus.from_json(json)
+      status.project_dir.should eq("/path/to/project")
+    end
+
+    it "returns nil project_dir when workspace is nil" do
+      json = %|{"session_id": "no-workspace"}|
+      status = GalaxyLedger::ContextStatus.from_json(json)
+      status.project_dir.should be_nil
     end
   end
 end
 
 describe "GalaxyLedger session helpers" do
-  describe ".context_status_path" do
-    it "returns correct path for session" do
-      path = GalaxyLedger.context_status_path("my-session")
-      path.to_s.should contain("sessions")
-      path.to_s.should contain("my-session")
-      path.to_s.should end_with("context-status.json")
-    end
-  end
-
   describe ".session_dir" do
     it "returns correct directory for session" do
       dir = GalaxyLedger.session_dir("my-session")

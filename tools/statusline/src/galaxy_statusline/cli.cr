@@ -116,14 +116,92 @@ module GalaxyStatusline
         renderer = Renderer.new(claude_input, config)
         puts renderer.render
 
-        # Write context status bridge file for ledger integration
-        ContextStatus.write(claude_input)
+        # Fire-and-forget: update ledger session metrics if ledger binary exists
+        send_metrics_to_ledger(claude_input, renderer.git_branch)
       rescue ex : JSON::ParseException
         STDERR.puts "Error: Invalid JSON input - #{ex.message}"
         exit(1)
       rescue ex
         STDERR.puts "Error: #{ex.message}"
         exit(1)
+      end
+    end
+
+    # Send session metrics to galaxy-ledger via async fire-and-forget subprocess.
+    # If ledger binary is not installed or spawn fails, silently ignores.
+    # Statusline must never block on ledger.
+    def self.send_metrics_to_ledger(input : ClaudeInput, git_branch : String?)
+      session_id = input.session_id
+      return unless session_id
+
+      ledger_binary = GALAXY_DIR / "bin" / "galaxy-ledger"
+      return unless File.exists?(ledger_binary)
+
+      # Build ContextStatus JSON (same data that was in the bridge file, plus git_branch)
+      json = build_metrics_json(input, git_branch)
+
+      begin
+        Process.new(
+          ledger_binary.to_s,
+          args: ["update-session-metrics", "--session", session_id],
+          input: IO::Memory.new(json),
+          output: Process::Redirect::Close,
+          error: Process::Redirect::Close,
+        )
+      rescue
+        # Silently fail - statusline works perfectly without ledger
+      end
+    end
+
+    # Build the ContextStatus JSON payload for the ledger.
+    # Includes all metrics plus git_branch (computed by the renderer's Git helper).
+    def self.build_metrics_json(input : ClaudeInput, git_branch : String?) : String
+      JSON.build do |json|
+        json.object do
+          json.field "session_id", input.session_id
+          json.field "timestamp", Time.utc.to_unix
+          json.field "cwd", input.cwd
+          json.field "claude_version", input.version
+          json.field "git_branch", git_branch
+
+          if ws = input.workspace
+            json.field "workspace" do
+              json.object do
+                json.field "current_dir", ws.current_dir
+                json.field "project_dir", ws.project_dir
+              end
+            end
+          end
+
+          if m = input.model
+            json.field "model" do
+              json.object do
+                json.field "id", m.id
+                json.field "display_name", m.display_name
+              end
+            end
+          end
+
+          if cw = input.context_window
+            json.field "context" do
+              json.object do
+                json.field "percentage", cw.used_percentage
+                json.field "tokens_used", cw.total_input_tokens
+                json.field "tokens_max", cw.context_window_size
+              end
+            end
+          end
+
+          if c = input.cost
+            json.field "cost" do
+              json.object do
+                json.field "usd", c.total_cost_usd
+                json.field "lines_added", c.total_lines_added
+                json.field "lines_removed", c.total_lines_removed
+              end
+            end
+          end
+        end
       end
     end
 

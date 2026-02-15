@@ -19,12 +19,6 @@ module GalaxyStatusline
     )
   )
   CONFIG_FILE = CONFIG_DIR / "config.json"
-
-  # Sessions directory for per-session state (shared between tools)
-  SESSIONS_DIR = GALAXY_DIR / "sessions"
-
-  # Context status filename (written to each session's folder)
-  CONTEXT_STATUS_FILENAME = "context-status.json"
 end
 
 # Only run CLI when executed directly, not when required by specs

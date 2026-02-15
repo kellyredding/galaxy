@@ -262,7 +262,7 @@ module GalaxyLedger
       end
     end
 
-    # Update session metrics from a ContextStatus bridge file
+    # Update session metrics from a ContextStatus payload (received via stdin from statusline)
     def self.update_session_metrics(session_identifier : String, status : ContextStatus) : Bool
       return false if session_identifier.empty?
 
@@ -272,6 +272,9 @@ module GalaxyLedger
             <<-SQL,
               UPDATE ledger_sessions SET
                 updated_at = datetime('now'),
+                cwd = COALESCE(?, cwd),
+                project_dir = COALESCE(?, project_dir),
+                git_branch = COALESCE(?, git_branch),
                 model_id = COALESCE(?, model_id),
                 model_display_name = COALESCE(?, model_display_name),
                 claude_version = COALESCE(?, claude_version),
@@ -283,6 +286,9 @@ module GalaxyLedger
                 lines_removed = COALESCE(?, lines_removed)
               WHERE session_identifier = ?
             SQL
+            status.cwd,
+            status.project_dir,
+            status.git_branch,
             status.model_id,
             status.model_display_name,
             status.claude_version,

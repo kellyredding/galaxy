@@ -31,6 +31,11 @@ module GalaxyStatusline
       @max_status_width = @terminal_width // 2 # Half of terminal, rounded down
     end
 
+    # Expose git branch for external consumers (e.g., ledger metrics)
+    def git_branch : String?
+      @git.branch
+    end
+
     def render : String
       # Priority order for fitting (shrink first → last):
       # 1. Context bar (shrink to min)

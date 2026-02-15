@@ -378,10 +378,9 @@ module GalaxyLedger
         galaxy-ledger session help              Show this help
 
       DESCRIPTION:
-        Sessions are stored in ~/.claude/galaxy/sessions/{session_id}/
-
-        Each session folder contains:
-          - context-status.json        Context percentage (from statusline)
+        Sessions are tracked in the SQLite database with metrics updated
+        by the statusline tool. Session folders in
+        ~/.claude/galaxy/sessions/{session_id}/ store auxiliary state.
 
       REMOVE BEHAVIOR:
         The 'remove' command completely removes a session:
@@ -424,8 +423,7 @@ module GalaxyLedger
       DESCRIPTION:
         Shows detailed information about a session including:
         - Session path and file list
-        - Context status (if available)
-        - Database entry count
+        - Context percentage (from database)
       HELP
     end
 
@@ -507,9 +505,10 @@ module GalaxyLedger
       end
       puts ""
       puts "Status:"
-      puts "  Context status: #{session.has_context_status ? "yes" : "no"}"
-      if session.has_context_status && (pct = session.context_percentage)
-        puts "    Percentage: #{pct.round(1)}%"
+      if pct = session.context_percentage
+        puts "  Context: #{pct.round(1)}%"
+      else
+        puts "  Context: no data"
       end
     end
 
@@ -1762,8 +1761,9 @@ module GalaxyLedger
 
       DESCRIPTION:
         Reads a ContextStatus JSON object from stdin and updates the session
-        metrics in the database. This is called by external tools (e.g.,
-        statusline) to sync context percentage, token usage, and cost data.
+        metrics in the database. Called by the statusline tool on every render
+        as a fire-and-forget subprocess. Updates context percentage, token usage,
+        cost, model info, project directory, and git branch.
 
         Silent on success (exit 0). Non-zero exit on failure.
 
@@ -1772,6 +1772,10 @@ module GalaxyLedger
         {
           "session_id": "abc123",
           "timestamp": 1234567890,
+          "git_branch": "main",
+          "workspace": {
+            "project_dir": "/path/to/project"
+          },
           "context": {
             "percentage": 45.2,
             "tokens_used": 50000,

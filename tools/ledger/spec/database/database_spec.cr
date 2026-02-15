@@ -1465,6 +1465,46 @@ describe GalaxyLedger::Database do
       s.lines_removed.should eq(25_i64)
     end
 
+    it "updates cwd, project_dir, and git_branch from ContextStatus" do
+      GalaxyLedger::Database.upsert_session("sess-metrics-pd")
+
+      status_json = %({"session_id":"sess-metrics-pd","cwd":"/home/user/project/subdir","git_branch":"kr/feature-01","workspace":{"project_dir":"/home/user/project"},"context":{"percentage":30.0}})
+      status = GalaxyLedger::ContextStatus.from_json(status_json)
+
+      result = GalaxyLedger::Database.update_session_metrics("sess-metrics-pd", status)
+      result.should be_true
+
+      session = GalaxyLedger::Database.get_session("sess-metrics-pd")
+      session.should_not be_nil
+      s = session.not_nil!
+      s.cwd.should eq("/home/user/project/subdir")
+      s.project_dir.should eq("/home/user/project")
+      s.git_branch.should eq("kr/feature-01")
+      s.context_percentage.should eq(30.0)
+    end
+
+    it "preserves existing cwd, project_dir, and git_branch when nil in update" do
+      GalaxyLedger::Database.upsert_session("sess-metrics-preserve",
+        cwd: "/existing/dir",
+        project_dir: "/existing/project",
+        git_branch: "main",
+      )
+
+      # Update with nil cwd, project_dir, and git_branch — should preserve existing
+      status_json = %({"context":{"percentage":55.0}})
+      status = GalaxyLedger::ContextStatus.from_json(status_json)
+
+      GalaxyLedger::Database.update_session_metrics("sess-metrics-preserve", status)
+
+      session = GalaxyLedger::Database.get_session("sess-metrics-preserve")
+      session.should_not be_nil
+      s = session.not_nil!
+      s.cwd.should eq("/existing/dir")
+      s.project_dir.should eq("/existing/project")
+      s.git_branch.should eq("main")
+      s.context_percentage.should eq(55.0)
+    end
+
     it "returns false for empty session_identifier" do
       status_json = %({"session_id":"x"})
       status = GalaxyLedger::ContextStatus.from_json(status_json)
