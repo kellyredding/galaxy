@@ -86,6 +86,8 @@ module GalaxyLedger
         handle_extract_assistant_command(rest)
       when "extract-file"
         handle_extract_file_command(rest)
+      when "list-files"
+        handle_list_files_command(rest)
       when "update-session-metrics"
         handle_update_session_metrics_command(rest)
       when "version"
@@ -108,6 +110,7 @@ module GalaxyLedger
       Commands:
         search              Search entries using full-text search
         list                List recent entries
+        list-files          List session file access records
         add                 Add an entry (learning, decision, direction, etc.)
         config              Manage configuration
         session             Manage sessions
@@ -832,6 +835,99 @@ module GalaxyLedger
       HELP
     end
 
+    private def self.handle_list_files_command(args : Array(String))
+      # Check for help flag first
+      if args.first? == "-h" || args.first? == "--help"
+        show_list_files_help
+        return
+      end
+
+      # Parse options
+      session_id : String? = nil
+      limit = 50
+
+      i = 0
+      while i < args.size
+        arg = args[i]
+        if arg == "--session" && i + 1 < args.size
+          session_id = args[i + 1]
+          i += 2
+        elsif arg == "--limit" && i + 1 < args.size
+          limit = args[i + 1].to_i? || 50
+          i += 2
+        else
+          STDERR.puts "Error: Unknown option '#{arg}'"
+          STDERR.puts "Run 'galaxy-ledger list-files --help' for usage"
+          exit(1)
+        end
+      end
+
+      unless session_id
+        STDERR.puts "Error: --session is required"
+        STDERR.puts "Run 'galaxy-ledger list-files --help' for usage"
+        exit(1)
+      end
+
+      files = Database.session_files(session_id)
+
+      if files.empty?
+        puts "No session files found for #{session_id[0, 8]}..."
+        return
+      end
+
+      display = files.size > limit ? files[0, limit] : files
+      puts "Session files for #{session_id[0, 8]}... (showing #{display.size}#{files.size > limit ? " of #{files.size}" : ""}):"
+      puts ""
+
+      display.each do |f|
+        # Build operation flags
+        ops = [] of String
+        ops << "read" if f.is_read
+        ops << "edited" if f.is_edited
+        ops << "written" if f.is_written
+        ops << "searched" if f.is_searched
+        ops_str = ops.join(", ")
+
+        # File path or search directory + pattern
+        path_str = if f.is_searched && !f.search_pattern.empty?
+                     "#{Hooks::Helpers.shorten_home_path(f.file_path)} (pattern: \"#{f.search_pattern}\")"
+                   else
+                     Hooks::Helpers.shorten_home_path(f.file_path)
+                   end
+
+        # Access info
+        access_str = "#{f.access_count} access#{f.access_count == 1 ? "" : "es"}"
+        time_str = f.last_seen_at ? ", last: #{f.last_seen_at}" : ""
+
+        puts "  [#{ops_str}]  #{path_str}"
+        puts "              (#{access_str}#{time_str})"
+      end
+    end
+
+    private def self.show_list_files_help
+      puts <<-HELP
+      galaxy-ledger list-files - List session file access records
+
+      USAGE:
+        galaxy-ledger list-files --session SESSION_ID [options]
+
+      REQUIRED:
+        --session SESSION_ID    Session to list files for
+
+      OPTIONS:
+        --limit N               Maximum files to show (default: 50)
+        -h, --help              Show this help
+
+      OUTPUT:
+        Shows each file with operation flags (read, edited, written, searched),
+        the file path, access count, and last access timestamp.
+
+      EXAMPLES:
+        galaxy-ledger list-files --session abc123
+        galaxy-ledger list-files --session abc123 --limit 10
+      HELP
+    end
+
     private def self.handle_add_command(args : Array(String))
       # Check for help flag first (only if it's a standalone argument, not a value)
       if args.empty? || args.first? == "-h" || args.first? == "--help"
@@ -969,7 +1065,8 @@ module GalaxyLedger
         Called by Claude Code's SessionStart hook when a fresh session starts.
         This hook:
         - Creates the session folder if needed
-        - Injects ledger awareness into the agent context
+        - Upserts session record in database
+        - Injects ledger awareness prompt with lookup directives
 
       INPUT (stdin):
         JSON object with hook data:
@@ -984,9 +1081,10 @@ module GalaxyLedger
       OUTPUT (stdout):
         JSON object with context to inject:
         {
+          "systemMessage": "Ledger active │ New session",
           "hookSpecificOutput": {
             "hookEventName": "SessionStart",
-            "additionalContext": "## Galaxy Ledger Available\\n..."
+            "additionalContext": "## Galaxy Ledger\\n..."
           }
         }
 
@@ -1079,9 +1177,9 @@ module GalaxyLedger
       DESCRIPTION:
         Called by Claude Code's SessionStart hook after /clear or auto-compact.
         This hook:
-        - Prints the last exchange to terminal for user visibility
-        - Queries the ledger for context to restore
-        - Injects restored context into the agent
+        - Queries tiered restoration data from SQLite
+        - Builds systemMessage status line for user display
+        - Returns additionalContext with full handoff markdown for agent restoration
 
       INPUT (stdin):
         JSON object with hook data:
@@ -1096,9 +1194,10 @@ module GalaxyLedger
       OUTPUT (stdout):
         JSON object with restored context:
         {
+          "systemMessage": "Handoff │ 3 guidelines, 1 plan │ 12 session files │ Last: "..."",
           "hookSpecificOutput": {
             "hookEventName": "SessionStart",
-            "additionalContext": "## Restored Context\\n..."
+            "additionalContext": "## Session Context Handoff\\n..."
           }
         }
 

@@ -165,14 +165,15 @@ describe "CLI Integration" do
   end
 
   describe "on-startup subcommand" do
-    it "outputs JSON with additionalContext" do
+    it "outputs JSON with systemMessage and additionalContext" do
       result = run_binary(["on-startup"])
       result[:status].should eq(0)
 
       # Parse the output as JSON
       output = JSON.parse(result[:output])
+      output["systemMessage"].should be_a(JSON::Any)
       output["hookSpecificOutput"]["hookEventName"].should eq("SessionStart")
-      output["hookSpecificOutput"]["additionalContext"].as_s.should contain("Galaxy Ledger Available")
+      output["hookSpecificOutput"]["additionalContext"].as_s.should contain("## Galaxy Ledger")
     end
 
     it "includes ledger awareness information" do
@@ -201,6 +202,7 @@ describe "CLI Integration" do
 
       # Clean up
       FileUtils.rm_rf(session_dir.to_s)
+      GalaxyLedger::Database.delete_session(session_id)
     end
   end
 
@@ -958,12 +960,101 @@ describe "CLI Integration" do
     end
   end
 
+  describe "list-files subcommand" do
+    before_each do
+      db_path = GalaxyLedger::Database.database_path
+      File.delete(db_path) if File.exists?(db_path)
+    end
+
+    it "lists session files with operation flags" do
+      session_id = "list-files-test-#{Random.rand(100000)}"
+      GalaxyLedger::Database.upsert_session(session_id)
+
+      GalaxyLedger::Database.upsert_session_file(session_id, "/home/user/src/app.cr", :edit)
+      GalaxyLedger::Database.upsert_session_file(session_id, "/home/user/src/app.cr", :read)
+      GalaxyLedger::Database.upsert_session_file(session_id, "/home/user/README.md", :read)
+
+      result = run_binary(["list-files", "--session", session_id])
+      result[:status].should eq(0)
+      result[:output].should contain("Session files for #{session_id[0, 8]}")
+      result[:output].should contain("edited")
+      result[:output].should contain("read")
+      result[:output].should contain("app.cr")
+      result[:output].should contain("README.md")
+
+      GalaxyLedger::Database.delete_session(session_id)
+    end
+
+    it "shows search patterns for searched files" do
+      session_id = "list-files-search-#{Random.rand(100000)}"
+      GalaxyLedger::Database.upsert_session(session_id)
+
+      GalaxyLedger::Database.upsert_session_file(
+        session_id, "/home/user/src/", :search,
+        search_pattern: "extraction_marker"
+      )
+
+      result = run_binary(["list-files", "--session", session_id])
+      result[:status].should eq(0)
+      result[:output].should contain("searched")
+      result[:output].should contain("extraction_marker")
+
+      GalaxyLedger::Database.delete_session(session_id)
+    end
+
+    it "shows empty message when no files found" do
+      session_id = "list-files-empty-#{Random.rand(100000)}"
+      GalaxyLedger::Database.upsert_session(session_id)
+
+      result = run_binary(["list-files", "--session", session_id])
+      result[:status].should eq(0)
+      result[:output].should contain("No session files found")
+
+      GalaxyLedger::Database.delete_session(session_id)
+    end
+
+    it "requires --session flag" do
+      result = run_binary(["list-files"])
+      result[:error].should contain("--session is required")
+      result[:status].should_not eq(0)
+    end
+
+    it "respects --limit flag" do
+      session_id = "list-files-limit-#{Random.rand(100000)}"
+      GalaxyLedger::Database.upsert_session(session_id)
+
+      5.times do |i|
+        GalaxyLedger::Database.upsert_session_file(session_id, "/home/user/file#{i}.rb", :read)
+      end
+
+      result = run_binary(["list-files", "--session", session_id, "--limit", "2"])
+      result[:status].should eq(0)
+      result[:output].should contain("showing 2 of 5")
+
+      GalaxyLedger::Database.delete_session(session_id)
+    end
+
+    it "shows help with --help flag" do
+      result = run_binary(["list-files", "--help"])
+      result[:status].should eq(0)
+      result[:output].should contain("USAGE")
+      result[:output].should contain("--session SESSION_ID")
+    end
+
+    it "shows help with -h flag" do
+      result = run_binary(["list-files", "-h"])
+      result[:status].should eq(0)
+      result[:output].should contain("USAGE")
+    end
+  end
+
   describe "top-level help banner" do
     it "lists all user-facing commands" do
       result = run_binary(["--help"])
       result[:status].should eq(0)
       result[:output].should contain("search")
       result[:output].should contain("list")
+      result[:output].should contain("list-files")
       result[:output].should contain("add")
       result[:output].should contain("config")
       result[:output].should contain("session")

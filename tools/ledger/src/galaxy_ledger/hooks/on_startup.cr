@@ -5,7 +5,7 @@ module GalaxyLedger
     # Handles the SessionStart(startup) hook
     # - Ensures session folder exists
     # - Upserts session record in DB
-    # - Injects ledger awareness prompt
+    # - Injects ledger awareness prompt with lookup directives
     class OnStartup
       @session_identifier : String?
 
@@ -25,26 +25,32 @@ module GalaxyLedger
           Database.upsert_session(session_identifier, cwd: Dir.current)
         end
 
-        # Query ledger for stats
-        stats = get_ledger_stats
+        # Query existing session data (may have data if resuming)
+        restoration : Database::RestorationResult? = nil
+        files : Array(Database::SessionFile)? = nil
+        if session_identifier
+          restoration = Database.query_for_restoration(session_identifier)
+          files = Database.session_files(session_identifier)
+        end
+
+        # Build systemMessage
+        system_message = Helpers.build_system_message(
+          prefix: "Ledger active",
+          empty_message: "New session",
+          restoration: restoration,
+          files: files,
+        )
 
         # Build the awareness context
-        context = build_awareness_context(stats)
+        context = build_awareness_context
 
         # Persist injected context to session record
         if session_identifier
           Database.merge_session_context(session_identifier, "injected_context", context)
         end
 
-        # Output JSON with additionalContext
-        output = {
-          "hookSpecificOutput" => {
-            "hookEventName"     => "SessionStart",
-            "additionalContext" => context,
-          },
-        }
-
-        puts output.to_json
+        # Output JSON with systemMessage and additionalContext
+        puts Helpers.output_json(system_message, context)
       end
 
       private def parse_hook_input
@@ -68,38 +74,11 @@ module GalaxyLedger
         Dir.mkdir_p(session_dir) unless Dir.exists?(session_dir)
       end
 
-      private def get_ledger_stats : NamedTuple(sessions: Int32, entries: Int32, last_session: String?)
-        # Count sessions by scanning sessions directory
-        session_count = 0
-        if Dir.exists?(SESSIONS_DIR)
-          Dir.each_child(SESSIONS_DIR) do |child|
-            session_path = SESSIONS_DIR / child
-            session_count += 1 if Dir.exists?(session_path)
-          end
-        end
-
-        # Query SQLite for entry stats
-        entry_count = Database.count
-        last_session : String? = nil
-
-        # Get last session from database stats
-        session_stats = Database.session_stats
-        if session_stats.any?
-          last_session = session_stats.first.last_entry
-        end
-
-        {
-          sessions:     session_count,
-          entries:      entry_count,
-          last_session: last_session,
-        }
-      end
-
-      private def build_awareness_context(stats : NamedTuple(sessions: Int32, entries: Int32, last_session: String?)) : String
+      private def build_awareness_context : String
         session_identifier = @session_identifier
 
         lines = [] of String
-        lines << "## Galaxy Ledger Available"
+        lines << "## Galaxy Ledger"
         lines << ""
 
         if session_identifier
@@ -107,43 +86,31 @@ module GalaxyLedger
           lines << ""
         end
 
-        lines << "You have access to a persistent context ledger that tracks learnings, decisions, and file interactions across sessions."
+        lines << "A persistent context ledger is active for this session. It"
+        lines << "automatically captures the following as you work:"
         lines << ""
-        lines << "The ledger automatically:"
-        lines << "- Extracts key insights from conversations"
-        lines << "- Tracks important decisions with rationale"
-        lines << "- Records file interactions"
-        lines << "- Restores context after /clear or compaction"
+        lines << "- **Guidelines**: Extracted rules when guideline files are read"
+        lines << "- **Implementation plans**: Extracted context when plan files are read"
+        lines << "- **Decisions**: Key choices and their rationale (extracted at session"
+        lines << "  end)"
+        lines << "- **Learnings**: Insights and discoveries (extracted at session end)"
+        lines << "- **Session files**: Every file read, edited, written, or searched"
         lines << ""
-
-        if stats[:sessions] > 0
-          lines << "### Ledger Stats"
-          lines << "- Sessions tracked: #{stats[:sessions]}"
-          if stats[:entries] > 0
-            lines << "- Total entries: #{stats[:entries]}"
-          end
-          if last = stats[:last_session]
-            lines << "- Last session: #{last}"
-          end
-          lines << ""
-        end
+        lines << "This information persists across context resets within this session."
+        lines << "When you need to recall something from earlier in this session \u2014"
+        lines << "before doing broader searches:"
+        lines << ""
 
         if session_identifier
-          lines << "### Querying the Ledger"
-          lines << ""
-          lines << "Search this session's entries:"
-          lines << "```"
-          lines << "galaxy-ledger search --query \"QUERY\" --session #{session_identifier}"
-          lines << "```"
-          lines << ""
-          lines << "List this session's recent entries:"
-          lines << "```"
-          lines << "galaxy-ledger list --session #{session_identifier}"
-          lines << "```"
-          lines << ""
-          lines << "Add optional filters: `--type TYPE`, `--importance LEVEL`, `--category CATEGORY`"
+          lines << "1. **Query the ledger**: `galaxy-ledger search --query \"QUERY\" --session #{session_identifier}`"
+          lines << "2. **Check recent code changes**: `git diff` and `git log --oneline -20`"
+          lines << "3. **Check session files**: `galaxy-ledger list-files --session #{session_identifier}`"
+          lines << "   to see every file read, edited, written, or searched this session"
+          lines << "4. **Fall back to normal exploration** \u2014 Grep, Glob, Read as usual"
         else
-          lines << "Use `galaxy-ledger search --query \"QUERY\"` to search the ledger."
+          lines << "1. **Query the ledger**: `galaxy-ledger search --query \"QUERY\"`"
+          lines << "2. **Check recent code changes**: `git diff` and `git log --oneline -20`"
+          lines << "3. **Fall back to normal exploration** \u2014 Grep, Glob, Read as usual"
         end
 
         lines.join("\n")
