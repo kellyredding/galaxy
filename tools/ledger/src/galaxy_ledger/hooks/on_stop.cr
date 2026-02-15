@@ -2,14 +2,14 @@ require "json"
 
 module GalaxyLedger
   module Hooks
-    # Handles the Stop hook
+    # Handles the Stop hook — RESOLVE MODE
+    # - Resolves session by Claude Code PID
     # - Parses transcript to capture last exchange
     # - Writes last interaction to DB session record
     # - Checks context thresholds and shows warnings
-    # - Persists session metrics to DB
     # - Spawns async extraction for learnings/decisions/summary
     class OnStop
-      @session_identifier : String?
+      @stdin_session_identifier : String?
       @transcript_path : String?
       @stop_hook_active : Bool = false
 
@@ -25,11 +25,17 @@ module GalaxyLedger
           return
         end
 
+        # Resolve session by PID
+        claude_pid = Process.ppid.to_i64
+        session_record = Database.get_session_by_pid(claude_pid)
+        session_identifier = session_record.try(&.session_identifier) || @stdin_session_identifier
+        return unless session_identifier
+
         # Capture last exchange from transcript
-        capture_last_exchange
+        capture_last_exchange(session_identifier)
 
         # Check context thresholds and build warning message if needed
-        warning = check_context_thresholds
+        warning = check_context_thresholds(session_identifier)
 
         # If we have a warning, output it
         if warning
@@ -37,11 +43,11 @@ module GalaxyLedger
         end
 
         # Spawn async extraction process for learnings/decisions/summary
-        spawn_extraction_async
+        spawn_extraction_async(session_identifier)
 
         # Re-extract any guideline/implementation plan files that were
         # edited during this session (stale entries)
-        re_extract_stale_files
+        re_extract_stale_files(session_identifier)
       end
 
       private def parse_hook_input
@@ -57,7 +63,7 @@ module GalaxyLedger
           return if input.empty?
 
           json = JSON.parse(input)
-          @session_identifier = json["session_id"]?.try(&.as_s?)
+          @stdin_session_identifier = json["session_id"]?.try(&.as_s?)
           @transcript_path = json["transcript_path"]?.try(&.as_s?)
           @stop_hook_active = json["stop_hook_active"]?.try(&.as_bool?) || false
         rescue
@@ -65,15 +71,9 @@ module GalaxyLedger
         end
       end
 
-      private def capture_last_exchange
-        session_identifier = @session_identifier
+      private def capture_last_exchange(session_identifier : String)
         transcript_path = @transcript_path
-
-        return unless session_identifier && transcript_path
-
-        # Ensure session folder exists
-        session_dir = GalaxyLedger.session_dir(session_identifier)
-        Dir.mkdir_p(session_dir) unless Dir.exists?(session_dir)
+        return unless transcript_path
 
         # Parse transcript
         entries = Transcript.parse(transcript_path)
@@ -88,10 +88,7 @@ module GalaxyLedger
         Database.update_session_last_interaction(session_identifier, last_exchange.to_pretty_json)
       end
 
-      private def check_context_thresholds : String?
-        session_identifier = @session_identifier
-        return nil unless session_identifier
-
+      private def check_context_thresholds(session_identifier : String) : String?
         # Read context percentage from DB (written by statusline → update-session-metrics)
         session_record = Database.get_session(session_identifier)
         return nil unless session_record
@@ -128,11 +125,9 @@ module GalaxyLedger
         lines.join("\n")
       end
 
-      private def spawn_extraction_async
-        session_identifier = @session_identifier
+      private def spawn_extraction_async(session_identifier : String)
         transcript_path = @transcript_path
-
-        return unless session_identifier && transcript_path
+        return unless transcript_path
 
         # Check if extraction is enabled in config
         config = Config.load
@@ -157,6 +152,8 @@ module GalaxyLedger
         return if user_message.strip.empty? || assistant_content.strip.empty?
 
         # Spawn async extraction process
+        # NOTE: extraction subprocesses use --session (not --pid) because their
+        # PPID is the hook process, not Claude Code.
         begin
           binary = Process.executable_path || "galaxy-ledger"
 
@@ -183,10 +180,9 @@ module GalaxyLedger
       # Re-extract guideline/implementation plan files that were edited
       # during this session. Reads fresh content from disk, prunes stale
       # DB entries, and spawns async extract-file subprocesses.
-      private def re_extract_stale_files
-        session_identifier = @session_identifier
-        return unless session_identifier
-
+      # NOTE: extraction subprocesses use --session (not --pid) because their
+      # PPID is the hook process, not Claude Code.
+      private def re_extract_stale_files(session_identifier : String)
         stale = Database.stale_entries(session_identifier)
         return if stale.empty?
 

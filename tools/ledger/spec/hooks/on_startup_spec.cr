@@ -15,10 +15,6 @@ describe "OnStartup GALAXY_SKIP_HOOKS" do
 
     # Should return empty output (no hookSpecificOutput)
     result[:output].strip.should eq("")
-
-    # Session folder should NOT be created (early return)
-    session_dir = GalaxyLedger.session_dir(test_session_id)
-    Dir.exists?(session_dir).should eq(false)
   ensure
     ENV.delete("GALAXY_SKIP_HOOKS")
   end
@@ -32,28 +28,6 @@ describe GalaxyLedger::Hooks::OnStartup do
       # Basic instantiation test - handler creates successfully
       handler.should be_a(GalaxyLedger::Hooks::OnStartup)
     end
-  end
-end
-
-describe "OnStartup session folder handling" do
-  test_session_id = "test-session-#{Random.rand(10000)}"
-
-  before_each do
-    # Clean up any existing test session folder
-    session_dir = GalaxyLedger.session_dir(test_session_id)
-    FileUtils.rm_rf(session_dir.to_s)
-  end
-
-  after_each do
-    # Clean up test session folder
-    session_dir = GalaxyLedger.session_dir(test_session_id)
-    FileUtils.rm_rf(session_dir.to_s)
-  end
-
-  it "handles missing session gracefully" do
-    # When no session_id provided, handler still runs without error
-    handler = GalaxyLedger::Hooks::OnStartup.new
-    handler.should be_a(GalaxyLedger::Hooks::OnStartup)
   end
 end
 
@@ -71,7 +45,6 @@ describe "OnStartup JSON output" do
     output["hookSpecificOutput"]["additionalContext"].should be_a(JSON::Any)
 
     # Clean up
-    FileUtils.rm_rf(GalaxyLedger.session_dir(test_session_id).to_s)
     GalaxyLedger::Database.delete_session(test_session_id)
   end
 end
@@ -88,7 +61,6 @@ describe "OnStartup systemMessage" do
     msg.should contain("New session")
 
     # Clean up
-    FileUtils.rm_rf(GalaxyLedger.session_dir(test_session_id).to_s)
     GalaxyLedger::Database.delete_session(test_session_id)
   end
 
@@ -116,7 +88,6 @@ describe "OnStartup systemMessage" do
     msg.should contain("2 guidelines")
 
     # Clean up
-    FileUtils.rm_rf(GalaxyLedger.session_dir(test_session_id).to_s)
     GalaxyLedger::Database.delete_session(test_session_id)
   end
 end
@@ -132,7 +103,6 @@ describe "OnStartup additionalContext" do
     ctx.should contain("## Galaxy Ledger")
 
     # Clean up
-    FileUtils.rm_rf(GalaxyLedger.session_dir(test_session_id).to_s)
     GalaxyLedger::Database.delete_session(test_session_id)
   end
 
@@ -146,7 +116,33 @@ describe "OnStartup additionalContext" do
     ctx.should contain(test_session_id)
 
     # Clean up
-    FileUtils.rm_rf(GalaxyLedger.session_dir(test_session_id).to_s)
+    GalaxyLedger::Database.delete_session(test_session_id)
+  end
+
+  it "includes Ledger PID" do
+    test_session_id = "startup-ctx-pid-#{Random.rand(10000)}"
+    hook_input = {"session_id" => test_session_id}.to_json
+
+    result = run_binary(["on-startup"], stdin: hook_input)
+    output = JSON.parse(result[:output])
+    ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+    ctx.should contain("**Ledger PID**:")
+
+    # Clean up
+    GalaxyLedger::Database.delete_session(test_session_id)
+  end
+
+  it "uses --pid in command examples" do
+    test_session_id = "startup-ctx-pidcmd-#{Random.rand(10000)}"
+    hook_input = {"session_id" => test_session_id}.to_json
+
+    result = run_binary(["on-startup"], stdin: hook_input)
+    output = JSON.parse(result[:output])
+    ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+    ctx.should contain("--pid")
+    ctx.should_not contain("--session")
+
+    # Clean up
     GalaxyLedger::Database.delete_session(test_session_id)
   end
 
@@ -164,7 +160,6 @@ describe "OnStartup additionalContext" do
     ctx.should contain("Session files")
 
     # Clean up
-    FileUtils.rm_rf(GalaxyLedger.session_dir(test_session_id).to_s)
     GalaxyLedger::Database.delete_session(test_session_id)
   end
 
@@ -182,7 +177,6 @@ describe "OnStartup additionalContext" do
     ctx.should contain("Fall back to normal exploration")
 
     # Clean up
-    FileUtils.rm_rf(GalaxyLedger.session_dir(test_session_id).to_s)
     GalaxyLedger::Database.delete_session(test_session_id)
   end
 
@@ -198,7 +192,23 @@ describe "OnStartup additionalContext" do
     ctx.should_not contain("Ledger Stats")
 
     # Clean up
-    FileUtils.rm_rf(GalaxyLedger.session_dir(test_session_id).to_s)
+    GalaxyLedger::Database.delete_session(test_session_id)
+  end
+
+  it "stores PID on session record" do
+    test_session_id = "startup-pid-store-#{Random.rand(10000)}"
+    hook_input = {"session_id" => test_session_id}.to_json
+
+    result = run_binary(["on-startup"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    session = GalaxyLedger::Database.get_session(test_session_id)
+    session.should_not be_nil
+    # The binary runs as a subprocess, so its Process.ppid is the spec runner's PID.
+    # We just verify that claude_pid was stored (not nil).
+    session.not_nil!.claude_pid.should_not be_nil
+
+    # Clean up
     GalaxyLedger::Database.delete_session(test_session_id)
   end
 end

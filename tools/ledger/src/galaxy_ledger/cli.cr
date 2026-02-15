@@ -60,8 +60,6 @@ module GalaxyLedger
       case command
       when "config"
         handle_config_command(rest)
-      when "session"
-        handle_session_command(rest)
       when "search"
         handle_search_command(rest)
       when "list"
@@ -113,7 +111,6 @@ module GalaxyLedger
         list-files          List session file access records
         add                 Add an entry (learning, decision, direction, etc.)
         config              Manage configuration
-        session             Manage sessions
         hooks               Install/uninstall Claude Code hooks
         version             Show version
         help                Show this help
@@ -333,213 +330,6 @@ module GalaxyLedger
       puts "  #{CONFIG_FILE}"
     end
 
-    private def self.handle_session_command(args : Array(String))
-      if args.empty?
-        show_session_help
-        return
-      end
-
-      subcommand = args[0]
-      rest = args[1..]? || [] of String
-
-      case subcommand
-      when "list"
-        if rest.includes?("-h") || rest.includes?("--help")
-          show_session_list_help
-        else
-          session_list
-        end
-      when "show"
-        if rest.includes?("-h") || rest.includes?("--help")
-          show_session_show_help
-        else
-          session_show(rest)
-        end
-      when "remove"
-        if rest.includes?("-h") || rest.includes?("--help")
-          show_session_remove_help
-        else
-          session_remove(rest)
-        end
-      when "help", "-h", "--help"
-        show_session_help
-      else
-        STDERR.puts "Error: Unknown session command '#{subcommand}'"
-        STDERR.puts "Run 'galaxy-ledger session --help' for usage"
-        exit(1)
-      end
-    end
-
-    private def self.show_session_help
-      puts <<-HELP
-      galaxy-ledger session - Manage sessions
-
-      USAGE:
-        galaxy-ledger session list              List all sessions
-        galaxy-ledger session show SESSION_ID   Show session details
-        galaxy-ledger session remove SESSION_ID Remove session completely
-        galaxy-ledger session help              Show this help
-
-      DESCRIPTION:
-        Sessions are tracked in the SQLite database with metrics updated
-        by the statusline tool. Session folders in
-        ~/.claude/galaxy/sessions/{session_id}/ store auxiliary state.
-
-      REMOVE BEHAVIOR:
-        The 'remove' command completely removes a session:
-          - Deletes the session folder and all its files
-          - Purges entries from SQLite database
-          - Purges entries from PostgreSQL (if enabled)
-
-      EXAMPLES:
-        galaxy-ledger session list
-        galaxy-ledger session show abc123-def456
-        galaxy-ledger session remove abc123-def456
-      HELP
-    end
-
-    private def self.show_session_list_help
-      puts <<-HELP
-      galaxy-ledger session list - List all sessions
-
-      USAGE:
-        galaxy-ledger session list
-
-      DESCRIPTION:
-        Lists all sessions in #{SESSIONS_DIR}/.
-
-      OUTPUT:
-        For each session shows: session_id | context% | file count | size | age
-      HELP
-    end
-
-    private def self.show_session_show_help
-      puts <<-HELP
-      galaxy-ledger session show - Show session details
-
-      USAGE:
-        galaxy-ledger session show SESSION_ID
-
-      ARGUMENTS:
-        SESSION_ID    The session ID to show details for
-
-      DESCRIPTION:
-        Shows detailed information about a session including:
-        - Session path and file list
-        - Context percentage (from database)
-      HELP
-    end
-
-    private def self.show_session_remove_help
-      puts <<-HELP
-      galaxy-ledger session remove - Remove a session completely
-
-      USAGE:
-        galaxy-ledger session remove SESSION_ID
-
-      ARGUMENTS:
-        SESSION_ID    The session ID to remove
-
-      DESCRIPTION:
-        Completely removes a session:
-        - Deletes the session folder and all its files
-        - Purges entries from SQLite database
-        - Purges entries from PostgreSQL (if enabled)
-
-      WARNING:
-        This action cannot be undone.
-      HELP
-    end
-
-    private def self.session_list
-      sessions = Session.list
-
-      if sessions.empty?
-        puts "No sessions found."
-        puts "  Sessions directory: #{SESSIONS_DIR}"
-        return
-      end
-
-      puts "Sessions (#{sessions.size} total):"
-      puts ""
-
-      sessions.each do |session|
-        # Format: SESSION_ID | 72% | 3 files | 2.5 KB | 5 min ago
-        parts = [] of String
-        parts << session.session_identifier
-
-        if pct = session.context_percentage
-          parts << "#{pct.round.to_i}%"
-        end
-
-        parts << "#{session.files.size} files"
-        parts << format_size(session.total_size)
-        parts << format_time_ago(session.last_modified)
-
-        puts "  #{parts.join(" | ")}"
-      end
-    end
-
-    private def self.session_show(args : Array(String))
-      if args.empty?
-        STDERR.puts "Usage: galaxy-ledger session show SESSION_ID"
-        exit(1)
-      end
-
-      session_id = args[0]
-      session = Session.show(session_id)
-
-      unless session
-        STDERR.puts "Error: Session not found: #{session_id}"
-        STDERR.puts "  Path: #{SESSIONS_DIR / session_id}"
-        exit(1)
-      end
-
-      puts "Session: #{session.session_identifier}"
-      puts "  Path: #{session.path}"
-      puts "  Last modified: #{format_time_ago(session.last_modified)}"
-      puts "  Total size: #{format_size(session.total_size)}"
-      puts ""
-      puts "Files:"
-      session.files.each do |file|
-        file_path = session.path / file
-        size = File.size(file_path)
-        puts "  #{file} (#{format_size(size)})"
-      end
-      puts ""
-      puts "Status:"
-      if pct = session.context_percentage
-        puts "  Context: #{pct.round(1)}%"
-      else
-        puts "  Context: no data"
-      end
-    end
-
-    private def self.session_remove(args : Array(String))
-      if args.empty?
-        STDERR.puts "Usage: galaxy-ledger session remove SESSION_ID"
-        exit(1)
-      end
-
-      session_id = args[0]
-
-      # Check if session exists
-      unless Session.exists?(session_id)
-        STDERR.puts "Error: Session not found: #{session_id}"
-        STDERR.puts "  Path: #{SESSIONS_DIR / session_id}"
-        exit(1)
-      end
-
-      result = Session.remove(session_id)
-
-      puts "Removed session: #{session_id}"
-      puts "  Folder removed: #{result.folder_removed ? "yes" : "no"}"
-      puts "  SQLite purged: #{result.sqlite_purged ? "yes" : "no"}"
-      if Config.load.storage.postgres_enabled
-        puts "  PostgreSQL purged: #{result.postgres_purged ? "yes" : "no (not implemented yet)"}"
-      end
-    end
-
     private def self.build_filter_summary(
       entry_type : String?,
       importance : String?,
@@ -554,36 +344,29 @@ module GalaxyLedger
       filters
     end
 
+    # Resolve a PID to a session identifier via database lookup.
+    # Returns the session_identifier or exits with error if not found.
+    private def self.resolve_pid_to_session(pid_str : String) : String
+      pid = pid_str.to_i64?
+      unless pid
+        STDERR.puts "Error: invalid --pid value '#{pid_str}' (must be an integer)"
+        exit(1)
+      end
+
+      session_record = Database.get_session_by_pid(pid)
+      unless session_record
+        STDERR.puts "Error: no session found for PID #{pid}"
+        exit(1)
+      end
+
+      session_record.session_identifier
+    end
+
     private def self.truncate(text : String, max_length : Int32) : String
       if text.size <= max_length
         text.gsub("\n", "\\n")
       else
         text[0, max_length - 3].gsub("\n", "\\n") + "..."
-      end
-    end
-
-    private def self.format_size(bytes : Int64) : String
-      if bytes < 1024
-        "#{bytes} B"
-      elsif bytes < 1024 * 1024
-        "#{(bytes / 1024.0).round(1)} KB"
-      else
-        "#{(bytes / (1024.0 * 1024.0)).round(1)} MB"
-      end
-    end
-
-    private def self.format_time_ago(time : Time) : String
-      diff = Time.utc - time
-      seconds = diff.total_seconds.to_i
-
-      if seconds < 60
-        "#{seconds}s ago"
-      elsif seconds < 3600
-        "#{seconds // 60}m ago"
-      elsif seconds < 86400
-        "#{seconds // 3600}h ago"
-      else
-        "#{seconds // 86400}d ago"
       end
     end
 
@@ -599,6 +382,7 @@ module GalaxyLedger
       importance : String? = nil
       category : String? = nil
       session_id : String? = nil
+      pid_str : String? = nil
       prefix_match = true
       query : String? = nil
 
@@ -630,6 +414,9 @@ module GalaxyLedger
         elsif arg == "--session" && i + 1 < args.size
           session_id = args[i + 1]
           i += 2
+        elsif arg == "--pid" && i + 1 < args.size
+          pid_str = args[i + 1]
+          i += 2
         elsif arg == "--exact"
           prefix_match = false
           i += 1
@@ -645,6 +432,11 @@ module GalaxyLedger
         STDERR.puts "Error: --query is required"
         STDERR.puts "Run 'galaxy-ledger search --help' for usage"
         exit(1)
+      end
+
+      # Resolve --pid to session_id if provided
+      if ps = pid_str
+        session_id = resolve_pid_to_session(ps)
       end
 
       entries = if sid = session_id
@@ -699,7 +491,8 @@ module GalaxyLedger
                               Searches across content, keywords, category, and source file
 
       OPTIONS:
-        --session ID          Scope search to a specific session
+        --pid PID             Scope search to session by Claude Code PID
+        --session ID          Scope search to a specific session (backward compat)
         --type TYPE           Filter by entry type
         --importance LEVEL    Filter by importance (high, medium, low)
         --category CATEGORY   Filter by category (e.g., ruby-style, rspec, git-workflow)
@@ -733,6 +526,7 @@ module GalaxyLedger
       entry_type : String? = nil
       importance : String? = nil
       session_id : String? = nil
+      pid_str : String? = nil
 
       i = 0
       while i < args.size
@@ -756,6 +550,9 @@ module GalaxyLedger
         elsif arg == "--session" && i + 1 < args.size
           session_id = args[i + 1]
           i += 2
+        elsif arg == "--pid" && i + 1 < args.size
+          pid_str = args[i + 1]
+          i += 2
         elsif arg == "--limit" && i + 1 < args.size
           limit = args[i + 1].to_i? || 20
           i += 2
@@ -765,6 +562,11 @@ module GalaxyLedger
         else
           i += 1
         end
+      end
+
+      # Resolve --pid to session_id if provided
+      if ps = pid_str
+        session_id = resolve_pid_to_session(ps)
       end
 
       entries = Database.query_recent_filtered(limit, entry_type, importance, session_identifier: session_id)
@@ -815,7 +617,8 @@ module GalaxyLedger
         galaxy-ledger list [options]
 
       OPTIONS:
-        --session ID            Scope listing to a specific session
+        --pid PID               Scope listing to session by Claude Code PID
+        --session ID            Scope listing to a specific session (backward compat)
         --limit N               Number of entries to show (default: 20)
         --type TYPE             Filter by entry type
         --importance LEVEL      Filter by importance (high, medium, low)
@@ -844,6 +647,7 @@ module GalaxyLedger
 
       # Parse options
       session_id : String? = nil
+      pid_str : String? = nil
       limit = 50
 
       i = 0
@@ -851,6 +655,9 @@ module GalaxyLedger
         arg = args[i]
         if arg == "--session" && i + 1 < args.size
           session_id = args[i + 1]
+          i += 2
+        elsif arg == "--pid" && i + 1 < args.size
+          pid_str = args[i + 1]
           i += 2
         elsif arg == "--limit" && i + 1 < args.size
           limit = args[i + 1].to_i? || 50
@@ -862,8 +669,13 @@ module GalaxyLedger
         end
       end
 
+      # Resolve --pid to session_id if provided
+      if ps = pid_str
+        session_id = resolve_pid_to_session(ps)
+      end
+
       unless session_id
-        STDERR.puts "Error: --session is required"
+        STDERR.puts "Error: --session or --pid is required"
         STDERR.puts "Run 'galaxy-ledger list-files --help' for usage"
         exit(1)
       end
@@ -909,10 +721,12 @@ module GalaxyLedger
       galaxy-ledger list-files - List session file access records
 
       USAGE:
+        galaxy-ledger list-files --pid PID [options]
         galaxy-ledger list-files --session SESSION_ID [options]
 
-      REQUIRED:
-        --session SESSION_ID    Session to list files for
+      REQUIRED (one of):
+        --pid PID               Session by Claude Code process PID
+        --session SESSION_ID    Session by identifier (backward compat)
 
       OPTIONS:
         --limit N               Maximum files to show (default: 50)
@@ -1064,9 +878,8 @@ module GalaxyLedger
       DESCRIPTION:
         Called by Claude Code's SessionStart hook when a fresh session starts.
         This hook:
-        - Creates the session folder if needed
-        - Upserts session record in database
-        - Injects ledger awareness prompt with lookup directives
+        - Registers session record in database with Claude Code PID
+        - Injects ledger awareness prompt with PID-based lookup directives
 
       INPUT (stdin):
         JSON object with hook data:
@@ -1812,19 +1625,28 @@ module GalaxyLedger
 
       # Parse args
       session_id : String? = nil
+      pid_str : String? = nil
       i = 0
       while i < args.size
         arg = args[i]
         if arg == "--session" && i + 1 < args.size
           session_id = args[i + 1]
           i += 2
+        elsif arg == "--pid" && i + 1 < args.size
+          pid_str = args[i + 1]
+          i += 2
         else
           i += 1
         end
       end
 
+      # Resolve --pid to session_id if provided
+      if ps = pid_str
+        session_id = resolve_pid_to_session(ps)
+      end
+
       unless session_id
-        STDERR.puts "Error: --session is required"
+        STDERR.puts "Error: --session or --pid is required"
         exit(1)
       end
 
@@ -1853,10 +1675,12 @@ module GalaxyLedger
       galaxy-ledger update-session-metrics - Update session metrics from stdin
 
       USAGE:
+        galaxy-ledger update-session-metrics --pid PID < metrics.json
         galaxy-ledger update-session-metrics --session SESSION_ID < metrics.json
 
-      REQUIRED:
-        --session SESSION_ID    The session to update metrics for
+      REQUIRED (one of):
+        --pid PID               Session by Claude Code process PID
+        --session SESSION_ID    Session by identifier (backward compat)
 
       DESCRIPTION:
         Reads a ContextStatus JSON object from stdin and updates the session

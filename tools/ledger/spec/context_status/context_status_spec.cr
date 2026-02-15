@@ -107,13 +107,3 @@ describe GalaxyLedger::ContextStatus do
     end
   end
 end
-
-describe "GalaxyLedger session helpers" do
-  describe ".session_dir" do
-    it "returns correct directory for session" do
-      dir = GalaxyLedger.session_dir("my-session")
-      dir.to_s.should contain("sessions")
-      dir.to_s.should end_with("my-session")
-    end
-  end
-end

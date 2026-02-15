@@ -2,12 +2,13 @@ require "json"
 
 module GalaxyLedger
   module Hooks
-    # Handles the PostToolUse hook
+    # Handles the PostToolUse hook — RESOLVE MODE
+    # - Resolves session by Claude Code PID
     # - Tracks file operations (Read, Edit, Write, Glob, Grep) via session_files DB table
     # - Detects guideline and implementation plan reads for extraction
     # - Writes extraction entries directly to SQLite
     class OnPostToolUse
-      @session_identifier : String?
+      @stdin_session_identifier : String?
       @tool_name : String?
       @tool_input : JSON::Any?
       @tool_response : String?
@@ -29,24 +30,25 @@ module GalaxyLedger
         # Parse hook input from stdin
         parse_hook_input
 
-        session_identifier = @session_identifier
         tool_name = @tool_name
-        return unless session_identifier && tool_name
+        return unless tool_name
 
-        # Ensure session folder exists
-        session_dir = GalaxyLedger.session_dir(session_identifier)
-        Dir.mkdir_p(session_dir) unless Dir.exists?(session_dir)
+        # Resolve session by PID
+        claude_pid = Process.ppid.to_i64
+        session_record = Database.get_session_by_pid(claude_pid)
+        session_identifier = session_record.try(&.session_identifier) || @stdin_session_identifier
+        return unless session_identifier
 
         # Process based on tool type
         case tool_name
         when "Read"
-          process_read
+          process_read(session_identifier)
         when "Edit"
-          process_edit
+          process_edit(session_identifier)
         when "Write"
-          process_write
+          process_write(session_identifier)
         when "Grep", "Glob"
-          process_search
+          process_search(session_identifier)
         end
       end
 
@@ -64,7 +66,7 @@ module GalaxyLedger
           return if input.empty?
 
           json = JSON.parse(input)
-          @session_identifier = json["session_id"]?.try(&.as_s?)
+          @stdin_session_identifier = json["session_id"]?.try(&.as_s?)
           @tool_name = json["tool_name"]?.try(&.as_s?)
           @tool_input = json["tool_input"]?
 
@@ -80,11 +82,10 @@ module GalaxyLedger
         end
       end
 
-      private def process_read
-        session_identifier = @session_identifier
+      private def process_read(session_identifier : String)
         tool_input = @tool_input
         tool_response = @tool_response
-        return unless session_identifier && tool_input
+        return unless tool_input
 
         file_path = tool_input["file_path"]?.try(&.as_s?)
         return unless file_path
@@ -103,6 +104,8 @@ module GalaxyLedger
 
           unless already_extracted
             # For guidelines and implementation plans, spawn extraction
+            # NOTE: extraction subprocesses use --session (not --pid) because their
+            # PPID is the hook process, not Claude Code.
             spawn_extraction_async(session_identifier, file_path, tool_response, special_type)
           end
 
@@ -147,10 +150,9 @@ module GalaxyLedger
         end
       end
 
-      private def process_edit
-        session_identifier = @session_identifier
+      private def process_edit(session_identifier : String)
         tool_input = @tool_input
-        return unless session_identifier && tool_input
+        return unless tool_input
 
         file_path = tool_input["file_path"]?.try(&.as_s?)
         return unless file_path
@@ -162,10 +164,9 @@ module GalaxyLedger
         check_stale_extraction(session_identifier, file_path)
       end
 
-      private def process_write
-        session_identifier = @session_identifier
+      private def process_write(session_identifier : String)
         tool_input = @tool_input
-        return unless session_identifier && tool_input
+        return unless tool_input
 
         file_path = tool_input["file_path"]?.try(&.as_s?)
         return unless file_path
@@ -187,11 +188,10 @@ module GalaxyLedger
         Database.mark_entries_stale(session_identifier, file_path)
       end
 
-      private def process_search
-        session_identifier = @session_identifier
+      private def process_search(session_identifier : String)
         tool_name = @tool_name
         tool_input = @tool_input
-        return unless session_identifier && tool_name && tool_input
+        return unless tool_name && tool_input
 
         # Extract search pattern
         pattern = tool_input["pattern"]?.try(&.as_s?)

@@ -2,10 +2,10 @@ require "json"
 
 module GalaxyLedger
   module Hooks
-    # Handles the SessionStart(startup) hook
-    # - Ensures session folder exists
-    # - Upserts session record in DB
+    # Handles the SessionStart(startup) hook — REGISTER MODE
+    # - Upserts session record in DB with Claude Code PID
     # - Injects ledger awareness prompt with lookup directives
+    # This is the ONLY hook that creates session records.
     class OnStartup
       @session_identifier : String?
 
@@ -16,13 +16,11 @@ module GalaxyLedger
         # Parse hook input from stdin to get session_id
         parse_hook_input
 
-        # Ensure session folder exists for current session
-        ensure_session_folder
-
-        # Upsert session record in database (creates if new, touches updated_at if existing)
+        # Register: upsert session record with PID (creates if new, touches updated_at if existing)
         session_identifier = @session_identifier
+        claude_pid = Process.ppid.to_i64
         if session_identifier
-          Database.upsert_session(session_identifier, cwd: Dir.current)
+          Database.upsert_session(session_identifier, claude_pid: claude_pid, cwd: Dir.current)
         end
 
         # Query existing session data (may have data if resuming)
@@ -42,7 +40,7 @@ module GalaxyLedger
         )
 
         # Build the awareness context
-        context = build_awareness_context
+        context = build_awareness_context(claude_pid)
 
         # Persist injected context to session record
         if session_identifier
@@ -66,15 +64,7 @@ module GalaxyLedger
         end
       end
 
-      private def ensure_session_folder
-        session_identifier = @session_identifier
-        return unless session_identifier
-
-        session_dir = GalaxyLedger.session_dir(session_identifier)
-        Dir.mkdir_p(session_dir) unless Dir.exists?(session_dir)
-      end
-
-      private def build_awareness_context : String
+      private def build_awareness_context(claude_pid : Int64) : String
         session_identifier = @session_identifier
 
         lines = [] of String
@@ -83,8 +73,9 @@ module GalaxyLedger
 
         if session_identifier
           lines << "**Session ID**: `#{session_identifier}`"
-          lines << ""
         end
+        lines << "**Ledger PID**: `#{claude_pid}`"
+        lines << ""
 
         lines << "A persistent context ledger is active for this session. It"
         lines << "automatically captures the following as you work:"
@@ -101,17 +92,11 @@ module GalaxyLedger
         lines << "before doing broader searches:"
         lines << ""
 
-        if session_identifier
-          lines << "1. **Query the ledger**: `galaxy-ledger search --query \"QUERY\" --session #{session_identifier}`"
-          lines << "2. **Check recent code changes**: `git diff` and `git log --oneline -20`"
-          lines << "3. **Check session files**: `galaxy-ledger list-files --session #{session_identifier}`"
-          lines << "   to see every file read, edited, written, or searched this session"
-          lines << "4. **Fall back to normal exploration** \u2014 Grep, Glob, Read as usual"
-        else
-          lines << "1. **Query the ledger**: `galaxy-ledger search --query \"QUERY\"`"
-          lines << "2. **Check recent code changes**: `git diff` and `git log --oneline -20`"
-          lines << "3. **Fall back to normal exploration** \u2014 Grep, Glob, Read as usual"
-        end
+        lines << "1. **Query the ledger**: `galaxy-ledger search --query \"QUERY\" --pid #{claude_pid}`"
+        lines << "2. **Check recent code changes**: `git diff` and `git log --oneline -20`"
+        lines << "3. **Check session files**: `galaxy-ledger list-files --pid #{claude_pid}`"
+        lines << "   to see every file read, edited, written, or searched this session"
+        lines << "4. **Fall back to normal exploration** \u2014 Grep, Glob, Read as usual"
 
         lines.join("\n")
       end

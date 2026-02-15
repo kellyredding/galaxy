@@ -5,8 +5,6 @@ describe "OnSessionStart GALAXY_SKIP_HOOKS" do
     ENV["GALAXY_SKIP_HOOKS"] = "1"
 
     test_session_id = "skip-hooks-test-#{Random.rand(10000)}"
-    session_dir = GalaxyLedger.session_dir(test_session_id)
-    Dir.mkdir_p(session_dir)
 
     # Ensure session record exists and write last interaction to DB
     GalaxyLedger::Database.upsert_session(test_session_id)
@@ -29,7 +27,6 @@ describe "OnSessionStart GALAXY_SKIP_HOOKS" do
     result[:output].strip.should eq("")
 
     # Clean up
-    FileUtils.rm_rf(session_dir.to_s)
     GalaxyLedger::Database.delete_session(test_session_id)
   ensure
     ENV.delete("GALAXY_SKIP_HOOKS")
@@ -49,16 +46,11 @@ describe "OnSessionStart JSON output" do
   test_session_id = "session-start-json-#{Random.rand(10000)}"
 
   before_each do
-    session_dir = GalaxyLedger.session_dir(test_session_id)
-    FileUtils.rm_rf(session_dir.to_s)
-    Dir.mkdir_p(session_dir)
     GalaxyLedger::Database.delete_session(test_session_id)
     GalaxyLedger::Database.upsert_session(test_session_id)
   end
 
   after_each do
-    session_dir = GalaxyLedger.session_dir(test_session_id)
-    FileUtils.rm_rf(session_dir.to_s)
     GalaxyLedger::Database.delete_session(test_session_id)
   end
 
@@ -96,30 +88,12 @@ describe "OnSessionStart systemMessage" do
   test_session_id = "session-start-sm-#{Random.rand(10000)}"
 
   before_each do
-    session_dir = GalaxyLedger.session_dir(test_session_id)
-    FileUtils.rm_rf(session_dir.to_s)
-    Dir.mkdir_p(session_dir)
     GalaxyLedger::Database.delete_session(test_session_id)
     GalaxyLedger::Database.upsert_session(test_session_id)
   end
 
   after_each do
-    session_dir = GalaxyLedger.session_dir(test_session_id)
-    FileUtils.rm_rf(session_dir.to_s)
     GalaxyLedger::Database.delete_session(test_session_id)
-  end
-
-  it "shows empty state when no data exists" do
-    hook_input = {
-      "session_id" => test_session_id,
-      "source"     => "clear",
-    }.to_json
-
-    result = run_binary(["on-session-start"], stdin: hook_input)
-    output = JSON.parse(result[:output])
-    msg = output["systemMessage"].as_s
-    msg.should contain("Handoff")
-    msg.should contain("No previous context to hand off.")
   end
 
   it "includes entry counts when data exists" do
@@ -183,30 +157,6 @@ describe "OnSessionStart systemMessage" do
     msg.should contain("Fix the auth bug")
   end
 
-  it "truncates long last exchange snippet" do
-    long_message = "A" * 200
-    exchange = GalaxyLedger::Exchange::LastExchange.new(
-      user_message: long_message,
-      full_content: "Response",
-      assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
-    )
-    GalaxyLedger::Database.update_session_last_interaction(test_session_id, exchange.to_pretty_json)
-
-    hook_input = {
-      "session_id" => test_session_id,
-      "source"     => "clear",
-    }.to_json
-
-    result = run_binary(["on-session-start"], stdin: hook_input)
-    output = JSON.parse(result[:output])
-    msg = output["systemMessage"].as_s
-    msg.should contain("...")
-    # Snippet should not exceed 125 chars + surrounding text
-    last_part = msg.split("Last: \"").last
-    snippet = last_part.rstrip('"')
-    snippet.size.should be <= 125
-  end
-
   it "combines counts and files in status line" do
     # Add guidelines and decisions
     entry = GalaxyLedger::Entry.new(
@@ -244,16 +194,11 @@ describe "OnSessionStart additionalContext" do
   test_session_id = "session-start-ctx-#{Random.rand(10000)}"
 
   before_each do
-    session_dir = GalaxyLedger.session_dir(test_session_id)
-    FileUtils.rm_rf(session_dir.to_s)
-    Dir.mkdir_p(session_dir)
     GalaxyLedger::Database.delete_session(test_session_id)
     GalaxyLedger::Database.upsert_session(test_session_id)
   end
 
   after_each do
-    session_dir = GalaxyLedger.session_dir(test_session_id)
-    FileUtils.rm_rf(session_dir.to_s)
     GalaxyLedger::Database.delete_session(test_session_id)
   end
 
@@ -270,7 +215,7 @@ describe "OnSessionStart additionalContext" do
     ctx.should contain(test_session_id)
   end
 
-  it "shows no-data message when session is empty" do
+  it "includes Ledger PID" do
     hook_input = {
       "session_id" => test_session_id,
       "source"     => "clear",
@@ -279,7 +224,27 @@ describe "OnSessionStart additionalContext" do
     result = run_binary(["on-session-start"], stdin: hook_input)
     output = JSON.parse(result[:output])
     ctx = output["hookSpecificOutput"]["additionalContext"].as_s
-    ctx.should contain("No previous context available.")
+    ctx.should contain("**Ledger PID**:")
+  end
+
+  it "uses --pid in command examples" do
+    exchange = GalaxyLedger::Exchange::LastExchange.new(
+      user_message: "Test",
+      full_content: "Response",
+      assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
+    )
+    GalaxyLedger::Database.update_session_last_interaction(test_session_id, exchange.to_pretty_json)
+
+    hook_input = {
+      "session_id" => test_session_id,
+      "source"     => "clear",
+    }.to_json
+
+    result = run_binary(["on-session-start"], stdin: hook_input)
+    output = JSON.parse(result[:output])
+    ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+    ctx.should contain("--pid")
+    ctx.should_not contain("--session")
   end
 
   it "includes orientation paragraph when data exists" do
@@ -302,7 +267,27 @@ describe "OnSessionStart additionalContext" do
     ctx.should contain("full awareness")
   end
 
-  it "includes recovery directives with session-scoped commands" do
+  it "includes PID tracking note when data exists" do
+    exchange = GalaxyLedger::Exchange::LastExchange.new(
+      user_message: "Test",
+      full_content: "Response",
+      assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
+    )
+    GalaxyLedger::Database.update_session_last_interaction(test_session_id, exchange.to_pretty_json)
+
+    hook_input = {
+      "session_id" => test_session_id,
+      "source"     => "clear",
+    }.to_json
+
+    result = run_binary(["on-session-start"], stdin: hook_input)
+    output = JSON.parse(result[:output])
+    ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+    ctx.should contain("The Claude session ID may change on /clear")
+    ctx.should contain("process ID")
+  end
+
+  it "includes recovery directives with PID-scoped commands" do
     exchange = GalaxyLedger::Exchange::LastExchange.new(
       user_message: "Test",
       full_content: "Response",
@@ -359,79 +344,6 @@ describe "OnSessionStart additionalContext" do
     ctx.should contain("RSpec rule 1")
   end
 
-  it "includes implementation plans grouped by source file" do
-    entry = GalaxyLedger::Entry.new(
-      entry_type: "implementation_plan",
-      content: "Step 1: Build the feature",
-      importance: "medium",
-      source_file: "/home/user/implementation-plans/feature.md"
-    )
-    GalaxyLedger::Database.insert(test_session_id, entry)
-
-    hook_input = {
-      "session_id" => test_session_id,
-      "source"     => "clear",
-    }.to_json
-
-    result = run_binary(["on-session-start"], stdin: hook_input)
-    output = JSON.parse(result[:output])
-    ctx = output["hookSpecificOutput"]["additionalContext"].as_s
-    ctx.should contain("### Implementation Plans")
-    ctx.should contain("feature.md")
-    ctx.should contain("Step 1: Build the feature")
-  end
-
-  it "includes last interaction with summary fields" do
-    exchange = GalaxyLedger::Exchange::LastExchange.new(
-      user_message: "Add feature",
-      full_content: "Full response content here...",
-      assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage,
-      summary: GalaxyLedger::Exchange::ExchangeSummary.new(
-        user_request: "Add feature X",
-        assistant_response: "Implemented the feature with tests",
-        files_modified: ["app/feature.rb", "spec/feature_spec.rb"],
-        key_actions: ["Created feature class", "Added test coverage"]
-      )
-    )
-    GalaxyLedger::Database.update_session_last_interaction(test_session_id, exchange.to_pretty_json)
-
-    hook_input = {
-      "session_id" => test_session_id,
-      "source"     => "clear",
-    }.to_json
-
-    result = run_binary(["on-session-start"], stdin: hook_input)
-    output = JSON.parse(result[:output])
-    ctx = output["hookSpecificOutput"]["additionalContext"].as_s
-    ctx.should contain("### Last Interaction")
-    ctx.should contain("Add feature X")
-    ctx.should contain("Implemented the feature with tests")
-    ctx.should contain("Files modified")
-    ctx.should contain("app/feature.rb")
-    ctx.should contain("Key actions")
-    ctx.should contain("Created feature class")
-  end
-
-  it "falls back to truncated full_content when no summary" do
-    exchange = GalaxyLedger::Exchange::LastExchange.new(
-      user_message: "Fix the bug",
-      full_content: "I found the issue in the config file and fixed it by updating the parsing logic.",
-      assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
-    )
-    GalaxyLedger::Database.update_session_last_interaction(test_session_id, exchange.to_pretty_json)
-
-    hook_input = {
-      "session_id" => test_session_id,
-      "source"     => "clear",
-    }.to_json
-
-    result = run_binary(["on-session-start"], stdin: hook_input)
-    output = JSON.parse(result[:output])
-    ctx = output["hookSpecificOutput"]["additionalContext"].as_s
-    ctx.should contain("**You asked**: Fix the bug")
-    ctx.should contain("**What was accomplished**: I found the issue")
-  end
-
   it "includes key decisions with importance labels" do
     entry_high = GalaxyLedger::Entry.new(
       entry_type: "decision",
@@ -460,26 +372,6 @@ describe "OnSessionStart additionalContext" do
     ctx.should contain("Use JSON output format (medium)")
   end
 
-  it "includes recent learnings" do
-    entry = GalaxyLedger::Entry.new(
-      entry_type: "learning",
-      content: "Crystal requires explicit type annotations for empty arrays",
-      importance: "medium"
-    )
-    GalaxyLedger::Database.insert(test_session_id, entry)
-
-    hook_input = {
-      "session_id" => test_session_id,
-      "source"     => "clear",
-    }.to_json
-
-    result = run_binary(["on-session-start"], stdin: hook_input)
-    output = JSON.parse(result[:output])
-    ctx = output["hookSpecificOutput"]["additionalContext"].as_s
-    ctx.should contain("### Recent Learnings")
-    ctx.should contain("Crystal requires explicit type annotations")
-  end
-
   it "includes session file manifest split by operation" do
     GalaxyLedger::Database.upsert_session_file(test_session_id, "/home/user/src/app.cr", :edit)
     GalaxyLedger::Database.upsert_session_file(test_session_id, "/home/user/src/app.cr", :read)
@@ -498,32 +390,6 @@ describe "OnSessionStart additionalContext" do
     ctx.should contain("src/app.cr")
     ctx.should contain("**Read:**")
     ctx.should contain("README.md")
-  end
-
-  it "skips sections when no data exists for them" do
-    # Only add a last exchange — no guidelines, plans, decisions, learnings, files
-    exchange = GalaxyLedger::Exchange::LastExchange.new(
-      user_message: "Test",
-      full_content: "Response",
-      assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
-    )
-    GalaxyLedger::Database.update_session_last_interaction(test_session_id, exchange.to_pretty_json)
-
-    hook_input = {
-      "session_id" => test_session_id,
-      "source"     => "clear",
-    }.to_json
-
-    result = run_binary(["on-session-start"], stdin: hook_input)
-    output = JSON.parse(result[:output])
-    ctx = output["hookSpecificOutput"]["additionalContext"].as_s
-    ctx.should_not contain("### Guidelines")
-    ctx.should_not contain("### Implementation Plans")
-    ctx.should_not contain("### Key Decisions")
-    ctx.should_not contain("### Recent Learnings")
-    ctx.should_not contain("### Session File Manifest")
-    # But should contain last interaction
-    ctx.should contain("### Last Interaction")
   end
 end
 

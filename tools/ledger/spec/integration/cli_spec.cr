@@ -2,9 +2,6 @@ require "../spec_helper"
 
 # Helper to create a test session with database entries
 def create_test_session_with_entries(session_id : String, entry_count : Int32 = 3)
-  session_dir = GalaxyLedger.session_dir(session_id)
-  Dir.mkdir_p(session_dir)
-
   # Create session record first to satisfy FK constraint on ledger_entries
   GalaxyLedger::Database.upsert_session(session_id)
 
@@ -184,119 +181,6 @@ describe "CLI Integration" do
       context = output["hookSpecificOutput"]["additionalContext"].as_s
       context.should contain("persistent context ledger")
       context.should contain("galaxy-ledger search")
-    end
-
-    it "creates session folder when session_id provided" do
-      session_id = "test-startup-session-#{Random.rand(100000)}"
-      session_dir = GalaxyLedger.session_dir(session_id)
-
-      # Clean up any existing session
-      FileUtils.rm_rf(session_dir.to_s)
-
-      # Run on-startup with session_id
-      result = run_binary(["on-startup"], stdin: %({"session_id": "#{session_id}"}))
-      result[:status].should eq(0)
-
-      # Verify session folder was created
-      Dir.exists?(session_dir).should eq(true)
-
-      # Clean up
-      FileUtils.rm_rf(session_dir.to_s)
-      GalaxyLedger::Database.delete_session(session_id)
-    end
-  end
-
-  describe "session subcommand" do
-    test_session_id = "test-cli-session-#{Random.rand(100000)}"
-
-    describe "session (no args)" do
-      it "shows help when no subcommand provided" do
-        result = run_binary(["session"])
-        result[:output].should contain("galaxy-ledger session")
-        result[:output].should contain("USAGE")
-        result[:status].should eq(0)
-      end
-    end
-
-    describe "session list" do
-      it "lists sessions" do
-        result = run_binary(["session", "list"])
-        result[:status].should eq(0)
-        # Output should either show sessions or "No sessions found"
-        output = result[:output]
-        (output.includes?("Sessions") || output.includes?("No sessions")).should eq(true)
-      end
-    end
-
-    describe "session show SESSION_ID" do
-      it "shows session details for existing session" do
-        # Create a test session
-        session_dir = GalaxyLedger.session_dir(test_session_id)
-        Dir.mkdir_p(session_dir)
-
-        result = run_binary(["session", "show", test_session_id])
-        result[:status].should eq(0)
-        result[:output].should contain("Session: #{test_session_id}")
-        result[:output].should contain("Path:")
-        result[:output].should contain("Status:")
-
-        # Clean up
-        FileUtils.rm_rf(session_dir.to_s)
-      end
-
-      it "outputs error for non-existent session" do
-        result = run_binary(["session", "show", "nonexistent-session-#{Random.rand(100000)}"])
-        result[:error].should contain("Session not found")
-        result[:status].should_not eq(0)
-      end
-
-      it "outputs error when session_id not provided" do
-        result = run_binary(["session", "show"])
-        result[:error].should contain("Usage")
-        result[:status].should_not eq(0)
-      end
-    end
-
-    describe "session remove SESSION_ID" do
-      it "removes existing session" do
-        # Create a test session
-        session_dir = GalaxyLedger.session_dir(test_session_id)
-        Dir.mkdir_p(session_dir)
-        # Add a test file
-        File.write(session_dir / "test.txt", "test content")
-
-        # Verify it exists
-        Dir.exists?(session_dir).should eq(true)
-
-        result = run_binary(["session", "remove", test_session_id])
-        result[:status].should eq(0)
-        result[:output].should contain("Removed session")
-        result[:output].should contain("Folder removed: yes")
-
-        # Verify it's gone
-        Dir.exists?(session_dir).should eq(false)
-      end
-
-      it "outputs error for non-existent session" do
-        result = run_binary(["session", "remove", "nonexistent-session-#{Random.rand(100000)}"])
-        result[:error].should contain("Session not found")
-        result[:status].should_not eq(0)
-      end
-
-      it "outputs error when session_id not provided" do
-        result = run_binary(["session", "remove"])
-        result[:error].should contain("Usage")
-        result[:status].should_not eq(0)
-      end
-    end
-
-    describe "session help" do
-      it "shows session help" do
-        result = run_binary(["session", "help"])
-        result[:output].should contain("galaxy-ledger session")
-        result[:output].should contain("USAGE")
-        result[:status].should eq(0)
-      end
     end
   end
 
@@ -529,34 +413,6 @@ describe "CLI Integration" do
     end
   end
 
-  describe "session remove purges from SQLite" do
-    before_each do
-      # Clean database for isolation
-      db_path = GalaxyLedger::Database.database_path
-      File.delete(db_path) if File.exists?(db_path)
-    end
-
-    it "purges entries from database when session removed" do
-      session_id = "purge-test-#{Random.rand(100000)}"
-      create_test_session_with_entries(session_id, 3)
-
-      begin
-        # Verify entries are in database
-        GalaxyLedger::Database.count_by_session(session_id).should eq(3)
-
-        # Remove session
-        result = run_binary(["session", "remove", session_id])
-        result[:status].should eq(0)
-        result[:output].should contain("SQLite purged: yes")
-
-        # Verify entries are gone
-        GalaxyLedger::Database.count_by_session(session_id).should eq(0)
-      ensure
-        FileUtils.rm_rf(GalaxyLedger.session_dir(session_id).to_s)
-      end
-    end
-  end
-
   describe "search with prefix matching" do
     before_each do
       db_path = GalaxyLedger::Database.database_path
@@ -719,43 +575,6 @@ describe "CLI Integration" do
       end
     end
 
-    describe "session --help" do
-      it "shows help with --help flag" do
-        result = run_binary(["session", "--help"])
-        result[:status].should eq(0)
-        result[:output].should contain("USAGE")
-        result[:output].should contain("session list")
-        result[:output].should contain("session show")
-        result[:output].should contain("session remove")
-      end
-
-      it "shows help with -h flag" do
-        result = run_binary(["session", "-h"])
-        result[:status].should eq(0)
-        result[:output].should contain("USAGE")
-      end
-
-      it "shows subcommand help for session list --help" do
-        result = run_binary(["session", "list", "--help"])
-        result[:status].should eq(0)
-        result[:output].should contain("session list")
-      end
-
-      it "shows subcommand help for session show --help" do
-        result = run_binary(["session", "show", "--help"])
-        result[:status].should eq(0)
-        result[:output].should contain("session show")
-        result[:output].should contain("SESSION_ID")
-      end
-
-      it "shows subcommand help for session remove --help" do
-        result = run_binary(["session", "remove", "--help"])
-        result[:status].should eq(0)
-        result[:output].should contain("session remove")
-        result[:output].should contain("SESSION_ID")
-      end
-    end
-
     describe "hook commands --help" do
       it "shows help for on-startup --help" do
         result = run_binary(["on-startup", "--help"])
@@ -796,8 +615,6 @@ describe "CLI Integration" do
 
     it "full cycle: read guideline, edit it, verify stale, prune, verify clean" do
       session_id = "e2e-stale-#{Random.rand(100000)}"
-      session_dir = GalaxyLedger::SESSIONS_DIR / session_id
-      Dir.mkdir_p(session_dir)
       GalaxyLedger::Database.upsert_session(session_id)
 
       begin
@@ -847,15 +664,12 @@ describe "CLI Integration" do
         GalaxyLedger::Database.has_extracted_source_file?(session_id, "/home/user/agent-guidelines/ruby-style.md").should be_false
         GalaxyLedger::Database.stale_entries(session_id).should be_empty
       ensure
-        FileUtils.rm_rf(session_dir.to_s)
         GalaxyLedger::Database.delete_session(session_id)
       end
     end
 
     it "handles multiple stale files in same session" do
       session_id = "e2e-multi-stale-#{Random.rand(100000)}"
-      session_dir = GalaxyLedger::SESSIONS_DIR / session_id
-      Dir.mkdir_p(session_dir)
       GalaxyLedger::Database.upsert_session(session_id)
 
       begin
@@ -900,15 +714,12 @@ describe "CLI Integration" do
         GalaxyLedger::Database.has_extracted_source_file?(session_id, "/home/user/agent-guidelines/rspec-style.md").should be_true
         GalaxyLedger::Database.has_extracted_source_file?(session_id, "/home/user/agent-guidelines/ruby-style.md").should be_false
       ensure
-        FileUtils.rm_rf(session_dir.to_s)
         GalaxyLedger::Database.delete_session(session_id)
       end
     end
 
     it "mixed types: guideline and implementation_plan stale independently" do
       session_id = "e2e-mixed-stale-#{Random.rand(100000)}"
-      session_dir = GalaxyLedger::SESSIONS_DIR / session_id
-      Dir.mkdir_p(session_dir)
       GalaxyLedger::Database.upsert_session(session_id)
 
       begin
@@ -954,7 +765,6 @@ describe "CLI Integration" do
         # Guideline should be fresh
         GalaxyLedger::Database.has_extracted_source_file?(session_id, "/home/user/agent-guidelines/ruby-style.md").should be_true
       ensure
-        FileUtils.rm_rf(session_dir.to_s)
         GalaxyLedger::Database.delete_session(session_id)
       end
     end
@@ -1013,9 +823,9 @@ describe "CLI Integration" do
       GalaxyLedger::Database.delete_session(session_id)
     end
 
-    it "requires --session flag" do
+    it "requires --session or --pid flag" do
       result = run_binary(["list-files"])
-      result[:error].should contain("--session is required")
+      result[:error].should contain("--session or --pid is required")
       result[:status].should_not eq(0)
     end
 
@@ -1057,7 +867,6 @@ describe "CLI Integration" do
       result[:output].should contain("list-files")
       result[:output].should contain("add")
       result[:output].should contain("config")
-      result[:output].should contain("session")
     end
 
     it "lists hook commands in separate section" do
@@ -1160,11 +969,11 @@ describe "CLI Integration" do
       end
     end
 
-    it "exits non-zero when --session is missing" do
+    it "exits non-zero when --session or --pid is missing" do
       metrics_json = {"context" => {"percentage" => 10.0}}.to_json
       result = run_binary(["update-session-metrics"], stdin: metrics_json)
       result[:status].should_not eq(0)
-      result[:error].should contain("--session is required")
+      result[:error].should contain("--session or --pid is required")
     end
 
     it "exits non-zero when no JSON provided on stdin" do

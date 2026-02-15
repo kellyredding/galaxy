@@ -143,7 +143,7 @@ module GalaxyStatusline
       begin
         Process.new(
           ledger_binary.to_s,
-          args: ["update-session-metrics", "--session", session_id],
+          args: ["update-session-metrics", "--pid", Process.ppid.to_s],
           input: IO::Memory.new(json),
           output: Process::Redirect::Close,
           error: Process::Redirect::Close,

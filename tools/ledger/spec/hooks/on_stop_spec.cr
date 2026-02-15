@@ -5,8 +5,6 @@ describe "OnStop GALAXY_SKIP_HOOKS" do
     ENV["GALAXY_SKIP_HOOKS"] = "1"
 
     test_session_id = "skip-hooks-test-#{Random.rand(10000)}"
-    session_dir = GalaxyLedger.session_dir(test_session_id)
-    Dir.mkdir_p(session_dir)
 
     # Ensure session record exists for FK constraints
     GalaxyLedger::Database.upsert_session(test_session_id)
@@ -32,7 +30,6 @@ describe "OnStop GALAXY_SKIP_HOOKS" do
 
     # Clean up
     File.delete(transcript_file.path)
-    FileUtils.rm_rf(session_dir.to_s)
     GalaxyLedger::Database.delete_session(test_session_id)
   ensure
     ENV.delete("GALAXY_SKIP_HOOKS")
@@ -52,16 +49,12 @@ describe "OnStop last exchange capture" do
   test_session_id = "on-stop-test-#{Random.rand(10000)}"
 
   before_each do
-    session_dir = GalaxyLedger.session_dir(test_session_id)
-    FileUtils.rm_rf(session_dir.to_s)
     GalaxyLedger::Database.delete_session(test_session_id)
     # Ensure session record exists for FK constraints
     GalaxyLedger::Database.upsert_session(test_session_id)
   end
 
   after_each do
-    session_dir = GalaxyLedger.session_dir(test_session_id)
-    FileUtils.rm_rf(session_dir.to_s)
     GalaxyLedger::Database.delete_session(test_session_id)
   end
 
@@ -150,17 +143,12 @@ describe "OnStop context threshold warnings" do
   test_session_id = "threshold-test-#{Random.rand(10000)}"
 
   before_each do
-    session_dir = GalaxyLedger.session_dir(test_session_id)
-    FileUtils.rm_rf(session_dir.to_s)
-    Dir.mkdir_p(session_dir)
     GalaxyLedger::Database.delete_session(test_session_id)
     # Ensure session record exists for FK constraints
     GalaxyLedger::Database.upsert_session(test_session_id)
   end
 
   after_each do
-    session_dir = GalaxyLedger.session_dir(test_session_id)
-    FileUtils.rm_rf(session_dir.to_s)
     GalaxyLedger::Database.delete_session(test_session_id)
   end
 
@@ -265,17 +253,12 @@ describe "OnStop stale re-extraction" do
   test_session_id = "stale-reextract-#{Random.rand(10000)}"
 
   before_each do
-    session_dir = GalaxyLedger.session_dir(test_session_id)
-    FileUtils.rm_rf(session_dir.to_s)
-    Dir.mkdir_p(session_dir)
     GalaxyLedger::Database.delete_session(test_session_id)
     # Ensure session record exists for FK constraints
     GalaxyLedger::Database.upsert_session(test_session_id)
   end
 
   after_each do
-    session_dir = GalaxyLedger.session_dir(test_session_id)
-    FileUtils.rm_rf(session_dir.to_s)
     GalaxyLedger::Database.delete_session(test_session_id)
   end
 

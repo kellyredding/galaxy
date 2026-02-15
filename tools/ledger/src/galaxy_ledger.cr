@@ -40,14 +40,6 @@ module GalaxyLedger
     )
   )
   CONFIG_FILE = CONFIG_DIR / "config.json"
-
-  # Sessions directory for per-session state (shared between tools)
-  SESSIONS_DIR = GALAXY_DIR / "sessions"
-
-  # Helper to get session directory path
-  def self.session_dir(session_identifier : String) : Path
-    SESSIONS_DIR / session_identifier
-  end
 end
 
 # Only run CLI when executed directly, not when required by specs

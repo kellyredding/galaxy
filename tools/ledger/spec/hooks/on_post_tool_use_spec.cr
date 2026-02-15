@@ -5,8 +5,6 @@ describe "OnPostToolUse GALAXY_SKIP_HOOKS" do
     ENV["GALAXY_SKIP_HOOKS"] = "1"
 
     session_id = "skip-hooks-test-#{rand(100000)}"
-    session_dir = GalaxyLedger::SESSIONS_DIR / session_id
-    Dir.mkdir_p(session_dir)
 
     input = {
       "session_id"      => session_id,
@@ -24,7 +22,6 @@ describe "OnPostToolUse GALAXY_SKIP_HOOKS" do
     entries.size.should eq(0)
 
     # Clean up
-    FileUtils.rm_rf(session_dir.to_s)
     GalaxyLedger::Database.delete_session(session_id)
   ensure
     ENV.delete("GALAXY_SKIP_HOOKS")
@@ -36,8 +33,6 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
     describe "with Read tool" do
       it "creates a session file record for regular files" do
         session_id = "post-tool-test-#{rand(100000)}"
-        session_dir = GalaxyLedger::SESSIONS_DIR / session_id
-        Dir.mkdir_p(session_dir)
         GalaxyLedger::Database.upsert_session(session_id)
 
         input = {
@@ -65,14 +60,11 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         files.first.is_searched.should be_false
 
         # Clean up
-        FileUtils.rm_rf(session_dir.to_s)
         GalaxyLedger::Database.delete_session(session_id)
       end
 
       it "creates an extraction_marker entry for agent-guidelines files" do
         session_id = "post-tool-test-#{rand(100000)}"
-        session_dir = GalaxyLedger::SESSIONS_DIR / session_id
-        Dir.mkdir_p(session_dir)
         GalaxyLedger::Database.upsert_session(session_id)
 
         input = {
@@ -104,14 +96,11 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         files.first.is_read.should be_true
 
         # Clean up
-        FileUtils.rm_rf(session_dir.to_s)
         GalaxyLedger::Database.delete_session(session_id)
       end
 
       it "creates an extraction_marker entry for any file in agent-guidelines" do
         session_id = "post-tool-test-#{rand(100000)}"
-        session_dir = GalaxyLedger::SESSIONS_DIR / session_id
-        Dir.mkdir_p(session_dir)
         GalaxyLedger::Database.upsert_session(session_id)
 
         input = {
@@ -130,14 +119,11 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         entries.first.entry_type.should eq("extraction_marker")
 
         # Clean up
-        FileUtils.rm_rf(session_dir.to_s)
         GalaxyLedger::Database.delete_session(session_id)
       end
 
       it "creates an extraction_marker entry for implementation-plans files" do
         session_id = "post-tool-test-#{rand(100000)}"
-        session_dir = GalaxyLedger::SESSIONS_DIR / session_id
-        Dir.mkdir_p(session_dir)
         GalaxyLedger::Database.upsert_session(session_id)
 
         input = {
@@ -168,7 +154,6 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         files.first.is_read.should be_true
 
         # Clean up
-        FileUtils.rm_rf(session_dir.to_s)
         GalaxyLedger::Database.delete_session(session_id)
       end
     end
@@ -176,8 +161,6 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
     describe "extraction deduplication" do
       it "skips extraction on second read of same guideline file" do
         session_id = "post-tool-dedup-#{rand(100000)}"
-        session_dir = GalaxyLedger::SESSIONS_DIR / session_id
-        Dir.mkdir_p(session_dir)
         GalaxyLedger::Database.upsert_session(session_id)
 
         input = {
@@ -212,14 +195,11 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         markers_after.size.should eq(1) # No new marker entry (same content_hash)
 
         # Clean up
-        FileUtils.rm_rf(session_dir.to_s)
         GalaxyLedger::Database.delete_session(session_id)
       end
 
       it "skips extraction on second read of same implementation plan" do
         session_id = "post-tool-dedup-#{rand(100000)}"
-        session_dir = GalaxyLedger::SESSIONS_DIR / session_id
-        Dir.mkdir_p(session_dir)
         GalaxyLedger::Database.upsert_session(session_id)
 
         input = {
@@ -244,14 +224,11 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         markers.size.should eq(1)
 
         # Clean up
-        FileUtils.rm_rf(session_dir.to_s)
         GalaxyLedger::Database.delete_session(session_id)
       end
 
       it "allows extraction for different guideline files in same session" do
         session_id = "post-tool-dedup-#{rand(100000)}"
-        session_dir = GalaxyLedger::SESSIONS_DIR / session_id
-        Dir.mkdir_p(session_dir)
         GalaxyLedger::Database.upsert_session(session_id)
 
         # Read first guideline
@@ -291,7 +268,6 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         metadata_values.all? { |v| v == true }.should be_true
 
         # Clean up
-        FileUtils.rm_rf(session_dir.to_s)
         GalaxyLedger::Database.delete_session(session_id)
       end
     end
@@ -299,8 +275,6 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
     describe "with Edit tool" do
       it "creates a session file record" do
         session_id = "post-tool-test-#{rand(100000)}"
-        session_dir = GalaxyLedger::SESSIONS_DIR / session_id
-        Dir.mkdir_p(session_dir)
         GalaxyLedger::Database.upsert_session(session_id)
 
         input = {
@@ -332,7 +306,6 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         files.first.is_searched.should be_false
 
         # Clean up
-        FileUtils.rm_rf(session_dir.to_s)
         GalaxyLedger::Database.delete_session(session_id)
       end
     end
@@ -340,8 +313,6 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
     describe "with Write tool" do
       it "creates a session file record" do
         session_id = "post-tool-test-#{rand(100000)}"
-        session_dir = GalaxyLedger::SESSIONS_DIR / session_id
-        Dir.mkdir_p(session_dir)
         GalaxyLedger::Database.upsert_session(session_id)
 
         input = {
@@ -372,7 +343,6 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         files.first.is_searched.should be_false
 
         # Clean up
-        FileUtils.rm_rf(session_dir.to_s)
         GalaxyLedger::Database.delete_session(session_id)
       end
     end
@@ -380,8 +350,6 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
     describe "stale extraction marking" do
       it "marks extraction_marker entries stale when editing a guideline file" do
         session_id = "post-tool-stale-#{rand(100000)}"
-        session_dir = GalaxyLedger::SESSIONS_DIR / session_id
-        Dir.mkdir_p(session_dir)
         GalaxyLedger::Database.upsert_session(session_id)
 
         # First: read the guideline to create extraction_marker entry
@@ -423,14 +391,11 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         stale[0][:entry_type].should eq("guideline")
 
         # Clean up
-        FileUtils.rm_rf(session_dir.to_s)
         GalaxyLedger::Database.delete_session(session_id)
       end
 
       it "marks extraction_marker entries stale when writing a plan file" do
         session_id = "post-tool-stale-#{rand(100000)}"
-        session_dir = GalaxyLedger::SESSIONS_DIR / session_id
-        Dir.mkdir_p(session_dir)
         GalaxyLedger::Database.upsert_session(session_id)
 
         # First: read the plan to create extraction_marker entry
@@ -467,14 +432,11 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         stale[0][:entry_type].should eq("implementation_plan")
 
         # Clean up
-        FileUtils.rm_rf(session_dir.to_s)
         GalaxyLedger::Database.delete_session(session_id)
       end
 
       it "does not mark entries stale when editing a regular file" do
         session_id = "post-tool-stale-#{rand(100000)}"
-        session_dir = GalaxyLedger::SESSIONS_DIR / session_id
-        Dir.mkdir_p(session_dir)
         GalaxyLedger::Database.upsert_session(session_id)
 
         # Read a guideline first
@@ -508,7 +470,6 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         GalaxyLedger::Database.stale_entries(session_id).should be_empty
 
         # Clean up
-        FileUtils.rm_rf(session_dir.to_s)
         GalaxyLedger::Database.delete_session(session_id)
       end
     end
@@ -516,8 +477,6 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
     describe "with Grep tool" do
       it "creates a session file record with search pattern" do
         session_id = "post-tool-test-#{rand(100000)}"
-        session_dir = GalaxyLedger::SESSIONS_DIR / session_id
-        Dir.mkdir_p(session_dir)
         GalaxyLedger::Database.upsert_session(session_id)
 
         input = {
@@ -549,7 +508,6 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         files.first.is_written.should be_false
 
         # Clean up
-        FileUtils.rm_rf(session_dir.to_s)
         GalaxyLedger::Database.delete_session(session_id)
       end
     end
@@ -557,8 +515,6 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
     describe "with Glob tool" do
       it "creates a session file record with search pattern" do
         session_id = "post-tool-test-#{rand(100000)}"
-        session_dir = GalaxyLedger::SESSIONS_DIR / session_id
-        Dir.mkdir_p(session_dir)
         GalaxyLedger::Database.upsert_session(session_id)
 
         input = {
@@ -590,7 +546,6 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         files.first.is_written.should be_false
 
         # Clean up
-        FileUtils.rm_rf(session_dir.to_s)
         GalaxyLedger::Database.delete_session(session_id)
       end
     end
@@ -619,8 +574,6 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
 
       it "handles unsupported tool_name gracefully" do
         session_id = "post-tool-test-#{rand(100000)}"
-        session_dir = GalaxyLedger::SESSIONS_DIR / session_id
-        Dir.mkdir_p(session_dir)
 
         input = {
           "session_id"    => session_id,
@@ -635,9 +588,6 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         # No entry should be created
         entries = GalaxyLedger::Database.query_by_session(session_id)
         entries.size.should eq(0)
-
-        # Clean up
-        FileUtils.rm_rf(session_dir.to_s)
       end
     end
   end

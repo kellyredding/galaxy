@@ -2,12 +2,20 @@ require "json"
 
 module GalaxyLedger
   module Hooks
-    # Handles the SessionStart(clear|compact) hook
-    # - Queries tiered restoration data from SQLite
+    # Handles the SessionStart(clear|compact) hook — RESOLVE MODE
+    #
+    # This hook is RESOLVE-ONLY — it ignores the new session_id from stdin
+    # and resolves the original session by Claude Code PID. All data
+    # accumulates under the one session record created by on_startup for
+    # the entire life of the Claude Code process, regardless of how many
+    # /clears happen.
+    #
+    # - Resolves session by PID (Process.ppid)
+    # - Queries tiered restoration data from SQLite using resolved session
     # - Builds systemMessage status line for user display
     # - Returns additionalContext with full handoff markdown for agent restoration
     class OnSessionStart
-      @session_identifier : String?
+      @stdin_session_identifier : String?
       @source : String?
 
       # Read-only cap on session files in the manifest
@@ -20,13 +28,26 @@ module GalaxyLedger
         # Parse hook input from stdin
         parse_hook_input
 
-        session_identifier = @session_identifier
-        return output_empty unless session_identifier
+        # Resolve session by PID — ignore stdin session_id
+        claude_pid = Process.ppid.to_i64
+        session_record = Database.get_session_by_pid(claude_pid)
 
-        # Upsert session record (idempotent, touches updated_at)
-        Database.upsert_session(session_identifier)
+        # Fallback: if PID lookup fails (on_startup never ran or DB was wiped),
+        # register a new session with the stdin session_id + PID so subsequent
+        # hooks work. Restoration will be empty.
+        unless session_record
+          stdin_id = @stdin_session_identifier
+          if stdin_id && !stdin_id.empty?
+            Database.upsert_session(stdin_id, claude_pid: claude_pid, cwd: Dir.current)
+            session_record = Database.get_session(stdin_id)
+          end
+        end
 
-        # Query restoration data
+        return output_empty unless session_record
+
+        session_identifier = session_record.session_identifier
+
+        # Query restoration data using the resolved session identifier
         restoration = Database.query_for_restoration(session_identifier)
         files = Database.session_files(session_identifier)
         last_exchange = read_last_exchange_from_db(session_identifier)
@@ -42,6 +63,7 @@ module GalaxyLedger
 
         context = build_additional_context(
           session_identifier: session_identifier,
+          claude_pid: claude_pid,
           restoration: restoration,
           files: files,
           last_exchange: last_exchange,
@@ -56,7 +78,7 @@ module GalaxyLedger
           return if input.empty?
 
           json = JSON.parse(input)
-          @session_identifier = json["session_id"]?.try(&.as_s?)
+          @stdin_session_identifier = json["session_id"]?.try(&.as_s?)
           @source = json["source"]?.try(&.as_s?)
         rescue
           # Silently ignore parse errors
@@ -79,6 +101,7 @@ module GalaxyLedger
 
       private def build_additional_context(
         session_identifier : String,
+        claude_pid : Int64,
         restoration : Database::RestorationResult,
         files : Array(Database::SessionFile),
         last_exchange : Exchange::LastExchange?,
@@ -87,6 +110,7 @@ module GalaxyLedger
         lines << "## Session Context Handoff"
         lines << ""
         lines << "**Session ID**: `#{session_identifier}`"
+        lines << "**Ledger PID**: `#{claude_pid}`"
         lines << ""
 
         has_any_data = restoration.total_count > 0 || files.size > 0 || last_exchange
@@ -95,8 +119,8 @@ module GalaxyLedger
           lines << "No previous context available."
           lines << ""
           lines << "---"
-          lines << "\u{1f4da} Search this session: `galaxy-ledger search --query \"QUERY\" --session #{session_identifier}`"
-          lines << "\u{1f4cb} List this session: `galaxy-ledger list --session #{session_identifier}`"
+          lines << "\u{1f4da} Search this session: `galaxy-ledger search --query \"QUERY\" --pid #{claude_pid}`"
+          lines << "\u{1f4cb} List this session: `galaxy-ledger list --pid #{claude_pid}`"
           return lines.join("\n")
         end
 
@@ -106,18 +130,21 @@ module GalaxyLedger
         lines << "the reset never happened \u2014 they expect you to have full awareness of"
         lines << "all progress, decisions, and context from this session."
         lines << ""
+        lines << "The Claude session ID may change on /clear. The ledger tracks your"
+        lines << "session by process ID."
+        lines << ""
 
         # Recovery directives
         lines << "When the user references something you don't recognize or something"
         lines << "doesn't make sense:"
         lines << ""
-        lines << "1. **Query the ledger**: `galaxy-ledger search --query \"QUERY\" --session #{session_identifier}`"
+        lines << "1. **Query the ledger**: `galaxy-ledger search --query \"QUERY\" --pid #{claude_pid}`"
         lines << "2. **Check recent code changes**: `git diff` and `git log --oneline -20`"
         lines << "3. **Review the session file manifest** listed below \u2014 these are the"
         lines << "   files actively worked on this session; start searches here before"
         lines << "   going broader"
         lines << "4. **Check session files**: if a file isn't in the manifest below, run"
-        lines << "   `galaxy-ledger list-files --session #{session_identifier}` to see every"
+        lines << "   `galaxy-ledger list-files --pid #{claude_pid}` to see every"
         lines << "   file read, edited, written, or searched this session"
         lines << "5. **Fall back to normal exploration** \u2014 Grep, Glob, Read as usual"
 
@@ -243,7 +270,7 @@ module GalaxyLedger
               lines << "- `#{Helpers.shorten_home_path(f.file_path)}`"
             end
             if capped
-              lines << "- *(#{read_only.size - READ_ONLY_FILES_CAP} more \u2014 run `galaxy-ledger list-files --session #{@session_identifier}` to see all)*"
+              lines << "- *(#{read_only.size - READ_ONLY_FILES_CAP} more \u2014 run `galaxy-ledger list-files --pid #{claude_pid}` to see all)*"
             end
             lines << ""
           end

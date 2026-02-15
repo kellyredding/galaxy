@@ -96,6 +96,7 @@ module GalaxyLedger
           CREATE TABLE IF NOT EXISTS ledger_sessions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             session_identifier TEXT NOT NULL UNIQUE,
+            claude_pid INTEGER,
             started_at TEXT DEFAULT (datetime('now')),
             updated_at TEXT DEFAULT (datetime('now')),
             cwd TEXT,
@@ -162,6 +163,7 @@ module GalaxyLedger
 
         # Indexes for ledger_sessions
         db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_identifier ON ledger_sessions(session_identifier)")
+        db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_pid ON ledger_sessions(claude_pid)")
 
         # Indexes for ledger_entries
         db.exec("CREATE INDEX IF NOT EXISTS idx_entries_session ON ledger_entries(session_identifier)")
@@ -229,6 +231,7 @@ module GalaxyLedger
     # Returns the integer PK (ledger_sessions.id).
     def self.upsert_session(
       session_identifier : String,
+      claude_pid : Int64? = nil,
       cwd : String? = nil,
       project_dir : String? = nil,
       git_branch : String? = nil,
@@ -239,15 +242,17 @@ module GalaxyLedger
         open do |db|
           db.exec(
             <<-SQL,
-              INSERT INTO ledger_sessions (session_identifier, cwd, project_dir, git_branch)
-              VALUES (?, ?, ?, ?)
+              INSERT INTO ledger_sessions (session_identifier, claude_pid, cwd, project_dir, git_branch)
+              VALUES (?, ?, ?, ?, ?)
               ON CONFLICT (session_identifier) DO UPDATE SET
                 updated_at = datetime('now'),
+                claude_pid = COALESCE(excluded.claude_pid, ledger_sessions.claude_pid),
                 cwd = COALESCE(excluded.cwd, ledger_sessions.cwd),
                 project_dir = COALESCE(excluded.project_dir, ledger_sessions.project_dir),
                 git_branch = COALESCE(excluded.git_branch, ledger_sessions.git_branch)
             SQL
             session_identifier,
+            claude_pid,
             cwd,
             project_dir,
             git_branch,
@@ -383,7 +388,7 @@ module GalaxyLedger
         open do |db|
           db.query_one?(
             <<-SQL,
-              SELECT id, session_identifier, started_at, updated_at, cwd, project_dir,
+              SELECT id, session_identifier, claude_pid, started_at, updated_at, cwd, project_dir,
                      git_branch, model_id, model_display_name, claude_version,
                      context_percentage, tokens_used, tokens_max, cost_usd,
                      cumulative_tokens_used, cumulative_cost_usd,
@@ -408,7 +413,7 @@ module GalaxyLedger
         open do |db|
           db.query(
             <<-SQL,
-              SELECT id, session_identifier, started_at, updated_at, cwd, project_dir,
+              SELECT id, session_identifier, claude_pid, started_at, updated_at, cwd, project_dir,
                      git_branch, model_id, model_display_name, claude_version,
                      context_percentage, tokens_used, tokens_max, cost_usd,
                      cumulative_tokens_used, cumulative_cost_usd,
@@ -428,6 +433,35 @@ module GalaxyLedger
         # Return empty on error
       end
       sessions
+    end
+
+    # Look up a session by Claude Code process PID.
+    # Returns the most recently updated session matching this PID.
+    def self.get_session_by_pid(claude_pid : Int64) : SessionRecord?
+      return nil if claude_pid <= 0
+
+      begin
+        open do |db|
+          db.query_one?(
+            <<-SQL,
+              SELECT id, session_identifier, claude_pid, started_at, updated_at, cwd, project_dir,
+                     git_branch, model_id, model_display_name, claude_version,
+                     context_percentage, tokens_used, tokens_max, cost_usd,
+                     cumulative_tokens_used, cumulative_cost_usd,
+                     lines_added, lines_removed, context, last_interaction
+              FROM ledger_sessions
+              WHERE claude_pid = ?
+              ORDER BY updated_at DESC
+              LIMIT 1
+            SQL
+            claude_pid,
+          ) do |rs|
+            SessionRecord.from_row(rs)
+          end
+        end
+      rescue
+        nil
+      end
     end
 
     # ============================================================
@@ -1252,6 +1286,7 @@ module GalaxyLedger
     struct SessionRecord
       getter id : Int64
       getter session_identifier : String
+      getter claude_pid : Int64?
       getter started_at : String?
       getter updated_at : String?
       getter cwd : String?
@@ -1272,7 +1307,7 @@ module GalaxyLedger
       getter last_interaction : String?
 
       def initialize(
-        @id, @session_identifier, @started_at, @updated_at,
+        @id, @session_identifier, @claude_pid, @started_at, @updated_at,
         @cwd, @project_dir, @git_branch,
         @model_id, @model_display_name, @claude_version,
         @context_percentage, @tokens_used, @tokens_max, @cost_usd,
@@ -1285,6 +1320,7 @@ module GalaxyLedger
         SessionRecord.new(
           id: rs.read(Int64),
           session_identifier: rs.read(String),
+          claude_pid: rs.read(Int64?),
           started_at: rs.read(String?),
           updated_at: rs.read(String?),
           cwd: rs.read(String?),

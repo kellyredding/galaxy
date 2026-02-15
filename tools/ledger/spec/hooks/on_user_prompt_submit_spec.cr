@@ -14,10 +14,6 @@ describe "OnUserPromptSubmit GALAXY_SKIP_HOOKS" do
 
     result = run_binary(["on-user-prompt-submit"], stdin: input)
     result[:status].should eq(0)
-
-    # Session folder should NOT be created (early return)
-    session_dir = GalaxyLedger::SESSIONS_DIR / session_id
-    Dir.exists?(session_dir).should eq(false)
   ensure
     ENV.delete("GALAXY_SKIP_HOOKS")
   end
@@ -30,8 +26,6 @@ describe GalaxyLedger::Hooks::OnUserPromptSubmit do
 
     it "runs without error for valid prompts" do
       session_id = "user-prompt-test-#{rand(100000)}"
-      session_dir = GalaxyLedger::SESSIONS_DIR / session_id
-      Dir.mkdir_p(session_dir)
 
       input = {
         "session_id"      => session_id,
@@ -41,15 +35,10 @@ describe GalaxyLedger::Hooks::OnUserPromptSubmit do
 
       result = run_binary(["on-user-prompt-submit"], stdin: input)
       result[:status].should eq(0)
-
-      # Session folder should be created
-      Dir.exists?(session_dir).should be_true
     end
 
     it "skips empty prompts without spawning extraction" do
       session_id = "user-prompt-test-#{rand(100000)}"
-      session_dir = GalaxyLedger::SESSIONS_DIR / session_id
-      Dir.mkdir_p(session_dir)
 
       input = {
         "session_id"      => session_id,
@@ -61,15 +50,10 @@ describe GalaxyLedger::Hooks::OnUserPromptSubmit do
       result[:status].should eq(0)
       # No extraction spawned for empty prompts - validated by exit status
       # Async extraction writes directly to DB, so we can't easily verify no-op in unit tests
-
-      # Clean up
-      FileUtils.rm_rf(session_dir.to_s)
     end
 
     it "skips whitespace-only prompts without spawning extraction" do
       session_id = "user-prompt-test-#{rand(100000)}"
-      session_dir = GalaxyLedger::SESSIONS_DIR / session_id
-      Dir.mkdir_p(session_dir)
 
       input = {
         "session_id"      => session_id,
@@ -80,15 +64,10 @@ describe GalaxyLedger::Hooks::OnUserPromptSubmit do
       result = run_binary(["on-user-prompt-submit"], stdin: input)
       result[:status].should eq(0)
       # No extraction spawned for whitespace-only prompts
-
-      # Clean up
-      FileUtils.rm_rf(session_dir.to_s)
     end
 
     it "skips very short prompts (less than 10 chars)" do
       session_id = "user-prompt-test-#{rand(100000)}"
-      session_dir = GalaxyLedger::SESSIONS_DIR / session_id
-      Dir.mkdir_p(session_dir)
 
       short_prompts = ["yes", "ok", "continue", "go ahead", "sure"]
       short_prompts.each do |prompt|
@@ -102,15 +81,10 @@ describe GalaxyLedger::Hooks::OnUserPromptSubmit do
         result[:status].should eq(0)
       end
       # No extraction spawned for short prompts - validated by exit status
-
-      # Clean up
-      FileUtils.rm_rf(session_dir.to_s)
     end
 
     it "accepts prompts with exactly 10 characters and spawns extraction" do
       session_id = "user-prompt-test-#{rand(100000)}"
-      session_dir = GalaxyLedger::SESSIONS_DIR / session_id
-      Dir.mkdir_p(session_dir)
 
       input = {
         "session_id"      => session_id,
@@ -124,26 +98,6 @@ describe GalaxyLedger::Hooks::OnUserPromptSubmit do
       # Hook runs without error - extraction happens async
       # We can't easily verify the subprocess was spawned in unit tests
       # The integration/eval tests will verify actual extraction
-    end
-
-    it "creates session folder if it doesn't exist" do
-      session_id = "user-prompt-test-#{rand(100000)}"
-      session_dir = GalaxyLedger::SESSIONS_DIR / session_id
-
-      # Don't create session dir
-      Dir.exists?(session_dir).should be_false
-
-      input = {
-        "session_id"      => session_id,
-        "prompt"          => "Please always use descriptive variable names",
-        "hook_event_name" => "UserPromptSubmit",
-      }.to_json
-
-      result = run_binary(["on-user-prompt-submit"], stdin: input)
-      result[:status].should eq(0)
-
-      # Session dir should now exist
-      Dir.exists?(session_dir).should be_true
     end
 
     describe "with missing or invalid input" do
