@@ -466,7 +466,7 @@ describe "OnStop context indicators" do
     json = JSON.parse(result[:output])
     msg = json["systemMessage"].as_s
     msg.should contain("🔥")
-    msg.should contain("will auto-compact at 95%")
+    msg.should contain("will auto-compact soon")
     msg.should_not contain("/clear now")
 
     File.delete(transcript_file.path)

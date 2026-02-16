@@ -118,7 +118,7 @@ module GalaxyLedger
       #
       #   nil                                                       (below warning)
       #   ⚠️ Context 72% — consider /clear soon                     (warning)
-      #   🔥 Context 87% — will auto-compact at 95%                 (critical, auto-compact on)
+      #   🔥 Context 87% — will auto-compact soon                    (critical, auto-compact on)
       #   🔥 Context 87% — context nearly full, /clear now          (critical, auto-compact off)
       private def build_context_indicator(percentage : Float64) : String?
         config = Config.load
@@ -128,7 +128,7 @@ module GalaxyLedger
 
         if percentage >= config.thresholds.critical
           if auto_compact_enabled?
-            "\u{1F525} Context #{pct}% \u2014 will auto-compact at 95%"
+            "\u{1F525} Context #{pct}% \u2014 will auto-compact soon"
           else
             "\u{1F525} Context #{pct}% \u2014 context nearly full, /clear now"
           end
