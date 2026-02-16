@@ -101,17 +101,25 @@ end
 # run_binary can leave behind sessions, PID mappings, and identifier
 # mappings. Rather than relying on per-test cleanup (which is skipped on
 # assertion failure), wipe everything between tests for full isolation.
+#
+# Uses a direct DB.open (bypassing Database.open's migration machinery)
+# to avoid "database is locked" flakes caused by pool connections not
+# fully releasing before the next Database.open call.
 Spec.before_each do
+  db_path = SPEC_DATABASE_PATH.to_s
+  next unless File.exists?(db_path)
+
   begin
-    GalaxyLedger::Database.open do |db|
-      db.exec("DELETE FROM ledger_session_pids")
-      db.exec("DELETE FROM ledger_session_identifiers")
-      db.exec("DELETE FROM ledger_session_files")
-      db.exec("DELETE FROM ledger_entries")
-      db.exec("DELETE FROM ledger_sessions")
-    end
+    db = DB.open("sqlite3://#{db_path}")
+    db.exec("PRAGMA busy_timeout=5000")
+    db.exec("DELETE FROM ledger_session_pids")
+    db.exec("DELETE FROM ledger_session_identifiers")
+    db.exec("DELETE FROM ledger_session_files")
+    db.exec("DELETE FROM ledger_entries")
+    db.exec("DELETE FROM ledger_sessions")
+    db.close
   rescue
-    # DB may not exist yet for early specs
+    # DB may not exist yet or table may not exist for early specs
   end
 end
 

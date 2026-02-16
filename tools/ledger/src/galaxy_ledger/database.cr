@@ -50,11 +50,11 @@ module GalaxyLedger
     def self.open(&)
       ensure_database_exists
       DB.open("sqlite3://#{database_path}") do |db|
-        # Enable WAL mode for better concurrency
+        # Set busy timeout FIRST — before any write operations that could
+        # encounter a lock from concurrent processes (e.g., hook subprocesses).
+        db.exec("PRAGMA busy_timeout=5000")
         db.exec("PRAGMA journal_mode=WAL")
         db.exec("PRAGMA foreign_keys=ON")
-        # Set busy timeout for concurrent write safety (5 seconds)
-        db.exec("PRAGMA busy_timeout=5000")
         # Run migrations if needed (checks version, runs migrations, updates version)
         Migrations.migrate_database(db)
         yield db
