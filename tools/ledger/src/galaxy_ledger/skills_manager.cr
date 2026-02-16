@@ -18,12 +18,15 @@ module GalaxyLedger
     Review the Session Context Handoff that was injected into your
     context and present a clear summary to the user.
 
-    ## Restore Working Directory
+    ## Restore Working Directory (DO THIS FIRST)
 
-    If the handoff context includes a Working Directory, check whether
-    your current working directory matches. If it doesn't, `cd` to
-    the Working Directory from the handoff so the user picks up exactly
-    where they left off. Mention the directory change in your summary.
+    CRITICAL: Before doing anything else, you MUST restore the working
+    directory. Run `pwd` to check your current directory, then compare
+    it to the Working Directory from the handoff context. If they
+    differ, `cd` to the handoff Working Directory immediately. Do NOT
+    skip this step — the user needs to pick up exactly where they
+    left off. Always report the directory change (or confirmation of
+    match) in your summary.
 
     ## Present the Summary
 
