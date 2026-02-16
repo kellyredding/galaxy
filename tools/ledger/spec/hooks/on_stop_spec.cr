@@ -412,7 +412,6 @@ describe "OnStop context indicators" do
     msg = json["systemMessage"].as_s
     msg.should contain("🔥")
     msg.should contain("Context 85%")
-    msg.should contain("will auto-compact at 95%")
 
     File.delete(transcript_file.path)
   end
@@ -437,9 +436,75 @@ describe "OnStop context indicators" do
     msg = json["systemMessage"].as_s
     msg.should contain("🔥")
     msg.should contain("Context 90%")
-    msg.should contain("will auto-compact at 95%")
 
     File.delete(transcript_file.path)
+  end
+
+  it "shows auto-compact message when autoCompactEnabled is true" do
+    status = GalaxyLedger::ContextStatus.from_json(%|{"context": {"percentage": 90.0}}|)
+    GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
+
+    transcript_file = File.tempfile("transcript", ".jsonl")
+    transcript_file.print(%|{"type": "user", "timestamp": "2026-02-01T10:00:00Z", "message": {"role": "user", "content": "Test message here"}}\n|)
+    transcript_file.print(%|{"type": "assistant", "timestamp": "2026-02-01T10:01:00Z", "message": {"role": "assistant", "content": "Test response here"}}\n|)
+    transcript_file.close
+
+    # Create isolated .claude.json with auto-compact enabled
+    claude_json = File.tempfile("claude", ".json")
+    claude_json.print({"autoCompactEnabled" => true}.to_json)
+    claude_json.close
+
+    hook_input = {
+      "session_id"       => test_session_id,
+      "transcript_path"  => transcript_file.path,
+      "stop_hook_active" => false,
+    }.to_json
+
+    result = run_binary(["on-stop"], stdin: hook_input, extra_env: {
+      "GALAXY_CLAUDE_JSON_PATH" => claude_json.path,
+    })
+    json = JSON.parse(result[:output])
+    msg = json["systemMessage"].as_s
+    msg.should contain("🔥")
+    msg.should contain("will auto-compact at 95%")
+    msg.should_not contain("/clear now")
+
+    File.delete(transcript_file.path)
+    File.delete(claude_json.path)
+  end
+
+  it "shows /clear message when autoCompactEnabled is false" do
+    status = GalaxyLedger::ContextStatus.from_json(%|{"context": {"percentage": 90.0}}|)
+    GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
+
+    transcript_file = File.tempfile("transcript", ".jsonl")
+    transcript_file.print(%|{"type": "user", "timestamp": "2026-02-01T10:00:00Z", "message": {"role": "user", "content": "Test message here"}}\n|)
+    transcript_file.print(%|{"type": "assistant", "timestamp": "2026-02-01T10:01:00Z", "message": {"role": "assistant", "content": "Test response here"}}\n|)
+    transcript_file.close
+
+    # Create isolated .claude.json with auto-compact disabled
+    claude_json = File.tempfile("claude", ".json")
+    claude_json.print({"autoCompactEnabled" => false}.to_json)
+    claude_json.close
+
+    hook_input = {
+      "session_id"       => test_session_id,
+      "transcript_path"  => transcript_file.path,
+      "stop_hook_active" => false,
+    }.to_json
+
+    result = run_binary(["on-stop"], stdin: hook_input, extra_env: {
+      "GALAXY_CLAUDE_JSON_PATH" => claude_json.path,
+    })
+    json = JSON.parse(result[:output])
+    msg = json["systemMessage"].as_s
+    msg.should contain("🔥")
+    msg.should contain("context nearly full")
+    msg.should contain("/clear now")
+    msg.should_not contain("auto-compact")
+
+    File.delete(transcript_file.path)
+    File.delete(claude_json.path)
   end
 end
 

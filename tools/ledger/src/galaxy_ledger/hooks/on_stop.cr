@@ -113,10 +113,13 @@ module GalaxyLedger
       # Build the context indicator when above warning thresholds.
       # Returns nil when below warning threshold (no indicator shown).
       # Uses configurable thresholds for warning/critical boundaries.
+      # Reads ~/.claude.json to tailor the critical message based on
+      # whether auto-compact is enabled.
       #
-      #   nil                                          (below warning)
-      #   ⚠️ Context 72% — consider /clear soon        (warning threshold)
-      #   🔥 Context 87% — will auto-compact at 95%    (critical threshold)
+      #   nil                                                       (below warning)
+      #   ⚠️ Context 72% — consider /clear soon                     (warning)
+      #   🔥 Context 87% — will auto-compact at 95%                 (critical, auto-compact on)
+      #   🔥 Context 87% — context nearly full, /clear now          (critical, auto-compact off)
       private def build_context_indicator(percentage : Float64) : String?
         config = Config.load
 
@@ -124,12 +127,30 @@ module GalaxyLedger
         pct = 0 if pct < 0
 
         if percentage >= config.thresholds.critical
-          "\u{1F525} Context #{pct}% \u2014 will auto-compact at 95%"
+          if auto_compact_enabled?
+            "\u{1F525} Context #{pct}% \u2014 will auto-compact at 95%"
+          else
+            "\u{1F525} Context #{pct}% \u2014 context nearly full, /clear now"
+          end
         elsif percentage >= config.thresholds.warning
           "\u26A0\uFE0F Context #{pct}% \u2014 consider /clear soon"
         else
           nil
         end
+      end
+
+      # Check if Claude Code's auto-compact feature is enabled.
+      # Reads ~/.claude.json (Claude Code's app state file).
+      # Defaults to true (safer assumption) if the file can't be read.
+      # Path is overridable via GALAXY_CLAUDE_JSON_PATH env var for testing.
+      private def auto_compact_enabled? : Bool
+        path = ENV["GALAXY_CLAUDE_JSON_PATH"]? || (Path.home / ".claude.json").to_s
+        return true unless File.exists?(path)
+
+        json = JSON.parse(File.read(path))
+        json["autoCompactEnabled"]?.try(&.as_bool?) || false
+      rescue
+        true
       end
 
       # Assemble the full system message from activity parts.
