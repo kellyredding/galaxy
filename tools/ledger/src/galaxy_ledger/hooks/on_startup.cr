@@ -27,6 +27,8 @@ module GalaxyLedger
         claude_pid = Process.ppid.to_i64
         env_session_id = ENV[Resolver::ENV_SESSION_ID_KEY]?
         session_id = @session_identifier
+        current_cwd = Dir.current
+        current_git_branch = compute_git_branch
 
         return unless session_id && !session_id.empty?
 
@@ -51,7 +53,8 @@ module GalaxyLedger
           ledger_session_id = Database.create_session(
             session_id,
             claude_pid: claude_pid,
-            cwd: Dir.current,
+            cwd: current_cwd,
+            git_branch: current_git_branch,
           )
 
           return if ledger_session_id <= 0
@@ -78,7 +81,7 @@ module GalaxyLedger
         )
 
         # Build the awareness context
-        context = build_awareness_context(claude_pid)
+        context = build_awareness_context(claude_pid, current_cwd, current_git_branch)
 
         # Persist injected context to session record
         Database.merge_session_context(ledger_session_id, "injected_context", context)
@@ -100,11 +103,35 @@ module GalaxyLedger
         end
       end
 
-      private def build_awareness_context(claude_pid : Int64) : String
+      private def compute_git_branch : String?
+        output = IO::Memory.new
+        status = Process.run(
+          "git", ["rev-parse", "--abbrev-ref", "HEAD"],
+          output: output,
+          error: Process::Redirect::Close,
+        )
+        return nil unless status.success?
+        branch = output.to_s.strip
+        branch.empty? ? nil : branch
+      rescue
+        nil
+      end
+
+      private def build_awareness_context(
+        claude_pid : Int64,
+        cwd : String? = nil,
+        git_branch : String? = nil,
+      ) : String
         lines = [] of String
         lines << "## Galaxy Ledger"
         lines << ""
         lines << "**Ledger PID**: `#{claude_pid}`"
+        if cwd_val = cwd
+          lines << "**Working directory**: `#{Helpers.shorten_home_path(cwd_val)}`" unless cwd_val.empty?
+        end
+        if branch = git_branch
+          lines << "**Git branch**: `#{branch}`" unless branch.empty?
+        end
         lines << ""
 
         lines << "A persistent context ledger is active for this session. It"

@@ -129,6 +129,40 @@ describe "OnStartup additionalContext" do
     ctx.should contain("Fall back to normal exploration")
   end
 
+  it "includes working directory from Dir.current" do
+    test_session_id = "startup-ctx-cwd-#{Random.rand(10000)}"
+    hook_input = {"session_id" => test_session_id}.to_json
+
+    result = run_binary(["on-startup"], stdin: hook_input)
+    output = JSON.parse(result[:output])
+    ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+    ctx.should contain("**Working directory**:")
+  end
+
+  it "includes git branch when in a git repo" do
+    test_session_id = "startup-ctx-branch-#{Random.rand(10000)}"
+    hook_input = {"session_id" => test_session_id}.to_json
+
+    result = run_binary(["on-startup"], stdin: hook_input)
+    output = JSON.parse(result[:output])
+    ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+    # The spec runs inside a git repo, so git branch should be present
+    ctx.should contain("**Git branch**:")
+  end
+
+  it "stores git_branch on session record" do
+    test_session_id = "startup-ctx-stored-branch-#{Random.rand(10000)}"
+    hook_input = {"session_id" => test_session_id}.to_json
+
+    result = run_binary(["on-startup"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    session = GalaxyLedger::Database.get_session(test_session_id)
+    session.should_not be_nil
+    # git_branch should be stored on the session record
+    session.not_nil!.git_branch.should_not be_nil
+  end
+
   it "does not include cross-session stats" do
     test_session_id = "startup-ctx-no-stats-#{Random.rand(10000)}"
     hook_input = {"session_id" => test_session_id}.to_json

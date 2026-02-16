@@ -152,6 +152,68 @@ describe "OnCompact additionalContext" do
   end
 end
 
+describe "OnCompact cwd and git_branch in additionalContext" do
+  it "includes working directory when session has cwd" do
+    test_session_id = "compact-cwd-#{Random.rand(10000)}"
+    ledger_session_id = GalaxyLedger::Database.create_session(test_session_id)
+    GalaxyLedger::Database.update_session(ledger_session_id, cwd: "#{Path.home}/projects/my-app")
+
+    exchange = GalaxyLedger::Exchange::LastExchange.new(
+      user_message: "Test",
+      full_content: "Response",
+      assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
+    )
+    GalaxyLedger::Database.update_session_last_interaction(ledger_session_id, exchange.to_pretty_json)
+
+    hook_input = {"session_id" => test_session_id, "source" => "compact"}.to_json
+
+    result = run_binary(["on-compact"], stdin: hook_input)
+    output = JSON.parse(result[:output])
+    ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+    ctx.should contain("**Working directory**: `~/projects/my-app`")
+  end
+
+  it "includes git branch when session has git_branch" do
+    test_session_id = "compact-branch-#{Random.rand(10000)}"
+    ledger_session_id = GalaxyLedger::Database.create_session(test_session_id)
+    GalaxyLedger::Database.update_session(ledger_session_id, git_branch: "kr/feature-branch")
+
+    exchange = GalaxyLedger::Exchange::LastExchange.new(
+      user_message: "Test",
+      full_content: "Response",
+      assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
+    )
+    GalaxyLedger::Database.update_session_last_interaction(ledger_session_id, exchange.to_pretty_json)
+
+    hook_input = {"session_id" => test_session_id, "source" => "compact"}.to_json
+
+    result = run_binary(["on-compact"], stdin: hook_input)
+    output = JSON.parse(result[:output])
+    ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+    ctx.should contain("**Git branch**: `kr/feature-branch`")
+  end
+
+  it "omits working directory and git branch when nil" do
+    test_session_id = "compact-no-cwd-#{Random.rand(10000)}"
+    ledger_session_id = GalaxyLedger::Database.create_session(test_session_id)
+
+    exchange = GalaxyLedger::Exchange::LastExchange.new(
+      user_message: "Test",
+      full_content: "Response",
+      assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
+    )
+    GalaxyLedger::Database.update_session_last_interaction(ledger_session_id, exchange.to_pretty_json)
+
+    hook_input = {"session_id" => test_session_id, "source" => "compact"}.to_json
+
+    result = run_binary(["on-compact"], stdin: hook_input)
+    output = JSON.parse(result[:output])
+    ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+    ctx.should_not contain("**Working directory**:")
+    ctx.should_not contain("**Git branch**:")
+  end
+end
+
 describe "OnCompact edge cases" do
   it "handles empty stdin gracefully" do
     result = run_binary(["on-compact"], stdin: "")

@@ -61,6 +61,9 @@ module GalaxyLedger
           end
         end
 
+        # Fetch session record for cwd/git_branch
+        session_record = Database.get_session_by_id(ledger_session_id)
+
         # Query existing session data for awareness + restoration
         restoration = Database.query_for_restoration(ledger_session_id)
         files = Database.session_files(ledger_session_id)
@@ -78,6 +81,8 @@ module GalaxyLedger
           claude_pid: claude_pid,
           restoration: restoration,
           files: files,
+          cwd: session_record.try(&.cwd),
+          git_branch: session_record.try(&.git_branch),
         )
 
         puts Helpers.output_json(system_message, context)
@@ -162,6 +167,8 @@ module GalaxyLedger
         claude_pid : Int64,
         restoration : Database::RestorationResult,
         files : Array(Database::SessionFile),
+        cwd : String? = nil,
+        git_branch : String? = nil,
       ) : String
         lines = [] of String
 
@@ -169,6 +176,12 @@ module GalaxyLedger
         lines << "## Galaxy Ledger"
         lines << ""
         lines << "**Ledger PID**: `#{claude_pid}`"
+        if cwd_val = cwd
+          lines << "**Working directory**: `#{Helpers.shorten_home_path(cwd_val)}`" unless cwd_val.empty?
+        end
+        if branch = git_branch
+          lines << "**Git branch**: `#{branch}`" unless branch.empty?
+        end
         lines << ""
         lines << "A persistent context ledger is active for this session. It"
         lines << "automatically captures the following as you work:"

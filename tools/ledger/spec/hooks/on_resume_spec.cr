@@ -196,6 +196,65 @@ describe "OnResume additionalContext" do
   end
 end
 
+describe "OnResume cwd and git_branch in additionalContext" do
+  it "includes working directory when session has cwd" do
+    test_session_id = "resume-cwd-#{Random.rand(10000)}"
+    ledger_id = GalaxyLedger::Database.create_session(test_session_id)
+    GalaxyLedger::Database.update_session(ledger_id, cwd: "#{Path.home}/projects/my-app")
+
+    hook_input = {"session_id" => test_session_id}.to_json
+
+    result = run_binary(["on-resume"], stdin: hook_input)
+    output = JSON.parse(result[:output])
+    ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+    ctx.should contain("**Working directory**: `~/projects/my-app`")
+  end
+
+  it "includes git branch when session has git_branch" do
+    test_session_id = "resume-branch-#{Random.rand(10000)}"
+    ledger_id = GalaxyLedger::Database.create_session(test_session_id)
+    GalaxyLedger::Database.update_session(ledger_id, git_branch: "kr/feature-branch")
+
+    hook_input = {"session_id" => test_session_id}.to_json
+
+    result = run_binary(["on-resume"], stdin: hook_input)
+    output = JSON.parse(result[:output])
+    ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+    ctx.should contain("**Git branch**: `kr/feature-branch`")
+  end
+
+  it "omits working directory and git branch when nil" do
+    test_session_id = "resume-no-cwd-#{Random.rand(10000)}"
+    GalaxyLedger::Database.create_session(test_session_id)
+
+    hook_input = {"session_id" => test_session_id}.to_json
+
+    result = run_binary(["on-resume"], stdin: hook_input)
+    output = JSON.parse(result[:output])
+    ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+    ctx.should_not contain("**Working directory**:")
+    ctx.should_not contain("**Git branch**:")
+  end
+
+  it "includes both cwd and git_branch together" do
+    test_session_id = "resume-both-#{Random.rand(10000)}"
+    ledger_id = GalaxyLedger::Database.create_session(test_session_id)
+    GalaxyLedger::Database.update_session(
+      ledger_id,
+      cwd: "#{Path.home}/projects/galaxy",
+      git_branch: "main",
+    )
+
+    hook_input = {"session_id" => test_session_id}.to_json
+
+    result = run_binary(["on-resume"], stdin: hook_input)
+    output = JSON.parse(result[:output])
+    ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+    ctx.should contain("**Working directory**: `~/projects/galaxy`")
+    ctx.should contain("**Git branch**: `main`")
+  end
+end
+
 describe "OnResume resolves to original session via env var" do
   it "resolves existing session and registers new hook session_id" do
     # Setup: create original session with env var

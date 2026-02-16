@@ -41,10 +41,13 @@ module GalaxyLedger
           end
         end
 
+        # Fetch session record for cwd/git_branch and last_interaction
+        session_record = Database.get_session_by_id(ledger_session_id)
+
         # Query restoration data using the resolved ledger_session_id
         restoration = Database.query_for_restoration(ledger_session_id)
         files = Database.session_files(ledger_session_id)
-        last_exchange = read_last_exchange_from_db(ledger_session_id)
+        last_exchange = extract_last_exchange(session_record)
 
         # Build systemMessage and additionalContext
         system_message = Helpers.build_system_message(
@@ -60,13 +63,14 @@ module GalaxyLedger
           restoration: restoration,
           files: files,
           last_exchange: last_exchange,
+          cwd: session_record.try(&.cwd),
+          git_branch: session_record.try(&.git_branch),
         )
 
         puts Helpers.output_json(system_message, context)
       end
 
-      private def self.read_last_exchange_from_db(ledger_session_id : Int64) : Exchange::LastExchange?
-        session_record = Database.get_session_by_id(ledger_session_id)
+      private def self.extract_last_exchange(session_record : Database::SessionRecord?) : Exchange::LastExchange?
         return nil unless session_record
 
         json_str = session_record.last_interaction
@@ -84,11 +88,19 @@ module GalaxyLedger
         restoration : Database::RestorationResult,
         files : Array(Database::SessionFile),
         last_exchange : Exchange::LastExchange?,
+        cwd : String? = nil,
+        git_branch : String? = nil,
       ) : String
         lines = [] of String
         lines << "## Session Context Handoff"
         lines << ""
         lines << "**Ledger PID**: `#{claude_pid}`"
+        if cwd_val = cwd
+          lines << "**Working directory**: `#{Helpers.shorten_home_path(cwd_val)}`" unless cwd_val.empty?
+        end
+        if branch = git_branch
+          lines << "**Git branch**: `#{branch}`" unless branch.empty?
+        end
         lines << ""
 
         has_any_data = restoration.total_count > 0 || files.size > 0 || last_exchange
