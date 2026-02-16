@@ -222,73 +222,82 @@ describe GalaxyLedger::HooksManager do
   end
 end
 
-describe "CLI hooks commands" do
-  describe "hooks status" do
+describe "CLI install commands" do
+  # Clean up skills before each CLI install test
+  before_each do
+    skills_dir = GalaxyLedger::SKILLS_DIR
+    claude_skills_dir = GalaxyLedger::CLAUDE_SKILLS_DIR
+    FileUtils.rm_rf(skills_dir.to_s) if Dir.exists?(skills_dir)
+    FileUtils.rm_rf(claude_skills_dir.to_s) if Dir.exists?(claude_skills_dir)
+  end
+
+  describe "install" do
+    it "installs hooks and skills" do
+      File.write(GalaxyLedger::SETTINGS_FILE, "{}")
+
+      result = run_binary(["install"])
+      result[:status].should eq(0)
+      result[:output].should contain("Hooks installed successfully")
+      result[:output].should contain("Skills installed successfully")
+      result[:output].should contain("handoff")
+    end
+  end
+
+  describe "uninstall" do
+    it "removes hooks and skills" do
+      File.write(GalaxyLedger::SETTINGS_FILE, "{}")
+      run_binary(["install"])
+
+      result = run_binary(["uninstall"])
+      result[:status].should eq(0)
+      result[:output].should contain("Hooks removed")
+      result[:output].should contain("Skills removed")
+    end
+  end
+
+  describe "install status" do
     it "shows not installed status" do
       File.write(GalaxyLedger::SETTINGS_FILE, "{}")
 
-      result = run_binary(["hooks", "status"])
+      result = run_binary(["install", "status"])
       result[:status].should eq(0)
-      result[:output].should contain("No hooks installed")
+      result[:output].should contain("Not installed")
+      result[:output].should contain("Not fully installed")
     end
 
-    it "shows installed status after install" do
+    it "shows fully installed after install" do
       File.write(GalaxyLedger::SETTINGS_FILE, "{}")
-      GalaxyLedger::HooksManager.install
+      run_binary(["install"])
 
-      result = run_binary(["hooks", "status"])
+      result = run_binary(["install", "status"])
       result[:status].should eq(0)
-      result[:output].should contain("All hooks installed")
+      result[:output].should contain("All installed")
+      result[:output].should contain("Fully installed")
     end
   end
 
-  describe "hooks install" do
-    it "installs hooks successfully" do
-      File.write(GalaxyLedger::SETTINGS_FILE, "{}")
-
-      result = run_binary(["hooks", "install"])
+  describe "install help" do
+    it "shows help with --help flag" do
+      result = run_binary(["install", "--help"])
       result[:status].should eq(0)
-      result[:output].should contain("Hooks installed successfully")
+      result[:output].should contain("Install Galaxy Ledger")
+      result[:output].should contain("install status")
     end
   end
 
-  describe "hooks uninstall" do
-    it "uninstalls hooks successfully" do
-      File.write(GalaxyLedger::SETTINGS_FILE, "{}")
-      GalaxyLedger::HooksManager.install
-
-      result = run_binary(["hooks", "uninstall"])
+  describe "uninstall help" do
+    it "shows help with --help flag" do
+      result = run_binary(["uninstall", "--help"])
       result[:status].should eq(0)
-      result[:output].should contain("Hooks uninstalled successfully")
+      result[:output].should contain("Remove Galaxy Ledger")
     end
   end
 
-  describe "hooks help" do
-    it "shows help with -h flag" do
-      result = run_binary(["hooks", "-h"])
-      result[:status].should eq(0)
-      result[:output].should contain("USAGE")
-      result[:output].should contain("install")
-      result[:output].should contain("uninstall")
-      result[:output].should contain("status")
-    end
-
-    it "shows install help" do
-      result = run_binary(["hooks", "install", "-h"])
-      result[:status].should eq(0)
-      result[:output].should contain("Install ledger hooks")
-    end
-
-    it "shows uninstall help" do
-      result = run_binary(["hooks", "uninstall", "-h"])
-      result[:status].should eq(0)
-      result[:output].should contain("Remove ledger hooks")
-    end
-
-    it "shows status help" do
-      result = run_binary(["hooks", "status", "-h"])
-      result[:status].should eq(0)
-      result[:output].should contain("Check hook installation status")
+  describe "hooks subcommand removed" do
+    it "rejects the old hooks subcommand" do
+      result = run_binary(["hooks"])
+      result[:status].should_not eq(0)
+      result[:error].should contain("Unknown command")
     end
   end
 end

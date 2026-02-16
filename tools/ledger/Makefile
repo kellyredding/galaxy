@@ -40,6 +40,8 @@ install: check test-eval build
 	@# Symlink to local bin for PATH access
 	@mkdir -p $(LOCAL_BINDIR)
 	@ln -sf $(BINDIR)/galaxy-ledger $(LOCAL_BINDIR)/galaxy-ledger
+	@# Install hooks + skills
+	$(BINDIR)/galaxy-ledger install
 
 clean:
 	rm -rf $(BUILDDIR) lib .shards releases

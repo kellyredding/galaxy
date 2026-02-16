@@ -40,6 +40,10 @@ module GalaxyLedger
     )
   )
   CONFIG_FILE = CONFIG_DIR / "config.json"
+
+  # Skills directories
+  SKILLS_DIR        = GALAXY_DIR / "ledger" / "skills"
+  CLAUDE_SKILLS_DIR = CLAUDE_CONFIG_DIR / "skills"
 end
 
 # Only run CLI when executed directly, not when required by specs

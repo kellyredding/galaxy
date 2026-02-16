@@ -80,8 +80,10 @@ module GalaxyLedger
         handle_on_post_tool_use_command(rest)
       when "on-user-prompt-submit"
         handle_on_user_prompt_submit_command(rest)
-      when "hooks"
-        handle_hooks_command(rest)
+      when "install"
+        handle_install_command(rest)
+      when "uninstall"
+        handle_uninstall_command(rest)
       when "extract-user"
         handle_extract_user_command(rest)
       when "extract-assistant"
@@ -115,7 +117,8 @@ module GalaxyLedger
         list-files          List session file access records
         add                 Add an entry (learning, decision, direction, etc.)
         config              Manage configuration
-        hooks               Install/uninstall Claude Code hooks
+        install             Install hooks and skills into Claude Code
+        uninstall           Remove hooks and skills from Claude Code
         version             Show version
         help                Show this help
 
@@ -1317,213 +1320,208 @@ module GalaxyLedger
     # Hooks Management Commands
     # ========================================
 
-    private def self.handle_hooks_command(args : Array(String))
-      if args.empty?
-        show_hooks_help
+    private def self.handle_install_command(args : Array(String))
+      if args.first? == "-h" || args.first? == "--help"
+        show_install_help
         return
       end
 
-      subcommand = args[0]
-      rest = args[1..]? || [] of String
+      subcommand = args[0]? || ""
 
       case subcommand
-      when "install"
-        if rest.includes?("-h") || rest.includes?("--help")
-          show_hooks_install_help
-        else
-          hooks_install
-        end
-      when "uninstall"
-        if rest.includes?("-h") || rest.includes?("--help")
-          show_hooks_uninstall_help
-        else
-          hooks_uninstall
-        end
       when "status"
-        if rest.includes?("-h") || rest.includes?("--help")
-          show_hooks_status_help
-        else
-          hooks_status
-        end
-      when "help", "-h", "--help"
-        show_hooks_help
+        install_status
+      when ""
+        run_install
       else
-        STDERR.puts "Error: Unknown hooks command '#{subcommand}'"
-        STDERR.puts "Run 'galaxy-ledger hooks --help' for usage"
+        STDERR.puts "Error: Unknown install command '#{subcommand}'"
+        STDERR.puts "Run 'galaxy-ledger install --help' for usage"
         exit(1)
       end
     end
 
-    private def self.show_hooks_help
-      puts <<-HELP
-      galaxy-ledger hooks - Manage Claude Code hook installation
+    private def self.handle_uninstall_command(args : Array(String))
+      if args.first? == "-h" || args.first? == "--help"
+        show_uninstall_help
+        return
+      end
 
-      USAGE:
-        galaxy-ledger hooks install     Install ledger hooks to settings.json
-        galaxy-ledger hooks uninstall   Remove ledger hooks from settings.json
-        galaxy-ledger hooks status      Check which hooks are installed
-        galaxy-ledger hooks help        Show this help
-
-      DESCRIPTION:
-        These commands manage the installation of Galaxy Ledger hooks into
-        Claude Code's settings.json file. Hooks enable automatic context
-        tracking, file operation logging, and context restoration.
-
-      SETTINGS FILE:
-        Default: ~/.claude/settings.json
-        Override: Set GALAXY_CLAUDE_CONFIG_DIR environment variable
-
-      INSTALLED HOOKS:
-        - UserPromptSubmit: Capture user directions/preferences
-        - PostToolUse: Track file operations, detect guidelines
-        - Stop: Capture last exchange, check context thresholds
-        - SessionStart: Four matchers (startup, resume, clear, compact)
-
-      EXAMPLES:
-        galaxy-ledger hooks status
-        galaxy-ledger hooks install
-        galaxy-ledger hooks uninstall
-
-      TESTING:
-        To test without affecting your live Claude Code configuration:
-        export GALAXY_CLAUDE_CONFIG_DIR=/tmp/test-claude
-        galaxy-ledger hooks install
-        cat /tmp/test-claude/settings.json
-      HELP
+      run_uninstall
     end
 
-    private def self.show_hooks_install_help
+    private def self.show_install_help
       puts <<-HELP
-      galaxy-ledger hooks install - Install ledger hooks
+      galaxy-ledger install - Install Galaxy Ledger into Claude Code
 
       USAGE:
-        galaxy-ledger hooks install
+        galaxy-ledger install           Install hooks and skills
+        galaxy-ledger install status    Check installation status
+        galaxy-ledger install --help    Show this help
 
       DESCRIPTION:
-        Installs all Galaxy Ledger hooks into Claude Code's settings.json file.
-        If hooks are already installed, they will be updated to the latest version.
+        Installs all Galaxy Ledger components into Claude Code:
+        - Hooks: Registered in Claude Code's settings.json
+        - Skills: SKILL.md files symlinked into Claude Code's discovery path
 
-      SETTINGS FILE:
-        #{SETTINGS_FILE}
-        (Override with GALAXY_CLAUDE_CONFIG_DIR environment variable)
+        Installation is idempotent — safe to run multiple times.
 
       WHAT GETS INSTALLED:
-        - UserPromptSubmit hook (async): Captures user messages
-        - PostToolUse hook (async): Tracks file operations
-        - Stop hook: Captures last exchange, shows context warnings
-        - SessionStart hooks: Context restoration and startup awareness
+        Hooks (in #{SETTINGS_FILE}):
+          - UserPromptSubmit (async): Captures user messages
+          - PostToolUse (async): Tracks file operations
+          - Stop: Captures last exchange, shows context warnings
+          - SessionStart: Context restoration (startup, resume, clear, compact)
+
+        Skills (symlinked to #{CLAUDE_SKILLS_DIR}):
+          - handoff: Review and confirm context handoff after /clear
 
       SAFETY:
-        Existing non-ledger hooks are preserved.
-        To test first, use GALAXY_CLAUDE_CONFIG_DIR=/tmp/test-claude
+        Existing non-ledger hooks and skills are preserved.
+
+      TESTING:
+        To test without affecting your live configuration:
+        export GALAXY_CLAUDE_CONFIG_DIR=/tmp/test-claude
+        export GALAXY_DIR=/tmp/test-galaxy
+        galaxy-ledger install
       HELP
     end
 
-    private def self.show_hooks_uninstall_help
+    private def self.show_uninstall_help
       puts <<-HELP
-      galaxy-ledger hooks uninstall - Remove ledger hooks
+      galaxy-ledger uninstall - Remove Galaxy Ledger from Claude Code
 
       USAGE:
-        galaxy-ledger hooks uninstall
+        galaxy-ledger uninstall
+        galaxy-ledger uninstall --help
 
       DESCRIPTION:
-        Removes all Galaxy Ledger hooks from Claude Code's settings.json file.
-        Other hooks (non-ledger) are preserved.
+        Removes all Galaxy Ledger components from Claude Code:
+        - Hooks: Removed from Claude Code's settings.json
+        - Skills: Symlinks and source files removed
+
+        Non-ledger hooks and skills are preserved.
 
       SETTINGS FILE:
         #{SETTINGS_FILE}
         (Override with GALAXY_CLAUDE_CONFIG_DIR environment variable)
-
-      WHAT GETS REMOVED:
-        Any hook with a command containing "galaxy-ledger" is removed.
       HELP
     end
 
-    private def self.show_hooks_status_help
-      puts <<-HELP
-      galaxy-ledger hooks status - Check hook installation status
-
-      USAGE:
-        galaxy-ledger hooks status
-
-      DESCRIPTION:
-        Shows which Galaxy Ledger hooks are currently installed in
-        Claude Code's settings.json file.
-
-      SETTINGS FILE:
-        #{SETTINGS_FILE}
-        (Override with GALAXY_CLAUDE_CONFIG_DIR environment variable)
-
-      OUTPUT:
-        Lists each hook event type and whether ledger hooks are installed for it.
-      HELP
-    end
-
-    private def self.hooks_install
-      puts "Installing Galaxy Ledger hooks..."
+    private def self.run_install
+      puts "Installing Galaxy Ledger..."
       puts "  Settings file: #{SETTINGS_FILE}"
+      puts "  Skills directory: #{SKILLS_DIR}"
 
-      if HooksManager.install
+      result = InstallManager.install
+
+      if result.hooks_ok
         puts ""
         puts "✅ Hooks installed successfully!"
-        puts ""
-        puts "Installed hooks:"
         HooksManager::LEDGER_HOOKS.keys.each do |event|
           puts "  - #{event}"
         end
-        puts ""
-        puts "Restart Claude Code for hooks to take effect."
       else
+        STDERR.puts ""
         STDERR.puts "❌ Failed to install hooks"
-        exit(1)
       end
-    end
 
-    private def self.hooks_uninstall
-      puts "Uninstalling Galaxy Ledger hooks..."
-      puts "  Settings file: #{SETTINGS_FILE}"
-
-      if HooksManager.uninstall
+      if result.skills_ok
         puts ""
-        puts "✅ Hooks uninstalled successfully!"
+        puts "✅ Skills installed successfully!"
+        SkillsManager::LEDGER_SKILLS.each_key do |name|
+          puts "  - #{name} → #{CLAUDE_SKILLS_DIR / name}"
+        end
+      else
+        STDERR.puts ""
+        STDERR.puts "❌ Failed to install skills"
+      end
+
+      if result.success?
         puts ""
         puts "Restart Claude Code for changes to take effect."
       else
-        STDERR.puts "❌ Failed to uninstall hooks"
         exit(1)
       end
     end
 
-    private def self.hooks_status
-      status = HooksManager.status
+    private def self.run_uninstall
+      puts "Uninstalling Galaxy Ledger..."
 
-      puts "Galaxy Ledger Hook Status"
-      puts "========================="
-      puts ""
-      puts "Settings file: #{status.settings_path}"
-      puts ""
+      result = InstallManager.uninstall
 
-      if status.installed
-        puts "Status: ✅ All hooks installed"
-      elsif status.hook_events.empty?
-        puts "Status: ❌ No hooks installed"
+      if result.hooks_ok
+        puts ""
+        puts "✅ Hooks removed"
       else
-        puts "Status: ⚠️  Partially installed (#{status.hook_events.size}/#{HooksManager::LEDGER_HOOKS.keys.size})"
+        STDERR.puts ""
+        STDERR.puts "❌ Failed to remove hooks"
       end
 
+      if result.skills_ok
+        puts "✅ Skills removed"
+      else
+        STDERR.puts "❌ Failed to remove skills"
+      end
+
+      if result.success?
+        puts ""
+        puts "Restart Claude Code for changes to take effect."
+      else
+        exit(1)
+      end
+    end
+
+    private def self.install_status
+      status = InstallManager.status
+
+      puts "Galaxy Ledger Installation Status"
+      puts "=================================="
       puts ""
-      puts "Hook events:"
+      puts "Settings file: #{status.hooks.settings_path}"
+      puts ""
+
+      # Hooks status
+      if status.hooks.installed
+        puts "Hooks: ✅ All installed"
+      elsif status.hooks.hook_events.empty?
+        puts "Hooks: ❌ Not installed"
+      else
+        puts "Hooks: ⚠️  Partially installed (#{status.hooks.hook_events.size}/#{HooksManager::LEDGER_HOOKS.keys.size})"
+      end
+
       HooksManager::LEDGER_HOOKS.keys.each do |event|
-        if status.hook_events.includes?(event)
+        if status.hooks.hook_events.includes?(event)
           puts "  ✅ #{event}"
         else
           puts "  ❌ #{event}"
         end
       end
 
-      unless status.installed
+      puts ""
+
+      # Skills status
+      if status.skills.installed
+        puts "Skills: ✅ All installed"
+      else
+        puts "Skills: ❌ Not fully installed"
+      end
+
+      status.skills.skills.each do |skill|
+        if skill.installed
+          puts "  ✅ #{skill.name} → #{skill.symlink_path}"
+        else
+          puts "  ❌ #{skill.name}"
+        end
+      end
+
+      puts ""
+
+      if status.installed?
+        puts "Overall: ✅ Fully installed"
+      else
+        puts "Overall: ❌ Not fully installed"
         puts ""
-        puts "Run 'galaxy-ledger hooks install' to install missing hooks."
+        puts "Run 'galaxy-ledger install' to install missing components."
       end
     end
 
