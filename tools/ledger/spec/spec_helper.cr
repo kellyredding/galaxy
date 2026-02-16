@@ -55,6 +55,7 @@ BINARY_PATH = Path[__DIR__].parent / "build" / "galaxy-ledger"
 def run_binary(
   args : Array(String) = [] of String,
   stdin : String? = nil,
+  extra_env : Hash(String, String) = {} of String => String,
 ) : NamedTuple(output: String, error: String, status: Int32)
   unless File.exists?(BINARY_PATH)
     raise "Binary not found at #{BINARY_PATH}. Run 'make dev' first."
@@ -68,20 +69,23 @@ def run_binary(
     input_io = IO::Memory.new(stdin)
   end
 
+  base_env = {
+    "GALAXY_CLAUDE_CONFIG_DIR"    => SPEC_CLAUDE_CONFIG_DIR.to_s,
+    "GALAXY_LEDGER_CONFIG_DIR"    => SPEC_CONFIG_DIR.to_s,
+    "GALAXY_DIR"                  => SPEC_GALAXY_DIR.to_s,
+    "GALAXY_LEDGER_DATABASE_PATH" => SPEC_DATABASE_PATH.to_s,
+    "HOME"                        => ENV["HOME"],
+    "PATH"                        => ENV["PATH"],
+  }
+  merged_env = base_env.merge(extra_env)
+
   process = Process.new(
     BINARY_PATH.to_s,
     args: args,
     input: input_io,
     output: Process::Redirect::Pipe,
     error: Process::Redirect::Pipe,
-    env: {
-      "GALAXY_CLAUDE_CONFIG_DIR"    => SPEC_CLAUDE_CONFIG_DIR.to_s,
-      "GALAXY_LEDGER_CONFIG_DIR"    => SPEC_CONFIG_DIR.to_s,
-      "GALAXY_DIR"                  => SPEC_GALAXY_DIR.to_s,
-      "GALAXY_LEDGER_DATABASE_PATH" => SPEC_DATABASE_PATH.to_s,
-      "HOME"                        => ENV["HOME"],
-      "PATH"                        => ENV["PATH"],
-    }
+    env: merged_env,
   )
 
   # Read output streams

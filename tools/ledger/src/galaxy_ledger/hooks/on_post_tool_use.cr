@@ -33,16 +33,16 @@ module GalaxyLedger
         tool_name = @tool_name
         return unless tool_name
 
-        # Resolve session by PID → ledger_session_id
+        # Resolve session via 3-tier chain (PID → env var → hook session_id).
+        # No creation — bail if nothing resolves.
         claude_pid = Process.ppid.to_i64
-        ledger_session_id = Database.resolve_claude_pid(claude_pid)
+        env_session_id = ENV[Resolver::ENV_SESSION_ID_KEY]?
 
-        # Fallback: try resolving stdin session_identifier
-        unless ledger_session_id
-          if sid = @stdin_session_identifier
-            ledger_session_id = Database.resolve_session_identifier(sid)
-          end
-        end
+        ledger_session_id = Resolver.resolve_session(
+          claude_pid: claude_pid,
+          env_session_id: env_session_id,
+          stdin_session_id: @stdin_session_identifier,
+        )
         return unless ledger_session_id
 
         # Get current session_identifier for extraction subprocess --session flags

@@ -32,21 +32,18 @@ module GalaxyLedger
         # Parse hook input from stdin
         parse_hook_input
 
-        # Resolve session by PID → ledger_session_id
+        # Resolve session via 3-tier chain (PID → env var → hook session_id),
+        # creating a new session as last resort.
         claude_pid = Process.ppid.to_i64
-        ledger_session_id = Database.resolve_claude_pid(claude_pid)
+        env_session_id = ENV[Resolver::ENV_SESSION_ID_KEY]?
 
-        # Fallback: if PID lookup fails (on_startup never ran or DB was wiped),
-        # try resolving by session_identifier, then create as last resort.
-        unless ledger_session_id
-          stdin_id = @stdin_session_identifier
-          if stdin_id && !stdin_id.empty?
-            ledger_session_id = Database.resolve_session_identifier(stdin_id)
-            unless ledger_session_id
-              ledger_session_id = Database.create_session(stdin_id, claude_pid: claude_pid, cwd: Dir.current)
-            end
-          end
-        end
+        ledger_session_id = Resolver.resolve_session(
+          claude_pid: claude_pid,
+          env_session_id: env_session_id,
+          stdin_session_id: @stdin_session_identifier,
+          create_if_missing: true,
+          cwd: Dir.current,
+        )
 
         return output_empty unless ledger_session_id && ledger_session_id > 0
 

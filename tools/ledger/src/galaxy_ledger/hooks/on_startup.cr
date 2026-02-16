@@ -17,21 +17,23 @@ module GalaxyLedger
         # Parse hook input from stdin to get session_id
         parse_hook_input
 
-        # Register: create session record with PID, register mappings.
-        # Try resolving first in case this session_identifier already exists
-        # (e.g., process restart with same session ID).
-        session_identifier = @session_identifier
+        # Resolve session via 3-tier chain (PID → env var → hook session_id),
+        # creating a new session as last resort.
         claude_pid = Process.ppid.to_i64
-        ledger_session_id = 0_i64
-        if session_identifier
-          resolved = Database.resolve_session_identifier(session_identifier)
-          if resolved
-            ledger_session_id = resolved
-            Database.register_claude_pid(ledger_session_id, claude_pid)
-            Database.update_session(ledger_session_id, claude_pid: claude_pid)
-          else
-            ledger_session_id = Database.create_session(session_identifier, claude_pid: claude_pid, cwd: Dir.current)
-          end
+        env_session_id = ENV[Resolver::ENV_SESSION_ID_KEY]?
+
+        ledger_session_id = Resolver.resolve_session(
+          claude_pid: claude_pid,
+          env_session_id: env_session_id,
+          stdin_session_id: @session_identifier,
+          create_if_missing: true,
+          cwd: Dir.current,
+        ) || 0_i64
+
+        # If we resolved an existing session (not freshly created),
+        # update current values on the session record.
+        if ledger_session_id > 0 && @session_identifier
+          Database.update_session(ledger_session_id, session_identifier: @session_identifier, claude_pid: claude_pid)
         end
 
         # Query existing session data (may have data if resuming)
