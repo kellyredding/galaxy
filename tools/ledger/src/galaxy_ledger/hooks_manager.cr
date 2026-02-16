@@ -43,22 +43,42 @@ module GalaxyLedger
       ],
       "SessionStart" => [
         {
-          "matcher" => "clear|compact",
-          "hooks"   => [
-            {
-              "type"    => "command",
-              "command" => "~/.claude/galaxy/bin/galaxy-ledger on-session-start",
-              "timeout" => 30,
-            },
-          ],
-        },
-        {
           "matcher" => "startup",
           "hooks"   => [
             {
               "type"    => "command",
               "command" => "~/.claude/galaxy/bin/galaxy-ledger on-startup",
               "timeout" => 10,
+            },
+          ],
+        },
+        {
+          "matcher" => "resume",
+          "hooks"   => [
+            {
+              "type"    => "command",
+              "command" => "~/.claude/galaxy/bin/galaxy-ledger on-resume",
+              "timeout" => 30,
+            },
+          ],
+        },
+        {
+          "matcher" => "clear",
+          "hooks"   => [
+            {
+              "type"    => "command",
+              "command" => "~/.claude/galaxy/bin/galaxy-ledger on-clear",
+              "timeout" => 30,
+            },
+          ],
+        },
+        {
+          "matcher" => "compact",
+          "hooks"   => [
+            {
+              "type"    => "command",
+              "command" => "~/.claude/galaxy/bin/galaxy-ledger on-compact",
+              "timeout" => 30,
             },
           ],
         },

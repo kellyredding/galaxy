@@ -70,8 +70,12 @@ module GalaxyLedger
         handle_on_startup_command(rest)
       when "on-stop"
         handle_on_stop_command(rest)
-      when "on-session-start"
-        handle_on_session_start_command(rest)
+      when "on-clear"
+        handle_on_clear_command(rest)
+      when "on-compact"
+        handle_on_compact_command(rest)
+      when "on-resume"
+        handle_on_resume_command(rest)
       when "on-post-tool-use"
         handle_on_post_tool_use_command(rest)
       when "on-user-prompt-submit"
@@ -117,8 +121,10 @@ module GalaxyLedger
 
       Hook Commands (called by Claude Code hooks):
         on-startup          Fresh session startup (ledger awareness)
+        on-resume           Restore context for resumed session
+        on-clear            Restore context after /clear
+        on-compact          Restore context after auto/manual compact
         on-stop             Capture last exchange, check thresholds
-        on-session-start    Restore context after clear/compact
         on-post-tool-use    Track file operations, detect guidelines
         on-user-prompt-submit  Capture user directions/preferences
 
@@ -995,25 +1001,26 @@ module GalaxyLedger
       HELP
     end
 
-    private def self.handle_on_session_start_command(args : Array(String))
+    private def self.handle_on_clear_command(args : Array(String))
       if args.first? == "-h" || args.first? == "--help"
-        show_on_session_start_help
+        show_on_clear_help
         return
       end
-      handler = Hooks::OnSessionStart.new
+      handler = Hooks::OnClear.new
       handler.run
     end
 
-    private def self.show_on_session_start_help
+    private def self.show_on_clear_help
       puts <<-HELP
-      galaxy-ledger on-session-start - Handle SessionStart(clear|compact) hook
+      galaxy-ledger on-clear - Handle SessionStart(clear) hook
 
       USAGE:
-        galaxy-ledger on-session-start
+        galaxy-ledger on-clear
 
       DESCRIPTION:
-        Called by Claude Code's SessionStart hook after /clear or auto-compact.
+        Called by Claude Code's SessionStart hook after /clear.
         This hook:
+        - Resolves session via env var / PID / hook session_id
         - Queries tiered restoration data from SQLite
         - Builds systemMessage status line for user display
         - Returns additionalContext with full handoff markdown for agent restoration
@@ -1025,13 +1032,13 @@ module GalaxyLedger
           "transcript_path": "/path/to/transcript.jsonl",
           "cwd": "/current/working/directory",
           "hook_event_name": "SessionStart",
-          "source": "clear" | "compact"
+          "source": "clear"
         }
 
       OUTPUT (stdout):
         JSON object with restored context:
         {
-          "systemMessage": "Handoff │ 3 guidelines, 1 plan │ 12 session files │ Last: "..."",
+          "systemMessage": "Handoff │ 3 guidelines, 1 plan │ ...",
           "hookSpecificOutput": {
             "hookEventName": "SessionStart",
             "additionalContext": "## Session Context Handoff\\n..."
@@ -1043,10 +1050,132 @@ module GalaxyLedger
         {
           "hooks": {
             "SessionStart": [{
-              "matcher": "clear|compact",
+              "matcher": "clear",
               "hooks": [{
                 "type": "command",
-                "command": "galaxy-ledger on-session-start",
+                "command": "galaxy-ledger on-clear",
+                "timeout": 30
+              }]
+            }]
+          }
+        }
+      HELP
+    end
+
+    private def self.handle_on_compact_command(args : Array(String))
+      if args.first? == "-h" || args.first? == "--help"
+        show_on_compact_help
+        return
+      end
+      handler = Hooks::OnCompact.new
+      handler.run
+    end
+
+    private def self.show_on_compact_help
+      puts <<-HELP
+      galaxy-ledger on-compact - Handle SessionStart(compact) hook
+
+      USAGE:
+        galaxy-ledger on-compact
+
+      DESCRIPTION:
+        Called by Claude Code's SessionStart hook after auto/manual compact.
+        This hook:
+        - Resolves session via env var / PID / hook session_id
+        - Queries tiered restoration data from SQLite
+        - Builds systemMessage status line for user display
+        - Returns additionalContext with full handoff markdown for agent restoration
+
+      INPUT (stdin):
+        JSON object with hook data:
+        {
+          "session_id": "abc123",
+          "transcript_path": "/path/to/transcript.jsonl",
+          "cwd": "/current/working/directory",
+          "hook_event_name": "SessionStart",
+          "source": "compact"
+        }
+
+      OUTPUT (stdout):
+        JSON object with restored context:
+        {
+          "systemMessage": "Handoff │ 3 guidelines, 1 plan │ ...",
+          "hookSpecificOutput": {
+            "hookEventName": "SessionStart",
+            "additionalContext": "## Session Context Handoff\\n..."
+          }
+        }
+
+      HOOK CONFIGURATION:
+        Add to ~/.claude/settings.json:
+        {
+          "hooks": {
+            "SessionStart": [{
+              "matcher": "compact",
+              "hooks": [{
+                "type": "command",
+                "command": "galaxy-ledger on-compact",
+                "timeout": 30
+              }]
+            }]
+          }
+        }
+      HELP
+    end
+
+    private def self.handle_on_resume_command(args : Array(String))
+      if args.first? == "-h" || args.first? == "--help"
+        show_on_resume_help
+        return
+      end
+      handler = Hooks::OnResume.new
+      handler.run
+    end
+
+    private def self.show_on_resume_help
+      puts <<-HELP
+      galaxy-ledger on-resume - Handle SessionStart(resume) hook
+
+      USAGE:
+        galaxy-ledger on-resume
+
+      DESCRIPTION:
+        Called by Claude Code's SessionStart hook when resuming a previous session.
+        This hook:
+        - Resolves original session via env var (preferred) or PID
+        - Registers new hook session_id against the original session
+        - Injects ledger awareness context with PID-based lookup directives
+        - Includes condensed summary of accumulated session data
+
+      INPUT (stdin):
+        JSON object with hook data:
+        {
+          "session_id": "abc123",
+          "transcript_path": "/path/to/transcript.jsonl",
+          "cwd": "/current/working/directory",
+          "hook_event_name": "SessionStart",
+          "source": "resume"
+        }
+
+      OUTPUT (stdout):
+        JSON object with awareness context:
+        {
+          "systemMessage": "Resumed │ 3 guidelines, 5 session files",
+          "hookSpecificOutput": {
+            "hookEventName": "SessionStart",
+            "additionalContext": "## Galaxy Ledger\\n..."
+          }
+        }
+
+      HOOK CONFIGURATION:
+        Add to ~/.claude/settings.json:
+        {
+          "hooks": {
+            "SessionStart": [{
+              "matcher": "resume",
+              "hooks": [{
+                "type": "command",
+                "command": "galaxy-ledger on-resume",
                 "timeout": 30
               }]
             }]
@@ -1248,7 +1377,7 @@ module GalaxyLedger
         - UserPromptSubmit: Capture user directions/preferences
         - PostToolUse: Track file operations, detect guidelines
         - Stop: Capture last exchange, check context thresholds
-        - SessionStart: Restore context after clear/compact, startup awareness
+        - SessionStart: Four matchers (startup, resume, clear, compact)
 
       EXAMPLES:
         galaxy-ledger hooks status

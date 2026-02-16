@@ -20,38 +20,9 @@ describe "CLAUDE_CLI_SESSION_ID env var resolution" do
       session.should_not be_nil
       session.not_nil!.current_session_identifier.should eq(hook_id)
 
-      # Env var should resolve to the same session
-      ledger_id_from_env = GalaxyLedger::Database.resolve_session_identifier(env_id)
+      # Env var should resolve to the new session (on-startup always creates)
       ledger_id_from_hook = GalaxyLedger::Database.resolve_session_identifier(hook_id)
-      ledger_id_from_env.should_not be_nil
-      ledger_id_from_env.should eq(ledger_id_from_hook)
-    end
-
-    it "resolves existing session via env var on resume (new hook session_id)" do
-      # Simulate initial session
-      original_hook_id = "env-resume-orig-#{rand(100000)}"
-      env_id = "env-resume-durable-#{rand(100000)}"
-      original_ledger_id = GalaxyLedger::Database.create_session(original_hook_id)
-      GalaxyLedger::Database.register_session_identifier(original_ledger_id, env_id)
-
-      # Simulate resume: new hook session_id, same env var
-      resumed_hook_id = "env-resume-forked-#{rand(100000)}"
-      hook_input = {"session_id" => resumed_hook_id}.to_json
-
-      result = run_binary(
-        ["on-startup"],
-        stdin: hook_input,
-        extra_env: {"CLAUDE_CLI_SESSION_ID" => env_id},
-      )
-      result[:status].should eq(0)
-
-      # Should have resolved to the original session (not created a new one)
-      resumed_ledger_id = GalaxyLedger::Database.resolve_session_identifier(resumed_hook_id)
-      resumed_ledger_id.should eq(original_ledger_id)
-
-      # current_session_identifier should be updated to the new hook_id
-      session = GalaxyLedger::Database.get_session_by_id(original_ledger_id)
-      session.not_nil!.current_session_identifier.should eq(resumed_hook_id)
+      ledger_id_from_hook.should_not be_nil
     end
 
     it "works normally without CLAUDE_CLI_SESSION_ID env var" do
@@ -66,11 +37,11 @@ describe "CLAUDE_CLI_SESSION_ID env var resolution" do
     end
   end
 
-  describe "on-session-start" do
+  describe "on-clear" do
     it "resolves via env var when PID does not match (resume scenario)" do
       # Create original session with env var mapping
-      original_hook_id = "env-ss-orig-#{rand(100000)}"
-      env_id = "env-ss-durable-#{rand(100000)}"
+      original_hook_id = "env-clear-orig-#{rand(100000)}"
+      env_id = "env-clear-durable-#{rand(100000)}"
       original_ledger_id = GalaxyLedger::Database.create_session(original_hook_id)
       GalaxyLedger::Database.register_session_identifier(original_ledger_id, env_id)
 
@@ -83,15 +54,15 @@ describe "CLAUDE_CLI_SESSION_ID env var resolution" do
       )
       GalaxyLedger::Database.insert(original_ledger_id, entry)
 
-      # Simulate on-session-start with new hook session_id but same env var
-      new_hook_id = "env-ss-cleared-#{rand(100000)}"
+      # Simulate on-clear with new hook session_id but same env var
+      new_hook_id = "env-clear-cleared-#{rand(100000)}"
       hook_input = {
         "session_id" => new_hook_id,
         "source"     => "clear",
       }.to_json
 
       result = run_binary(
-        ["on-session-start"],
+        ["on-clear"],
         stdin: hook_input,
         extra_env: {"CLAUDE_CLI_SESSION_ID" => env_id},
       )
@@ -101,6 +72,82 @@ describe "CLAUDE_CLI_SESSION_ID env var resolution" do
       output = JSON.parse(result[:output])
       ctx = output["hookSpecificOutput"]["additionalContext"].as_s
       ctx.should contain("trailing commas")
+
+      # New hook_id should map to original session
+      GalaxyLedger::Database.resolve_session_identifier(new_hook_id).should eq(original_ledger_id)
+    end
+  end
+
+  describe "on-compact" do
+    it "resolves via env var and restores context" do
+      # Create original session with env var mapping
+      original_hook_id = "env-compact-orig-#{rand(100000)}"
+      env_id = "env-compact-durable-#{rand(100000)}"
+      original_ledger_id = GalaxyLedger::Database.create_session(original_hook_id)
+      GalaxyLedger::Database.register_session_identifier(original_ledger_id, env_id)
+
+      entry = GalaxyLedger::Entry.new(
+        entry_type: "decision",
+        content: "Use Crystal for CLI tools",
+        importance: "high",
+      )
+      GalaxyLedger::Database.insert(original_ledger_id, entry)
+
+      new_hook_id = "env-compact-new-#{rand(100000)}"
+      hook_input = {
+        "session_id" => new_hook_id,
+        "source"     => "compact",
+      }.to_json
+
+      result = run_binary(
+        ["on-compact"],
+        stdin: hook_input,
+        extra_env: {"CLAUDE_CLI_SESSION_ID" => env_id},
+      )
+      result[:status].should eq(0)
+
+      output = JSON.parse(result[:output])
+      ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+      ctx.should contain("Crystal for CLI")
+
+      GalaxyLedger::Database.resolve_session_identifier(new_hook_id).should eq(original_ledger_id)
+    end
+  end
+
+  describe "on-resume" do
+    it "resolves via env var and injects awareness context" do
+      # Create original session with env var
+      original_hook_id = "env-resume-orig-#{rand(100000)}"
+      env_id = "env-resume-durable-#{rand(100000)}"
+      original_ledger_id = GalaxyLedger::Database.create_session(original_hook_id)
+      GalaxyLedger::Database.register_session_identifier(original_ledger_id, env_id)
+
+      entry = GalaxyLedger::Entry.new(
+        entry_type: "learning",
+        content: "WAL mode improves concurrency",
+        importance: "medium",
+      )
+      GalaxyLedger::Database.insert(original_ledger_id, entry)
+
+      # Resume: new hook session_id, same env var
+      new_hook_id = "env-resume-new-#{rand(100000)}"
+      hook_input = {"session_id" => new_hook_id}.to_json
+
+      result = run_binary(
+        ["on-resume"],
+        stdin: hook_input,
+        extra_env: {"CLAUDE_CLI_SESSION_ID" => env_id},
+      )
+      result[:status].should eq(0)
+
+      output = JSON.parse(result[:output])
+      msg = output["systemMessage"].as_s
+      msg.should contain("Resumed")
+
+      ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+      ctx.should contain("## Galaxy Ledger")
+      ctx.should contain("resumed session")
+      ctx.should contain("1 learnings")
 
       # New hook_id should map to original session
       GalaxyLedger::Database.resolve_session_identifier(new_hook_id).should eq(original_ledger_id)
@@ -225,10 +272,10 @@ describe "CLAUDE_CLI_SESSION_ID env var resolution" do
       )
       GalaxyLedger::Database.insert(ledger_id, entry)
 
-      # Step 2: /clear → on-session-start (new hook session_id, same process)
+      # Step 2: /clear → on-clear (new hook session_id, same process)
       hook_id_2 = "env-lc-h2-#{rand(100000)}"
       result = run_binary(
-        ["on-session-start"],
+        ["on-clear"],
         stdin: {"session_id" => hook_id_2, "source" => "clear"}.to_json,
         extra_env: {"CLAUDE_CLI_SESSION_ID" => env_id},
       )
@@ -239,24 +286,25 @@ describe "CLAUDE_CLI_SESSION_ID env var resolution" do
       msg = output["systemMessage"].as_s
       msg.should contain("1 learning")
 
-      # Step 3: Resume → on-startup (new hook session_id, same env var)
+      # Step 3: Resume → on-resume (new hook session_id, same env var)
       hook_id_3 = "env-lc-h3-#{rand(100000)}"
       result = run_binary(
-        ["on-startup"],
+        ["on-resume"],
         stdin: {"session_id" => hook_id_3}.to_json,
         extra_env: {"CLAUDE_CLI_SESSION_ID" => env_id},
       )
       result[:status].should eq(0)
 
-      # Should resolve to same session (shows data counts in systemMessage)
+      # Should resolve to same session
       output = JSON.parse(result[:output])
       msg = output["systemMessage"].as_s
+      msg.should contain("Resumed")
       msg.should contain("1 learning")
 
-      # Step 4: /clear after resume → on-session-start (another new hook session_id)
+      # Step 4: /clear after resume → on-clear (another new hook session_id)
       hook_id_4 = "env-lc-h4-#{rand(100000)}"
       result = run_binary(
-        ["on-session-start"],
+        ["on-clear"],
         stdin: {"session_id" => hook_id_4, "source" => "clear"}.to_json,
         extra_env: {"CLAUDE_CLI_SESSION_ID" => env_id},
       )
@@ -265,8 +313,7 @@ describe "CLAUDE_CLI_SESSION_ID env var resolution" do
       # Still the same session
       GalaxyLedger::Database.resolve_session_identifier(hook_id_4).should eq(ledger_id)
 
-      # All four hook IDs and the env var should point to the same session
-      GalaxyLedger::Database.resolve_session_identifier(hook_id_1).should eq(ledger_id)
+      # hook_id_2 through hook_id_4 and the env var should point to the same session
       GalaxyLedger::Database.resolve_session_identifier(hook_id_2).should eq(ledger_id)
       GalaxyLedger::Database.resolve_session_identifier(hook_id_3).should eq(ledger_id)
       GalaxyLedger::Database.resolve_session_identifier(hook_id_4).should eq(ledger_id)

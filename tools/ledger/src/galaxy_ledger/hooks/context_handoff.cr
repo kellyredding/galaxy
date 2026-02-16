@@ -1,38 +1,22 @@
-require "json"
-
 module GalaxyLedger
   module Hooks
-    # Handles the SessionStart(clear|compact) hook — RESOLVE MODE
+    # Shared context restoration logic used by OnClear and OnCompact.
     #
-    # This hook is RESOLVE-ONLY — it resolves the original session by
-    # Claude Code PID. All data accumulates under the one session record
-    # created by on_startup for the entire life of the Claude Code process,
-    # regardless of how many /clears happen.
-    #
-    # On /clear, Claude generates a new session_id. This hook registers that
-    # new identifier in the mapping table and updates the session's
-    # current_session_identifier, maintaining continuity.
-    #
-    # - Resolves session by PID (Process.ppid) → ledger_session_id
-    # - Registers the new stdin session_id against the resolved session
-    # - Queries tiered restoration data from SQLite using ledger_session_id
-    # - Builds systemMessage status line for user display
-    # - Returns additionalContext with full handoff markdown for agent restoration
-    class OnSessionStart
-      @stdin_session_identifier : String?
-      @source : String?
-
+    # Resolves the session, queries restoration data, and builds the
+    # full handoff markdown for context restoration after a reset.
+    # Stateless — receives all inputs as parameters, outputs result
+    # directly to stdout.
+    module ContextHandoff
       # Read-only cap on session files in the manifest
       READ_ONLY_FILES_CAP = 15
 
-      def run
-        # Skip if GALAXY_SKIP_HOOKS is set (prevents recursion from extraction subprocesses)
-        return if ENV["GALAXY_SKIP_HOOKS"]? == "1"
-
-        # Parse hook input from stdin
-        parse_hook_input
-
-        # Resolve session via 3-tier chain (PID → env var → hook session_id),
+      # Runs the full context handoff flow. Called by OnClear and
+      # OnCompact with the parsed hook input.
+      def self.run(
+        stdin_session_identifier : String?,
+        source : String?,
+      )
+        # Resolve session via 3-tier chain (env var → PID → hook session_id),
         # creating a new session as last resort.
         claude_pid = Process.ppid.to_i64
         env_session_id = ENV[Resolver::ENV_SESSION_ID_KEY]?
@@ -40,7 +24,7 @@ module GalaxyLedger
         ledger_session_id = Resolver.resolve_session(
           claude_pid: claude_pid,
           env_session_id: env_session_id,
-          stdin_session_id: @stdin_session_identifier,
+          stdin_session_id: stdin_session_identifier,
           create_if_missing: true,
           cwd: Dir.current,
         )
@@ -50,7 +34,7 @@ module GalaxyLedger
         # Register the new stdin session_id against the existing session.
         # On /clear, Claude generates a new UUID — register it so it maps
         # to the same logical session.
-        if stdin_id = @stdin_session_identifier
+        if stdin_id = stdin_session_identifier
           unless stdin_id.empty?
             Database.register_session_identifier(ledger_session_id, stdin_id)
             Database.update_session(ledger_session_id, session_identifier: stdin_id)
@@ -81,20 +65,7 @@ module GalaxyLedger
         puts Helpers.output_json(system_message, context)
       end
 
-      private def parse_hook_input
-        begin
-          input = STDIN.gets_to_end
-          return if input.empty?
-
-          json = JSON.parse(input)
-          @stdin_session_identifier = json["session_id"]?.try(&.as_s?)
-          @source = json["source"]?.try(&.as_s?)
-        rescue
-          # Silently ignore parse errors
-        end
-      end
-
-      private def read_last_exchange_from_db(ledger_session_id : Int64) : Exchange::LastExchange?
+      private def self.read_last_exchange_from_db(ledger_session_id : Int64) : Exchange::LastExchange?
         session_record = Database.get_session_by_id(ledger_session_id)
         return nil unless session_record
 
@@ -108,7 +79,7 @@ module GalaxyLedger
         end
       end
 
-      private def build_additional_context(
+      private def self.build_additional_context(
         claude_pid : Int64,
         restoration : Database::RestorationResult,
         files : Array(Database::SessionFile),
@@ -286,7 +257,7 @@ module GalaxyLedger
         lines.join("\n")
       end
 
-      private def output_empty
+      private def self.output_empty
         puts Helpers.output_json(
           "Handoff \u2502 No previous context to hand off.",
           ""

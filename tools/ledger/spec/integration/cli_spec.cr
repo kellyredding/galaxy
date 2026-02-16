@@ -166,7 +166,8 @@ describe "CLI Integration" do
 
   describe "on-startup subcommand" do
     it "outputs JSON with systemMessage and additionalContext" do
-      result = run_binary(["on-startup"])
+      hook_input = {"session_id" => "cli-startup-#{rand(100000)}"}.to_json
+      result = run_binary(["on-startup"], stdin: hook_input)
       result[:status].should eq(0)
 
       # Parse the output as JSON
@@ -177,7 +178,8 @@ describe "CLI Integration" do
     end
 
     it "includes ledger awareness information" do
-      result = run_binary(["on-startup"])
+      hook_input = {"session_id" => "cli-startup-aware-#{rand(100000)}"}.to_json
+      result = run_binary(["on-startup"], stdin: hook_input)
       result[:status].should eq(0)
 
       output = JSON.parse(result[:output])
@@ -599,11 +601,31 @@ describe "CLI Integration" do
         result[:output].should contain("HOOK CONFIGURATION")
       end
 
-      it "shows help for on-session-start --help" do
-        result = run_binary(["on-session-start", "--help"])
+      it "shows help for on-clear --help" do
+        result = run_binary(["on-clear", "--help"])
         result[:status].should eq(0)
-        result[:output].should contain("on-session-start")
-        result[:output].should contain("clear|compact")
+        result[:output].should contain("on-clear")
+        result[:output].should contain("SessionStart")
+        result[:output].should contain("INPUT")
+        result[:output].should contain("OUTPUT")
+        result[:output].should contain("HOOK CONFIGURATION")
+      end
+
+      it "shows help for on-compact --help" do
+        result = run_binary(["on-compact", "--help"])
+        result[:status].should eq(0)
+        result[:output].should contain("on-compact")
+        result[:output].should contain("SessionStart")
+        result[:output].should contain("INPUT")
+        result[:output].should contain("OUTPUT")
+        result[:output].should contain("HOOK CONFIGURATION")
+      end
+
+      it "shows help for on-resume --help" do
+        result = run_binary(["on-resume", "--help"])
+        result[:status].should eq(0)
+        result[:output].should contain("on-resume")
+        result[:output].should contain("SessionStart")
         result[:output].should contain("INPUT")
         result[:output].should contain("OUTPUT")
         result[:output].should contain("HOOK CONFIGURATION")
@@ -877,8 +899,10 @@ describe "CLI Integration" do
       result[:status].should eq(0)
       result[:output].should contain("Hook Commands")
       result[:output].should contain("on-startup")
+      result[:output].should contain("on-resume")
+      result[:output].should contain("on-clear")
+      result[:output].should contain("on-compact")
       result[:output].should contain("on-stop")
-      result[:output].should contain("on-session-start")
     end
 
     it "includes discoverability hint" do

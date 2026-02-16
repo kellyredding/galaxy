@@ -1,10 +1,11 @@
 module GalaxyLedger
   module Hooks
-    # Shared 3-tier session resolution and mapping registration.
+    # Shared session resolution and mapping registration.
     #
-    # Resolution order:
-    #   1. PID (Process.ppid) → resolve_claude_pid
-    #   2. CLAUDE_CLI_SESSION_ID env var → resolve_session_identifier
+    # Resolution order (env var preferred over PID to avoid stale PID
+    # collisions from OS PID recycling):
+    #   1. CLAUDE_CLI_SESSION_ID env var → resolve_session_identifier
+    #   2. PID (Process.ppid) → resolve_claude_pid
     #   3. Hook's stdin session_id → resolve_session_identifier
     #
     # After resolving (or creating), registers mappings for all available
@@ -17,8 +18,8 @@ module GalaxyLedger
       # Resolve to an existing ledger_session_id, optionally creating a new
       # session as a last resort.
       #
-      # - create_if_missing: when true (on_startup, on_session_start), creates
-      #   a new session if all resolution tiers fail.
+      # - create_if_missing: when true, creates a new session if all
+      #   resolution tiers fail.
       # - cwd: passed to create_session when creating.
       #
       # Returns nil if nothing resolves and create_if_missing is false.
@@ -29,14 +30,15 @@ module GalaxyLedger
         create_if_missing : Bool = false,
         cwd : String? = nil,
       ) : Int64?
-        # 1. PID
-        ledger_session_id = Database.resolve_claude_pid(claude_pid)
+        # 1. Env var (CLAUDE_CLI_SESSION_ID) — durable identity from persona
+        ledger_session_id : Int64? = nil
+        if env_id = env_session_id
+          ledger_session_id = Database.resolve_session_identifier(env_id) unless env_id.empty?
+        end
 
-        # 2. Env var (CLAUDE_CLI_SESSION_ID)
+        # 2. PID (Process.ppid)
         unless ledger_session_id
-          if env_id = env_session_id
-            ledger_session_id = Database.resolve_session_identifier(env_id) unless env_id.empty?
-          end
+          ledger_session_id = Database.resolve_claude_pid(claude_pid)
         end
 
         # 3. Hook session_id
@@ -46,7 +48,7 @@ module GalaxyLedger
           end
         end
 
-        # 4. Create if requested (on_startup, on_session_start)
+        # 4. Create if requested
         if create_if_missing && !ledger_session_id
           current_session_id = stdin_session_id
           if current_session_id && !current_session_id.empty?

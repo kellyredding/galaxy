@@ -3,33 +3,56 @@ require "../spec_helper"
 describe GalaxyLedger::Hooks::Resolver do
   describe ".resolve_session" do
     describe "resolution tiers" do
-      it "resolves by PID (tier 1)" do
+      it "resolves by env var (tier 1)" do
+        session_id = "resolver-env-#{rand(100000)}"
+        ledger_id = GalaxyLedger::Database.create_session(session_id)
+        # Register env var mapping
+        GalaxyLedger::Database.register_session_identifier(ledger_id, "env-durable-#{session_id}")
+
+        result = GalaxyLedger::Hooks::Resolver.resolve_session(
+          claude_pid: 99999_i64, # unregistered PID
+          env_session_id: "env-durable-#{session_id}",
+          stdin_session_id: "different-hook-id",
+        )
+
+        result.should eq(ledger_id)
+      end
+
+      it "resolves env var before PID when both match different sessions" do
+        # Session A: registered with env var
+        session_a_id = "resolver-tier-a-#{rand(100000)}"
+        env_id = "resolver-tier-env-#{rand(100000)}"
+        ledger_a = GalaxyLedger::Database.create_session(session_a_id)
+        GalaxyLedger::Database.register_session_identifier(ledger_a, env_id)
+
+        # Session B: registered with PID (stale)
+        session_b_id = "resolver-tier-b-#{rand(100000)}"
+        ledger_b = GalaxyLedger::Database.create_session(session_b_id, claude_pid: 50000_i64)
+
+        # Resolve: env var should win over PID
+        result = GalaxyLedger::Hooks::Resolver.resolve_session(
+          claude_pid: 50000_i64,
+          env_session_id: env_id,
+          stdin_session_id: "some-hook-id",
+        )
+
+        result.should eq(ledger_a)
+      end
+
+      it "resolves by PID (tier 2) when env var fails" do
         session_id = "resolver-pid-#{rand(100000)}"
         ledger_id = GalaxyLedger::Database.create_session(session_id, claude_pid: 12345_i64)
 
         result = GalaxyLedger::Hooks::Resolver.resolve_session(
           claude_pid: 12345_i64,
-          env_session_id: "different-env-id",
+          env_session_id: "no-match-env-id",
           stdin_session_id: "different-hook-id",
         )
 
         result.should eq(ledger_id)
       end
 
-      it "resolves by env var (tier 2) when PID fails" do
-        session_id = "resolver-env-#{rand(100000)}"
-        ledger_id = GalaxyLedger::Database.create_session(session_id)
-
-        result = GalaxyLedger::Hooks::Resolver.resolve_session(
-          claude_pid: 99999_i64, # unregistered PID
-          env_session_id: session_id,
-          stdin_session_id: "different-hook-id",
-        )
-
-        result.should eq(ledger_id)
-      end
-
-      it "resolves by hook session_id (tier 3) when PID and env var fail" do
+      it "resolves by hook session_id (tier 3) when env var and PID fail" do
         session_id = "resolver-hook-#{rand(100000)}"
         ledger_id = GalaxyLedger::Database.create_session(session_id)
 
@@ -115,6 +138,24 @@ describe GalaxyLedger::Hooks::Resolver do
     end
 
     describe "mapping registration" do
+      it "registers all three mappings after env var resolution" do
+        session_id = "resolver-reg-env-#{rand(100000)}"
+        env_id = session_id # env var matches the original session_id
+        hook_id = "resolver-reg-hook-#{rand(100000)}"
+        ledger_id = GalaxyLedger::Database.create_session(session_id)
+
+        GalaxyLedger::Hooks::Resolver.resolve_session(
+          claude_pid: 33333_i64, # new PID
+          env_session_id: env_id,
+          stdin_session_id: hook_id,
+        )
+
+        # New PID should be registered
+        GalaxyLedger::Database.resolve_claude_pid(33333_i64).should eq(ledger_id)
+        # Hook session_id should be registered
+        GalaxyLedger::Database.resolve_session_identifier(hook_id).should eq(ledger_id)
+      end
+
       it "registers all three mappings after PID resolution" do
         session_id = "resolver-reg-pid-#{rand(100000)}"
         env_id = "resolver-reg-env-#{rand(100000)}"
@@ -135,24 +176,6 @@ describe GalaxyLedger::Hooks::Resolver do
         GalaxyLedger::Database.resolve_claude_pid(44444_i64).should eq(ledger_id)
       end
 
-      it "registers all three mappings after env var resolution" do
-        session_id = "resolver-reg2-#{rand(100000)}"
-        env_id = session_id # env var matches the original session_id
-        hook_id = "resolver-reg2-hook-#{rand(100000)}"
-        ledger_id = GalaxyLedger::Database.create_session(session_id)
-
-        GalaxyLedger::Hooks::Resolver.resolve_session(
-          claude_pid: 33333_i64, # new PID
-          env_session_id: env_id,
-          stdin_session_id: hook_id,
-        )
-
-        # New PID should be registered
-        GalaxyLedger::Database.resolve_claude_pid(33333_i64).should eq(ledger_id)
-        # Hook session_id should be registered
-        GalaxyLedger::Database.resolve_session_identifier(hook_id).should eq(ledger_id)
-      end
-
       it "registers all three mappings after creation" do
         env_id = "resolver-reg3-env-#{rand(100000)}"
         hook_id = "resolver-reg3-hook-#{rand(100000)}"
@@ -171,6 +194,30 @@ describe GalaxyLedger::Hooks::Resolver do
         GalaxyLedger::Database.resolve_claude_pid(22222_i64).should eq(ledger_id)
         GalaxyLedger::Database.resolve_session_identifier(env_id).should eq(ledger_id)
         GalaxyLedger::Database.resolve_session_identifier(hook_id).should eq(ledger_id)
+      end
+    end
+
+    describe "stale PID cleanup" do
+      it "re-registers PID to env var's session when PID was stale" do
+        # Session A: correct session, registered with env var
+        session_a_id = "stale-cleanup-a-#{rand(100000)}"
+        env_id = "stale-cleanup-env-#{rand(100000)}"
+        ledger_a = GalaxyLedger::Database.create_session(session_a_id)
+        GalaxyLedger::Database.register_session_identifier(ledger_a, env_id)
+
+        # Session B: stale session, registered with PID 50000
+        session_b_id = "stale-cleanup-b-#{rand(100000)}"
+        GalaxyLedger::Database.create_session(session_b_id, claude_pid: 50000_i64)
+
+        # Resolve: env var should win, PID should be remapped to session A
+        GalaxyLedger::Hooks::Resolver.resolve_session(
+          claude_pid: 50000_i64,
+          env_session_id: env_id,
+          stdin_session_id: "some-hook-id",
+        )
+
+        # PID should now map to session A (not B)
+        GalaxyLedger::Database.resolve_claude_pid(50000_i64).should eq(ledger_a)
       end
     end
 

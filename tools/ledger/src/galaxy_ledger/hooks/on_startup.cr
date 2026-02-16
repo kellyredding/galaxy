@@ -2,11 +2,17 @@ require "json"
 
 module GalaxyLedger
   module Hooks
-    # Handles the SessionStart(startup) hook — REGISTER MODE
+    # Handles the SessionStart(startup) hook — ALWAYS CREATE MODE
+    #
+    # On a fresh startup, any PID match is stale by definition — the old
+    # process is dead (the OS wouldn't have recycled its PID otherwise).
+    # So we skip the Resolver entirely and always create a new session.
+    #
     # - Creates session record in DB with Claude Code PID
-    # - Registers session identifier and PID in mapping tables
+    # - Registers session identifier, PID, and env var in mapping tables
+    # - PID registration uses INSERT OR REPLACE, cleaning up any stale
+    #   PID mapping as a side effect
     # - Injects ledger awareness prompt with lookup directives
-    # This is the ONLY hook that creates session records.
     class OnStartup
       @session_identifier : String?
 
@@ -17,32 +23,34 @@ module GalaxyLedger
         # Parse hook input from stdin to get session_id
         parse_hook_input
 
-        # Resolve session via 3-tier chain (PID → env var → hook session_id),
-        # creating a new session as last resort.
         claude_pid = Process.ppid.to_i64
         env_session_id = ENV[Resolver::ENV_SESSION_ID_KEY]?
+        session_id = @session_identifier
 
-        ledger_session_id = Resolver.resolve_session(
+        return unless session_id && !session_id.empty?
+
+        # Fresh startup — always create a new session record.
+        # Any existing PID mapping is stale (the old process is dead,
+        # otherwise the OS wouldn't have recycled its PID).
+        ledger_session_id = Database.create_session(
+          session_id,
           claude_pid: claude_pid,
-          env_session_id: env_session_id,
-          stdin_session_id: @session_identifier,
-          create_if_missing: true,
           cwd: Dir.current,
-        ) || 0_i64
+        )
 
-        # If we resolved an existing session (not freshly created),
-        # update current values on the session record.
-        if ledger_session_id > 0 && @session_identifier
-          Database.update_session(ledger_session_id, session_identifier: @session_identifier, claude_pid: claude_pid)
+        return if ledger_session_id <= 0
+
+        # Register env var mapping if available.
+        # create_session already registers session_id + PID internally.
+        # PID registration uses INSERT OR REPLACE, cleaning up any stale
+        # mapping as a side effect.
+        if env_id = env_session_id
+          Database.register_session_identifier(ledger_session_id, env_id) unless env_id.empty?
         end
 
-        # Query existing session data (may have data if resuming)
-        restoration : Database::RestorationResult? = nil
-        files : Array(Database::SessionFile)? = nil
-        if ledger_session_id > 0
-          restoration = Database.query_for_restoration(ledger_session_id)
-          files = Database.session_files(ledger_session_id)
-        end
+        # Query existing session data (will be empty for fresh session)
+        restoration = Database.query_for_restoration(ledger_session_id)
+        files = Database.session_files(ledger_session_id)
 
         # Build systemMessage
         system_message = Helpers.build_system_message(
@@ -56,9 +64,7 @@ module GalaxyLedger
         context = build_awareness_context(claude_pid)
 
         # Persist injected context to session record
-        if ledger_session_id > 0
-          Database.merge_session_context(ledger_session_id, "injected_context", context)
-        end
+        Database.merge_session_context(ledger_session_id, "injected_context", context)
 
         # Output JSON with systemMessage and additionalContext
         puts Helpers.output_json(system_message, context)

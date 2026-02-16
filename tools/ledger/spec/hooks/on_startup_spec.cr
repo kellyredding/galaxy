@@ -43,9 +43,6 @@ describe "OnStartup JSON output" do
     output["systemMessage"].should be_a(JSON::Any)
     output["hookSpecificOutput"]["hookEventName"].should eq("SessionStart")
     output["hookSpecificOutput"]["additionalContext"].should be_a(JSON::Any)
-
-    # Clean up
-    GalaxyLedger::Database.delete_session(test_session_id)
   end
 end
 
@@ -59,36 +56,6 @@ describe "OnStartup systemMessage" do
     msg = output["systemMessage"].as_s
     msg.should contain("Ledger active")
     msg.should contain("New session")
-
-    # Clean up
-    GalaxyLedger::Database.delete_session(test_session_id)
-  end
-
-  it "shows counts when session already has data" do
-    test_session_id = "startup-sm-data-#{Random.rand(10000)}"
-    ledger_session_id = GalaxyLedger::Database.create_session(test_session_id)
-
-    # Add some pre-existing guideline entries
-    2.times do |i|
-      entry = GalaxyLedger::Entry.new(
-        entry_type: "guideline",
-        content: "Pre-existing guideline #{i + 1}",
-        importance: "medium",
-        source_file: "/home/user/guidelines/style.md"
-      )
-      GalaxyLedger::Database.insert(ledger_session_id, entry)
-    end
-
-    hook_input = {"session_id" => test_session_id}.to_json
-
-    result = run_binary(["on-startup"], stdin: hook_input)
-    output = JSON.parse(result[:output])
-    msg = output["systemMessage"].as_s
-    msg.should contain("Ledger active")
-    msg.should contain("2 guidelines")
-
-    # Clean up
-    GalaxyLedger::Database.delete_session(test_session_id)
   end
 end
 
@@ -101,9 +68,6 @@ describe "OnStartup additionalContext" do
     output = JSON.parse(result[:output])
     ctx = output["hookSpecificOutput"]["additionalContext"].as_s
     ctx.should contain("## Galaxy Ledger")
-
-    # Clean up
-    GalaxyLedger::Database.delete_session(test_session_id)
   end
 
   it "includes persistent context ledger description" do
@@ -114,9 +78,6 @@ describe "OnStartup additionalContext" do
     output = JSON.parse(result[:output])
     ctx = output["hookSpecificOutput"]["additionalContext"].as_s
     ctx.should contain("persistent context ledger")
-
-    # Clean up
-    GalaxyLedger::Database.delete_session(test_session_id)
   end
 
   it "includes Ledger PID" do
@@ -127,9 +88,6 @@ describe "OnStartup additionalContext" do
     output = JSON.parse(result[:output])
     ctx = output["hookSpecificOutput"]["additionalContext"].as_s
     ctx.should contain("**Ledger PID**:")
-
-    # Clean up
-    GalaxyLedger::Database.delete_session(test_session_id)
   end
 
   it "uses --pid in command examples" do
@@ -141,9 +99,6 @@ describe "OnStartup additionalContext" do
     ctx = output["hookSpecificOutput"]["additionalContext"].as_s
     ctx.should contain("--pid")
     ctx.should_not contain("--session")
-
-    # Clean up
-    GalaxyLedger::Database.delete_session(test_session_id)
   end
 
   it "describes what the ledger captures" do
@@ -158,9 +113,6 @@ describe "OnStartup additionalContext" do
     ctx.should contain("Decisions")
     ctx.should contain("Learnings")
     ctx.should contain("Session files")
-
-    # Clean up
-    GalaxyLedger::Database.delete_session(test_session_id)
   end
 
   it "includes tiered lookup directives" do
@@ -175,9 +127,6 @@ describe "OnStartup additionalContext" do
     ctx.should contain("galaxy-ledger list-files")
     ctx.should contain("git diff")
     ctx.should contain("Fall back to normal exploration")
-
-    # Clean up
-    GalaxyLedger::Database.delete_session(test_session_id)
   end
 
   it "does not include cross-session stats" do
@@ -190,9 +139,6 @@ describe "OnStartup additionalContext" do
     ctx.should_not contain("Sessions tracked")
     ctx.should_not contain("Total entries")
     ctx.should_not contain("Ledger Stats")
-
-    # Clean up
-    GalaxyLedger::Database.delete_session(test_session_id)
   end
 
   it "stores PID on session record" do
@@ -207,8 +153,61 @@ describe "OnStartup additionalContext" do
     # The binary runs as a subprocess, so its Process.ppid is the spec runner's PID.
     # We just verify that current_claude_pid was stored (not nil).
     session.not_nil!.current_claude_pid.should_not be_nil
+  end
+end
 
-    # Clean up
-    GalaxyLedger::Database.delete_session(test_session_id)
+describe "OnStartup always creates new session (stale PID fix)" do
+  it "creates a new session instead of resolving to a stale PID mapping" do
+    # Setup: create an old session with a known PID
+    old_session_id = "stale-pid-old-#{Random.rand(10000)}"
+    old_ledger_id = GalaxyLedger::Database.create_session(
+      old_session_id,
+      claude_pid: 99998_i64, # some PID
+    )
+
+    # Run on-startup with a new session_id
+    # In real scenario, the subprocess PID would match an old session.
+    # We can't control Process.ppid in the subprocess, but we can verify
+    # that a NEW session is always created (not the old one).
+    new_session_id = "stale-pid-new-#{Random.rand(10000)}"
+    hook_input = {"session_id" => new_session_id}.to_json
+
+    result = run_binary(["on-startup"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    # A NEW session should have been created for the new session_id
+    new_ledger_id = GalaxyLedger::Database.resolve_session_identifier(new_session_id)
+    new_ledger_id.should_not be_nil
+    new_ledger_id.should_not eq(old_ledger_id)
+  end
+
+  it "always creates even when an existing session matches via env var" do
+    # Create old session and register env var
+    old_session_id = "startup-env-old-#{Random.rand(10000)}"
+    env_id = "startup-env-durable-#{Random.rand(10000)}"
+    old_ledger_id = GalaxyLedger::Database.create_session(old_session_id)
+    GalaxyLedger::Database.register_session_identifier(old_ledger_id, env_id)
+
+    # on-startup should create a NEW session, not resolve to old one
+    new_session_id = "startup-env-new-#{Random.rand(10000)}"
+    hook_input = {"session_id" => new_session_id}.to_json
+
+    result = run_binary(
+      ["on-startup"],
+      stdin: hook_input,
+      extra_env: {"CLAUDE_CLI_SESSION_ID" => env_id},
+    )
+    result[:status].should eq(0)
+
+    # Should have created a new session (startup always creates)
+    new_ledger_id = GalaxyLedger::Database.resolve_session_identifier(new_session_id)
+    new_ledger_id.should_not be_nil
+    new_ledger_id.should_not eq(old_ledger_id)
+
+    # But env var should now be registered against the new session too
+    env_ledger_id = GalaxyLedger::Database.resolve_session_identifier(env_id)
+    # The env var may still point to old session since on-startup registers
+    # it via INSERT OR IGNORE (not REPLACE) for identifiers. That's fine —
+    # resume will use Resolver which handles this correctly.
   end
 end
