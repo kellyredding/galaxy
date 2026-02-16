@@ -6,8 +6,11 @@ module GalaxyLedger
     # - Resolves session by Claude Code PID
     # - Parses transcript to capture last exchange
     # - Writes last interaction to DB session record
-    # - Checks context thresholds and shows warnings
+    # - Reports context usage via colored status indicator
     # - Spawns async extraction for learnings/decisions/summary
+    #
+    # Output: Claude Code Stop hook JSON format
+    #   { "decision": "approve", "systemMessage": "🟢 Context 34% │ ..." }
     class OnStop
       @stdin_session_identifier : String?
       @transcript_path : String?
@@ -43,22 +46,27 @@ module GalaxyLedger
         return unless current_sid
 
         # Capture last exchange from transcript
-        capture_last_exchange(ledger_session_id)
-
-        # Check context thresholds and build warning message if needed
-        warning = check_context_thresholds(ledger_session_id)
-
-        # If we have a warning, output it
-        if warning
-          puts warning
-        end
+        exchange_captured = capture_last_exchange(ledger_session_id)
 
         # Spawn async extraction process for learnings/decisions/summary
-        spawn_extraction_async(ledger_session_id, current_sid)
+        extraction_spawned = spawn_extraction_async(ledger_session_id, current_sid)
 
         # Re-extract any guideline/implementation plan files that were
         # edited during this session (stale entries)
-        re_extract_stale_files(ledger_session_id, current_sid)
+        re_extracted_files = re_extract_stale_files(ledger_session_id, current_sid)
+
+        # Re-read session record to get latest context_percentage
+        session_record = Database.get_session_by_id(ledger_session_id)
+        return unless session_record
+
+        # Build and output structured JSON system message
+        system_message = build_system_message(
+          percentage: session_record.context_percentage,
+          exchange_captured: exchange_captured,
+          extraction_spawned: extraction_spawned,
+          re_extracted_files: re_extracted_files,
+        )
+        puts output_stop_json(system_message)
       end
 
       private def parse_hook_input
@@ -82,85 +90,103 @@ module GalaxyLedger
         end
       end
 
-      private def capture_last_exchange(ledger_session_id : Int64)
+      private def capture_last_exchange(ledger_session_id : Int64) : Bool
         transcript_path = @transcript_path
-        return unless transcript_path
+        return false unless transcript_path
 
         # Parse transcript
         entries = Transcript.parse(transcript_path)
-        return if entries.empty?
+        return false if entries.empty?
 
         # Extract last exchange
         extracted = Transcript.extract_last_exchange(entries)
-        return unless extracted
+        return false unless extracted
 
         # Convert to LastExchange format and write to DB
         last_exchange = Transcript.to_last_exchange(extracted)
         Database.update_session_last_interaction(ledger_session_id, last_exchange.to_pretty_json)
+        true
+      rescue
+        false
       end
 
-      private def check_context_thresholds(ledger_session_id : Int64) : String?
-        # Read context percentage from DB (written by statusline → update-session-metrics)
-        session_record = Database.get_session_by_id(ledger_session_id)
-        return nil unless session_record
-
-        percentage = session_record.context_percentage
-        return nil if percentage <= 0.0
-
-        # Load config for thresholds
+      # Build the context indicator when above warning thresholds.
+      # Returns nil when below warning threshold (no indicator shown).
+      # Uses configurable thresholds for warning/critical boundaries.
+      #
+      #   nil                                          (below warning)
+      #   ⚠️ Context 72% — consider /clear soon        (warning threshold)
+      #   🔥 Context 87% — will auto-compact at 95%    (critical threshold)
+      private def build_context_indicator(percentage : Float64) : String?
         config = Config.load
 
-        # Check critical threshold first (85% default)
+        pct = percentage.round.to_i
+        pct = 0 if pct < 0
+
         if percentage >= config.thresholds.critical
-          if config.warnings.at_critical_threshold
-            return build_critical_warning(percentage)
-          end
-          # Check warning threshold (70% default)
+          "\u{1F525} Context #{pct}% \u2014 will auto-compact at 95%"
         elsif percentage >= config.thresholds.warning
-          if config.warnings.at_warning_threshold
-            return build_warning(percentage)
-          end
+          "\u26A0\uFE0F Context #{pct}% \u2014 consider /clear soon"
+        else
+          nil
+        end
+      end
+
+      # Assemble the full system message from activity parts.
+      # Format: {context_indicator} │ {activity parts...}
+      private def build_system_message(
+        percentage : Float64,
+        exchange_captured : Bool,
+        extraction_spawned : Bool,
+        re_extracted_files : Array(String),
+      ) : String
+        parts = [] of String
+        indicator = build_context_indicator(percentage)
+        parts << indicator if indicator
+        parts << "Exchange captured" if exchange_captured
+        parts << "Extraction spawned" if extraction_spawned
+
+        if re_extracted_files.any?
+          names = re_extracted_files.map { |f| File.basename(f) }
+          parts << "Re-extracting: #{names.join(", ")}"
         end
 
-        nil
+        parts.join(" \u2502 ")
       end
 
-      private def build_warning(percentage : Float64) : String
-        "⚠️  Context at #{percentage.round.to_i}%. Consider /clear soon to preserve performance."
+      # Output Claude Code Stop hook JSON format.
+      private def output_stop_json(system_message : String) : String
+        {
+          "decision"      => "approve",
+          "systemMessage" => system_message,
+        }.to_json
       end
 
-      private def build_critical_warning(percentage : Float64) : String
-        lines = [] of String
-        lines << "🚨 Context at #{percentage.round.to_i}%. Please /clear now."
-        lines << "   Auto-compact will trigger at 95% and may lose important context."
-        lines.join("\n")
-      end
-
-      private def spawn_extraction_async(ledger_session_id : Int64, current_sid : String)
+      private def spawn_extraction_async(ledger_session_id : Int64, current_sid : String) : Bool
         transcript_path = @transcript_path
-        return unless transcript_path
+        return false unless transcript_path
 
         # Check if extraction is enabled in config
         config = Config.load
-        return unless config.extraction.on_stop
+        return false unless config.extraction.on_stop
 
         # Read the last exchange from the DB session record
         session_record = Database.get_session_by_id(ledger_session_id)
-        return unless session_record
+        return false unless session_record
 
         json_str = session_record.last_interaction
-        return unless json_str
+        return false unless json_str
 
         last_exchange = begin
           Exchange::LastExchange.from_json(json_str)
         rescue
-          return
+          return false
         end
 
         user_message = last_exchange.user_message
         assistant_content = last_exchange.full_content
 
-        return if user_message.strip.empty? || assistant_content.strip.empty?
+        return false if user_message.strip.empty? || assistant_content.strip.empty?
 
         # Spawn async extraction process
         # NOTE: extraction subprocesses use --session (not --pid) because their
@@ -183,19 +209,23 @@ module GalaxyLedger
             output: Process::Redirect::Close,
             error: Process::Redirect::Close,
           )
+          true
         rescue
-          # Silently fail - extraction is best-effort
+          false
         end
       end
 
       # Re-extract guideline/implementation plan files that were edited
       # during this session. Reads fresh content from disk, prunes stale
       # DB entries, and spawns async extract-file subprocesses.
+      # Returns list of file paths that were re-extracted.
       # NOTE: extraction subprocesses use --session (not --pid) because their
       # PPID is the hook process, not Claude Code.
-      private def re_extract_stale_files(ledger_session_id : Int64, current_sid : String)
+      private def re_extract_stale_files(ledger_session_id : Int64, current_sid : String) : Array(String)
+        re_extracted = [] of String
+
         stale = Database.stale_entries(ledger_session_id)
-        return if stale.empty?
+        return re_extracted if stale.empty?
 
         binary = Process.executable_path || "galaxy-ledger"
 
@@ -222,10 +252,13 @@ module GalaxyLedger
               output: Process::Redirect::Close,
               error: Process::Redirect::Close,
             )
+            re_extracted << entry[:full_path]
           rescue
             # Silently fail - re-extraction is best-effort
           end
         end
+
+        re_extracted
       end
     end
   end

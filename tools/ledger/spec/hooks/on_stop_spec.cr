@@ -140,13 +140,12 @@ describe "OnStop last exchange capture" do
   end
 end
 
-describe "OnStop context threshold warnings" do
-  test_session_id = "threshold-test-#{Random.rand(10000)}"
+describe "OnStop JSON output format" do
+  test_session_id = "json-output-test-#{Random.rand(10000)}"
   ledger_session_id = 0_i64
 
   before_each do
     GalaxyLedger::Database.delete_session(test_session_id)
-    # Ensure session record exists for FK constraints
     ledger_session_id = GalaxyLedger::Database.create_session(test_session_id)
   end
 
@@ -154,14 +153,201 @@ describe "OnStop context threshold warnings" do
     GalaxyLedger::Database.delete_session(test_session_id)
   end
 
-  it "outputs warning when context exceeds warning threshold" do
-    # Write context percentage to DB (simulates statusline -> update-session-metrics)
+  it "outputs valid JSON with decision and systemMessage keys" do
+    transcript_file = File.tempfile("transcript", ".jsonl")
+    transcript_file.print(%|{"type": "user", "timestamp": "2026-02-01T10:00:00Z", "message": {"role": "user", "content": "Add authentication"}}\n|)
+    transcript_file.print(%|{"type": "assistant", "timestamp": "2026-02-01T10:01:00Z", "message": {"role": "assistant", "content": "I'll help you add authentication."}}\n|)
+    transcript_file.close
+
+    hook_input = {
+      "session_id"       => test_session_id,
+      "transcript_path"  => transcript_file.path,
+      "stop_hook_active" => false,
+    }.to_json
+
+    result = run_binary(["on-stop"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    json = JSON.parse(result[:output])
+    json["decision"].as_s.should eq("approve")
+    json["systemMessage"].as_s.should_not be_empty
+
+    File.delete(transcript_file.path)
+  end
+
+  it "always outputs decision approve" do
+    transcript_file = File.tempfile("transcript", ".jsonl")
+    transcript_file.print(%|{"type": "user", "timestamp": "2026-02-01T10:00:00Z", "message": {"role": "user", "content": "Test message"}}\n|)
+    transcript_file.print(%|{"type": "assistant", "timestamp": "2026-02-01T10:01:00Z", "message": {"role": "assistant", "content": "Test response"}}\n|)
+    transcript_file.close
+
+    # Test with various context percentages — decision should always be "approve"
+    [0.0, 50.0, 75.0, 90.0].each do |pct|
+      status = GalaxyLedger::ContextStatus.from_json(%|{"context": {"percentage": #{pct}}}|)
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
+
+      hook_input = {
+        "session_id"       => test_session_id,
+        "transcript_path"  => transcript_file.path,
+        "stop_hook_active" => false,
+      }.to_json
+
+      result = run_binary(["on-stop"], stdin: hook_input)
+      json = JSON.parse(result[:output])
+      json["decision"].as_s.should eq("approve")
+    end
+
+    File.delete(transcript_file.path)
+  end
+
+  it "includes Exchange captured when transcript has valid exchange" do
+    transcript_file = File.tempfile("transcript", ".jsonl")
+    transcript_file.print(%|{"type": "user", "timestamp": "2026-02-01T10:00:00Z", "message": {"role": "user", "content": "Add authentication"}}\n|)
+    transcript_file.print(%|{"type": "assistant", "timestamp": "2026-02-01T10:01:00Z", "message": {"role": "assistant", "content": "I'll help you add authentication."}}\n|)
+    transcript_file.close
+
+    hook_input = {
+      "session_id"       => test_session_id,
+      "transcript_path"  => transcript_file.path,
+      "stop_hook_active" => false,
+    }.to_json
+
+    result = run_binary(["on-stop"], stdin: hook_input)
+    json = JSON.parse(result[:output])
+    json["systemMessage"].as_s.should contain("Exchange captured")
+
+    File.delete(transcript_file.path)
+  end
+
+  it "does not include Exchange captured with invalid transcript" do
+    hook_input = {
+      "session_id"       => test_session_id,
+      "transcript_path"  => "/nonexistent/transcript.jsonl",
+      "stop_hook_active" => false,
+    }.to_json
+
+    result = run_binary(["on-stop"], stdin: hook_input)
+    json = JSON.parse(result[:output])
+    json["systemMessage"].as_s.should_not contain("Exchange captured")
+  end
+end
+
+describe "OnStop context indicators" do
+  test_session_id = "context-indicator-#{Random.rand(10000)}"
+  ledger_session_id = 0_i64
+
+  before_each do
+    GalaxyLedger::Database.delete_session(test_session_id)
+    ledger_session_id = GalaxyLedger::Database.create_session(test_session_id)
+  end
+
+  after_each do
+    GalaxyLedger::Database.delete_session(test_session_id)
+  end
+
+  it "shows no context indicator when context is 0% (no metrics)" do
+    # Session exists but no metrics written (context_percentage defaults to 0.0)
+    transcript_file = File.tempfile("transcript", ".jsonl")
+    transcript_file.print(%|{"type": "user", "timestamp": "2026-02-01T10:00:00Z", "message": {"role": "user", "content": "Test message here"}}\n|)
+    transcript_file.print(%|{"type": "assistant", "timestamp": "2026-02-01T10:01:00Z", "message": {"role": "assistant", "content": "Test response here"}}\n|)
+    transcript_file.close
+
+    hook_input = {
+      "session_id"       => test_session_id,
+      "transcript_path"  => transcript_file.path,
+      "stop_hook_active" => false,
+    }.to_json
+
+    result = run_binary(["on-stop"], stdin: hook_input)
+    json = JSON.parse(result[:output])
+    msg = json["systemMessage"].as_s
+    msg.should_not contain("Context")
+    msg.should_not contain("⚠️")
+    msg.should_not contain("🔥")
+
+    File.delete(transcript_file.path)
+  end
+
+  it "shows no context indicator when context is below warning threshold" do
+    status = GalaxyLedger::ContextStatus.from_json(%|{"context": {"percentage": 34.0}}|)
+    GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
+
+    transcript_file = File.tempfile("transcript", ".jsonl")
+    transcript_file.print(%|{"type": "user", "timestamp": "2026-02-01T10:00:00Z", "message": {"role": "user", "content": "Test message here"}}\n|)
+    transcript_file.print(%|{"type": "assistant", "timestamp": "2026-02-01T10:01:00Z", "message": {"role": "assistant", "content": "Test response here"}}\n|)
+    transcript_file.close
+
+    hook_input = {
+      "session_id"       => test_session_id,
+      "transcript_path"  => transcript_file.path,
+      "stop_hook_active" => false,
+    }.to_json
+
+    result = run_binary(["on-stop"], stdin: hook_input)
+    json = JSON.parse(result[:output])
+    msg = json["systemMessage"].as_s
+    msg.should_not contain("Context")
+    msg.should_not contain("⚠️")
+    msg.should_not contain("🔥")
+
+    File.delete(transcript_file.path)
+  end
+
+  it "shows no context indicator at 69% (just below warning threshold)" do
+    status = GalaxyLedger::ContextStatus.from_json(%|{"context": {"percentage": 69.0}}|)
+    GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
+
+    transcript_file = File.tempfile("transcript", ".jsonl")
+    transcript_file.print(%|{"type": "user", "timestamp": "2026-02-01T10:00:00Z", "message": {"role": "user", "content": "Test message here"}}\n|)
+    transcript_file.print(%|{"type": "assistant", "timestamp": "2026-02-01T10:01:00Z", "message": {"role": "assistant", "content": "Test response here"}}\n|)
+    transcript_file.close
+
+    hook_input = {
+      "session_id"       => test_session_id,
+      "transcript_path"  => transcript_file.path,
+      "stop_hook_active" => false,
+    }.to_json
+
+    result = run_binary(["on-stop"], stdin: hook_input)
+    json = JSON.parse(result[:output])
+    msg = json["systemMessage"].as_s
+    msg.should_not contain("Context")
+
+    File.delete(transcript_file.path)
+  end
+
+  it "shows warning at threshold boundary (70%)" do
+    status = GalaxyLedger::ContextStatus.from_json(%|{"context": {"percentage": 70.0}}|)
+    GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
+
+    transcript_file = File.tempfile("transcript", ".jsonl")
+    transcript_file.print(%|{"type": "user", "timestamp": "2026-02-01T10:00:00Z", "message": {"role": "user", "content": "Test message here"}}\n|)
+    transcript_file.print(%|{"type": "assistant", "timestamp": "2026-02-01T10:01:00Z", "message": {"role": "assistant", "content": "Test response here"}}\n|)
+    transcript_file.close
+
+    hook_input = {
+      "session_id"       => test_session_id,
+      "transcript_path"  => transcript_file.path,
+      "stop_hook_active" => false,
+    }.to_json
+
+    result = run_binary(["on-stop"], stdin: hook_input)
+    json = JSON.parse(result[:output])
+    msg = json["systemMessage"].as_s
+    msg.should contain("⚠️")
+    msg.should contain("Context 70%")
+    msg.should contain("consider /clear soon")
+
+    File.delete(transcript_file.path)
+  end
+
+  it "shows warning when context is in warning range (75%)" do
     status = GalaxyLedger::ContextStatus.from_json(%|{"context": {"percentage": 75.0}}|)
     GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
 
-    # Create minimal transcript
     transcript_file = File.tempfile("transcript", ".jsonl")
-    transcript_file.print(%|{"type": "user", "message": {"role": "user", "content": "Test"}}\n|)
+    transcript_file.print(%|{"type": "user", "timestamp": "2026-02-01T10:00:00Z", "message": {"role": "user", "content": "Test message here"}}\n|)
+    transcript_file.print(%|{"type": "assistant", "timestamp": "2026-02-01T10:01:00Z", "message": {"role": "assistant", "content": "Test response here"}}\n|)
     transcript_file.close
 
     hook_input = {
@@ -171,22 +357,73 @@ describe "OnStop context threshold warnings" do
     }.to_json
 
     result = run_binary(["on-stop"], stdin: hook_input)
-    result[:output].should contain("⚠️")
-    result[:output].should contain("75%")
-    result[:output].should contain("/clear")
+    json = JSON.parse(result[:output])
+    msg = json["systemMessage"].as_s
+    msg.should contain("⚠️")
+    msg.should contain("Context 75%")
+    msg.should contain("consider /clear soon")
 
-    # Clean up
     File.delete(transcript_file.path)
   end
 
-  it "outputs critical warning when context exceeds critical threshold" do
-    # Write context percentage to DB (simulates statusline -> update-session-metrics)
+  it "shows warning at 84% (just below critical threshold)" do
+    status = GalaxyLedger::ContextStatus.from_json(%|{"context": {"percentage": 84.0}}|)
+    GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
+
+    transcript_file = File.tempfile("transcript", ".jsonl")
+    transcript_file.print(%|{"type": "user", "timestamp": "2026-02-01T10:00:00Z", "message": {"role": "user", "content": "Test message here"}}\n|)
+    transcript_file.print(%|{"type": "assistant", "timestamp": "2026-02-01T10:01:00Z", "message": {"role": "assistant", "content": "Test response here"}}\n|)
+    transcript_file.close
+
+    hook_input = {
+      "session_id"       => test_session_id,
+      "transcript_path"  => transcript_file.path,
+      "stop_hook_active" => false,
+    }.to_json
+
+    result = run_binary(["on-stop"], stdin: hook_input)
+    json = JSON.parse(result[:output])
+    msg = json["systemMessage"].as_s
+    msg.should contain("⚠️")
+    msg.should contain("Context 84%")
+    msg.should contain("consider /clear soon")
+    msg.should_not contain("auto-compact")
+
+    File.delete(transcript_file.path)
+  end
+
+  it "shows critical at threshold boundary (85%)" do
+    status = GalaxyLedger::ContextStatus.from_json(%|{"context": {"percentage": 85.0}}|)
+    GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
+
+    transcript_file = File.tempfile("transcript", ".jsonl")
+    transcript_file.print(%|{"type": "user", "timestamp": "2026-02-01T10:00:00Z", "message": {"role": "user", "content": "Test message here"}}\n|)
+    transcript_file.print(%|{"type": "assistant", "timestamp": "2026-02-01T10:01:00Z", "message": {"role": "assistant", "content": "Test response here"}}\n|)
+    transcript_file.close
+
+    hook_input = {
+      "session_id"       => test_session_id,
+      "transcript_path"  => transcript_file.path,
+      "stop_hook_active" => false,
+    }.to_json
+
+    result = run_binary(["on-stop"], stdin: hook_input)
+    json = JSON.parse(result[:output])
+    msg = json["systemMessage"].as_s
+    msg.should contain("🔥")
+    msg.should contain("Context 85%")
+    msg.should contain("will auto-compact at 95%")
+
+    File.delete(transcript_file.path)
+  end
+
+  it "shows critical when context exceeds critical threshold (90%)" do
     status = GalaxyLedger::ContextStatus.from_json(%|{"context": {"percentage": 90.0}}|)
     GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
 
-    # Create minimal transcript
     transcript_file = File.tempfile("transcript", ".jsonl")
-    transcript_file.print(%|{"type": "user", "message": {"role": "user", "content": "Test"}}\n|)
+    transcript_file.print(%|{"type": "user", "timestamp": "2026-02-01T10:00:00Z", "message": {"role": "user", "content": "Test message here"}}\n|)
+    transcript_file.print(%|{"type": "assistant", "timestamp": "2026-02-01T10:01:00Z", "message": {"role": "assistant", "content": "Test response here"}}\n|)
     transcript_file.close
 
     hook_input = {
@@ -196,57 +433,12 @@ describe "OnStop context threshold warnings" do
     }.to_json
 
     result = run_binary(["on-stop"], stdin: hook_input)
-    result[:output].should contain("🚨")
-    result[:output].should contain("90%")
-    result[:output].should contain("Auto-compact")
+    json = JSON.parse(result[:output])
+    msg = json["systemMessage"].as_s
+    msg.should contain("🔥")
+    msg.should contain("Context 90%")
+    msg.should contain("will auto-compact at 95%")
 
-    # Clean up
-    File.delete(transcript_file.path)
-  end
-
-  it "outputs no warning when context is below threshold" do
-    # Write context percentage to DB (simulates statusline -> update-session-metrics)
-    status = GalaxyLedger::ContextStatus.from_json(%|{"context": {"percentage": 50.0}}|)
-    GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
-
-    # Create minimal transcript
-    transcript_file = File.tempfile("transcript", ".jsonl")
-    transcript_file.print(%|{"type": "user", "message": {"role": "user", "content": "Test"}}\n|)
-    transcript_file.close
-
-    hook_input = {
-      "session_id"       => test_session_id,
-      "transcript_path"  => transcript_file.path,
-      "stop_hook_active" => false,
-    }.to_json
-
-    result = run_binary(["on-stop"], stdin: hook_input)
-    result[:output].should_not contain("⚠️")
-    result[:output].should_not contain("🚨")
-
-    # Clean up
-    File.delete(transcript_file.path)
-  end
-
-  it "outputs no warning when no metrics have been written" do
-    # Session exists but no metrics written (context_percentage defaults to 0.0)
-
-    # Create minimal transcript
-    transcript_file = File.tempfile("transcript", ".jsonl")
-    transcript_file.print(%|{"type": "user", "message": {"role": "user", "content": "Test"}}\n|)
-    transcript_file.close
-
-    hook_input = {
-      "session_id"       => test_session_id,
-      "transcript_path"  => transcript_file.path,
-      "stop_hook_active" => false,
-    }.to_json
-
-    result = run_binary(["on-stop"], stdin: hook_input)
-    result[:output].should_not contain("⚠️")
-    result[:output].should_not contain("🚨")
-
-    # Clean up
     File.delete(transcript_file.path)
   end
 end
