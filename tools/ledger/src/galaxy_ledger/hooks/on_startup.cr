@@ -3,7 +3,8 @@ require "json"
 module GalaxyLedger
   module Hooks
     # Handles the SessionStart(startup) hook — REGISTER MODE
-    # - Upserts session record in DB with Claude Code PID
+    # - Creates session record in DB with Claude Code PID
+    # - Registers session identifier and PID in mapping tables
     # - Injects ledger awareness prompt with lookup directives
     # This is the ONLY hook that creates session records.
     class OnStartup
@@ -16,19 +17,29 @@ module GalaxyLedger
         # Parse hook input from stdin to get session_id
         parse_hook_input
 
-        # Register: upsert session record with PID (creates if new, touches updated_at if existing)
+        # Register: create session record with PID, register mappings.
+        # Try resolving first in case this session_identifier already exists
+        # (e.g., process restart with same session ID).
         session_identifier = @session_identifier
         claude_pid = Process.ppid.to_i64
+        ledger_session_id = 0_i64
         if session_identifier
-          Database.upsert_session(session_identifier, claude_pid: claude_pid, cwd: Dir.current)
+          resolved = Database.resolve_session_identifier(session_identifier)
+          if resolved
+            ledger_session_id = resolved
+            Database.register_claude_pid(ledger_session_id, claude_pid)
+            Database.update_session(ledger_session_id, claude_pid: claude_pid)
+          else
+            ledger_session_id = Database.create_session(session_identifier, claude_pid: claude_pid, cwd: Dir.current)
+          end
         end
 
         # Query existing session data (may have data if resuming)
         restoration : Database::RestorationResult? = nil
         files : Array(Database::SessionFile)? = nil
-        if session_identifier
-          restoration = Database.query_for_restoration(session_identifier)
-          files = Database.session_files(session_identifier)
+        if ledger_session_id > 0
+          restoration = Database.query_for_restoration(ledger_session_id)
+          files = Database.session_files(ledger_session_id)
         end
 
         # Build systemMessage
@@ -43,8 +54,8 @@ module GalaxyLedger
         context = build_awareness_context(claude_pid)
 
         # Persist injected context to session record
-        if session_identifier
-          Database.merge_session_context(session_identifier, "injected_context", context)
+        if ledger_session_id > 0
+          Database.merge_session_context(ledger_session_id, "injected_context", context)
         end
 
         # Output JSON with systemMessage and additionalContext
@@ -65,15 +76,9 @@ module GalaxyLedger
       end
 
       private def build_awareness_context(claude_pid : Int64) : String
-        session_identifier = @session_identifier
-
         lines = [] of String
         lines << "## Galaxy Ledger"
         lines << ""
-
-        if session_identifier
-          lines << "**Session ID**: `#{session_identifier}`"
-        end
         lines << "**Ledger PID**: `#{claude_pid}`"
         lines << ""
 

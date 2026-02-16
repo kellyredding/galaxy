@@ -1,9 +1,10 @@
 require "../spec_helper"
 
-# Helper to create a test session with database entries
-def create_test_session_with_entries(session_id : String, entry_count : Int32 = 3)
+# Helper to create a test session with database entries.
+# Returns the ledger_session_id (Int64) for use in subsequent DB calls.
+def create_test_session_with_entries(session_id : String, entry_count : Int32 = 3) : Int64
   # Create session record first to satisfy FK constraint on ledger_entries
-  GalaxyLedger::Database.upsert_session(session_id)
+  ledger_session_id = GalaxyLedger::Database.create_session(session_id)
 
   entry_count.times do |i|
     entry = GalaxyLedger::Entry.new(
@@ -12,8 +13,10 @@ def create_test_session_with_entries(session_id : String, entry_count : Int32 = 
       importance: "medium",
       created_at: "2026-02-01T10:0#{i}:00Z"
     )
-    GalaxyLedger::Database.insert(session_id, entry)
+    GalaxyLedger::Database.insert(ledger_session_id, entry)
   end
+
+  ledger_session_id
 end
 
 describe "CLI Integration" do
@@ -615,7 +618,7 @@ describe "CLI Integration" do
 
     it "full cycle: read guideline, edit it, verify stale, prune, verify clean" do
       session_id = "e2e-stale-#{Random.rand(100000)}"
-      GalaxyLedger::Database.upsert_session(session_id)
+      ledger_session_id = GalaxyLedger::Database.create_session(session_id)
 
       begin
         # Step 1: Read a guideline file → creates extraction_marker entry
@@ -631,8 +634,8 @@ describe "CLI Integration" do
         result[:status].should eq(0)
 
         # Verify: extraction_marker entry exists, not stale
-        GalaxyLedger::Database.has_extracted_source_file?(session_id, "/home/user/agent-guidelines/ruby-style.md").should be_true
-        GalaxyLedger::Database.stale_entries(session_id).should be_empty
+        GalaxyLedger::Database.has_extracted_source_file?(ledger_session_id, "/home/user/agent-guidelines/ruby-style.md").should be_true
+        GalaxyLedger::Database.stale_entries(ledger_session_id).should be_empty
 
         # Step 2: Edit the same guideline file → marks entries stale
         edit_input = {
@@ -651,18 +654,18 @@ describe "CLI Integration" do
         result[:status].should eq(0)
 
         # Verify: marker is now stale
-        stale = GalaxyLedger::Database.stale_entries(session_id)
+        stale = GalaxyLedger::Database.stale_entries(ledger_session_id)
         stale.size.should eq(1)
         stale[0][:source_file].should eq("/home/user/agent-guidelines/ruby-style.md")
         stale[0][:full_path].should eq("/home/user/agent-guidelines/ruby-style.md")
         stale[0][:entry_type].should eq("guideline")
 
         # Step 3: Simulate what on-stop does — prune stale entries
-        GalaxyLedger::Database.delete_entries_by_source_file(session_id, "/home/user/agent-guidelines/ruby-style.md")
+        GalaxyLedger::Database.delete_entries_by_source_file(ledger_session_id, "/home/user/agent-guidelines/ruby-style.md")
 
         # Verify: entries are pruned, ready for re-extraction
-        GalaxyLedger::Database.has_extracted_source_file?(session_id, "/home/user/agent-guidelines/ruby-style.md").should be_false
-        GalaxyLedger::Database.stale_entries(session_id).should be_empty
+        GalaxyLedger::Database.has_extracted_source_file?(ledger_session_id, "/home/user/agent-guidelines/ruby-style.md").should be_false
+        GalaxyLedger::Database.stale_entries(ledger_session_id).should be_empty
       ensure
         GalaxyLedger::Database.delete_session(session_id)
       end
@@ -670,7 +673,7 @@ describe "CLI Integration" do
 
     it "handles multiple stale files in same session" do
       session_id = "e2e-multi-stale-#{Random.rand(100000)}"
-      GalaxyLedger::Database.upsert_session(session_id)
+      ledger_session_id = GalaxyLedger::Database.create_session(session_id)
 
       begin
         # Read two guideline files
@@ -700,19 +703,19 @@ describe "CLI Integration" do
         run_binary(["on-post-tool-use"], stdin: edit_input)
 
         # Only ruby-style should be stale
-        stale = GalaxyLedger::Database.stale_entries(session_id)
+        stale = GalaxyLedger::Database.stale_entries(ledger_session_id)
         stale.size.should eq(1)
         stale[0][:source_file].should eq("/home/user/agent-guidelines/ruby-style.md")
 
         # rspec-style should be untouched
-        GalaxyLedger::Database.has_extracted_source_file?(session_id, "/home/user/agent-guidelines/rspec-style.md").should be_true
+        GalaxyLedger::Database.has_extracted_source_file?(ledger_session_id, "/home/user/agent-guidelines/rspec-style.md").should be_true
 
         # Prune only the stale one
-        GalaxyLedger::Database.delete_entries_by_source_file(session_id, "/home/user/agent-guidelines/ruby-style.md")
+        GalaxyLedger::Database.delete_entries_by_source_file(ledger_session_id, "/home/user/agent-guidelines/ruby-style.md")
 
         # rspec-style still present, ruby-style gone
-        GalaxyLedger::Database.has_extracted_source_file?(session_id, "/home/user/agent-guidelines/rspec-style.md").should be_true
-        GalaxyLedger::Database.has_extracted_source_file?(session_id, "/home/user/agent-guidelines/ruby-style.md").should be_false
+        GalaxyLedger::Database.has_extracted_source_file?(ledger_session_id, "/home/user/agent-guidelines/rspec-style.md").should be_true
+        GalaxyLedger::Database.has_extracted_source_file?(ledger_session_id, "/home/user/agent-guidelines/ruby-style.md").should be_false
       ensure
         GalaxyLedger::Database.delete_session(session_id)
       end
@@ -720,7 +723,7 @@ describe "CLI Integration" do
 
     it "mixed types: guideline and implementation_plan stale independently" do
       session_id = "e2e-mixed-stale-#{Random.rand(100000)}"
-      GalaxyLedger::Database.upsert_session(session_id)
+      ledger_session_id = GalaxyLedger::Database.create_session(session_id)
 
       begin
         # Read a guideline
@@ -757,13 +760,13 @@ describe "CLI Integration" do
         run_binary(["on-post-tool-use"], stdin: write_ip)
 
         # Only the plan should be stale
-        stale = GalaxyLedger::Database.stale_entries(session_id)
+        stale = GalaxyLedger::Database.stale_entries(ledger_session_id)
         stale.size.should eq(1)
         stale[0][:source_file].should eq("/home/user/implementation-plans/feature.md")
         stale[0][:entry_type].should eq("implementation_plan")
 
         # Guideline should be fresh
-        GalaxyLedger::Database.has_extracted_source_file?(session_id, "/home/user/agent-guidelines/ruby-style.md").should be_true
+        GalaxyLedger::Database.has_extracted_source_file?(ledger_session_id, "/home/user/agent-guidelines/ruby-style.md").should be_true
       ensure
         GalaxyLedger::Database.delete_session(session_id)
       end
@@ -778,15 +781,15 @@ describe "CLI Integration" do
 
     it "lists session files with operation flags" do
       session_id = "list-files-test-#{Random.rand(100000)}"
-      GalaxyLedger::Database.upsert_session(session_id)
+      ledger_session_id = GalaxyLedger::Database.create_session(session_id)
 
-      GalaxyLedger::Database.upsert_session_file(session_id, "/home/user/src/app.cr", :edit)
-      GalaxyLedger::Database.upsert_session_file(session_id, "/home/user/src/app.cr", :read)
-      GalaxyLedger::Database.upsert_session_file(session_id, "/home/user/README.md", :read)
+      GalaxyLedger::Database.upsert_session_file(ledger_session_id, "/home/user/src/app.cr", :edit)
+      GalaxyLedger::Database.upsert_session_file(ledger_session_id, "/home/user/src/app.cr", :read)
+      GalaxyLedger::Database.upsert_session_file(ledger_session_id, "/home/user/README.md", :read)
 
       result = run_binary(["list-files", "--session", session_id])
       result[:status].should eq(0)
-      result[:output].should contain("Session files for #{session_id[0, 8]}")
+      result[:output].should contain("Session files for session ##{ledger_session_id}")
       result[:output].should contain("edited")
       result[:output].should contain("read")
       result[:output].should contain("app.cr")
@@ -797,10 +800,10 @@ describe "CLI Integration" do
 
     it "shows search patterns for searched files" do
       session_id = "list-files-search-#{Random.rand(100000)}"
-      GalaxyLedger::Database.upsert_session(session_id)
+      ledger_session_id = GalaxyLedger::Database.create_session(session_id)
 
       GalaxyLedger::Database.upsert_session_file(
-        session_id, "/home/user/src/", :search,
+        ledger_session_id, "/home/user/src/", :search,
         search_pattern: "extraction_marker"
       )
 
@@ -814,7 +817,7 @@ describe "CLI Integration" do
 
     it "shows empty message when no files found" do
       session_id = "list-files-empty-#{Random.rand(100000)}"
-      GalaxyLedger::Database.upsert_session(session_id)
+      ledger_session_id = GalaxyLedger::Database.create_session(session_id)
 
       result = run_binary(["list-files", "--session", session_id])
       result[:status].should eq(0)
@@ -831,10 +834,10 @@ describe "CLI Integration" do
 
     it "respects --limit flag" do
       session_id = "list-files-limit-#{Random.rand(100000)}"
-      GalaxyLedger::Database.upsert_session(session_id)
+      ledger_session_id = GalaxyLedger::Database.create_session(session_id)
 
       5.times do |i|
-        GalaxyLedger::Database.upsert_session_file(session_id, "/home/user/file#{i}.rb", :read)
+        GalaxyLedger::Database.upsert_session_file(ledger_session_id, "/home/user/file#{i}.rb", :read)
       end
 
       result = run_binary(["list-files", "--session", session_id, "--limit", "2"])
@@ -896,7 +899,7 @@ describe "CLI Integration" do
       session_id = "metrics-test-#{Random.rand(100000)}"
 
       # Create the session record first
-      GalaxyLedger::Database.upsert_session(session_id)
+      GalaxyLedger::Database.create_session(session_id)
 
       metrics_json = {
         "session_id" => session_id,
@@ -938,7 +941,7 @@ describe "CLI Integration" do
       session_id = "metrics-branch-#{Random.rand(100000)}"
 
       # Create the session record first
-      GalaxyLedger::Database.upsert_session(session_id)
+      GalaxyLedger::Database.create_session(session_id)
 
       metrics_json = {
         "session_id" => session_id,
@@ -978,7 +981,7 @@ describe "CLI Integration" do
 
     it "exits non-zero when no JSON provided on stdin" do
       session_id = "metrics-empty-#{Random.rand(100000)}"
-      GalaxyLedger::Database.upsert_session(session_id)
+      GalaxyLedger::Database.create_session(session_id)
 
       result = run_binary(["update-session-metrics", "--session", session_id])
       result[:status].should_not eq(0)

@@ -4,14 +4,18 @@ module GalaxyLedger
   module Hooks
     # Handles the SessionStart(clear|compact) hook — RESOLVE MODE
     #
-    # This hook is RESOLVE-ONLY — it ignores the new session_id from stdin
-    # and resolves the original session by Claude Code PID. All data
-    # accumulates under the one session record created by on_startup for
-    # the entire life of the Claude Code process, regardless of how many
-    # /clears happen.
+    # This hook is RESOLVE-ONLY — it resolves the original session by
+    # Claude Code PID. All data accumulates under the one session record
+    # created by on_startup for the entire life of the Claude Code process,
+    # regardless of how many /clears happen.
     #
-    # - Resolves session by PID (Process.ppid)
-    # - Queries tiered restoration data from SQLite using resolved session
+    # On /clear, Claude generates a new session_id. This hook registers that
+    # new identifier in the mapping table and updates the session's
+    # current_session_identifier, maintaining continuity.
+    #
+    # - Resolves session by PID (Process.ppid) → ledger_session_id
+    # - Registers the new stdin session_id against the resolved session
+    # - Queries tiered restoration data from SQLite using ledger_session_id
     # - Builds systemMessage status line for user display
     # - Returns additionalContext with full handoff markdown for agent restoration
     class OnSessionStart
@@ -28,29 +32,38 @@ module GalaxyLedger
         # Parse hook input from stdin
         parse_hook_input
 
-        # Resolve session by PID — ignore stdin session_id
+        # Resolve session by PID → ledger_session_id
         claude_pid = Process.ppid.to_i64
-        session_record = Database.get_session_by_pid(claude_pid)
+        ledger_session_id = Database.resolve_claude_pid(claude_pid)
 
         # Fallback: if PID lookup fails (on_startup never ran or DB was wiped),
-        # register a new session with the stdin session_id + PID so subsequent
-        # hooks work. Restoration will be empty.
-        unless session_record
+        # try resolving by session_identifier, then create as last resort.
+        unless ledger_session_id
           stdin_id = @stdin_session_identifier
           if stdin_id && !stdin_id.empty?
-            Database.upsert_session(stdin_id, claude_pid: claude_pid, cwd: Dir.current)
-            session_record = Database.get_session(stdin_id)
+            ledger_session_id = Database.resolve_session_identifier(stdin_id)
+            unless ledger_session_id
+              ledger_session_id = Database.create_session(stdin_id, claude_pid: claude_pid, cwd: Dir.current)
+            end
           end
         end
 
-        return output_empty unless session_record
+        return output_empty unless ledger_session_id && ledger_session_id > 0
 
-        session_identifier = session_record.session_identifier
+        # Register the new stdin session_id against the existing session.
+        # On /clear, Claude generates a new UUID — register it so it maps
+        # to the same logical session.
+        if stdin_id = @stdin_session_identifier
+          unless stdin_id.empty?
+            Database.register_session_identifier(ledger_session_id, stdin_id)
+            Database.update_session(ledger_session_id, session_identifier: stdin_id)
+          end
+        end
 
-        # Query restoration data using the resolved session identifier
-        restoration = Database.query_for_restoration(session_identifier)
-        files = Database.session_files(session_identifier)
-        last_exchange = read_last_exchange_from_db(session_identifier)
+        # Query restoration data using the resolved ledger_session_id
+        restoration = Database.query_for_restoration(ledger_session_id)
+        files = Database.session_files(ledger_session_id)
+        last_exchange = read_last_exchange_from_db(ledger_session_id)
 
         # Build systemMessage and additionalContext
         system_message = Helpers.build_system_message(
@@ -62,7 +75,6 @@ module GalaxyLedger
         )
 
         context = build_additional_context(
-          session_identifier: session_identifier,
           claude_pid: claude_pid,
           restoration: restoration,
           files: files,
@@ -85,8 +97,8 @@ module GalaxyLedger
         end
       end
 
-      private def read_last_exchange_from_db(session_identifier : String) : Exchange::LastExchange?
-        session_record = Database.get_session(session_identifier)
+      private def read_last_exchange_from_db(ledger_session_id : Int64) : Exchange::LastExchange?
+        session_record = Database.get_session_by_id(ledger_session_id)
         return nil unless session_record
 
         json_str = session_record.last_interaction
@@ -100,7 +112,6 @@ module GalaxyLedger
       end
 
       private def build_additional_context(
-        session_identifier : String,
         claude_pid : Int64,
         restoration : Database::RestorationResult,
         files : Array(Database::SessionFile),
@@ -109,7 +120,6 @@ module GalaxyLedger
         lines = [] of String
         lines << "## Session Context Handoff"
         lines << ""
-        lines << "**Session ID**: `#{session_identifier}`"
         lines << "**Ledger PID**: `#{claude_pid}`"
         lines << ""
 

@@ -7,13 +7,13 @@ describe "OnSessionStart GALAXY_SKIP_HOOKS" do
     test_session_id = "skip-hooks-test-#{Random.rand(10000)}"
 
     # Ensure session record exists and write last interaction to DB
-    GalaxyLedger::Database.upsert_session(test_session_id)
+    ledger_session_id = GalaxyLedger::Database.create_session(test_session_id)
     exchange = GalaxyLedger::Exchange::LastExchange.new(
       user_message: "Test message",
       full_content: "Test response",
       assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
     )
-    GalaxyLedger::Database.update_session_last_interaction(test_session_id, exchange.to_pretty_json)
+    GalaxyLedger::Database.update_session_last_interaction(ledger_session_id, exchange.to_pretty_json)
 
     hook_input = {
       "session_id" => test_session_id,
@@ -44,10 +44,11 @@ end
 
 describe "OnSessionStart JSON output" do
   test_session_id = "session-start-json-#{Random.rand(10000)}"
+  ledger_session_id = 0_i64
 
   before_each do
     GalaxyLedger::Database.delete_session(test_session_id)
-    GalaxyLedger::Database.upsert_session(test_session_id)
+    ledger_session_id = GalaxyLedger::Database.create_session(test_session_id)
   end
 
   after_each do
@@ -86,10 +87,11 @@ end
 
 describe "OnSessionStart systemMessage" do
   test_session_id = "session-start-sm-#{Random.rand(10000)}"
+  ledger_session_id = 0_i64
 
   before_each do
     GalaxyLedger::Database.delete_session(test_session_id)
-    GalaxyLedger::Database.upsert_session(test_session_id)
+    ledger_session_id = GalaxyLedger::Database.create_session(test_session_id)
   end
 
   after_each do
@@ -105,7 +107,7 @@ describe "OnSessionStart systemMessage" do
         importance: "medium",
         source_file: "/home/user/agent-guidelines/ruby-style.md"
       )
-      GalaxyLedger::Database.insert(test_session_id, entry)
+      GalaxyLedger::Database.insert(ledger_session_id, entry)
     end
 
     hook_input = {
@@ -123,7 +125,7 @@ describe "OnSessionStart systemMessage" do
   it "includes session file count" do
     # Add a session file
     GalaxyLedger::Database.upsert_session_file(
-      test_session_id, "/home/user/app.rb", :read
+      ledger_session_id, "/home/user/app.rb", :read
     )
 
     hook_input = {
@@ -143,7 +145,7 @@ describe "OnSessionStart systemMessage" do
       full_content: "I fixed the auth bug.",
       assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
     )
-    GalaxyLedger::Database.update_session_last_interaction(test_session_id, exchange.to_pretty_json)
+    GalaxyLedger::Database.update_session_last_interaction(ledger_session_id, exchange.to_pretty_json)
 
     hook_input = {
       "session_id" => test_session_id,
@@ -165,16 +167,16 @@ describe "OnSessionStart systemMessage" do
       importance: "medium",
       source_file: "/home/user/guidelines/ruby.md"
     )
-    GalaxyLedger::Database.insert(test_session_id, entry)
+    GalaxyLedger::Database.insert(ledger_session_id, entry)
 
     entry = GalaxyLedger::Entry.new(
       entry_type: "decision",
       content: "Use SQLite",
       importance: "high"
     )
-    GalaxyLedger::Database.insert(test_session_id, entry)
+    GalaxyLedger::Database.insert(ledger_session_id, entry)
 
-    GalaxyLedger::Database.upsert_session_file(test_session_id, "/home/user/app.rb", :edit)
+    GalaxyLedger::Database.upsert_session_file(ledger_session_id, "/home/user/app.rb", :edit)
 
     hook_input = {
       "session_id" => test_session_id,
@@ -192,17 +194,18 @@ end
 
 describe "OnSessionStart additionalContext" do
   test_session_id = "session-start-ctx-#{Random.rand(10000)}"
+  ledger_session_id = 0_i64
 
   before_each do
     GalaxyLedger::Database.delete_session(test_session_id)
-    GalaxyLedger::Database.upsert_session(test_session_id)
+    ledger_session_id = GalaxyLedger::Database.create_session(test_session_id)
   end
 
   after_each do
     GalaxyLedger::Database.delete_session(test_session_id)
   end
 
-  it "includes header and session ID" do
+  it "includes header and Ledger PID" do
     hook_input = {
       "session_id" => test_session_id,
       "source"     => "clear",
@@ -212,7 +215,7 @@ describe "OnSessionStart additionalContext" do
     output = JSON.parse(result[:output])
     ctx = output["hookSpecificOutput"]["additionalContext"].as_s
     ctx.should contain("## Session Context Handoff")
-    ctx.should contain(test_session_id)
+    ctx.should contain("**Ledger PID**:")
   end
 
   it "includes Ledger PID" do
@@ -233,7 +236,7 @@ describe "OnSessionStart additionalContext" do
       full_content: "Response",
       assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
     )
-    GalaxyLedger::Database.update_session_last_interaction(test_session_id, exchange.to_pretty_json)
+    GalaxyLedger::Database.update_session_last_interaction(ledger_session_id, exchange.to_pretty_json)
 
     hook_input = {
       "session_id" => test_session_id,
@@ -253,7 +256,7 @@ describe "OnSessionStart additionalContext" do
       full_content: "Response",
       assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
     )
-    GalaxyLedger::Database.update_session_last_interaction(test_session_id, exchange.to_pretty_json)
+    GalaxyLedger::Database.update_session_last_interaction(ledger_session_id, exchange.to_pretty_json)
 
     hook_input = {
       "session_id" => test_session_id,
@@ -273,7 +276,7 @@ describe "OnSessionStart additionalContext" do
       full_content: "Response",
       assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
     )
-    GalaxyLedger::Database.update_session_last_interaction(test_session_id, exchange.to_pretty_json)
+    GalaxyLedger::Database.update_session_last_interaction(ledger_session_id, exchange.to_pretty_json)
 
     hook_input = {
       "session_id" => test_session_id,
@@ -293,7 +296,7 @@ describe "OnSessionStart additionalContext" do
       full_content: "Response",
       assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
     )
-    GalaxyLedger::Database.update_session_last_interaction(test_session_id, exchange.to_pretty_json)
+    GalaxyLedger::Database.update_session_last_interaction(ledger_session_id, exchange.to_pretty_json)
 
     hook_input = {
       "session_id" => test_session_id,
@@ -318,7 +321,7 @@ describe "OnSessionStart additionalContext" do
         importance: "medium",
         source_file: "/home/user/agent-guidelines/ruby-style.md"
       )
-      GalaxyLedger::Database.insert(test_session_id, entry)
+      GalaxyLedger::Database.insert(ledger_session_id, entry)
     end
 
     entry = GalaxyLedger::Entry.new(
@@ -327,7 +330,7 @@ describe "OnSessionStart additionalContext" do
       importance: "medium",
       source_file: "/home/user/agent-guidelines/rspec-style.md"
     )
-    GalaxyLedger::Database.insert(test_session_id, entry)
+    GalaxyLedger::Database.insert(ledger_session_id, entry)
 
     hook_input = {
       "session_id" => test_session_id,
@@ -350,14 +353,14 @@ describe "OnSessionStart additionalContext" do
       content: "Use SQLite for storage",
       importance: "high"
     )
-    GalaxyLedger::Database.insert(test_session_id, entry_high)
+    GalaxyLedger::Database.insert(ledger_session_id, entry_high)
 
     entry_med = GalaxyLedger::Entry.new(
       entry_type: "decision",
       content: "Use JSON output format",
       importance: "medium"
     )
-    GalaxyLedger::Database.insert(test_session_id, entry_med)
+    GalaxyLedger::Database.insert(ledger_session_id, entry_med)
 
     hook_input = {
       "session_id" => test_session_id,
@@ -373,9 +376,9 @@ describe "OnSessionStart additionalContext" do
   end
 
   it "includes session file manifest split by operation" do
-    GalaxyLedger::Database.upsert_session_file(test_session_id, "/home/user/src/app.cr", :edit)
-    GalaxyLedger::Database.upsert_session_file(test_session_id, "/home/user/src/app.cr", :read)
-    GalaxyLedger::Database.upsert_session_file(test_session_id, "/home/user/README.md", :read)
+    GalaxyLedger::Database.upsert_session_file(ledger_session_id, "/home/user/src/app.cr", :edit)
+    GalaxyLedger::Database.upsert_session_file(ledger_session_id, "/home/user/src/app.cr", :read)
+    GalaxyLedger::Database.upsert_session_file(ledger_session_id, "/home/user/README.md", :read)
 
     hook_input = {
       "session_id" => test_session_id,

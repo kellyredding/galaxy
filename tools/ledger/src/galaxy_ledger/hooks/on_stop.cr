@@ -25,17 +25,28 @@ module GalaxyLedger
           return
         end
 
-        # Resolve session by PID
+        # Resolve session by PID → ledger_session_id
         claude_pid = Process.ppid.to_i64
-        session_record = Database.get_session_by_pid(claude_pid)
-        session_identifier = session_record.try(&.session_identifier) || @stdin_session_identifier
-        return unless session_identifier
+        ledger_session_id = Database.resolve_claude_pid(claude_pid)
+
+        # Fallback: try resolving stdin session_identifier
+        unless ledger_session_id
+          if sid = @stdin_session_identifier
+            ledger_session_id = Database.resolve_session_identifier(sid)
+          end
+        end
+        return unless ledger_session_id
+
+        # Get current session_identifier for extraction subprocess --session flags
+        session_record = Database.get_session_by_id(ledger_session_id)
+        current_sid = session_record.try(&.current_session_identifier) || @stdin_session_identifier
+        return unless current_sid
 
         # Capture last exchange from transcript
-        capture_last_exchange(session_identifier)
+        capture_last_exchange(ledger_session_id)
 
         # Check context thresholds and build warning message if needed
-        warning = check_context_thresholds(session_identifier)
+        warning = check_context_thresholds(ledger_session_id)
 
         # If we have a warning, output it
         if warning
@@ -43,11 +54,11 @@ module GalaxyLedger
         end
 
         # Spawn async extraction process for learnings/decisions/summary
-        spawn_extraction_async(session_identifier)
+        spawn_extraction_async(ledger_session_id, current_sid)
 
         # Re-extract any guideline/implementation plan files that were
         # edited during this session (stale entries)
-        re_extract_stale_files(session_identifier)
+        re_extract_stale_files(ledger_session_id, current_sid)
       end
 
       private def parse_hook_input
@@ -71,7 +82,7 @@ module GalaxyLedger
         end
       end
 
-      private def capture_last_exchange(session_identifier : String)
+      private def capture_last_exchange(ledger_session_id : Int64)
         transcript_path = @transcript_path
         return unless transcript_path
 
@@ -85,12 +96,12 @@ module GalaxyLedger
 
         # Convert to LastExchange format and write to DB
         last_exchange = Transcript.to_last_exchange(extracted)
-        Database.update_session_last_interaction(session_identifier, last_exchange.to_pretty_json)
+        Database.update_session_last_interaction(ledger_session_id, last_exchange.to_pretty_json)
       end
 
-      private def check_context_thresholds(session_identifier : String) : String?
+      private def check_context_thresholds(ledger_session_id : Int64) : String?
         # Read context percentage from DB (written by statusline → update-session-metrics)
-        session_record = Database.get_session(session_identifier)
+        session_record = Database.get_session_by_id(ledger_session_id)
         return nil unless session_record
 
         percentage = session_record.context_percentage
@@ -125,7 +136,7 @@ module GalaxyLedger
         lines.join("\n")
       end
 
-      private def spawn_extraction_async(session_identifier : String)
+      private def spawn_extraction_async(ledger_session_id : Int64, current_sid : String)
         transcript_path = @transcript_path
         return unless transcript_path
 
@@ -134,7 +145,7 @@ module GalaxyLedger
         return unless config.extraction.on_stop
 
         # Read the last exchange from the DB session record
-        session_record = Database.get_session(session_identifier)
+        session_record = Database.get_session_by_id(ledger_session_id)
         return unless session_record
 
         json_str = session_record.last_interaction
@@ -167,7 +178,7 @@ module GalaxyLedger
 
           Process.new(
             binary,
-            args: ["extract-assistant", "--session", session_identifier, "--input-file", temp_file.path],
+            args: ["extract-assistant", "--session", current_sid, "--input-file", temp_file.path],
             input: Process::Redirect::Close,
             output: Process::Redirect::Close,
             error: Process::Redirect::Close,
@@ -182,8 +193,8 @@ module GalaxyLedger
       # DB entries, and spawns async extract-file subprocesses.
       # NOTE: extraction subprocesses use --session (not --pid) because their
       # PPID is the hook process, not Claude Code.
-      private def re_extract_stale_files(session_identifier : String)
-        stale = Database.stale_entries(session_identifier)
+      private def re_extract_stale_files(ledger_session_id : Int64, current_sid : String)
+        stale = Database.stale_entries(ledger_session_id)
         return if stale.empty?
 
         binary = Process.executable_path || "galaxy-ledger"
@@ -201,12 +212,12 @@ module GalaxyLedger
           next if content.strip.empty?
 
           # Prune stale entries, then spawn re-extraction with fresh content
-          Database.delete_entries_by_source_file(session_identifier, entry[:source_file])
+          Database.delete_entries_by_source_file(ledger_session_id, entry[:source_file])
 
           begin
             Process.new(
               binary,
-              args: ["extract-file", "--session", session_identifier, "--type", entry[:entry_type], "--path", entry[:full_path]],
+              args: ["extract-file", "--session", current_sid, "--type", entry[:entry_type], "--path", entry[:full_path]],
               input: IO::Memory.new(content),
               output: Process::Redirect::Close,
               error: Process::Redirect::Close,

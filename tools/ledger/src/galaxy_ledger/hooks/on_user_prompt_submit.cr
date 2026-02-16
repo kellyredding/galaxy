@@ -26,20 +26,31 @@ module GalaxyLedger
         return if prompt.strip.empty?
         return if prompt.strip.size < 10 # Skip "yes", "ok", "continue", etc.
 
-        # Resolve session by PID
+        # Resolve session by PID → ledger_session_id
         claude_pid = Process.ppid.to_i64
-        session_record = Database.get_session_by_pid(claude_pid)
-        session_identifier = session_record.try(&.session_identifier) || @stdin_session_identifier
-        return unless session_identifier
+        ledger_session_id = Database.resolve_claude_pid(claude_pid)
+
+        # Fallback: try resolving stdin session_identifier
+        unless ledger_session_id
+          if sid = @stdin_session_identifier
+            ledger_session_id = Database.resolve_session_identifier(sid)
+          end
+        end
+        return unless ledger_session_id
+
+        # Get current session_identifier for extraction subprocess --session flag
+        session_record = Database.get_session_by_id(ledger_session_id)
+        current_sid = session_record.try(&.current_session_identifier) || @stdin_session_identifier
+        return unless current_sid
 
         # Persist the initial message to session context (write_once so only the first prompt is stored)
-        Database.merge_session_context(session_identifier, "initial_message", prompt, write_once: true)
+        Database.merge_session_context(ledger_session_id, "initial_message", prompt, write_once: true)
 
         # Spawn async extraction for user directions
         # Extract actual directions/preferences/constraints and write to database
         # NOTE: extraction subprocesses use --session (not --pid) because their
         # PPID is the hook process, not Claude Code.
-        spawn_extraction_async(session_identifier, prompt)
+        spawn_extraction_async(current_sid, prompt)
       end
 
       private def spawn_extraction_async(session_identifier : String, prompt : String)

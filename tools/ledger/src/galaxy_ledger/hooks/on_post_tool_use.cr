@@ -33,22 +33,33 @@ module GalaxyLedger
         tool_name = @tool_name
         return unless tool_name
 
-        # Resolve session by PID
+        # Resolve session by PID → ledger_session_id
         claude_pid = Process.ppid.to_i64
-        session_record = Database.get_session_by_pid(claude_pid)
-        session_identifier = session_record.try(&.session_identifier) || @stdin_session_identifier
-        return unless session_identifier
+        ledger_session_id = Database.resolve_claude_pid(claude_pid)
+
+        # Fallback: try resolving stdin session_identifier
+        unless ledger_session_id
+          if sid = @stdin_session_identifier
+            ledger_session_id = Database.resolve_session_identifier(sid)
+          end
+        end
+        return unless ledger_session_id
+
+        # Get current session_identifier for extraction subprocess --session flags
+        session_record = Database.get_session_by_id(ledger_session_id)
+        current_sid = session_record.try(&.current_session_identifier) || @stdin_session_identifier
+        return unless current_sid
 
         # Process based on tool type
         case tool_name
         when "Read"
-          process_read(session_identifier)
+          process_read(ledger_session_id, current_sid)
         when "Edit"
-          process_edit(session_identifier)
+          process_edit(ledger_session_id)
         when "Write"
-          process_write(session_identifier)
+          process_write(ledger_session_id)
         when "Grep", "Glob"
-          process_search(session_identifier)
+          process_search(ledger_session_id)
         end
       end
 
@@ -82,7 +93,7 @@ module GalaxyLedger
         end
       end
 
-      private def process_read(session_identifier : String)
+      private def process_read(ledger_session_id : Int64, current_sid : String)
         tool_input = @tool_input
         tool_response = @tool_response
         return unless tool_input
@@ -94,19 +105,19 @@ module GalaxyLedger
         special_type = detect_special_file_type(file_path)
 
         # Track every read in session_files, regardless of file type
-        Database.upsert_session_file(session_identifier, file_path, :read)
+        Database.upsert_session_file(ledger_session_id, file_path, :read)
 
         if special_type && tool_response && !tool_response.empty?
           # Skip extraction if we already have a marker for this source file in this session.
           # The LLM produces unique output each time, so the content-hash unique index
           # can't catch these — we need to check by source_file instead.
-          already_extracted = Database.has_extracted_source_file?(session_identifier, file_path)
+          already_extracted = Database.has_extracted_source_file?(ledger_session_id, file_path)
 
           unless already_extracted
             # For guidelines and implementation plans, spawn extraction
             # NOTE: extraction subprocesses use --session (not --pid) because their
             # PPID is the hook process, not Claude Code.
-            spawn_extraction_async(session_identifier, file_path, tool_response, special_type)
+            spawn_extraction_async(current_sid, file_path, tool_response, special_type)
           end
 
           # Always record a marker entry that we read this file.
@@ -120,7 +131,7 @@ module GalaxyLedger
             metadata: JSON.parse({"tool" => "Read", "extraction_type" => special_type, "extraction_spawned" => !already_extracted}.to_json),
             source_file: file_path,
           )
-          Database.insert(session_identifier, entry)
+          Database.insert(ledger_session_id, entry)
         end
       end
 
@@ -150,7 +161,7 @@ module GalaxyLedger
         end
       end
 
-      private def process_edit(session_identifier : String)
+      private def process_edit(ledger_session_id : Int64)
         tool_input = @tool_input
         return unless tool_input
 
@@ -158,13 +169,13 @@ module GalaxyLedger
         return unless file_path
 
         # Record in session_files table
-        Database.upsert_session_file(session_identifier, file_path, :edit)
+        Database.upsert_session_file(ledger_session_id, file_path, :edit)
 
         # Mark extracted entries stale if this is a special file
-        check_stale_extraction(session_identifier, file_path)
+        check_stale_extraction(ledger_session_id, file_path)
       end
 
-      private def process_write(session_identifier : String)
+      private def process_write(ledger_session_id : Int64)
         tool_input = @tool_input
         return unless tool_input
 
@@ -172,23 +183,23 @@ module GalaxyLedger
         return unless file_path
 
         # Record in session_files table
-        Database.upsert_session_file(session_identifier, file_path, :write)
+        Database.upsert_session_file(ledger_session_id, file_path, :write)
 
         # Mark extracted entries stale if this is a special file
-        check_stale_extraction(session_identifier, file_path)
+        check_stale_extraction(ledger_session_id, file_path)
       end
 
       # When a guideline or implementation plan file is edited/written,
       # mark its extracted entries as stale so the Stop hook knows to
       # re-extract fresh content from disk.
-      private def check_stale_extraction(session_identifier : String, file_path : String)
+      private def check_stale_extraction(ledger_session_id : Int64, file_path : String)
         special_type = detect_special_file_type(file_path)
         return unless special_type
 
-        Database.mark_entries_stale(session_identifier, file_path)
+        Database.mark_entries_stale(ledger_session_id, file_path)
       end
 
-      private def process_search(session_identifier : String)
+      private def process_search(ledger_session_id : Int64)
         tool_name = @tool_name
         tool_input = @tool_input
         return unless tool_name && tool_input
@@ -200,7 +211,7 @@ module GalaxyLedger
         search_path = tool_input["path"]?.try(&.as_s?) || ""
 
         # Record in session_files table
-        Database.upsert_session_file(session_identifier, search_path, :search, search_pattern: pattern)
+        Database.upsert_session_file(ledger_session_id, search_path, :search, search_pattern: pattern)
       end
 
       private def detect_special_file_type(file_path : String) : String?

@@ -66,7 +66,7 @@ describe "OnStartup systemMessage" do
 
   it "shows counts when session already has data" do
     test_session_id = "startup-sm-data-#{Random.rand(10000)}"
-    GalaxyLedger::Database.upsert_session(test_session_id)
+    ledger_session_id = GalaxyLedger::Database.create_session(test_session_id)
 
     # Add some pre-existing guideline entries
     2.times do |i|
@@ -76,7 +76,7 @@ describe "OnStartup systemMessage" do
         importance: "medium",
         source_file: "/home/user/guidelines/style.md"
       )
-      GalaxyLedger::Database.insert(test_session_id, entry)
+      GalaxyLedger::Database.insert(ledger_session_id, entry)
     end
 
     hook_input = {"session_id" => test_session_id}.to_json
@@ -106,14 +106,14 @@ describe "OnStartup additionalContext" do
     GalaxyLedger::Database.delete_session(test_session_id)
   end
 
-  it "includes session ID" do
-    test_session_id = "startup-ctx-sid-#{Random.rand(10000)}"
+  it "includes persistent context ledger description" do
+    test_session_id = "startup-ctx-desc-#{Random.rand(10000)}"
     hook_input = {"session_id" => test_session_id}.to_json
 
     result = run_binary(["on-startup"], stdin: hook_input)
     output = JSON.parse(result[:output])
     ctx = output["hookSpecificOutput"]["additionalContext"].as_s
-    ctx.should contain(test_session_id)
+    ctx.should contain("persistent context ledger")
 
     # Clean up
     GalaxyLedger::Database.delete_session(test_session_id)
@@ -205,8 +205,8 @@ describe "OnStartup additionalContext" do
     session = GalaxyLedger::Database.get_session(test_session_id)
     session.should_not be_nil
     # The binary runs as a subprocess, so its Process.ppid is the spec runner's PID.
-    # We just verify that claude_pid was stored (not nil).
-    session.not_nil!.claude_pid.should_not be_nil
+    # We just verify that current_claude_pid was stored (not nil).
+    session.not_nil!.current_claude_pid.should_not be_nil
 
     # Clean up
     GalaxyLedger::Database.delete_session(test_session_id)

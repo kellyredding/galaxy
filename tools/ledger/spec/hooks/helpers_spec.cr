@@ -49,17 +49,17 @@ describe GalaxyLedger::Hooks::Helpers do
     it "groups entries by source_file" do
       entries = [
         GalaxyLedger::Database::StoredEntry.new(
-          id: 1_i64, created_at: "2026-01-01", session_identifier: "s1",
+          id: 1_i64, created_at: "2026-01-01", ledger_session_id: 1_i64,
           entry_type: "guideline", source: nil, content: "Rule 1", content_hash: "h1",
           metadata: nil, importance: "medium", source_file: "/path/a.md"
         ),
         GalaxyLedger::Database::StoredEntry.new(
-          id: 2_i64, created_at: "2026-01-01", session_identifier: "s1",
+          id: 2_i64, created_at: "2026-01-01", ledger_session_id: 1_i64,
           entry_type: "guideline", source: nil, content: "Rule 2", content_hash: "h2",
           metadata: nil, importance: "medium", source_file: "/path/a.md"
         ),
         GalaxyLedger::Database::StoredEntry.new(
-          id: 3_i64, created_at: "2026-01-01", session_identifier: "s1",
+          id: 3_i64, created_at: "2026-01-01", ledger_session_id: 1_i64,
           entry_type: "guideline", source: nil, content: "Rule 3", content_hash: "h3",
           metadata: nil, importance: "medium", source_file: "/path/b.md"
         ),
@@ -74,7 +74,7 @@ describe GalaxyLedger::Hooks::Helpers do
     it "groups entries without source_file under (unknown)" do
       entries = [
         GalaxyLedger::Database::StoredEntry.new(
-          id: 1_i64, created_at: "2026-01-01", session_identifier: "s1",
+          id: 1_i64, created_at: "2026-01-01", ledger_session_id: 1_i64,
           entry_type: "guideline", source: nil, content: "Rule 1", content_hash: "h1",
           metadata: nil, importance: "medium"
         ),
@@ -204,7 +204,7 @@ def make_stored_entry(entry_type : String, content : String = "test content") : 
   GalaxyLedger::Database::StoredEntry.new(
     id: Random.rand(10000).to_i64,
     created_at: "2026-01-01T00:00:00Z",
-    session_identifier: "test-session",
+    ledger_session_id: 1_i64,
     entry_type: entry_type,
     source: nil,
     content: content,
@@ -219,7 +219,6 @@ def make_session_file(path : String) : GalaxyLedger::Database::SessionFile
   GalaxyLedger::Database::SessionFile.new(
     id: Random.rand(10000).to_i64,
     ledger_session_id: 1_i64,
-    session_identifier: "test-session",
     file_path: path,
     search_pattern: "",
     is_read: true,

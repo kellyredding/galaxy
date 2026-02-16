@@ -97,6 +97,24 @@ def run_binary(
   }
 end
 
+# Clear all session data before each test. Integration tests that call
+# run_binary can leave behind sessions, PID mappings, and identifier
+# mappings. Rather than relying on per-test cleanup (which is skipped on
+# assertion failure), wipe everything between tests for full isolation.
+Spec.before_each do
+  begin
+    GalaxyLedger::Database.open do |db|
+      db.exec("DELETE FROM ledger_session_pids")
+      db.exec("DELETE FROM ledger_session_identifiers")
+      db.exec("DELETE FROM ledger_session_files")
+      db.exec("DELETE FROM ledger_entries")
+      db.exec("DELETE FROM ledger_sessions")
+    end
+  rescue
+    # DB may not exist yet for early specs
+  end
+end
+
 # Clean up entire test directory after all specs (includes sessions, config, data, etc.)
 Spec.after_suite do
   FileUtils.rm_rf(SPEC_CLAUDE_CONFIG_DIR.to_s) if Dir.exists?(SPEC_CLAUDE_CONFIG_DIR)

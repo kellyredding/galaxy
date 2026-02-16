@@ -344,22 +344,32 @@ module GalaxyLedger
       filters
     end
 
-    # Resolve a PID to a session identifier via database lookup.
-    # Returns the session_identifier or exits with error if not found.
-    private def self.resolve_pid_to_session(pid_str : String) : String
+    # Resolve a --pid or --session value to a ledger_session_id via database lookup.
+    # Exits with error if not found.
+    private def self.resolve_pid_to_ledger_session_id(pid_str : String) : Int64
       pid = pid_str.to_i64?
       unless pid
         STDERR.puts "Error: invalid --pid value '#{pid_str}' (must be an integer)"
         exit(1)
       end
 
-      session_record = Database.get_session_by_pid(pid)
-      unless session_record
+      ledger_session_id = Database.resolve_claude_pid(pid)
+      unless ledger_session_id
         STDERR.puts "Error: no session found for PID #{pid}"
         exit(1)
       end
 
-      session_record.session_identifier
+      ledger_session_id
+    end
+
+    private def self.resolve_session_to_ledger_session_id(session_identifier : String) : Int64
+      ledger_session_id = Database.resolve_session_identifier(session_identifier)
+      unless ledger_session_id
+        STDERR.puts "Error: no session found for identifier '#{session_identifier}'"
+        exit(1)
+      end
+
+      ledger_session_id
     end
 
     private def self.truncate(text : String, max_length : Int32) : String
@@ -434,13 +444,16 @@ module GalaxyLedger
         exit(1)
       end
 
-      # Resolve --pid to session_id if provided
+      # Resolve --pid or --session to ledger_session_id
+      ledger_session_id : Int64? = nil
       if ps = pid_str
-        session_id = resolve_pid_to_session(ps)
+        ledger_session_id = resolve_pid_to_ledger_session_id(ps)
+      elsif sid = session_id
+        ledger_session_id = resolve_session_to_ledger_session_id(sid)
       end
 
-      entries = if sid = session_id
-                  Database.search_in_session(sid, query, entry_type: entry_type, importance: importance, category: category, prefix_match: prefix_match)
+      entries = if lsid = ledger_session_id
+                  Database.search_in_session(lsid, query, entry_type: entry_type, importance: importance, category: category, prefix_match: prefix_match)
                 else
                   Database.search(query, entry_type: entry_type, importance: importance, category: category, prefix_match: prefix_match)
                 end
@@ -469,7 +482,7 @@ module GalaxyLedger
         if source_file = entry.source_file
           puts "    File: #{source_file}"
         end
-        puts "    Session: #{entry.session_identifier[0, 8]}..."
+        puts "    Session: ##{entry.ledger_session_id}"
         puts "    Content: #{truncate(entry.content, 100)}"
         # Show keywords if present
         keywords = entry.keywords_array
@@ -564,12 +577,15 @@ module GalaxyLedger
         end
       end
 
-      # Resolve --pid to session_id if provided
+      # Resolve --pid or --session to ledger_session_id
+      ledger_session_id : Int64? = nil
       if ps = pid_str
-        session_id = resolve_pid_to_session(ps)
+        ledger_session_id = resolve_pid_to_ledger_session_id(ps)
+      elsif sid = session_id
+        ledger_session_id = resolve_session_to_ledger_session_id(sid)
       end
 
-      entries = Database.query_recent_filtered(limit, entry_type, importance, session_identifier: session_id)
+      entries = Database.query_recent_filtered(limit, entry_type, importance, ledger_session_id: ledger_session_id)
 
       if entries.empty?
         puts "No entries in ledger."
@@ -581,7 +597,7 @@ module GalaxyLedger
 
       total = Database.count
       header = "Recent ledger entries (showing #{entries.size}"
-      header += " of #{total}" unless entry_type || importance || session_id
+      header += " of #{total}" unless entry_type || importance || ledger_session_id
       header += "):"
       puts header
       filters = build_filter_summary(entry_type, importance, nil, session_id)
@@ -599,7 +615,7 @@ module GalaxyLedger
         if source_file = entry.source_file
           puts "    File: #{source_file}"
         end
-        puts "    Session: #{entry.session_identifier[0, 8]}..."
+        puts "    Session: ##{entry.ledger_session_id}"
         puts "    Content: #{truncate(entry.content, 100)}"
         # Show keywords if present
         keywords = entry.keywords_array
@@ -669,26 +685,29 @@ module GalaxyLedger
         end
       end
 
-      # Resolve --pid to session_id if provided
+      # Resolve --pid or --session to ledger_session_id
+      ledger_session_id : Int64? = nil
       if ps = pid_str
-        session_id = resolve_pid_to_session(ps)
+        ledger_session_id = resolve_pid_to_ledger_session_id(ps)
+      elsif sid = session_id
+        ledger_session_id = resolve_session_to_ledger_session_id(sid)
       end
 
-      unless session_id
+      unless ledger_session_id
         STDERR.puts "Error: --session or --pid is required"
         STDERR.puts "Run 'galaxy-ledger list-files --help' for usage"
         exit(1)
       end
 
-      files = Database.session_files(session_id)
+      files = Database.session_files(ledger_session_id)
 
       if files.empty?
-        puts "No session files found for #{session_id[0, 8]}..."
+        puts "No session files found for session ##{ledger_session_id}"
         return
       end
 
       display = files.size > limit ? files[0, limit] : files
-      puts "Session files for #{session_id[0, 8]}... (showing #{display.size}#{files.size > limit ? " of #{files.size}" : ""}):"
+      puts "Session files for session ##{ledger_session_id} (showing #{display.size}#{files.size > limit ? " of #{files.size}" : ""}):"
       puts ""
 
       display.each do |f|
@@ -801,7 +820,12 @@ module GalaxyLedger
       end
 
       # Ensure session record exists (FK constraint)
-      Database.upsert_session(session_id)
+      ledger_session_id = Database.ensure_session(session_id)
+
+      if ledger_session_id <= 0
+        STDERR.puts "Error: failed to create or resolve session"
+        exit(1)
+      end
 
       # Create entry and insert directly into database
       entry = Entry.new(
@@ -811,7 +835,7 @@ module GalaxyLedger
         source: "user"
       )
 
-      success = Database.insert(session_id, entry)
+      success = Database.insert(ledger_session_id, entry)
 
       if success
         puts "Added #{entry_type} to ledger"
@@ -1402,6 +1426,13 @@ module GalaxyLedger
         exit(1)
       end
 
+      # Resolve session_identifier to ledger_session_id
+      ledger_session_id = Database.resolve_session_identifier(session_id)
+      unless ledger_session_id
+        STDERR.puts "Error: no session found for identifier '#{session_id}'"
+        exit(1)
+      end
+
       # Read prompt from stdin
       prompt = STDIN.gets_to_end
 
@@ -1417,9 +1448,9 @@ module GalaxyLedger
         entries = result.extractions.select(&.valid?).map do |e|
           e.to_entry(source: "user")
         end
-        inserted = Database.insert_many(session_id, entries)
+        inserted = Database.insert_many(ledger_session_id, entries)
         if inserted > 0
-          STDERR.puts "[galaxy-ledger] Extracted #{inserted} user directions for session #{session_id[0, 8]}..."
+          STDERR.puts "[galaxy-ledger] Extracted #{inserted} user directions for session ##{ledger_session_id}"
         end
       end
     end
@@ -1472,6 +1503,13 @@ module GalaxyLedger
         exit(1)
       end
 
+      # Resolve session_identifier to ledger_session_id
+      ledger_session_id = Database.resolve_session_identifier(session_id)
+      unless ledger_session_id
+        STDERR.puts "Error: no session found for identifier '#{session_id}'"
+        exit(1)
+      end
+
       # Read input file
       begin
         input_json = File.read(input_file)
@@ -1494,15 +1532,15 @@ module GalaxyLedger
           entries = result.extractions.select(&.valid?).map do |e|
             e.to_entry(source: "assistant")
           end
-          inserted = Database.insert_many(session_id, entries)
+          inserted = Database.insert_many(ledger_session_id, entries)
           if inserted > 0
-            STDERR.puts "[galaxy-ledger] Extracted #{inserted} learnings for session #{session_id[0, 8]}..."
+            STDERR.puts "[galaxy-ledger] Extracted #{inserted} learnings for session ##{ledger_session_id}"
           end
         end
 
         # Update last interaction with summary if we got one
         if summary = result.summary
-          session_record = Database.get_session(session_id)
+          session_record = Database.get_session_by_id(ledger_session_id)
           if session_record && (li_json = session_record.last_interaction)
             begin
               last_exchange = Exchange::LastExchange.from_json(li_json)
@@ -1514,7 +1552,7 @@ module GalaxyLedger
                 user_timestamp: last_exchange.user_timestamp,
                 summary: summary,
               )
-              Database.update_session_last_interaction(session_id, updated.to_pretty_json)
+              Database.update_session_last_interaction(ledger_session_id, updated.to_pretty_json)
               STDERR.puts "[galaxy-ledger] Updated last interaction with summary"
             rescue
               # Ignore parse errors on last_interaction
@@ -1583,6 +1621,13 @@ module GalaxyLedger
         exit(1)
       end
 
+      # Resolve session_identifier to ledger_session_id
+      ledger_session_id = Database.resolve_session_identifier(session_id)
+      unless ledger_session_id
+        STDERR.puts "Error: no session found for identifier '#{session_id}'"
+        exit(1)
+      end
+
       # Read content from stdin
       content = STDIN.gets_to_end
 
@@ -1606,7 +1651,7 @@ module GalaxyLedger
         entries = result.extractions.select(&.valid?).map do |e|
           e.to_entry
         end
-        inserted = Database.insert_many(session_id, entries)
+        inserted = Database.insert_many(ledger_session_id, entries)
         if inserted > 0
           STDERR.puts "[galaxy-ledger] Extracted #{inserted} #{extraction_type} entries from #{File.basename(file_path)}"
         end
@@ -1640,12 +1685,15 @@ module GalaxyLedger
         end
       end
 
-      # Resolve --pid to session_id if provided
+      # Resolve --pid or --session to ledger_session_id
+      ledger_session_id : Int64? = nil
       if ps = pid_str
-        session_id = resolve_pid_to_session(ps)
+        ledger_session_id = resolve_pid_to_ledger_session_id(ps)
+      elsif sid = session_id
+        ledger_session_id = resolve_session_to_ledger_session_id(sid)
       end
 
-      unless session_id
+      unless ledger_session_id
         STDERR.puts "Error: --session or --pid is required"
         exit(1)
       end
@@ -1659,7 +1707,7 @@ module GalaxyLedger
         end
 
         status = ContextStatus.from_json(json_str)
-        success = Database.update_session_metrics(session_id, status)
+        success = Database.update_session_metrics(ledger_session_id, status)
 
         unless success
           exit(1)

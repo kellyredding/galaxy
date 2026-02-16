@@ -10,6 +10,7 @@ module GalaxyLedger
   # Provides:
   # - Schema creation with FTS5 full-text search
   # - Session records (ledger_sessions) with metrics and context
+  # - Session identity mapping tables (identifiers + PIDs)
   # - Content hash deduplication (SHA256)
   # - File access tracking (ledger_session_files)
   # - Insert with ON CONFLICT DO NOTHING
@@ -95,8 +96,8 @@ module GalaxyLedger
         db.exec(<<-SQL)
           CREATE TABLE IF NOT EXISTS ledger_sessions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_identifier TEXT NOT NULL UNIQUE,
-            claude_pid INTEGER,
+            current_session_identifier TEXT,
+            current_claude_pid INTEGER,
             started_at TEXT DEFAULT (datetime('now')),
             updated_at TEXT DEFAULT (datetime('now')),
             cwd TEXT,
@@ -118,13 +119,34 @@ module GalaxyLedger
           )
         SQL
 
+        # Session identifier mapping table (many-to-one: identifiers → session)
+        db.exec(<<-SQL)
+          CREATE TABLE IF NOT EXISTS ledger_session_identifiers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ledger_session_id INTEGER NOT NULL,
+            session_identifier TEXT NOT NULL UNIQUE,
+            registered_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (ledger_session_id) REFERENCES ledger_sessions(id) ON DELETE CASCADE
+          )
+        SQL
+
+        # Session PID mapping table (many-to-one: PIDs → session)
+        db.exec(<<-SQL)
+          CREATE TABLE IF NOT EXISTS ledger_session_pids (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ledger_session_id INTEGER NOT NULL,
+            claude_pid INTEGER NOT NULL UNIQUE,
+            registered_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (ledger_session_id) REFERENCES ledger_sessions(id) ON DELETE CASCADE
+          )
+        SQL
+
         # Main ledger entries table
         db.exec(<<-SQL)
           CREATE TABLE IF NOT EXISTS ledger_entries (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             created_at TEXT DEFAULT (datetime('now')),
             ledger_session_id INTEGER NOT NULL,
-            session_identifier TEXT NOT NULL,
             entry_type TEXT NOT NULL,
             source TEXT,
             content TEXT NOT NULL,
@@ -145,7 +167,6 @@ module GalaxyLedger
           CREATE TABLE IF NOT EXISTS ledger_session_files (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ledger_session_id INTEGER NOT NULL,
-            session_identifier TEXT NOT NULL,
             file_path TEXT NOT NULL,
             search_pattern TEXT NOT NULL DEFAULT '',
             is_read INTEGER DEFAULT 0,
@@ -156,30 +177,28 @@ module GalaxyLedger
             last_seen_at TEXT DEFAULT (datetime('now')),
             access_count INTEGER DEFAULT 1,
             metadata TEXT,
-            UNIQUE(session_identifier, file_path, search_pattern),
+            UNIQUE(ledger_session_id, file_path, search_pattern),
             FOREIGN KEY (ledger_session_id) REFERENCES ledger_sessions(id) ON DELETE CASCADE
           )
         SQL
 
-        # Indexes for ledger_sessions
-        db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_identifier ON ledger_sessions(session_identifier)")
-        db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_pid ON ledger_sessions(claude_pid)")
+        # Indexes for mapping tables
+        db.exec("CREATE INDEX IF NOT EXISTS idx_session_ids_session ON ledger_session_identifiers(ledger_session_id)")
+        db.exec("CREATE INDEX IF NOT EXISTS idx_session_pids_session ON ledger_session_pids(ledger_session_id)")
 
         # Indexes for ledger_entries
-        db.exec("CREATE INDEX IF NOT EXISTS idx_entries_session ON ledger_entries(session_identifier)")
-        db.exec("CREATE INDEX IF NOT EXISTS idx_entries_session_type ON ledger_entries(session_identifier, entry_type)")
+        db.exec("CREATE INDEX IF NOT EXISTS idx_entries_session ON ledger_entries(ledger_session_id)")
+        db.exec("CREATE INDEX IF NOT EXISTS idx_entries_session_type ON ledger_entries(ledger_session_id, entry_type)")
         db.exec("CREATE INDEX IF NOT EXISTS idx_entries_source ON ledger_entries(source)")
         db.exec("CREATE INDEX IF NOT EXISTS idx_entries_created ON ledger_entries(created_at)")
         db.exec("CREATE INDEX IF NOT EXISTS idx_entries_importance ON ledger_entries(importance)")
         db.exec("CREATE INDEX IF NOT EXISTS idx_entries_category ON ledger_entries(category)")
-        db.exec("CREATE INDEX IF NOT EXISTS idx_entries_ledger_session ON ledger_entries(ledger_session_id)")
 
         # Unique constraint for deduplication
-        db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_content_dedup ON ledger_entries(session_identifier, entry_type, content_hash)")
+        db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_content_dedup ON ledger_entries(ledger_session_id, entry_type, content_hash)")
 
         # Indexes for ledger_session_files
-        db.exec("CREATE INDEX IF NOT EXISTS idx_files_session ON ledger_session_files(session_identifier)")
-        db.exec("CREATE INDEX IF NOT EXISTS idx_files_ledger_session ON ledger_session_files(ledger_session_id)")
+        db.exec("CREATE INDEX IF NOT EXISTS idx_files_session ON ledger_session_files(ledger_session_id)")
 
         # FTS5 full-text search
         db.exec(<<-SQL)
@@ -224,12 +243,95 @@ module GalaxyLedger
     end
 
     # ============================================================
+    # Session Identity Resolution & Registration
+    # ============================================================
+
+    # Resolve a Claude session identifier to a ledger_session_id via mapping table.
+    def self.resolve_session_identifier(session_identifier : String) : Int64?
+      return nil if session_identifier.empty?
+
+      begin
+        open do |db|
+          db.query_one?(
+            "SELECT ledger_session_id FROM ledger_session_identifiers WHERE session_identifier = ?",
+            session_identifier,
+            as: Int64,
+          )
+        end
+      rescue
+        nil
+      end
+    end
+
+    # Resolve a Claude Code PID to a ledger_session_id via mapping table.
+    def self.resolve_claude_pid(claude_pid : Int64) : Int64?
+      return nil if claude_pid <= 0
+
+      begin
+        open do |db|
+          db.query_one?(
+            "SELECT ledger_session_id FROM ledger_session_pids WHERE claude_pid = ?",
+            claude_pid,
+            as: Int64,
+          )
+        end
+      rescue
+        nil
+      end
+    end
+
+    # Register a session identifier mapping (public, opens own connection).
+    def self.register_session_identifier(ledger_session_id : Int64, session_identifier : String)
+      return if ledger_session_id <= 0 || session_identifier.empty?
+
+      begin
+        open do |db|
+          register_session_identifier_in(db, ledger_session_id, session_identifier)
+        end
+      rescue
+        # Silently ignore
+      end
+    end
+
+    # Register a PID mapping (public, opens own connection).
+    def self.register_claude_pid(ledger_session_id : Int64, claude_pid : Int64)
+      return if ledger_session_id <= 0 || claude_pid <= 0
+
+      begin
+        open do |db|
+          register_claude_pid_in(db, ledger_session_id, claude_pid)
+        end
+      rescue
+        # Silently ignore
+      end
+    end
+
+    # Internal: register session identifier within an existing connection.
+    private def self.register_session_identifier_in(db, ledger_session_id : Int64, session_identifier : String)
+      db.exec(
+        "INSERT OR IGNORE INTO ledger_session_identifiers (ledger_session_id, session_identifier) VALUES (?, ?)",
+        ledger_session_id,
+        session_identifier,
+      )
+    end
+
+    # Internal: register PID within an existing connection.
+    # INSERT OR REPLACE handles PID recycling — stale mapping gets overwritten.
+    private def self.register_claude_pid_in(db, ledger_session_id : Int64, claude_pid : Int64)
+      db.exec(
+        "INSERT OR REPLACE INTO ledger_session_pids (ledger_session_id, claude_pid) VALUES (?, ?)",
+        ledger_session_id,
+        claude_pid,
+      )
+    end
+
+    # ============================================================
     # Session Record Operations
     # ============================================================
 
-    # Upsert a session record. Creates if new, updates updated_at if existing.
-    # Returns the integer PK (ledger_sessions.id).
-    def self.upsert_session(
+    # Create a new session record. Returns the integer PK (ledger_sessions.id).
+    # Registers the session_identifier and optional claude_pid in mapping tables.
+    def self.create_session(
       session_identifier : String,
       claude_pid : Int64? = nil,
       cwd : String? = nil,
@@ -242,14 +344,8 @@ module GalaxyLedger
         open do |db|
           db.exec(
             <<-SQL,
-              INSERT INTO ledger_sessions (session_identifier, claude_pid, cwd, project_dir, git_branch)
+              INSERT INTO ledger_sessions (current_session_identifier, current_claude_pid, cwd, project_dir, git_branch)
               VALUES (?, ?, ?, ?, ?)
-              ON CONFLICT (session_identifier) DO UPDATE SET
-                updated_at = datetime('now'),
-                claude_pid = COALESCE(excluded.claude_pid, ledger_sessions.claude_pid),
-                cwd = COALESCE(excluded.cwd, ledger_sessions.cwd),
-                project_dir = COALESCE(excluded.project_dir, ledger_sessions.project_dir),
-                git_branch = COALESCE(excluded.git_branch, ledger_sessions.git_branch)
             SQL
             session_identifier,
             claude_pid,
@@ -257,19 +353,92 @@ module GalaxyLedger
             project_dir,
             git_branch,
           )
-          db.scalar(
-            "SELECT id FROM ledger_sessions WHERE session_identifier = ?",
-            session_identifier
-          ).as(Int64)
+          ledger_session_id = db.scalar("SELECT last_insert_rowid()").as(Int64)
+
+          # Register mappings
+          register_session_identifier_in(db, ledger_session_id, session_identifier)
+          if pid = claude_pid
+            register_claude_pid_in(db, ledger_session_id, pid)
+          end
+
+          ledger_session_id
         end
       rescue
         0_i64
       end
     end
 
+    # Update an existing session record by PK.
+    # Registers any new session_identifier or claude_pid in mapping tables.
+    def self.update_session(
+      ledger_session_id : Int64,
+      session_identifier : String? = nil,
+      claude_pid : Int64? = nil,
+      cwd : String? = nil,
+      project_dir : String? = nil,
+      git_branch : String? = nil,
+    ) : Bool
+      return false if ledger_session_id <= 0
+
+      begin
+        open do |db|
+          db.exec(
+            <<-SQL,
+              UPDATE ledger_sessions SET
+                updated_at = datetime('now'),
+                current_session_identifier = COALESCE(?, current_session_identifier),
+                current_claude_pid = COALESCE(?, current_claude_pid),
+                cwd = COALESCE(?, cwd),
+                project_dir = COALESCE(?, project_dir),
+                git_branch = COALESCE(?, git_branch)
+              WHERE id = ?
+            SQL
+            session_identifier,
+            claude_pid,
+            cwd,
+            project_dir,
+            git_branch,
+            ledger_session_id,
+          )
+
+          # Register new mappings if provided
+          if sid = session_identifier
+            register_session_identifier_in(db, ledger_session_id, sid)
+          end
+          if pid = claude_pid
+            register_claude_pid_in(db, ledger_session_id, pid)
+          end
+
+          true
+        end
+      rescue
+        false
+      end
+    end
+
+    # Convenience: resolve an existing session by identifier, or create a new one.
+    # Used by CLI commands (like `add`) that need a session to exist.
+    def self.ensure_session(
+      session_identifier : String,
+      claude_pid : Int64? = nil,
+      cwd : String? = nil,
+      project_dir : String? = nil,
+      git_branch : String? = nil,
+    ) : Int64
+      return 0_i64 if session_identifier.empty?
+
+      # Try to resolve existing
+      if id = resolve_session_identifier(session_identifier)
+        return id
+      end
+
+      # Create new
+      create_session(session_identifier, claude_pid: claude_pid, cwd: cwd, project_dir: project_dir, git_branch: git_branch)
+    end
+
     # Update session metrics from a ContextStatus payload (received via stdin from statusline)
-    def self.update_session_metrics(session_identifier : String, status : ContextStatus) : Bool
-      return false if session_identifier.empty?
+    def self.update_session_metrics(ledger_session_id : Int64, status : ContextStatus) : Bool
+      return false if ledger_session_id <= 0
 
       begin
         open do |db|
@@ -291,7 +460,7 @@ module GalaxyLedger
                 cumulative_cost_usd = COALESCE(?, cumulative_cost_usd),
                 lines_added = COALESCE(?, lines_added),
                 lines_removed = COALESCE(?, lines_removed)
-              WHERE session_identifier = ?
+              WHERE id = ?
             SQL
             status.cwd,
             status.project_dir,
@@ -307,7 +476,7 @@ module GalaxyLedger
             status.cost_usd,
             status.lines_added,
             status.lines_removed,
-            session_identifier,
+            ledger_session_id,
           )
           true
         end
@@ -317,15 +486,15 @@ module GalaxyLedger
     end
 
     # Update the last_interaction JSON for a session
-    def self.update_session_last_interaction(session_identifier : String, json : String) : Bool
-      return false if session_identifier.empty?
+    def self.update_session_last_interaction(ledger_session_id : Int64, json : String) : Bool
+      return false if ledger_session_id <= 0
 
       begin
         open do |db|
           db.exec(
-            "UPDATE ledger_sessions SET last_interaction = ?, updated_at = datetime('now') WHERE session_identifier = ?",
+            "UPDATE ledger_sessions SET last_interaction = ?, updated_at = datetime('now') WHERE id = ?",
             json,
-            session_identifier,
+            ledger_session_id,
           )
           true
         end
@@ -338,19 +507,19 @@ module GalaxyLedger
     # Reads existing JSON, adds key, writes back.
     # If write_once is true, skips if key already exists.
     def self.merge_session_context(
-      session_identifier : String,
+      ledger_session_id : Int64,
       key : String,
       value : String,
       write_once : Bool = false,
     ) : Bool
-      return false if session_identifier.empty?
+      return false if ledger_session_id <= 0
 
       begin
         open do |db|
           # Read current context
           current = db.query_one?(
-            "SELECT context FROM ledger_sessions WHERE session_identifier = ?",
-            session_identifier,
+            "SELECT context FROM ledger_sessions WHERE id = ?",
+            ledger_session_id,
             as: String
           ) || "{}"
 
@@ -369,9 +538,9 @@ module GalaxyLedger
           new_json = JSON::Any.new(ctx).to_json
 
           db.exec(
-            "UPDATE ledger_sessions SET context = ?, updated_at = datetime('now') WHERE session_identifier = ?",
+            "UPDATE ledger_sessions SET context = ?, updated_at = datetime('now') WHERE id = ?",
             new_json,
-            session_identifier,
+            ledger_session_id,
           )
           true
         end
@@ -380,23 +549,23 @@ module GalaxyLedger
       end
     end
 
-    # Get a session record by identifier
-    def self.get_session(session_identifier : String) : SessionRecord?
-      return nil if session_identifier.empty?
+    # Get a session record by PK
+    def self.get_session_by_id(ledger_session_id : Int64) : SessionRecord?
+      return nil if ledger_session_id <= 0
 
       begin
         open do |db|
           db.query_one?(
             <<-SQL,
-              SELECT id, session_identifier, claude_pid, started_at, updated_at, cwd, project_dir,
+              SELECT id, current_session_identifier, current_claude_pid, started_at, updated_at, cwd, project_dir,
                      git_branch, model_id, model_display_name, claude_version,
                      context_percentage, tokens_used, tokens_max, cost_usd,
                      cumulative_tokens_used, cumulative_cost_usd,
                      lines_added, lines_removed, context, last_interaction
               FROM ledger_sessions
-              WHERE session_identifier = ?
+              WHERE id = ?
             SQL
-            session_identifier,
+            ledger_session_id,
           ) do |rs|
             SessionRecord.from_row(rs)
           end
@@ -406,6 +575,16 @@ module GalaxyLedger
       end
     end
 
+    # Convenience: get a session record by identifier (resolves through mapping table)
+    def self.get_session(session_identifier : String) : SessionRecord?
+      return nil if session_identifier.empty?
+
+      ledger_session_id = resolve_session_identifier(session_identifier)
+      return nil unless ledger_session_id
+
+      get_session_by_id(ledger_session_id)
+    end
+
     # List session records, most recent first
     def self.list_sessions(limit : Int32 = 50) : Array(SessionRecord)
       sessions = [] of SessionRecord
@@ -413,7 +592,7 @@ module GalaxyLedger
         open do |db|
           db.query(
             <<-SQL,
-              SELECT id, session_identifier, claude_pid, started_at, updated_at, cwd, project_dir,
+              SELECT id, current_session_identifier, current_claude_pid, started_at, updated_at, cwd, project_dir,
                      git_branch, model_id, model_display_name, claude_version,
                      context_percentage, tokens_used, tokens_max, cost_usd,
                      cumulative_tokens_used, cumulative_cost_usd,
@@ -435,50 +614,21 @@ module GalaxyLedger
       sessions
     end
 
-    # Look up a session by Claude Code process PID.
-    # Returns the most recently updated session matching this PID.
-    def self.get_session_by_pid(claude_pid : Int64) : SessionRecord?
-      return nil if claude_pid <= 0
-
-      begin
-        open do |db|
-          db.query_one?(
-            <<-SQL,
-              SELECT id, session_identifier, claude_pid, started_at, updated_at, cwd, project_dir,
-                     git_branch, model_id, model_display_name, claude_version,
-                     context_percentage, tokens_used, tokens_max, cost_usd,
-                     cumulative_tokens_used, cumulative_cost_usd,
-                     lines_added, lines_removed, context, last_interaction
-              FROM ledger_sessions
-              WHERE claude_pid = ?
-              ORDER BY updated_at DESC
-              LIMIT 1
-            SQL
-            claude_pid,
-          ) do |rs|
-            SessionRecord.from_row(rs)
-          end
-        end
-      rescue
-        nil
-      end
-    end
-
     # ============================================================
     # Session File Operations
     # ============================================================
 
     # Upsert a file access record for a session.
-    # File ops dedup on (session_identifier, file_path, '').
-    # Search ops dedup on (session_identifier, directory_path, pattern).
+    # File ops dedup on (ledger_session_id, file_path, '').
+    # Search ops dedup on (ledger_session_id, directory_path, pattern).
     def self.upsert_session_file(
-      session_identifier : String,
+      ledger_session_id : Int64,
       file_path : String,
       operation : Symbol,
       search_pattern : String = "",
       metadata : String? = nil,
     ) : Bool
-      return false if session_identifier.empty? || file_path.empty?
+      return false if ledger_session_id <= 0 || file_path.empty?
 
       is_read = operation == :read ? 1 : 0
       is_edited = operation == :edit ? 1 : 0
@@ -490,15 +640,11 @@ module GalaxyLedger
           db.exec(
             <<-SQL,
               INSERT INTO ledger_session_files (
-                ledger_session_id, session_identifier, file_path, search_pattern,
+                ledger_session_id, file_path, search_pattern,
                 is_read, is_edited, is_written, is_searched, metadata
               )
-              VALUES (
-                (SELECT id FROM ledger_sessions WHERE session_identifier = ?),
-                ?, ?, ?,
-                ?, ?, ?, ?, ?
-              )
-              ON CONFLICT (session_identifier, file_path, search_pattern) DO UPDATE SET
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+              ON CONFLICT (ledger_session_id, file_path, search_pattern) DO UPDATE SET
                 is_read = MAX(ledger_session_files.is_read, excluded.is_read),
                 is_edited = MAX(ledger_session_files.is_edited, excluded.is_edited),
                 is_written = MAX(ledger_session_files.is_written, excluded.is_written),
@@ -507,8 +653,7 @@ module GalaxyLedger
                 access_count = ledger_session_files.access_count + 1,
                 metadata = COALESCE(excluded.metadata, ledger_session_files.metadata)
             SQL
-            session_identifier,
-            session_identifier,
+            ledger_session_id,
             file_path,
             search_pattern,
             is_read,
@@ -525,22 +670,22 @@ module GalaxyLedger
     end
 
     # Get all file access records for a session
-    def self.session_files(session_identifier : String) : Array(SessionFile)
+    def self.session_files(ledger_session_id : Int64) : Array(SessionFile)
       files = [] of SessionFile
-      return files if session_identifier.empty?
+      return files if ledger_session_id <= 0
 
       begin
         open do |db|
           db.query(
             <<-SQL,
-              SELECT id, ledger_session_id, session_identifier, file_path, search_pattern,
+              SELECT id, ledger_session_id, file_path, search_pattern,
                      is_read, is_edited, is_written, is_searched,
                      first_seen_at, last_seen_at, access_count, metadata
               FROM ledger_session_files
-              WHERE session_identifier = ?
+              WHERE ledger_session_id = ?
               ORDER BY last_seen_at DESC
             SQL
-            session_identifier,
+            ledger_session_id,
           ) do |rs|
             rs.each do
               files << SessionFile.from_row(rs)
@@ -559,8 +704,8 @@ module GalaxyLedger
 
     # Insert an entry into the database
     # Returns true if inserted, false if duplicate (content_hash conflict)
-    def self.insert(session_identifier : String, entry : Entry) : Bool
-      return false if session_identifier.empty?
+    def self.insert(ledger_session_id : Int64, entry : Entry) : Bool
+      return false if ledger_session_id <= 0
       return false unless entry.valid?
 
       hash = content_hash(entry.entry_type, entry.content)
@@ -573,20 +718,14 @@ module GalaxyLedger
           result = db.exec(
             <<-SQL,
               INSERT INTO ledger_entries (
-                ledger_session_id, session_identifier, entry_type, source, content,
+                ledger_session_id, entry_type, source, content,
                 content_hash, metadata, importance, created_at, category, keywords,
                 applies_when, source_file
               )
-              VALUES (
-                (SELECT id FROM ledger_sessions WHERE session_identifier = ?),
-                ?, ?, ?, ?,
-                ?, ?, ?, ?, ?, ?,
-                ?, ?
-              )
-              ON CONFLICT (session_identifier, entry_type, content_hash) DO NOTHING
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              ON CONFLICT (ledger_session_id, entry_type, content_hash) DO NOTHING
             SQL
-            session_identifier,
-            session_identifier,
+            ledger_session_id,
             entry.entry_type,
             entry.source,
             entry.content,
@@ -608,8 +747,8 @@ module GalaxyLedger
 
     # Insert multiple entries (batch insert)
     # Returns count of entries actually inserted (excludes duplicates)
-    def self.insert_many(session_identifier : String, entries : Array(Entry)) : Int32
-      return 0 if session_identifier.empty?
+    def self.insert_many(ledger_session_id : Int64, entries : Array(Entry)) : Int32
+      return 0 if ledger_session_id <= 0
       return 0 if entries.empty?
 
       inserted = 0
@@ -626,20 +765,14 @@ module GalaxyLedger
             result = db.exec(
               <<-SQL,
                 INSERT INTO ledger_entries (
-                  ledger_session_id, session_identifier, entry_type, source, content,
+                  ledger_session_id, entry_type, source, content,
                   content_hash, metadata, importance, created_at, category, keywords,
                   applies_when, source_file
                 )
-                VALUES (
-                  (SELECT id FROM ledger_sessions WHERE session_identifier = ?),
-                  ?, ?, ?, ?,
-                  ?, ?, ?, ?, ?, ?,
-                  ?, ?
-                )
-                ON CONFLICT (session_identifier, entry_type, content_hash) DO NOTHING
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (ledger_session_id, entry_type, content_hash) DO NOTHING
               SQL
-              session_identifier,
-              session_identifier,
+              ledger_session_id,
               entry.entry_type,
               entry.source,
               entry.content,
@@ -661,27 +794,37 @@ module GalaxyLedger
       inserted
     end
 
-    # Delete a session and all associated data (entries + files cascade via FK)
+    # Delete a session and all associated data (entries + files + mappings cascade via FK)
     # Returns count of entries deleted
-    def self.delete_session(session_identifier : String) : Int32
-      return 0 if session_identifier.empty?
+    def self.delete_session(ledger_session_id : Int64) : Int32
+      return 0 if ledger_session_id <= 0
 
       begin
         open do |db|
           # Count entries before delete for return value
           count = db.scalar(
-            "SELECT COUNT(*) FROM ledger_entries WHERE session_identifier = ?",
-            session_identifier
+            "SELECT COUNT(*) FROM ledger_entries WHERE ledger_session_id = ?",
+            ledger_session_id
           ).as(Int64).to_i
 
-          # Delete from ledger_sessions — FK cascade handles entries + files
-          db.exec("DELETE FROM ledger_sessions WHERE session_identifier = ?", session_identifier)
+          # Delete from ledger_sessions — FK cascade handles entries + files + mappings
+          db.exec("DELETE FROM ledger_sessions WHERE id = ?", ledger_session_id)
 
           count
         end
       rescue
         0
       end
+    end
+
+    # Convenience: delete a session by identifier (resolves through mapping table)
+    def self.delete_session(session_identifier : String) : Int32
+      return 0 if session_identifier.empty?
+
+      ledger_session_id = resolve_session_identifier(session_identifier)
+      return 0 unless ledger_session_id
+
+      delete_session(ledger_session_id)
     end
 
     # Count all entries (excludes internal entry types)
@@ -696,12 +839,12 @@ module GalaxyLedger
     end
 
     # Count entries for a session (excludes internal entry types)
-    def self.count_by_session(session_identifier : String) : Int32
-      return 0 if session_identifier.empty?
+    def self.count_by_session(ledger_session_id : Int64) : Int32
+      return 0 if ledger_session_id <= 0
 
       begin
         open do |db|
-          db.scalar("SELECT COUNT(*) FROM ledger_entries WHERE session_identifier = ? #{INTERNAL_TYPE_EXCLUSION_SQL}", session_identifier).as(Int64).to_i
+          db.scalar("SELECT COUNT(*) FROM ledger_entries WHERE ledger_session_id = ? #{INTERNAL_TYPE_EXCLUSION_SQL}", ledger_session_id).as(Int64).to_i
         end
       rescue
         0
@@ -709,19 +852,19 @@ module GalaxyLedger
     end
 
     # Check if an extraction marker already exists for a source file in a session.
-    def self.has_extracted_source_file?(session_identifier : String, source_file : String) : Bool
-      return false if session_identifier.empty? || source_file.empty?
+    def self.has_extracted_source_file?(ledger_session_id : Int64, source_file : String) : Bool
+      return false if ledger_session_id <= 0 || source_file.empty?
 
       begin
         open do |db|
           db.scalar(
             <<-SQL,
               SELECT COUNT(*) FROM ledger_entries
-              WHERE session_identifier = ? AND source_file = ?
+              WHERE ledger_session_id = ? AND source_file = ?
               AND entry_type = 'extraction_marker'
               LIMIT 1
             SQL
-            session_identifier,
+            ledger_session_id,
             source_file,
           ).as(Int64) > 0
         end
@@ -731,17 +874,17 @@ module GalaxyLedger
     end
 
     # Mark all entries for a source file as stale within a session.
-    def self.mark_entries_stale(session_identifier : String, source_file : String) : Int32
-      return 0 if session_identifier.empty? || source_file.empty?
+    def self.mark_entries_stale(ledger_session_id : Int64, source_file : String) : Int32
+      return 0 if ledger_session_id <= 0 || source_file.empty?
 
       begin
         open do |db|
           db.exec(
             <<-SQL,
               UPDATE ledger_entries SET stale = 1
-              WHERE session_identifier = ? AND source_file = ?
+              WHERE ledger_session_id = ? AND source_file = ?
             SQL
-            session_identifier,
+            ledger_session_id,
             source_file,
           )
           db.scalar("SELECT changes()").as(Int64).to_i
@@ -754,9 +897,9 @@ module GalaxyLedger
     # Find source files with stale extraction markers in a session.
     # Returns the full path (from source_file) and the original extraction type
     # (from metadata) for each stale marker.
-    def self.stale_entries(session_identifier : String) : Array(NamedTuple(source_file: String, full_path: String, entry_type: String))
+    def self.stale_entries(ledger_session_id : Int64) : Array(NamedTuple(source_file: String, full_path: String, entry_type: String))
       results = [] of NamedTuple(source_file: String, full_path: String, entry_type: String)
-      return results if session_identifier.empty?
+      return results if ledger_session_id <= 0
 
       begin
         open do |db|
@@ -764,11 +907,11 @@ module GalaxyLedger
             <<-SQL,
               SELECT DISTINCT source_file, content, metadata
               FROM ledger_entries
-              WHERE session_identifier = ? AND stale = 1
+              WHERE ledger_session_id = ? AND stale = 1
                 AND source_file IS NOT NULL
                 AND entry_type = 'extraction_marker'
             SQL
-            session_identifier,
+            ledger_session_id,
           ) do |rs|
             rs.each do
               source_file = rs.read(String)
@@ -804,18 +947,18 @@ module GalaxyLedger
     end
 
     # Delete all guideline/implementation_plan/extraction_marker entries for a source file in a session.
-    def self.delete_entries_by_source_file(session_identifier : String, source_file : String) : Int32
-      return 0 if session_identifier.empty? || source_file.empty?
+    def self.delete_entries_by_source_file(ledger_session_id : Int64, source_file : String) : Int32
+      return 0 if ledger_session_id <= 0 || source_file.empty?
 
       begin
         open do |db|
           db.exec(
             <<-SQL,
               DELETE FROM ledger_entries
-              WHERE session_identifier = ? AND source_file = ?
+              WHERE ledger_session_id = ? AND source_file = ?
                 AND entry_type IN ('guideline', 'implementation_plan', 'extraction_marker')
             SQL
-            session_identifier,
+            ledger_session_id,
             source_file,
           )
           db.scalar("SELECT changes()").as(Int64).to_i
@@ -830,21 +973,21 @@ module GalaxyLedger
     # ============================================================
 
     # Query entries by session (most recent first, excludes internal entry types)
-    def self.query_by_session(session_identifier : String, limit : Int32 = 100) : Array(StoredEntry)
-      return [] of StoredEntry if session_identifier.empty?
+    def self.query_by_session(ledger_session_id : Int64, limit : Int32 = 100) : Array(StoredEntry)
+      return [] of StoredEntry if ledger_session_id <= 0
 
       entries = [] of StoredEntry
       begin
         open do |db|
           db.query(
             <<-SQL,
-              SELECT id, created_at, session_identifier, entry_type, source, content, content_hash, metadata, importance, category, keywords, applies_when, source_file
+              SELECT id, created_at, ledger_session_id, entry_type, source, content, content_hash, metadata, importance, category, keywords, applies_when, source_file
               FROM ledger_entries
-              WHERE session_identifier = ? #{INTERNAL_TYPE_EXCLUSION_SQL}
+              WHERE ledger_session_id = ? #{INTERNAL_TYPE_EXCLUSION_SQL}
               ORDER BY created_at DESC
               LIMIT ?
             SQL
-            session_identifier,
+            ledger_session_id,
             limit
           ) do |rs|
             rs.each do
@@ -859,21 +1002,21 @@ module GalaxyLedger
     end
 
     # Query entries by type for a session
-    def self.query_by_type(session_identifier : String, entry_type : String, limit : Int32 = 100) : Array(StoredEntry)
-      return [] of StoredEntry if session_identifier.empty?
+    def self.query_by_type(ledger_session_id : Int64, entry_type : String, limit : Int32 = 100) : Array(StoredEntry)
+      return [] of StoredEntry if ledger_session_id <= 0
 
       entries = [] of StoredEntry
       begin
         open do |db|
           db.query(
             <<-SQL,
-              SELECT id, created_at, session_identifier, entry_type, source, content, content_hash, metadata, importance, category, keywords, applies_when, source_file
+              SELECT id, created_at, ledger_session_id, entry_type, source, content, content_hash, metadata, importance, category, keywords, applies_when, source_file
               FROM ledger_entries
-              WHERE session_identifier = ? AND entry_type = ?
+              WHERE ledger_session_id = ? AND entry_type = ?
               ORDER BY created_at DESC
               LIMIT ?
             SQL
-            session_identifier,
+            ledger_session_id,
             entry_type,
             limit
           ) do |rs|
@@ -889,21 +1032,21 @@ module GalaxyLedger
     end
 
     # Query entries by importance for a session
-    def self.query_by_importance(session_identifier : String, importance : String, limit : Int32 = 100) : Array(StoredEntry)
-      return [] of StoredEntry if session_identifier.empty?
+    def self.query_by_importance(ledger_session_id : Int64, importance : String, limit : Int32 = 100) : Array(StoredEntry)
+      return [] of StoredEntry if ledger_session_id <= 0
 
       entries = [] of StoredEntry
       begin
         open do |db|
           db.query(
             <<-SQL,
-              SELECT id, created_at, session_identifier, entry_type, source, content, content_hash, metadata, importance, category, keywords, applies_when, source_file
+              SELECT id, created_at, ledger_session_id, entry_type, source, content, content_hash, metadata, importance, category, keywords, applies_when, source_file
               FROM ledger_entries
-              WHERE session_identifier = ? AND importance = ? #{INTERNAL_TYPE_EXCLUSION_SQL}
+              WHERE ledger_session_id = ? AND importance = ? #{INTERNAL_TYPE_EXCLUSION_SQL}
               ORDER BY created_at DESC
               LIMIT ?
             SQL
-            session_identifier,
+            ledger_session_id,
             importance,
             limit
           ) do |rs|
@@ -967,7 +1110,7 @@ module GalaxyLedger
         open do |db|
           sql = String.build do |s|
             s << <<-SQL
-              SELECT e.id, e.created_at, e.session_identifier, e.entry_type, e.source, e.content, e.content_hash, e.metadata, e.importance, e.category, e.keywords, e.applies_when, e.source_file
+              SELECT e.id, e.created_at, e.ledger_session_id, e.entry_type, e.source, e.content, e.content_hash, e.metadata, e.importance, e.category, e.keywords, e.applies_when, e.source_file
               FROM ledger_entries e
               JOIN ledger_fts f ON e.id = f.rowid
               WHERE ledger_fts MATCH ?
@@ -999,7 +1142,7 @@ module GalaxyLedger
     # Full-text search within a session with optional filters
     # (excludes internal entry types)
     def self.search_in_session(
-      session_identifier : String,
+      ledger_session_id : Int64,
       query : String,
       limit : Int32 = 50,
       entry_type : String? = nil,
@@ -1007,7 +1150,7 @@ module GalaxyLedger
       category : String? = nil,
       prefix_match : Bool = true,
     ) : Array(StoredEntry)
-      return [] of StoredEntry if session_identifier.empty?
+      return [] of StoredEntry if ledger_session_id <= 0
       return [] of StoredEntry if query.strip.empty?
 
       fts_query = prepare_fts_query(query, prefix_match)
@@ -1017,10 +1160,10 @@ module GalaxyLedger
         open do |db|
           sql = String.build do |s|
             s << <<-SQL
-              SELECT e.id, e.created_at, e.session_identifier, e.entry_type, e.source, e.content, e.content_hash, e.metadata, e.importance, e.category, e.keywords, e.applies_when, e.source_file
+              SELECT e.id, e.created_at, e.ledger_session_id, e.entry_type, e.source, e.content, e.content_hash, e.metadata, e.importance, e.category, e.keywords, e.applies_when, e.source_file
               FROM ledger_entries e
               JOIN ledger_fts f ON e.id = f.rowid
-              WHERE e.session_identifier = ? AND ledger_fts MATCH ?
+              WHERE e.ledger_session_id = ? AND ledger_fts MATCH ?
             SQL
             s << (entry_type ? " AND e.entry_type = ?" : " #{INTERNAL_TYPE_EXCLUSION_ALIAS_SQL}")
 
@@ -1029,7 +1172,7 @@ module GalaxyLedger
             s << " ORDER BY rank LIMIT ?"
           end
 
-          args = [session_identifier, fts_query] of DB::Any
+          args = [ledger_session_id, fts_query] of DB::Any
           args << entry_type if entry_type
           args << importance if importance
           args << category if category
@@ -1054,16 +1197,16 @@ module GalaxyLedger
         open do |db|
           db.query(
             <<-SQL
-              SELECT session_identifier, COUNT(*) as entry_count, MAX(created_at) as last_entry
-              FROM ledger_entries
-              WHERE 1=1 #{INTERNAL_TYPE_EXCLUSION_SQL}
-              GROUP BY session_identifier
+              SELECT e.ledger_session_id, COUNT(*) as entry_count, MAX(e.created_at) as last_entry
+              FROM ledger_entries e
+              WHERE 1=1 #{INTERNAL_TYPE_EXCLUSION_ALIAS_SQL}
+              GROUP BY e.ledger_session_id
               ORDER BY last_entry DESC
             SQL
           ) do |rs|
             rs.each do
               stats << SessionStat.new(
-                session_identifier: rs.read(String),
+                ledger_session_id: rs.read(Int64),
                 entry_count: rs.read(Int64).to_i,
                 last_entry: rs.read(String)
               )
@@ -1082,18 +1225,18 @@ module GalaxyLedger
       entry_type : String? = nil,
       importance : String? = nil,
       category : String? = nil,
-      session_identifier : String? = nil,
+      ledger_session_id : Int64? = nil,
     ) : Array(StoredEntry)
       entries = [] of StoredEntry
       begin
         open do |db|
           sql = String.build do |s|
             s << <<-SQL
-              SELECT id, created_at, session_identifier, entry_type, source, content, content_hash, metadata, importance, category, keywords, applies_when, source_file
+              SELECT id, created_at, ledger_session_id, entry_type, source, content, content_hash, metadata, importance, category, keywords, applies_when, source_file
               FROM ledger_entries
               WHERE 1=1
             SQL
-            s << " AND session_identifier = ?" if session_identifier
+            s << " AND ledger_session_id = ?" if ledger_session_id
             s << (entry_type ? " AND entry_type = ?" : " #{INTERNAL_TYPE_EXCLUSION_SQL}")
             s << " AND importance = ?" if importance
             s << " AND category = ?" if category
@@ -1101,7 +1244,7 @@ module GalaxyLedger
           end
 
           args = [] of DB::Any
-          args << session_identifier if session_identifier
+          args << ledger_session_id if ledger_session_id
           args << entry_type if entry_type
           args << importance if importance
           args << category if category
@@ -1138,48 +1281,48 @@ module GalaxyLedger
     end
 
     # Query Tier 1 essentials for a session
-    def self.query_tier1(session_identifier : String, decision_limit : Int32 = 10) : Tier1Result
+    def self.query_tier1(ledger_session_id : Int64, decision_limit : Int32 = 10) : Tier1Result
       guidelines = [] of StoredEntry
       impl_plans = [] of StoredEntry
       decisions = [] of StoredEntry
 
-      return Tier1Result.new(guidelines, impl_plans, decisions) if session_identifier.empty?
+      return Tier1Result.new(guidelines, impl_plans, decisions) if ledger_session_id <= 0
 
       begin
         open do |db|
           db.query(
             <<-SQL,
-              SELECT id, created_at, session_identifier, entry_type, source, content, content_hash, metadata, importance, category, keywords, applies_when, source_file
+              SELECT id, created_at, ledger_session_id, entry_type, source, content, content_hash, metadata, importance, category, keywords, applies_when, source_file
               FROM ledger_entries
-              WHERE session_identifier = ? AND entry_type = 'guideline'
+              WHERE ledger_session_id = ? AND entry_type = 'guideline'
               ORDER BY created_at DESC
             SQL
-            session_identifier
+            ledger_session_id
           ) do |rs|
             rs.each { guidelines << StoredEntry.from_row(rs) }
           end
 
           db.query(
             <<-SQL,
-              SELECT id, created_at, session_identifier, entry_type, source, content, content_hash, metadata, importance, category, keywords, applies_when, source_file
+              SELECT id, created_at, ledger_session_id, entry_type, source, content, content_hash, metadata, importance, category, keywords, applies_when, source_file
               FROM ledger_entries
-              WHERE session_identifier = ? AND entry_type = 'implementation_plan'
+              WHERE ledger_session_id = ? AND entry_type = 'implementation_plan'
               ORDER BY created_at DESC
             SQL
-            session_identifier
+            ledger_session_id
           ) do |rs|
             rs.each { impl_plans << StoredEntry.from_row(rs) }
           end
 
           db.query(
             <<-SQL,
-              SELECT id, created_at, session_identifier, entry_type, source, content, content_hash, metadata, importance, category, keywords, applies_when, source_file
+              SELECT id, created_at, ledger_session_id, entry_type, source, content, content_hash, metadata, importance, category, keywords, applies_when, source_file
               FROM ledger_entries
-              WHERE session_identifier = ? AND entry_type = 'decision' AND importance = 'high'
+              WHERE ledger_session_id = ? AND entry_type = 'decision' AND importance = 'high'
               ORDER BY created_at DESC
               LIMIT ?
             SQL
-            session_identifier,
+            ledger_session_id,
             decision_limit
           ) do |rs|
             rs.each { decisions << StoredEntry.from_row(rs) }
@@ -1207,26 +1350,26 @@ module GalaxyLedger
 
     # Query Tier 2 supporting context for a session
     def self.query_tier2(
-      session_identifier : String,
+      ledger_session_id : Int64,
       learnings_limit : Int32 = 5,
       decisions_limit : Int32 = 5,
     ) : Tier2Result
       learnings = [] of StoredEntry
       decisions = [] of StoredEntry
 
-      return Tier2Result.new(learnings, decisions) if session_identifier.empty?
+      return Tier2Result.new(learnings, decisions) if ledger_session_id <= 0
 
       begin
         open do |db|
           db.query(
             <<-SQL,
-              SELECT id, created_at, session_identifier, entry_type, source, content, content_hash, metadata, importance, category, keywords, applies_when, source_file
+              SELECT id, created_at, ledger_session_id, entry_type, source, content, content_hash, metadata, importance, category, keywords, applies_when, source_file
               FROM ledger_entries
-              WHERE session_identifier = ? AND entry_type = 'learning'
+              WHERE ledger_session_id = ? AND entry_type = 'learning'
               ORDER BY created_at DESC
               LIMIT ?
             SQL
-            session_identifier,
+            ledger_session_id,
             learnings_limit
           ) do |rs|
             rs.each { learnings << StoredEntry.from_row(rs) }
@@ -1234,13 +1377,13 @@ module GalaxyLedger
 
           db.query(
             <<-SQL,
-              SELECT id, created_at, session_identifier, entry_type, source, content, content_hash, metadata, importance, category, keywords, applies_when, source_file
+              SELECT id, created_at, ledger_session_id, entry_type, source, content, content_hash, metadata, importance, category, keywords, applies_when, source_file
               FROM ledger_entries
-              WHERE session_identifier = ? AND entry_type = 'decision' AND importance = 'medium'
+              WHERE ledger_session_id = ? AND entry_type = 'decision' AND importance = 'medium'
               ORDER BY created_at DESC
               LIMIT ?
             SQL
-            session_identifier,
+            ledger_session_id,
             decisions_limit
           ) do |rs|
             rs.each { decisions << StoredEntry.from_row(rs) }
@@ -1268,13 +1411,13 @@ module GalaxyLedger
 
     # Query all restoration context for a session
     def self.query_for_restoration(
-      session_identifier : String,
+      ledger_session_id : Int64,
       tier1_decision_limit : Int32 = 10,
       tier2_learnings_limit : Int32 = 5,
       tier2_decisions_limit : Int32 = 5,
     ) : RestorationResult
-      tier1 = query_tier1(session_identifier, tier1_decision_limit)
-      tier2 = query_tier2(session_identifier, tier2_learnings_limit, tier2_decisions_limit)
+      tier1 = query_tier1(ledger_session_id, tier1_decision_limit)
+      tier2 = query_tier2(ledger_session_id, tier2_learnings_limit, tier2_decisions_limit)
       RestorationResult.new(tier1, tier2)
     end
 
@@ -1285,8 +1428,8 @@ module GalaxyLedger
     # A session record from the database
     struct SessionRecord
       getter id : Int64
-      getter session_identifier : String
-      getter claude_pid : Int64?
+      getter current_session_identifier : String?
+      getter current_claude_pid : Int64?
       getter started_at : String?
       getter updated_at : String?
       getter cwd : String?
@@ -1307,7 +1450,7 @@ module GalaxyLedger
       getter last_interaction : String?
 
       def initialize(
-        @id, @session_identifier, @claude_pid, @started_at, @updated_at,
+        @id, @current_session_identifier, @current_claude_pid, @started_at, @updated_at,
         @cwd, @project_dir, @git_branch,
         @model_id, @model_display_name, @claude_version,
         @context_percentage, @tokens_used, @tokens_max, @cost_usd,
@@ -1319,8 +1462,8 @@ module GalaxyLedger
       def self.from_row(rs) : SessionRecord
         SessionRecord.new(
           id: rs.read(Int64),
-          session_identifier: rs.read(String),
-          claude_pid: rs.read(Int64?),
+          current_session_identifier: rs.read(String?),
+          current_claude_pid: rs.read(Int64?),
           started_at: rs.read(String?),
           updated_at: rs.read(String?),
           cwd: rs.read(String?),
@@ -1347,7 +1490,6 @@ module GalaxyLedger
     struct SessionFile
       getter id : Int64
       getter ledger_session_id : Int64
-      getter session_identifier : String
       getter file_path : String
       getter search_pattern : String
       getter is_read : Bool
@@ -1360,7 +1502,7 @@ module GalaxyLedger
       getter metadata : String?
 
       def initialize(
-        @id, @ledger_session_id, @session_identifier, @file_path, @search_pattern,
+        @id, @ledger_session_id, @file_path, @search_pattern,
         @is_read, @is_edited, @is_written, @is_searched,
         @first_seen_at, @last_seen_at, @access_count, @metadata,
       )
@@ -1370,7 +1512,6 @@ module GalaxyLedger
         SessionFile.new(
           id: rs.read(Int64),
           ledger_session_id: rs.read(Int64),
-          session_identifier: rs.read(String),
           file_path: rs.read(String),
           search_pattern: rs.read(String),
           is_read: rs.read(Int64) == 1,
@@ -1389,7 +1530,7 @@ module GalaxyLedger
     struct StoredEntry
       getter id : Int64
       getter created_at : String
-      getter session_identifier : String
+      getter ledger_session_id : Int64
       getter entry_type : String
       getter source : String?
       getter content : String
@@ -1404,7 +1545,7 @@ module GalaxyLedger
       def initialize(
         @id,
         @created_at,
-        @session_identifier,
+        @ledger_session_id,
         @entry_type,
         @source,
         @content,
@@ -1422,7 +1563,7 @@ module GalaxyLedger
         StoredEntry.new(
           id: rs.read(Int64),
           created_at: rs.read(String),
-          session_identifier: rs.read(String),
+          ledger_session_id: rs.read(Int64),
           entry_type: rs.read(String),
           source: rs.read(String?),
           content: rs.read(String),
@@ -1474,11 +1615,11 @@ module GalaxyLedger
 
     # Session statistics
     struct SessionStat
-      getter session_identifier : String
+      getter ledger_session_id : Int64
       getter entry_count : Int32
       getter last_entry : String
 
-      def initialize(@session_identifier, @entry_count, @last_entry)
+      def initialize(@ledger_session_id, @entry_count, @last_entry)
       end
     end
   end

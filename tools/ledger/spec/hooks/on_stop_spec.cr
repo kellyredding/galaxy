@@ -7,7 +7,7 @@ describe "OnStop GALAXY_SKIP_HOOKS" do
     test_session_id = "skip-hooks-test-#{Random.rand(10000)}"
 
     # Ensure session record exists for FK constraints
-    GalaxyLedger::Database.upsert_session(test_session_id)
+    ledger_session_id = GalaxyLedger::Database.create_session(test_session_id)
 
     # Create test transcript file
     transcript_file = File.tempfile("transcript", ".jsonl")
@@ -47,11 +47,12 @@ end
 
 describe "OnStop last exchange capture" do
   test_session_id = "on-stop-test-#{Random.rand(10000)}"
+  ledger_session_id = 0_i64
 
   before_each do
     GalaxyLedger::Database.delete_session(test_session_id)
     # Ensure session record exists for FK constraints
-    GalaxyLedger::Database.upsert_session(test_session_id)
+    ledger_session_id = GalaxyLedger::Database.create_session(test_session_id)
   end
 
   after_each do
@@ -141,11 +142,12 @@ end
 
 describe "OnStop context threshold warnings" do
   test_session_id = "threshold-test-#{Random.rand(10000)}"
+  ledger_session_id = 0_i64
 
   before_each do
     GalaxyLedger::Database.delete_session(test_session_id)
     # Ensure session record exists for FK constraints
-    GalaxyLedger::Database.upsert_session(test_session_id)
+    ledger_session_id = GalaxyLedger::Database.create_session(test_session_id)
   end
 
   after_each do
@@ -153,9 +155,9 @@ describe "OnStop context threshold warnings" do
   end
 
   it "outputs warning when context exceeds warning threshold" do
-    # Write context percentage to DB (simulates statusline → update-session-metrics)
+    # Write context percentage to DB (simulates statusline -> update-session-metrics)
     status = GalaxyLedger::ContextStatus.from_json(%|{"context": {"percentage": 75.0}}|)
-    GalaxyLedger::Database.update_session_metrics(test_session_id, status)
+    GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
 
     # Create minimal transcript
     transcript_file = File.tempfile("transcript", ".jsonl")
@@ -178,9 +180,9 @@ describe "OnStop context threshold warnings" do
   end
 
   it "outputs critical warning when context exceeds critical threshold" do
-    # Write context percentage to DB (simulates statusline → update-session-metrics)
+    # Write context percentage to DB (simulates statusline -> update-session-metrics)
     status = GalaxyLedger::ContextStatus.from_json(%|{"context": {"percentage": 90.0}}|)
-    GalaxyLedger::Database.update_session_metrics(test_session_id, status)
+    GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
 
     # Create minimal transcript
     transcript_file = File.tempfile("transcript", ".jsonl")
@@ -203,9 +205,9 @@ describe "OnStop context threshold warnings" do
   end
 
   it "outputs no warning when context is below threshold" do
-    # Write context percentage to DB (simulates statusline → update-session-metrics)
+    # Write context percentage to DB (simulates statusline -> update-session-metrics)
     status = GalaxyLedger::ContextStatus.from_json(%|{"context": {"percentage": 50.0}}|)
-    GalaxyLedger::Database.update_session_metrics(test_session_id, status)
+    GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
 
     # Create minimal transcript
     transcript_file = File.tempfile("transcript", ".jsonl")
@@ -251,11 +253,12 @@ end
 
 describe "OnStop stale re-extraction" do
   test_session_id = "stale-reextract-#{Random.rand(10000)}"
+  ledger_session_id = 0_i64
 
   before_each do
     GalaxyLedger::Database.delete_session(test_session_id)
     # Ensure session record exists for FK constraints
-    GalaxyLedger::Database.upsert_session(test_session_id)
+    ledger_session_id = GalaxyLedger::Database.create_session(test_session_id)
   end
 
   after_each do
@@ -279,22 +282,22 @@ describe "OnStop stale re-extraction" do
       content: "Always use double-quotes for strings",
       source_file: "/home/user/agent-guidelines/ruby-style.md",
     )
-    GalaxyLedger::Database.insert(test_session_id, marker)
-    GalaxyLedger::Database.insert(test_session_id, extracted)
+    GalaxyLedger::Database.insert(ledger_session_id, marker)
+    GalaxyLedger::Database.insert(ledger_session_id, extracted)
 
     # Mark them stale (simulates edit detection)
-    GalaxyLedger::Database.mark_entries_stale(test_session_id, "/home/user/agent-guidelines/ruby-style.md")
+    GalaxyLedger::Database.mark_entries_stale(ledger_session_id, "/home/user/agent-guidelines/ruby-style.md")
 
     # Verify stale
-    stale = GalaxyLedger::Database.stale_entries(test_session_id)
+    stale = GalaxyLedger::Database.stale_entries(ledger_session_id)
     stale.size.should eq(1)
 
     # Now prune (simulates what on-stop does before spawning re-extraction)
-    GalaxyLedger::Database.delete_entries_by_source_file(test_session_id, "/home/user/agent-guidelines/ruby-style.md")
+    GalaxyLedger::Database.delete_entries_by_source_file(ledger_session_id, "/home/user/agent-guidelines/ruby-style.md")
 
     # Entries should be gone
-    GalaxyLedger::Database.has_extracted_source_file?(test_session_id, "/home/user/agent-guidelines/ruby-style.md").should be_false
-    GalaxyLedger::Database.stale_entries(test_session_id).should be_empty
+    GalaxyLedger::Database.has_extracted_source_file?(ledger_session_id, "/home/user/agent-guidelines/ruby-style.md").should be_false
+    GalaxyLedger::Database.stale_entries(ledger_session_id).should be_empty
   end
 
   it "preserves non-stale entries when pruning stale ones" do
@@ -318,22 +321,22 @@ describe "OnStop stale re-extraction" do
       content: "Learned something important",
     )
 
-    GalaxyLedger::Database.insert(test_session_id, fresh_entry)
-    GalaxyLedger::Database.insert(test_session_id, stale_entry)
-    GalaxyLedger::Database.insert(test_session_id, learning)
+    GalaxyLedger::Database.insert(ledger_session_id, fresh_entry)
+    GalaxyLedger::Database.insert(ledger_session_id, stale_entry)
+    GalaxyLedger::Database.insert(ledger_session_id, learning)
 
     # Mark only ruby-style as stale
-    GalaxyLedger::Database.mark_entries_stale(test_session_id, "/home/user/agent-guidelines/ruby-style.md")
+    GalaxyLedger::Database.mark_entries_stale(ledger_session_id, "/home/user/agent-guidelines/ruby-style.md")
 
     # Prune stale entries
-    GalaxyLedger::Database.delete_entries_by_source_file(test_session_id, "/home/user/agent-guidelines/ruby-style.md")
+    GalaxyLedger::Database.delete_entries_by_source_file(ledger_session_id, "/home/user/agent-guidelines/ruby-style.md")
 
     # Fresh extraction_marker should survive
-    markers = GalaxyLedger::Database.query_by_type(test_session_id, "extraction_marker")
+    markers = GalaxyLedger::Database.query_by_type(ledger_session_id, "extraction_marker")
     markers.size.should eq(1)
 
     # Learning should survive
-    entries = GalaxyLedger::Database.query_by_session(test_session_id)
+    entries = GalaxyLedger::Database.query_by_session(ledger_session_id)
     entries.size.should eq(1)
     entries[0].entry_type.should eq("learning")
   end
@@ -346,10 +349,10 @@ describe "OnStop stale re-extraction" do
       source_file: "/home/user/agent-guidelines/ruby-style.md",
       metadata: JSON.parse({"extraction_type" => "guideline"}.to_json),
     )
-    GalaxyLedger::Database.insert(test_session_id, entry)
+    GalaxyLedger::Database.insert(ledger_session_id, entry)
 
     # No stale entries
-    GalaxyLedger::Database.stale_entries(test_session_id).should be_empty
+    GalaxyLedger::Database.stale_entries(ledger_session_id).should be_empty
 
     # Running on-stop should not affect anything
     transcript_file = File.tempfile("transcript", ".jsonl")
@@ -367,7 +370,7 @@ describe "OnStop stale re-extraction" do
     result[:status].should eq(0)
 
     # Entry should still exist
-    GalaxyLedger::Database.has_extracted_source_file?(test_session_id, "/home/user/agent-guidelines/ruby-style.md").should be_true
+    GalaxyLedger::Database.has_extracted_source_file?(ledger_session_id, "/home/user/agent-guidelines/ruby-style.md").should be_true
 
     # Clean up
     File.delete(transcript_file.path)
