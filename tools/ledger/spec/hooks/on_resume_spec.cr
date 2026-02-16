@@ -248,10 +248,6 @@ describe "OnResume with stale PID collision" do
     )
     GalaxyLedger::Database.insert(ledger_a, entry)
 
-    # Session B: stale session with a different PID
-    # (We can't control the subprocess PID, but the env var resolution
-    # should still work correctly regardless of PID state)
-
     new_hook_id = "resume-stale-new-#{Random.rand(10000)}"
     hook_input = {"session_id" => new_hook_id}.to_json
 
@@ -267,17 +263,43 @@ describe "OnResume with stale PID collision" do
   end
 end
 
-describe "OnResume creates new session when nothing resolves" do
-  it "creates a new session with create_if_missing" do
-    new_hook_id = "resume-create-#{Random.rand(10000)}"
+describe "OnResume resolves via stdin session_id when no env var" do
+  it "finds original session by hook session_id" do
+    # Setup: create session with session_id registered
+    original_id = "resume-stdin-orig-#{Random.rand(10000)}"
+    original_ledger_id = GalaxyLedger::Database.create_session(original_id)
+
+    entry = GalaxyLedger::Entry.new(
+      entry_type: "learning",
+      content: "Original session data via stdin",
+      importance: "medium"
+    )
+    GalaxyLedger::Database.insert(original_ledger_id, entry)
+
+    # Resume: stdin = original session_id, no env var
+    hook_input = {"session_id" => original_id}.to_json
+
+    result = run_binary(["on-resume"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    output = JSON.parse(result[:output])
+    msg = output["systemMessage"].as_s
+    msg.should contain("Resumed")
+    msg.should contain("1 learning")
+  end
+end
+
+describe "OnResume returns output_empty when nothing resolves" do
+  it "returns output_empty instead of creating a session" do
+    new_hook_id = "resume-noresolve-#{Random.rand(10000)}"
     hook_input = {"session_id" => new_hook_id}.to_json
 
     result = run_binary(["on-resume"], stdin: hook_input)
     result[:status].should eq(0)
 
-    # Should have created a new session
+    # Should NOT have created a new session
     ledger_id = GalaxyLedger::Database.resolve_session_identifier(new_hook_id)
-    ledger_id.should_not be_nil
+    ledger_id.should be_nil
 
     # Output should still be valid JSON
     output = JSON.parse(result[:output])
@@ -285,12 +307,163 @@ describe "OnResume creates new session when nothing resolves" do
   end
 end
 
+describe "OnResume orphan cleanup" do
+  it "deletes orphan session created by OnStartup" do
+    # Setup: create original session (session A)
+    original_id = "resume-orphan-orig-#{Random.rand(10000)}"
+    original_ledger_id = GalaxyLedger::Database.create_session(original_id)
+
+    # Simulate OnStartup orphan: create session B with same PID as subprocess
+    orphan_id = "resume-orphan-orphan-#{Random.rand(10000)}"
+    # We need to use the PID that the subprocess will see as its ppid.
+    # In tests, the subprocess's ppid is the Crystal spec runner PID.
+    spec_runner_pid = Process.pid.to_i64
+    orphan_ledger_id = GalaxyLedger::Database.create_session(orphan_id, claude_pid: spec_runner_pid)
+
+    # Resume: stdin session_id resolves to session A
+    hook_input = {"session_id" => original_id}.to_json
+
+    result = run_binary(["on-resume"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    # Orphan should be deleted
+    GalaxyLedger::Database.get_session_by_id(orphan_ledger_id).should be_nil
+
+    # Original should still exist
+    GalaxyLedger::Database.get_session_by_id(original_ledger_id).should_not be_nil
+
+    # PID should now map to original session
+    GalaxyLedger::Database.resolve_claude_pid(spec_runner_pid).should eq(original_ledger_id)
+  end
+
+  it "re-registers all orphan identifier mappings against original" do
+    original_id = "resume-orphan-ids-orig-#{Random.rand(10000)}"
+    original_ledger_id = GalaxyLedger::Database.create_session(original_id)
+
+    # Create orphan with two identifiers
+    orphan_id = "resume-orphan-ids-orphan-#{Random.rand(10000)}"
+    extra_orphan_id = "resume-orphan-ids-extra-#{Random.rand(10000)}"
+    spec_runner_pid = Process.pid.to_i64
+    orphan_ledger_id = GalaxyLedger::Database.create_session(orphan_id, claude_pid: spec_runner_pid)
+    GalaxyLedger::Database.register_session_identifier(orphan_ledger_id, extra_orphan_id)
+
+    # Resume: resolves to original via stdin
+    hook_input = {"session_id" => original_id}.to_json
+
+    result = run_binary(["on-resume"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    # Both orphan identifiers should now resolve to original session
+    GalaxyLedger::Database.resolve_session_identifier(orphan_id).should eq(original_ledger_id)
+    GalaxyLedger::Database.resolve_session_identifier(extra_orphan_id).should eq(original_ledger_id)
+  end
+
+  it "re-registers all orphan PID mappings against original" do
+    original_id = "resume-orphan-pids-orig-#{Random.rand(10000)}"
+    original_ledger_id = GalaxyLedger::Database.create_session(original_id)
+
+    # Create orphan with PID
+    orphan_id = "resume-orphan-pids-orphan-#{Random.rand(10000)}"
+    spec_runner_pid = Process.pid.to_i64
+    orphan_ledger_id = GalaxyLedger::Database.create_session(orphan_id, claude_pid: spec_runner_pid)
+
+    # Resume: resolves to original via stdin
+    hook_input = {"session_id" => original_id}.to_json
+
+    result = run_binary(["on-resume"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    # PID should map to original
+    GalaxyLedger::Database.resolve_claude_pid(spec_runner_pid).should eq(original_ledger_id)
+  end
+
+  it "cascade-deletes orphan entries and files" do
+    original_id = "resume-orphan-cascade-orig-#{Random.rand(10000)}"
+    original_ledger_id = GalaxyLedger::Database.create_session(original_id)
+
+    # Add data to original
+    original_entry = GalaxyLedger::Entry.new(
+      entry_type: "learning",
+      content: "Original data survives",
+      importance: "medium"
+    )
+    GalaxyLedger::Database.insert(original_ledger_id, original_entry)
+    GalaxyLedger::Database.upsert_session_file(original_ledger_id, "/original/file.cr", :read)
+
+    # Create orphan with entries and files
+    orphan_id = "resume-orphan-cascade-orphan-#{Random.rand(10000)}"
+    spec_runner_pid = Process.pid.to_i64
+    orphan_ledger_id = GalaxyLedger::Database.create_session(orphan_id, claude_pid: spec_runner_pid)
+
+    orphan_entry = GalaxyLedger::Entry.new(
+      entry_type: "learning",
+      content: "Orphan data gets deleted",
+      importance: "medium"
+    )
+    GalaxyLedger::Database.insert(orphan_ledger_id, orphan_entry)
+    GalaxyLedger::Database.upsert_session_file(orphan_ledger_id, "/orphan/file.cr", :write)
+
+    # Resume: resolves to original via stdin
+    hook_input = {"session_id" => original_id}.to_json
+
+    result = run_binary(["on-resume"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    # Orphan's entries and files should be gone (CASCADE)
+    GalaxyLedger::Database.count_by_session(orphan_ledger_id).should eq(0)
+    GalaxyLedger::Database.session_files(orphan_ledger_id).should be_empty
+
+    # Original's entries and files should be untouched
+    GalaxyLedger::Database.count_by_session(original_ledger_id).should eq(1)
+    GalaxyLedger::Database.session_files(original_ledger_id).size.should eq(1)
+  end
+
+  it "no-ops when PID already points to resolved session" do
+    # OnStartup resolved correctly via env var, so PID → resolved session
+    original_id = "resume-orphan-noop-#{Random.rand(10000)}"
+    env_id = "resume-orphan-noop-env-#{Random.rand(10000)}"
+    spec_runner_pid = Process.pid.to_i64
+    original_ledger_id = GalaxyLedger::Database.create_session(original_id, claude_pid: spec_runner_pid)
+    GalaxyLedger::Database.register_session_identifier(original_ledger_id, env_id)
+
+    hook_input = {"session_id" => original_id}.to_json
+
+    # Count sessions before
+    sessions_before = GalaxyLedger::Database.list_sessions.size
+
+    result = run_binary(
+      ["on-resume"],
+      stdin: hook_input,
+      extra_env: {"CLAUDE_CLI_SESSION_ID" => env_id},
+    )
+    result[:status].should eq(0)
+
+    # Session count should be unchanged
+    GalaxyLedger::Database.list_sessions.size.should eq(sessions_before)
+  end
+
+  it "no-ops when PID has no mapping" do
+    # First-ever session, no prior PID mapping
+    original_id = "resume-orphan-nopid-#{Random.rand(10000)}"
+    original_ledger_id = GalaxyLedger::Database.create_session(original_id)
+
+    hook_input = {"session_id" => original_id}.to_json
+
+    sessions_before = GalaxyLedger::Database.list_sessions.size
+
+    result = run_binary(["on-resume"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    # Session count should be unchanged
+    GalaxyLedger::Database.list_sessions.size.should eq(sessions_before)
+  end
+end
+
 describe "OnResume edge cases" do
   it "handles empty stdin gracefully" do
     result = run_binary(["on-resume"], stdin: "")
     result[:status].should eq(0)
-    # With empty stdin, no session_id is parsed, so Resolver may create
-    # or fail — either way, should output valid JSON
+    # With empty stdin, no session_id is parsed — nothing resolves → output_empty
     output = JSON.parse(result[:output])
     output["hookSpecificOutput"].should_not be_nil
   end

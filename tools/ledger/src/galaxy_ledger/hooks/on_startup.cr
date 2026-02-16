@@ -2,17 +2,18 @@ require "json"
 
 module GalaxyLedger
   module Hooks
-    # Handles the SessionStart(startup) hook — ALWAYS CREATE MODE
+    # Handles the SessionStart(startup) hook.
     #
-    # On a fresh startup, any PID match is stale by definition — the old
-    # process is dead (the OS wouldn't have recycled its PID otherwise).
-    # So we skip the Resolver entirely and always create a new session.
+    # On genuine fresh start (no env var match): creates a new session
+    # record and registers all available identifiers.
     #
-    # - Creates session record in DB with Claude Code PID
-    # - Registers session identifier, PID, and env var in mapping tables
-    # - PID registration uses INSERT OR REPLACE, cleaning up any stale
-    #   PID mapping as a side effect
-    # - Injects ledger awareness prompt with lookup directives
+    # On --resume (env var matches existing session): resolves to the
+    # existing session instead of creating an orphan. Claude Code fires
+    # startup before resume on --resume; without this check, an orphan
+    # record would be created.
+    #
+    # PID is not used for resolution here — on startup the PID is always
+    # a new process, so any PID match would be stale.
     class OnStartup
       @session_identifier : String?
 
@@ -29,23 +30,39 @@ module GalaxyLedger
 
         return unless session_id && !session_id.empty?
 
-        # Fresh startup — always create a new session record.
-        # Any existing PID mapping is stale (the old process is dead,
-        # otherwise the OS wouldn't have recycled its PID).
-        ledger_session_id = Database.create_session(
-          session_id,
-          claude_pid: claude_pid,
-          cwd: Dir.current,
-        )
-
-        return if ledger_session_id <= 0
-
-        # Register env var mapping if available.
-        # create_session already registers session_id + PID internally.
-        # PID registration uses INSERT OR REPLACE, cleaning up any stale
-        # mapping as a side effect.
+        # Check if env var resolves to an existing session.
+        # On --resume, Claude Code fires startup before resume. If the env
+        # var already maps to a session, this is a resume — resolve to it
+        # instead of creating an orphan.
+        ledger_session_id : Int64? = nil
         if env_id = env_session_id
-          Database.register_session_identifier(ledger_session_id, env_id) unless env_id.empty?
+          unless env_id.empty?
+            ledger_session_id = Database.resolve_session_identifier(env_id)
+          end
+        end
+
+        if ledger_session_id && ledger_session_id > 0
+          # Existing session found via env var — update PID and register
+          # new hook session_id. Don't create a new session.
+          Database.register_claude_pid(ledger_session_id, claude_pid)
+          Database.register_session_identifier(ledger_session_id, session_id)
+        else
+          # No env var match — genuine fresh start. Create new session.
+          ledger_session_id = Database.create_session(
+            session_id,
+            claude_pid: claude_pid,
+            cwd: Dir.current,
+          )
+
+          return if ledger_session_id <= 0
+
+          # Register env var mapping if available.
+          # create_session already registers session_id + PID internally.
+          if env_id = env_session_id
+            unless env_id.empty?
+              Database.register_session_identifier(ledger_session_id, env_id)
+            end
+          end
         end
 
         # Query existing session data (will be empty for fresh session)

@@ -20,9 +20,10 @@ describe "CLAUDE_CLI_SESSION_ID env var resolution" do
       session.should_not be_nil
       session.not_nil!.current_session_identifier.should eq(hook_id)
 
-      # Env var should resolve to the new session (on-startup always creates)
+      # Both hook_id and env_id should resolve to the new session
       ledger_id_from_hook = GalaxyLedger::Database.resolve_session_identifier(hook_id)
       ledger_id_from_hook.should_not be_nil
+      GalaxyLedger::Database.resolve_session_identifier(env_id).should eq(ledger_id_from_hook)
     end
 
     it "works normally without CLAUDE_CLI_SESSION_ID env var" do
@@ -318,6 +319,169 @@ describe "CLAUDE_CLI_SESSION_ID env var resolution" do
       GalaxyLedger::Database.resolve_session_identifier(hook_id_3).should eq(ledger_id)
       GalaxyLedger::Database.resolve_session_identifier(hook_id_4).should eq(ledger_id)
       GalaxyLedger::Database.resolve_session_identifier(env_id).should eq(ledger_id)
+    end
+  end
+
+  describe "resume with env var (claude-persona)" do
+    it "startup before resume does not create orphan" do
+      env_id = "env-resume-noorphan-#{rand(100000)}"
+
+      # Step 1: on-startup (first time, env var not registered yet → creates)
+      hook_id_1 = "env-resume-noorphan-h1-#{rand(100000)}"
+      result = run_binary(
+        ["on-startup"],
+        stdin: {"session_id" => hook_id_1}.to_json,
+        extra_env: {"CLAUDE_CLI_SESSION_ID" => env_id},
+      )
+      result[:status].should eq(0)
+      ledger_id = GalaxyLedger::Database.resolve_session_identifier(hook_id_1).not_nil!
+
+      # Step 2: Exit and resume — on-startup fires again (env var now registered)
+      hook_id_2 = "env-resume-noorphan-h2-#{rand(100000)}"
+      result = run_binary(
+        ["on-startup"],
+        stdin: {"session_id" => hook_id_2}.to_json,
+        extra_env: {"CLAUDE_CLI_SESSION_ID" => env_id},
+      )
+      result[:status].should eq(0)
+
+      # Should NOT have created a second session — env var resolves to original
+      GalaxyLedger::Database.resolve_session_identifier(hook_id_2).should eq(ledger_id)
+      GalaxyLedger::Database.list_sessions.size.should eq(1)
+
+      # Step 3: on-resume fires
+      hook_id_3 = "env-resume-noorphan-h3-#{rand(100000)}"
+      result = run_binary(
+        ["on-resume"],
+        stdin: {"session_id" => hook_id_3}.to_json,
+        extra_env: {"CLAUDE_CLI_SESSION_ID" => env_id},
+      )
+      result[:status].should eq(0)
+
+      # Still 1 session, all hook_ids registered
+      GalaxyLedger::Database.list_sessions.size.should eq(1)
+      GalaxyLedger::Database.resolve_session_identifier(hook_id_1).should eq(ledger_id)
+      GalaxyLedger::Database.resolve_session_identifier(hook_id_2).should eq(ledger_id)
+      GalaxyLedger::Database.resolve_session_identifier(hook_id_3).should eq(ledger_id)
+      GalaxyLedger::Database.resolve_session_identifier(env_id).should eq(ledger_id)
+    end
+  end
+
+  describe "resume without env var (no persona)" do
+    it "on-resume resolves via stdin to original session" do
+      # Step 1: Create original session via on-startup subprocess
+      uuid_a = "env-nopersona-a-#{rand(100000)}"
+      result = run_binary(
+        ["on-startup"],
+        stdin: {"session_id" => uuid_a}.to_json,
+      )
+      result[:status].should eq(0)
+      original_ledger_id = GalaxyLedger::Database.resolve_session_identifier(uuid_a).not_nil!
+
+      # Add data to verify resolution
+      entry = GalaxyLedger::Entry.new(
+        entry_type: "learning",
+        content: "Data from original session",
+        importance: "medium"
+      )
+      GalaxyLedger::Database.insert(original_ledger_id, entry)
+
+      # Step 2: Simulate resume — on-startup fires first with new UUID-B
+      uuid_b = "env-nopersona-b-#{rand(100000)}"
+      result = run_binary(
+        ["on-startup"],
+        stdin: {"session_id" => uuid_b}.to_json,
+      )
+      result[:status].should eq(0)
+
+      # Orphan should exist now (on-startup creates without env var)
+      orphan_id = GalaxyLedger::Database.resolve_session_identifier(uuid_b)
+      orphan_id.should_not be_nil
+      orphan_id.should_not eq(original_ledger_id)
+
+      # Step 3: on-resume fires with original UUID-A
+      result = run_binary(
+        ["on-resume"],
+        stdin: {"session_id" => uuid_a}.to_json,
+      )
+      result[:status].should eq(0)
+
+      # UUID-A should still resolve to original session
+      GalaxyLedger::Database.resolve_session_identifier(uuid_a).should eq(original_ledger_id)
+
+      # Original session should still exist
+      GalaxyLedger::Database.get_session_by_id(original_ledger_id).should_not be_nil
+
+      # on-resume should have resolved and shown the data
+      output = JSON.parse(result[:output])
+      msg = output["systemMessage"].as_s
+      msg.should contain("Resumed")
+      msg.should contain("1 learning")
+    end
+  end
+
+  describe "resume lifecycle with env var" do
+    it "startup → resume → clear → resume all resolve to same session" do
+      env_id = "env-lc2-#{rand(100000)}"
+
+      # Step 1: on-startup with env var (creates session first time)
+      hook_id_1 = "env-lc2-h1-#{rand(100000)}"
+      result = run_binary(
+        ["on-startup"],
+        stdin: {"session_id" => hook_id_1}.to_json,
+        extra_env: {"CLAUDE_CLI_SESSION_ID" => env_id},
+      )
+      result[:status].should eq(0)
+      ledger_id = GalaxyLedger::Database.resolve_session_identifier(hook_id_1).not_nil!
+
+      # Step 2: /clear
+      hook_id_2 = "env-lc2-h2-#{rand(100000)}"
+      result = run_binary(
+        ["on-clear"],
+        stdin: {"session_id" => hook_id_2, "source" => "clear"}.to_json,
+        extra_env: {"CLAUDE_CLI_SESSION_ID" => env_id},
+      )
+      result[:status].should eq(0)
+      GalaxyLedger::Database.resolve_session_identifier(hook_id_2).should eq(ledger_id)
+
+      # Step 3: Exit and resume (new process)
+      #   a. on-startup fires (env var already registered → resolves, no orphan)
+      hook_id_3 = "env-lc2-h3-#{rand(100000)}"
+      result = run_binary(
+        ["on-startup"],
+        stdin: {"session_id" => hook_id_3}.to_json,
+        extra_env: {"CLAUDE_CLI_SESSION_ID" => env_id},
+      )
+      result[:status].should eq(0)
+      GalaxyLedger::Database.resolve_session_identifier(hook_id_3).should eq(ledger_id)
+
+      #   b. on-resume fires
+      hook_id_4 = "env-lc2-h4-#{rand(100000)}"
+      result = run_binary(
+        ["on-resume"],
+        stdin: {"session_id" => hook_id_4}.to_json,
+        extra_env: {"CLAUDE_CLI_SESSION_ID" => env_id},
+      )
+      result[:status].should eq(0)
+      GalaxyLedger::Database.resolve_session_identifier(hook_id_4).should eq(ledger_id)
+
+      # Step 4: /clear after resume
+      hook_id_5 = "env-lc2-h5-#{rand(100000)}"
+      result = run_binary(
+        ["on-clear"],
+        stdin: {"session_id" => hook_id_5, "source" => "clear"}.to_json,
+        extra_env: {"CLAUDE_CLI_SESSION_ID" => env_id},
+      )
+      result[:status].should eq(0)
+      GalaxyLedger::Database.resolve_session_identifier(hook_id_5).should eq(ledger_id)
+
+      # Assert: single session throughout
+      GalaxyLedger::Database.list_sessions.size.should eq(1)
+
+      # All hook IDs and env var point to same session
+      [hook_id_1, hook_id_2, hook_id_3, hook_id_4, hook_id_5, env_id].each do |id|
+        GalaxyLedger::Database.resolve_session_identifier(id).should eq(ledger_id)
+      end
     end
   end
 end

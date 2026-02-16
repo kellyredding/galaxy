@@ -359,8 +359,9 @@ describe "CLI Integration" do
     end
 
     it "detects duplicate content" do
-      run_binary(["add", "--type", "learning", "--content", "Duplicate test content"])
-      result = run_binary(["add", "--type", "learning", "--content", "Duplicate test content"])
+      dedup_session = "dedup-test-#{Random.rand(10000)}"
+      run_binary(["add", "--type", "learning", "--content", "Duplicate test content", "--session", dedup_session])
+      result = run_binary(["add", "--type", "learning", "--content", "Duplicate test content", "--session", dedup_session])
       result[:status].should eq(0)
       result[:output].should contain("already exists")
     end

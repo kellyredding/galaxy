@@ -1777,6 +1777,58 @@ describe GalaxyLedger::Database do
     end
   end
 
+  describe ".session_identifiers" do
+    it "returns all identifiers registered to a session" do
+      ledger_session_id = GalaxyLedger::Database.create_session("sess-ids-1")
+      # create_session registers "sess-ids-1" automatically
+      GalaxyLedger::Database.register_session_identifier(ledger_session_id, "extra-id-1")
+      GalaxyLedger::Database.register_session_identifier(ledger_session_id, "extra-id-2")
+
+      ids = GalaxyLedger::Database.session_identifiers(ledger_session_id)
+      ids.size.should eq(3)
+      ids.should contain("sess-ids-1")
+      ids.should contain("extra-id-1")
+      ids.should contain("extra-id-2")
+    end
+
+    it "returns array with just the create_session identifier when no extras registered" do
+      ledger_session_id = GalaxyLedger::Database.create_session("sess-ids-2")
+
+      ids = GalaxyLedger::Database.session_identifiers(ledger_session_id)
+      ids.size.should eq(1)
+      ids.should contain("sess-ids-2")
+    end
+
+    it "returns empty array for invalid session id" do
+      GalaxyLedger::Database.session_identifiers(0_i64).should be_empty
+      GalaxyLedger::Database.session_identifiers(-1_i64).should be_empty
+    end
+  end
+
+  describe ".session_pids" do
+    it "returns all PIDs registered to a session" do
+      ledger_session_id = GalaxyLedger::Database.create_session("sess-pids-1", claude_pid: 12345_i64)
+      GalaxyLedger::Database.register_claude_pid(ledger_session_id, 67890_i64)
+
+      pids = GalaxyLedger::Database.session_pids(ledger_session_id)
+      pids.size.should eq(2)
+      pids.should contain(12345_i64)
+      pids.should contain(67890_i64)
+    end
+
+    it "returns empty array for session with no PIDs" do
+      ledger_session_id = GalaxyLedger::Database.create_session("sess-pids-2")
+
+      pids = GalaxyLedger::Database.session_pids(ledger_session_id)
+      pids.should be_empty
+    end
+
+    it "returns empty array for invalid session id" do
+      GalaxyLedger::Database.session_pids(0_i64).should be_empty
+      GalaxyLedger::Database.session_pids(-1_i64).should be_empty
+    end
+  end
+
   describe ".session_files" do
     it "returns file records for a session" do
       ledger_session_id = GalaxyLedger::Database.create_session("sess-files-1")

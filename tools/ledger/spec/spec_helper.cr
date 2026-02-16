@@ -76,6 +76,10 @@ def run_binary(
     "GALAXY_LEDGER_DATABASE_PATH" => SPEC_DATABASE_PATH.to_s,
     "HOME"                        => ENV["HOME"],
     "PATH"                        => ENV["PATH"],
+    # Clear CLAUDE_CLI_SESSION_ID so subprocesses don't inherit it from
+    # the parent environment (e.g., when specs run inside a Claude Persona
+    # session). Tests that need it set should pass it via extra_env.
+    "CLAUDE_CLI_SESSION_ID" => "",
   }
   merged_env = base_env.merge(extra_env)
 

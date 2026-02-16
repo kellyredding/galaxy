@@ -307,22 +307,113 @@ module GalaxyLedger
     end
 
     # Internal: register session identifier within an existing connection.
+    # Wrapped in a transaction to make the check-then-write atomic,
+    # preventing TOCTOU races when hooks and statusline fire concurrently.
+    # Queries first to avoid burning autoincrement IDs on redundant
+    # re-registrations (SQLite bumps the counter even on ON CONFLICT
+    # no-ops).  Only INSERTs for genuinely new identifiers, UPDATEs
+    # when an identifier moves to a different session.
     private def self.register_session_identifier_in(db, ledger_session_id : Int64, session_identifier : String)
-      db.exec(
-        "INSERT OR IGNORE INTO ledger_session_identifiers (ledger_session_id, session_identifier) VALUES (?, ?)",
-        ledger_session_id,
-        session_identifier,
-      )
+      db.transaction do |tx|
+        c = tx.connection
+        existing = c.query_one?(
+          "SELECT ledger_session_id FROM ledger_session_identifiers WHERE session_identifier = ?",
+          session_identifier,
+          as: Int64,
+        )
+        if existing == ledger_session_id
+          next # Already mapped correctly
+        elsif existing
+          # Identifier moved to different session — update in place
+          c.exec(
+            "UPDATE ledger_session_identifiers SET ledger_session_id = ?, registered_at = datetime('now') WHERE session_identifier = ?",
+            ledger_session_id,
+            session_identifier,
+          )
+        else
+          # New identifier
+          c.exec(
+            "INSERT INTO ledger_session_identifiers (ledger_session_id, session_identifier) VALUES (?, ?)",
+            ledger_session_id,
+            session_identifier,
+          )
+        end
+      end
     end
 
     # Internal: register PID within an existing connection.
-    # INSERT OR REPLACE handles PID recycling — stale mapping gets overwritten.
+    # Wrapped in a transaction to make the check-then-write atomic,
+    # preventing TOCTOU races when hooks and statusline fire concurrently.
+    # Queries first to avoid burning autoincrement IDs on redundant
+    # re-registrations (SQLite bumps the counter even on ON CONFLICT
+    # no-ops).  Only INSERTs for genuinely new PIDs, UPDATEs when a
+    # PID moves to a different session (stale PID recycling).
     private def self.register_claude_pid_in(db, ledger_session_id : Int64, claude_pid : Int64)
-      db.exec(
-        "INSERT OR REPLACE INTO ledger_session_pids (ledger_session_id, claude_pid) VALUES (?, ?)",
-        ledger_session_id,
-        claude_pid,
-      )
+      db.transaction do |tx|
+        c = tx.connection
+        existing = c.query_one?(
+          "SELECT ledger_session_id FROM ledger_session_pids WHERE claude_pid = ?",
+          claude_pid,
+          as: Int64,
+        )
+        if existing == ledger_session_id
+          next # Already mapped correctly
+        elsif existing
+          # PID moved to different session — update in place
+          c.exec(
+            "UPDATE ledger_session_pids SET ledger_session_id = ?, registered_at = datetime('now') WHERE claude_pid = ?",
+            ledger_session_id,
+            claude_pid,
+          )
+        else
+          # New PID
+          c.exec(
+            "INSERT INTO ledger_session_pids (ledger_session_id, claude_pid) VALUES (?, ?)",
+            ledger_session_id,
+            claude_pid,
+          )
+        end
+      end
+    end
+
+    # Return all session identifiers registered to a session.
+    def self.session_identifiers(ledger_session_id : Int64) : Array(String)
+      return [] of String if ledger_session_id <= 0
+
+      begin
+        open do |db|
+          results = [] of String
+          db.query(
+            "SELECT session_identifier FROM ledger_session_identifiers WHERE ledger_session_id = ?",
+            ledger_session_id,
+          ) do |rs|
+            rs.each { results << rs.read(String) }
+          end
+          results
+        end
+      rescue
+        [] of String
+      end
+    end
+
+    # Return all Claude PIDs registered to a session.
+    def self.session_pids(ledger_session_id : Int64) : Array(Int64)
+      return [] of Int64 if ledger_session_id <= 0
+
+      begin
+        open do |db|
+          results = [] of Int64
+          db.query(
+            "SELECT claude_pid FROM ledger_session_pids WHERE ledger_session_id = ?",
+            ledger_session_id,
+          ) do |rs|
+            rs.each { results << rs.read(Int64) }
+          end
+          results
+        end
+      rescue
+        [] of Int64
+      end
     end
 
     # ============================================================
