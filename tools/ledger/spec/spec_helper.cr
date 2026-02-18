@@ -123,6 +123,7 @@ Spec.before_each do
     db.exec("DELETE FROM ledger_session_pids")
     db.exec("DELETE FROM ledger_session_identifiers")
     db.exec("DELETE FROM ledger_session_files")
+    db.exec("DELETE FROM ledger_session_daily_usages")
     db.exec("DELETE FROM ledger_entries")
     db.exec("DELETE FROM ledger_sessions")
     db.close

@@ -54,9 +54,38 @@ module GalaxyLedger
     can scan in 5 seconds, not a data dump.
     SKILL
 
+    SPEND_SKILL = <<-'SKILL'
+    ---
+    name: spend
+    description: Show token and cost usage over time
+    ---
+
+    Show the user their Claude Code spending and usage data.
+
+    ## Arguments
+
+    The argument after `/spend` is the time period. If no argument
+    is given, default to `mtd` (month to date).
+
+    If the argument is `help`, show the available periods:
+    `today`, `wtd`, `mtd` (default), `qtd`, `ytd`, `1y`, `all`,
+    `YYYY-MM-DD..YYYY-MM-DD`
+
+    ## Execution
+
+    1. Parse the argument as the period
+    2. Run `galaxy-ledger spend <period>` via Bash
+    3. Display the output verbatim — preserve the sparklines, bar
+       charts, and all formatting exactly as rendered by the CLI
+    4. After the CLI output, add a brief analysis: trends,
+       notable patterns, rate-of-change observations, or
+       comparisons — whatever is interesting in the data
+    SKILL
+
     # All ledger-managed skills: name => SKILL.md content
     LEDGER_SKILLS = {
       "handoff" => HANDOFF_SKILL,
+      "spend"   => SPEND_SKILL,
     }
 
     struct SkillInfo

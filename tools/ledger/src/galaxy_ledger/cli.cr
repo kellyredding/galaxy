@@ -94,6 +94,8 @@ module GalaxyLedger
         handle_list_files_command(rest)
       when "update-session-metrics"
         handle_update_session_metrics_command(rest)
+      when "spend"
+        handle_spend_command(rest)
       when "version"
         puts "galaxy-ledger #{VERSION}"
       when "help"
@@ -116,6 +118,7 @@ module GalaxyLedger
         list                List recent entries
         list-files          List session file access records
         add                 Add an entry (learning, decision, direction, etc.)
+        spend               Show token and cost usage over time
         config              Manage configuration
         install             Install hooks and skills into Claude Code
         uninstall           Remove hooks and skills from Claude Code
@@ -1874,6 +1877,400 @@ module GalaxyLedger
           STDERR.puts "[galaxy-ledger] Extracted #{inserted} #{extraction_type} entries from #{File.basename(file_path)}"
         end
       end
+    end
+
+    # ========================================
+    # Spend Command
+    # ========================================
+
+    SPEND_PERIODS = ["today", "wtd", "mtd", "qtd", "ytd", "1y", "all"]
+
+    private def self.handle_spend_command(args : Array(String))
+      if args.first? == "-h" || args.first? == "--help"
+        show_spend_help
+        return
+      end
+
+      # Parse flags
+      json_output = false
+      no_chart = false
+      no_sparkline = false
+      period_arg : String? = nil
+
+      args.each do |arg|
+        case arg
+        when "--json"
+          json_output = true
+        when "--no-chart"
+          no_chart = true
+        when "--no-sparkline"
+          no_sparkline = true
+        else
+          if period_arg.nil?
+            period_arg = arg
+          else
+            STDERR.puts "Error: unexpected argument '#{arg}'"
+            show_spend_help
+            exit(1)
+          end
+        end
+      end
+
+      period = period_arg || "mtd"
+
+      # Resolve date range
+      from_date, to_date, period_label = resolve_spend_period(period)
+
+      # Fetch data
+      summary = Database.spend_summary(from_date, to_date)
+      daily = Database.spend_daily(from_date, to_date)
+      avg_daily = Database.spend_avg_daily(from_date, to_date)
+
+      # Calculate total days in range
+      from_time = Time.parse(from_date, "%Y-%m-%d", Time::Location::UTC)
+      to_time = Time.parse(to_date, "%Y-%m-%d", Time::Location::UTC)
+      total_days = ((to_time - from_time).total_days + 1).to_i
+
+      if json_output
+        render_spend_json(period, from_date, to_date, summary, daily, avg_daily, total_days)
+      else
+        render_spend_terminal(
+          period, period_label, from_date, to_date,
+          summary, daily, avg_daily, total_days,
+          show_chart: !no_chart,
+          show_sparkline: !no_sparkline,
+        )
+      end
+    end
+
+    private def self.resolve_spend_period(period : String) : {String, String, String}
+      today = Time.utc
+      today_str = today.to_s("%Y-%m-%d")
+
+      case period
+      when "today"
+        {today_str, today_str, "Today"}
+      when "wtd"
+        # Monday of current week
+        days_since_monday = (today.day_of_week.value - 1) % 7
+        monday = today - days_since_monday.days
+        {monday.to_s("%Y-%m-%d"), today_str, "Week to Date"}
+      when "mtd"
+        first = Time.utc(today.year, today.month, 1)
+        {first.to_s("%Y-%m-%d"), today_str, "Month to Date"}
+      when "qtd"
+        quarter_month = ((today.month - 1) // 3) * 3 + 1
+        first = Time.utc(today.year, quarter_month, 1)
+        {first.to_s("%Y-%m-%d"), today_str, "Quarter to Date"}
+      when "ytd"
+        first = Time.utc(today.year, 1, 1)
+        {first.to_s("%Y-%m-%d"), today_str, "Year to Date"}
+      when "1y"
+        year_ago = today - 365.days
+        {year_ago.to_s("%Y-%m-%d"), today_str, "Last 1 Year"}
+      when "all"
+        {"0000-01-01", today_str, "All Time"}
+      else
+        # Custom range: YYYY-MM-DD..YYYY-MM-DD
+        if period.includes?("..")
+          parts = period.split("..", 2)
+          if parts.size == 2
+            from = parts[0]
+            to = parts[1]
+            # Validate format
+            begin
+              Time.parse(from, "%Y-%m-%d", Time::Location::UTC)
+              Time.parse(to, "%Y-%m-%d", Time::Location::UTC)
+            rescue
+              STDERR.puts "Error: invalid date format in '#{period}'"
+              STDERR.puts "Expected: YYYY-MM-DD..YYYY-MM-DD"
+              exit(1)
+            end
+            {from, to, "#{from} to #{to}"}
+          else
+            STDERR.puts "Error: invalid period '#{period}'"
+            show_spend_help
+            exit(1)
+          end
+        else
+          STDERR.puts "Error: unknown period '#{period}'"
+          show_spend_help
+          exit(1)
+        end
+      end
+    end
+
+    private def self.render_spend_json(
+      period : String,
+      from_date : String,
+      to_date : String,
+      summary : Database::SpendSummary,
+      daily : Array(Database::SpendDay),
+      avg_daily : Float64,
+      total_days : Int32,
+    )
+      json = JSON.build do |j|
+        j.object do
+          j.field "period", period
+          j.field "from", from_date
+          j.field "to", to_date
+          j.field "summary" do
+            j.object do
+              j.field "total_cost_usd", summary.total_cost
+              j.field "total_tokens", summary.total_tokens
+              j.field "active_days", summary.active_days
+              j.field "total_days", total_days
+              j.field "active_sessions", summary.active_sessions
+              j.field "avg_daily_rate", avg_daily
+            end
+          end
+          j.field "daily" do
+            j.array do
+              daily.each do |d|
+                j.object do
+                  j.field "date", d.date
+                  j.field "cost_usd", d.cost
+                  j.field "tokens", d.tokens
+                end
+              end
+            end
+          end
+        end
+      end
+      puts json
+    end
+
+    private def self.render_spend_terminal(
+      period : String,
+      period_label : String,
+      from_date : String,
+      to_date : String,
+      summary : Database::SpendSummary,
+      daily : Array(Database::SpendDay),
+      avg_daily : Float64,
+      total_days : Int32,
+      show_chart : Bool,
+      show_sparkline : Bool,
+    )
+      # Format date range for header
+      from_display = format_date_display(from_date)
+      to_display = format_date_display(to_date)
+      date_range = from_date == to_date ? "#{from_display} UTC" : "#{from_display} – #{to_display} UTC"
+
+      puts "📊 Spend — #{period_label} (#{date_range})"
+      puts ""
+      puts "  Total Cost:       #{Chart.format_cost(summary.total_cost)}"
+      puts "  Total Tokens:     #{format_number(summary.total_tokens)}"
+      puts "  Active Days:      #{summary.active_days} / #{total_days}"
+      puts "  Active Sessions:  #{summary.active_sessions}"
+      puts "  Avg Daily Rate:   #{Chart.format_cost(avg_daily)}"
+
+      return if daily.empty?
+
+      # Determine grouping strategy based on period
+      is_long_period = ["qtd", "ytd", "1y", "all"].includes?(period)
+
+      if show_sparkline && daily.size > 1
+        puts ""
+
+        if is_long_period
+          # Weekly sparkline for long periods
+          weekly = group_by_week(daily)
+          values = weekly.map(&.[:cost])
+          spark = Chart.sparkline(values)
+          puts "  Weekly:"
+          puts "  #{spark}"
+          low = values.min
+          high = values.max
+          avg = values.sum / values.size
+          puts "  Low: #{Chart.format_cost(low)}/wk    High: #{Chart.format_cost(high)}/wk    Avg: #{Chart.format_cost(avg)}/wk"
+        else
+          # Daily sparkline for short periods
+          values = daily.map(&.cost)
+          spark = Chart.sparkline(values)
+          puts "  Daily:"
+          puts "  #{spark}"
+          low = values.min
+          high = values.max
+          avg = values.sum / values.size
+          puts "  Low: #{Chart.format_cost(low)}   High: #{Chart.format_cost(high)}   Avg: #{Chart.format_cost(avg)}"
+        end
+      end
+
+      if show_chart && daily.size > 0
+        puts ""
+
+        # Determine UTC annotation for last bar row
+        utc_today = Time.utc.to_s("%Y-%m-%d")
+        local_today = Time.local.to_s("%Y-%m-%d")
+        grouping = is_long_period ? :monthly : :daily
+        footnote = utc_bar_footnote(utc_today, local_today, grouping)
+
+        if is_long_period
+          # Monthly bar chart for long periods
+          monthly = group_by_month(daily)
+          rows = monthly.map_with_index do |m, idx|
+            extra = "#{Chart.format_cost(m[:cost])}    #{Chart.format_tokens(m[:tokens])}"
+            extra += "  *" if footnote && idx == monthly.size - 1
+            Chart::BarRow.new(
+              label: m[:label],
+              value: m[:cost],
+              extra: extra,
+            )
+          end
+          puts Chart.bar_chart(rows)
+        else
+          # Daily bar chart for short periods
+          rows = daily.map_with_index do |d, idx|
+            label = format_bar_date(d.date)
+            if d.cost > 0.0
+              extra = "#{Chart.format_cost(d.cost)}    #{Chart.format_tokens(d.tokens)}"
+              extra += "  *" if footnote && idx == daily.size - 1
+              Chart::BarRow.new(
+                label: label,
+                value: d.cost,
+                extra: extra,
+              )
+            else
+              Chart::BarRow.new(label: label, value: 0.0)
+            end
+          end
+          puts Chart.bar_chart(rows)
+        end
+
+        if footnote
+          puts ""
+          puts "  #{footnote}"
+        end
+      end
+
+      puts ""
+    end
+
+    # Returns a UTC footnote string if the last bar chart row needs annotation,
+    # nil otherwise. Annotation is needed when the UTC date/month doesn't match
+    # the local date/month — only matters for the current (last) data point.
+    def self.utc_bar_footnote(
+      utc_today : String,
+      local_today : String,
+      grouping : Symbol,
+    ) : String?
+      case grouping
+      when :daily
+        if utc_today != local_today
+          "* UTC — local date is still #{format_date_display(local_today)}"
+        end
+      when :monthly
+        if utc_today[0, 7] != local_today[0, 7]
+          local_month = Time.parse(local_today, "%Y-%m-%d", Time::Location::UTC).to_s("%B")
+          "* UTC — local month is still #{local_month}"
+        end
+      end
+    end
+
+    # Group daily data into weekly buckets
+    private def self.group_by_week(daily : Array(Database::SpendDay)) : Array(NamedTuple(label: String, cost: Float64, tokens: Int64))
+      weeks = {} of String => {cost: Float64, tokens: Int64}
+
+      daily.each do |d|
+        date = Time.parse(d.date, "%Y-%m-%d", Time::Location::UTC)
+        # ISO week start (Monday)
+        days_since_monday = (date.day_of_week.value - 1) % 7
+        week_start = date - days_since_monday.days
+        key = week_start.to_s("%Y-%m-%d")
+
+        existing = weeks[key]? || {cost: 0.0, tokens: 0_i64}
+        weeks[key] = {cost: existing[:cost] + d.cost, tokens: existing[:tokens] + d.tokens}
+      end
+
+      weeks.to_a.sort_by(&.[0]).map do |key, vals|
+        {label: key, cost: vals[:cost], tokens: vals[:tokens]}
+      end
+    end
+
+    # Group daily data into monthly buckets
+    private def self.group_by_month(daily : Array(Database::SpendDay)) : Array(NamedTuple(label: String, cost: Float64, tokens: Int64))
+      months = {} of String => {cost: Float64, tokens: Int64}
+
+      daily.each do |d|
+        key = d.date[0, 7] # "YYYY-MM"
+
+        existing = months[key]? || {cost: 0.0, tokens: 0_i64}
+        months[key] = {cost: existing[:cost] + d.cost, tokens: existing[:tokens] + d.tokens}
+      end
+
+      months.to_a.sort_by(&.[0]).map do |key, vals|
+        # Format label as "Mon YY"
+        date = Time.parse("#{key}-01", "%Y-%m-%d", Time::Location::UTC)
+        label = date.to_s("%b %y")
+        {label: label, cost: vals[:cost], tokens: vals[:tokens]}
+      end
+    end
+
+    # Format a date for display (e.g., "Feb 17, 2025")
+    private def self.format_date_display(date_str : String) : String
+      return date_str if date_str.starts_with?("0000")
+      begin
+        date = Time.parse(date_str, "%Y-%m-%d", Time::Location::UTC)
+        date.to_s("%b %-d, %Y")
+      rescue
+        date_str
+      end
+    end
+
+    # Format a date for bar chart labels (e.g., "Feb 01")
+    private def self.format_bar_date(date_str : String) : String
+      begin
+        date = Time.parse(date_str, "%Y-%m-%d", Time::Location::UTC)
+        date.to_s("%b %d")
+      rescue
+        date_str
+      end
+    end
+
+    # Format a number with comma separators
+    private def self.format_number(n : Int64) : String
+      s = n.to_s
+      groups = [] of String
+      while s.size > 3
+        groups.unshift(s[-3..])
+        s = s[0...-3]
+      end
+      groups.unshift(s) unless s.empty?
+      groups.join(",")
+    end
+
+    private def self.show_spend_help
+      puts <<-HELP
+      galaxy-ledger spend - Show token and cost usage over time
+
+      USAGE:
+        galaxy-ledger spend [PERIOD] [options]
+
+      PERIODS:
+        today                        Current UTC day
+        wtd                          Week to date (Monday → today)
+        mtd                          Month to date (default)
+        qtd                          Quarter to date
+        ytd                          Year to date
+        1y                           Last 365 days
+        all                          All time
+        YYYY-MM-DD..YYYY-MM-DD       Custom range
+
+      OPTIONS:
+        --json                       Output as JSON
+        --no-chart                   Hide bar chart
+        --no-sparkline               Hide sparkline
+        -h, --help                   Show this help
+
+      EXAMPLES:
+        galaxy-ledger spend
+        galaxy-ledger spend today
+        galaxy-ledger spend ytd
+        galaxy-ledger spend ytd --json
+        galaxy-ledger spend 2025-01-01..2025-01-31
+        galaxy-ledger spend mtd --no-sparkline
+      HELP
     end
 
     # ========================================

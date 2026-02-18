@@ -129,9 +129,10 @@ describe GalaxyLedger::SkillsManager do
     it "reports not installed when nothing installed" do
       status = GalaxyLedger::SkillsManager.status
       status.installed.should be_false
-      status.skills.size.should eq(1)
-      status.skills.first.name.should eq("handoff")
-      status.skills.first.installed.should be_false
+      status.skills.size.should eq(2)
+      status.skills.map(&.name).should contain("handoff")
+      status.skills.map(&.name).should contain("spend")
+      status.skills.all?(&.installed).should be_false
     end
 
     it "reports installed after install" do

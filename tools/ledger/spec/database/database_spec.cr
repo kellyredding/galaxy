@@ -1509,8 +1509,6 @@ describe GalaxyLedger::Database do
       s.tokens_used.should eq(50000_i64)
       s.tokens_max.should eq(200000_i64)
       s.cost_usd.should eq(0.15)
-      s.cumulative_tokens_used.should eq(50000_i64)
-      s.cumulative_cost_usd.should eq(0.15)
       s.lines_added.should eq(100_i64)
       s.lines_removed.should eq(25_i64)
     end
@@ -1915,6 +1913,233 @@ describe GalaxyLedger::Database do
       GalaxyLedger::Database.session_files(ledger_session_id).should be_empty
       # Verify cascade: session record gone
       GalaxyLedger::Database.get_session("sess-cascade-1").should be_nil
+    end
+  end
+
+  # ============================================================
+  # Daily Usage Recording
+  # ============================================================
+
+  describe "daily usage recording" do
+    it "creates a daily usage record on first metrics update" do
+      ledger_session_id = GalaxyLedger::Database.create_session("sess-daily-1")
+
+      status = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":5000},"cost":{"usd":0.50}}))
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
+
+      today = Time.utc.to_s("%Y-%m-%d")
+      daily = GalaxyLedger::Database.spend_daily(today, today)
+      daily.size.should eq(1)
+      daily[0].cost.should eq(0.50)
+      daily[0].tokens.should eq(5000_i64)
+    end
+
+    it "updates cumulative values on same-day updates" do
+      ledger_session_id = GalaxyLedger::Database.create_session("sess-daily-2")
+
+      # First update
+      status1 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":5000},"cost":{"usd":0.50}}))
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, status1)
+
+      # Second update — cost and tokens increase
+      status2 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":12000},"cost":{"usd":1.20}}))
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, status2)
+
+      today = Time.utc.to_s("%Y-%m-%d")
+      daily = GalaxyLedger::Database.spend_daily(today, today)
+      daily.size.should eq(1)
+      # Cost: recalculated from baseline (0.0) → 1.20
+      daily[0].cost.should eq(1.20)
+      # Tokens: cumulative from incremental diffs: 5000 + 7000 = 12000
+      daily[0].tokens.should eq(12000_i64)
+    end
+
+    it "handles compaction correctly — tokens drop, cumulative preserved" do
+      ledger_session_id = GalaxyLedger::Database.create_session("sess-daily-compact")
+
+      # Update 1: tokens=5000
+      status1 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":5000},"cost":{"usd":0.50}}))
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, status1)
+
+      # Update 2: tokens=12000
+      status2 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":12000},"cost":{"usd":1.00}}))
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, status2)
+
+      # Update 3: tokens=3000 (COMPACTION — tokens dropped)
+      status3 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":3000},"cost":{"usd":1.50}}))
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, status3)
+
+      # Update 4: tokens=9000
+      status4 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":9000},"cost":{"usd":2.00}}))
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, status4)
+
+      today = Time.utc.to_s("%Y-%m-%d")
+      daily = GalaxyLedger::Database.spend_daily(today, today)
+      daily.size.should eq(1)
+      # Cost: monotonic, just 2.00 - 0.0 = 2.00
+      daily[0].cost.should eq(2.00)
+      # Tokens: 5000 + 7000 + 0(compaction) + 6000 = 18000
+      daily[0].tokens.should eq(18000_i64)
+    end
+
+    it "tracks multiple sessions independently on same day" do
+      lid1 = GalaxyLedger::Database.create_session("sess-daily-multi-1")
+      lid2 = GalaxyLedger::Database.create_session("sess-daily-multi-2")
+
+      status1 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":5000},"cost":{"usd":1.00}}))
+      status2 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":3000},"cost":{"usd":0.75}}))
+
+      GalaxyLedger::Database.update_session_metrics(lid1, status1)
+      GalaxyLedger::Database.update_session_metrics(lid2, status2)
+
+      today = Time.utc.to_s("%Y-%m-%d")
+      summary = GalaxyLedger::Database.spend_summary(today, today)
+      summary.total_cost.should eq(1.75)
+      summary.total_tokens.should eq(8000_i64)
+      summary.active_sessions.should eq(2)
+      summary.active_days.should eq(1)
+    end
+
+    it "handles nil cost and token values gracefully" do
+      ledger_session_id = GalaxyLedger::Database.create_session("sess-daily-nil")
+
+      # Both nil — should skip recording
+      status = GalaxyLedger::ContextStatus.from_json(%({"context":{"percentage":42.0}}))
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
+
+      today = Time.utc.to_s("%Y-%m-%d")
+      daily = GalaxyLedger::Database.spend_daily(today, today)
+      daily.size.should eq(0)
+    end
+
+    it "handles nil tokens with non-nil cost" do
+      ledger_session_id = GalaxyLedger::Database.create_session("sess-daily-partial")
+
+      status = GalaxyLedger::ContextStatus.from_json(%({"cost":{"usd":0.50}}))
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
+
+      today = Time.utc.to_s("%Y-%m-%d")
+      daily = GalaxyLedger::Database.spend_daily(today, today)
+      daily.size.should eq(1)
+      daily[0].cost.should eq(0.50)
+      daily[0].tokens.should eq(0_i64)
+    end
+
+    it "returns empty results for date range with no data" do
+      GalaxyLedger::Database.ensure_database_exists
+      summary = GalaxyLedger::Database.spend_summary("2020-01-01", "2020-01-31")
+      summary.total_cost.should eq(0.0)
+      summary.total_tokens.should eq(0_i64)
+      summary.active_days.should eq(0)
+      summary.active_sessions.should eq(0)
+
+      daily = GalaxyLedger::Database.spend_daily("2020-01-01", "2020-01-31")
+      daily.should be_empty
+    end
+
+    it "computes correct avg daily cost" do
+      lid = GalaxyLedger::Database.create_session("sess-daily-avg")
+
+      # Simulate two different days by inserting directly
+      GalaxyLedger::Database.open do |db|
+        db.exec(
+          <<-SQL,
+            INSERT INTO ledger_session_daily_usages (
+              ledger_session_id, date,
+              baseline_cost_usd, current_cost_usd, cumulative_cost_usd,
+              baseline_tokens, current_tokens, cumulative_tokens
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          SQL
+          lid, "2025-02-01", 0.0, 6.0, 6.0, 0_i64, 100_i64, 100_i64,
+        )
+        db.exec(
+          <<-SQL,
+            INSERT INTO ledger_session_daily_usages (
+              ledger_session_id, date,
+              baseline_cost_usd, current_cost_usd, cumulative_cost_usd,
+              baseline_tokens, current_tokens, cumulative_tokens
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          SQL
+          lid, "2025-02-02", 6.0, 10.0, 4.0, 100_i64, 200_i64, 100_i64,
+        )
+      end
+
+      avg = GalaxyLedger::Database.spend_avg_daily("2025-02-01", "2025-02-02")
+      # (6.0 + 4.0) / 2 = 5.0
+      avg.should eq(5.0)
+    end
+
+    it "cascades daily usage records on session delete" do
+      lid = GalaxyLedger::Database.create_session("sess-daily-cascade")
+
+      status = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":5000},"cost":{"usd":1.00}}))
+      GalaxyLedger::Database.update_session_metrics(lid, status)
+
+      today = Time.utc.to_s("%Y-%m-%d")
+      GalaxyLedger::Database.spend_daily(today, today).size.should eq(1)
+
+      GalaxyLedger::Database.delete_session("sess-daily-cascade")
+
+      GalaxyLedger::Database.spend_daily(today, today).size.should eq(0)
+    end
+  end
+
+  # ============================================================
+  # Spend Aggregation Queries
+  # ============================================================
+
+  describe ".spend_summary" do
+    it "aggregates across multiple sessions and days" do
+      lid1 = GalaxyLedger::Database.create_session("sess-agg-1")
+      lid2 = GalaxyLedger::Database.create_session("sess-agg-2")
+
+      GalaxyLedger::Database.open do |db|
+        # Session 1, day 1
+        db.exec(
+          "INSERT INTO ledger_session_daily_usages (ledger_session_id, date, baseline_cost_usd, current_cost_usd, cumulative_cost_usd, baseline_tokens, current_tokens, cumulative_tokens) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          lid1, "2025-02-01", 0.0, 5.0, 5.0, 0_i64, 1000_i64, 1000_i64,
+        )
+        # Session 1, day 2
+        db.exec(
+          "INSERT INTO ledger_session_daily_usages (ledger_session_id, date, baseline_cost_usd, current_cost_usd, cumulative_cost_usd, baseline_tokens, current_tokens, cumulative_tokens) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          lid1, "2025-02-02", 5.0, 8.0, 3.0, 1000_i64, 2000_i64, 1000_i64,
+        )
+        # Session 2, day 1
+        db.exec(
+          "INSERT INTO ledger_session_daily_usages (ledger_session_id, date, baseline_cost_usd, current_cost_usd, cumulative_cost_usd, baseline_tokens, current_tokens, cumulative_tokens) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          lid2, "2025-02-01", 0.0, 2.0, 2.0, 0_i64, 500_i64, 500_i64,
+        )
+      end
+
+      summary = GalaxyLedger::Database.spend_summary("2025-02-01", "2025-02-28")
+      summary.total_cost.should eq(10.0)   # 5 + 3 + 2
+      summary.total_tokens.should eq(2500) # 1000 + 1000 + 500
+      summary.active_days.should eq(2)     # Feb 1 and Feb 2
+      summary.active_sessions.should eq(2) # Two sessions
+    end
+  end
+
+  describe ".spend_daily" do
+    it "groups by date and sums across sessions" do
+      lid1 = GalaxyLedger::Database.create_session("sess-daily-grp-1")
+      lid2 = GalaxyLedger::Database.create_session("sess-daily-grp-2")
+
+      GalaxyLedger::Database.open do |db|
+        db.exec(
+          "INSERT INTO ledger_session_daily_usages (ledger_session_id, date, baseline_cost_usd, current_cost_usd, cumulative_cost_usd, baseline_tokens, current_tokens, cumulative_tokens) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          lid1, "2025-02-01", 0.0, 3.0, 3.0, 0_i64, 100_i64, 100_i64,
+        )
+        db.exec(
+          "INSERT INTO ledger_session_daily_usages (ledger_session_id, date, baseline_cost_usd, current_cost_usd, cumulative_cost_usd, baseline_tokens, current_tokens, cumulative_tokens) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          lid2, "2025-02-01", 0.0, 2.0, 2.0, 0_i64, 50_i64, 50_i64,
+        )
+      end
+
+      daily = GalaxyLedger::Database.spend_daily("2025-02-01", "2025-02-01")
+      daily.size.should eq(1)
+      daily[0].date.should eq("2025-02-01")
+      daily[0].cost.should eq(5.0)       # 3 + 2
+      daily[0].tokens.should eq(150_i64) # 100 + 50
     end
   end
 end

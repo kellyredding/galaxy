@@ -111,8 +111,6 @@ module GalaxyLedger
             tokens_used INTEGER DEFAULT 0,
             tokens_max INTEGER DEFAULT 0,
             cost_usd REAL DEFAULT 0.0,
-            cumulative_tokens_used INTEGER DEFAULT 0,
-            cumulative_cost_usd REAL DEFAULT 0.0,
             lines_added INTEGER DEFAULT 0,
             lines_removed INTEGER DEFAULT 0,
             context TEXT NOT NULL DEFAULT '{}',
@@ -183,6 +181,25 @@ module GalaxyLedger
           )
         SQL
 
+        # Daily usage tracking table (one record per session per UTC day)
+        db.exec(<<-SQL)
+          CREATE TABLE IF NOT EXISTS ledger_session_daily_usages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ledger_session_id INTEGER NOT NULL,
+            date TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            baseline_cost_usd REAL NOT NULL DEFAULT 0.0,
+            current_cost_usd REAL NOT NULL DEFAULT 0.0,
+            cumulative_cost_usd REAL NOT NULL DEFAULT 0.0,
+            baseline_tokens INTEGER NOT NULL DEFAULT 0,
+            current_tokens INTEGER NOT NULL DEFAULT 0,
+            cumulative_tokens INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (ledger_session_id) REFERENCES ledger_sessions(id) ON DELETE CASCADE,
+            UNIQUE(ledger_session_id, date)
+          )
+        SQL
+
         # Indexes for mapping tables
         db.exec("CREATE INDEX IF NOT EXISTS idx_session_ids_session ON ledger_session_identifiers(ledger_session_id)")
         db.exec("CREATE INDEX IF NOT EXISTS idx_session_pids_session ON ledger_session_pids(ledger_session_id)")
@@ -197,6 +214,10 @@ module GalaxyLedger
 
         # Unique constraint for deduplication
         db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_content_dedup ON ledger_entries(ledger_session_id, entry_type, content_hash)")
+
+        # Indexes for ledger_session_daily_usages
+        db.exec("CREATE INDEX IF NOT EXISTS idx_daily_usages_date ON ledger_session_daily_usages(date)")
+        db.exec("CREATE INDEX IF NOT EXISTS idx_daily_usages_session ON ledger_session_daily_usages(ledger_session_id)")
 
         # Indexes for ledger_session_files
         db.exec("CREATE INDEX IF NOT EXISTS idx_files_session ON ledger_session_files(ledger_session_id)")
@@ -551,8 +572,6 @@ module GalaxyLedger
                 tokens_used = COALESCE(?, tokens_used),
                 tokens_max = COALESCE(?, tokens_max),
                 cost_usd = COALESCE(?, cost_usd),
-                cumulative_tokens_used = COALESCE(?, cumulative_tokens_used),
-                cumulative_cost_usd = COALESCE(?, cumulative_cost_usd),
                 lines_added = COALESCE(?, lines_added),
                 lines_removed = COALESCE(?, lines_removed)
               WHERE id = ?
@@ -567,16 +586,253 @@ module GalaxyLedger
             status.tokens_used,
             status.tokens_max,
             status.cost_usd,
-            status.tokens_used,
-            status.cost_usd,
             status.lines_added,
             status.lines_removed,
             ledger_session_id,
           )
+
+          # Record daily usage
+          record_daily_usage(db, ledger_session_id, status)
+
           true
         end
       rescue
         false
+      end
+    end
+
+    # Record daily usage for the current UTC day.
+    # Uses static baseline for cost (monotonically increasing) and
+    # dynamic baseline for tokens (can decrease on compaction).
+    private def self.record_daily_usage(
+      db : DB::Database,
+      ledger_session_id : Int64,
+      status : ContextStatus,
+    )
+      new_cost = status.cost_usd
+      new_tokens = status.tokens_used
+
+      # Skip if we don't have any values to record
+      return if new_cost.nil? && new_tokens.nil?
+
+      # Default nil values to 0
+      cost_val = new_cost || 0.0
+      tokens_val = new_tokens || 0_i64
+
+      today = Time.utc.to_s("%Y-%m-%d")
+
+      # Check for existing record today
+      existing = db.query_one?(
+        <<-SQL,
+          SELECT id, baseline_cost_usd, current_cost_usd, cumulative_cost_usd,
+                 baseline_tokens, current_tokens, cumulative_tokens
+          FROM ledger_session_daily_usages
+          WHERE ledger_session_id = ? AND date = ?
+        SQL
+        ledger_session_id, today,
+      ) do |rs|
+        {
+          id:                  rs.read(Int64),
+          baseline_cost_usd:   rs.read(Float64),
+          current_cost_usd:    rs.read(Float64),
+          cumulative_cost_usd: rs.read(Float64),
+          baseline_tokens:     rs.read(Int64),
+          current_tokens:      rs.read(Int64),
+          cumulative_tokens:   rs.read(Int64),
+        }
+      end
+
+      if existing.nil?
+        # --- New day record ---
+        # Look up previous day's current values as baseline
+        prev = db.query_one?(
+          <<-SQL,
+            SELECT current_cost_usd, current_tokens
+            FROM ledger_session_daily_usages
+            WHERE ledger_session_id = ? AND date < ?
+            ORDER BY date DESC LIMIT 1
+          SQL
+          ledger_session_id, today,
+        ) do |rs|
+          {cost: rs.read(Float64), tokens: rs.read(Int64)}
+        end
+
+        baseline_cost = prev ? prev[:cost] : 0.0
+        baseline_tokens = prev ? prev[:tokens] : 0_i64
+
+        # Cost: simple diff from static baseline
+        cumulative_cost = cost_val - baseline_cost
+
+        # Tokens: handle potential cross-day compaction
+        token_diff = tokens_val - baseline_tokens
+        if token_diff < 0
+          # Compaction happened between days — reset baseline
+          token_diff = 0_i64
+        end
+        cumulative_tokens = token_diff
+
+        # Set baseline_tokens to current value so next update diffs correctly
+        insert_baseline_tokens = tokens_val
+
+        db.exec(
+          <<-SQL,
+            INSERT INTO ledger_session_daily_usages (
+              ledger_session_id, date,
+              baseline_cost_usd, current_cost_usd, cumulative_cost_usd,
+              baseline_tokens, current_tokens, cumulative_tokens
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          SQL
+          ledger_session_id, today,
+          baseline_cost, cost_val, cumulative_cost,
+          insert_baseline_tokens, tokens_val, cumulative_tokens,
+        )
+      else
+        # --- Existing record for today ---
+
+        # Cost: recalculate from static baseline (idempotent)
+        cumulative_cost = cost_val - existing[:baseline_cost_usd]
+
+        # Tokens: incremental diff from dynamic baseline
+        token_diff = tokens_val - existing[:baseline_tokens]
+        if token_diff >= 0
+          cumulative_tokens = existing[:cumulative_tokens] + token_diff
+          new_baseline_tokens = tokens_val
+        else
+          # Compaction detected — reset baseline, preserve cumulative
+          cumulative_tokens = existing[:cumulative_tokens]
+          new_baseline_tokens = tokens_val
+        end
+
+        db.exec(
+          <<-SQL,
+            UPDATE ledger_session_daily_usages SET
+              current_cost_usd = ?,
+              cumulative_cost_usd = ?,
+              baseline_tokens = ?,
+              current_tokens = ?,
+              cumulative_tokens = ?,
+              updated_at = datetime('now')
+            WHERE id = ?
+          SQL
+          cost_val, cumulative_cost,
+          new_baseline_tokens, tokens_val, cumulative_tokens,
+          existing[:id],
+        )
+      end
+    end
+
+    # ============================================================
+    # Daily Usage Aggregation Queries
+    # ============================================================
+
+    # Summary stats for a date range
+    struct SpendSummary
+      getter total_cost : Float64
+      getter total_tokens : Int64
+      getter active_days : Int32
+      getter active_sessions : Int32
+
+      def initialize(@total_cost, @total_tokens, @active_days, @active_sessions)
+      end
+    end
+
+    # Daily breakdown row
+    struct SpendDay
+      getter date : String
+      getter cost : Float64
+      getter tokens : Int64
+
+      def initialize(@date, @cost, @tokens)
+      end
+    end
+
+    # Returns summary stats for a date range
+    def self.spend_summary(from_date : String, to_date : String) : SpendSummary
+      begin
+        open do |db|
+          total_cost = 0.0
+          total_tokens = 0_i64
+          active_days = 0
+          active_sessions = 0
+
+          db.query_one?(
+            <<-SQL,
+              SELECT
+                COALESCE(SUM(cumulative_cost_usd), 0.0) as total_cost,
+                COALESCE(SUM(cumulative_tokens), 0) as total_tokens,
+                COUNT(DISTINCT date) as active_days,
+                COUNT(DISTINCT ledger_session_id) as active_sessions
+              FROM ledger_session_daily_usages
+              WHERE date >= ? AND date <= ?
+            SQL
+            from_date, to_date,
+          ) do |rs|
+            total_cost = rs.read(Float64)
+            total_tokens = rs.read(Int64)
+            active_days = rs.read(Int64).to_i
+            active_sessions = rs.read(Int64).to_i
+          end
+
+          SpendSummary.new(total_cost, total_tokens, active_days, active_sessions)
+        end
+      rescue
+        SpendSummary.new(0.0, 0_i64, 0, 0)
+      end
+    end
+
+    # Returns daily breakdown for a date range
+    def self.spend_daily(from_date : String, to_date : String) : Array(SpendDay)
+      days = [] of SpendDay
+      begin
+        open do |db|
+          db.query(
+            <<-SQL,
+              SELECT
+                date,
+                SUM(cumulative_cost_usd) as daily_cost,
+                SUM(cumulative_tokens) as daily_tokens
+              FROM ledger_session_daily_usages
+              WHERE date >= ? AND date <= ?
+              GROUP BY date ORDER BY date
+            SQL
+            from_date, to_date,
+          ) do |rs|
+            rs.each do
+              days << SpendDay.new(
+                date: rs.read(String),
+                cost: rs.read(Float64),
+                tokens: rs.read(Int64),
+              )
+            end
+          end
+        end
+      rescue
+        # Return empty on error
+      end
+      days
+    end
+
+    # Returns average daily cost over a period
+    def self.spend_avg_daily(from_date : String, to_date : String) : Float64
+      begin
+        open do |db|
+          result = db.query_one?(
+            <<-SQL,
+              SELECT AVG(daily_cost) FROM (
+                SELECT SUM(cumulative_cost_usd) as daily_cost
+                FROM ledger_session_daily_usages
+                WHERE date >= ? AND date <= ?
+                GROUP BY date
+              )
+            SQL
+            from_date, to_date,
+          ) do |rs|
+            rs.read(Float64?)
+          end
+          result || 0.0
+        end
+      rescue
+        0.0
       end
     end
 
@@ -675,7 +931,6 @@ module GalaxyLedger
               SELECT id, title, current_session_identifier, current_claude_pid, started_at, updated_at, cwd, project_dir,
                      git_branch, model_id, model_display_name, claude_version,
                      context_percentage, tokens_used, tokens_max, cost_usd,
-                     cumulative_tokens_used, cumulative_cost_usd,
                      lines_added, lines_removed, context, last_interaction
               FROM ledger_sessions
               WHERE id = ?
@@ -710,7 +965,6 @@ module GalaxyLedger
               SELECT id, title, current_session_identifier, current_claude_pid, started_at, updated_at, cwd, project_dir,
                      git_branch, model_id, model_display_name, claude_version,
                      context_percentage, tokens_used, tokens_max, cost_usd,
-                     cumulative_tokens_used, cumulative_cost_usd,
                      lines_added, lines_removed, context, last_interaction
               FROM ledger_sessions
               ORDER BY updated_at DESC
@@ -1558,8 +1812,6 @@ module GalaxyLedger
       getter tokens_used : Int64
       getter tokens_max : Int64
       getter cost_usd : Float64
-      getter cumulative_tokens_used : Int64
-      getter cumulative_cost_usd : Float64
       getter lines_added : Int64
       getter lines_removed : Int64
       getter context : String
@@ -1570,7 +1822,6 @@ module GalaxyLedger
         @cwd, @project_dir, @git_branch,
         @model_id, @model_display_name, @claude_version,
         @context_percentage, @tokens_used, @tokens_max, @cost_usd,
-        @cumulative_tokens_used, @cumulative_cost_usd,
         @lines_added, @lines_removed, @context, @last_interaction,
       )
       end
@@ -1593,8 +1844,6 @@ module GalaxyLedger
           tokens_used: rs.read(Int64),
           tokens_max: rs.read(Int64),
           cost_usd: rs.read(Float64),
-          cumulative_tokens_used: rs.read(Int64),
-          cumulative_cost_usd: rs.read(Float64),
           lines_added: rs.read(Int64),
           lines_removed: rs.read(Int64),
           context: rs.read(String),
