@@ -19,6 +19,13 @@ def create_test_session_with_entries(session_id : String, entry_count : Int32 = 
   ledger_session_id
 end
 
+# Helper to create a session with a registered PID for CLI tests.
+# Returns the ledger_session_id (Int64).
+def create_session_with_pid(pid : Int64) : Int64
+  session_id = "snap-cli-#{Random.rand(100000)}"
+  GalaxyLedger::Database.create_session(session_id, claude_pid: pid)
+end
+
 describe "CLI Integration" do
   describe "version subcommand" do
     it "outputs version" do
@@ -1125,6 +1132,201 @@ describe "CLI Integration" do
       end
 
       File.delete(transcript_file.path) if File.exists?(transcript_file.path)
+    end
+  end
+
+  describe "snapshot subcommand" do
+    describe "snapshot --help" do
+      it "shows help text with all subcommands" do
+        result = run_binary(["snapshot", "--help"])
+        result[:status].should eq(0)
+        result[:output].should contain("snapshot")
+        result[:output].should contain("save")
+        result[:output].should contain("list")
+        result[:output].should contain("view")
+        result[:output].should contain("delete")
+      end
+    end
+
+    describe "snapshot save" do
+      it "saves snapshot with valid PID, title, and stdin content" do
+        pid = Random.rand(10000).to_i64 + 90000
+        ledger_session_id = create_session_with_pid(pid)
+
+        result = run_binary(
+          ["snapshot", "save", "--pid", pid.to_s, "--title", "Test snapshot"],
+          stdin: "## Exchange 1\n\n### User\nHello\n\n### Assistant\nHi there!",
+        )
+        result[:status].should eq(0)
+        result[:output].should contain("Snapshot #1 saved")
+        result[:output].should contain("Test snapshot")
+      end
+
+      it "returns number 2 for second save to same session" do
+        pid = Random.rand(10000).to_i64 + 90000
+        ledger_session_id = create_session_with_pid(pid)
+
+        result1 = run_binary(
+          ["snapshot", "save", "--pid", pid.to_s, "--title", "First"],
+          stdin: "content 1",
+        )
+        result1[:status].should eq(0)
+        result1[:output].should contain("Snapshot #1")
+
+        result2 = run_binary(
+          ["snapshot", "save", "--pid", pid.to_s, "--title", "Second"],
+          stdin: "content 2",
+        )
+        result2[:status].should eq(0)
+        result2[:output].should contain("Snapshot #2")
+      end
+
+      it "returns number 1 for save to different session" do
+        pid_a = Random.rand(10000).to_i64 + 90000
+        pid_b = pid_a + 1
+        create_session_with_pid(pid_a)
+        create_session_with_pid(pid_b)
+
+        run_binary(
+          ["snapshot", "save", "--pid", pid_a.to_s, "--title", "A snap"],
+          stdin: "content a",
+        )
+
+        result = run_binary(
+          ["snapshot", "save", "--pid", pid_b.to_s, "--title", "B snap"],
+          stdin: "content b",
+        )
+        result[:status].should eq(0)
+        result[:output].should contain("Snapshot #1")
+      end
+
+      it "errors without --pid" do
+        result = run_binary(
+          ["snapshot", "save", "--title", "No PID"],
+          stdin: "content",
+        )
+        result[:status].should_not eq(0)
+        result[:error].should contain("--pid is required")
+      end
+
+      it "errors without --title" do
+        pid = Random.rand(10000).to_i64 + 90000
+        create_session_with_pid(pid)
+
+        result = run_binary(
+          ["snapshot", "save", "--pid", pid.to_s],
+          stdin: "content",
+        )
+        result[:status].should_not eq(0)
+        result[:error].should contain("--title is required")
+      end
+
+      it "errors with invalid PID" do
+        result = run_binary(
+          ["snapshot", "save", "--pid", "99999999", "--title", "Bad PID"],
+          stdin: "content",
+        )
+        result[:status].should_not eq(0)
+        result[:error].should contain("no session found")
+      end
+
+      it "shows help with --help" do
+        result = run_binary(["snapshot", "save", "--help"])
+        result[:status].should eq(0)
+        result[:output].should contain("snapshot save")
+        result[:output].should contain("--pid")
+        result[:output].should contain("--title")
+      end
+    end
+
+    describe "snapshot list" do
+      it "lists snapshots with formatted output" do
+        pid = Random.rand(10000).to_i64 + 90000
+        ledger_session_id = create_session_with_pid(pid)
+
+        run_binary(
+          ["snapshot", "save", "--pid", pid.to_s, "--title", "First snap"],
+          stdin: "content one",
+        )
+        run_binary(
+          ["snapshot", "save", "--pid", pid.to_s, "--title", "Second snap", "--exchanges", "2"],
+          stdin: "content two is longer",
+        )
+
+        result = run_binary(["snapshot", "list", "--pid", pid.to_s])
+        result[:status].should eq(0)
+        result[:output].should contain("2 total")
+        result[:output].should contain("#1")
+        result[:output].should contain("First snap")
+        result[:output].should contain("#2")
+        result[:output].should contain("Second snap")
+        result[:output].should contain("2 exchanges")
+      end
+
+      it "shows empty message when no snapshots" do
+        pid = Random.rand(10000).to_i64 + 90000
+        create_session_with_pid(pid)
+
+        result = run_binary(["snapshot", "list", "--pid", pid.to_s])
+        result[:status].should eq(0)
+        result[:output].should contain("No snapshots")
+      end
+    end
+
+    describe "snapshot view" do
+      it "outputs full snapshot content" do
+        pid = Random.rand(10000).to_i64 + 90000
+        create_session_with_pid(pid)
+
+        content = "## Exchange 1\n\n### User\nHello world\n\n### Assistant\nHi!"
+        run_binary(
+          ["snapshot", "save", "--pid", pid.to_s, "--title", "View test"],
+          stdin: content,
+        )
+
+        result = run_binary(["snapshot", "view", "--pid", pid.to_s, "1"])
+        result[:status].should eq(0)
+        result[:output].should contain("## Exchange 1")
+        result[:output].should contain("Hello world")
+      end
+
+      it "errors with invalid number" do
+        pid = Random.rand(10000).to_i64 + 90000
+        create_session_with_pid(pid)
+
+        result = run_binary(["snapshot", "view", "--pid", pid.to_s, "99"])
+        result[:status].should_not eq(0)
+        result[:error].should contain("not found")
+      end
+    end
+
+    describe "snapshot delete" do
+      it "deletes snapshot and confirms" do
+        pid = Random.rand(10000).to_i64 + 90000
+        create_session_with_pid(pid)
+
+        run_binary(
+          ["snapshot", "save", "--pid", pid.to_s, "--title", "To delete"],
+          stdin: "content",
+        )
+
+        result = run_binary(["snapshot", "delete", "--pid", pid.to_s, "1"])
+        result[:status].should eq(0)
+        result[:output].should contain("Snapshot #1 deleted")
+
+        # Verify it's gone
+        view_result = run_binary(["snapshot", "view", "--pid", pid.to_s, "1"])
+        view_result[:status].should_not eq(0)
+      end
+
+      it "errors when snapshot not found" do
+        pid = Random.rand(10000).to_i64 + 90000
+        create_session_with_pid(pid)
+
+        result = run_binary(["snapshot", "delete", "--pid", pid.to_s, "99"])
+        result[:status].should_not eq(0)
+        result[:error].should contain("not found")
+      end
     end
   end
 end

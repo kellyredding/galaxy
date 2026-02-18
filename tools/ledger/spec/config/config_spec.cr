@@ -20,6 +20,8 @@ describe GalaxyLedger::Config do
       config.restoration.tier1_limits.high_importance_decisions.should eq(10)
       config.restoration.tier2_limits.learnings.should eq(5)
       config.restoration.tier2_limits.medium_importance_decisions.should eq(5)
+      config.snapshots.inline_char_cap.should eq(15000)
+      config.snapshots.max_per_session.should eq(10)
     end
   end
 
@@ -86,6 +88,32 @@ describe GalaxyLedger::Config do
 
       config.set("restoration.tier2_limits.medium_importance_decisions", "8")
       config.get("restoration.tier2_limits.medium_importance_decisions").should eq("8")
+    end
+
+    it "sets and gets snapshots values" do
+      config = GalaxyLedger::Config.default
+      config.get("snapshots.inline_char_cap").should eq("15000")
+      config.get("snapshots.max_per_session").should eq("10")
+
+      config.set("snapshots.inline_char_cap", "20000")
+      config.get("snapshots.inline_char_cap").should eq("20000")
+
+      config.set("snapshots.max_per_session", "5")
+      config.get("snapshots.max_per_session").should eq("5")
+    end
+
+    it "validates snapshots values are positive integers" do
+      config = GalaxyLedger::Config.default
+      expect_raises(Exception, /must be integer/) do
+        config.set("snapshots.inline_char_cap", "abc")
+      end
+    end
+
+    it "validates snapshots values are positive" do
+      config = GalaxyLedger::Config.default
+      expect_raises(Exception, /must be positive/) do
+        config.set("snapshots.max_per_session", "0")
+      end
     end
 
     it "validates threshold range" do

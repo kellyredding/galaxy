@@ -16,6 +16,7 @@ module GalaxyLedger
     property extraction : Extraction
     property storage : Storage
     property restoration : Restoration
+    property snapshots : Snapshots = Snapshots.new
 
     class Thresholds
       include JSON::Serializable
@@ -128,6 +129,22 @@ module GalaxyLedger
       end
     end
 
+    class Snapshots
+      include JSON::Serializable
+
+      @[JSON::Field(key: "inline_char_cap")]
+      property inline_char_cap : Int32
+
+      @[JSON::Field(key: "max_per_session")]
+      property max_per_session : Int32
+
+      def initialize(
+        @inline_char_cap = 15000,
+        @max_per_session = 10,
+      )
+      end
+    end
+
     def initialize(
       @schema_version = VERSION,
       @version = VERSION,
@@ -136,6 +153,7 @@ module GalaxyLedger
       @extraction = Extraction.new,
       @storage = Storage.new,
       @restoration = Restoration.new,
+      @snapshots = Snapshots.new,
     )
     end
 
@@ -203,6 +221,8 @@ module GalaxyLedger
         set_storage(parts[1]?, value)
       when "restoration"
         set_restoration(parts[1]?, parts[2]?, value)
+      when "snapshots"
+        set_snapshots(parts[1]?, value)
       else
         raise "Unknown setting: #{key}"
       end
@@ -224,6 +244,8 @@ module GalaxyLedger
         get_storage(parts[1]?)
       when "restoration"
         get_restoration(parts[1]?, parts[2]?)
+      when "snapshots"
+        get_snapshots(parts[1]?)
       else
         raise "Unknown setting: #{key}"
       end
@@ -418,6 +440,33 @@ module GalaxyLedger
         restoration.tier2_limits.medium_importance_decisions.to_s
       else
         raise "Unknown tier2_limits field: #{field}"
+      end
+    end
+
+    private def set_snapshots(field : String?, value : String)
+      raise "Missing snapshots field (e.g., snapshots.inline_char_cap)" unless field
+
+      int_value = value.to_i? || raise "Invalid value: #{value} (must be integer)"
+      raise "Value must be positive" if int_value < 1
+
+      case field
+      when "inline_char_cap"
+        snapshots.inline_char_cap = int_value
+      when "max_per_session"
+        snapshots.max_per_session = int_value
+      else
+        raise "Unknown snapshots field: snapshots.#{field}"
+      end
+    end
+
+    private def get_snapshots(field : String?) : String
+      raise "Missing snapshots field (e.g., snapshots.inline_char_cap)" unless field
+
+      case field
+      when "inline_char_cap" then snapshots.inline_char_cap.to_s
+      when "max_per_session" then snapshots.max_per_session.to_s
+      else
+        raise "Unknown snapshots field: snapshots.#{field}"
       end
     end
 

@@ -49,6 +49,9 @@ module GalaxyLedger
         files = Database.session_files(ledger_session_id)
         last_exchange = extract_last_exchange(session_record)
 
+        # Query snapshot stats for budget-aware rendering
+        snapshot_stats = Database.session_snapshot_stats(ledger_session_id)
+
         # Build systemMessage and additionalContext
         system_message = Helpers.build_system_message(
           prefix: "Handoff",
@@ -56,15 +59,18 @@ module GalaxyLedger
           restoration: restoration,
           files: files,
           last_exchange: last_exchange,
+          snapshot_count: snapshot_stats[:count],
         )
 
         context = build_additional_context(
           claude_pid: claude_pid,
+          ledger_session_id: ledger_session_id,
           restoration: restoration,
           files: files,
           last_exchange: last_exchange,
           cwd: handoff_cwd(session_record),
           git_branch: session_record.try(&.git_branch),
+          snapshot_stats: snapshot_stats,
         )
 
         puts Helpers.output_json(system_message, context)
@@ -104,11 +110,13 @@ module GalaxyLedger
 
       private def self.build_additional_context(
         claude_pid : Int64,
+        ledger_session_id : Int64,
         restoration : Database::RestorationResult,
         files : Array(Database::SessionFile),
         last_exchange : Exchange::LastExchange?,
         cwd : String? = nil,
         git_branch : String? = nil,
+        snapshot_stats : NamedTuple(count: Int32, total_chars: Int64) = {count: 0, total_chars: 0_i64},
       ) : String
         lines = [] of String
         lines << "## Session Context Handoff"
@@ -122,7 +130,7 @@ module GalaxyLedger
         end
         lines << ""
 
-        has_any_data = restoration.total_count > 0 || files.size > 0 || last_exchange
+        has_any_data = restoration.total_count > 0 || files.size > 0 || last_exchange || snapshot_stats[:count] > 0
 
         unless has_any_data
           lines << "No previous context available."
@@ -222,6 +230,48 @@ module GalaxyLedger
           lines << ""
         end
 
+        # Session snapshots section (budget-aware)
+        if snapshot_stats[:count] > 0
+          config = Config.load
+          inline_char_cap = config.snapshots.inline_char_cap
+
+          lines << "---"
+          lines << ""
+
+          if snapshot_stats[:total_chars] <= inline_char_cap
+            # Under budget — inline full content
+            snapshots = Database.list_snapshots(ledger_session_id)
+            lines << "### Session Snapshots (#{snapshots.size} saved)"
+            lines << ""
+            snapshots.each do |snap|
+              exchange_label = snap.exchange_count == 1 ? "exchange" : "exchanges"
+              time_str = begin
+                utc_time = Time.parse_utc(snap.created_at, "%Y-%m-%d %H:%M:%S")
+                utc_time.to_local.to_s("%H:%M")
+              rescue
+                snap.created_at
+              end
+              lines << "**##{snap.number} \u2014 \"#{snap.title}\"** (#{snap.exchange_count} #{exchange_label}, #{time_str})"
+              lines << ""
+              lines << snap.content
+              lines << ""
+            end
+          else
+            # Over budget — metadata only with CLI query commands
+            snapshots = Database.list_snapshots(ledger_session_id)
+            lines << "### Session Snapshots (#{snapshots.size} saved \u2014 query for full content)"
+            lines << ""
+            lines << "Snapshots exceed inline budget. Load individually:"
+            snapshots.each do |snap|
+              exchange_label = snap.exchange_count == 1 ? "exchange" : "exchanges"
+              chars_formatted = format_char_count(snap.char_count)
+              lines << "- ##{snap.number} \"#{snap.title}\" (#{snap.exchange_count} #{exchange_label}, #{chars_formatted} chars) \u2192"
+              lines << "  `galaxy-ledger snapshot view --pid #{claude_pid} #{snap.number}`"
+            end
+            lines << ""
+          end
+        end
+
         # Key decisions section (high + medium, labeled)
         high_decisions = restoration.tier1.high_importance_decisions
         medium_decisions = restoration.tier2.medium_decisions
@@ -286,6 +336,15 @@ module GalaxyLedger
         end
 
         lines.join("\n")
+      end
+
+      # Format char count for display (e.g., 3241 -> "3.2k", 150 -> "150")
+      private def self.format_char_count(chars : Int32) : String
+        if chars >= 1000
+          "#{(chars / 1000.0).round(1)}k"
+        else
+          chars.to_s
+        end
       end
 
       private def self.output_empty

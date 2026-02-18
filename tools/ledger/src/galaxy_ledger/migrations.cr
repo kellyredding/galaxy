@@ -76,7 +76,28 @@ module GalaxyLedger
     #     db.exec("ALTER TABLE ledger_entries ADD COLUMN new_field TEXT")
     #   },
     #
-    DATABASE_MIGRATIONS = {} of String => Proc(DB::Database, Nil)
+    DATABASE_MIGRATIONS = {
+      "0.2.0" => ->(db : DB::Database) {
+        db.exec(<<-SQL)
+          CREATE TABLE IF NOT EXISTS ledger_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ledger_session_id INTEGER NOT NULL,
+            number INTEGER NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            exchange_count INTEGER NOT NULL DEFAULT 1,
+            char_count INTEGER NOT NULL DEFAULT 0,
+            metadata TEXT,
+            UNIQUE(ledger_session_id, number),
+            FOREIGN KEY (ledger_session_id)
+              REFERENCES ledger_sessions(id) ON DELETE CASCADE
+          )
+        SQL
+        db.exec("CREATE INDEX IF NOT EXISTS idx_snapshots_session ON ledger_snapshots(ledger_session_id)")
+      },
+    }
 
     # ==========================================================================
     # CONFIG MIGRATIONS
@@ -92,7 +113,18 @@ module GalaxyLedger
     #     JSON::Any.new(obj)
     #   },
     #
-    CONFIG_MIGRATIONS = {} of String => Proc(JSON::Any, JSON::Any)
+    CONFIG_MIGRATIONS = {
+      "0.2.0" => Proc(JSON::Any, JSON::Any).new { |config_json|
+        obj = config_json.as_h.dup
+        unless obj.has_key?("snapshots")
+          obj["snapshots"] = JSON::Any.new({
+            "inline_char_cap" => JSON::Any.new(15000_i64),
+            "max_per_session" => JSON::Any.new(10_i64),
+          })
+        end
+        JSON::Any.new(obj)
+      },
+    }
 
     # ==========================================================================
     # VERSION UTILITIES

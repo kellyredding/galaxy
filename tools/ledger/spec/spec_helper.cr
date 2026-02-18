@@ -120,6 +120,7 @@ Spec.before_each do
   begin
     db = DB.open("sqlite3://#{db_path}")
     db.exec("PRAGMA busy_timeout=5000")
+    db.exec("DELETE FROM ledger_snapshots")
     db.exec("DELETE FROM ledger_session_pids")
     db.exec("DELETE FROM ledger_session_identifiers")
     db.exec("DELETE FROM ledger_session_files")

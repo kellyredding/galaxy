@@ -215,9 +215,31 @@ module GalaxyLedger
         # Unique constraint for deduplication
         db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_content_dedup ON ledger_entries(ledger_session_id, entry_type, content_hash)")
 
+        # Snapshot table for preserving verbatim exchanges
+        db.exec(<<-SQL)
+          CREATE TABLE IF NOT EXISTS ledger_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ledger_session_id INTEGER NOT NULL,
+            number INTEGER NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            exchange_count INTEGER NOT NULL DEFAULT 1,
+            char_count INTEGER NOT NULL DEFAULT 0,
+            metadata TEXT,
+            UNIQUE(ledger_session_id, number),
+            FOREIGN KEY (ledger_session_id)
+              REFERENCES ledger_sessions(id) ON DELETE CASCADE
+          )
+        SQL
+
         # Indexes for ledger_session_daily_usages
         db.exec("CREATE INDEX IF NOT EXISTS idx_daily_usages_date ON ledger_session_daily_usages(date)")
         db.exec("CREATE INDEX IF NOT EXISTS idx_daily_usages_session ON ledger_session_daily_usages(ledger_session_id)")
+
+        # Indexes for ledger_snapshots
+        db.exec("CREATE INDEX IF NOT EXISTS idx_snapshots_session ON ledger_snapshots(ledger_session_id)")
 
         # Indexes for ledger_session_files
         db.exec("CREATE INDEX IF NOT EXISTS idx_files_session ON ledger_session_files(ledger_session_id)")
@@ -1798,6 +1820,156 @@ module GalaxyLedger
     end
 
     # ============================================================
+    # Snapshot Operations
+    # ============================================================
+
+    # Save a snapshot of verbatim exchanges for a session.
+    # Number is auto-assigned as session-scoped sequential (1, 2, 3, ...).
+    # Returns the snapshot number (not the primary key).
+    def self.save_snapshot(
+      ledger_session_id : Int64,
+      title : String,
+      content : String,
+      exchange_count : Int32 = 1,
+      metadata : String? = nil,
+    ) : Int32
+      return 0 if ledger_session_id <= 0
+
+      char_count = content.size
+
+      begin
+        open do |db|
+          db.exec(
+            <<-SQL,
+              INSERT INTO ledger_snapshots (
+                ledger_session_id, number, title, content,
+                exchange_count, char_count, metadata
+              )
+              VALUES (
+                ?, (SELECT COALESCE(MAX(number), 0) + 1 FROM ledger_snapshots WHERE ledger_session_id = ?),
+                ?, ?, ?, ?, ?
+              )
+            SQL
+            ledger_session_id,
+            ledger_session_id,
+            title,
+            content,
+            exchange_count,
+            char_count,
+            metadata,
+          )
+          # Retrieve the number that was just assigned
+          db.query_one?(
+            "SELECT number FROM ledger_snapshots WHERE id = last_insert_rowid()",
+            as: Int64,
+          ).try(&.to_i) || 0
+        end
+      rescue
+        0
+      end
+    end
+
+    # List all snapshots for a session, ordered by number (chronological).
+    def self.list_snapshots(ledger_session_id : Int64, limit : Int32 = 50) : Array(Snapshot)
+      snapshots = [] of Snapshot
+      return snapshots if ledger_session_id <= 0
+
+      begin
+        open do |db|
+          db.query(
+            <<-SQL,
+              SELECT id, ledger_session_id, number, created_at, updated_at,
+                     title, content, exchange_count, char_count, metadata
+              FROM ledger_snapshots
+              WHERE ledger_session_id = ?
+              ORDER BY number ASC
+              LIMIT ?
+            SQL
+            ledger_session_id,
+            limit,
+          ) do |rs|
+            rs.each do
+              snapshots << Snapshot.from_row(rs)
+            end
+          end
+        end
+      rescue
+        # Return empty on error
+      end
+      snapshots
+    end
+
+    # Get a snapshot by session + number (user-facing identifier).
+    def self.get_snapshot_by_number(ledger_session_id : Int64, number : Int32) : Snapshot?
+      return nil if ledger_session_id <= 0
+
+      begin
+        open do |db|
+          db.query_one?(
+            <<-SQL,
+              SELECT id, ledger_session_id, number, created_at, updated_at,
+                     title, content, exchange_count, char_count, metadata
+              FROM ledger_snapshots
+              WHERE ledger_session_id = ? AND number = ?
+            SQL
+            ledger_session_id,
+            number,
+          ) do |rs|
+            Snapshot.from_row(rs)
+          end
+        end
+      rescue
+        nil
+      end
+    end
+
+    # Delete a snapshot by session + number. Returns true if deleted.
+    def self.delete_snapshot_by_number(ledger_session_id : Int64, number : Int32) : Bool
+      return false if ledger_session_id <= 0
+
+      begin
+        open do |db|
+          result = db.exec(
+            "DELETE FROM ledger_snapshots WHERE ledger_session_id = ? AND number = ?",
+            ledger_session_id,
+            number,
+          )
+          result.rows_affected > 0
+        end
+      rescue
+        false
+      end
+    end
+
+    # Get snapshot stats for budget decisions without loading content.
+    def self.session_snapshot_stats(ledger_session_id : Int64) : NamedTuple(count: Int32, total_chars: Int64)
+      return {count: 0, total_chars: 0_i64} if ledger_session_id <= 0
+
+      begin
+        open do |db|
+          count = 0
+          total_chars = 0_i64
+
+          db.query_one?(
+            <<-SQL,
+              SELECT COUNT(*), COALESCE(SUM(char_count), 0)
+              FROM ledger_snapshots
+              WHERE ledger_session_id = ?
+            SQL
+            ledger_session_id,
+          ) do |rs|
+            count = rs.read(Int64).to_i
+            total_chars = rs.read(Int64)
+          end
+
+          {count: count, total_chars: total_chars}
+        end
+      rescue
+        {count: 0, total_chars: 0_i64}
+      end
+    end
+
+    # ============================================================
     # Data Structs
     # ============================================================
 
@@ -1982,6 +2154,41 @@ module GalaxyLedger
           keywords: keywords_array,
           applies_when: applies_when,
           source_file: source_file
+        )
+      end
+    end
+
+    # A snapshot record from the database
+    struct Snapshot
+      getter id : Int64
+      getter ledger_session_id : Int64
+      getter number : Int32
+      getter created_at : String
+      getter updated_at : String
+      getter title : String
+      getter content : String
+      getter exchange_count : Int32
+      getter char_count : Int32
+      getter metadata : String?
+
+      def initialize(
+        @id, @ledger_session_id, @number, @created_at, @updated_at,
+        @title, @content, @exchange_count, @char_count, @metadata,
+      )
+      end
+
+      def self.from_row(rs) : Snapshot
+        Snapshot.new(
+          id: rs.read(Int64),
+          ledger_session_id: rs.read(Int64),
+          number: rs.read(Int64).to_i,
+          created_at: rs.read(String),
+          updated_at: rs.read(String),
+          title: rs.read(String),
+          content: rs.read(String),
+          exchange_count: rs.read(Int64).to_i,
+          char_count: rs.read(Int64).to_i,
+          metadata: rs.read(String?),
         )
       end
     end

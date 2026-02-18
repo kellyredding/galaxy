@@ -96,6 +96,8 @@ module GalaxyLedger
         handle_update_session_metrics_command(rest)
       when "spend"
         handle_spend_command(rest)
+      when "snapshot"
+        handle_snapshot_command(rest)
       when "version"
         puts "galaxy-ledger #{VERSION}"
       when "help"
@@ -119,6 +121,7 @@ module GalaxyLedger
         list-files          List session file access records
         add                 Add an entry (learning, decision, direction, etc.)
         spend               Show token and cost usage over time
+        snapshot            Manage session snapshots
         config              Manage configuration
         install             Install hooks and skills into Claude Code
         uninstall           Remove hooks and skills from Claude Code
@@ -2372,6 +2375,407 @@ module GalaxyLedger
             "usd": 0.15
           }
         }
+      HELP
+    end
+
+    # ========================================
+    # Snapshot Commands
+    # ========================================
+
+    private def self.handle_snapshot_command(args : Array(String))
+      if args.empty? || args.first? == "-h" || args.first? == "--help"
+        show_snapshot_help
+        return
+      end
+
+      subcommand = args[0]
+      rest = args[1..]? || [] of String
+
+      case subcommand
+      when "save"
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_snapshot_save_help
+        else
+          snapshot_save(rest)
+        end
+      when "list"
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_snapshot_list_help
+        else
+          snapshot_list(rest)
+        end
+      when "view"
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_snapshot_view_help
+        else
+          snapshot_view(rest)
+        end
+      when "delete"
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_snapshot_delete_help
+        else
+          snapshot_delete(rest)
+        end
+      else
+        STDERR.puts "Error: Unknown snapshot command '#{subcommand}'"
+        STDERR.puts "Run 'galaxy-ledger snapshot --help' for usage"
+        exit(1)
+      end
+    end
+
+    private def self.snapshot_save(args : Array(String))
+      pid_str : String? = nil
+      title : String? = nil
+      exchange_count = 1
+
+      i = 0
+      while i < args.size
+        arg = args[i]
+        case arg
+        when "--pid"
+          if i + 1 < args.size
+            pid_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --pid requires a value"
+            exit(1)
+          end
+        when "--title"
+          if i + 1 < args.size
+            title = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --title requires a value"
+            exit(1)
+          end
+        when "--exchanges"
+          if i + 1 < args.size
+            exchange_count = args[i + 1].to_i? || 1
+            i += 2
+          else
+            STDERR.puts "Error: --exchanges requires a value"
+            exit(1)
+          end
+        else
+          STDERR.puts "Error: Unknown option '#{arg}'"
+          STDERR.puts "Run 'galaxy-ledger snapshot save --help' for usage"
+          exit(1)
+        end
+      end
+
+      unless pid_str
+        STDERR.puts "Error: --pid is required"
+        STDERR.puts "Run 'galaxy-ledger snapshot save --help' for usage"
+        exit(1)
+      end
+
+      unless title
+        STDERR.puts "Error: --title is required"
+        STDERR.puts "Run 'galaxy-ledger snapshot save --help' for usage"
+        exit(1)
+      end
+
+      ledger_session_id = resolve_pid_to_ledger_session_id(pid_str)
+
+      # Read content from stdin
+      content = STDIN.gets_to_end
+      if content.strip.empty?
+        STDERR.puts "Error: no content provided on stdin"
+        exit(1)
+      end
+
+      number = Database.save_snapshot(
+        ledger_session_id,
+        title,
+        content,
+        exchange_count: exchange_count,
+      )
+
+      if number > 0
+        puts "Snapshot ##{number} saved (title: \"#{title}\", chars: #{content.size})"
+      else
+        STDERR.puts "Error: failed to save snapshot"
+        exit(1)
+      end
+    end
+
+    private def self.snapshot_list(args : Array(String))
+      pid_str : String? = nil
+      session_id : String? = nil
+
+      i = 0
+      while i < args.size
+        arg = args[i]
+        case arg
+        when "--pid"
+          if i + 1 < args.size
+            pid_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --pid requires a value"
+            exit(1)
+          end
+        when "--session"
+          if i + 1 < args.size
+            session_id = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --session requires a value"
+            exit(1)
+          end
+        else
+          STDERR.puts "Error: Unknown option '#{arg}'"
+          STDERR.puts "Run 'galaxy-ledger snapshot list --help' for usage"
+          exit(1)
+        end
+      end
+
+      # Resolve to ledger_session_id
+      ledger_session_id : Int64? = nil
+      if ps = pid_str
+        ledger_session_id = resolve_pid_to_ledger_session_id(ps)
+      elsif sid = session_id
+        ledger_session_id = resolve_session_to_ledger_session_id(sid)
+      end
+
+      unless ledger_session_id
+        STDERR.puts "Error: --pid or --session is required"
+        STDERR.puts "Run 'galaxy-ledger snapshot list --help' for usage"
+        exit(1)
+      end
+
+      snapshots = Database.list_snapshots(ledger_session_id)
+
+      if snapshots.empty?
+        puts "No snapshots for this session."
+        return
+      end
+
+      puts "Snapshots for session (#{snapshots.size} total):"
+      puts ""
+
+      snapshots.each do |snap|
+        exchange_label = snap.exchange_count == 1 ? "exchange" : "exchanges"
+        chars_formatted = format_number(snap.char_count)
+        timestamp = format_snapshot_timestamp(snap.created_at)
+        puts "  ##{snap.number}  \"#{snap.title}\"  #{snap.exchange_count} #{exchange_label}  #{chars_formatted} chars  #{timestamp}"
+      end
+    end
+
+    private def self.snapshot_view(args : Array(String))
+      pid_str : String? = nil
+      number : Int32? = nil
+
+      i = 0
+      while i < args.size
+        arg = args[i]
+        case arg
+        when "--pid"
+          if i + 1 < args.size
+            pid_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --pid requires a value"
+            exit(1)
+          end
+        else
+          # Try as positional number
+          if n = arg.to_i?
+            number = n
+          else
+            STDERR.puts "Error: Unknown option '#{arg}'"
+            STDERR.puts "Run 'galaxy-ledger snapshot view --help' for usage"
+            exit(1)
+          end
+          i += 1
+        end
+      end
+
+      unless pid_str
+        STDERR.puts "Error: --pid is required"
+        STDERR.puts "Run 'galaxy-ledger snapshot view --help' for usage"
+        exit(1)
+      end
+
+      unless number
+        STDERR.puts "Error: snapshot number is required"
+        STDERR.puts "Run 'galaxy-ledger snapshot view --help' for usage"
+        exit(1)
+      end
+
+      ledger_session_id = resolve_pid_to_ledger_session_id(pid_str)
+      snapshot = Database.get_snapshot_by_number(ledger_session_id, number)
+
+      unless snapshot
+        STDERR.puts "Error: snapshot ##{number} not found"
+        exit(1)
+      end
+
+      puts snapshot.content
+    end
+
+    private def self.snapshot_delete(args : Array(String))
+      pid_str : String? = nil
+      number : Int32? = nil
+
+      i = 0
+      while i < args.size
+        arg = args[i]
+        case arg
+        when "--pid"
+          if i + 1 < args.size
+            pid_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --pid requires a value"
+            exit(1)
+          end
+        else
+          # Try as positional number
+          if n = arg.to_i?
+            number = n
+          else
+            STDERR.puts "Error: Unknown option '#{arg}'"
+            STDERR.puts "Run 'galaxy-ledger snapshot delete --help' for usage"
+            exit(1)
+          end
+          i += 1
+        end
+      end
+
+      unless pid_str
+        STDERR.puts "Error: --pid is required"
+        STDERR.puts "Run 'galaxy-ledger snapshot delete --help' for usage"
+        exit(1)
+      end
+
+      unless number
+        STDERR.puts "Error: snapshot number is required"
+        STDERR.puts "Run 'galaxy-ledger snapshot delete --help' for usage"
+        exit(1)
+      end
+
+      ledger_session_id = resolve_pid_to_ledger_session_id(pid_str)
+      result = Database.delete_snapshot_by_number(ledger_session_id, number)
+
+      if result
+        puts "Snapshot ##{number} deleted"
+      else
+        STDERR.puts "Error: snapshot ##{number} not found"
+        exit(1)
+      end
+    end
+
+    # Format a number with commas (e.g., 3241 -> "3,241")
+    private def self.format_number(n : Int32) : String
+      n.to_s.reverse.gsub(/(\d{3})(?=\d)/, "\\1,").reverse
+    end
+
+    # Format a UTC timestamp from SQLite to local time in American style.
+    # Input: "2026-02-17 22:32:00" (UTC from SQLite datetime('now'))
+    # Output: "02/17/2026 2:32 PM"
+    private def self.format_snapshot_timestamp(utc_str : String) : String
+      begin
+        utc_time = Time.parse_utc(utc_str, "%Y-%m-%d %H:%M:%S")
+        local_time = utc_time.to_local
+        hour = local_time.hour % 12
+        hour = 12 if hour == 0
+        ampm = local_time.hour >= 12 ? "PM" : "AM"
+        "#{local_time.to_s("%m/%d/%Y")} #{hour}:#{local_time.to_s("%M")} #{ampm}"
+      rescue
+        utc_str # Fallback to raw string
+      end
+    end
+
+    private def self.show_snapshot_help
+      puts <<-HELP
+      galaxy-ledger snapshot - Manage session snapshots
+
+      USAGE:
+        galaxy-ledger snapshot <command> [options]
+
+      COMMANDS:
+        save     Save a snapshot from stdin
+        list     List snapshots for a session
+        view     View a snapshot's content
+        delete   Delete a snapshot
+
+      Run 'galaxy-ledger snapshot <command> --help' for detailed usage.
+      HELP
+    end
+
+    private def self.show_snapshot_save_help
+      puts <<-HELP
+      galaxy-ledger snapshot save - Save a snapshot
+
+      USAGE:
+        galaxy-ledger snapshot save --pid PID --title TITLE [--exchanges N] < content
+
+      REQUIRED:
+        --pid PID           Claude Code process ID
+        --title TITLE       Descriptive title for the snapshot
+
+      OPTIONS:
+        --exchanges N       Number of exchanges captured (default: 1)
+
+      DESCRIPTION:
+        Reads markdown content from stdin and saves it as a session snapshot.
+        Snapshots preserve verbatim user/assistant exchanges for restoration
+        on context handoff (/clear, /compact).
+
+      EXAMPLES:
+        echo "## Exchange 1..." | galaxy-ledger snapshot save --pid 12345 --title "Design discussion"
+        galaxy-ledger snapshot save --pid 12345 --title "Style correction" --exchanges 2 < content.md
+      HELP
+    end
+
+    private def self.show_snapshot_list_help
+      puts <<-HELP
+      galaxy-ledger snapshot list - List session snapshots
+
+      USAGE:
+        galaxy-ledger snapshot list --pid PID
+        galaxy-ledger snapshot list --session SESSION_ID
+
+      REQUIRED (one of):
+        --pid PID           Claude Code process ID
+        --session ID        Session identifier
+
+      DESCRIPTION:
+        Lists all snapshots for the specified session with number, title,
+        exchange count, character count, and timestamp.
+      HELP
+    end
+
+    private def self.show_snapshot_view_help
+      puts <<-HELP
+      galaxy-ledger snapshot view - View a snapshot
+
+      USAGE:
+        galaxy-ledger snapshot view --pid PID NUMBER
+
+      REQUIRED:
+        --pid PID           Claude Code process ID
+        NUMBER              Snapshot number (session-scoped)
+
+      DESCRIPTION:
+        Outputs the full markdown content of a snapshot to stdout.
+      HELP
+    end
+
+    private def self.show_snapshot_delete_help
+      puts <<-HELP
+      galaxy-ledger snapshot delete - Delete a snapshot
+
+      USAGE:
+        galaxy-ledger snapshot delete --pid PID NUMBER
+
+      REQUIRED:
+        --pid PID           Claude Code process ID
+        NUMBER              Snapshot number (session-scoped)
+
+      DESCRIPTION:
+        Permanently deletes a snapshot from the session.
       HELP
     end
 
