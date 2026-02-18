@@ -66,6 +66,19 @@ module GalaxyLedger
               Database.register_session_identifier(ledger_session_id, env_id)
             end
           end
+
+          # Automatic database backup on fresh session start only.
+          # Resumes reuse the existing session — no backup needed.
+          begin
+            config = Config.load
+            if config.backups.enabled
+              backup_dir = config.effective_backup_path
+              Database.backup(backup_dir, ledger_session_id)
+              Database.prune_backups(backup_dir, config.backups.retention_days)
+            end
+          rescue ex
+            STDERR.puts "[galaxy-ledger] Backup error: #{ex.message}"
+          end
         end
 
         # Query existing session data (will be empty for fresh session)

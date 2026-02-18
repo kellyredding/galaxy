@@ -98,6 +98,8 @@ module GalaxyLedger
         handle_spend_command(rest)
       when "snapshot"
         handle_snapshot_command(rest)
+      when "backup"
+        handle_backup_command(rest)
       when "version"
         puts "galaxy-ledger #{VERSION}"
       when "help"
@@ -122,6 +124,7 @@ module GalaxyLedger
         add                 Add an entry (learning, decision, direction, etc.)
         spend               Show token and cost usage over time
         snapshot            Manage session snapshots
+        backup              Manage database backups
         config              Manage configuration
         install             Install hooks and skills into Claude Code
         uninstall           Remove hooks and skills from Claude Code
@@ -2948,6 +2951,194 @@ module GalaxyLedger
       TYPES:
         guideline           Extract coding guidelines and rules
         implementation_plan Extract project context and progress
+      HELP
+    end
+
+    # ================================================================
+    # Backup Command
+    # ================================================================
+
+    private def self.handle_backup_command(args : Array(String))
+      if args.includes?("-h") || args.includes?("--help")
+        show_backup_help
+        return
+      end
+
+      list_mode = false
+      prune_only = false
+      session_id = 0_i64
+
+      i = 0
+      while i < args.size
+        case args[i]
+        when "--list"
+          list_mode = true
+        when "--prune-only"
+          prune_only = true
+        when "--session-id"
+          if i + 1 < args.size
+            session_id = args[i + 1].to_i64? || 0_i64
+            i += 1
+          end
+        end
+        i += 1
+      end
+
+      config = Config.load
+
+      if list_mode
+        backup_list(config)
+      elsif prune_only
+        backup_prune_only(config)
+      else
+        backup_create_and_prune(config, session_id)
+      end
+    end
+
+    private def self.backup_list(config : Config)
+      backup_dir = config.effective_backup_path
+
+      unless Dir.exists?(backup_dir)
+        puts "No backups found."
+        puts "Backup directory: #{Hooks::Helpers.shorten_home_path(backup_dir.to_s)}"
+        return
+      end
+
+      # Collect date directories, sorted descending
+      date_dirs = [] of String
+      Dir.each_child(backup_dir) do |entry|
+        entry_path = backup_dir / entry
+        next unless File.directory?(entry_path)
+        # Only include date-named directories
+        begin
+          Time.parse(entry, "%Y-%m-%d", Time::Location.local)
+          date_dirs << entry
+        rescue Time::Format::Error
+          # Skip non-date directories
+        end
+      end
+
+      if date_dirs.empty?
+        puts "No backups found."
+        puts "Backup directory: #{Hooks::Helpers.shorten_home_path(backup_dir.to_s)}"
+        return
+      end
+
+      date_dirs.sort!.reverse!
+
+      puts "Backups in #{Hooks::Helpers.shorten_home_path(backup_dir.to_s)} (retention: #{config.backups.retention_days} days)"
+      puts ""
+
+      total_count = 0
+      total_bytes = 0_i64
+
+      date_dirs.each do |date_dir|
+        dir_path = backup_dir / date_dir
+        files = [] of {name: String, size: Int64, time: Time}
+
+        Dir.each_child(dir_path) do |file|
+          file_path = dir_path / file
+          next unless File.file?(file_path) && file.ends_with?(".db")
+          info = File.info(file_path)
+          files << {name: file, size: info.size, time: info.modification_time}
+        end
+
+        next if files.empty?
+        files.sort_by! { |f| f[:time] }.reverse!
+
+        dir_size = files.sum(&.[:size])
+        puts "  #{date_dir}/ (#{files.size} #{files.size == 1 ? "backup" : "backups"}, #{format_size(dir_size)})"
+
+        files.each do |f|
+          time_str = f[:time].to_s("%l:%M %p").strip
+          puts "    %-25s %8s   %s" % [f[:name], format_size(f[:size]), time_str]
+        end
+        puts ""
+
+        total_count += files.size
+        total_bytes += dir_size
+      end
+
+      puts "  Total: #{total_count} #{total_count == 1 ? "backup" : "backups"}, #{format_size(total_bytes)}"
+    end
+
+    private def self.backup_create_and_prune(config : Config, session_id : Int64)
+      unless config.backups.enabled
+        puts "Backups are disabled. Enable with: galaxy-ledger config set backups.enabled true"
+        return
+      end
+
+      backup_dir = config.effective_backup_path
+
+      result = Database.backup(backup_dir, session_id)
+      if result
+        size = File.size(result)
+        puts "Backup created: #{Hooks::Helpers.shorten_home_path(result.to_s)} (#{format_size(size)})"
+      else
+        STDERR.puts "Backup failed."
+      end
+
+      pruned = Database.prune_backups(backup_dir, config.backups.retention_days)
+      if pruned > 0
+        puts "Pruned #{pruned} old backup #{pruned == 1 ? "directory" : "directories"}."
+      end
+    end
+
+    private def self.backup_prune_only(config : Config)
+      backup_dir = config.effective_backup_path
+      pruned = Database.prune_backups(backup_dir, config.backups.retention_days)
+      if pruned > 0
+        puts "Pruned #{pruned} old backup #{pruned == 1 ? "directory" : "directories"}."
+      else
+        puts "No backups to prune."
+      end
+    end
+
+    private def self.format_size(bytes : Int64) : String
+      if bytes < 1024
+        "#{bytes} B"
+      elsif bytes < 1024 * 1024
+        "%.1f KB" % (bytes / 1024.0)
+      else
+        "%.1f MB" % (bytes / (1024.0 * 1024.0))
+      end
+    end
+
+    private def self.show_backup_help
+      puts <<-HELP
+      galaxy-ledger backup - Manage database backups
+
+      USAGE:
+        galaxy-ledger backup                        Create a backup and prune old ones
+        galaxy-ledger backup --list                 List all backups
+        galaxy-ledger backup --prune-only           Prune old backups without creating new one
+
+      OPTIONS:
+        --session-id ID   Session record ID for backup filename (default: 0)
+        --list            List all existing backups
+        --prune-only      Only prune old backups, don't create a new one
+        -h, --help        Show this help
+
+      CONFIGURATION:
+        backups.enabled          Enable/disable automatic backups (default: true)
+        backups.retention_days   Days of backups to keep (default: 3)
+        backups.path             Custom backup directory (default: ~/.claude/galaxy/data/backups)
+
+      DESCRIPTION:
+        Creates point-in-time database backups using SQLite VACUUM INTO.
+        Backups are organized in date directories with session IDs in
+        filenames. Old backups are automatically pruned based on the
+        configured retention period.
+
+        Backups run automatically on every session start via the startup
+        hook. This command provides manual control for on-demand backups,
+        listing, and pruning.
+
+      EXAMPLES:
+        galaxy-ledger backup                   # Create backup + prune
+        galaxy-ledger backup --list            # See all backups
+        galaxy-ledger backup --prune-only      # Clean up old backups
+        galaxy-ledger config set backups.retention_days 7
       HELP
     end
   end

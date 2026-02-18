@@ -135,6 +135,17 @@ module GalaxyLedger
         end
         JSON::Any.new(obj)
       },
+      "0.3.1" => Proc(JSON::Any, JSON::Any).new { |config_json|
+        obj = config_json.as_h.dup
+        unless obj.has_key?("backups")
+          obj["backups"] = JSON::Any.new({
+            "enabled"        => JSON::Any.new(true),
+            "retention_days" => JSON::Any.new(3_i64),
+            "path"           => JSON::Any.new(""),
+          })
+        end
+        JSON::Any.new(obj)
+      },
     }
 
     # ==========================================================================

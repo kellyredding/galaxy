@@ -23,6 +23,9 @@ describe GalaxyLedger::Config do
       config.snapshots.inline_char_cap.should eq(15000)
       config.snapshots.max_per_session.should eq(10)
       config.snapshots.editor.should eq("")
+      config.backups.enabled.should eq(true)
+      config.backups.retention_days.should eq(3)
+      config.backups.path.should eq("")
     end
   end
 
@@ -160,11 +163,54 @@ describe GalaxyLedger::Config do
       end
     end
 
+    it "sets and gets backups values" do
+      config = GalaxyLedger::Config.default
+      config.get("backups.enabled").should eq("true")
+      config.get("backups.retention_days").should eq("3")
+      config.get("backups.path").should eq("")
+
+      config.set("backups.enabled", "false")
+      config.get("backups.enabled").should eq("false")
+
+      config.set("backups.retention_days", "7")
+      config.get("backups.retention_days").should eq("7")
+
+      config.set("backups.path", "/custom/backup/path")
+      config.get("backups.path").should eq("/custom/backup/path")
+    end
+
+    it "validates backups.retention_days must be >= 1" do
+      config = GalaxyLedger::Config.default
+      expect_raises(Exception, />= 1/) do
+        config.set("backups.retention_days", "0")
+      end
+    end
+
+    it "validates backups.retention_days must be integer" do
+      config = GalaxyLedger::Config.default
+      expect_raises(Exception, /must be integer/) do
+        config.set("backups.retention_days", "abc")
+      end
+    end
+
     it "raises for unknown keys" do
       config = GalaxyLedger::Config.default
       expect_raises(Exception, /Unknown setting/) do
         config.set("nonexistent", "value")
       end
+    end
+  end
+
+  describe "#effective_backup_path" do
+    it "returns default when path is empty" do
+      config = GalaxyLedger::Config.default
+      config.effective_backup_path.should eq(GalaxyLedger::DATA_DIR / "backups")
+    end
+
+    it "returns custom path when set" do
+      config = GalaxyLedger::Config.default
+      config.set("backups.path", "/custom/backup/path")
+      config.effective_backup_path.should eq(Path.new("/custom/backup/path"))
     end
   end
 
@@ -176,6 +222,41 @@ describe GalaxyLedger::Config do
       # Should be valid JSON that can be parsed back
       parsed = GalaxyLedger::Config.from_json(json)
       parsed.thresholds.warning.should eq(70)
+    end
+  end
+
+  describe "config migration for backups" do
+    it "migrates config missing backups section" do
+      # Write a v0.3.0 config without the backups section
+      Dir.mkdir_p(GalaxyLedger::CONFIG_DIR)
+      File.write(GalaxyLedger::CONFIG_FILE, {
+        "_schema_version" => "0.3.0",
+        "version"         => "0.3.0",
+        "thresholds"      => {"warning" => 70, "critical" => 85},
+        "warnings"        => {"at_warning_threshold" => true, "at_critical_threshold" => true},
+        "extraction"      => {"on_stop" => true, "on_guideline_read" => true},
+        "storage"         => {
+          "postgres_enabled"       => false,
+          "postgres_host_port"     => 5433,
+          "embeddings_enabled"     => false,
+          "openai_api_key_env_var" => "GALAXY_OPENAI_API_KEY",
+        },
+        "restoration" => {
+          "max_essential_tokens" => 2000,
+          "tier1_limits"         => {"high_importance_decisions" => 10},
+          "tier2_limits"         => {"learnings" => 5, "medium_importance_decisions" => 5},
+        },
+        "snapshots" => {
+          "inline_char_cap" => 15000,
+          "max_per_session" => 10,
+          "editor"          => "",
+        },
+      }.to_json)
+
+      config = GalaxyLedger::Config.load
+      config.backups.enabled.should eq(true)
+      config.backups.retention_days.should eq(3)
+      config.backups.path.should eq("")
     end
   end
 end

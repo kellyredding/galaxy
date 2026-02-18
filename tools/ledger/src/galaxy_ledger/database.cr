@@ -1,6 +1,7 @@
 require "db"
 require "sqlite3"
 require "digest/sha256"
+require "file_utils"
 require "json"
 
 module GalaxyLedger
@@ -2001,6 +2002,77 @@ module GalaxyLedger
       rescue
         {count: 0, total_chars: 0_i64}
       end
+    end
+
+    # ============================================================
+    # Backup Operations
+    # ============================================================
+
+    # Create a point-in-time backup of the database using VACUUM INTO.
+    # Returns the backup file path on success, nil on failure.
+    #
+    # Layout: backup_dir/YYYY-MM-DD/ledger_SESSION_ID.db
+    #
+    # VACUUM INTO acquires only a shared read lock (same as SELECT),
+    # so it is safe to run while other processes write to the database.
+    # The backup is a clean, compacted, standalone .db file with no
+    # WAL or SHM sidecars.
+    def self.backup(
+      backup_dir : Path,
+      session_id : Int64,
+    ) : Path?
+      today = Time.local.to_s("%Y-%m-%d")
+      date_dir = backup_dir / today
+      Dir.mkdir_p(date_dir) unless Dir.exists?(date_dir)
+
+      backup_file = date_dir / "ledger_#{session_id}.db"
+
+      # Skip if backup already exists (idempotent — same session starting twice)
+      return backup_file if File.exists?(backup_file)
+
+      open do |db|
+        db.exec("VACUUM INTO '#{backup_file}'")
+      end
+
+      backup_file
+    rescue ex
+      STDERR.puts "[galaxy-ledger] Backup failed: #{ex.message}"
+      nil
+    end
+
+    # Remove backup directories older than retention_days.
+    # Returns the number of directories pruned.
+    #
+    # Only deletes directories whose names parse as dates. Non-date entries
+    # in the backup directory are ignored.
+    def self.prune_backups(
+      backup_dir : Path,
+      retention_days : Int32,
+    ) : Int32
+      return 0 unless Dir.exists?(backup_dir)
+
+      cutoff = Time.local - retention_days.days
+      pruned = 0
+
+      Dir.each_child(backup_dir) do |entry|
+        entry_path = backup_dir / entry
+        next unless File.directory?(entry_path)
+
+        begin
+          dir_date = Time.parse(entry, "%Y-%m-%d", Time::Location.local)
+          if dir_date < cutoff
+            FileUtils.rm_rf(entry_path)
+            pruned += 1
+          end
+        rescue Time::Format::Error
+          # Not a date-named directory — skip
+        end
+      end
+
+      pruned
+    rescue ex
+      STDERR.puts "[galaxy-ledger] Prune failed: #{ex.message}"
+      0
     end
 
     # ============================================================

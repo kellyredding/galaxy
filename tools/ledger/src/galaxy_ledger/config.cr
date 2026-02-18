@@ -17,6 +17,7 @@ module GalaxyLedger
     property storage : Storage
     property restoration : Restoration
     property snapshots : Snapshots = Snapshots.new
+    property backups : Backups = Backups.new
 
     class Thresholds
       include JSON::Serializable
@@ -148,6 +149,24 @@ module GalaxyLedger
       end
     end
 
+    class Backups
+      include JSON::Serializable
+
+      property enabled : Bool
+
+      @[JSON::Field(key: "retention_days")]
+      property retention_days : Int32
+
+      property path : String
+
+      def initialize(
+        @enabled = true,
+        @retention_days = 3,
+        @path = "",
+      )
+      end
+    end
+
     def initialize(
       @schema_version = VERSION,
       @version = VERSION,
@@ -157,11 +176,22 @@ module GalaxyLedger
       @storage = Storage.new,
       @restoration = Restoration.new,
       @snapshots = Snapshots.new,
+      @backups = Backups.new,
     )
     end
 
     def self.default : Config
       Config.new
+    end
+
+    # Resolve the effective backup directory path.
+    # Uses the configured path if set, otherwise defaults to DATA_DIR/backups.
+    def effective_backup_path : Path
+      if backups.path.empty?
+        GalaxyLedger::DATA_DIR / "backups"
+      else
+        Path.new(backups.path)
+      end
     end
 
     def self.load : Config
@@ -226,6 +256,8 @@ module GalaxyLedger
         set_restoration(parts[1]?, parts[2]?, value)
       when "snapshots"
         set_snapshots(parts[1]?, value)
+      when "backups"
+        set_backups(parts[1]?, value)
       else
         raise "Unknown setting: #{key}"
       end
@@ -249,6 +281,8 @@ module GalaxyLedger
         get_restoration(parts[1]?, parts[2]?)
       when "snapshots"
         get_snapshots(parts[1]?)
+      when "backups"
+        get_backups(parts[1]?)
       else
         raise "Unknown setting: #{key}"
       end
@@ -474,6 +508,35 @@ module GalaxyLedger
       when "editor"          then snapshots.editor
       else
         raise "Unknown snapshots field: snapshots.#{field}"
+      end
+    end
+
+    private def set_backups(field : String?, value : String)
+      raise "Missing backups field (e.g., backups.enabled)" unless field
+
+      case field
+      when "enabled"
+        backups.enabled = parse_bool(value)
+      when "retention_days"
+        int_value = value.to_i? || raise "Invalid value: #{value} (must be integer)"
+        raise "Value must be >= 1" if int_value < 1
+        backups.retention_days = int_value
+      when "path"
+        backups.path = value
+      else
+        raise "Unknown backups field: backups.#{field}"
+      end
+    end
+
+    private def get_backups(field : String?) : String
+      raise "Missing backups field (e.g., backups.enabled)" unless field
+
+      case field
+      when "enabled"        then backups.enabled.to_s
+      when "retention_days" then backups.retention_days.to_s
+      when "path"           then backups.path
+      else
+        raise "Unknown backups field: backups.#{field}"
       end
     end
 

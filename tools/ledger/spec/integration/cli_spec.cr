@@ -1440,4 +1440,119 @@ describe "CLI Integration" do
       end
     end
   end
+
+  describe "backup subcommand" do
+    # Use the test data dir for backup isolation
+    backup_dir = SPEC_DATA_DIR / "backups"
+
+    before_each do
+      FileUtils.rm_rf(backup_dir) if Dir.exists?(backup_dir)
+      # Ensure backups config points to the test backup dir
+      Dir.mkdir_p(SPEC_CONFIG_DIR)
+      config_data = {
+        "extraction" => {
+          "on_stop"           => false,
+          "on_guideline_read" => false,
+        },
+        "backups" => {
+          "enabled"        => true,
+          "retention_days" => 3,
+          "path"           => backup_dir.to_s,
+        },
+      }
+      File.write(SPEC_CONFIG_DIR / "config.json", config_data.to_json)
+    end
+
+    it "shows help with --help" do
+      result = run_binary(["backup", "--help"])
+      result[:status].should eq(0)
+      result[:output].should contain("galaxy-ledger backup")
+      result[:output].should contain("--list")
+      result[:output].should contain("--prune-only")
+      result[:output].should contain("--session-id")
+    end
+
+    it "creates a backup file" do
+      result = run_binary(["backup"])
+      result[:status].should eq(0)
+      result[:output].should contain("Backup created")
+
+      # Verify backup file exists in today's directory
+      today = Time.local.to_s("%Y-%m-%d")
+      today_dir = backup_dir / today
+      Dir.exists?(today_dir).should be_true
+
+      # Should have at least one .db file
+      db_files = Dir.children(today_dir).select(&.ends_with?(".db"))
+      db_files.size.should be >= 1
+    end
+
+    it "uses provided session ID in filename" do
+      result = run_binary(["backup", "--session-id", "42"])
+      result[:status].should eq(0)
+
+      today = Time.local.to_s("%Y-%m-%d")
+      File.exists?(backup_dir / today / "ledger_42.db").should be_true
+    end
+
+    it "lists backups" do
+      # Create a backup first
+      run_binary(["backup", "--session-id", "99"])
+
+      result = run_binary(["backup", "--list"])
+      result[:status].should eq(0)
+      result[:output].should contain("Backups in")
+      result[:output].should contain("ledger_99.db")
+      result[:output].should contain("Total:")
+    end
+
+    it "shows empty state when no backups exist" do
+      result = run_binary(["backup", "--list"])
+      result[:status].should eq(0)
+      result[:output].should contain("No backups found")
+    end
+
+    it "prunes without creating a backup" do
+      result = run_binary(["backup", "--prune-only"])
+      result[:status].should eq(0)
+      result[:output].should contain("No backups to prune")
+    end
+
+    it "reports disabled state" do
+      Dir.mkdir_p(SPEC_CONFIG_DIR)
+      config_data = {
+        "_schema_version" => GalaxyLedger::VERSION,
+        "version"         => GalaxyLedger::VERSION,
+        "thresholds"      => {"warning" => 70, "critical" => 85},
+        "warnings"        => {"at_warning_threshold" => true, "at_critical_threshold" => true},
+        "extraction"      => {"on_stop" => false, "on_guideline_read" => false},
+        "storage"         => {
+          "postgres_enabled"       => false,
+          "postgres_host_port"     => 5433,
+          "embeddings_enabled"     => false,
+          "openai_api_key_env_var" => "GALAXY_OPENAI_API_KEY",
+        },
+        "restoration" => {
+          "max_essential_tokens" => 2000,
+          "tier1_limits"         => {"high_importance_decisions" => 10},
+          "tier2_limits"         => {"learnings" => 5, "medium_importance_decisions" => 5},
+        },
+        "snapshots" => {
+          "inline_char_cap" => 15000,
+          "max_per_session" => 10,
+          "editor"          => "",
+        },
+        "backups" => {
+          "enabled"        => false,
+          "retention_days" => 3,
+          "path"           => backup_dir.to_s,
+        },
+      }
+      File.write(SPEC_CONFIG_DIR / "config.json", config_data.to_json)
+
+      result = run_binary(["backup"])
+      result[:status].should eq(0)
+      result[:output].should contain("disabled")
+    end
+  end
 end

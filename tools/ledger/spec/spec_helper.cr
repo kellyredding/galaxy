@@ -27,12 +27,15 @@ Dir.mkdir_p(SPEC_DATA_DIR)
 
 # Disable extraction in test config to prevent real Claude CLI calls.
 # Extraction logic is covered by stubbed pipeline specs and eval specs.
-File.write(SPEC_CONFIG_DIR / "config.json", {
+# This is also used by Spec.before_each to reset config between tests,
+# preventing config file leakage from tests that write custom configs.
+SPEC_DEFAULT_CONFIG = {
   "extraction" => {
     "on_stop"           => false,
     "on_guideline_read" => false,
   },
-}.to_json)
+}.to_json
+File.write(SPEC_CONFIG_DIR / "config.json", SPEC_DEFAULT_CONFIG)
 
 # Skip CLI auto-run when loading module for specs
 ENV["GALAXY_LEDGER_SKIP_CLI"] = "1"
@@ -135,6 +138,11 @@ Spec.before_each do
   rescue
     # DB may not exist yet or table may not exist for early specs
   end
+
+  # Reset config file to defaults. Tests that write custom configs
+  # (e.g., backup integration, config migration) can leak state to
+  # later tests that depend on Config.load behavior.
+  File.write(SPEC_CONFIG_DIR / "config.json", SPEC_DEFAULT_CONFIG)
 end
 
 # Clean up entire test directory after all specs (includes sessions, config, data, etc.)
