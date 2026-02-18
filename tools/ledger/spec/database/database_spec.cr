@@ -1564,6 +1564,47 @@ describe GalaxyLedger::Database do
     end
   end
 
+  describe ".update_session_title" do
+    it "writes title to DB when provided" do
+      ledger_session_id = GalaxyLedger::Database.create_session("sess-title-write")
+
+      result = GalaxyLedger::Database.update_session_title(ledger_session_id, "Checkout Upsells Theming")
+      result.should be_true
+
+      session = GalaxyLedger::Database.get_session("sess-title-write")
+      session.should_not be_nil
+      session.not_nil!.title.should eq("Checkout Upsells Theming")
+    end
+
+    it "overwrites existing title with new value" do
+      ledger_session_id = GalaxyLedger::Database.create_session("sess-title-overwrite")
+
+      GalaxyLedger::Database.update_session_title(ledger_session_id, "Original Title")
+      GalaxyLedger::Database.update_session_title(ledger_session_id, "Updated Title")
+
+      session = GalaxyLedger::Database.get_session("sess-title-overwrite")
+      session.should_not be_nil
+      session.not_nil!.title.should eq("Updated Title")
+    end
+
+    it "returns false for nil title" do
+      ledger_session_id = GalaxyLedger::Database.create_session("sess-title-nil")
+
+      result = GalaxyLedger::Database.update_session_title(ledger_session_id, nil)
+      result.should be_false
+    end
+
+    it "returns false for invalid session ID (0)" do
+      result = GalaxyLedger::Database.update_session_title(0_i64, "Some Title")
+      result.should be_false
+    end
+
+    it "returns false for negative session ID" do
+      result = GalaxyLedger::Database.update_session_title(-1_i64, "Some Title")
+      result.should be_false
+    end
+  end
+
   describe ".merge_session_context" do
     it "adds a key to the session context JSON" do
       ledger_session_id = GalaxyLedger::Database.create_session("sess-ctx-1")
@@ -1734,6 +1775,7 @@ describe GalaxyLedger::Database do
       session.should_not be_nil
       session.not_nil!.current_session_identifier.should eq("sess-get-1")
       session.not_nil!.cwd.should eq("/home/user/proj1")
+      session.not_nil!.title.should be_nil
     end
 
     it "returns nil when session does not exist" do

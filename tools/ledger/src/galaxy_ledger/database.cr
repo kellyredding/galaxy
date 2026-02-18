@@ -96,6 +96,7 @@ module GalaxyLedger
         db.exec(<<-SQL)
           CREATE TABLE IF NOT EXISTS ledger_sessions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT,
             current_session_identifier TEXT,
             current_claude_pid INTEGER,
             started_at TEXT DEFAULT (datetime('now')),
@@ -528,7 +529,10 @@ module GalaxyLedger
     end
 
     # Update session metrics from a ContextStatus payload (received via stdin from statusline)
-    def self.update_session_metrics(ledger_session_id : Int64, status : ContextStatus) : Bool
+    def self.update_session_metrics(
+      ledger_session_id : Int64,
+      status : ContextStatus,
+    ) : Bool
       return false if ledger_session_id <= 0
 
       begin
@@ -567,6 +571,26 @@ module GalaxyLedger
             status.cost_usd,
             status.lines_added,
             status.lines_removed,
+            ledger_session_id,
+          )
+          true
+        end
+      rescue
+        false
+      end
+    end
+
+    # Update the title for a session. Direct write (not COALESCE) because
+    # extraction should always reflect the latest session topic.
+    def self.update_session_title(ledger_session_id : Int64, title : String?) : Bool
+      return false if ledger_session_id <= 0
+      return false unless title
+
+      begin
+        open do |db|
+          db.exec(
+            "UPDATE ledger_sessions SET title = ?, updated_at = datetime('now') WHERE id = ?",
+            title,
             ledger_session_id,
           )
           true
@@ -648,7 +672,7 @@ module GalaxyLedger
         open do |db|
           db.query_one?(
             <<-SQL,
-              SELECT id, current_session_identifier, current_claude_pid, started_at, updated_at, cwd, project_dir,
+              SELECT id, title, current_session_identifier, current_claude_pid, started_at, updated_at, cwd, project_dir,
                      git_branch, model_id, model_display_name, claude_version,
                      context_percentage, tokens_used, tokens_max, cost_usd,
                      cumulative_tokens_used, cumulative_cost_usd,
@@ -683,7 +707,7 @@ module GalaxyLedger
         open do |db|
           db.query(
             <<-SQL,
-              SELECT id, current_session_identifier, current_claude_pid, started_at, updated_at, cwd, project_dir,
+              SELECT id, title, current_session_identifier, current_claude_pid, started_at, updated_at, cwd, project_dir,
                      git_branch, model_id, model_display_name, claude_version,
                      context_percentage, tokens_used, tokens_max, cost_usd,
                      cumulative_tokens_used, cumulative_cost_usd,
@@ -1519,6 +1543,7 @@ module GalaxyLedger
     # A session record from the database
     struct SessionRecord
       getter id : Int64
+      getter title : String?
       getter current_session_identifier : String?
       getter current_claude_pid : Int64?
       getter started_at : String?
@@ -1541,7 +1566,7 @@ module GalaxyLedger
       getter last_interaction : String?
 
       def initialize(
-        @id, @current_session_identifier, @current_claude_pid, @started_at, @updated_at,
+        @id, @title, @current_session_identifier, @current_claude_pid, @started_at, @updated_at,
         @cwd, @project_dir, @git_branch,
         @model_id, @model_display_name, @claude_version,
         @context_percentage, @tokens_used, @tokens_max, @cost_usd,
@@ -1553,6 +1578,7 @@ module GalaxyLedger
       def self.from_row(rs) : SessionRecord
         SessionRecord.new(
           id: rs.read(Int64),
+          title: rs.read(String?),
           current_session_identifier: rs.read(String?),
           current_claude_pid: rs.read(Int64?),
           started_at: rs.read(String?),

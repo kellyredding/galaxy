@@ -45,10 +45,9 @@ module GalaxyLedger
         current_sid = session_record.try(&.current_session_identifier) || @stdin_session_identifier
         return unless current_sid
 
-        # Capture last exchange from transcript
-        exchange_captured = capture_last_exchange(ledger_session_id)
-
-        # Spawn async extraction process for learnings/decisions/summary
+        # Spawn async extraction process for exchange capture + learnings/decisions/summary.
+        # Exchange capture is done in the subprocess with exponential backoff because
+        # Claude Code writes the assistant response to the transcript AFTER the stop hook fires.
         extraction_spawned = spawn_extraction_async(ledger_session_id, current_sid)
 
         # Re-extract any guideline/implementation plan files that were
@@ -62,7 +61,6 @@ module GalaxyLedger
         # Build and output structured JSON system message
         system_message = build_system_message(
           percentage: session_record.context_percentage,
-          exchange_captured: exchange_captured,
           extraction_spawned: extraction_spawned,
           re_extracted_files: re_extracted_files,
         )
@@ -88,26 +86,6 @@ module GalaxyLedger
         rescue
           # Silently ignore parse errors
         end
-      end
-
-      private def capture_last_exchange(ledger_session_id : Int64) : Bool
-        transcript_path = @transcript_path
-        return false unless transcript_path
-
-        # Parse transcript
-        entries = Transcript.parse(transcript_path)
-        return false if entries.empty?
-
-        # Extract last exchange
-        extracted = Transcript.extract_last_exchange(entries)
-        return false unless extracted
-
-        # Convert to LastExchange format and write to DB
-        last_exchange = Transcript.to_last_exchange(extracted)
-        Database.update_session_last_interaction(ledger_session_id, last_exchange.to_pretty_json)
-        true
-      rescue
-        false
       end
 
       # Build the context indicator when above warning thresholds.
@@ -157,14 +135,12 @@ module GalaxyLedger
       # Format: {context_indicator} │ {activity parts...}
       private def build_system_message(
         percentage : Float64,
-        exchange_captured : Bool,
         extraction_spawned : Bool,
         re_extracted_files : Array(String),
       ) : String
         parts = [] of String
         indicator = build_context_indicator(percentage)
         parts << indicator if indicator
-        parts << "Exchange captured" if exchange_captured
         parts << "Extraction spawned" if extraction_spawned
 
         if re_extracted_files.any?
@@ -191,41 +167,16 @@ module GalaxyLedger
         config = Config.load
         return false unless config.extraction.on_stop
 
-        # Read the last exchange from the DB session record
-        session_record = Database.get_session_by_id(ledger_session_id)
-        return false unless session_record
-
-        json_str = session_record.last_interaction
-        return false unless json_str
-
-        last_exchange = begin
-          Exchange::LastExchange.from_json(json_str)
-        rescue
-          return false
-        end
-
-        user_message = last_exchange.user_message
-        assistant_content = last_exchange.full_content
-
-        return false if user_message.strip.empty? || assistant_content.strip.empty?
-
-        # Spawn async extraction process
-        # NOTE: extraction subprocesses use --session (not --pid) because their
-        # PPID is the hook process, not Claude Code.
+        # Spawn async extraction process with transcript path.
+        # The subprocess handles exchange capture (with exponential backoff)
+        # and extraction. This avoids the transcript timing bug where the
+        # assistant response hasn't been flushed yet when the stop hook fires.
         begin
           binary = Process.executable_path || "galaxy-ledger"
 
-          # Pass the content via a temp file to avoid stdin issues with large content
-          temp_file = File.tempfile("extraction", ".json")
-          temp_file.puts({
-            "user_message"      => user_message,
-            "assistant_content" => assistant_content,
-          }.to_json)
-          temp_file.close
-
           Process.new(
             binary,
-            args: ["extract-assistant", "--session", current_sid, "--input-file", temp_file.path],
+            args: ["extract-assistant", "--session", current_sid, "--transcript-path", transcript_path],
             input: Process::Redirect::Close,
             output: Process::Redirect::Close,
             error: Process::Redirect::Close,

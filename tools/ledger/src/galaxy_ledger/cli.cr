@@ -1597,6 +1597,11 @@ module GalaxyLedger
       HELP
     end
 
+    # Exponential backoff delays (in seconds) for transcript reading.
+    # Attempt 1: immediate, then 0.25s, 0.5s, 1.0s, 2.0s
+    # Total worst case: ~3.75 seconds
+    TRANSCRIPT_BACKOFF_DELAYS = [0.0, 0.25, 0.5, 1.0, 2.0]
+
     private def self.handle_extract_assistant_command(args : Array(String))
       if args.first? == "-h" || args.first? == "--help"
         show_extract_assistant_help
@@ -1606,6 +1611,7 @@ module GalaxyLedger
       # Parse args
       session_id : String? = nil
       input_file : String? = nil
+      transcript_path : String? = nil
       i = 0
       while i < args.size
         arg = args[i]
@@ -1614,6 +1620,9 @@ module GalaxyLedger
           i += 2
         elsif arg == "--input-file" && i + 1 < args.size
           input_file = args[i + 1]
+          i += 2
+        elsif arg == "--transcript-path" && i + 1 < args.size
+          transcript_path = args[i + 1]
           i += 2
         else
           i += 1
@@ -1625,8 +1634,8 @@ module GalaxyLedger
         exit(1)
       end
 
-      unless input_file
-        STDERR.puts "Error: --input-file is required"
+      unless input_file || transcript_path
+        STDERR.puts "Error: --input-file or --transcript-path is required"
         exit(1)
       end
 
@@ -1637,21 +1646,89 @@ module GalaxyLedger
         exit(1)
       end
 
-      # Read input file
-      begin
-        input_json = File.read(input_file)
-        json = JSON.parse(input_json)
-        user_message = json["user_message"]?.try(&.as_s?) || ""
-        assistant_content = json["assistant_content"]?.try(&.as_s?) || ""
+      # Get user_message and assistant_content from the appropriate source
+      user_message : String = ""
+      assistant_content : String = ""
 
-        # Clean up temp file
-        File.delete(input_file) if File.exists?(input_file)
+      if tp = transcript_path
+        # Transcript-based flow: read with exponential backoff
+        user_message, assistant_content = read_transcript_with_backoff(tp, ledger_session_id)
+      elsif inf = input_file
+        # Input-file flow: direct read (backward compat / testing)
+        user_message, assistant_content = read_input_file(inf)
+      end
 
-        if user_message.strip.empty? || assistant_content.strip.empty?
-          return # Nothing to extract
+      if user_message.strip.empty? || assistant_content.strip.empty?
+        return
+      end
+
+      # Run extraction and write results
+      run_extraction_and_write(ledger_session_id, user_message, assistant_content)
+    end
+
+    # Read transcript file with exponential backoff, waiting for a complete
+    # exchange (user message + assistant response). Writes last_interaction
+    # to the DB once captured.
+    private def self.read_transcript_with_backoff(
+      transcript_path : String,
+      ledger_session_id : Int64,
+    ) : {String, String}
+      user_message = ""
+      assistant_content = ""
+
+      TRANSCRIPT_BACKOFF_DELAYS.each_with_index do |delay, attempt|
+        if delay > 0
+          sleep (delay * 1000).to_i.milliseconds
         end
 
-        # Run extraction
+        entries = Transcript.parse(transcript_path)
+
+        extracted = Transcript.extract_last_exchange(entries)
+        next unless extracted
+
+        user_message = extracted.user_message
+        last_exchange = Transcript.to_last_exchange(extracted)
+        assistant_content = last_exchange.full_content
+
+        if !assistant_content.strip.empty?
+          # Write last_interaction to DB
+          Database.update_session_last_interaction(ledger_session_id, last_exchange.to_pretty_json)
+          return {user_message, assistant_content}
+        end
+      end
+
+      # Even with incomplete data, write what we have to last_interaction
+      unless user_message.strip.empty?
+        entries = Transcript.parse(transcript_path)
+        if extracted = Transcript.extract_last_exchange(entries)
+          last_exchange = Transcript.to_last_exchange(extracted)
+          Database.update_session_last_interaction(ledger_session_id, last_exchange.to_pretty_json)
+        end
+      end
+
+      {user_message, assistant_content}
+    end
+
+    # Read user_message and assistant_content from an input file (legacy/testing path)
+    private def self.read_input_file(input_file : String) : {String, String}
+      input_json = File.read(input_file)
+      json = JSON.parse(input_json)
+      user_message = json["user_message"]?.try(&.as_s?) || ""
+      assistant_content = json["assistant_content"]?.try(&.as_s?) || ""
+
+      # Clean up temp file
+      File.delete(input_file) if File.exists?(input_file)
+
+      {user_message, assistant_content}
+    end
+
+    # Run extraction via Claude CLI and write all results to DB
+    private def self.run_extraction_and_write(
+      ledger_session_id : Int64,
+      user_message : String,
+      assistant_content : String,
+    )
+      begin
         result = Extraction.extract_assistant_learnings(user_message, assistant_content)
 
         # Write extracted entries directly to database
@@ -1663,6 +1740,12 @@ module GalaxyLedger
           if inserted > 0
             STDERR.puts "[galaxy-ledger] Extracted #{inserted} learnings for session ##{ledger_session_id}"
           end
+        end
+
+        # Update session title if the extraction generated one
+        if session_title = result.session_title
+          Database.update_session_title(ledger_session_id, session_title)
+          STDERR.puts "[galaxy-ledger] Updated session title: #{session_title}"
         end
 
         # Update last interaction with summary if we got one
@@ -1697,10 +1780,18 @@ module GalaxyLedger
 
       USAGE:
         galaxy-ledger extract-assistant --session SESSION_ID --input-file FILE
+        galaxy-ledger extract-assistant --session SESSION_ID --transcript-path PATH
 
       DESCRIPTION:
         Called by hooks to extract learnings, decisions, and discoveries
         from an assistant response using Claude CLI.
+
+        With --transcript-path, reads the transcript file with exponential
+        backoff to wait for the assistant response to be flushed. Also
+        captures the last exchange and writes it to the DB.
+
+        With --input-file, reads pre-extracted content directly (used for
+        testing).
 
         This is an internal command used by the Stop hook.
       HELP
@@ -1834,6 +1925,7 @@ module GalaxyLedger
         end
 
         status = ContextStatus.from_json(json_str)
+
         success = Database.update_session_metrics(ledger_session_id, status)
 
         unless success

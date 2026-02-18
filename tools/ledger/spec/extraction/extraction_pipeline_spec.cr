@@ -91,6 +91,23 @@ describe "Extraction Pipeline" do
       result.extractions[0].entry_type.should eq("preference")
     end
 
+    it "does not parse session_title (include_summary is false)" do
+      GalaxyLedger::Extraction::ClaudeCLI.test_response = {
+        "session_title" => "Should Be Ignored",
+        "extractions"   => [
+          {
+            "type"       => "direction",
+            "content"    => "Always use trailing commas",
+            "importance" => "medium",
+          },
+        ],
+      }.to_json
+
+      result = GalaxyLedger::Extraction.extract_user_directions("Use trailing commas")
+      result.session_title.should be_nil
+      result.extractions.size.should eq(1)
+    end
+
     it "parses mixed direction and preference extractions" do
       GalaxyLedger::Extraction::ClaudeCLI.test_response = {
         "extractions" => [
@@ -241,6 +258,54 @@ describe "Extraction Pipeline" do
       result = GalaxyLedger::Extraction.extract_assistant_learnings("question", "answer")
       result.extractions.size.should eq(1)
       result.summary.should be_nil
+    end
+
+    it "parses session_title from JSON" do
+      GalaxyLedger::Extraction::ClaudeCLI.test_response = {
+        "session_title" => "Galaxy Ledger Session Title",
+        "summary"       => {
+          "user_request"       => "Add session titles",
+          "assistant_response" => "Added session title extraction",
+          "files_modified"     => ["extraction.cr"],
+          "key_actions"        => ["Updated prompt"],
+        },
+        "extractions" => [] of String,
+      }.to_json
+
+      result = GalaxyLedger::Extraction.extract_assistant_learnings("Add session titles", "Done")
+      result.session_title.should eq("Galaxy Ledger Session Title")
+      result.summary.should_not be_nil
+    end
+
+    it "returns nil session_title when field is missing" do
+      GalaxyLedger::Extraction::ClaudeCLI.test_response = {
+        "summary" => {
+          "user_request"       => "Test",
+          "assistant_response" => "Done",
+          "files_modified"     => [] of String,
+          "key_actions"        => [] of String,
+        },
+        "extractions" => [] of String,
+      }.to_json
+
+      result = GalaxyLedger::Extraction.extract_assistant_learnings("Test", "Done")
+      result.session_title.should be_nil
+    end
+
+    it "returns empty string session_title when field is empty" do
+      GalaxyLedger::Extraction::ClaudeCLI.test_response = {
+        "session_title" => "",
+        "summary"       => {
+          "user_request"       => "Test",
+          "assistant_response" => "Done",
+          "files_modified"     => [] of String,
+          "key_actions"        => [] of String,
+        },
+        "extractions" => [] of String,
+      }.to_json
+
+      result = GalaxyLedger::Extraction.extract_assistant_learnings("Test", "Done")
+      result.session_title.should eq("")
     end
   end
 

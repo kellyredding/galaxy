@@ -59,7 +59,7 @@ describe "OnStop last exchange capture" do
     GalaxyLedger::Database.delete_session(test_session_id)
   end
 
-  it "captures last exchange from transcript" do
+  it "does not capture last exchange synchronously (capture moved to async subprocess)" do
     # Create test transcript file
     transcript_file = File.tempfile("transcript", ".jsonl")
     transcript_file.print(%|{"type": "user", "timestamp": "2026-02-01T10:00:00Z", "message": {"role": "user", "content": "Add authentication"}}\n|)
@@ -76,15 +76,12 @@ describe "OnStop last exchange capture" do
     result = run_binary(["on-stop"], stdin: hook_input)
     result[:status].should eq(0)
 
-    # Verify last interaction was written to DB
+    # last_interaction is NOT set synchronously — capture is now in the async subprocess.
+    # The stop hook just spawns the subprocess and returns immediately.
     session_record = GalaxyLedger::Database.get_session(test_session_id)
     session_record.should_not be_nil
-    json_str = session_record.not_nil!.last_interaction
-    json_str.should_not be_nil
-
-    exchange = GalaxyLedger::Exchange::LastExchange.from_json(json_str.not_nil!)
-    exchange.user_message.should eq("Add authentication")
-    exchange.full_content.should contain("I'll help you add authentication")
+    # Note: last_interaction may or may not be nil depending on timing of the
+    # spawned subprocess, but the stop hook itself does not write it.
 
     # Clean up
     File.delete(transcript_file.path)
@@ -200,7 +197,7 @@ describe "OnStop JSON output format" do
     File.delete(transcript_file.path)
   end
 
-  it "includes Exchange captured when transcript has valid exchange" do
+  it "does not include Exchange captured (capture moved to async subprocess)" do
     transcript_file = File.tempfile("transcript", ".jsonl")
     transcript_file.print(%|{"type": "user", "timestamp": "2026-02-01T10:00:00Z", "message": {"role": "user", "content": "Add authentication"}}\n|)
     transcript_file.print(%|{"type": "assistant", "timestamp": "2026-02-01T10:01:00Z", "message": {"role": "assistant", "content": "I'll help you add authentication."}}\n|)
@@ -214,21 +211,10 @@ describe "OnStop JSON output format" do
 
     result = run_binary(["on-stop"], stdin: hook_input)
     json = JSON.parse(result[:output])
-    json["systemMessage"].as_s.should contain("Exchange captured")
+    # Exchange capture is now done in the async subprocess, not the stop hook
+    json["systemMessage"].as_s.should_not contain("Exchange captured")
 
     File.delete(transcript_file.path)
-  end
-
-  it "does not include Exchange captured with invalid transcript" do
-    hook_input = {
-      "session_id"       => test_session_id,
-      "transcript_path"  => "/nonexistent/transcript.jsonl",
-      "stop_hook_active" => false,
-    }.to_json
-
-    result = run_binary(["on-stop"], stdin: hook_input)
-    json = JSON.parse(result[:output])
-    json["systemMessage"].as_s.should_not contain("Exchange captured")
   end
 end
 

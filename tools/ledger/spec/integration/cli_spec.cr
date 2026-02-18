@@ -1027,4 +1027,104 @@ describe "CLI Integration" do
       result[:output].should contain("update-session-metrics")
     end
   end
+
+  describe "extract-assistant" do
+    it "captures last exchange from transcript via --transcript-path" do
+      session_id = "extract-transcript-#{Random.rand(100000)}"
+      ledger_session_id = GalaxyLedger::Database.create_session(session_id)
+
+      # Create a JSONL transcript with a complete exchange
+      transcript_file = File.tempfile("transcript", ".jsonl")
+      transcript_file.print(%|{"type": "user", "timestamp": "2026-02-01T10:00:00Z", "message": {"role": "user", "content": "Help me add dark mode"}}\n|)
+      transcript_file.print(%|{"type": "assistant", "timestamp": "2026-02-01T10:01:00Z", "message": {"role": "assistant", "content": "I added a dark mode toggle to the settings page."}}\n|)
+      transcript_file.close
+
+      result = run_binary([
+        "extract-assistant",
+        "--session", session_id,
+        "--transcript-path", transcript_file.path,
+      ])
+      result[:status].should eq(0)
+
+      # Verify last_interaction was captured with non-empty content
+      session = GalaxyLedger::Database.get_session(session_id)
+      session.should_not be_nil
+      if s = session
+        s.last_interaction.should_not be_nil, "Expected last_interaction to be set"
+        li = JSON.parse(s.last_interaction.not_nil!)
+        li["user_message"].as_s.should eq("Help me add dark mode")
+        li["full_content"].as_s.should_not be_empty, "Expected full_content to be non-empty"
+      end
+
+      File.delete(transcript_file.path) if File.exists?(transcript_file.path)
+    end
+
+    it "requires --input-file or --transcript-path" do
+      session_id = "extract-no-input-#{Random.rand(100000)}"
+      GalaxyLedger::Database.create_session(session_id)
+
+      result = run_binary([
+        "extract-assistant",
+        "--session", session_id,
+      ])
+      result[:status].should eq(1)
+      result[:error].should contain("--input-file or --transcript-path is required")
+    end
+
+    it "writes session title to DB from extraction via --input-file", tags: "eval" do
+      session_id = "extract-title-#{Random.rand(100000)}"
+      ledger_session_id = GalaxyLedger::Database.create_session(session_id)
+
+      # Write input file with a realistic exchange
+      input_file = File.tempfile("extract-input", ".json")
+      input_json = {
+        "user_message"      => "Help me add dark mode to the settings page",
+        "assistant_content" => "I've added a dark mode toggle to the settings page. The implementation uses CSS custom properties for theming and persists the user's preference in localStorage. Files modified: settings.tsx, theme.css.",
+      }.to_json
+      File.write(input_file.path, input_json)
+
+      result = run_binary([
+        "extract-assistant",
+        "--session", session_id,
+        "--input-file", input_file.path,
+      ])
+      result[:status].should eq(0)
+
+      # Verify the session title was written to the DB
+      session = GalaxyLedger::Database.get_session(session_id)
+      session.should_not be_nil
+      if s = session
+        s.title.should_not be_nil, "Expected session title to be set by extraction"
+        STDERR.puts "\n  [extract-assistant --input-file] Session title: #{s.title}"
+      end
+    end
+
+    it "writes session title to DB from extraction via --transcript-path", tags: "eval" do
+      session_id = "extract-title-tp-#{Random.rand(100000)}"
+      ledger_session_id = GalaxyLedger::Database.create_session(session_id)
+
+      # Create a JSONL transcript with a complete exchange
+      transcript_file = File.tempfile("transcript", ".jsonl")
+      transcript_file.print(%|{"type": "user", "timestamp": "2026-02-01T10:00:00Z", "message": {"role": "user", "content": "Help me add dark mode to the settings page"}}\n|)
+      transcript_file.print(%|{"type": "assistant", "timestamp": "2026-02-01T10:01:00Z", "message": {"role": "assistant", "content": "I've added a dark mode toggle to the settings page. The implementation uses CSS custom properties for theming and persists the user's preference in localStorage. Files modified: settings.tsx, theme.css."}}\n|)
+      transcript_file.close
+
+      result = run_binary([
+        "extract-assistant",
+        "--session", session_id,
+        "--transcript-path", transcript_file.path,
+      ])
+      result[:status].should eq(0)
+
+      # Verify the session title was written to the DB
+      session = GalaxyLedger::Database.get_session(session_id)
+      session.should_not be_nil
+      if s = session
+        s.title.should_not be_nil, "Expected session title to be set by extraction"
+        STDERR.puts "\n  [extract-assistant --transcript-path] Session title: #{s.title}"
+      end
+
+      File.delete(transcript_file.path) if File.exists?(transcript_file.path)
+    end
+  end
 end
