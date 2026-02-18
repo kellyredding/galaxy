@@ -195,12 +195,13 @@ module GalaxyLedger
 
     - Reference snapshots by number or title when justifying
       decisions: "Per snapshot #1 ('caching design'), we agreed..."
-    - If the user asks to view a snapshot, run:
+    - If the user asks to view a snapshot in the terminal, run:
       `galaxy-ledger snapshot view --pid $LEDGER_PID N`
-    - If the user asks to open a snapshot in an editor, view the
-      content via CLI, write it to a temp file (e.g.,
-      `/tmp/galaxy-snapshot-N-title-slug.md`), and open with the
-      appropriate editor command per the user's guidelines
+    - If the user asks to open a snapshot in an editor, run:
+      `galaxy-ledger snapshot open --pid $LEDGER_PID N`
+      This writes the snapshot to a stable temp file and opens it
+      using the configured editor (config, $VISUAL, $EDITOR, or
+      macOS `open`). No manual temp file handling needed.
     - To list all snapshots:
       `galaxy-ledger snapshot list --pid $LEDGER_PID`
     - To delete:

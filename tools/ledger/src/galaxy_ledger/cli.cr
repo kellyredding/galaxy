@@ -229,6 +229,11 @@ module GalaxyLedger
         restoration.*                Context restoration settings
           restoration.max_essential_tokens  Token budget for essentials (default: 2000)
 
+        snapshots.*                  Snapshot settings
+          snapshots.inline_char_cap       Inline char budget for handoff (default: 15000)
+          snapshots.max_per_session       Max snapshots per session (default: 10)
+          snapshots.editor                Editor command for 'snapshot open' (default: "")
+
       EXAMPLES:
         galaxy-ledger config set thresholds.warning 75
         galaxy-ledger config set storage.postgres_enabled true
@@ -2416,6 +2421,12 @@ module GalaxyLedger
         else
           snapshot_delete(rest)
         end
+      when "open"
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_snapshot_open_help
+        else
+          snapshot_open(rest)
+        end
       else
         STDERR.puts "Error: Unknown snapshot command '#{subcommand}'"
         STDERR.puts "Run 'galaxy-ledger snapshot --help' for usage"
@@ -2666,6 +2677,119 @@ module GalaxyLedger
       end
     end
 
+    private def self.snapshot_open(args : Array(String))
+      pid_str : String? = nil
+      number : Int32? = nil
+
+      i = 0
+      while i < args.size
+        arg = args[i]
+        case arg
+        when "--pid"
+          if i + 1 < args.size
+            pid_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --pid requires a value"
+            exit(1)
+          end
+        else
+          # Try as positional number
+          if n = arg.to_i?
+            number = n
+          else
+            STDERR.puts "Error: Unknown option '#{arg}'"
+            STDERR.puts "Run 'galaxy-ledger snapshot open --help' for usage"
+            exit(1)
+          end
+          i += 1
+        end
+      end
+
+      unless pid_str
+        STDERR.puts "Error: --pid is required"
+        STDERR.puts "Run 'galaxy-ledger snapshot open --help' for usage"
+        exit(1)
+      end
+
+      unless number
+        STDERR.puts "Error: snapshot number is required"
+        STDERR.puts "Run 'galaxy-ledger snapshot open --help' for usage"
+        exit(1)
+      end
+
+      ledger_session_id = resolve_pid_to_ledger_session_id(pid_str)
+      snapshot = Database.get_snapshot_by_number(ledger_session_id, number)
+
+      unless snapshot
+        STDERR.puts "Error: snapshot ##{number} not found"
+        exit(1)
+      end
+
+      # Write content to a stable temp file
+      temp_path = snapshot_temp_path(ledger_session_id, number)
+      Dir.mkdir_p(Path.new(temp_path).parent)
+      File.write(temp_path, snapshot.content)
+
+      # Resolve the editor command via cascade:
+      # 1. config.snapshots.editor (explicit)
+      # 2. $VISUAL env var
+      # 3. $EDITOR env var
+      # 4. "open" (macOS default)
+      editor = resolve_editor
+
+      # Open the file
+      begin
+        process = Process.new(
+          editor,
+          args: [temp_path],
+          shell: false,
+          input: Process::Redirect::Inherit,
+          output: Process::Redirect::Inherit,
+          error: Process::Redirect::Inherit,
+        )
+        process.wait
+      rescue ex
+        STDERR.puts "Error: failed to open with '#{editor}': #{ex.message}"
+        STDERR.puts "Set an editor via: galaxy-ledger config set snapshots.editor <command>"
+        exit(1)
+      end
+
+      puts "Opened snapshot ##{number} (\"#{snapshot.title}\") → #{temp_path}"
+    end
+
+    # Build a stable temp file path for a snapshot.
+    # Same snapshot always maps to the same path, so reopening
+    # in an editor reuses the tab instead of creating a duplicate.
+    def self.snapshot_temp_path(
+      ledger_session_id : Int64,
+      number : Int32,
+    ) : String
+      File.join(Dir.tempdir, "galaxy-ledger-snapshot-#{ledger_session_id}-#{number}.md")
+    end
+
+    # Resolve which editor command to use via cascade:
+    # 1. config snapshots.editor (if non-empty)
+    # 2. $VISUAL
+    # 3. $EDITOR
+    # 4. "open" (macOS default)
+    def self.resolve_editor : String
+      # 1. Config
+      config_editor = Config.load.snapshots.editor
+      return config_editor unless config_editor.empty?
+
+      # 2. $VISUAL
+      visual = ENV["VISUAL"]?
+      return visual if visual && !visual.empty?
+
+      # 3. $EDITOR
+      editor = ENV["EDITOR"]?
+      return editor if editor && !editor.empty?
+
+      # 4. macOS default
+      "open"
+    end
+
     # Format a number with commas (e.g., 3241 -> "3,241")
     private def self.format_number(n : Int32) : String
       n.to_s.reverse.gsub(/(\d{3})(?=\d)/, "\\1,").reverse
@@ -2698,6 +2822,7 @@ module GalaxyLedger
         save     Save a snapshot from stdin
         list     List snapshots for a session
         view     View a snapshot's content
+        open     Open a snapshot in an editor
         delete   Delete a snapshot
 
       Run 'galaxy-ledger snapshot <command> --help' for detailed usage.
@@ -2776,6 +2901,34 @@ module GalaxyLedger
 
       DESCRIPTION:
         Permanently deletes a snapshot from the session.
+      HELP
+    end
+
+    private def self.show_snapshot_open_help
+      puts <<-HELP
+      galaxy-ledger snapshot open - Open a snapshot in an editor
+
+      USAGE:
+        galaxy-ledger snapshot open --pid PID NUMBER
+
+      REQUIRED:
+        --pid PID           Claude Code process ID
+        NUMBER              Snapshot number (session-scoped)
+
+      DESCRIPTION:
+        Writes the snapshot content to a stable temp file and opens it
+        with the configured editor. The temp file path is deterministic
+        so reopening the same snapshot reuses the file (and editor tab).
+
+      EDITOR RESOLUTION (first match wins):
+        1. snapshots.editor config setting
+        2. $VISUAL environment variable
+        3. $EDITOR environment variable
+        4. 'open' (macOS default application)
+
+      EXAMPLES:
+        galaxy-ledger snapshot open --pid 12345 1
+        galaxy-ledger config set snapshots.editor subl
       HELP
     end
 

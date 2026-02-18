@@ -138,9 +138,12 @@ module GalaxyLedger
       @[JSON::Field(key: "max_per_session")]
       property max_per_session : Int32
 
+      property editor : String
+
       def initialize(
         @inline_char_cap = 15000,
         @max_per_session = 10,
+        @editor = "",
       )
       end
     end
@@ -446,14 +449,17 @@ module GalaxyLedger
     private def set_snapshots(field : String?, value : String)
       raise "Missing snapshots field (e.g., snapshots.inline_char_cap)" unless field
 
-      int_value = value.to_i? || raise "Invalid value: #{value} (must be integer)"
-      raise "Value must be positive" if int_value < 1
-
       case field
       when "inline_char_cap"
+        int_value = value.to_i? || raise "Invalid value: #{value} (must be integer)"
+        raise "Value must be positive" if int_value < 1
         snapshots.inline_char_cap = int_value
       when "max_per_session"
+        int_value = value.to_i? || raise "Invalid value: #{value} (must be integer)"
+        raise "Value must be positive" if int_value < 1
         snapshots.max_per_session = int_value
+      when "editor"
+        snapshots.editor = value
       else
         raise "Unknown snapshots field: snapshots.#{field}"
       end
@@ -465,6 +471,7 @@ module GalaxyLedger
       case field
       when "inline_char_cap" then snapshots.inline_char_cap.to_s
       when "max_per_session" then snapshots.max_per_session.to_s
+      when "editor"          then snapshots.editor
       else
         raise "Unknown snapshots field: snapshots.#{field}"
       end

@@ -80,6 +80,10 @@ def run_binary(
     # the parent environment (e.g., when specs run inside a Claude Persona
     # session). Tests that need it set should pass it via extra_env.
     "CLAUDE_CLI_SESSION_ID" => "",
+    # Clear editor env vars so they don't leak into snapshot open tests.
+    # Tests that need these set should pass them via extra_env.
+    "VISUAL" => "",
+    "EDITOR" => "",
   }
   merged_env = base_env.merge(extra_env)
 

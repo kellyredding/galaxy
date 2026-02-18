@@ -22,6 +22,7 @@ describe GalaxyLedger::Config do
       config.restoration.tier2_limits.medium_importance_decisions.should eq(5)
       config.snapshots.inline_char_cap.should eq(15000)
       config.snapshots.max_per_session.should eq(10)
+      config.snapshots.editor.should eq("")
     end
   end
 
@@ -35,6 +36,38 @@ describe GalaxyLedger::Config do
 
       # Should have created the file
       File.exists?(GalaxyLedger::CONFIG_FILE).should eq(true)
+    end
+
+    it "migrates config missing snapshots.editor field" do
+      # Write a v0.2.0 config without the editor field
+      Dir.mkdir_p(GalaxyLedger::CONFIG_DIR)
+      File.write(GalaxyLedger::CONFIG_FILE, {
+        "_schema_version" => "0.2.0",
+        "version"         => "0.2.0",
+        "thresholds"      => {"warning" => 70, "critical" => 85},
+        "warnings"        => {"at_warning_threshold" => true, "at_critical_threshold" => true},
+        "extraction"      => {"on_stop" => true, "on_guideline_read" => true},
+        "storage"         => {
+          "postgres_enabled"       => false,
+          "postgres_host_port"     => 5433,
+          "embeddings_enabled"     => false,
+          "openai_api_key_env_var" => "GALAXY_OPENAI_API_KEY",
+        },
+        "restoration" => {
+          "max_essential_tokens" => 2000,
+          "tier1_limits"         => {"high_importance_decisions" => 10},
+          "tier2_limits"         => {"learnings" => 5, "medium_importance_decisions" => 5},
+        },
+        "snapshots" => {
+          "inline_char_cap" => 15000,
+          "max_per_session" => 10,
+        },
+      }.to_json)
+
+      config = GalaxyLedger::Config.load
+      config.snapshots.editor.should eq("")
+      config.snapshots.inline_char_cap.should eq(15000)
+      config.snapshots.max_per_session.should eq(10)
     end
   end
 
@@ -94,12 +127,16 @@ describe GalaxyLedger::Config do
       config = GalaxyLedger::Config.default
       config.get("snapshots.inline_char_cap").should eq("15000")
       config.get("snapshots.max_per_session").should eq("10")
+      config.get("snapshots.editor").should eq("")
 
       config.set("snapshots.inline_char_cap", "20000")
       config.get("snapshots.inline_char_cap").should eq("20000")
 
       config.set("snapshots.max_per_session", "5")
       config.get("snapshots.max_per_session").should eq("5")
+
+      config.set("snapshots.editor", "subl")
+      config.get("snapshots.editor").should eq("subl")
     end
 
     it "validates snapshots values are positive integers" do

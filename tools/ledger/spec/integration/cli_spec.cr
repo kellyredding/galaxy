@@ -1144,6 +1144,7 @@ describe "CLI Integration" do
         result[:output].should contain("save")
         result[:output].should contain("list")
         result[:output].should contain("view")
+        result[:output].should contain("open")
         result[:output].should contain("delete")
       end
     end
@@ -1326,6 +1327,116 @@ describe "CLI Integration" do
         result = run_binary(["snapshot", "delete", "--pid", pid.to_s, "99"])
         result[:status].should_not eq(0)
         result[:error].should contain("not found")
+      end
+    end
+
+    describe "snapshot open" do
+      it "writes temp file and opens with configured editor" do
+        pid = Random.rand(10000).to_i64 + 90000
+        ledger_session_id = create_session_with_pid(pid)
+
+        content = "## Exchange 1\n\n### User\nHello\n\n### Assistant\nHi!"
+        run_binary(
+          ["snapshot", "save", "--pid", pid.to_s, "--title", "Open test"],
+          stdin: content,
+        )
+
+        # Use 'true' as the editor so it exits immediately without opening anything
+        result = run_binary(
+          ["snapshot", "open", "--pid", pid.to_s, "1"],
+          extra_env: {"EDITOR" => "true"},
+        )
+        result[:status].should eq(0)
+        result[:output].should contain("Opened snapshot #1")
+        result[:output].should contain("Open test")
+
+        # Verify the temp file was written with correct content
+        temp_path = GalaxyLedger::CLI.snapshot_temp_path(ledger_session_id, 1)
+        File.exists?(temp_path).should be_true
+        File.read(temp_path).should eq(content)
+      end
+
+      it "produces a stable temp file path (same path on re-open)" do
+        pid = Random.rand(10000).to_i64 + 90000
+        ledger_session_id = create_session_with_pid(pid)
+
+        run_binary(
+          ["snapshot", "save", "--pid", pid.to_s, "--title", "Stability test"],
+          stdin: "content",
+        )
+
+        # Open twice — should produce the same temp file path
+        result1 = run_binary(
+          ["snapshot", "open", "--pid", pid.to_s, "1"],
+          extra_env: {"EDITOR" => "true"},
+        )
+        result2 = run_binary(
+          ["snapshot", "open", "--pid", pid.to_s, "1"],
+          extra_env: {"EDITOR" => "true"},
+        )
+
+        # Both should reference the same temp file in output
+        temp_path = GalaxyLedger::CLI.snapshot_temp_path(ledger_session_id, 1)
+        result1[:output].should contain(temp_path)
+        result2[:output].should contain(temp_path)
+      end
+
+      it "errors when snapshot not found" do
+        pid = Random.rand(10000).to_i64 + 90000
+        create_session_with_pid(pid)
+
+        result = run_binary(
+          ["snapshot", "open", "--pid", pid.to_s, "99"],
+          extra_env: {"EDITOR" => "true"},
+        )
+        result[:status].should_not eq(0)
+        result[:error].should contain("not found")
+      end
+
+      it "errors without --pid" do
+        result = run_binary(
+          ["snapshot", "open", "1"],
+          extra_env: {"EDITOR" => "true"},
+        )
+        result[:status].should_not eq(0)
+        result[:error].should contain("--pid is required")
+      end
+
+      it "errors without snapshot number" do
+        pid = Random.rand(10000).to_i64 + 90000
+        create_session_with_pid(pid)
+
+        result = run_binary(
+          ["snapshot", "open", "--pid", pid.to_s],
+          extra_env: {"EDITOR" => "true"},
+        )
+        result[:status].should_not eq(0)
+        result[:error].should contain("snapshot number is required")
+      end
+
+      it "errors with invalid editor command" do
+        pid = Random.rand(10000).to_i64 + 90000
+        create_session_with_pid(pid)
+
+        run_binary(
+          ["snapshot", "save", "--pid", pid.to_s, "--title", "Bad editor"],
+          stdin: "content",
+        )
+
+        result = run_binary(
+          ["snapshot", "open", "--pid", pid.to_s, "1"],
+          extra_env: {"EDITOR" => "nonexistent-editor-command-xyz"},
+        )
+        result[:status].should_not eq(0)
+        result[:error].should contain("failed to open")
+      end
+
+      it "shows help with --help" do
+        result = run_binary(["snapshot", "open", "--help"])
+        result[:status].should eq(0)
+        result[:output].should contain("snapshot open")
+        result[:output].should contain("--pid")
+        result[:output].should contain("EDITOR RESOLUTION")
       end
     end
   end

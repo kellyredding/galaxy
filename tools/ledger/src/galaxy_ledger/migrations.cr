@@ -124,6 +124,17 @@ module GalaxyLedger
         end
         JSON::Any.new(obj)
       },
+      "0.3.0" => Proc(JSON::Any, JSON::Any).new { |config_json|
+        obj = config_json.as_h.dup
+        if snapshots = obj["snapshots"]?.try(&.as_h?)
+          unless snapshots.has_key?("editor")
+            snap = snapshots.dup
+            snap["editor"] = JSON::Any.new("")
+            obj["snapshots"] = JSON::Any.new(snap)
+          end
+        end
+        JSON::Any.new(obj)
+      },
     }
 
     # ==========================================================================
