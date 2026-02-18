@@ -620,6 +620,103 @@ describe "OnStop stale re-extraction" do
   end
 end
 
+describe "OnStop last_stop_cwd stamping" do
+  test_session_id = "stop-cwd-stamp-#{Random.rand(10000)}"
+  ledger_session_id = 0_i64
+
+  before_each do
+    GalaxyLedger::Database.delete_session(test_session_id)
+    ledger_session_id = GalaxyLedger::Database.create_session(test_session_id)
+  end
+
+  after_each do
+    GalaxyLedger::Database.delete_session(test_session_id)
+  end
+
+  it "stamps last_stop_cwd from hook input cwd" do
+    transcript_file = File.tempfile("transcript", ".jsonl")
+    transcript_file.print(%|{"type": "user", "timestamp": "2026-02-01T10:00:00Z", "message": {"role": "user", "content": "Test"}}\n|)
+    transcript_file.print(%|{"type": "assistant", "timestamp": "2026-02-01T10:01:00Z", "message": {"role": "assistant", "content": "Response"}}\n|)
+    transcript_file.close
+
+    hook_input = {
+      "session_id"       => test_session_id,
+      "transcript_path"  => transcript_file.path,
+      "cwd"              => "/home/user/projects/galaxy-poc",
+      "stop_hook_active" => false,
+    }.to_json
+
+    result = run_binary(["on-stop"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    session = GalaxyLedger::Database.get_session(test_session_id).not_nil!
+    ctx = JSON.parse(session.context)
+    ctx["last_stop_cwd"]?.should_not be_nil
+    ctx["last_stop_cwd"].as_s.should eq("/home/user/projects/galaxy-poc")
+
+    File.delete(transcript_file.path)
+  end
+
+  it "does not stamp last_stop_cwd when hook input has no cwd" do
+    transcript_file = File.tempfile("transcript", ".jsonl")
+    transcript_file.print(%|{"type": "user", "timestamp": "2026-02-01T10:00:00Z", "message": {"role": "user", "content": "Test"}}\n|)
+    transcript_file.print(%|{"type": "assistant", "timestamp": "2026-02-01T10:01:00Z", "message": {"role": "assistant", "content": "Response"}}\n|)
+    transcript_file.close
+
+    hook_input = {
+      "session_id"       => test_session_id,
+      "transcript_path"  => transcript_file.path,
+      "stop_hook_active" => false,
+    }.to_json
+
+    result = run_binary(["on-stop"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    session = GalaxyLedger::Database.get_session(test_session_id).not_nil!
+    ctx = JSON.parse(session.context)
+    ctx["last_stop_cwd"]?.should be_nil
+
+    File.delete(transcript_file.path)
+  end
+
+  it "survives concurrent status line updates without being clobbered" do
+    # Simulate: session starts with cwd=/projects/kajabi
+    status1 = GalaxyLedger::ContextStatus.from_json(
+      %({"cwd":"/projects/galaxy-poc","context":{"percentage":30.0}})
+    )
+    GalaxyLedger::Database.update_session_metrics(ledger_session_id, status1)
+
+    # Stop hook stamps last_stop_cwd
+    transcript_file = File.tempfile("transcript", ".jsonl")
+    transcript_file.print(%|{"type": "user", "timestamp": "2026-02-01T10:00:00Z", "message": {"role": "user", "content": "Test"}}\n|)
+    transcript_file.print(%|{"type": "assistant", "timestamp": "2026-02-01T10:01:00Z", "message": {"role": "assistant", "content": "Response"}}\n|)
+    transcript_file.close
+
+    hook_input = {
+      "session_id"       => test_session_id,
+      "transcript_path"  => transcript_file.path,
+      "cwd"              => "/projects/galaxy-poc",
+      "stop_hook_active" => false,
+    }.to_json
+
+    result = run_binary(["on-stop"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    # Status line fires AFTER reset → pushes project root
+    status2 = GalaxyLedger::ContextStatus.from_json(
+      %({"cwd":"/projects/kajabi","context":{"percentage":5.0}})
+    )
+    GalaxyLedger::Database.update_session_metrics(ledger_session_id, status2)
+
+    # last_stop_cwd should survive the status line update
+    session = GalaxyLedger::Database.get_session(test_session_id).not_nil!
+    ctx = JSON.parse(session.context)
+    ctx["last_stop_cwd"].as_s.should eq("/projects/galaxy-poc")
+
+    File.delete(transcript_file.path)
+  end
+end
+
 describe "OnStop CLI help" do
   it "shows help with -h flag" do
     result = run_binary(["on-stop", "-h"])

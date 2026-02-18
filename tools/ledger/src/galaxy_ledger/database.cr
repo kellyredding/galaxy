@@ -903,6 +903,32 @@ module GalaxyLedger
       end
     end
 
+    # Atomically stamp last_stop_cwd into the session's context JSON.
+    # Uses json_set in SQL — no read-modify-write, safe against concurrent
+    # writes from the status line (which uses the same json_set pattern for
+    # previous_cwd).  WAL + busy_timeout serializes the two writers.
+    def self.stamp_stop_cwd(ledger_session_id : Int64, cwd : String) : Bool
+      return false if ledger_session_id <= 0 || cwd.empty?
+
+      begin
+        open do |db|
+          db.exec(
+            <<-SQL,
+              UPDATE ledger_sessions SET
+                context = json_set(context, '$.last_stop_cwd', ?),
+                updated_at = datetime('now')
+              WHERE id = ?
+            SQL
+            cwd,
+            ledger_session_id,
+          )
+          true
+        end
+      rescue
+        false
+      end
+    end
+
     # Merge a key/value into the session's context JSON column.
     # Reads existing JSON, adds key, writes back.
     # If write_once is true, skips if key already exists.

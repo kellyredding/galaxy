@@ -76,16 +76,29 @@ module GalaxyLedger
         puts Helpers.output_json(system_message, context)
       end
 
-      # Extracts the pre-reset working directory from the session's context
-      # JSON. The status line saves previous_cwd atomically before each cwd
-      # update via update_session_metrics, so on a context reset this contains
-      # the directory the user was actually working in (before Claude reset to
-      # project root). Falls back to the live cwd column.
+      # Determines the working directory to report in the handoff.
+      #
+      # Preference chain:
+      #   1. last_stop_cwd  — stamped by the Stop hook at end-of-turn, once
+      #      per turn at a deterministic boundary.  Most reliable because it
+      #      is not affected by async status line tick timing.
+      #   2. previous_cwd   — saved by update_session_metrics (status line)
+      #      before each cwd overwrite.  Rolling one-step buffer, can drift
+      #      in multi-repo workflows where Claude cd's between directories.
+      #   3. cwd column     — live value, may already reflect the post-reset
+      #      project root if the status line fired after the reset.
       private def self.handoff_cwd(session_record : Database::SessionRecord?) : String?
         return nil unless session_record
 
         begin
           ctx = JSON.parse(session_record.context)
+
+          # Prefer last_stop_cwd (stamped by Stop hook)
+          if stop_cwd = ctx["last_stop_cwd"]?.try(&.as_s?)
+            return stop_cwd unless stop_cwd.empty?
+          end
+
+          # Fall back to previous_cwd (stamped by status line)
           if prev = ctx["previous_cwd"]?.try(&.as_s?)
             return prev unless prev.empty?
           end

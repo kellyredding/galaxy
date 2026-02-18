@@ -600,3 +600,208 @@ describe "OnClear cwd reset timing regression" do
     end
   end
 end
+
+describe "OnClear last_stop_cwd handoff preference" do
+  # Regression tests for the handoff CWD preference chain:
+  #   last_stop_cwd > previous_cwd > cwd (live column)
+  #
+  # The Stop hook stamps last_stop_cwd at end-of-turn. The handoff should
+  # prefer this over the status-line-driven previous_cwd and the live cwd
+  # (which may already reflect the post-reset project root).
+
+  it "prefers last_stop_cwd over previous_cwd in handoff" do
+    session_id = "clear-stop-cwd-pref-#{Random.rand(100000)}"
+    ledger_session_id = GalaxyLedger::Database.create_session(session_id,
+      cwd: "#{Path.home}/projects/kajabi",
+    )
+
+    begin
+      # Status line updates cwd → previous_cwd captures old value
+      status = GalaxyLedger::ContextStatus.from_json(
+        %({"cwd":"#{Path.home}/projects/galaxy","context":{"percentage":30.0}})
+      )
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
+
+      # Stop hook stamps last_stop_cwd (the real working dir)
+      GalaxyLedger::Database.stamp_stop_cwd(ledger_session_id, "#{Path.home}/projects/galaxy-poc")
+
+      # Add data so handoff renders full context
+      exchange = GalaxyLedger::Exchange::LastExchange.new(
+        user_message: "Working on galaxy-poc",
+        full_content: "Implemented feature",
+        assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
+      )
+      GalaxyLedger::Database.update_session_last_interaction(ledger_session_id, exchange.to_pretty_json)
+
+      hook_input = {"session_id" => session_id, "source" => "clear"}.to_json
+      result = run_binary(["on-clear"], stdin: hook_input)
+      result[:status].should eq(0)
+
+      output = JSON.parse(result[:output])
+      ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+      # Should use last_stop_cwd, NOT previous_cwd or live cwd
+      ctx.should contain("**Working directory**: `~/projects/galaxy-poc`")
+      ctx.should_not contain("**Working directory**: `~/projects/galaxy`")
+      ctx.should_not contain("**Working directory**: `~/projects/kajabi`")
+    ensure
+      GalaxyLedger::Database.delete_session(session_id)
+    end
+  end
+
+  it "falls back to previous_cwd when last_stop_cwd is absent" do
+    session_id = "clear-no-stop-cwd-#{Random.rand(100000)}"
+    ledger_session_id = GalaxyLedger::Database.create_session(session_id,
+      cwd: "#{Path.home}/projects/kajabi",
+    )
+
+    begin
+      # Status line updates but no Stop hook stamps last_stop_cwd
+      status = GalaxyLedger::ContextStatus.from_json(
+        %({"cwd":"#{Path.home}/projects/galaxy","context":{"percentage":30.0}})
+      )
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
+
+      exchange = GalaxyLedger::Exchange::LastExchange.new(
+        user_message: "Test",
+        full_content: "Response",
+        assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
+      )
+      GalaxyLedger::Database.update_session_last_interaction(ledger_session_id, exchange.to_pretty_json)
+
+      hook_input = {"session_id" => session_id, "source" => "clear"}.to_json
+      result = run_binary(["on-clear"], stdin: hook_input)
+      result[:status].should eq(0)
+
+      output = JSON.parse(result[:output])
+      ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+      # Should fall back to previous_cwd (kajabi was the cwd before galaxy)
+      ctx.should contain("**Working directory**: `~/projects/kajabi`")
+    ensure
+      GalaxyLedger::Database.delete_session(session_id)
+    end
+  end
+
+  it "full cycle: stop stamps cwd, status line clobbers after reset, handoff still correct" do
+    session_id = "clear-full-cycle-#{Random.rand(100000)}"
+    ledger_session_id = GalaxyLedger::Database.create_session(session_id,
+      cwd: "#{Path.home}/projects/kajabi",
+    )
+
+    begin
+      # Step 1: User cd's to galaxy-poc during session (status line updates)
+      status1 = GalaxyLedger::ContextStatus.from_json(
+        %({"cwd":"#{Path.home}/projects/galaxy-poc","context":{"percentage":25.0}})
+      )
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, status1)
+
+      # Step 2: Claude briefly cd's to galaxy to read a file (status line updates)
+      status2 = GalaxyLedger::ContextStatus.from_json(
+        %({"cwd":"#{Path.home}/projects/galaxy","context":{"percentage":30.0}})
+      )
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, status2)
+
+      # Step 3: Claude cd's back to galaxy-poc (status line updates)
+      status3 = GalaxyLedger::ContextStatus.from_json(
+        %({"cwd":"#{Path.home}/projects/galaxy-poc","context":{"percentage":35.0}})
+      )
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, status3)
+
+      # Step 4: Stop hook fires at end of turn — stamps galaxy-poc
+      GalaxyLedger::Database.stamp_stop_cwd(ledger_session_id, "#{Path.home}/projects/galaxy-poc")
+
+      # Step 5: /clear happens → Claude resets → status line pushes project root
+      status4 = GalaxyLedger::ContextStatus.from_json(
+        %({"cwd":"#{Path.home}/projects/kajabi","context":{"percentage":5.0}})
+      )
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, status4)
+
+      # Verify intermediate state: cwd is kajabi (wrong), previous_cwd is
+      # galaxy-poc (would be correct by luck here), but last_stop_cwd is
+      # galaxy-poc (deterministically correct)
+      s = GalaxyLedger::Database.get_session(session_id).not_nil!
+      s.cwd.should eq("#{Path.home}/projects/kajabi")
+      ctx = JSON.parse(s.context)
+      ctx["last_stop_cwd"].as_s.should eq("#{Path.home}/projects/galaxy-poc")
+
+      # Step 6: Handoff runs
+      exchange = GalaxyLedger::Exchange::LastExchange.new(
+        user_message: "Working in galaxy-poc",
+        full_content: "Implemented feature",
+        assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
+      )
+      GalaxyLedger::Database.update_session_last_interaction(ledger_session_id, exchange.to_pretty_json)
+
+      hook_input = {"session_id" => session_id, "source" => "clear"}.to_json
+      result = run_binary(["on-clear"], stdin: hook_input)
+      result[:status].should eq(0)
+
+      output = JSON.parse(result[:output])
+      handoff_ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+      handoff_ctx.should contain("**Working directory**: `~/projects/galaxy-poc`")
+      handoff_ctx.should_not contain("**Working directory**: `~/projects/kajabi`")
+      handoff_ctx.should_not contain("**Working directory**: `~/projects/galaxy`")
+    ensure
+      GalaxyLedger::Database.delete_session(session_id)
+    end
+  end
+
+  it "full cycle: multi-repo drift where previous_cwd would be wrong" do
+    # This is the exact scenario from the bug report:
+    # User works in galaxy-poc, Claude briefly visits galaxy,
+    # previous_cwd captures galaxy (wrong), but last_stop_cwd is galaxy-poc.
+    session_id = "clear-drift-#{Random.rand(100000)}"
+    ledger_session_id = GalaxyLedger::Database.create_session(session_id,
+      cwd: "#{Path.home}/projects/kajabi",
+    )
+
+    begin
+      # Status line ticks: kajabi → galaxy-poc
+      status1 = GalaxyLedger::ContextStatus.from_json(
+        %({"cwd":"#{Path.home}/projects/galaxy-poc","context":{"percentage":20.0}})
+      )
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, status1)
+
+      # Status line ticks: galaxy-poc → galaxy (Claude checks something)
+      status2 = GalaxyLedger::ContextStatus.from_json(
+        %({"cwd":"#{Path.home}/projects/galaxy","context":{"percentage":25.0}})
+      )
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, status2)
+
+      # Status line ticks: galaxy → galaxy-poc (Claude goes back)
+      status3 = GalaxyLedger::ContextStatus.from_json(
+        %({"cwd":"#{Path.home}/projects/galaxy-poc","context":{"percentage":30.0}})
+      )
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, status3)
+      # At this point: cwd=galaxy-poc, previous_cwd=galaxy (WRONG for handoff)
+
+      # Stop hook stamps the correct working directory
+      GalaxyLedger::Database.stamp_stop_cwd(ledger_session_id, "#{Path.home}/projects/galaxy-poc")
+
+      # /clear → status line pushes project root
+      status4 = GalaxyLedger::ContextStatus.from_json(
+        %({"cwd":"#{Path.home}/projects/kajabi","context":{"percentage":5.0}})
+      )
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, status4)
+      # Now: cwd=kajabi, previous_cwd=galaxy-poc, last_stop_cwd=galaxy-poc
+      # Without last_stop_cwd, if previous_cwd had drifted to galaxy,
+      # handoff would report the wrong directory.
+
+      exchange = GalaxyLedger::Exchange::LastExchange.new(
+        user_message: "Test",
+        full_content: "Response",
+        assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
+      )
+      GalaxyLedger::Database.update_session_last_interaction(ledger_session_id, exchange.to_pretty_json)
+
+      hook_input = {"session_id" => session_id, "source" => "clear"}.to_json
+      result = run_binary(["on-clear"], stdin: hook_input)
+      result[:status].should eq(0)
+
+      output = JSON.parse(result[:output])
+      handoff_ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+      handoff_ctx.should contain("**Working directory**: `~/projects/galaxy-poc`")
+    ensure
+      GalaxyLedger::Database.delete_session(session_id)
+    end
+  end
+end

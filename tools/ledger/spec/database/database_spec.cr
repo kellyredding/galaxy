@@ -1656,6 +1656,100 @@ describe GalaxyLedger::Database do
     end
   end
 
+  describe ".stamp_stop_cwd" do
+    it "writes last_stop_cwd into context JSON" do
+      ledger_session_id = GalaxyLedger::Database.create_session("sess-stop-cwd-basic",
+        cwd: "/home/user/projects/kajabi",
+      )
+
+      result = GalaxyLedger::Database.stamp_stop_cwd(ledger_session_id, "/home/user/projects/galaxy")
+      result.should be_true
+
+      session = GalaxyLedger::Database.get_session("sess-stop-cwd-basic").not_nil!
+      ctx = JSON.parse(session.context)
+      ctx["last_stop_cwd"]?.should_not be_nil
+      ctx["last_stop_cwd"].as_s.should eq("/home/user/projects/galaxy")
+    end
+
+    it "overwrites last_stop_cwd on successive calls" do
+      ledger_session_id = GalaxyLedger::Database.create_session("sess-stop-cwd-overwrite")
+
+      GalaxyLedger::Database.stamp_stop_cwd(ledger_session_id, "/dir/first")
+      GalaxyLedger::Database.stamp_stop_cwd(ledger_session_id, "/dir/second")
+
+      session = GalaxyLedger::Database.get_session("sess-stop-cwd-overwrite").not_nil!
+      ctx = JSON.parse(session.context)
+      ctx["last_stop_cwd"].as_s.should eq("/dir/second")
+    end
+
+    it "preserves existing context keys when stamping" do
+      ledger_session_id = GalaxyLedger::Database.create_session("sess-stop-cwd-preserve")
+      GalaxyLedger::Database.merge_session_context(ledger_session_id, "injected_context", "some data")
+
+      GalaxyLedger::Database.stamp_stop_cwd(ledger_session_id, "/home/user/galaxy")
+
+      session = GalaxyLedger::Database.get_session("sess-stop-cwd-preserve").not_nil!
+      ctx = JSON.parse(session.context)
+      ctx["injected_context"].as_s.should eq("some data")
+      ctx["last_stop_cwd"].as_s.should eq("/home/user/galaxy")
+    end
+
+    it "coexists with previous_cwd from status line updates" do
+      ledger_session_id = GalaxyLedger::Database.create_session("sess-stop-cwd-coexist",
+        cwd: "/dir/original",
+      )
+
+      # Status line changes cwd, setting previous_cwd
+      status = GalaxyLedger::ContextStatus.from_json(%({"cwd":"/dir/new","context":{"percentage":10.0}}))
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
+
+      # Stop hook stamps last_stop_cwd
+      GalaxyLedger::Database.stamp_stop_cwd(ledger_session_id, "/dir/stop")
+
+      session = GalaxyLedger::Database.get_session("sess-stop-cwd-coexist").not_nil!
+      ctx = JSON.parse(session.context)
+      ctx["previous_cwd"].as_s.should eq("/dir/original")
+      ctx["last_stop_cwd"].as_s.should eq("/dir/stop")
+    end
+
+    it "returns false for empty cwd" do
+      ledger_session_id = GalaxyLedger::Database.create_session("sess-stop-cwd-empty")
+
+      result = GalaxyLedger::Database.stamp_stop_cwd(ledger_session_id, "")
+      result.should be_false
+    end
+
+    it "returns false for invalid session ID" do
+      result = GalaxyLedger::Database.stamp_stop_cwd(0_i64, "/some/dir")
+      result.should be_false
+
+      result = GalaxyLedger::Database.stamp_stop_cwd(-1_i64, "/some/dir")
+      result.should be_false
+    end
+
+    it "is not clobbered by a subsequent status line update" do
+      ledger_session_id = GalaxyLedger::Database.create_session("sess-stop-cwd-no-clobber",
+        cwd: "/dir/working",
+      )
+
+      # Stop hook stamps last_stop_cwd
+      GalaxyLedger::Database.stamp_stop_cwd(ledger_session_id, "/dir/working")
+
+      # Status line fires after reset with project root cwd
+      status = GalaxyLedger::ContextStatus.from_json(%({"cwd":"/dir/project-root","context":{"percentage":5.0}}))
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
+
+      session = GalaxyLedger::Database.get_session("sess-stop-cwd-no-clobber").not_nil!
+      ctx = JSON.parse(session.context)
+      # last_stop_cwd should survive — status line only touches previous_cwd
+      ctx["last_stop_cwd"].as_s.should eq("/dir/working")
+      # previous_cwd reflects the pre-reset cwd (correct for its purpose)
+      ctx["previous_cwd"].as_s.should eq("/dir/working")
+      # live cwd is now the project root (post-reset)
+      session.cwd.should eq("/dir/project-root")
+    end
+  end
+
   describe ".update_session_title" do
     it "writes title to DB when provided" do
       ledger_session_id = GalaxyLedger::Database.create_session("sess-title-write")

@@ -14,6 +14,7 @@ module GalaxyLedger
     class OnStop
       @stdin_session_identifier : String?
       @transcript_path : String?
+      @stdin_cwd : String?
       @stop_hook_active : Bool = false
 
       def run
@@ -39,6 +40,16 @@ module GalaxyLedger
           stdin_session_id: @stdin_session_identifier,
         )
         return unless ledger_session_id
+
+        # Stamp the current working directory from the hook input.
+        # This captures Claude Code's CWD at end-of-turn — before any
+        # /clear or auto-compact can reset it.  The handoff prefers this
+        # over the status-line-driven previous_cwd because it's written
+        # once per turn at a deterministic boundary, not on every async
+        # status line tick.
+        if cwd = @stdin_cwd
+          Database.stamp_stop_cwd(ledger_session_id, cwd) unless cwd.empty?
+        end
 
         # Get current session_identifier for extraction subprocess --session flags
         session_record = Database.get_session_by_id(ledger_session_id)
@@ -72,6 +83,7 @@ module GalaxyLedger
         # {
         #   "session_id": "abc123",
         #   "transcript_path": "/path/to/transcript.jsonl",
+        #   "cwd": "/current/working/directory",
         #   "stop_hook_active": true|false,
         #   ...
         # }
@@ -82,6 +94,7 @@ module GalaxyLedger
           json = JSON.parse(input)
           @stdin_session_identifier = json["session_id"]?.try(&.as_s?)
           @transcript_path = json["transcript_path"]?.try(&.as_s?)
+          @stdin_cwd = json["cwd"]?.try(&.as_s?)
           @stop_hook_active = json["stop_hook_active"]?.try(&.as_bool?) || false
         rescue
           # Silently ignore parse errors
