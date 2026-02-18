@@ -1842,6 +1842,21 @@ describe GalaxyLedger::Database do
       result = GalaxyLedger::Database.merge_session_context(0_i64, "key", "value")
       result.should be_false
     end
+
+    it "preserves keys written by stamp_stop_cwd" do
+      ledger_session_id = GalaxyLedger::Database.create_session("sess-ctx-coexist")
+
+      # stamp_stop_cwd writes last_stop_cwd via its own json_set
+      GalaxyLedger::Database.stamp_stop_cwd(ledger_session_id, "/home/user/galaxy")
+
+      # merge_session_context writes a different key via json_set
+      GalaxyLedger::Database.merge_session_context(ledger_session_id, "injected_context", "some data")
+
+      session = GalaxyLedger::Database.get_session("sess-ctx-coexist").not_nil!
+      ctx = JSON.parse(session.context)
+      ctx["last_stop_cwd"].as_s.should eq("/home/user/galaxy")
+      ctx["injected_context"].as_s.should eq("some data")
+    end
   end
 
   describe ".update_session_last_interaction" do

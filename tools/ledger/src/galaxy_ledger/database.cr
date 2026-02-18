@@ -930,8 +930,9 @@ module GalaxyLedger
     end
 
     # Merge a key/value into the session's context JSON column.
-    # Reads existing JSON, adds key, writes back.
-    # If write_once is true, skips if key already exists.
+    # Uses json_set in SQL — no read-modify-write, safe against concurrent
+    # writes from other hooks and the status line.
+    # If write_once is true, only sets the key when it doesn't already exist.
     def self.merge_session_context(
       ledger_session_id : Int64,
       key : String,
@@ -942,32 +943,39 @@ module GalaxyLedger
 
       begin
         open do |db|
-          # Read current context
-          current = db.query_one?(
-            "SELECT context FROM ledger_sessions WHERE id = ?",
-            ledger_session_id,
-            as: String
-          ) || "{}"
-
-          ctx = begin
-            JSON.parse(current).as_h
-          rescue
-            {} of String => JSON::Any
+          if write_once
+            # Atomic write-once: only set if key is absent in the JSON.
+            # json_extract returns NULL for missing keys; existing keys
+            # (even empty strings) are preserved.
+            db.exec(
+              <<-SQL,
+                UPDATE ledger_sessions SET
+                  context = CASE
+                    WHEN json_extract(context, ?) IS NULL
+                      THEN json_set(context, ?, ?)
+                    ELSE context
+                  END,
+                  updated_at = datetime('now')
+                WHERE id = ?
+              SQL
+              "$.#{key}",
+              "$.#{key}",
+              value,
+              ledger_session_id,
+            )
+          else
+            db.exec(
+              <<-SQL,
+                UPDATE ledger_sessions SET
+                  context = json_set(context, ?, ?),
+                  updated_at = datetime('now')
+                WHERE id = ?
+              SQL
+              "$.#{key}",
+              value,
+              ledger_session_id,
+            )
           end
-
-          # Write-once: skip if key exists
-          if write_once && ctx.has_key?(key)
-            return true
-          end
-
-          ctx[key] = JSON::Any.new(value)
-          new_json = JSON::Any.new(ctx).to_json
-
-          db.exec(
-            "UPDATE ledger_sessions SET context = ?, updated_at = datetime('now') WHERE id = ?",
-            new_json,
-            ledger_session_id,
-          )
           true
         end
       rescue
