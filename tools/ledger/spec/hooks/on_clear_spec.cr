@@ -383,6 +383,36 @@ describe "OnClear cwd and git_branch in additionalContext" do
     ctx.should contain("**Working directory**: `~/projects/my-app`")
   end
 
+  it "uses previous_cwd from context JSON when status line has overwritten cwd" do
+    test_session_id = "clear-prev-cwd-#{Random.rand(10000)}"
+    ledger_session_id = GalaxyLedger::Database.create_session(test_session_id,
+      cwd: "#{Path.home}/projects/galaxy",
+    )
+
+    # Simulate the timing issue: status line fires after reset and overwrites
+    # cwd to the project root, but previous_cwd is preserved in context JSON.
+    status = GalaxyLedger::ContextStatus.from_json(%({"cwd":"#{Path.home}/projects/kajabi","context":{"percentage":5.0}}))
+    GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
+
+    # Add data so we get full context (not empty)
+    exchange = GalaxyLedger::Exchange::LastExchange.new(
+      user_message: "Test",
+      full_content: "Response",
+      assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
+    )
+    GalaxyLedger::Database.update_session_last_interaction(ledger_session_id, exchange.to_pretty_json)
+
+    hook_input = {"session_id" => test_session_id, "source" => "clear"}.to_json
+
+    result = run_binary(["on-clear"], stdin: hook_input)
+    output = JSON.parse(result[:output])
+    ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+    # Should show the PREVIOUS cwd (where user was working), not the current
+    # cwd (project root after reset)
+    ctx.should contain("**Working directory**: `~/projects/galaxy`")
+    ctx.should_not contain("**Working directory**: `~/projects/kajabi`")
+  end
+
   it "includes git branch when session has git_branch" do
     test_session_id = "clear-branch-#{Random.rand(10000)}"
     ledger_session_id = GalaxyLedger::Database.create_session(test_session_id)
@@ -474,5 +504,99 @@ describe "OnClear edge cases" do
     result[:status].should eq(0)
     output = JSON.parse(result[:output])
     output["hookSpecificOutput"].should_not be_nil
+  end
+end
+
+describe "OnClear cwd reset timing regression" do
+  # End-to-end test for the cwd timing issue:
+  # 1. Session starts in /projects/galaxy (status line updates cwd)
+  # 2. /clear fires → Claude resets to project root
+  # 3. Status line fires → overwrites cwd to /projects/kajabi
+  # 4. Handoff should still report /projects/galaxy (from previous_cwd)
+
+  it "full cycle: status line updates, cwd changes on reset, handoff reports previous" do
+    session_id = "e2e-cwd-reset-#{Random.rand(100000)}"
+    ledger_session_id = GalaxyLedger::Database.create_session(session_id,
+      cwd: "#{Path.home}/projects/kajabi",
+    )
+
+    begin
+      # Step 1: Status line updates cwd to where user cd'd during session
+      status1 = GalaxyLedger::ContextStatus.from_json(
+        %({"cwd":"#{Path.home}/projects/galaxy","context":{"percentage":25.0}})
+      )
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, status1)
+
+      # Verify: cwd is now galaxy, previous_cwd is kajabi
+      s1 = GalaxyLedger::Database.get_session(session_id).not_nil!
+      s1.cwd.should eq("#{Path.home}/projects/galaxy")
+      JSON.parse(s1.context)["previous_cwd"].as_s.should eq("#{Path.home}/projects/kajabi")
+
+      # Step 2: More status line ticks with same cwd (previous_cwd stays put)
+      status2 = GalaxyLedger::ContextStatus.from_json(
+        %({"cwd":"#{Path.home}/projects/galaxy","context":{"percentage":40.0}})
+      )
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, status2)
+
+      s2 = GalaxyLedger::Database.get_session(session_id).not_nil!
+      JSON.parse(s2.context)["previous_cwd"].as_s.should eq("#{Path.home}/projects/kajabi")
+
+      # Step 3: /clear happens → Claude resets → status line pushes project root
+      status3 = GalaxyLedger::ContextStatus.from_json(
+        %({"cwd":"#{Path.home}/projects/kajabi","context":{"percentage":5.0}})
+      )
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, status3)
+
+      # Verify: cwd is now kajabi (wrong), but previous_cwd is galaxy (correct)
+      s3 = GalaxyLedger::Database.get_session(session_id).not_nil!
+      s3.cwd.should eq("#{Path.home}/projects/kajabi")
+      JSON.parse(s3.context)["previous_cwd"].as_s.should eq("#{Path.home}/projects/galaxy")
+
+      # Step 4: Handoff runs — should use previous_cwd, not cwd
+      exchange = GalaxyLedger::Exchange::LastExchange.new(
+        user_message: "Working on galaxy",
+        full_content: "Implemented feature",
+        assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
+      )
+      GalaxyLedger::Database.update_session_last_interaction(ledger_session_id, exchange.to_pretty_json)
+
+      hook_input = {"session_id" => session_id, "source" => "clear"}.to_json
+      result = run_binary(["on-clear"], stdin: hook_input)
+      result[:status].should eq(0)
+
+      output = JSON.parse(result[:output])
+      ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+      ctx.should contain("**Working directory**: `~/projects/galaxy`")
+      ctx.should_not contain("**Working directory**: `~/projects/kajabi`")
+    ensure
+      GalaxyLedger::Database.delete_session(session_id)
+    end
+  end
+
+  it "falls back to live cwd when no previous_cwd exists" do
+    session_id = "e2e-cwd-no-prev-#{Random.rand(100000)}"
+    ledger_session_id = GalaxyLedger::Database.create_session(session_id,
+      cwd: "#{Path.home}/projects/my-app",
+    )
+
+    begin
+      # No status line updates — no previous_cwd in context JSON
+      exchange = GalaxyLedger::Exchange::LastExchange.new(
+        user_message: "Test",
+        full_content: "Response",
+        assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
+      )
+      GalaxyLedger::Database.update_session_last_interaction(ledger_session_id, exchange.to_pretty_json)
+
+      hook_input = {"session_id" => session_id, "source" => "clear"}.to_json
+      result = run_binary(["on-clear"], stdin: hook_input)
+      result[:status].should eq(0)
+
+      output = JSON.parse(result[:output])
+      ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+      ctx.should contain("**Working directory**: `~/projects/my-app`")
+    ensure
+      GalaxyLedger::Database.delete_session(session_id)
+    end
   end
 end

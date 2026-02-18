@@ -63,11 +63,30 @@ module GalaxyLedger
           restoration: restoration,
           files: files,
           last_exchange: last_exchange,
-          cwd: session_record.try(&.cwd),
+          cwd: handoff_cwd(session_record),
           git_branch: session_record.try(&.git_branch),
         )
 
         puts Helpers.output_json(system_message, context)
+      end
+
+      # Extracts the pre-reset working directory from the session's context
+      # JSON. The status line saves previous_cwd atomically before each cwd
+      # update via update_session_metrics, so on a context reset this contains
+      # the directory the user was actually working in (before Claude reset to
+      # project root). Falls back to the live cwd column.
+      private def self.handoff_cwd(session_record : Database::SessionRecord?) : String?
+        return nil unless session_record
+
+        begin
+          ctx = JSON.parse(session_record.context)
+          if prev = ctx["previous_cwd"]?.try(&.as_s?)
+            return prev unless prev.empty?
+          end
+        rescue
+        end
+
+        session_record.cwd
       end
 
       private def self.extract_last_exchange(session_record : Database::SessionRecord?) : Exchange::LastExchange?

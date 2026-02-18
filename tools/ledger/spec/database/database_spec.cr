@@ -1553,6 +1553,100 @@ describe GalaxyLedger::Database do
       s.context_percentage.should eq(55.0)
     end
 
+    it "saves previous_cwd in context JSON before overwriting cwd" do
+      ledger_session_id = GalaxyLedger::Database.create_session("sess-metrics-prev-cwd",
+        cwd: "/home/user/projects/galaxy",
+      )
+
+      # Simulate status line pushing a new cwd (e.g., after context reset)
+      status_json = %({"cwd":"/home/user/projects/kajabi","context":{"percentage":10.0}})
+      status = GalaxyLedger::ContextStatus.from_json(status_json)
+
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
+
+      session = GalaxyLedger::Database.get_session("sess-metrics-prev-cwd")
+      session.should_not be_nil
+      s = session.not_nil!
+      # cwd should be the new value
+      s.cwd.should eq("/home/user/projects/kajabi")
+      # previous_cwd should be the old value, saved in context JSON
+      ctx = JSON.parse(s.context)
+      ctx["previous_cwd"]?.should_not be_nil
+      ctx["previous_cwd"].as_s.should eq("/home/user/projects/galaxy")
+    end
+
+    it "preserves previous_cwd across successive cwd updates" do
+      ledger_session_id = GalaxyLedger::Database.create_session("sess-metrics-prev-chain",
+        cwd: "/dir/a",
+      )
+
+      # First update: /dir/a → /dir/b
+      status1 = GalaxyLedger::ContextStatus.from_json(%({"cwd":"/dir/b","context":{"percentage":20.0}}))
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, status1)
+
+      s1 = GalaxyLedger::Database.get_session("sess-metrics-prev-chain").not_nil!
+      JSON.parse(s1.context)["previous_cwd"].as_s.should eq("/dir/a")
+
+      # Second update: /dir/b → /dir/c
+      status2 = GalaxyLedger::ContextStatus.from_json(%({"cwd":"/dir/c","context":{"percentage":30.0}}))
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, status2)
+
+      s2 = GalaxyLedger::Database.get_session("sess-metrics-prev-chain").not_nil!
+      s2.cwd.should eq("/dir/c")
+      JSON.parse(s2.context)["previous_cwd"].as_s.should eq("/dir/b")
+    end
+
+    it "does not overwrite previous_cwd when cwd is unchanged" do
+      ledger_session_id = GalaxyLedger::Database.create_session("sess-metrics-same-cwd",
+        cwd: "/dir/original",
+      )
+
+      # First update: /dir/original → /dir/new (previous_cwd = /dir/original)
+      status1 = GalaxyLedger::ContextStatus.from_json(%({"cwd":"/dir/new","context":{"percentage":20.0}}))
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, status1)
+
+      s1 = GalaxyLedger::Database.get_session("sess-metrics-same-cwd").not_nil!
+      JSON.parse(s1.context)["previous_cwd"].as_s.should eq("/dir/original")
+
+      # Second update: same cwd /dir/new — previous_cwd should stay /dir/original
+      status2 = GalaxyLedger::ContextStatus.from_json(%({"cwd":"/dir/new","context":{"percentage":30.0}}))
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, status2)
+
+      s2 = GalaxyLedger::Database.get_session("sess-metrics-same-cwd").not_nil!
+      s2.cwd.should eq("/dir/new")
+      JSON.parse(s2.context)["previous_cwd"].as_s.should eq("/dir/original")
+    end
+
+    it "does not overwrite context JSON when cwd is null" do
+      ledger_session_id = GalaxyLedger::Database.create_session("sess-metrics-no-cwd")
+
+      # No cwd in the status update — context should remain untouched
+      status_json = %({"context":{"percentage":50.0}})
+      status = GalaxyLedger::ContextStatus.from_json(status_json)
+
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
+
+      session = GalaxyLedger::Database.get_session("sess-metrics-no-cwd").not_nil!
+      ctx = JSON.parse(session.context)
+      ctx["previous_cwd"]?.should be_nil
+    end
+
+    it "preserves existing context keys when saving previous_cwd" do
+      ledger_session_id = GalaxyLedger::Database.create_session("sess-metrics-ctx-merge",
+        cwd: "/home/user/galaxy",
+      )
+      # Pre-populate context with an existing key
+      GalaxyLedger::Database.merge_session_context(ledger_session_id, "injected_context", "some data")
+
+      status = GalaxyLedger::ContextStatus.from_json(%({"cwd":"/home/user/kajabi","context":{"percentage":10.0}}))
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
+
+      session = GalaxyLedger::Database.get_session("sess-metrics-ctx-merge").not_nil!
+      ctx = JSON.parse(session.context)
+      ctx["injected_context"].as_s.should eq("some data")
+      ctx["previous_cwd"].as_s.should eq("/home/user/galaxy")
+    end
+
     it "returns false for empty session_identifier" do
       status_json = %({"session_id":"x"})
       status = GalaxyLedger::ContextStatus.from_json(status_json)

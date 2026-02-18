@@ -562,6 +562,11 @@ module GalaxyLedger
             <<-SQL,
               UPDATE ledger_sessions SET
                 updated_at = datetime('now'),
+                context = CASE
+                  WHEN ? IS NOT NULL AND cwd IS NOT NULL AND ? != cwd
+                    THEN json_set(context, '$.previous_cwd', cwd)
+                  ELSE context
+                END,
                 cwd = COALESCE(?, cwd),
                 project_dir = COALESCE(?, project_dir),
                 git_branch = COALESCE(?, git_branch),
@@ -576,6 +581,8 @@ module GalaxyLedger
                 lines_removed = COALESCE(?, lines_removed)
               WHERE id = ?
             SQL
+            status.cwd,
+            status.cwd,
             status.cwd,
             status.project_dir,
             status.git_branch,
