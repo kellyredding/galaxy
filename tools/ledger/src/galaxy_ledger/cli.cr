@@ -1594,6 +1594,11 @@ module GalaxyLedger
           STDERR.puts "[galaxy-ledger] Extracted #{inserted} user directions for session ##{ledger_session_id}"
         end
       end
+
+      # Record one-shot usage
+      if result.cost_usd > 0.0 || result.total_tokens > 0
+        Database.record_oneshot_usage(ledger_session_id, result.cost_usd, result.total_tokens)
+      end
     end
 
     private def self.show_extract_user_help
@@ -1783,6 +1788,11 @@ module GalaxyLedger
             end
           end
         end
+
+        # Record one-shot usage
+        if result.cost_usd > 0.0 || result.total_tokens > 0
+          Database.record_oneshot_usage(ledger_session_id, result.cost_usd, result.total_tokens)
+        end
       rescue ex
         STDERR.puts "[galaxy-ledger] Extract assistant error: #{ex.message}"
       end
@@ -1887,6 +1897,11 @@ module GalaxyLedger
         if inserted > 0
           STDERR.puts "[galaxy-ledger] Extracted #{inserted} #{extraction_type} entries from #{File.basename(file_path)}"
         end
+      end
+
+      # Record one-shot usage
+      if result.cost_usd > 0.0 || result.total_tokens > 0
+        Database.record_oneshot_usage(ledger_session_id, result.cost_usd, result.total_tokens)
       end
     end
 

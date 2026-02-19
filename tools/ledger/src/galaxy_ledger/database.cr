@@ -196,6 +196,8 @@ module GalaxyLedger
             baseline_tokens INTEGER NOT NULL DEFAULT 0,
             current_tokens INTEGER NOT NULL DEFAULT 0,
             cumulative_tokens INTEGER NOT NULL DEFAULT 0,
+            oneshot_cost_usd REAL NOT NULL DEFAULT 0.0,
+            oneshot_tokens INTEGER NOT NULL DEFAULT 0,
             FOREIGN KEY (ledger_session_id) REFERENCES ledger_sessions(id) ON DELETE CASCADE,
             UNIQUE(ledger_session_id, date)
           )
@@ -751,6 +753,65 @@ module GalaxyLedger
       end
     end
 
+    # Record one-shot usage (cost and tokens) for a session.
+    # Atomically increments the oneshot columns on the existing daily
+    # record, or creates one if none exists yet (e.g., one-shots fire
+    # before the first status line tick).
+    def self.record_oneshot_usage(
+      ledger_session_id : Int64,
+      cost_usd : Float64,
+      tokens : Int64,
+    ) : Bool
+      return false if ledger_session_id <= 0
+
+      begin
+        open do |db|
+          today = Time.utc.to_s("%Y-%m-%d")
+
+          # Check for existing record today
+          existing_id = db.query_one?(
+            "SELECT id FROM ledger_session_daily_usages WHERE ledger_session_id = ? AND date = ?",
+            ledger_session_id, today,
+            as: Int64,
+          )
+
+          if existing_id
+            # Atomically increment oneshot columns
+            db.exec(
+              <<-SQL,
+                UPDATE ledger_session_daily_usages SET
+                  oneshot_cost_usd = oneshot_cost_usd + ?,
+                  oneshot_tokens = oneshot_tokens + ?,
+                  updated_at = datetime('now')
+                WHERE id = ?
+              SQL
+              cost_usd,
+              tokens,
+              existing_id,
+            )
+          else
+            # Create a new record with zero baseline/cumulative, only oneshot populated
+            db.exec(
+              <<-SQL,
+                INSERT INTO ledger_session_daily_usages (
+                  ledger_session_id, date,
+                  baseline_cost_usd, current_cost_usd, cumulative_cost_usd,
+                  baseline_tokens, current_tokens, cumulative_tokens,
+                  oneshot_cost_usd, oneshot_tokens
+                ) VALUES (?, ?, 0.0, 0.0, 0.0, 0, 0, 0, ?, ?)
+              SQL
+              ledger_session_id, today,
+              cost_usd, tokens,
+            )
+          end
+
+          true
+        end
+      rescue
+        false
+      end
+    end
+
     # ============================================================
     # Daily Usage Aggregation Queries
     # ============================================================
@@ -788,8 +849,8 @@ module GalaxyLedger
           db.query_one?(
             <<-SQL,
               SELECT
-                COALESCE(SUM(cumulative_cost_usd), 0.0) as total_cost,
-                COALESCE(SUM(cumulative_tokens), 0) as total_tokens,
+                COALESCE(SUM(cumulative_cost_usd + oneshot_cost_usd), 0.0) as total_cost,
+                COALESCE(SUM(cumulative_tokens + oneshot_tokens), 0) as total_tokens,
                 COUNT(DISTINCT date) as active_days,
                 COUNT(DISTINCT ledger_session_id) as active_sessions
               FROM ledger_session_daily_usages
@@ -819,8 +880,8 @@ module GalaxyLedger
             <<-SQL,
               SELECT
                 date,
-                SUM(cumulative_cost_usd) as daily_cost,
-                SUM(cumulative_tokens) as daily_tokens
+                SUM(cumulative_cost_usd + oneshot_cost_usd) as daily_cost,
+                SUM(cumulative_tokens + oneshot_tokens) as daily_tokens
               FROM ledger_session_daily_usages
               WHERE date >= ? AND date <= ?
               GROUP BY date ORDER BY date
@@ -849,7 +910,7 @@ module GalaxyLedger
           result = db.query_one?(
             <<-SQL,
               SELECT AVG(daily_cost) FROM (
-                SELECT SUM(cumulative_cost_usd) as daily_cost
+                SELECT SUM(cumulative_cost_usd + oneshot_cost_usd) as daily_cost
                 FROM ledger_session_daily_usages
                 WHERE date >= ? AND date <= ?
                 GROUP BY date

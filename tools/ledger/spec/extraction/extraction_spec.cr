@@ -153,6 +153,11 @@ describe GalaxyLedger::Extraction do
         result = GalaxyLedger::Extraction::Result.new(session_title: "Some Title")
         result.empty?.should be_true
       end
+
+      it "returns true when has only usage data (usage alone is not content)" do
+        result = GalaxyLedger::Extraction::Result.new(cost_usd: 5.0, total_tokens: 10000_i64)
+        result.empty?.should be_true
+      end
     end
 
     describe "#session_title" do
@@ -164,6 +169,36 @@ describe GalaxyLedger::Extraction do
       it "defaults session_title to nil" do
         result = GalaxyLedger::Extraction::Result.new
         result.session_title.should be_nil
+      end
+    end
+
+    describe "usage fields" do
+      it "defaults cost_usd to 0.0" do
+        result = GalaxyLedger::Extraction::Result.new
+        result.cost_usd.should eq(0.0)
+      end
+
+      it "defaults total_tokens to 0" do
+        result = GalaxyLedger::Extraction::Result.new
+        result.total_tokens.should eq(0_i64)
+      end
+
+      it "stores cost_usd when provided" do
+        result = GalaxyLedger::Extraction::Result.new(cost_usd: 0.128)
+        result.cost_usd.should eq(0.128)
+      end
+
+      it "stores total_tokens when provided" do
+        result = GalaxyLedger::Extraction::Result.new(total_tokens: 34752_i64)
+        result.total_tokens.should eq(34752_i64)
+      end
+
+      it "cost_usd and total_tokens are settable via property" do
+        result = GalaxyLedger::Extraction::Result.new
+        result.cost_usd = 1.50
+        result.total_tokens = 25000_i64
+        result.cost_usd.should eq(1.50)
+        result.total_tokens.should eq(25000_i64)
       end
     end
   end

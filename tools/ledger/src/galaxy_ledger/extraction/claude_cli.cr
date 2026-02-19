@@ -6,24 +6,69 @@ module GalaxyLedger
       # Default timeout for Claude CLI calls (60 seconds)
       DEFAULT_TIMEOUT = 60.seconds
 
-      # Test stub: when set, run() returns this instead of calling Claude CLI.
-      # Used by specs to test the extraction pipeline without live subprocess calls.
+      # Result of a Claude CLI one-shot invocation, containing both the
+      # extracted result text and usage/cost metadata from the JSON envelope.
+      alias RunResult = NamedTuple(
+        result: String?,
+        cost_usd: Float64,
+        input_tokens: Int64,
+        output_tokens: Int64,
+        cache_creation_tokens: Int64,
+        cache_read_tokens: Int64,
+      )
+
+      ZERO_USAGE_RESULT = RunResult.new(
+        result: nil,
+        cost_usd: 0.0,
+        input_tokens: 0_i64,
+        output_tokens: 0_i64,
+        cache_creation_tokens: 0_i64,
+        cache_read_tokens: 0_i64,
+      )
+
+      # Test stub: when set, run() wraps this in a zero-usage RunResult.
+      # Used by existing pipeline specs for backward compatibility.
       @@test_response : String? = nil
 
       def self.test_response=(response : String?)
         @@test_response = response
       end
 
+      # Test stub: when set, run() returns this full RunResult directly.
+      # Takes precedence over @@test_response. Used by specs that need
+      # to verify usage data flow through the pipeline.
+      @@test_run_result : RunResult? = nil
+
+      def self.test_run_result=(result : RunResult?)
+        @@test_run_result = result
+      end
+
       # Run a Claude CLI one-shot command
-      # Returns the JSON output string, or nil on error
+      # Returns a RunResult with the extracted content and usage metadata.
+      # On error/timeout, returns a RunResult with result: nil and zero usage.
       def self.run(
         content : String,
         prompt : String,
         timeout : Time::Span = DEFAULT_TIMEOUT,
-      ) : String?
-        return nil if content.strip.empty?
-        return nil if prompt.strip.empty?
-        return @@test_response if @@test_response
+      ) : RunResult
+        return ZERO_USAGE_RESULT if content.strip.empty?
+        return ZERO_USAGE_RESULT if prompt.strip.empty?
+
+        # test_run_result takes precedence over test_response
+        if run_result = @@test_run_result
+          return run_result
+        end
+
+        if test_resp = @@test_response
+          return RunResult.new(
+            result: test_resp,
+            cost_usd: 0.0,
+            input_tokens: 0_i64,
+            output_tokens: 0_i64,
+            cache_creation_tokens: 0_i64,
+            cache_read_tokens: 0_i64,
+          )
+        end
 
         begin
           # Build the full prompt with content embedded
@@ -61,45 +106,76 @@ module GalaxyLedger
             # Timeout - kill the process
             process.terminate
             STDERR.puts "[galaxy-ledger] Claude CLI timeout after #{timeout.total_seconds}s"
-            return nil
+            return ZERO_USAGE_RESULT
           end
 
           status = process.wait
 
           if status.success?
-            # Parse the outer JSON wrapper to get the result field
-            extract_result_from_cli_output(output.strip)
+            # Parse the outer JSON wrapper to get result and usage data
+            extract_run_result_from_cli_output(output.strip)
           else
             STDERR.puts "[galaxy-ledger] Claude CLI error (exit #{status.exit_code}): #{error}"
-            nil
+            ZERO_USAGE_RESULT
           end
         rescue ex
           STDERR.puts "[galaxy-ledger] Claude CLI exception: #{ex.message}"
-          nil
+          ZERO_USAGE_RESULT
         end
       end
 
-      # Extract the actual result from Claude CLI's JSON output
+      # Extract the result text and usage data from Claude CLI's JSON output.
       # The --output-format json flag wraps the result in metadata:
-      # {"type":"result","result":"...actual content...","...":"..."}
-      private def self.extract_result_from_cli_output(output : String) : String?
-        return nil if output.empty?
+      # {"type":"result","result":"...","total_cost_usd":0.12,"usage":{...}}
+      private def self.extract_run_result_from_cli_output(output : String) : RunResult
+        return ZERO_USAGE_RESULT if output.empty?
 
         begin
           json = JSON.parse(output)
 
+          # Extract usage data from the envelope
+          cost_usd = json["total_cost_usd"]?.try(&.as_f?) || 0.0
+          input_tokens = json["usage"]?.try(&.["input_tokens"]?.try(&.as_i64?)) || 0_i64
+          output_tokens = json["usage"]?.try(&.["output_tokens"]?.try(&.as_i64?)) || 0_i64
+          cache_creation_tokens = json["usage"]?.try(&.["cache_creation_input_tokens"]?.try(&.as_i64?)) || 0_i64
+          cache_read_tokens = json["usage"]?.try(&.["cache_read_input_tokens"]?.try(&.as_i64?)) || 0_i64
+
           # Get the result field
           result = json["result"]?.try(&.as_s?)
-          return nil if result.nil? || result.empty?
+          if result.nil? || result.empty?
+            return RunResult.new(
+              result: nil,
+              cost_usd: cost_usd,
+              input_tokens: input_tokens,
+              output_tokens: output_tokens,
+              cache_creation_tokens: cache_creation_tokens,
+              cache_read_tokens: cache_read_tokens,
+            )
+          end
 
           # Strip markdown code blocks if present
           # Claude sometimes wraps JSON in ```json ... ```
           cleaned = strip_markdown_code_blocks(result)
 
-          cleaned.empty? ? nil : cleaned
+          RunResult.new(
+            result: cleaned.empty? ? nil : cleaned,
+            cost_usd: cost_usd,
+            input_tokens: input_tokens,
+            output_tokens: output_tokens,
+            cache_creation_tokens: cache_creation_tokens,
+            cache_read_tokens: cache_read_tokens,
+          )
         rescue
           # If outer parsing fails, maybe it's already just the content
-          strip_markdown_code_blocks(output)
+          cleaned = strip_markdown_code_blocks(output)
+          RunResult.new(
+            result: cleaned.empty? ? nil : cleaned,
+            cost_usd: 0.0,
+            input_tokens: 0_i64,
+            output_tokens: 0_i64,
+            cache_creation_tokens: 0_i64,
+            cache_read_tokens: 0_i64,
+          )
         end
       end
 

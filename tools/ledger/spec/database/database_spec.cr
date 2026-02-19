@@ -2345,4 +2345,422 @@ describe GalaxyLedger::Database do
       daily[0].tokens.should eq(150_i64) # 100 + 50
     end
   end
+
+  # ============================================================
+  # One-Shot Usage Recording
+  # ============================================================
+
+  describe ".record_oneshot_usage" do
+    it "creates a daily record when none exists" do
+      lid = GalaxyLedger::Database.create_session("sess-oneshot-create")
+      result = GalaxyLedger::Database.record_oneshot_usage(lid, 0.15, 5000_i64)
+      result.should be_true
+
+      today = Time.utc.to_s("%Y-%m-%d")
+      GalaxyLedger::Database.open do |db|
+        row = db.query_one?(
+          <<-SQL,
+            SELECT baseline_cost_usd, cumulative_cost_usd, oneshot_cost_usd,
+                   cumulative_tokens, oneshot_tokens
+            FROM ledger_session_daily_usages
+            WHERE ledger_session_id = ? AND date = ?
+          SQL
+          lid, today,
+        ) do |rs|
+          {
+            baseline_cost:   rs.read(Float64),
+            cumulative_cost: rs.read(Float64),
+            oneshot_cost:    rs.read(Float64),
+            cumulative_tok:  rs.read(Int64),
+            oneshot_tok:     rs.read(Int64),
+          }
+        end
+
+        row.should_not be_nil
+        row = row.not_nil!
+        row[:baseline_cost].should eq(0.0)
+        row[:cumulative_cost].should eq(0.0)
+        row[:oneshot_cost].should eq(0.15)
+        row[:cumulative_tok].should eq(0_i64)
+        row[:oneshot_tok].should eq(5000_i64)
+      end
+    end
+
+    it "increments on repeated calls" do
+      lid = GalaxyLedger::Database.create_session("sess-oneshot-incr")
+      GalaxyLedger::Database.record_oneshot_usage(lid, 0.10, 3000_i64)
+      GalaxyLedger::Database.record_oneshot_usage(lid, 0.05, 2000_i64)
+
+      today = Time.utc.to_s("%Y-%m-%d")
+      GalaxyLedger::Database.open do |db|
+        row = db.query_one?(
+          "SELECT oneshot_cost_usd, oneshot_tokens FROM ledger_session_daily_usages WHERE ledger_session_id = ? AND date = ?",
+          lid, today,
+        ) do |rs|
+          {cost: rs.read(Float64), tokens: rs.read(Int64)}
+        end
+        row.should_not be_nil
+        row = row.not_nil!
+        row[:cost].should be_close(0.15, 0.001)
+        row[:tokens].should eq(5000_i64)
+      end
+    end
+
+    it "oneshot columns are independent of status line columns" do
+      lid = GalaxyLedger::Database.create_session("sess-oneshot-indep")
+
+      # Status line tick first
+      status = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":5000},"cost":{"usd":0.50}}))
+      GalaxyLedger::Database.update_session_metrics(lid, status)
+
+      # Then one-shot
+      GalaxyLedger::Database.record_oneshot_usage(lid, 0.10, 3000_i64)
+
+      today = Time.utc.to_s("%Y-%m-%d")
+      GalaxyLedger::Database.open do |db|
+        row = db.query_one?(
+          <<-SQL,
+            SELECT cumulative_cost_usd, cumulative_tokens, oneshot_cost_usd, oneshot_tokens
+            FROM ledger_session_daily_usages
+            WHERE ledger_session_id = ? AND date = ?
+          SQL
+          lid, today,
+        ) do |rs|
+          {
+            cumulative_cost: rs.read(Float64),
+            cumulative_tok:  rs.read(Int64),
+            oneshot_cost:    rs.read(Float64),
+            oneshot_tok:     rs.read(Int64),
+          }
+        end
+        row.should_not be_nil
+        row = row.not_nil!
+        row[:cumulative_cost].should eq(0.50)
+        row[:cumulative_tok].should eq(5000_i64)
+        row[:oneshot_cost].should eq(0.10)
+        row[:oneshot_tok].should eq(3000_i64)
+      end
+    end
+
+    it "status line updates don't stomp oneshot columns" do
+      lid = GalaxyLedger::Database.create_session("sess-oneshot-nostomp")
+
+      # One-shot first
+      GalaxyLedger::Database.record_oneshot_usage(lid, 0.10, 3000_i64)
+
+      # Then status line tick
+      status = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":10000},"cost":{"usd":0.50}}))
+      GalaxyLedger::Database.update_session_metrics(lid, status)
+
+      today = Time.utc.to_s("%Y-%m-%d")
+      GalaxyLedger::Database.open do |db|
+        row = db.query_one?(
+          "SELECT oneshot_cost_usd, oneshot_tokens FROM ledger_session_daily_usages WHERE ledger_session_id = ? AND date = ?",
+          lid, today,
+        ) do |rs|
+          {cost: rs.read(Float64), tokens: rs.read(Int64)}
+        end
+        row.should_not be_nil
+        row = row.not_nil!
+        row[:cost].should eq(0.10)
+        row[:tokens].should eq(3000_i64)
+      end
+    end
+
+    it "interleaved updates: realistic scenario" do
+      lid = GalaxyLedger::Database.create_session("sess-oneshot-interleave")
+      today = Time.utc.to_s("%Y-%m-%d")
+
+      # Status tick 1: cost=0.50, tokens=5000
+      status1 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":5000},"cost":{"usd":0.50}}))
+      GalaxyLedger::Database.update_session_metrics(lid, status1)
+
+      # One-shot 1: cost=0.10, tokens=3000
+      GalaxyLedger::Database.record_oneshot_usage(lid, 0.10, 3000_i64)
+
+      # Status tick 2: cost=1.00, tokens=12000
+      status2 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":12000},"cost":{"usd":1.00}}))
+      GalaxyLedger::Database.update_session_metrics(lid, status2)
+
+      # One-shot 2: cost=0.05, tokens=1000
+      GalaxyLedger::Database.record_oneshot_usage(lid, 0.05, 1000_i64)
+
+      GalaxyLedger::Database.open do |db|
+        row = db.query_one?(
+          <<-SQL,
+            SELECT cumulative_cost_usd, cumulative_tokens, oneshot_cost_usd, oneshot_tokens
+            FROM ledger_session_daily_usages
+            WHERE ledger_session_id = ? AND date = ?
+          SQL
+          lid, today,
+        ) do |rs|
+          {
+            cumulative_cost: rs.read(Float64),
+            cumulative_tok:  rs.read(Int64),
+            oneshot_cost:    rs.read(Float64),
+            oneshot_tok:     rs.read(Int64),
+          }
+        end
+        row.should_not be_nil
+        row = row.not_nil!
+        row[:cumulative_cost].should eq(1.00)
+        row[:cumulative_tok].should eq(12000_i64)
+        row[:oneshot_cost].should be_close(0.15, 0.001)
+        row[:oneshot_tok].should eq(4000_i64)
+      end
+    end
+
+    it "handles zero values without error" do
+      lid = GalaxyLedger::Database.create_session("sess-oneshot-zero")
+      result = GalaxyLedger::Database.record_oneshot_usage(lid, 0.0, 0_i64)
+      result.should be_true
+    end
+
+    it "returns false for invalid session ID" do
+      result = GalaxyLedger::Database.record_oneshot_usage(0_i64, 0.10, 3000_i64)
+      result.should be_false
+    end
+  end
+
+  # ============================================================
+  # Spend Aggregation with Oneshot Data
+  # ============================================================
+
+  describe "spend aggregation with oneshot data" do
+    it "spend_summary includes oneshot costs in totals" do
+      lid = GalaxyLedger::Database.create_session("sess-spend-oneshot-1")
+
+      GalaxyLedger::Database.open do |db|
+        db.exec(
+          <<-SQL,
+            INSERT INTO ledger_session_daily_usages (
+              ledger_session_id, date,
+              baseline_cost_usd, current_cost_usd, cumulative_cost_usd,
+              baseline_tokens, current_tokens, cumulative_tokens,
+              oneshot_cost_usd, oneshot_tokens
+            ) VALUES (?, ?, 0.0, 5.0, 5.0, 0, 100000, 100000, 0.50, 10000)
+          SQL
+          lid, "2025-03-01",
+        )
+      end
+
+      summary = GalaxyLedger::Database.spend_summary("2025-03-01", "2025-03-01")
+      summary.total_cost.should eq(5.50)
+      summary.total_tokens.should eq(110000_i64)
+    end
+
+    it "spend_daily includes oneshot costs in daily totals" do
+      lid = GalaxyLedger::Database.create_session("sess-spend-oneshot-2")
+
+      GalaxyLedger::Database.open do |db|
+        db.exec(
+          <<-SQL,
+            INSERT INTO ledger_session_daily_usages (
+              ledger_session_id, date,
+              baseline_cost_usd, current_cost_usd, cumulative_cost_usd,
+              baseline_tokens, current_tokens, cumulative_tokens,
+              oneshot_cost_usd, oneshot_tokens
+            ) VALUES (?, ?, 0.0, 3.0, 3.0, 0, 50000, 50000, 0.25, 5000)
+          SQL
+          lid, "2025-03-01",
+        )
+      end
+
+      daily = GalaxyLedger::Database.spend_daily("2025-03-01", "2025-03-01")
+      daily.size.should eq(1)
+      daily[0].cost.should eq(3.25)
+      daily[0].tokens.should eq(55000_i64)
+    end
+
+    it "spend_avg_daily includes oneshot costs" do
+      lid = GalaxyLedger::Database.create_session("sess-spend-oneshot-3")
+
+      GalaxyLedger::Database.open do |db|
+        db.exec(
+          <<-SQL,
+            INSERT INTO ledger_session_daily_usages (
+              ledger_session_id, date,
+              baseline_cost_usd, current_cost_usd, cumulative_cost_usd,
+              baseline_tokens, current_tokens, cumulative_tokens,
+              oneshot_cost_usd, oneshot_tokens
+            ) VALUES (?, ?, 0.0, 6.0, 6.0, 0, 100, 100, 1.0, 10)
+          SQL
+          lid, "2025-03-01",
+        )
+        db.exec(
+          <<-SQL,
+            INSERT INTO ledger_session_daily_usages (
+              ledger_session_id, date,
+              baseline_cost_usd, current_cost_usd, cumulative_cost_usd,
+              baseline_tokens, current_tokens, cumulative_tokens,
+              oneshot_cost_usd, oneshot_tokens
+            ) VALUES (?, ?, 6.0, 10.0, 4.0, 100, 200, 100, 0.50, 5)
+          SQL
+          lid, "2025-03-02",
+        )
+      end
+
+      avg = GalaxyLedger::Database.spend_avg_daily("2025-03-01", "2025-03-02")
+      # Day 1: 6.0 + 1.0 = 7.0; Day 2: 4.0 + 0.50 = 4.50; Avg: (7.0 + 4.50) / 2 = 5.75
+      avg.should eq(5.75)
+    end
+
+    it "multiple sessions with mixed oneshot" do
+      lid1 = GalaxyLedger::Database.create_session("sess-spend-mix-1")
+      lid2 = GalaxyLedger::Database.create_session("sess-spend-mix-2")
+
+      GalaxyLedger::Database.open do |db|
+        # Session 1 has oneshot data
+        db.exec(
+          <<-SQL,
+            INSERT INTO ledger_session_daily_usages (
+              ledger_session_id, date,
+              baseline_cost_usd, current_cost_usd, cumulative_cost_usd,
+              baseline_tokens, current_tokens, cumulative_tokens,
+              oneshot_cost_usd, oneshot_tokens
+            ) VALUES (?, ?, 0.0, 5.0, 5.0, 0, 100000, 100000, 0.50, 10000)
+          SQL
+          lid1, "2025-03-01",
+        )
+        # Session 2 has no oneshot data (defaults to 0)
+        db.exec(
+          <<-SQL,
+            INSERT INTO ledger_session_daily_usages (
+              ledger_session_id, date,
+              baseline_cost_usd, current_cost_usd, cumulative_cost_usd,
+              baseline_tokens, current_tokens, cumulative_tokens
+            ) VALUES (?, ?, 0.0, 2.0, 2.0, 0, 50000, 50000)
+          SQL
+          lid2, "2025-03-01",
+        )
+      end
+
+      summary = GalaxyLedger::Database.spend_summary("2025-03-01", "2025-03-01")
+      summary.total_cost.should eq(7.50)     # 5.0 + 0.50 + 2.0
+      summary.total_tokens.should eq(160000) # 100000 + 10000 + 50000
+    end
+
+    it "cascade delete includes oneshot data" do
+      lid = GalaxyLedger::Database.create_session("sess-oneshot-cascade")
+
+      status = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":5000},"cost":{"usd":1.00}}))
+      GalaxyLedger::Database.update_session_metrics(lid, status)
+      GalaxyLedger::Database.record_oneshot_usage(lid, 0.25, 5000_i64)
+
+      today = Time.utc.to_s("%Y-%m-%d")
+      GalaxyLedger::Database.spend_daily(today, today).size.should eq(1)
+
+      GalaxyLedger::Database.delete_session("sess-oneshot-cascade")
+      GalaxyLedger::Database.spend_daily(today, today).size.should eq(0)
+    end
+  end
+
+  # ============================================================
+  # Migration: 0.3.2
+  # ============================================================
+
+  describe "0.3.2 migration" do
+    # Migration test creates a partial DB (only the tables needed to test
+    # the migration). Clean up by deleting the DB so subsequent tests get
+    # a fresh full-schema database instead of the partial one.
+    after_each do
+      db_path = GalaxyLedger::Database.database_path
+      File.delete(db_path) if File.exists?(db_path)
+    end
+
+    it "adds oneshot columns to existing table" do
+      db_path = GalaxyLedger::Database.database_path
+      File.delete(db_path) if File.exists?(db_path)
+
+      # Create a 0.3.1-era database manually (without oneshot columns)
+      DB.open("sqlite3://#{db_path}") do |db|
+        db.exec("PRAGMA journal_mode=WAL")
+        db.exec("PRAGMA foreign_keys=ON")
+
+        db.exec(<<-SQL)
+          CREATE TABLE IF NOT EXISTS schema_info (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+          )
+        SQL
+        db.exec("INSERT INTO schema_info (key, value) VALUES ('version', '0.3.1')")
+
+        db.exec(<<-SQL)
+          CREATE TABLE IF NOT EXISTS ledger_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT,
+            current_session_identifier TEXT,
+            current_claude_pid INTEGER,
+            started_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now')),
+            cwd TEXT, project_dir TEXT, git_branch TEXT,
+            model_id TEXT, model_display_name TEXT, claude_version TEXT,
+            context_percentage REAL DEFAULT 0.0,
+            tokens_used INTEGER DEFAULT 0, tokens_max INTEGER DEFAULT 0,
+            cost_usd REAL DEFAULT 0.0,
+            lines_added INTEGER DEFAULT 0, lines_removed INTEGER DEFAULT 0,
+            context TEXT NOT NULL DEFAULT '{}',
+            last_interaction TEXT
+          )
+        SQL
+
+        db.exec(<<-SQL)
+          CREATE TABLE IF NOT EXISTS ledger_session_daily_usages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ledger_session_id INTEGER NOT NULL,
+            date TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            baseline_cost_usd REAL NOT NULL DEFAULT 0.0,
+            current_cost_usd REAL NOT NULL DEFAULT 0.0,
+            cumulative_cost_usd REAL NOT NULL DEFAULT 0.0,
+            baseline_tokens INTEGER NOT NULL DEFAULT 0,
+            current_tokens INTEGER NOT NULL DEFAULT 0,
+            cumulative_tokens INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (ledger_session_id) REFERENCES ledger_sessions(id) ON DELETE CASCADE,
+            UNIQUE(ledger_session_id, date)
+          )
+        SQL
+
+        # Insert a pre-migration row
+        db.exec("INSERT INTO ledger_sessions (current_session_identifier) VALUES ('migration-test')")
+        db.exec(
+          "INSERT INTO ledger_session_daily_usages (ledger_session_id, date, baseline_cost_usd, current_cost_usd, cumulative_cost_usd, baseline_tokens, current_tokens, cumulative_tokens) VALUES (1, '2025-03-01', 0.0, 5.0, 5.0, 0, 100, 100)"
+        )
+      end
+
+      # Open via Database.open which triggers migration
+      GalaxyLedger::Database.open do |db|
+        # Verify version was updated
+        version = GalaxyLedger::Migrations.get_database_version(db)
+        version.should eq(GalaxyLedger::VERSION)
+
+        # Verify columns exist via PRAGMA
+        columns = [] of String
+        db.query("PRAGMA table_info(ledger_session_daily_usages)") do |rs|
+          rs.each do
+            rs.read(Int64)             # cid
+            columns << rs.read(String) # name
+            rs.read(String)            # type
+            rs.read(Int64)             # notnull
+            rs.read(String | Nil)      # dflt_value
+            rs.read(Int64)             # pk
+          end
+        end
+        columns.should contain("oneshot_cost_usd")
+        columns.should contain("oneshot_tokens")
+
+        # Verify existing data has default values
+        row = db.query_one?(
+          "SELECT oneshot_cost_usd, oneshot_tokens FROM ledger_session_daily_usages WHERE ledger_session_id = 1",
+        ) do |rs|
+          {cost: rs.read(Float64), tokens: rs.read(Int64)}
+        end
+        row.should_not be_nil
+        row = row.not_nil!
+        row[:cost].should eq(0.0)
+        row[:tokens].should eq(0_i64)
+      end
+    end
+  end
 end

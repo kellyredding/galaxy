@@ -7,6 +7,7 @@ require "../spec_helper"
 describe "Extraction Pipeline" do
   after_each do
     GalaxyLedger::Extraction::ClaudeCLI.test_response = nil
+    GalaxyLedger::Extraction::ClaudeCLI.test_run_result = nil
   end
 
   # ---------------------------------------------------------------------------
@@ -643,6 +644,222 @@ describe "Extraction Pipeline" do
       summary.files_modified.size.should eq(2)
       summary.files_modified.should contain("app/models/user.rb")
       summary.key_actions.size.should eq(2)
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # ClaudeCLI.run Return Type Behavior
+  # ---------------------------------------------------------------------------
+  describe "ClaudeCLI.run return type" do
+    it "test_response wraps in zero-usage RunResult" do
+      GalaxyLedger::Extraction::ClaudeCLI.test_response = {
+        "extractions" => [] of String,
+      }.to_json
+
+      run_result = GalaxyLedger::Extraction::ClaudeCLI.run(
+        content: "test content",
+        prompt: "test prompt",
+      )
+      run_result[:result].should_not be_nil
+      run_result[:cost_usd].should eq(0.0)
+      run_result[:input_tokens].should eq(0_i64)
+      run_result[:output_tokens].should eq(0_i64)
+      run_result[:cache_creation_tokens].should eq(0_i64)
+      run_result[:cache_read_tokens].should eq(0_i64)
+    end
+
+    it "test_run_result returns full tuple" do
+      full_result = GalaxyLedger::Extraction::ClaudeCLI::RunResult.new(
+        result: %({"extractions":[]}),
+        cost_usd: 0.15,
+        input_tokens: 5000_i64,
+        output_tokens: 200_i64,
+        cache_creation_tokens: 3000_i64,
+        cache_read_tokens: 1000_i64,
+      )
+      GalaxyLedger::Extraction::ClaudeCLI.test_run_result = full_result
+
+      run_result = GalaxyLedger::Extraction::ClaudeCLI.run(
+        content: "test content",
+        prompt: "test prompt",
+      )
+      run_result[:result].should eq(%({"extractions":[]}))
+      run_result[:cost_usd].should eq(0.15)
+      run_result[:input_tokens].should eq(5000_i64)
+      run_result[:output_tokens].should eq(200_i64)
+      run_result[:cache_creation_tokens].should eq(3000_i64)
+      run_result[:cache_read_tokens].should eq(1000_i64)
+    end
+
+    it "test_run_result takes precedence over test_response" do
+      GalaxyLedger::Extraction::ClaudeCLI.test_response = "should be ignored"
+      GalaxyLedger::Extraction::ClaudeCLI.test_run_result = GalaxyLedger::Extraction::ClaudeCLI::RunResult.new(
+        result: "from_run_result",
+        cost_usd: 0.50,
+        input_tokens: 100_i64,
+        output_tokens: 50_i64,
+        cache_creation_tokens: 0_i64,
+        cache_read_tokens: 0_i64,
+      )
+
+      run_result = GalaxyLedger::Extraction::ClaudeCLI.run(
+        content: "test content",
+        prompt: "test prompt",
+      )
+      run_result[:result].should eq("from_run_result")
+      run_result[:cost_usd].should eq(0.50)
+    end
+
+    it "returns zero-usage RunResult for empty content" do
+      run_result = GalaxyLedger::Extraction::ClaudeCLI.run(
+        content: "  ",
+        prompt: "test prompt",
+      )
+      run_result[:result].should be_nil
+      run_result[:cost_usd].should eq(0.0)
+    end
+
+    it "returns zero-usage RunResult for empty prompt" do
+      run_result = GalaxyLedger::Extraction::ClaudeCLI.run(
+        content: "test content",
+        prompt: "  ",
+      )
+      run_result[:result].should be_nil
+      run_result[:cost_usd].should eq(0.0)
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # Usage Data Flow Through Extraction Pipeline
+  # ---------------------------------------------------------------------------
+  describe "usage data propagation" do
+    it "propagates usage to Result via extract_user_directions" do
+      GalaxyLedger::Extraction::ClaudeCLI.test_run_result = GalaxyLedger::Extraction::ClaudeCLI::RunResult.new(
+        result: {
+          "extractions" => [
+            {
+              "type"       => "direction",
+              "content"    => "Always use trailing commas",
+              "importance" => "medium",
+            },
+          ],
+        }.to_json,
+        cost_usd: 0.15,
+        input_tokens: 5000_i64,
+        output_tokens: 200_i64,
+        cache_creation_tokens: 3000_i64,
+        cache_read_tokens: 1000_i64,
+      )
+
+      result = GalaxyLedger::Extraction.extract_user_directions("some input")
+      result.cost_usd.should eq(0.15)
+      result.total_tokens.should eq(9200_i64) # 5000+200+3000+1000
+      result.extractions.size.should eq(1)
+    end
+
+    it "propagates usage to Result via extract_assistant_learnings" do
+      GalaxyLedger::Extraction::ClaudeCLI.test_run_result = GalaxyLedger::Extraction::ClaudeCLI::RunResult.new(
+        result: {
+          "summary" => {
+            "user_request"       => "Test",
+            "assistant_response" => "Done",
+            "files_modified"     => [] of String,
+            "key_actions"        => [] of String,
+          },
+          "extractions" => [] of String,
+        }.to_json,
+        cost_usd: 0.25,
+        input_tokens: 10000_i64,
+        output_tokens: 500_i64,
+        cache_creation_tokens: 0_i64,
+        cache_read_tokens: 5000_i64,
+      )
+
+      result = GalaxyLedger::Extraction.extract_assistant_learnings("q", "a")
+      result.cost_usd.should eq(0.25)
+      result.total_tokens.should eq(15500_i64)
+    end
+
+    it "propagates usage to Result via extract_guidelines" do
+      GalaxyLedger::Extraction::ClaudeCLI.test_run_result = GalaxyLedger::Extraction::ClaudeCLI::RunResult.new(
+        result: {
+          "extractions" => [
+            {
+              "type"       => "guideline",
+              "content"    => "Use double quotes",
+              "importance" => "medium",
+            },
+          ],
+        }.to_json,
+        cost_usd: 0.10,
+        input_tokens: 2000_i64,
+        output_tokens: 100_i64,
+        cache_creation_tokens: 1000_i64,
+        cache_read_tokens: 500_i64,
+      )
+
+      result = GalaxyLedger::Extraction.extract_guidelines("/path/to/file.md", "content")
+      result.cost_usd.should eq(0.10)
+      result.total_tokens.should eq(3600_i64)
+    end
+
+    it "propagates usage to Result via extract_implementation_plan" do
+      GalaxyLedger::Extraction::ClaudeCLI.test_run_result = GalaxyLedger::Extraction::ClaudeCLI::RunResult.new(
+        result: {
+          "extractions" => [
+            {
+              "type"       => "implementation_plan",
+              "content"    => "Phase 1 complete",
+              "importance" => "high",
+            },
+          ],
+        }.to_json,
+        cost_usd: 0.20,
+        input_tokens: 8000_i64,
+        output_tokens: 400_i64,
+        cache_creation_tokens: 2000_i64,
+        cache_read_tokens: 3000_i64,
+      )
+
+      result = GalaxyLedger::Extraction.extract_implementation_plan("/path/to/plan.md", "content")
+      result.cost_usd.should eq(0.20)
+      result.total_tokens.should eq(13400_i64)
+    end
+
+    it "returns zero usage on nil result" do
+      GalaxyLedger::Extraction::ClaudeCLI.test_run_result = GalaxyLedger::Extraction::ClaudeCLI::RunResult.new(
+        result: nil,
+        cost_usd: 0.05,
+        input_tokens: 100_i64,
+        output_tokens: 0_i64,
+        cache_creation_tokens: 0_i64,
+        cache_read_tokens: 0_i64,
+      )
+
+      result = GalaxyLedger::Extraction.extract_user_directions("some input")
+      result.empty?.should be_true
+      # When result is nil, we get a fresh Result.new — zero usage
+      result.cost_usd.should eq(0.0)
+      result.total_tokens.should eq(0_i64)
+    end
+
+    it "zero-usage test_response backward compat preserves existing pipeline tests" do
+      # This validates that all existing pipeline tests using test_response
+      # still work — the extraction result has zero usage data
+      GalaxyLedger::Extraction::ClaudeCLI.test_response = {
+        "extractions" => [
+          {
+            "type"       => "direction",
+            "content"    => "Always use trailing commas",
+            "importance" => "medium",
+          },
+        ],
+      }.to_json
+
+      result = GalaxyLedger::Extraction.extract_user_directions("some input")
+      result.extractions.size.should eq(1)
+      result.cost_usd.should eq(0.0)
+      result.total_tokens.should eq(0_i64)
     end
   end
 end

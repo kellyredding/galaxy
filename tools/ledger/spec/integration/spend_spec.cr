@@ -8,6 +8,8 @@ def seed_daily_usage(
   tokens : Int64,
   baseline_cost : Float64 = 0.0,
   baseline_tokens : Int64 = 0_i64,
+  oneshot_cost : Float64 = 0.0,
+  oneshot_tokens : Int64 = 0_i64,
 )
   GalaxyLedger::Database.open do |db|
     db.exec(
@@ -15,12 +17,14 @@ def seed_daily_usage(
         INSERT INTO ledger_session_daily_usages (
           ledger_session_id, date,
           baseline_cost_usd, current_cost_usd, cumulative_cost_usd,
-          baseline_tokens, current_tokens, cumulative_tokens
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          baseline_tokens, current_tokens, cumulative_tokens,
+          oneshot_cost_usd, oneshot_tokens
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       SQL
       ledger_session_id, date,
       baseline_cost, baseline_cost + cost, cost,
       baseline_tokens, baseline_tokens + tokens, tokens,
+      oneshot_cost, oneshot_tokens,
     )
   end
 end
@@ -128,6 +132,43 @@ describe "CLI Integration - spend" do
       result[:output].should contain("$5.00")
       # Should still have the summary
       result[:output].should contain("Total Cost:")
+      result[:status].should eq(0)
+    end
+  end
+
+  describe "spend with oneshot data" do
+    it "includes oneshot in total cost" do
+      lid = GalaxyLedger::Database.create_session("sess-spend-oneshot")
+      today = Time.utc.to_s("%Y-%m-%d")
+      seed_daily_usage(lid, today, 5.00, 100000_i64, oneshot_cost: 0.50, oneshot_tokens: 10000_i64)
+
+      result = run_binary(["spend", "today"])
+      result[:output].should contain("$5.50")
+      result[:output].should contain("110.0k tok")
+      result[:status].should eq(0)
+    end
+
+    it "includes oneshot in JSON output" do
+      lid = GalaxyLedger::Database.create_session("sess-spend-oneshot-json")
+      today = Time.utc.to_s("%Y-%m-%d")
+      seed_daily_usage(lid, today, 5.00, 100000_i64, oneshot_cost: 0.50, oneshot_tokens: 10000_i64)
+
+      result = run_binary(["spend", "today", "--json"])
+      result[:status].should eq(0)
+
+      json = JSON.parse(result[:output])
+      json["summary"]["total_cost_usd"].as_f.should eq(5.5)
+      json["summary"]["total_tokens"].as_i64.should eq(110000_i64)
+    end
+
+    it "shows cost when only oneshot data exists (no session activity)" do
+      lid = GalaxyLedger::Database.create_session("sess-spend-oneshot-only")
+      today = Time.utc.to_s("%Y-%m-%d")
+      seed_daily_usage(lid, today, 0.0, 0_i64, oneshot_cost: 0.25, oneshot_tokens: 5000_i64)
+
+      result = run_binary(["spend", "today"])
+      result[:output].should contain("$0.25")
+      result[:output].should contain("5.0k tok")
       result[:status].should eq(0)
     end
   end

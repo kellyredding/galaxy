@@ -97,6 +97,10 @@ module GalaxyLedger
         SQL
         db.exec("CREATE INDEX IF NOT EXISTS idx_snapshots_session ON ledger_snapshots(ledger_session_id)")
       },
+      "0.3.2" => ->(db : DB::Database) {
+        db.exec("ALTER TABLE ledger_session_daily_usages ADD COLUMN oneshot_cost_usd REAL NOT NULL DEFAULT 0.0")
+        db.exec("ALTER TABLE ledger_session_daily_usages ADD COLUMN oneshot_tokens INTEGER NOT NULL DEFAULT 0")
+      },
     }
 
     # ==========================================================================
