@@ -2373,6 +2373,160 @@ module GalaxyLedger
     end
 
     # ============================================================
+    # Prune Operations
+    # ============================================================
+
+    # Standard prune duration periods and their day counts
+    PRUNE_PERIODS = {
+      "1w" => 7,
+      "2w" => 14,
+      "1m" => 30,
+      "2m" => 60,
+      "3m" => 90,
+      "6m" => 180,
+      "1y" => 365,
+      "2y" => 730,
+      "5y" => 1825,
+    }
+
+    # Counts for a single prune period
+    struct PruneCounts
+      getter sessions : Int32
+      getter entries : Int32
+      getter files : Int32
+      getter daily_usages : Int32
+      getter snapshots : Int32
+      getter artifacts : Int32
+
+      def initialize(
+        @sessions, @entries, @files,
+        @daily_usages, @snapshots, @artifacts,
+      )
+      end
+    end
+
+    # Count prunable data for all standard periods at once.
+    # Returns a hash of period label => PruneCounts.
+    def self.count_prunable_summary : Hash(String, PruneCounts)
+      result = {} of String => PruneCounts
+
+      begin
+        open do |db|
+          PRUNE_PERIODS.each do |label, days|
+            cutoff = (Time.utc - days.days).to_s("%Y-%m-%d %H:%M:%S")
+            result[label] = count_prunable_for_cutoff(db, cutoff)
+          end
+        end
+      rescue
+        # Return whatever we have on error
+      end
+
+      result
+    end
+
+    # Count prunable data for a specific cutoff date string.
+    def self.count_prunable_data(cutoff_date : String) : PruneCounts
+      begin
+        open do |db|
+          count_prunable_for_cutoff(db, cutoff_date)
+        end
+      rescue
+        PruneCounts.new(0, 0, 0, 0, 0, 0)
+      end
+    end
+
+    # Internal: count prunable + preserved data for a cutoff, using an existing db connection.
+    private def self.count_prunable_for_cutoff(db : DB::Database, cutoff : String) : PruneCounts
+      sessions = db.scalar(
+        "SELECT COUNT(*) FROM ledger_sessions WHERE updated_at < ?", cutoff
+      ).as(Int64).to_i
+
+      entries = db.scalar(
+        "SELECT COUNT(*) FROM ledger_entries WHERE ledger_session_id IN (SELECT id FROM ledger_sessions WHERE updated_at < ?)", cutoff
+      ).as(Int64).to_i
+
+      files = db.scalar(
+        "SELECT COUNT(*) FROM ledger_session_files WHERE ledger_session_id IN (SELECT id FROM ledger_sessions WHERE updated_at < ?)", cutoff
+      ).as(Int64).to_i
+
+      daily_usages = db.scalar(
+        "SELECT COUNT(*) FROM ledger_session_daily_usages WHERE ledger_session_id IN (SELECT id FROM ledger_sessions WHERE updated_at < ?)", cutoff
+      ).as(Int64).to_i
+
+      snapshots = db.scalar(
+        "SELECT COUNT(*) FROM ledger_snapshots WHERE ledger_session_id IN (SELECT id FROM ledger_sessions WHERE updated_at < ?)", cutoff
+      ).as(Int64).to_i
+
+      artifacts = db.scalar(
+        "SELECT COUNT(*) FROM ledger_artifacts WHERE ledger_session_id IN (SELECT id FROM ledger_sessions WHERE updated_at < ?)", cutoff
+      ).as(Int64).to_i
+
+      PruneCounts.new(sessions, entries, files, daily_usages, snapshots, artifacts)
+    end
+
+    # Prune entries and files for sessions older than cutoff.
+    # Returns {entries_deleted, files_deleted}.
+    def self.prune_session_data(cutoff_date : String) : NamedTuple(entries: Int32, files: Int32)
+      begin
+        open do |db|
+          db.exec(
+            "DELETE FROM ledger_entries WHERE ledger_session_id IN (SELECT id FROM ledger_sessions WHERE updated_at < ?)",
+            cutoff_date,
+          )
+          entries_deleted = db.scalar("SELECT changes()").as(Int64).to_i
+
+          db.exec(
+            "DELETE FROM ledger_session_files WHERE ledger_session_id IN (SELECT id FROM ledger_sessions WHERE updated_at < ?)",
+            cutoff_date,
+          )
+          files_deleted = db.scalar("SELECT changes()").as(Int64).to_i
+
+          # Compact FTS tombstones from bulk entry deletes
+          db.exec("INSERT INTO ledger_fts(ledger_fts) VALUES('optimize')")
+          db.exec("PRAGMA optimize")
+
+          {entries: entries_deleted, files: files_deleted}
+        end
+      rescue
+        {entries: 0, files: 0}
+      end
+    end
+
+    # Run VACUUM to reclaim disk space. Must be in its own connection.
+    # Returns {before_bytes, after_bytes}.
+    def self.vacuum_database : NamedTuple(before: Int64, after: Int64)
+      before = database_file_size
+      begin
+        open do |db|
+          db.exec("VACUUM")
+        end
+      rescue ex
+        return {before: before, after: before}
+      end
+      {before: before, after: database_file_size}
+    end
+
+    # Get the database file size in bytes.
+    def self.database_file_size : Int64
+      File.size(database_path).to_i64
+    rescue
+      0_i64
+    end
+
+    # Count sessions likely still active (updated within last 5 minutes).
+    def self.active_session_count : Int32
+      begin
+        open do |db|
+          db.scalar(
+            "SELECT COUNT(*) FROM ledger_sessions WHERE updated_at > datetime('now', '-5 minutes')"
+          ).as(Int64).to_i
+        end
+      rescue
+        0
+      end
+    end
+
+    # ============================================================
     # Backup Operations
     # ============================================================
 

@@ -320,12 +320,94 @@ module GalaxyLedger
       manually saved artifacts should have descriptive titles
     SKILL
 
+    PRUNE_SKILL = <<-'SKILL'
+    ---
+    name: ledger:prune
+    description: >-
+      This skill should be used when the user asks to "prune sessions",
+      "clean up old data", "prune the ledger", "delete old session
+      data", "free up ledger space", "how big is the ledger", "ledger
+      maintenance", or wants to remove stale entries and files from
+      old sessions.
+    ---
+
+    Prune stale entries and file-access records from old Galaxy Ledger
+    sessions. Session records, daily usage metrics, snapshots, and
+    artifacts are always preserved.
+
+    ## Workflow
+
+    ### Step 1 — Show Options
+
+    Run `galaxy-ledger prune --summary` to get counts for all periods.
+
+    Present the output to the user as a numbered list they can choose
+    from:
+
+    ```
+    Here's what can be pruned (by last-active date):
+
+     1. Older than 1 week:   12 sessions →    580 entries,    340 files
+     2. Older than 2 weeks:  28 sessions →  1,200 entries,    890 files
+     3. Older than 1 month:  45 sessions →  2,100 entries,  1,500 files
+     ...
+
+    Session records, daily usages, snapshots, and artifacts are always preserved.
+    Which timeframe? (enter a number, or "none" to cancel)
+    ```
+
+    Skip rows where all counts are 0 — no point showing "Older than
+    5 years: 0 sessions" if the ledger is 2 months old.
+
+    If the user specified a period directly ("prune data older than
+    6 months"), skip the summary and go straight to Step 2 with that
+    period.
+
+    ### Step 2 — Confirm
+
+    After the user picks a number (or gave a specific period):
+
+    Run `galaxy-ledger prune --older-than PERIOD` (preview mode) and
+    show the detailed preview. Ask for explicit confirmation before
+    proceeding:
+
+    "This will prune 5,500 entries and 4,100 files across 120
+    sessions. Session records, daily usages, snapshots, and artifacts
+    are preserved. Go ahead?"
+
+    ### Step 3 — Execute
+
+    On confirmation, run:
+    `galaxy-ledger prune --older-than PERIOD --apply`
+
+    ### Step 4 — Report
+
+    Present the results to the user:
+
+    "Done — pruned 5,500 entries and 4,100 files across 120 sessions.
+    Database: 85 MB → 52 MB."
+
+    ## Period Mapping
+
+    When the user picks a number, map to these CLI periods:
+    1 → 1w, 2 → 2w, 3 → 1m, 4 → 2m, 5 → 3m, 6 → 6m, 7 → 1y,
+    8 → 2y, 9 → 5y
+
+    ## Important Notes
+
+    - Always show the summary first for vague requests
+    - Always confirm before applying — never auto-prune
+    - If all counts are 0, tell the user there's nothing to prune
+    - The CLI handles VACUUM automatically after pruning
+    SKILL
+
     # All ledger-managed skills: name => SKILL.md content
     LEDGER_SKILLS = {
       "handoff"         => HANDOFF_SKILL,
       "spend"           => SPEND_SKILL,
       "ledger:snapshot" => SNAPSHOT_SKILL,
       "ledger:artifact" => ARTIFACT_SKILL,
+      "ledger:prune"    => PRUNE_SKILL,
     }
 
     struct SkillInfo

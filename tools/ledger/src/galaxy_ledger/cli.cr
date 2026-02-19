@@ -100,6 +100,8 @@ module GalaxyLedger
         handle_snapshot_command(rest)
       when "artifact"
         handle_artifact_command(rest)
+      when "prune"
+        handle_prune_command(rest)
       when "backup"
         handle_backup_command(rest)
       when "version"
@@ -127,6 +129,7 @@ module GalaxyLedger
         spend               Show token and cost usage over time
         snapshot            Manage session snapshots
         artifact            Manage session artifacts
+        prune               Prune old session entries and files
         backup              Manage database backups
         config              Manage configuration
         install             Install hooks and skills into Claude Code
@@ -3699,6 +3702,182 @@ module GalaxyLedger
         galaxy-ledger backup --list            # See all backups
         galaxy-ledger backup --prune-only      # Clean up old backups
         galaxy-ledger config set backups.retention_days 7
+      HELP
+    end
+
+    # ================================================================
+    # Prune Command
+    # ================================================================
+
+    private def self.handle_prune_command(args : Array(String))
+      if args.includes?("-h") || args.includes?("--help")
+        show_prune_help
+        return
+      end
+
+      summary_mode = false
+      older_than : String? = nil
+      apply = false
+
+      i = 0
+      while i < args.size
+        case args[i]
+        when "--summary"
+          summary_mode = true
+        when "--older-than"
+          if i + 1 < args.size
+            older_than = args[i + 1]
+            i += 1
+          else
+            STDERR.puts "Error: --older-than requires a duration argument"
+            STDERR.puts "Valid durations: 1w, 2w, 1m, 2m, 3m, 6m, 1y, 2y, 5y"
+            exit(1)
+          end
+        when "--apply"
+          apply = true
+        end
+        i += 1
+      end
+
+      if summary_mode
+        prune_summary
+      elsif older_than
+        days = parse_prune_duration(older_than)
+        unless days
+          STDERR.puts "Error: Invalid duration '#{older_than}'"
+          STDERR.puts "Valid durations: 1w, 2w, 1m, 2m, 3m, 6m, 1y, 2y, 5y"
+          exit(1)
+        end
+
+        if apply
+          prune_apply(older_than, days)
+        else
+          prune_preview(older_than, days)
+        end
+      else
+        show_prune_help
+      end
+    end
+
+    # Parse a prune duration string into number of days.
+    # Returns nil for unrecognized input.
+    def self.parse_prune_duration(duration : String) : Int32?
+      Database::PRUNE_PERIODS[duration]?
+    end
+
+    private def self.prune_summary
+      summary = Database.count_prunable_summary
+      db_size = Database.database_file_size
+
+      puts "Prunable session data (by last-active date):"
+      puts ""
+      puts "  %-20s %10s %10s %10s" % ["Period", "Sessions", "Entries", "Files"]
+      puts "  " + "─" * 52
+
+      Database::PRUNE_PERIODS.each_key do |label|
+        counts = summary[label]?
+        next unless counts
+        next if counts.sessions == 0 && counts.entries == 0 && counts.files == 0
+
+        puts "  %-20s %10s %10s %10s" % [
+          "Older than #{label}",
+          format_number(counts.sessions),
+          format_number(counts.entries),
+          format_number(counts.files),
+        ]
+      end
+
+      puts ""
+      puts "Database size: #{format_size(db_size)}"
+      puts ""
+      puts "Preserved per session: session record, daily usages, snapshots, artifacts"
+      puts ""
+      puts "To prune: galaxy-ledger prune --older-than PERIOD --apply"
+    end
+
+    private def self.prune_preview(duration_label : String, days : Int32)
+      cutoff = (Time.utc - days.days).to_s("%Y-%m-%d %H:%M:%S")
+      cutoff_display = (Time.utc - days.days).to_s("%Y-%m-%d")
+      counts = Database.count_prunable_data(cutoff)
+
+      if counts.sessions == 0
+        puts "No sessions older than #{duration_label} (#{days} days). Nothing to prune."
+        return
+      end
+
+      puts "Sessions last active before #{cutoff_display} (#{days} days): #{format_number(counts.sessions)}"
+      puts ""
+      puts "Would prune:"
+      puts "  Entries:  #{format_number(counts.entries)}"
+      puts "  Files:    #{format_number(counts.files)}"
+      puts ""
+      puts "Preserved:"
+      puts "  Session records:  #{format_number(counts.sessions)}"
+      puts "  Daily usages:     #{format_number(counts.daily_usages)}"
+      puts "  Snapshots:        #{format_number(counts.snapshots)}"
+      puts "  Artifacts:        #{format_number(counts.artifacts)}"
+      puts ""
+      puts "Run with --apply to execute."
+    end
+
+    private def self.prune_apply(duration_label : String, days : Int32)
+      cutoff = (Time.utc - days.days).to_s("%Y-%m-%d %H:%M:%S")
+
+      # Warn if active sessions exist
+      active = Database.active_session_count
+      if active > 0
+        puts "Note: #{active} active #{active == 1 ? "session" : "sessions"} detected. VACUUM may fail if database is locked."
+      end
+
+      result = Database.prune_session_data(cutoff)
+
+      if result[:entries] == 0 && result[:files] == 0
+        puts "No data to prune for sessions older than #{duration_label} (#{days} days)."
+        return
+      end
+
+      puts "Pruned session data older than #{duration_label} (#{days} days):"
+      puts "  Entries deleted:  #{format_number(result[:entries])}"
+      puts "  Files deleted:    #{format_number(result[:files])}"
+
+      vacuum_result = Database.vacuum_database
+      puts ""
+      puts "Database: #{format_size(vacuum_result[:before])} → #{format_size(vacuum_result[:after])}"
+      puts ""
+      puts "Session records, daily usages, snapshots, and artifacts preserved."
+    end
+
+    private def self.show_prune_help
+      puts <<-HELP
+      galaxy-ledger prune - Prune old session entries and files
+
+      USAGE:
+        galaxy-ledger prune --summary                    Show all pruning options
+        galaxy-ledger prune --older-than PERIOD          Preview what would be pruned
+        galaxy-ledger prune --older-than PERIOD --apply  Execute the prune
+
+      PERIODS:
+        1w, 2w, 1m, 2m, 3m, 6m, 1y, 2y, 5y
+
+      OPTIONS:
+        --summary            Show prunable data for all periods
+        --older-than PERIOD  Target sessions last active before PERIOD ago
+        --apply              Execute the prune (default is preview only)
+        -h, --help           Show this help
+
+      DESCRIPTION:
+        Prunes entries and file-access records from sessions that haven't
+        been active within the specified period. Session records, daily
+        usage metrics, snapshots, and artifacts are always preserved.
+
+        Default mode is preview (dry run). Use --apply to execute.
+        After pruning, the database is automatically vacuumed to
+        reclaim disk space.
+
+      EXAMPLES:
+        galaxy-ledger prune --summary                # See what can be pruned
+        galaxy-ledger prune --older-than 3m          # Preview 3-month prune
+        galaxy-ledger prune --older-than 3m --apply  # Execute 3-month prune
       HELP
     end
   end

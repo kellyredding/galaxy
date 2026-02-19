@@ -129,11 +129,12 @@ describe GalaxyLedger::SkillsManager do
     it "reports not installed when nothing installed" do
       status = GalaxyLedger::SkillsManager.status
       status.installed.should be_false
-      status.skills.size.should eq(4)
+      status.skills.size.should eq(5)
       status.skills.map(&.name).should contain("handoff")
       status.skills.map(&.name).should contain("spend")
       status.skills.map(&.name).should contain("ledger:snapshot")
       status.skills.map(&.name).should contain("ledger:artifact")
+      status.skills.map(&.name).should contain("ledger:prune")
       status.skills.all?(&.installed).should be_false
     end
 
@@ -217,6 +218,48 @@ describe GalaxyLedger::SkillsManager do
       snapshot_skill = status.skills.find { |s| s.name == "ledger:snapshot" }
       snapshot_skill.should_not be_nil
       snapshot_skill.not_nil!.installed.should be_true
+    end
+  end
+
+  describe "ledger:prune skill" do
+    it "is registered in LEDGER_SKILLS" do
+      GalaxyLedger::SkillsManager::LEDGER_SKILLS.has_key?("ledger:prune").should be_true
+    end
+
+    it "does NOT include disable-model-invocation" do
+      content = GalaxyLedger::SkillsManager::PRUNE_SKILL
+      content.should_not contain("disable-model-invocation")
+    end
+
+    it "installs ledger:prune skill directory and symlink" do
+      GalaxyLedger::SkillsManager.install
+
+      source_file = GalaxyLedger::SKILLS_DIR / "ledger:prune" / "SKILL.md"
+      File.exists?(source_file).should be_true
+
+      content = File.read(source_file)
+      content.should contain("name: ledger:prune")
+      content.should contain("prune")
+
+      symlink_path = GalaxyLedger::CLAUDE_SKILLS_DIR / "ledger:prune"
+      File.symlink?(symlink_path).should be_true
+    end
+
+    it "uninstalls ledger:prune skill" do
+      GalaxyLedger::SkillsManager.install
+      GalaxyLedger::SkillsManager.uninstall
+
+      Dir.exists?(GalaxyLedger::SKILLS_DIR / "ledger:prune").should be_false
+      File.symlink?(GalaxyLedger::CLAUDE_SKILLS_DIR / "ledger:prune").should be_false
+    end
+
+    it "reports ledger:prune installation state in status" do
+      GalaxyLedger::SkillsManager.install
+
+      status = GalaxyLedger::SkillsManager.status
+      prune_skill = status.skills.find { |s| s.name == "ledger:prune" }
+      prune_skill.should_not be_nil
+      prune_skill.not_nil!.installed.should be_true
     end
   end
 end
