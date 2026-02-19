@@ -86,6 +86,7 @@ class DragHandleNSView: NSView {
         NSCursor.closedHand.set()
         needsDisplay = true
         StatusLineService.shared.pauseUpdates()  // Pause for performance
+        SessionManager.shared.pauseAllBusyObservers()
 
         let screenY = NSEvent.mouseLocation.y
         onDragStart?(sessionId, sessionIndex, screenY)
@@ -115,6 +116,7 @@ class DragHandleNSView: NSView {
 
         isDragging = false
         StatusLineService.shared.resumeUpdates()  // Resume after drag
+        SessionManager.shared.resumeAllBusyObservers()
 
         // Reset cursor based on whether still hovering
         if isHovered {

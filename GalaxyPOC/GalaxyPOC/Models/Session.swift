@@ -20,6 +20,16 @@ class Session: Identifiable, ObservableObject {
     @Published var exitCode: Int32?
     @Published var hasUnreadBell: Bool = false
     @Published var visualBellActive: Bool = false
+    @Published var isBusy: Bool = false
+
+    /// Debounce timer for busy→idle transition
+    private var busyDebounceTimer: Timer?
+
+    /// How long after the last PTY output before transitioning busy→idle
+    private static let busyDebounceInterval: TimeInterval = 0.5
+
+    /// When true, busy state changes are frozen (during drag/resize operations)
+    private var isBusyPaused: Bool = false
 
     /// Current terminal font size for this session (transient, not persisted)
     @Published var terminalFontSize: CGFloat {
@@ -126,6 +136,56 @@ class Session: Identifiable, ObservableObject {
         }
     }
 
+    // MARK: - Busy State
+
+    /// Called from onDataReceived callback (fires on SwiftTerm's dispatch queue).
+    /// Dispatches to main thread for all state mutation.
+    func markBusy() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, self.isRunning, !self.hasExited, !self.isBusyPaused else { return }
+
+            // Only trigger @Published when actually changing (idle → busy)
+            // This prevents unnecessary SessionRow re-renders during sustained output
+            if !self.isBusy {
+                self.isBusy = true
+            }
+
+            // Always reset the debounce timer (even when already busy)
+            self.busyDebounceTimer?.invalidate()
+            self.busyDebounceTimer = Timer.scheduledTimer(
+                withTimeInterval: Self.busyDebounceInterval,
+                repeats: false
+            ) { [weak self] _ in
+                self?.isBusy = false
+            }
+        }
+    }
+
+    /// Freeze busy state during drag/resize operations to prevent animation jank
+    func pauseBusyObserver() {
+        isBusyPaused = true
+        busyDebounceTimer?.invalidate()
+        busyDebounceTimer = nil
+    }
+
+    /// Resume busy state observation after drag/resize completes.
+    /// If still busy, restarts debounce timer so it can naturally transition to idle.
+    func resumeBusyObserver() {
+        isBusyPaused = false
+
+        // If we were busy when paused, restart the debounce timer
+        // so it transitions to idle if no more output arrives
+        if isBusy {
+            busyDebounceTimer?.invalidate()
+            busyDebounceTimer = Timer.scheduledTimer(
+                withTimeInterval: Self.busyDebounceInterval,
+                repeats: false
+            ) { [weak self] _ in
+                self?.isBusy = false
+            }
+        }
+    }
+
     /// Returns the CLI command to resume this session
     var resumeCommand: String {
         return "cd \(workingDirectory) && claude --resume \(claudeSessionId)"
@@ -185,6 +245,13 @@ class Session: Identifiable, ObservableObject {
             self.hasExited = true
             self.exitCode = exitCode
             self.childPid = 0
+
+            // A dead process is never busy — clear state and timer
+            self.busyDebounceTimer?.invalidate()
+            self.busyDebounceTimer = nil
+            if self.isBusy {
+                self.isBusy = false
+            }
         }
     }
 

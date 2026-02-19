@@ -90,12 +90,14 @@ extension MainWindowController: NSWindowDelegate {
     // MARK: - Live Resize Performance Optimization
 
     func windowWillStartLiveResize(_ notification: Notification) {
-        // Pause status line updates during resize to reduce re-render lag
+        // Pause status line updates and busy observers during resize to reduce re-render lag
         StatusLineService.shared.pauseUpdates()
+        SessionManager.shared.pauseAllBusyObservers()
     }
 
     func windowDidEndLiveResize(_ notification: Notification) {
-        // Resume status line updates after resize completes
+        // Resume status line updates and busy observers after resize completes
         StatusLineService.shared.resumeUpdates()
+        SessionManager.shared.resumeAllBusyObservers()
     }
 }

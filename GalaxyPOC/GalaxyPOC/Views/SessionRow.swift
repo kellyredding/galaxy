@@ -19,6 +19,7 @@ struct SessionRow: View {
 
     @Environment(\.chromeFontSize) private var chromeFontSize
     @State private var isHovered = false
+    @State private var isPulsePhase = false
 
     private var fontSize: ChromeFontSize { ChromeFontSize(chromeFontSize) }
 
@@ -34,10 +35,11 @@ struct SessionRow: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.8)))
             }
 
-            // Status indicator
+            // Status indicator (pulses opacity when session is busy)
             Circle()
                 .fill(statusColor)
                 .frame(width: 8, height: 8)
+                .opacity(isPulsePhase ? 0.3 : 1.0)
 
             // Session info with bell indicator overlay
             ZStack(alignment: .topLeading) {
@@ -167,6 +169,19 @@ struct SessionRow: View {
                     withAnimation(.easeOut(duration: 3.0)) {
                         session.hasUnreadBell = false
                     }
+                }
+            }
+        }
+        .onChange(of: session.isBusy) { _, newValue in
+            if newValue {
+                // Start continuous pulse: smooth fade between full and dim opacity
+                withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) {
+                    isPulsePhase = true
+                }
+            } else {
+                // Stop pulsing: smoothly return to full opacity
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    isPulsePhase = false
                 }
             }
         }

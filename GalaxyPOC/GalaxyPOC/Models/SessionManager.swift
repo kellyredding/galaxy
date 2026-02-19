@@ -115,6 +115,11 @@ class SessionManager: ObservableObject {
             }
         }
 
+        // Set up data received callback for busy state detection
+        session.terminalView.onDataReceived = { [weak session] in
+            session?.markBusy()
+        }
+
         // Start the claude process
         session.startProcess(claudePath: claudePath)
 
@@ -215,6 +220,11 @@ class SessionManager: ObservableObject {
                     session.hasUnreadBell = true
                 }
             }
+        }
+
+        // Set up data received callback for busy state detection
+        session.terminalView.onDataReceived = { [weak session] in
+            session?.markBusy()
         }
 
         // Start claude: --resume if session exists in Claude storage, --session-id if not
@@ -321,6 +331,16 @@ class SessionManager: ObservableObject {
         guard indexA >= 0 && indexA < sessions.count else { return }
         guard indexB >= 0 && indexB < sessions.count else { return }
         sessions.swapAt(indexA, indexB)
+    }
+
+    /// Pause busy state observation on all sessions (during drag/resize)
+    func pauseAllBusyObservers() {
+        sessions.forEach { $0.pauseBusyObserver() }
+    }
+
+    /// Resume busy state observation on all sessions (after drag/resize)
+    func resumeAllBusyObservers() {
+        sessions.forEach { $0.resumeBusyObserver() }
     }
 
     /// Trigger visual bell with 3 flashes, each shorter than the last
