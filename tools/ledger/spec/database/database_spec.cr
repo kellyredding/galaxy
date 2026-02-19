@@ -2285,6 +2285,134 @@ describe GalaxyLedger::Database do
 
       GalaxyLedger::Database.spend_daily(today, today).size.should eq(0)
     end
+
+    it "handles cost compaction correctly — cost drops mid-day, cumulative preserved" do
+      ledger_session_id = GalaxyLedger::Database.create_session("sess-daily-cost-compact")
+
+      # Update 1: cost=0.50
+      status1 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":5000},"cost":{"usd":0.50}}))
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, status1)
+
+      # Update 2: cost=1.00 (normal increase)
+      status2 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":12000},"cost":{"usd":1.00}}))
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, status2)
+
+      # Update 3: cost=0.30 (RESET — session resumed with new process)
+      status3 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":3000},"cost":{"usd":0.30}}))
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, status3)
+
+      # Update 4: cost=0.80 (new process accumulates)
+      status4 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":9000},"cost":{"usd":0.80}}))
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, status4)
+
+      today = Time.utc.to_s("%Y-%m-%d")
+      daily = GalaxyLedger::Database.spend_daily(today, today)
+      daily.size.should eq(1)
+      # Cost: 1.00 (before reset) + 0.80 (after reset) = 1.80
+      daily[0].cost.should eq(1.80)
+      # Tokens: 5000 + 7000 + 0(compaction) + 6000 = 18000
+      daily[0].tokens.should eq(18000_i64)
+    end
+
+    it "handles cross-day cost reset — session resumed on new day with lower cost" do
+      lid = GalaxyLedger::Database.create_session("sess-daily-crossday-reset")
+      today = Time.utc.to_s("%Y-%m-%d")
+      yesterday = (Time.utc - 1.day).to_s("%Y-%m-%d")
+
+      # Simulate Day 1: session ran with cost=2.50, tokens=10000
+      GalaxyLedger::Database.open do |db|
+        db.exec(
+          <<-SQL,
+            INSERT INTO ledger_session_daily_usages (
+              ledger_session_id, date,
+              baseline_cost_usd, current_cost_usd, cumulative_cost_usd,
+              baseline_tokens, current_tokens, cumulative_tokens
+            ) VALUES (?, ?, 0.0, 2.50, 2.50, 10000, 10000, 10000)
+          SQL
+          lid, yesterday,
+        )
+      end
+
+      # Day 2: session resumed — cost counter reset, reports 0.75
+      status = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":3000},"cost":{"usd":0.75}}))
+      GalaxyLedger::Database.update_session_metrics(lid, status)
+
+      # Verify Day 2 record has non-negative cumulative
+      daily = GalaxyLedger::Database.spend_daily(today, today)
+      daily.size.should eq(1)
+      daily[0].cost.should eq(0.75)
+      # Tokens: 3000 < 10000 (previous day) → token compaction resets diff to 0
+      daily[0].tokens.should eq(0_i64)
+
+      # Verify Day 1 record is unchanged
+      daily_prev = GalaxyLedger::Database.spend_daily(yesterday, yesterday)
+      daily_prev.size.should eq(1)
+      daily_prev[0].cost.should eq(2.50)
+    end
+
+    it "handles cross-day cost reset to zero — session resumed with no activity" do
+      lid = GalaxyLedger::Database.create_session("sess-daily-crossday-zero")
+      today = Time.utc.to_s("%Y-%m-%d")
+      yesterday = (Time.utc - 1.day).to_s("%Y-%m-%d")
+
+      # Simulate Day 1: session ran with cost=1.00
+      GalaxyLedger::Database.open do |db|
+        db.exec(
+          <<-SQL,
+            INSERT INTO ledger_session_daily_usages (
+              ledger_session_id, date,
+              baseline_cost_usd, current_cost_usd, cumulative_cost_usd,
+              baseline_tokens, current_tokens, cumulative_tokens
+            ) VALUES (?, ?, 0.0, 1.00, 1.00, 5000, 5000, 5000)
+          SQL
+          lid, yesterday,
+        )
+      end
+
+      # Day 2: session resumed, statusline reports cost=0 (no activity yet)
+      status = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":0},"cost":{"usd":0.0}}))
+      GalaxyLedger::Database.update_session_metrics(lid, status)
+
+      # Verify Day 2 record has zero cumulative, not negative
+      daily = GalaxyLedger::Database.spend_daily(today, today)
+      daily.size.should eq(1)
+      daily[0].cost.should eq(0.0)
+      daily[0].tokens.should eq(0_i64)
+    end
+
+    it "handles cross-day normal continuation — cost increases monotonically" do
+      lid = GalaxyLedger::Database.create_session("sess-daily-crossday-normal")
+      today = Time.utc.to_s("%Y-%m-%d")
+      yesterday = (Time.utc - 1.day).to_s("%Y-%m-%d")
+
+      # Simulate Day 1: session ran with cost=3.00, tokens=15000
+      GalaxyLedger::Database.open do |db|
+        db.exec(
+          <<-SQL,
+            INSERT INTO ledger_session_daily_usages (
+              ledger_session_id, date,
+              baseline_cost_usd, current_cost_usd, cumulative_cost_usd,
+              baseline_tokens, current_tokens, cumulative_tokens
+            ) VALUES (?, ?, 0.0, 3.00, 3.00, 15000, 15000, 15000)
+          SQL
+          lid, yesterday,
+        )
+      end
+
+      # Day 2: same process continues — cost is cumulative (5.00 > 3.00)
+      status = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":25000},"cost":{"usd":5.00}}))
+      GalaxyLedger::Database.update_session_metrics(lid, status)
+
+      # Verify Day 2: cumulative = 5.00 - 3.00 = 2.00 (normal diff)
+      daily = GalaxyLedger::Database.spend_daily(today, today)
+      daily.size.should eq(1)
+      daily[0].cost.should eq(2.00)
+      daily[0].tokens.should eq(10000_i64)
+
+      # Verify Day 1 unchanged
+      daily_prev = GalaxyLedger::Database.spend_daily(yesterday, yesterday)
+      daily_prev[0].cost.should eq(3.00)
+    end
   end
 
   # ============================================================

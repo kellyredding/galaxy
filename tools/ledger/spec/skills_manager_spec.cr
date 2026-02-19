@@ -179,6 +179,15 @@ describe GalaxyLedger::SkillsManager do
     end
   end
 
+  describe "spend skill" do
+    it "requires mandatory verbatim CLI output in a code block" do
+      content = GalaxyLedger::SkillsManager::SPEND_SKILL
+      content.should contain("MANDATORY")
+      content.should contain("code block")
+      content.should contain("Do NOT summarize")
+    end
+  end
+
   describe "ledger:snapshot skill" do
     it "is registered in LEDGER_SKILLS" do
       GalaxyLedger::SkillsManager::LEDGER_SKILLS.has_key?("ledger:snapshot").should be_true

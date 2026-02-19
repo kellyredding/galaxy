@@ -723,6 +723,12 @@ module GalaxyLedger
         # Cost: simple diff from static baseline
         cumulative_cost = cost_val - baseline_cost
 
+        # Handle cost reset (session resumed with new process/compacted context)
+        if cumulative_cost < 0
+          baseline_cost = 0.0
+          cumulative_cost = cost_val
+        end
+
         # Tokens: handle potential cross-day compaction
         token_diff = tokens_val - baseline_tokens
         if token_diff < 0
@@ -752,6 +758,17 @@ module GalaxyLedger
         # Cost: recalculate from static baseline (idempotent)
         cumulative_cost = cost_val - existing[:baseline_cost_usd]
 
+        if cumulative_cost < 0 || cost_val < existing[:current_cost_usd]
+          # Cost counter reset (session resumed with new process/compacted context)
+          # Preserve accumulated cost, set negative baseline so future static
+          # calculations automatically include the preserved amount:
+          #   future_cost - (-cumulative) = future_cost + cumulative
+          cumulative_cost = existing[:cumulative_cost_usd]
+          new_baseline_cost = -existing[:cumulative_cost_usd]
+        else
+          new_baseline_cost = existing[:baseline_cost_usd]
+        end
+
         # Tokens: incremental diff from dynamic baseline
         token_diff = tokens_val - existing[:baseline_tokens]
         if token_diff >= 0
@@ -766,6 +783,7 @@ module GalaxyLedger
         db.exec(
           <<-SQL,
             UPDATE ledger_session_daily_usages SET
+              baseline_cost_usd = ?,
               current_cost_usd = ?,
               cumulative_cost_usd = ?,
               baseline_tokens = ?,
@@ -774,7 +792,7 @@ module GalaxyLedger
               updated_at = datetime('now')
             WHERE id = ?
           SQL
-          cost_val, cumulative_cost,
+          new_baseline_cost, cost_val, cumulative_cost,
           new_baseline_tokens, tokens_val, cumulative_tokens,
           existing[:id],
         )

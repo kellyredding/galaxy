@@ -75,9 +75,12 @@ module GalaxyLedger
 
     1. Parse the argument as the period
     2. Run `galaxy-ledger spend <period>` via Bash
-    3. Display the output verbatim — preserve the sparklines, bar
-       charts, and all formatting exactly as rendered by the CLI
-    4. After the CLI output, add a brief analysis: trends,
+    3. **MANDATORY — transcribe the full raw CLI output in a code
+       block.** Copy every line of the command output into a fenced
+       code block in your response. Do NOT summarize, paraphrase,
+       or skip this step. The user must see the exact CLI output
+       (sparklines, bar charts, formatting) before anything else.
+    4. After the code block, add a brief analysis: trends,
        notable patterns, rate-of-change observations, or
        comparisons — whatever is interesting in the data
     SKILL
