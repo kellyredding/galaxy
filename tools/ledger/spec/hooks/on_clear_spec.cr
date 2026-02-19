@@ -45,7 +45,11 @@ describe "OnClear JSON output" do
 
   before_each do
     GalaxyLedger::Database.delete_session(test_session_id)
-    ledger_session_id = GalaxyLedger::Database.create_session(test_session_id)
+    # Pass spec runner PID so the binary's Process.ppid resolves to this
+    # session via PID (tier 2), preventing stale PID mappings from a
+    # previous test from resolving to the wrong session.
+    ledger_session_id = GalaxyLedger::Database.create_session(
+      test_session_id, claude_pid: Process.pid.to_i64)
   end
 
   after_each do
@@ -88,7 +92,8 @@ describe "OnClear systemMessage" do
 
   before_each do
     GalaxyLedger::Database.delete_session(test_session_id)
-    ledger_session_id = GalaxyLedger::Database.create_session(test_session_id)
+    ledger_session_id = GalaxyLedger::Database.create_session(
+      test_session_id, claude_pid: Process.pid.to_i64)
   end
 
   after_each do
@@ -195,7 +200,8 @@ describe "OnClear additionalContext" do
 
   before_each do
     GalaxyLedger::Database.delete_session(test_session_id)
-    ledger_session_id = GalaxyLedger::Database.create_session(test_session_id)
+    ledger_session_id = GalaxyLedger::Database.create_session(
+      test_session_id, claude_pid: Process.pid.to_i64)
   end
 
   after_each do

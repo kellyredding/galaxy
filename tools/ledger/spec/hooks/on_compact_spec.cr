@@ -42,7 +42,8 @@ describe "OnCompact JSON output" do
 
   before_each do
     GalaxyLedger::Database.delete_session(test_session_id)
-    ledger_session_id = GalaxyLedger::Database.create_session(test_session_id)
+    ledger_session_id = GalaxyLedger::Database.create_session(
+      test_session_id, claude_pid: Process.pid.to_i64)
   end
 
   after_each do
@@ -71,7 +72,8 @@ describe "OnCompact systemMessage" do
 
   before_each do
     GalaxyLedger::Database.delete_session(test_session_id)
-    ledger_session_id = GalaxyLedger::Database.create_session(test_session_id)
+    ledger_session_id = GalaxyLedger::Database.create_session(
+      test_session_id, claude_pid: Process.pid.to_i64)
   end
 
   after_each do
@@ -108,7 +110,8 @@ describe "OnCompact additionalContext" do
 
   before_each do
     GalaxyLedger::Database.delete_session(test_session_id)
-    ledger_session_id = GalaxyLedger::Database.create_session(test_session_id)
+    ledger_session_id = GalaxyLedger::Database.create_session(
+      test_session_id, claude_pid: Process.pid.to_i64)
   end
 
   after_each do
