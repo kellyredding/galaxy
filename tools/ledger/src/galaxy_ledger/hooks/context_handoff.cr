@@ -310,6 +310,21 @@ module GalaxyLedger
           lines << ""
         end
 
+        # Artifact capture directive — behavioral reminder so the agent
+        # continues registering Bash-produced files after context reset.
+        lines << "### Artifact Capture"
+        lines << ""
+        lines << "**Bash-created artifacts** (pandoc, mermaid-cli, python scripts,"
+        lines << "curl downloads) need manual registration:"
+        lines << ""
+        lines << "    galaxy-ledger artifact save --pid #{claude_pid} \\\\"
+        lines << "      --title \"Title\" --source-path /path/to/file \\\\"
+        lines << "      --description \"Brief context\""
+        lines << ""
+        lines << "Do this silently after Bash commands that produce document files."
+        lines << "Write tool artifacts are captured automatically."
+        lines << ""
+
         # Key decisions section (high + medium, labeled)
         high_decisions = restoration.tier1.high_importance_decisions
         medium_decisions = restoration.tier2.medium_decisions

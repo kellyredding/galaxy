@@ -163,6 +163,20 @@ describe "OnStartup additionalContext" do
     session.not_nil!.git_branch.should_not be_nil
   end
 
+  it "includes artifact awareness with Bash capture directive" do
+    test_session_id = "startup-ctx-artifact-#{Random.rand(10000)}"
+    hook_input = {"session_id" => test_session_id}.to_json
+
+    result = run_binary(["on-startup"], stdin: hook_input)
+    output = JSON.parse(result[:output])
+    ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+    ctx.should contain("### Artifact Awareness")
+    ctx.should contain("artifact save --pid")
+    ctx.should contain("--source-path")
+    ctx.should contain("Do this automatically")
+    ctx.should contain("Do not mention artifact capture")
+  end
+
   it "does not include cross-session stats" do
     test_session_id = "startup-ctx-no-stats-#{Random.rand(10000)}"
     hook_input = {"session_id" => test_session_id}.to_json
