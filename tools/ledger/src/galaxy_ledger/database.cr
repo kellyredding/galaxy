@@ -237,12 +237,40 @@ module GalaxyLedger
           )
         SQL
 
+        # Artifact table for session-produced documents
+        db.exec(<<-SQL)
+          CREATE TABLE IF NOT EXISTS ledger_artifacts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ledger_session_id INTEGER NOT NULL,
+            number INTEGER NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            title TEXT NOT NULL,
+            artifact_type TEXT NOT NULL,
+            mime_type TEXT NOT NULL,
+            original_filename TEXT NOT NULL,
+            stored_path TEXT NOT NULL,
+            source_path TEXT,
+            file_size INTEGER NOT NULL DEFAULT 0,
+            content_hash TEXT NOT NULL,
+            description TEXT,
+            metadata TEXT,
+            UNIQUE(ledger_session_id, number),
+            FOREIGN KEY (ledger_session_id)
+              REFERENCES ledger_sessions(id) ON DELETE CASCADE
+          )
+        SQL
+
         # Indexes for ledger_session_daily_usages
         db.exec("CREATE INDEX IF NOT EXISTS idx_daily_usages_date ON ledger_session_daily_usages(date)")
         db.exec("CREATE INDEX IF NOT EXISTS idx_daily_usages_session ON ledger_session_daily_usages(ledger_session_id)")
 
         # Indexes for ledger_snapshots
         db.exec("CREATE INDEX IF NOT EXISTS idx_snapshots_session ON ledger_snapshots(ledger_session_id)")
+
+        # Indexes for ledger_artifacts
+        db.exec("CREATE INDEX IF NOT EXISTS idx_artifacts_session ON ledger_artifacts(ledger_session_id)")
+        db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_artifacts_source_path ON ledger_artifacts(ledger_session_id, source_path) WHERE source_path IS NOT NULL")
 
         # Indexes for ledger_session_files
         db.exec("CREATE INDEX IF NOT EXISTS idx_files_session ON ledger_session_files(ledger_session_id)")
@@ -2066,6 +2094,285 @@ module GalaxyLedger
     end
 
     # ============================================================
+    # Artifact Operations
+    # ============================================================
+
+    # Save an artifact record for a session.
+    # Number is auto-assigned as session-scoped sequential (1, 2, 3, ...).
+    # Returns the artifact number (not the primary key).
+    def self.save_artifact(
+      ledger_session_id : Int64,
+      title : String,
+      artifact_type : String,
+      mime_type : String,
+      original_filename : String,
+      stored_path : String,
+      source_path : String?,
+      file_size : Int64,
+      content_hash : String,
+      description : String? = nil,
+      metadata : String? = nil,
+    ) : SaveArtifactResult
+      failed = SaveArtifactResult.new(SaveArtifactAction::Failed, 0)
+      return failed if ledger_session_id <= 0
+
+      begin
+        open do |db|
+          # Check for existing artifact with same source_path (dedup).
+          # NULL source_paths always insert new (no dedup).
+          if source_path
+            existing = db.query_one?(
+              <<-SQL,
+                SELECT number, content_hash
+                FROM ledger_artifacts
+                WHERE ledger_session_id = ? AND source_path = ?
+              SQL
+              ledger_session_id,
+              source_path,
+              as: {Int64, String},
+            )
+
+            if existing
+              existing_number, existing_hash = existing
+
+              if existing_hash == content_hash
+                # Enrichment: same file, same content — update metadata only.
+                # Title updates only if the new title is longer (richer).
+                db.exec(
+                  <<-SQL,
+                    UPDATE ledger_artifacts
+                    SET title = CASE WHEN length(?) > length(title) THEN ? ELSE title END,
+                        description = COALESCE(?, description),
+                        metadata = COALESCE(?, metadata),
+                        updated_at = datetime('now')
+                    WHERE ledger_session_id = ? AND number = ?
+                  SQL
+                  title,
+                  title,
+                  description,
+                  metadata,
+                  ledger_session_id,
+                  existing_number,
+                )
+                return SaveArtifactResult.new(SaveArtifactAction::Enrichment, existing_number.to_i)
+              else
+                # Version update: same file path, new content — update all fields.
+                db.exec(
+                  <<-SQL,
+                    UPDATE ledger_artifacts
+                    SET title = CASE WHEN length(?) > length(title) THEN ? ELSE title END,
+                        artifact_type = ?,
+                        mime_type = ?,
+                        original_filename = ?,
+                        file_size = ?,
+                        content_hash = ?,
+                        description = COALESCE(?, description),
+                        metadata = COALESCE(?, metadata),
+                        updated_at = datetime('now')
+                    WHERE ledger_session_id = ? AND number = ?
+                  SQL
+                  title,
+                  title,
+                  artifact_type,
+                  mime_type,
+                  original_filename,
+                  file_size,
+                  content_hash,
+                  description,
+                  metadata,
+                  ledger_session_id,
+                  existing_number,
+                )
+                return SaveArtifactResult.new(SaveArtifactAction::VersionUpdate, existing_number.to_i)
+              end
+            end
+          end
+
+          # No existing artifact — insert new.
+          db.exec(
+            <<-SQL,
+              INSERT INTO ledger_artifacts (
+                ledger_session_id, number, title, artifact_type,
+                mime_type, original_filename, stored_path, source_path,
+                file_size, content_hash, description, metadata
+              )
+              VALUES (
+                ?,
+                (SELECT COALESCE(MAX(number), 0) + 1
+                 FROM ledger_artifacts
+                 WHERE ledger_session_id = ?),
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+              )
+            SQL
+            ledger_session_id,
+            ledger_session_id,
+            title,
+            artifact_type,
+            mime_type,
+            original_filename,
+            stored_path,
+            source_path,
+            file_size,
+            content_hash,
+            description,
+            metadata,
+          )
+          # Retrieve the number that was just assigned
+          number = db.query_one?(
+            "SELECT number FROM ledger_artifacts WHERE id = last_insert_rowid()",
+            as: Int64,
+          ).try(&.to_i) || 0
+
+          if number > 0
+            SaveArtifactResult.new(SaveArtifactAction::Insert, number)
+          else
+            failed
+          end
+        end
+      rescue
+        failed
+      end
+    end
+
+    # List all artifacts for a session, ordered by number.
+    def self.list_artifacts(
+      ledger_session_id : Int64,
+      limit : Int32 = 50,
+    ) : Array(Artifact)
+      artifacts = [] of Artifact
+      return artifacts if ledger_session_id <= 0
+
+      begin
+        open do |db|
+          db.query(
+            <<-SQL,
+              SELECT id, ledger_session_id, number, created_at,
+                     updated_at, title, artifact_type, mime_type,
+                     original_filename, stored_path, source_path,
+                     file_size, content_hash, description, metadata
+              FROM ledger_artifacts
+              WHERE ledger_session_id = ?
+              ORDER BY number ASC
+              LIMIT ?
+            SQL
+            ledger_session_id,
+            limit,
+          ) do |rs|
+            rs.each do
+              artifacts << Artifact.from_row(rs)
+            end
+          end
+        end
+      rescue
+        # Return empty on error
+      end
+      artifacts
+    end
+
+    # Get an artifact by session + number.
+    def self.get_artifact_by_number(
+      ledger_session_id : Int64,
+      number : Int32,
+    ) : Artifact?
+      return nil if ledger_session_id <= 0
+
+      begin
+        open do |db|
+          db.query_one?(
+            <<-SQL,
+              SELECT id, ledger_session_id, number, created_at,
+                     updated_at, title, artifact_type, mime_type,
+                     original_filename, stored_path, source_path,
+                     file_size, content_hash, description, metadata
+              FROM ledger_artifacts
+              WHERE ledger_session_id = ? AND number = ?
+            SQL
+            ledger_session_id,
+            number,
+          ) do |rs|
+            Artifact.from_row(rs)
+          end
+        end
+      rescue
+        nil
+      end
+    end
+
+    # Delete an artifact by session + number.
+    # Also removes the stored file from disk. Returns true if deleted.
+    def self.delete_artifact_by_number(
+      ledger_session_id : Int64,
+      number : Int32,
+    ) : Bool
+      return false if ledger_session_id <= 0
+
+      # Get stored_path before deleting the record
+      artifact = get_artifact_by_number(ledger_session_id, number)
+      return false unless artifact
+
+      begin
+        open do |db|
+          result = db.exec(
+            "DELETE FROM ledger_artifacts WHERE ledger_session_id = ? AND number = ?",
+            ledger_session_id,
+            number,
+          )
+          if result.rows_affected > 0
+            # Clean up the file on disk
+            File.delete(artifact.stored_path) if File.exists?(artifact.stored_path)
+            # Remove session directory if now empty
+            session_dir = Path.new(artifact.stored_path).parent
+            if Dir.exists?(session_dir) && Dir.empty?(session_dir)
+              Dir.delete(session_dir)
+            end
+            true
+          else
+            false
+          end
+        end
+      rescue
+        false
+      end
+    end
+
+    # Get artifact count for a session (for handoff display).
+    def self.session_artifact_count(
+      ledger_session_id : Int64,
+    ) : Int32
+      return 0 if ledger_session_id <= 0
+
+      begin
+        open do |db|
+          db.query_one?(
+            "SELECT COUNT(*) FROM ledger_artifacts WHERE ledger_session_id = ?",
+            ledger_session_id,
+            as: Int64,
+          ).try(&.to_i) || 0
+        end
+      rescue
+        0
+      end
+    end
+
+    # Update the stored_path for an artifact after file storage.
+    def self.update_artifact_stored_path(
+      ledger_session_id : Int64,
+      number : Int32,
+      stored_path : String,
+    )
+      open do |db|
+        db.exec(
+          "UPDATE ledger_artifacts SET stored_path = ? WHERE ledger_session_id = ? AND number = ?",
+          stored_path,
+          ledger_session_id,
+          number,
+        )
+      end
+    rescue
+      # Best-effort
+    end
+
+    # ============================================================
     # Backup Operations
     # ============================================================
 
@@ -2357,6 +2664,70 @@ module GalaxyLedger
           char_count: rs.read(Int64).to_i,
           metadata: rs.read(String?),
         )
+      end
+    end
+
+    # An artifact record from the database
+    struct Artifact
+      getter id : Int64
+      getter ledger_session_id : Int64
+      getter number : Int32
+      getter created_at : String
+      getter updated_at : String
+      getter title : String
+      getter artifact_type : String
+      getter mime_type : String
+      getter original_filename : String
+      getter stored_path : String
+      getter source_path : String?
+      getter file_size : Int64
+      getter content_hash : String
+      getter description : String?
+      getter metadata : String?
+
+      def initialize(
+        @id, @ledger_session_id, @number, @created_at, @updated_at,
+        @title, @artifact_type, @mime_type, @original_filename,
+        @stored_path, @source_path, @file_size, @content_hash,
+        @description, @metadata,
+      )
+      end
+
+      def self.from_row(rs) : Artifact
+        Artifact.new(
+          id: rs.read(Int64),
+          ledger_session_id: rs.read(Int64),
+          number: rs.read(Int64).to_i,
+          created_at: rs.read(String),
+          updated_at: rs.read(String),
+          title: rs.read(String),
+          artifact_type: rs.read(String),
+          mime_type: rs.read(String),
+          original_filename: rs.read(String),
+          stored_path: rs.read(String),
+          source_path: rs.read(String?),
+          file_size: rs.read(Int64),
+          content_hash: rs.read(String),
+          description: rs.read(String?),
+          metadata: rs.read(String?),
+        )
+      end
+    end
+
+    # Result type for save_artifact upsert operations.
+    # Communicates what happened so callers know whether to copy/overwrite files.
+    enum SaveArtifactAction
+      Insert        # New artifact created, caller should store file
+      Enrichment    # Same file, same content — metadata updated, skip file copy
+      VersionUpdate # Same file, new content — metadata updated, caller should re-copy
+      Failed        # Operation failed
+    end
+
+    struct SaveArtifactResult
+      getter action : SaveArtifactAction
+      getter number : Int32
+
+      def initialize(@action, @number)
       end
     end
 

@@ -101,6 +101,46 @@ module GalaxyLedger
         db.exec("ALTER TABLE ledger_session_daily_usages ADD COLUMN oneshot_cost_usd REAL NOT NULL DEFAULT 0.0")
         db.exec("ALTER TABLE ledger_session_daily_usages ADD COLUMN oneshot_tokens INTEGER NOT NULL DEFAULT 0")
       },
+      "0.3.3" => ->(db : DB::Database) {
+        db.exec(<<-SQL)
+          CREATE TABLE IF NOT EXISTS ledger_artifacts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ledger_session_id INTEGER NOT NULL,
+            number INTEGER NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            title TEXT NOT NULL,
+            artifact_type TEXT NOT NULL,
+            mime_type TEXT NOT NULL,
+            original_filename TEXT NOT NULL,
+            stored_path TEXT NOT NULL,
+            source_path TEXT,
+            file_size INTEGER NOT NULL DEFAULT 0,
+            content_hash TEXT NOT NULL,
+            description TEXT,
+            metadata TEXT,
+            UNIQUE(ledger_session_id, number),
+            FOREIGN KEY (ledger_session_id)
+              REFERENCES ledger_sessions(id) ON DELETE CASCADE
+          )
+        SQL
+        db.exec("CREATE INDEX IF NOT EXISTS idx_artifacts_session ON ledger_artifacts(ledger_session_id)")
+      },
+      "0.3.4" => ->(db : DB::Database) {
+        # Clean up pre-existing duplicate (session_id, source_path) pairs before
+        # creating the unique index. Keep the row with the highest number (latest).
+        db.exec(<<-SQL)
+          DELETE FROM ledger_artifacts
+          WHERE id NOT IN (
+            SELECT MAX(id)
+            FROM ledger_artifacts
+            WHERE source_path IS NOT NULL
+            GROUP BY ledger_session_id, source_path
+          )
+          AND source_path IS NOT NULL
+        SQL
+        db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_artifacts_source_path ON ledger_artifacts(ledger_session_id, source_path) WHERE source_path IS NOT NULL")
+      },
     }
 
     # ==========================================================================
@@ -146,6 +186,17 @@ module GalaxyLedger
             "enabled"        => JSON::Any.new(true),
             "retention_days" => JSON::Any.new(3_i64),
             "path"           => JSON::Any.new(""),
+          })
+        end
+        JSON::Any.new(obj)
+      },
+      "0.3.3" => Proc(JSON::Any, JSON::Any).new { |config_json|
+        obj = config_json.as_h.dup
+        unless obj.has_key?("artifacts")
+          obj["artifacts"] = JSON::Any.new({
+            "enabled"       => JSON::Any.new(true),
+            "auto_detect"   => JSON::Any.new(true),
+            "max_file_size" => JSON::Any.new(52_428_800_i64),
           })
         end
         JSON::Any.new(obj)

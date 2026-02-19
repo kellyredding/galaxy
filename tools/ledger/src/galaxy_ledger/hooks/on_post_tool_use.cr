@@ -187,6 +187,74 @@ module GalaxyLedger
 
         # Mark extracted entries stale if this is a special file
         check_stale_extraction(ledger_session_id, file_path)
+
+        # Artifact detection
+        detect_and_store_artifact(ledger_session_id, file_path)
+      end
+
+      # Detect if a written file is an artifact and store it.
+      # Runs silently — failures are ignored. The original file is
+      # always left in place; artifact storage is a copy.
+      private def detect_and_store_artifact(
+        ledger_session_id : Int64,
+        file_path : String,
+      )
+        config = Config.load
+        return unless config.artifacts.enabled && config.artifacts.auto_detect
+
+        # Classify the file
+        classification = ArtifactClassifier.classify(file_path)
+        return unless classification
+
+        # Check file size limit
+        source_size = ArtifactStorage.file_size(file_path)
+        return if source_size <= 0
+        return if source_size > config.artifacts.max_file_size
+
+        original_filename = File.basename(file_path)
+        title = ArtifactStorage.title_from_filename(original_filename)
+
+        # Compute hash from tool_input content if available, else from file
+        hash = if content = @tool_input.try(&.["content"]?.try(&.as_s?))
+                 ArtifactStorage.content_hash(content)
+               else
+                 ArtifactStorage.file_hash(file_path)
+               end
+
+        result = Database.save_artifact(
+          ledger_session_id,
+          title: title,
+          artifact_type: classification.artifact_type,
+          mime_type: classification.mime_type,
+          original_filename: original_filename,
+          stored_path: "", # Placeholder, updated after storage
+          source_path: file_path,
+          file_size: source_size,
+          content_hash: hash,
+        )
+        return if result.action.failed?
+        number = result.number
+
+        # Enrichment means same file, same content — skip file copy.
+        return if result.action.enrichment?
+
+        # Insert or VersionUpdate — store/overwrite the file.
+        stored_path = if content = @tool_input.try(&.["content"]?.try(&.as_s?))
+                        ArtifactStorage.store_content(
+                          ledger_session_id, number, content, original_filename,
+                        )
+                      else
+                        ArtifactStorage.store(
+                          ledger_session_id, number, file_path, original_filename,
+                        )
+                      end
+
+        # Update the stored_path in the DB record
+        if stored_path
+          Database.update_artifact_stored_path(ledger_session_id, number, stored_path)
+        end
+      rescue
+        # Silently fail — artifact capture is best-effort
       end
 
       # When a guideline or implementation plan file is edited/written,

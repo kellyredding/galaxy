@@ -14,6 +14,7 @@ module GalaxyLedger
         files : Array(Database::SessionFile)? = nil,
         last_exchange : Exchange::LastExchange? = nil,
         snapshot_count : Int32 = 0,
+        artifact_count : Int32 = 0,
       ) : String
         parts = [] of String
 
@@ -29,6 +30,7 @@ module GalaxyLedger
           counts << "#{gl} guideline#{gl == 1 ? "" : "s"}" if gl > 0
           counts << "#{ip} plan#{ip == 1 ? "" : "s"}" if ip > 0
           counts << "#{snapshot_count} snapshot#{snapshot_count == 1 ? "" : "s"}" if snapshot_count > 0
+          counts << "#{artifact_count} artifact#{artifact_count == 1 ? "" : "s"}" if artifact_count > 0
           counts << "#{total_decisions} decision#{total_decisions == 1 ? "" : "s"}" if total_decisions > 0
           counts << "#{lr} learning#{lr == 1 ? "" : "s"}" if lr > 0
 

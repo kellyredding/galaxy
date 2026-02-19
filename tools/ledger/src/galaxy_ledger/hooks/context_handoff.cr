@@ -52,6 +52,9 @@ module GalaxyLedger
         # Query snapshot stats for budget-aware rendering
         snapshot_stats = Database.session_snapshot_stats(ledger_session_id)
 
+        # Query artifact count
+        artifact_count = Database.session_artifact_count(ledger_session_id)
+
         # Build systemMessage and additionalContext
         system_message = Helpers.build_system_message(
           prefix: "Handoff",
@@ -60,6 +63,7 @@ module GalaxyLedger
           files: files,
           last_exchange: last_exchange,
           snapshot_count: snapshot_stats[:count],
+          artifact_count: artifact_count,
         )
 
         context = build_additional_context(
@@ -71,6 +75,7 @@ module GalaxyLedger
           cwd: handoff_cwd(session_record),
           git_branch: session_record.try(&.git_branch),
           snapshot_stats: snapshot_stats,
+          artifact_count: artifact_count,
         )
 
         puts Helpers.output_json(system_message, context)
@@ -130,6 +135,7 @@ module GalaxyLedger
         cwd : String? = nil,
         git_branch : String? = nil,
         snapshot_stats : NamedTuple(count: Int32, total_chars: Int64) = {count: 0, total_chars: 0_i64},
+        artifact_count : Int32 = 0,
       ) : String
         lines = [] of String
         lines << "## Session Context Handoff"
@@ -143,7 +149,7 @@ module GalaxyLedger
         end
         lines << ""
 
-        has_any_data = restoration.total_count > 0 || files.size > 0 || last_exchange || snapshot_stats[:count] > 0
+        has_any_data = restoration.total_count > 0 || files.size > 0 || last_exchange || snapshot_stats[:count] > 0 || artifact_count > 0
 
         unless has_any_data
           lines << "No previous context available."
@@ -285,6 +291,25 @@ module GalaxyLedger
           end
         end
 
+        # Session artifacts section (metadata only — files can be large/binary)
+        if artifact_count > 0
+          artifacts = Database.list_artifacts(ledger_session_id)
+          lines << "---"
+          lines << ""
+          lines << "### Session Artifacts (#{artifacts.size} saved)"
+          lines << ""
+          lines << "| # | Type | Title | Size |"
+          lines << "|---|------|-------|------|"
+          artifacts.each do |art|
+            size_formatted = format_file_size(art.file_size)
+            lines << "| #{art.number} | #{art.artifact_type} | #{art.title} | #{size_formatted} |"
+          end
+          lines << ""
+          lines << "View: `galaxy-ledger artifact view --pid #{claude_pid} N`"
+          lines << "Open: `galaxy-ledger artifact open --pid #{claude_pid} N`"
+          lines << ""
+        end
+
         # Key decisions section (high + medium, labeled)
         high_decisions = restoration.tier1.high_importance_decisions
         medium_decisions = restoration.tier2.medium_decisions
@@ -349,6 +374,17 @@ module GalaxyLedger
         end
 
         lines.join("\n")
+      end
+
+      # Format file size for display (e.g., 1024 -> "1.0k", 1048576 -> "1.0M")
+      private def self.format_file_size(bytes : Int64) : String
+        if bytes >= 1_048_576
+          "#{"%.1f" % (bytes / 1_048_576.0)}M"
+        elsif bytes >= 1024
+          "#{"%.1f" % (bytes / 1024.0)}k"
+        else
+          "#{bytes}B"
+        end
       end
 
       # Format char count for display (e.g., 3241 -> "3.2k", 150 -> "150")

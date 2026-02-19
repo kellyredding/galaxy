@@ -216,11 +216,116 @@ module GalaxyLedger
     - The agent formats the content — the CLI just stores it
     SKILL
 
+    ARTIFACT_SKILL = <<-'SKILL'
+    ---
+    name: ledger:artifact
+    description: >-
+      This skill should be used when the user asks about produced documents,
+      wants to see artifacts from the session, asks to "show me that report",
+      "open the CSV", "what have we generated", "list artifacts", or wants
+      to manage session-produced files.
+    ---
+
+    Manage and retrieve session artifacts stored in the Galaxy Ledger.
+    Artifacts are documents, data exports, diagrams, images, and other
+    files produced during a session. They are automatically captured
+    when created via the Write tool, or manually registered when
+    created via Bash.
+
+    ## When This Skill Triggers
+
+    Use when the user asks about produced documents or files:
+    - "Show me that report from earlier"
+    - "What artifacts do we have?"
+    - "Open the CSV we generated"
+    - "List everything we've produced this session"
+    - "Can you pull up that diagram?"
+
+    ## Listing Artifacts
+
+    Show all artifacts in the current session:
+
+    ```bash
+    galaxy-ledger artifact list --pid $LEDGER_PID
+    ```
+
+    Present the results as a clean table to the user with number,
+    type, title, and size. If no artifacts exist, let the user know.
+
+    ## Viewing Artifacts (Text-Based)
+
+    For text-based artifacts (markdown, csv, text, mermaid, data),
+    output content to stdout:
+
+    ```bash
+    galaxy-ledger artifact view --pid $LEDGER_PID N
+    ```
+
+    Good for when the user wants to reference content inline or when
+    you need to read artifact content to answer a question about it.
+
+    ## Opening Artifacts (Any Type)
+
+    Opens in the appropriate native application (Preview for PDFs/
+    images, default browser for HTML, configured editor for text):
+
+    ```bash
+    galaxy-ledger artifact open --pid $LEDGER_PID N
+    ```
+
+    Use this when the user says "open it" or "show me" and the
+    artifact is binary (PDF, image) or they'd prefer a GUI view.
+
+    ## Manual Save (Bash-Created Files Only)
+
+    Files created via the Write tool are captured automatically —
+    do NOT manually save those. Only use manual save for files
+    produced by Bash commands (e.g., pandoc, mermaid-cli, python
+    scripts, curl downloads):
+
+    ```bash
+    galaxy-ledger artifact save --pid $LEDGER_PID \
+      --title "Descriptive title" \
+      --source-path /path/to/file \
+      --description "Context about what this artifact contains"
+    ```
+
+    The source file is copied to artifact storage. The original is
+    left in place. If the same source path was already saved in
+    this session, the existing artifact is updated (not duplicated).
+
+    ## Deleting Artifacts
+
+    ```bash
+    galaxy-ledger artifact delete --pid $LEDGER_PID N
+    ```
+
+    ## Referencing Artifacts
+
+    When discussing prior work, reference artifacts by number:
+    "Per artifact #2 (User Data Export), the revenue figures show..."
+
+    If artifact content isn't in your context, use `view` to load
+    it before responding.
+
+    ## Important Notes
+
+    - Artifacts are session-scoped — persist across /clear and
+      /compact within the same session
+    - Stored on filesystem with metadata in the Ledger database
+    - Original file always left in place — storage is a copy
+    - Binary artifacts (PDF, images) can only be opened, not viewed
+      inline — use `open` for those
+    - Auto-captured artifacts get a generated title from filename;
+      manually saved artifacts should have descriptive titles
+    SKILL
+
     # All ledger-managed skills: name => SKILL.md content
     LEDGER_SKILLS = {
       "handoff"         => HANDOFF_SKILL,
       "spend"           => SPEND_SKILL,
       "ledger:snapshot" => SNAPSHOT_SKILL,
+      "ledger:artifact" => ARTIFACT_SKILL,
     }
 
     struct SkillInfo
