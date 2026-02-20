@@ -1,0 +1,95 @@
+diff --git a/Sources/SwiftTerm/Apple/AppleTerminalView.swift b/Sources/SwiftTerm/Apple/AppleTerminalView.swift
+index 553a94c..c0b3174 100644
+--- a/Sources/SwiftTerm/Apple/AppleTerminalView.swift
++++ b/Sources/SwiftTerm/Apple/AppleTerminalView.swift
+@@ -191,6 +191,11 @@ extension TerminalView {
+         switch color {
+         case .defaultColor:
+             if isFg {
++                // GALAXY: Brighten default foreground for bold text, matching Terminal.app behavior.
++                // Without this, bold text using the default color looks the same brightness as regular text.
++                if isBold && useBrightColors {
++                    return nativeForegroundColor.brightened()
++                }
+                 return nativeForegroundColor
+             } else {
+                 return nativeBackgroundColor
+@@ -1064,6 +1069,12 @@ extension TerminalView {
+             #if os(macOS)
+             context.setShouldSmoothFonts(true)
+             context.setAllowsFontSmoothing(true)
++            // GALAXY: Enable FillStroke text rendering for heavier font weight.
++            // Uses the kitty terminal approach: stroke glyph outlines while filling
++            // to thicken text, compensating for layer-backed view thinning.
++            // Set to 0.0 to disable. Typical range: 0.2-0.75.
++            let galaxyFontThickenAmount: CGFloat = 0.3
++            let galaxyBoldExtraThicken: CGFloat = 0.25
+             #endif
+ 
+             for segment in lineInfo.segments {
+@@ -1111,6 +1122,10 @@ extension TerminalView {
+                     }
+ 
+                     nativeForegroundColor.set()
++                    // GALAXY: Also set stroke color for default foreground
++                    #if os(macOS)
++                    nativeForegroundColor.setStroke()
++                    #endif
+ 
+                     if runAttributes.keys.contains(.foregroundColor) {
+                         let color = runAttributes[.foregroundColor] as! TTColor
+@@ -1119,8 +1134,24 @@ extension TerminalView {
+                             context.setFillColorSpace(colorSpace)
+                         }
+                         context.setFillColor(cgColor)
++                        // GALAXY: Match stroke color to fill for FillStroke thickening
++                        #if os(macOS)
++                        context.setStrokeColor(cgColor)
++                        #endif
+                     }
+-                    
++
++                    // GALAXY: Apply FillStroke thickening (heavier for bold runs)
++                    #if os(macOS)
++                    if galaxyFontThickenAmount > 0 {
++                        let isBoldRun = (runFont == fontSet.bold || runFont == fontSet.boldItalic)
++                        let thickness = isBoldRun
++                            ? galaxyFontThickenAmount + galaxyBoldExtraThicken
++                            : galaxyFontThickenAmount
++                        context.setLineWidth(thickness)
++                        context.setTextDrawingMode(.fillStroke)
++                    }
++                    #endif
++
+                     CTFontDrawGlyphs(runFont, runGlyphs, &positions, positions.count, context)
+ 
+                     // Draw other attributes
+diff --git a/Sources/SwiftTerm/Mac/MacExtensions.swift b/Sources/SwiftTerm/Mac/MacExtensions.swift
+index 90402c0..e9fbf5c 100644
+--- a/Sources/SwiftTerm/Mac/MacExtensions.swift
++++ b/Sources/SwiftTerm/Mac/MacExtensions.swift
+@@ -29,6 +29,24 @@ extension NSColor {
+         return NSColor(calibratedRed: 1.0 - red, green: 1.0 - green, blue: 1.0 - blue, alpha: alpha)
+     }
+ 
++    // GALAXY: Returns a brightened version of the color for bold text.
++    // Blends toward white, matching Terminal.app's behavior of showing bold
++    // text at higher intensity when using the default foreground color.
++    func brightened() -> NSColor {
++        guard let color = self.usingColorSpace(.deviceRGB) else {
++            return self
++        }
++
++        var red: CGFloat = 0.0, green: CGFloat = 0.0, blue: CGFloat = 0.0, alpha: CGFloat = 1.0
++        color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
++        // GALAXY: Blend toward white — tune this for bold text brightness (0.0-1.0)
++        let brightFactor: CGFloat = 0.6
++        return NSColor(calibratedRed: red + (1.0 - red) * brightFactor,
++                       green: green + (1.0 - green) * brightFactor,
++                       blue: blue + (1.0 - blue) * brightFactor,
++                       alpha: alpha)
++    }
++
+     /// Returns a dimmed version of the color (for SGR 2 faint/dim text attribute)
+     /// Reduces the color intensity by approximately 50%
+     func dimmedColor() -> NSColor {
