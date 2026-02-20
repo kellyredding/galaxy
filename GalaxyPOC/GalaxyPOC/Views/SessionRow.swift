@@ -75,7 +75,7 @@ struct SessionRow: View {
                     .fill(Color(red: 1.0, green: 0.2, blue: 0.2))  // Bright, saturated red
                     .frame(width: 8, height: 8)
                     .shadow(color: Color.red.opacity(0.6), radius: 3, x: 0, y: 0)  // Subtle glow
-                    .offset(x: -10, y: -2)  // Tight to top-left corner
+                    .offset(x: -6, y: -2)  // Right edge overlaps first letter of session name
                     .opacity(session.hasUnreadBell ? 1 : 0)
             }
         }
