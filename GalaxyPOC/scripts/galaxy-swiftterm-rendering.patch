@@ -1,5 +1,5 @@
 diff --git a/Sources/SwiftTerm/Apple/AppleTerminalView.swift b/Sources/SwiftTerm/Apple/AppleTerminalView.swift
-index 553a94c..c0b3174 100644
+index 553a94c..c5c9421 100644
 --- a/Sources/SwiftTerm/Apple/AppleTerminalView.swift
 +++ b/Sources/SwiftTerm/Apple/AppleTerminalView.swift
 @@ -191,6 +191,11 @@ extension TerminalView {
@@ -14,7 +14,17 @@ index 553a94c..c0b3174 100644
                  return nativeForegroundColor
              } else {
                  return nativeBackgroundColor
-@@ -1064,6 +1069,12 @@ extension TerminalView {
+@@ -575,7 +580,8 @@ extension TerminalView {
+             // Renders block elements independently of the font
+             // U+2580...U+259F
+             } else if customBlockGlyphs,
+-                      (ch.code > BlockElementMapping.lowerBoundary && ch.code < BlockElementMapping.upperBoundary),
++                      ch.code >= BlockElementMapping.lowerBoundary,
++                      ch.code <= BlockElementMapping.upperBoundary,
+                       let rects = BlockElementMapping.rects(for: UInt32(ch.code)) {
+                 let fgColor = (currentAttributes[.foregroundColor] as? TTColor) ?? nativeForegroundColor
+                 blockElements.append(BlockElementRenderItem(column: col, columnWidth: width, rects: rects, foregroundColor: fgColor))
+@@ -1064,6 +1070,12 @@ extension TerminalView {
              #if os(macOS)
              context.setShouldSmoothFonts(true)
              context.setAllowsFontSmoothing(true)
@@ -27,7 +37,7 @@ index 553a94c..c0b3174 100644
              #endif
  
              for segment in lineInfo.segments {
-@@ -1111,6 +1122,10 @@ extension TerminalView {
+@@ -1111,6 +1123,10 @@ extension TerminalView {
                      }
  
                      nativeForegroundColor.set()
@@ -38,7 +48,7 @@ index 553a94c..c0b3174 100644
  
                      if runAttributes.keys.contains(.foregroundColor) {
                          let color = runAttributes[.foregroundColor] as! TTColor
-@@ -1119,8 +1134,24 @@ extension TerminalView {
+@@ -1119,8 +1135,24 @@ extension TerminalView {
                              context.setFillColorSpace(colorSpace)
                          }
                          context.setFillColor(cgColor)

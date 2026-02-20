@@ -74,7 +74,7 @@ else
     echo "    Package.swift already patched or structure changed"
 fi
 
-# Apply Galaxy font rendering patch (FillStroke thickening + bold brightening)
+# Apply Galaxy font rendering patch (FillStroke thickening + bold brightening + block element boundary fix)
 RENDERING_PATCH="$SCRIPT_DIR/galaxy-swiftterm-rendering.patch"
 if [ -f "$RENDERING_PATCH" ]; then
     echo "==> Applying Galaxy font rendering patch..."
