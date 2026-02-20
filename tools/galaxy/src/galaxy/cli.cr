@@ -3,9 +3,20 @@ require "uri"
 
 module Galaxy
   class CLI
+    # Galaxy's own commands — checked before delegation
+    GALAXY_COMMANDS = %w[help version update]
+
     def self.run(args : Array(String))
+      # Save original args before OptionParser modifies the array in-place.
+      # Needed for delegation — claude-persona must receive the full args.
+      original_args = args.dup
+
       show_help_flag = false
       show_version_flag = false
+      vibe = false
+      dryrun = false
+      resume_id : String? = nil
+      print_prompt : String? = nil
 
       parser = OptionParser.new do |p|
         p.banner = build_banner
@@ -13,6 +24,10 @@ module Galaxy
         p.separator ""
         p.separator "Options:"
 
+        p.on("--vibe", "Launch persona in vibe mode") { vibe = true }
+        p.on("--dry-run", "Show command without executing (delegates to claude-persona)") { dryrun = true }
+        p.on("-p PROMPT", "--print=PROMPT", "Print response and exit (delegates to claude-persona)") { |prompt| print_prompt = prompt }
+        p.on("-r ID", "--resume=ID", "Resume a previous session") { |id| resume_id = id }
         p.on("-h", "--help", "Show this help") { show_help_flag = true }
         p.on("-v", "--version", "Show version") { show_version_flag = true }
 
@@ -28,7 +43,7 @@ module Galaxy
       parser.unknown_args { |a| positional_args = a }
       parser.parse(args)
 
-      # Handle help/version flags
+      # 1. Handle help/version flags
       if show_help_flag
         puts parser
         return
@@ -39,60 +54,126 @@ module Galaxy
         return
       end
 
-      # No args: open Galaxy.app with new session
-      if positional_args.empty?
+      # 2. No args: open Galaxy.app with vanilla Claude session
+      #    (--resume without a command opens Mac app for vanilla resume)
+      if positional_args.empty? && !resume_id
         open_session
         return
       end
 
-      # First positional arg is command
+      # 3. No args + --resume: open Galaxy.app for vanilla resume
+      if positional_args.empty? && resume_id
+        open_session(resume: resume_id)
+        return
+      end
+
+      # First positional arg is command or persona name
       command = positional_args.first
       rest = positional_args[1..]? || [] of String
 
+      # 4. Galaxy's own commands
       case command
-      when "update"
-        handle_update_command(rest)
-      when "version"
-        puts VERSION
       when "help"
         puts parser
-      else
-        STDERR.puts "Error: Unknown command '#{command}'"
-        STDERR.puts "Run 'galaxy --help' for usage"
-        exit(1)
+        return
+      when "version"
+        puts VERSION
+        return
+      when "update"
+        handle_update_command(rest)
+        return
       end
+
+      # 5. "generate" → delegate to claude-persona locally + post-banner
+      if command == "generate"
+        handle_generate_command(original_args)
+        return
+      end
+
+      # 6. Non-interactive flags (--dry-run or -p): delegate locally
+      if dryrun || print_prompt
+        delegate_to_claude_persona(original_args)
+        return
+      end
+
+      # 7. Persona TOML exists for first arg → open Galaxy.app with persona
+      if persona_file_exists?(command)
+        open_session(persona: command, vibe: vibe, resume: resume_id)
+        return
+      end
+
+      # 8. Otherwise → delegate to claude-persona (handles: list, show, rename,
+      #    remove, mcp *, unknown commands/errors)
+      delegate_to_claude_persona(original_args)
     end
 
-    private def self.build_banner : String
-      <<-BANNER
-      galaxy - Launch Galaxy sessions from the terminal
-
-      Usage: galaxy [command] [options]
-
-      Commands:
-        (none)              Open Galaxy.app, create session in current directory
-        update              Update to latest version
-        update preview      Preview update without changes
-        update force        Reinstall latest version
-        version             Show version
-        help                Show this help
-
-      Options:
-        -h, --help          Show this help
-        -v, --version       Show version
-
-      Examples:
-        cd ~/projects/my-app && galaxy    Start session in project directory
-        galaxy version                    Check installed version
-        galaxy update                     Update to latest release
-      BANNER
+    # Check if a persona TOML file exists in the personas directory
+    def self.persona_file_exists?(name : String) : Bool
+      File.exists?(PERSONAS_DIR / "#{name}.toml")
     end
 
-    # Opens Galaxy.app via URL scheme with current directory
-    def self.open_session
-      path = Dir.current
+    # Build a galaxy:// URL with optional persona/vibe/resume parameters
+    def self.build_session_url(
+      path : String,
+      persona : String? = nil,
+      vibe : Bool = false,
+      resume : String? = nil,
+    ) : String
       encoded_path = URI.encode_path(path)
       url = "#{URL_SCHEME}://new-session?path=#{encoded_path}"
+      url += "&persona=#{URI.encode_path(persona)}" if persona
+      url += "&vibe=true" if vibe
+      url += "&resume=#{URI.encode_path(resume)}" if resume
+      url
+    end
+
+    # Locate the claude-persona binary. Returns path or nil if not found.
+    def self.find_claude_persona_path : String?
+      possible_paths = [
+        Path.home / ".local" / "bin" / "claude-persona",
+        Path.new("/usr/local/bin/claude-persona"),
+      ]
+
+      possible_paths.each do |path|
+        path_str = path.to_s
+        if File.exists?(path_str) && File.info(path_str).permissions.owner_execute?
+          return path_str
+        end
+      end
+
+      # Fallback: which (may fail if PATH is empty or which is not found)
+      begin
+        output = IO::Memory.new
+        status = Process.run("which", args: ["claude-persona"],
+          output: output,
+          error: Process::Redirect::Close)
+        if status.success?
+          result = output.to_s.strip
+          return result unless result.empty?
+        end
+      rescue File::NotFoundError
+        # `which` not found (e.g., empty PATH) — fall through to nil
+      end
+
+      nil
+    end
+
+    # Opens Galaxy.app via URL scheme with optional persona parameters
+    def self.open_session(
+      persona : String? = nil,
+      vibe : Bool = false,
+      resume : String? = nil,
+    )
+      # For persona sessions, verify claude-persona is available
+      if persona
+        unless find_claude_persona_path
+          show_claude_persona_install_hint
+          exit(1)
+        end
+      end
+
+      path = Dir.current
+      url = build_session_url(path, persona: persona, vibe: vibe, resume: resume)
 
       stderr = IO::Memory.new
       status = Process.run(
@@ -111,6 +192,108 @@ module Galaxy
         STDERR.puts "Make sure Galaxy.app is installed"
         exit(1)
       end
+    end
+
+    # Delegate a command to claude-persona with inherited I/O
+    private def self.delegate_to_claude_persona(args : Array(String))
+      cp_path = find_claude_persona_path
+
+      unless cp_path
+        show_claude_persona_install_hint
+        exit(1)
+      end
+
+      status = Process.run(
+        cp_path,
+        args: args,
+        input: Process::Redirect::Inherit,
+        output: Process::Redirect::Inherit,
+        error: Process::Redirect::Inherit
+      )
+
+      exit(status.exit_code)
+    end
+
+    # Handle "galaxy generate" — delegate locally, then show post-banner
+    private def self.handle_generate_command(original_args : Array(String))
+      cp_path = find_claude_persona_path
+
+      unless cp_path
+        show_claude_persona_install_hint
+        exit(1)
+      end
+
+      status = Process.run(
+        cp_path,
+        args: original_args,
+        input: Process::Redirect::Inherit,
+        output: Process::Redirect::Inherit,
+        error: Process::Redirect::Inherit
+      )
+
+      if status.success?
+        # Show post-generate banner with Galaxy launch hint
+        puts ""
+        puts "Launch this persona in Galaxy:"
+        puts "  galaxy <persona-name>"
+      end
+
+      exit(status.exit_code)
+    end
+
+    private def self.show_claude_persona_install_hint
+      STDERR.puts "Claude Persona is not installed. Persona features require it."
+      STDERR.puts ""
+      STDERR.puts "Install from: https://github.com/kellyredding/claude-persona"
+    end
+
+    private def self.build_banner : String
+      if find_claude_persona_path
+        build_full_banner
+      else
+        build_vanilla_banner
+      end
+    end
+
+    private def self.build_full_banner : String
+      <<-BANNER
+      Galaxy v#{VERSION} - Claude Code session manager
+
+      Usage:
+        galaxy                          Open Galaxy with a new Claude session
+        galaxy <persona>                Open Galaxy with a persona session
+        galaxy <persona> --vibe         Launch persona in vibe mode
+        galaxy <persona> --resume <id>  Resume a persona session
+        galaxy --resume <id>            Resume a vanilla session
+        galaxy generate                 Create a new persona interactively
+
+        galaxy list                     List available personas
+        galaxy show <name>              Show persona configuration
+        galaxy mcp list                 List imported MCP configs
+        ... and all other claude-persona commands.
+        Run 'claude-persona help' for the full reference.
+
+        galaxy update                   Update Galaxy
+        galaxy version                  Show version
+        galaxy help                     Show this help
+      BANNER
+    end
+
+    private def self.build_vanilla_banner : String
+      <<-BANNER
+      Galaxy v#{VERSION} - Claude Code session manager
+
+      Usage:
+        galaxy                          Open Galaxy with a new Claude session
+        galaxy --resume <id>            Resume a session
+
+        galaxy update                   Update Galaxy
+        galaxy version                  Show version
+        galaxy help                     Show this help
+
+      Persona features require claude-persona:
+        https://github.com/kellyredding/claude-persona
+      BANNER
     end
 
     private def self.handle_update_command(args : Array(String))
@@ -150,8 +333,10 @@ module Galaxy
       exit(status.exit_code)
     end
 
-    private def self.command_exists?(cmd : String) : Bool
+    def self.command_exists?(cmd : String) : Bool
       Process.run("which", args: [cmd], output: Process::Redirect::Close, error: Process::Redirect::Close).success?
+    rescue File::NotFoundError
+      false
     end
 
     private def self.show_update_help

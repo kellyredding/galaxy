@@ -16,6 +16,13 @@ module Galaxy
 
   # Default Galaxy.app bundle identifier
   APP_BUNDLE_ID = "com.kellyredding.galaxy"
+
+  # Claude Persona integration
+  # Allow override via environment variable for testing (mirrors claude-persona's pattern)
+  CLAUDE_PERSONA_DIR = Path.new(
+    ENV.fetch("CLAUDE_PERSONA_DIR", (Path.home / ".claude-persona").to_s)
+  )
+  PERSONAS_DIR = CLAUDE_PERSONA_DIR / "personas"
 end
 
 # Only run CLI when executed directly, not when required by specs

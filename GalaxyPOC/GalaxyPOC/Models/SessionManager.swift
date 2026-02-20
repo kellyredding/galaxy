@@ -21,6 +21,9 @@ class SessionManager: ObservableObject {
     // Path to claude binary - detected at init
     let claudePath: String
 
+    // Path to claude-persona binary - detected at init, nil if not installed
+    let claudePersonaPath: String?
+
     var activeSession: Session? {
         sessions.first { $0.id == activeSessionId }
     }
@@ -34,31 +37,45 @@ class SessionManager: ObservableObject {
     }
 
     init() {
-        // Detect claude path
-        self.claudePath = SessionManager.findClaudePath()
+        // Detect binary paths
+        self.claudePath = SessionManager.findBinaryPath(
+            name: "claude",
+            searchPaths: [
+                "\(NSHomeDirectory())/.local/bin/claude",
+                "/usr/local/bin/claude",
+                "/opt/homebrew/bin/claude",
+            ],
+            fallback: "\(NSHomeDirectory())/.local/bin/claude"
+        )
+        self.claudePersonaPath = SessionManager.findBinaryPath(name: "claude-persona")
     }
 
-    private static func findClaudePath() -> String {
-        // Check common locations
-        let possiblePaths = [
-            "\(NSHomeDirectory())/.local/bin/claude",
-            "/usr/local/bin/claude",
-            "/opt/homebrew/bin/claude"
+    /// Find a binary by checking common paths, then falling back to `which`.
+    /// Returns the resolved path, or `fallback` if provided and nothing found, or nil.
+    private static func findBinaryPath(
+        name: String,
+        searchPaths: [String]? = nil,
+        fallback: String? = nil
+    ) -> String? {
+        // Check explicit search paths first
+        let paths = searchPaths ?? [
+            "\(NSHomeDirectory())/.local/bin/\(name)",
+            "/usr/local/bin/\(name)",
         ]
 
-        for path in possiblePaths {
+        for path in paths {
             if FileManager.default.isExecutableFile(atPath: path) {
                 return path
             }
         }
 
-        // Fallback - try to find via which command
+        // Fallback: which command
         let task = Process()
         let pipe = Pipe()
         task.standardOutput = pipe
-        task.standardError = pipe
+        task.standardError = FileHandle.nullDevice
         task.executableURL = URL(fileURLWithPath: "/usr/bin/which")
-        task.arguments = ["claude"]
+        task.arguments = [name]
 
         do {
             try task.run()
@@ -72,15 +89,46 @@ class SessionManager: ObservableObject {
             // Ignore errors
         }
 
-        // Return default path
-        return "\(NSHomeDirectory())/.local/bin/claude"
+        return fallback
+    }
+
+    // Non-optional overload for claude (always returns a path)
+    private static func findBinaryPath(
+        name: String,
+        searchPaths: [String],
+        fallback: String
+    ) -> String {
+        return findBinaryPath(name: name, searchPaths: searchPaths, fallback: fallback as String?) ?? fallback
     }
 
     @discardableResult
-    func createSession(workingDirectory: String? = nil) -> Session {
+    func createSession(
+        workingDirectory: String? = nil,
+        personaName: String? = nil,
+        isVibe: Bool = false,
+        resumeSessionId: String? = nil
+    ) -> Session {
         let directory = workingDirectory ?? NSHomeDirectory()
         let sessionId = SessionIDGenerator.generate()
-        let session = Session(workingDirectory: directory, userSessionId: sessionId)
+
+        // Parse resume UUID if provided
+        let resumeUUID: UUID? = resumeSessionId.flatMap { UUID(uuidString: $0) }
+
+        let session = Session(
+            workingDirectory: directory,
+            userSessionId: sessionId,
+            personaName: personaName,
+            isVibe: isVibe,
+            resumeSessionId: resumeUUID
+        )
+
+        // Determine the executable path: claude-persona for persona sessions, claude for vanilla
+        let executablePath: String
+        if personaName != nil, let cpPath = claudePersonaPath {
+            executablePath = cpPath
+        } else {
+            executablePath = claudePath
+        }
 
         // Set up terminal delegate to track process termination
         // Store a strong reference in session so it doesn't get deallocated
@@ -120,8 +168,11 @@ class SessionManager: ObservableObject {
             session?.markBusy()
         }
 
-        // Start the claude process
-        session.startProcess(claudePath: claudePath)
+        // Determine if this is a resume (resumeSessionId provided means URL had resume param)
+        let isResume = resumeSessionId != nil
+
+        // Start the process
+        session.startProcess(executablePath: executablePath, resume: isResume)
 
         sessions.append(session)
         activeSessionId = session.id
@@ -227,8 +278,16 @@ class SessionManager: ObservableObject {
             session?.markBusy()
         }
 
-        // Start claude: --resume if session exists in Claude storage, --session-id if not
-        session.startProcess(claudePath: claudePath, resume: canResume)
+        // Determine executable path: claude-persona for persona sessions, claude for vanilla
+        let executablePath: String
+        if session.personaName != nil, let cpPath = claudePersonaPath {
+            executablePath = cpPath
+        } else {
+            executablePath = claudePath
+        }
+
+        // Start process: --resume if session exists in Claude storage, --session-id if not
+        session.startProcess(executablePath: executablePath, resume: canResume)
 
         // Make this the active session
         activeSessionId = session.id

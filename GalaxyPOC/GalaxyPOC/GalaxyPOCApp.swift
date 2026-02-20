@@ -91,14 +91,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         switch url.host {
         case "new-session":
-            if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-               let pathItem = components.queryItems?.first(where: { $0.name == "path" }),
-               let path = pathItem.value {
-                NSLog("AppDelegate: Creating session in directory: %@", path)
-                SessionManager.shared.createSession(workingDirectory: path)
-            } else {
+            guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+                  let pathItem = components.queryItems?.first(where: { $0.name == "path" }),
+                  let path = pathItem.value else {
                 NSLog("AppDelegate: new-session URL missing path parameter")
+                return
             }
+
+            // Parse optional persona parameters
+            let persona = components.queryItems?.first(where: { $0.name == "persona" })?.value
+            let vibe = components.queryItems?.first(where: { $0.name == "vibe" })?.value == "true"
+            let resume = components.queryItems?.first(where: { $0.name == "resume" })?.value
+
+            if let persona = persona {
+                NSLog("AppDelegate: Creating persona session '%@' in %@ (vibe: %d, resume: %@)",
+                      persona, path, vibe ? 1 : 0, resume ?? "nil")
+            } else {
+                NSLog("AppDelegate: Creating session in directory: %@ (resume: %@)",
+                      path, resume ?? "nil")
+            }
+
+            SessionManager.shared.createSession(
+                workingDirectory: path,
+                personaName: persona,
+                isVibe: vibe,
+                resumeSessionId: resume
+            )
         default:
             NSLog("AppDelegate: Unknown galaxy URL action: %@", url.host ?? "nil")
         }

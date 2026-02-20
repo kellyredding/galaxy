@@ -60,7 +60,7 @@ struct StoppedSessionView: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
 
-                    Text("or use the CLI:")
+                    Text("or resume elsewhere:")
                         .chromeFont(size: fontSize.caption)
                         .foregroundColor(.secondary)
 

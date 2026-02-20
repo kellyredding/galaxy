@@ -22,6 +22,18 @@ class Session: Identifiable, ObservableObject {
     @Published var visualBellActive: Bool = false
     @Published var isBusy: Bool = false
 
+    /// Persona name for this session (nil for vanilla Claude sessions)
+    let personaName: String?
+
+    /// Whether vibe mode was active at launch
+    let isVibe: Bool
+
+    /// Expected direct child process name for PID tracking
+    /// "claude-persona" for persona sessions, "claude" for vanilla sessions
+    var expectedProcessName: String {
+        personaName != nil ? "claude-persona" : "claude"
+    }
+
     /// Debounce timer for busy→idle transition
     private var busyDebounceTimer: Timer?
 
@@ -48,9 +60,12 @@ class Session: Identifiable, ObservableObject {
     // Track the child process PID for termination (SwiftTerm doesn't expose this)
     private var childPid: pid_t = 0
 
-    init(workingDirectory: String, userSessionId: String) {
-        self.id = UUID()
+    init(workingDirectory: String, userSessionId: String, personaName: String? = nil, isVibe: Bool = false, resumeSessionId: UUID? = nil) {
+        // Use provided resume UUID if resuming a specific session, otherwise generate new
+        self.id = resumeSessionId ?? UUID()
         self.userSessionId = userSessionId
+        self.personaName = personaName
+        self.isVibe = isVibe
         self.createdAt = Date()
         self.workingDirectory = workingDirectory
 
@@ -186,12 +201,20 @@ class Session: Identifiable, ObservableObject {
         }
     }
 
-    /// Returns the CLI command to resume this session
+    /// Returns the CLI command to resume this session from another terminal
     var resumeCommand: String {
-        return "cd \(workingDirectory) && claude --resume \(claudeSessionId)"
+        var cmd = "cd \(workingDirectory) && galaxy"
+        if let persona = personaName {
+            cmd += " \(persona)"
+        }
+        cmd += " --resume \(claudeSessionId)"
+        if isVibe {
+            cmd += " --vibe"
+        }
+        return cmd
     }
 
-    func startProcess(claudePath: String, resume: Bool = false) {
+    func startProcess(executablePath: String, resume: Bool = false) {
         // Build environment as array of "KEY=VALUE" strings
         var envArray: [String] = ProcessInfo.processInfo.environment.map { "\($0.key)=\($0.value)" }
 
@@ -205,28 +228,50 @@ class Session: Identifiable, ObservableObject {
         envArray.append("COLORTERM=truecolor")
         envArray.append("LANG=en_US.UTF-8")
 
-        // Build args
+        // Build args and determine executable
         var args: [String] = []
+        let execName: String
 
-        if resume {
-            // Resume this specific Claude session by its UUID
-            args.append("--resume")
-            args.append(claudeSessionId)
-            NSLog("Session: Resuming Claude session %@ in %@", claudeSessionId, workingDirectory)
+        if let persona = personaName {
+            // Persona session: launch via claude-persona
+            execName = "claude-persona"
+            args.append(persona)
+
+            if resume {
+                args.append("--resume")
+                args.append(claudeSessionId)
+                NSLog("Session: Resuming persona '%@' session %@ in %@", persona, claudeSessionId, workingDirectory)
+            } else {
+                args.append("--session-id")
+                args.append(claudeSessionId)
+                NSLog("Session: Starting persona '%@' session with ID %@", persona, claudeSessionId)
+            }
+
+            if isVibe {
+                args.append("--vibe")
+            }
         } else {
-            // Start new Claude session with our UUID so we can resume it later
-            args.append("--session-id")
-            args.append(claudeSessionId)
-            NSLog("Session: Starting new Claude session with ID %@", claudeSessionId)
+            // Vanilla Claude session
+            execName = "claude"
+
+            if resume {
+                args.append("--resume")
+                args.append(claudeSessionId)
+                NSLog("Session: Resuming Claude session %@ in %@", claudeSessionId, workingDirectory)
+            } else {
+                args.append("--session-id")
+                args.append(claudeSessionId)
+                NSLog("Session: Starting new Claude session with ID %@", claudeSessionId)
+            }
         }
 
-        // Start claude directly (not via shell) so SwiftTerm can properly monitor the process
+        // Start process directly (not via shell) so SwiftTerm can properly monitor it
         // SwiftTerm 1.10+ supports currentDirectory parameter directly
         terminalView.startProcess(
-            executable: claudePath,
+            executable: executablePath,
             args: args,
             environment: envArray,
-            execName: "claude",
+            execName: execName,
             currentDirectory: workingDirectory
         )
 
@@ -282,16 +327,18 @@ class Session: Identifiable, ObservableObject {
         }
     }
 
-    /// Find the claude child process that belongs to this session
-    /// Called shortly after startProcess() to capture the PID
+    /// Find the direct child process that belongs to this session
+    /// Uses expectedProcessName to target "claude-persona" for persona sessions
+    /// or "claude" for vanilla sessions.
     func captureChildPid() {
+        let processName = expectedProcessName
         let task = Process()
         let pipe = Pipe()
         task.standardOutput = pipe
         task.standardError = FileHandle.nullDevice
         task.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
         // -P: parent PID, -n: newest match, -x: exact name match
-        task.arguments = ["-P", String(getpid()), "-n", "-x", "claude"]
+        task.arguments = ["-P", String(getpid()), "-n", "-x", processName]
 
         do {
             try task.run()
