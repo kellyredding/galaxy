@@ -75,7 +75,7 @@ index 553a94c..c5c9421 100644
  
                      // Draw other attributes
 diff --git a/Sources/SwiftTerm/Mac/MacExtensions.swift b/Sources/SwiftTerm/Mac/MacExtensions.swift
-index 90402c0..e9fbf5c 100644
+index 90402c0..3844af8 100644
 --- a/Sources/SwiftTerm/Mac/MacExtensions.swift
 +++ b/Sources/SwiftTerm/Mac/MacExtensions.swift
 @@ -29,6 +29,24 @@ extension NSColor {
@@ -103,3 +103,26 @@ index 90402c0..e9fbf5c 100644
      /// Returns a dimmed version of the color (for SGR 2 faint/dim text attribute)
      /// Reduces the color intensity by approximately 50%
      func dimmedColor() -> NSColor {
+@@ -45,7 +63,8 @@ extension NSColor {
+ 
+     static func make (red: CGFloat, green: CGFloat, blue: CGFloat, alpha: CGFloat) -> NSColor
+     {
+-        return NSColor (deviceRed: red, green: green, blue: blue, alpha: alpha)
++        // GALAXY: Use sRGB for true color (24-bit) values, matching Terminal.app rendering.
++        return NSColor (srgbRed: red, green: green, blue: blue, alpha: alpha)
+     }
+     
+     static func make (hue: CGFloat, saturation: CGFloat, brightness: CGFloat, alpha: CGFloat) -> TTColor
+@@ -59,7 +78,11 @@ extension NSColor {
+ 
+     static func make (color: Color) -> NSColor
+     {
+-        return NSColor (deviceRed: CGFloat (color.red) / 65535.0,
++        // GALAXY: Use sRGB color space instead of uncalibrated device RGB.
++        // On P3 displays, deviceRed produces more saturated colors than intended,
++        // shifting magenta toward purple and cyan toward teal. sRGB matches
++        // Terminal.app's color rendering.
++        return NSColor (srgbRed: CGFloat (color.red) / 65535.0,
+                         green: CGFloat (color.green) / 65535.0,
+                         blue: CGFloat (color.blue) / 65535.0,
+                         alpha: 1.0)
