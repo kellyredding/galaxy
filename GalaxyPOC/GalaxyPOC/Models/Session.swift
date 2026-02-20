@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import Combine
 import SwiftTerm
 
 class Session: Identifiable, ObservableObject {
@@ -57,6 +58,8 @@ class Session: Identifiable, ObservableObject {
     // Keep a strong reference to the process handler so it doesn't get deallocated
     var processHandler: TerminalProcessHandler?
 
+    private var cancellables = Set<AnyCancellable>()
+
     // Track the child process PID for termination (SwiftTerm doesn't expose this)
     private var childPid: pid_t = 0
 
@@ -83,18 +86,39 @@ class Session: Identifiable, ObservableObject {
     }
 
     private func configureTerminal() {
-        // Apply initial font size
+        // Apply initial font
         applyTerminalFontSize()
+
+        // Re-apply font when the font family setting changes
+        SettingsManager.shared.$settings
+            .map(\.terminalFontFamily)
+            .removeDuplicates()
+            .dropFirst()  // Skip initial value (already applied above)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.applyTerminalFontSize()
+            }
+            .store(in: &cancellables)
 
         // Terminal colors are controlled by Claude Code's own settings
         // We don't override them here - let Claude Code manage its appearance
     }
 
-    /// Apply the current terminal font size to the terminal view
+    /// Apply the current terminal font to the terminal view
     private func applyTerminalFontSize() {
-        if let font = NSFont(name: "SF Mono", size: terminalFontSize) ?? NSFont(name: "Menlo", size: terminalFontSize) {
-            terminalView.font = font
+        let family = SettingsManager.shared.settings.terminalFontFamily
+        let font: NSFont
+        if family == "SF Mono" {
+            // SF Mono is only available via the system monospaced font API.
+            // .medium weight matches Terminal.app's rendering more closely than .regular,
+            // which Apple maps to an unexpectedly light weight for this font.
+            font = NSFont.monospacedSystemFont(ofSize: terminalFontSize, weight: .medium)
+        } else {
+            font = NSFont(name: family, size: terminalFontSize)
+                ?? NSFont.monospacedSystemFont(ofSize: terminalFontSize, weight: .regular)
         }
+        NSLog("Session[%@]: applyFont family=%@ -> fontName=%@ size=%.0f", name, family, font.fontName, terminalFontSize)
+        terminalView.font = font
     }
 
     /// Increase terminal font size by one step

@@ -35,36 +35,50 @@ struct SettingsView: View {
 
             // Terminal section
             SettingsCard(title: "Terminal") {
-                SettingsRow(label: "Default font size") {
-                    HStack(spacing: 4) {
-                        TextField("", text: $fontSizeText)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 50)
-                            .multilineTextAlignment(.trailing)
-                            .onAppear {
-                                fontSizeText = "\(Int(settingsManager.settings.defaultTerminalFontSize))"
+                VStack(alignment: .leading, spacing: 12) {
+                    SettingsRow(label: "Font") {
+                        Picker("", selection: $settingsManager.settings.terminalFontFamily) {
+                            ForEach(Self.monospacedFontFamilies, id: \.self) { family in
+                                Text(family)
+                                    .font(.custom(family, size: 13))
+                                    .tag(family)
                             }
-                            .onChange(of: fontSizeText) { _, newValue in
-                                if let value = Double(newValue) {
-                                    let clamped = min(max(value, AppSettings.terminalFontSizeRange.lowerBound),
-                                                     AppSettings.terminalFontSizeRange.upperBound)
-                                    settingsManager.settings.defaultTerminalFontSize = clamped
-                                }
-                            }
-                            .onChange(of: settingsManager.settings.defaultTerminalFontSize) { _, newValue in
-                                let newText = "\(Int(newValue))"
-                                if fontSizeText != newText {
-                                    fontSizeText = newText
-                                }
-                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 160)
+                    }
 
-                        Stepper("", value: $settingsManager.settings.defaultTerminalFontSize,
-                               in: AppSettings.terminalFontSizeRange,
-                               step: AppSettings.terminalFontSizeStep)
-                            .labelsHidden()
+                    SettingsRow(label: "Default font size") {
+                        HStack(spacing: 4) {
+                            TextField("", text: $fontSizeText)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 50)
+                                .multilineTextAlignment(.trailing)
+                                .onAppear {
+                                    fontSizeText = "\(Int(settingsManager.settings.defaultTerminalFontSize))"
+                                }
+                                .onChange(of: fontSizeText) { _, newValue in
+                                    if let value = Double(newValue) {
+                                        let clamped = min(max(value, AppSettings.terminalFontSizeRange.lowerBound),
+                                                         AppSettings.terminalFontSizeRange.upperBound)
+                                        settingsManager.settings.defaultTerminalFontSize = clamped
+                                    }
+                                }
+                                .onChange(of: settingsManager.settings.defaultTerminalFontSize) { _, newValue in
+                                    let newText = "\(Int(newValue))"
+                                    if fontSizeText != newText {
+                                        fontSizeText = newText
+                                    }
+                                }
 
-                        Text("pt")
-                            .foregroundColor(.secondary)
+                            Stepper("", value: $settingsManager.settings.defaultTerminalFontSize,
+                                   in: AppSettings.terminalFontSizeRange,
+                                   step: AppSettings.terminalFontSizeStep)
+                                .labelsHidden()
+
+                            Text("pt")
+                                .foregroundColor(.secondary)
+                        }
                     }
                 }
             }
@@ -116,6 +130,35 @@ struct SettingsView: View {
     private func previewBell() {
         settingsManager.handleBell()
     }
+
+    /// CJK font families that report as fixed-pitch but aren't suitable for terminal display
+    private static let cjkFontFamilies: Set<String> = [
+        "Lantinghei TC", "Lantinghei SC", "PCMyungjo",
+        "Osaka", "Osaka−等幅",
+    ]
+
+    /// All monospaced font families suitable for terminal display, sorted alphabetically.
+    /// Includes SF Mono (the system monospaced font) which requires special API access.
+    private static let monospacedFontFamilies: [String] = {
+        let fontManager = NSFontManager.shared
+
+        var families = fontManager.availableFontFamilies.filter { family in
+            guard !cjkFontFamilies.contains(family) else { return false }
+            guard let members = fontManager.availableMembers(ofFontFamily: family),
+                  let firstMember = members.first,
+                  let postscriptName = firstMember[0] as? String,
+                  let font = NSFont(name: postscriptName, size: 13.0) else {
+                return false
+            }
+            return font.isFixedPitch
+        }
+
+        // SF Mono is the system monospaced font — only available via monospacedSystemFont(),
+        // not through NSFontManager enumeration or NSFont(name:size:)
+        families.append("SF Mono")
+
+        return families.sorted()
+    }()
 }
 
 // MARK: - Supporting Views
