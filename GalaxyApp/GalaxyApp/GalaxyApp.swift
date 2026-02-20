@@ -9,6 +9,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Probe the file system to trigger the macOS TCC permission dialog
+        // before any session tries to access the working directory. Without
+        // this, the first session launch fails because claude can't access
+        // files on disk — the TCC prompt appears too late and the process
+        // has already exited. This call blocks until the user responds.
+        requestFileAccessIfNeeded()
+
         // Set up the main menu
         mainMenu = MainMenu()
         NSApp.mainMenu = mainMenu?.createMainMenu()
@@ -130,6 +137,48 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func windowDidResignKey(_ notification: Notification) {
         SessionManager.shared.isWindowFocused = false
+    }
+
+    // MARK: - File Access
+
+    /// Trigger macOS TCC permission dialogs on first launch before any
+    /// session starts.
+    ///
+    /// macOS requires explicit user consent before an app (or its child
+    /// processes) can access certain file system resources. The TCC prompt
+    /// is triggered by the first actual access, but if that access comes
+    /// from a spawned child process (like claude), the process may exit
+    /// before the user can respond to the dialog.
+    ///
+    /// This method probes file system paths at launch to surface any
+    /// permission dialogs early. Specifically:
+    /// - Network volume mountpoints in the home directory (e.g., OrbStack
+    ///   NFS mounts) trigger the "access files on a network volume" dialog.
+    /// - The home directory itself is probed for general file access.
+    private func requestFileAccessIfNeeded() {
+        let fm = FileManager.default
+        let home = fm.homeDirectoryForCurrentUser
+
+        // Probe the home directory for general file access
+        _ = try? fm.contentsOfDirectory(atPath: home.path)
+
+        // Find and probe network volume mountpoints in the home directory.
+        // This triggers the kTCCServiceSystemPolicyNetworkVolumes dialog
+        // (e.g., "Galaxy.app would like to access files on a network
+        // volume") before any child process hits the gate.
+        let keys: Set<URLResourceKey> = [.isVolumeKey, .volumeIsLocalKey]
+        if let entries = try? fm.contentsOfDirectory(
+            at: home,
+            includingPropertiesForKeys: Array(keys)
+        ) {
+            for entry in entries {
+                guard let values = try? entry.resourceValues(forKeys: keys),
+                      values.isVolume == true,
+                      values.volumeIsLocal == false else { continue }
+
+                _ = try? fm.contentsOfDirectory(atPath: entry.path)
+            }
+        }
     }
 
     // MARK: - Preferences

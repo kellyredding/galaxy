@@ -283,11 +283,16 @@ class Session: Identifiable, ObservableObject {
         // Build environment as array of "KEY=VALUE" strings
         var envArray: [String] = ProcessInfo.processInfo.environment.map { "\($0.key)=\($0.value)" }
 
-        // Override terminal-related environment variables
+        // Strip environment variables that interfere with child sessions:
+        // - TERM/COLORTERM/LANG: overridden below for terminal behavior
+        // - CLAUDECODE: set by running Claude Code sessions; if Galaxy.app
+        //   was launched from within a Claude session, this prevents child
+        //   processes from starting ("nested session" detection)
         envArray = envArray.filter {
             !$0.hasPrefix("TERM=") &&
             !$0.hasPrefix("COLORTERM=") &&
-            !$0.hasPrefix("LANG=")
+            !$0.hasPrefix("LANG=") &&
+            !$0.hasPrefix("CLAUDECODE=")
         }
         envArray.append("TERM=xterm-256color")
         // Don't set COLORTERM=truecolor — this makes Claude Code use 24-bit

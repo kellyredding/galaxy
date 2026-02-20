@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Setup script for GalaxyPOC vendored dependencies
+# Setup script for GalaxyApp vendored dependencies
 #
 # This script clones SwiftTerm v1.10.1 and applies a patch to fix
 # Swift Package Manager compatibility issues (trailing commas in
@@ -17,7 +17,7 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 VENDOR_DIR="$PROJECT_DIR/Vendor"
 SWIFTTERM_VERSION="v1.10.1"
 
-echo "==> Setting up vendored dependencies for GalaxyPOC"
+echo "==> Setting up vendored dependencies for GalaxyApp"
 echo "    Project: $PROJECT_DIR"
 echo "    Vendor:  $VENDOR_DIR"
 
@@ -93,5 +93,5 @@ echo ""
 echo "Next steps:"
 echo "  1. cd $PROJECT_DIR"
 echo "  2. xcodegen generate"
-echo "  3. xcodebuild -project GalaxyPOC.xcodeproj -scheme GalaxyPOC build"
+echo "  3. xcodebuild -project GalaxyApp.xcodeproj -scheme GalaxyApp build"
 echo ""

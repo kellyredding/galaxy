@@ -1,4 +1,4 @@
-name: GalaxyPOC
+name: GalaxyApp
 options:
   bundleIdPrefix: com.kellyredding
   deploymentTarget:
@@ -10,16 +10,16 @@ packages:
     path: Vendor/SwiftTerm
 
 targets:
-  GalaxyPOC:
+  GalaxyApp:
     type: application
     platform: macOS
     sources:
-      - GalaxyPOC
+      - GalaxyApp
     info:
-      path: GalaxyPOC/Info.plist
+      path: GalaxyApp/Info.plist
       properties:
         CFBundleName: $(PRODUCT_NAME)
-        CFBundleDisplayName: Galaxy POC
+        CFBundleDisplayName: Galaxy
         CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleShortVersionString: $(MARKETING_VERSION)
@@ -34,7 +34,8 @@ targets:
               - galaxy
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.kellyredding.GalaxyPOC
+        PRODUCT_NAME: Galaxy
+        PRODUCT_BUNDLE_IDENTIFIER: com.kellyredding.Galaxy
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.10"

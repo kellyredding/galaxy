@@ -8,10 +8,10 @@
 .vscode/
 
 # Vendored dependencies (cloned locally, not committed)
-# See GalaxyPOC/SETUP.md for instructions to set up
-GalaxyPOC/Vendor/
+# See GalaxyApp/SETUP.md for instructions to set up
+GalaxyApp/Vendor/
 
 # Xcode build output (from xcodebuild -derivedDataPath build)
-GalaxyPOC/build/
+GalaxyApp/build/
 
 # Tool-specific ignores are in each tool's .gitignore

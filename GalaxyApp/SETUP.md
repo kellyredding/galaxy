@@ -1,6 +1,6 @@
-# GalaxyPOC Setup Guide
+# GalaxyApp Setup Guide
 
-This document explains how to set up the GalaxyPOC project for building, including vendored dependencies.
+This document explains how to set up the GalaxyApp project for building, including vendored dependencies.
 
 ## Prerequisites
 
@@ -11,7 +11,7 @@ This document explains how to set up the GalaxyPOC project for building, includi
 ## Quick Start
 
 ```bash
-cd GalaxyPOC
+cd GalaxyApp
 
 # 1. Set up vendored dependencies (SwiftTerm)
 ./scripts/setup-vendor.sh
@@ -20,7 +20,7 @@ cd GalaxyPOC
 xcodegen generate
 
 # 3. Build
-xcodebuild -project GalaxyPOC.xcodeproj -scheme GalaxyPOC -configuration Debug build
+xcodebuild -project GalaxyApp.xcodeproj -scheme GalaxyApp -configuration Debug build
 ```
 
 ## Vendored Dependencies
@@ -78,15 +78,15 @@ To update to a newer SwiftTerm version:
 ## Project Structure
 
 ```
-GalaxyPOC/
+GalaxyApp/
 ├── scripts/
 │   └── setup-vendor.sh      # Vendor dependency setup
 ├── Vendor/                   # Vendored dependencies (gitignored)
 │   └── SwiftTerm/           # SwiftTerm v1.10.1 (patched)
-├── GalaxyPOC/               # Swift source files
+├── GalaxyApp/               # Swift source files
 ├── project.yml              # XcodeGen project spec
 ├── SETUP.md                 # This file
-└── GalaxyPOC.xcodeproj/     # Generated (don't edit directly)
+└── GalaxyApp.xcodeproj/     # Generated (don't edit directly)
 ```
 
 ## Troubleshooting

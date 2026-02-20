@@ -137,7 +137,7 @@ class SettingsManager: ObservableObject {
     private init() {
         // Set up settings directory and file path
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let galaxyDir = appSupport.appendingPathComponent("GalaxyPOC", isDirectory: true)
+        let galaxyDir = appSupport.appendingPathComponent("Galaxy", isDirectory: true)
 
         // Create directory if needed
         try? FileManager.default.createDirectory(at: galaxyDir, withIntermediateDirectories: true)
