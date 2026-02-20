@@ -11,4 +11,7 @@
 # See GalaxyPOC/SETUP.md for instructions to set up
 GalaxyPOC/Vendor/
 
+# Xcode build output (from xcodebuild -derivedDataPath build)
+GalaxyPOC/build/
+
 # Tool-specific ignores are in each tool's .gitignore
