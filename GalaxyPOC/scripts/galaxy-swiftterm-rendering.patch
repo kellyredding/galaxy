@@ -1,8 +1,22 @@
 diff --git a/Sources/SwiftTerm/Apple/AppleTerminalView.swift b/Sources/SwiftTerm/Apple/AppleTerminalView.swift
-index 553a94c..c5c9421 100644
+index 553a94c..79461fd 100644
 --- a/Sources/SwiftTerm/Apple/AppleTerminalView.swift
 +++ b/Sources/SwiftTerm/Apple/AppleTerminalView.swift
-@@ -191,6 +191,11 @@ extension TerminalView {
+@@ -14,6 +14,13 @@ import ImageIO
+ #endif
+ import SwiftUI
+ 
++// GALAXY: Custom attribute key to carry bold state through to glyph rendering.
++// Needed because fonts without a bold variant (e.g. Monaco) make the bold font
++// identical to normal, so comparing runFont == fontSet.bold is unreliable.
++extension NSAttributedString.Key {
++    static let galaxyBold = NSAttributedString.Key("galaxyBold")
++}
++
+ #if os(iOS) || os(visionOS)
+ import UIKit
+ typealias TTColor = UIColor
+@@ -191,6 +198,11 @@ extension TerminalView {
          switch color {
          case .defaultColor:
              if isFg {
@@ -14,7 +28,27 @@ index 553a94c..c5c9421 100644
                  return nativeForegroundColor
              } else {
                  return nativeBackgroundColor
-@@ -575,7 +580,8 @@ extension TerminalView {
+@@ -332,7 +344,8 @@ extension TerminalView {
+         var nsattr: [NSAttributedString.Key:Any] = [
+             .font: tf,
+             .foregroundColor: fg,
+-            .backgroundColor: bg
++            .backgroundColor: bg,
++            .galaxyBold: isBold,  // GALAXY: carry bold state for FillStroke rendering
+         ]
+         if flags.contains (.underline) {
+             let underlineColor = attribute.underlineColor.map {
+@@ -400,7 +413,8 @@ extension TerminalView {
+         var nsattr: [NSAttributedString.Key:Any] = [
+             .font: tf,
+             .foregroundColor: fgColor,
+-            .backgroundColor: mapColor(color: bg, isFg: false, isBold: false)
++            .backgroundColor: mapColor(color: bg, isFg: false, isBold: false),
++            .galaxyBold: isBold,  // GALAXY: carry bold state for FillStroke rendering
+         ]
+         if flags.contains (.underline) {
+             let underlineColor = attribute.underlineColor.map {
+@@ -575,7 +589,8 @@ extension TerminalView {
              // Renders block elements independently of the font
              // U+2580...U+259F
              } else if customBlockGlyphs,
@@ -24,7 +58,7 @@ index 553a94c..c5c9421 100644
                        let rects = BlockElementMapping.rects(for: UInt32(ch.code)) {
                  let fgColor = (currentAttributes[.foregroundColor] as? TTColor) ?? nativeForegroundColor
                  blockElements.append(BlockElementRenderItem(column: col, columnWidth: width, rects: rects, foregroundColor: fgColor))
-@@ -1064,6 +1070,12 @@ extension TerminalView {
+@@ -1064,6 +1079,12 @@ extension TerminalView {
              #if os(macOS)
              context.setShouldSmoothFonts(true)
              context.setAllowsFontSmoothing(true)
@@ -33,11 +67,11 @@ index 553a94c..c5c9421 100644
 +            // to thicken text, compensating for layer-backed view thinning.
 +            // Set to 0.0 to disable. Typical range: 0.2-0.75.
 +            let galaxyFontThickenAmount: CGFloat = 0.3
-+            let galaxyBoldExtraThicken: CGFloat = 0.25
++            let galaxyBoldExtraThicken: CGFloat = 0.7
              #endif
  
              for segment in lineInfo.segments {
-@@ -1111,6 +1123,10 @@ extension TerminalView {
+@@ -1111,6 +1132,10 @@ extension TerminalView {
                      }
  
                      nativeForegroundColor.set()
@@ -48,7 +82,7 @@ index 553a94c..c5c9421 100644
  
                      if runAttributes.keys.contains(.foregroundColor) {
                          let color = runAttributes[.foregroundColor] as! TTColor
-@@ -1119,8 +1135,24 @@ extension TerminalView {
+@@ -1119,8 +1144,26 @@ extension TerminalView {
                              context.setFillColorSpace(colorSpace)
                          }
                          context.setFillColor(cgColor)
@@ -59,10 +93,12 @@ index 553a94c..c5c9421 100644
                      }
 -                    
 +
-+                    // GALAXY: Apply FillStroke thickening (heavier for bold runs)
++                    // GALAXY: Apply FillStroke thickening (heavier for bold runs).
++                    // Uses .galaxyBold attribute instead of font identity because fonts
++                    // without a bold variant (e.g. Monaco) make fontSet.bold == fontSet.normal.
 +                    #if os(macOS)
 +                    if galaxyFontThickenAmount > 0 {
-+                        let isBoldRun = (runFont == fontSet.bold || runFont == fontSet.boldItalic)
++                        let isBoldRun = (runAttributes[.galaxyBold] as? Bool) == true
 +                        let thickness = isBoldRun
 +                            ? galaxyFontThickenAmount + galaxyBoldExtraThicken
 +                            : galaxyFontThickenAmount
