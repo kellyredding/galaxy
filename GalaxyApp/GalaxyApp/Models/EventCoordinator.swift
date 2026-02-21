@@ -182,21 +182,41 @@ final class EventCoordinator {
     }
 
     /// Apply enrichment data to app sessions.
-    /// For now, just updates ledgerSessionId mapping. Full data model
-    /// enrichment is deferred to follow-up work.
-    private func applyEnrichmentData(_ response: EnrichmentService.EnrichmentResponse, sessionManager: SessionManager) {
+    /// Updates all ledger-tracked properties on matching Sessions.
+    private func applyEnrichmentData(
+        _ response: EnrichmentService.EnrichmentResponse,
+        sessionManager: SessionManager
+    ) {
         for sessionData in response.sessions {
             // Find matching app session
             for appSession in sessionManager.sessions {
                 let claudeId = appSession.claudeSessionId
                 if sessionData.sessionIdentifiers.contains(claudeId) {
-                    // Update ledger session ID mapping
-                    if appSession.ledgerSessionId != sessionData.ledgerSessionId {
-                        appSession.ledgerSessionId = sessionData.ledgerSessionId
-                    }
-
                     // Cache the mapping
                     ledgerSessionIdCache[sessionData.ledgerSessionId] = appSession.id
+
+                    // Apply all enrichment fields
+                    appSession.ledgerSessionId = sessionData.ledgerSessionId
+                    appSession.ledgerSessionIdentifiers = sessionData.sessionIdentifiers
+                    appSession.ledgerCurrentSessionIdentifier = sessionData.currentSessionIdentifier
+                    appSession.ledgerClaudePids = sessionData.claudePids
+                    appSession.ledgerCurrentClaudePid = sessionData.currentClaudePid
+                    appSession.ledgerCwd = sessionData.cwd
+                    appSession.ledgerProjectDir = sessionData.projectDir
+                    appSession.ledgerGitBranch = sessionData.gitBranch
+                    appSession.ledgerModelId = sessionData.modelId
+                    appSession.ledgerModelDisplayName = sessionData.modelDisplayName
+                    appSession.ledgerClaudeVersion = sessionData.claudeVersion
+                    appSession.ledgerContextPercentage = sessionData.contextPercentage
+                    appSession.ledgerTokensUsed = sessionData.tokensUsed
+                    appSession.ledgerTokensMax = sessionData.tokensMax
+                    appSession.ledgerCostUsd = sessionData.costUsd
+                    appSession.ledgerLinesAdded = sessionData.linesAdded
+                    appSession.ledgerLinesRemoved = sessionData.linesRemoved
+                    appSession.ledgerStartedAt = sessionData.startedAt
+                    appSession.ledgerUpdatedAt = sessionData.updatedAt
+                    appSession.ledgerLastInteraction = sessionData.lastInteraction
+
                     break
                 }
             }

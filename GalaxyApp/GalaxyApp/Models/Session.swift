@@ -23,10 +23,73 @@ class Session: Identifiable, ObservableObject {
     @Published var visualBellActive: Bool = false
     @Published var isBusy: Bool = false
 
-    /// Ledger session ID for fast event matching. Set when the event system
-    /// first matches this session via session_identifiers array.
-    /// Optional because it's not known until the first event or enrichment call.
+    // MARK: - Ledger Enrichment Data
+    // Populated by EventCoordinator.applyEnrichmentData() on each
+    // session.metrics event. Plain var (not @Published) until a
+    // specific property is promoted for UI rendering.
+
+    /// Ledger session ID for fast event matching. Set when the event
+    /// system first matches this session via session_identifiers array.
+    /// Optional because it's not known until the first event or
+    /// enrichment call.
     var ledgerSessionId: Int64?
+
+    /// All Claude session UUIDs accumulated through resumes/clears
+    var ledgerSessionIdentifiers: [String]?
+
+    /// Most recent Claude session UUID
+    var ledgerCurrentSessionIdentifier: String?
+
+    /// All known Claude process IDs for this session
+    var ledgerClaudePids: [Int]?
+
+    /// Currently active Claude process PID
+    var ledgerCurrentClaudePid: Int?
+
+    /// Working directory reported by the ledger
+    var ledgerCwd: String?
+
+    /// Git root / project directory
+    var ledgerProjectDir: String?
+
+    /// Current git branch
+    var ledgerGitBranch: String?
+
+    /// Raw model identifier (e.g., "claude-sonnet-4-20250514")
+    var ledgerModelId: String?
+
+    /// Human-readable model name (e.g., "Sonnet 4")
+    var ledgerModelDisplayName: String?
+
+    /// Claude CLI version string
+    var ledgerClaudeVersion: String?
+
+    /// Context window usage (0.0–1.0)
+    var ledgerContextPercentage: Double?
+
+    /// Tokens consumed so far
+    var ledgerTokensUsed: Int?
+
+    /// Token context window maximum
+    var ledgerTokensMax: Int?
+
+    /// Running session cost in USD
+    var ledgerCostUsd: Double?
+
+    /// Lines of code added this session
+    var ledgerLinesAdded: Int?
+
+    /// Lines of code removed this session
+    var ledgerLinesRemoved: Int?
+
+    /// ISO timestamp when the ledger session started
+    var ledgerStartedAt: String?
+
+    /// ISO timestamp of last ledger update
+    var ledgerUpdatedAt: String?
+
+    /// ISO timestamp of last user interaction
+    var ledgerLastInteraction: String?
 
     /// Persona name for this session (nil for vanilla Claude sessions)
     let personaName: String?
