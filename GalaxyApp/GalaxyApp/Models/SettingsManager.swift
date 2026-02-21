@@ -92,6 +92,9 @@ struct AppSettings: Codable {
     var chromeFontSize: CGFloat = 13.0  // Base font size for app chrome (sidebar, labels, etc.)
     var defaultTerminalFontSize: CGFloat = 13.0  // Default font size for new terminal sessions
 
+    // Terminal color settings
+    var terminalColorThemeName: String = "terminal-classic"  // Active color theme
+
     // Sidebar width constraints
     static let sidebarWidthRange: ClosedRange<CGFloat> = 150...500
 
@@ -114,6 +117,7 @@ struct AppSettings: Codable {
         terminalFontFamily = try container.decodeIfPresent(String.self, forKey: .terminalFontFamily) ?? "SF Mono"
         chromeFontSize = try container.decodeIfPresent(CGFloat.self, forKey: .chromeFontSize) ?? 13.0
         defaultTerminalFontSize = try container.decodeIfPresent(CGFloat.self, forKey: .defaultTerminalFontSize) ?? 13.0
+        terminalColorThemeName = try container.decodeIfPresent(String.self, forKey: .terminalColorThemeName) ?? "terminal-classic"
     }
 
     init() {

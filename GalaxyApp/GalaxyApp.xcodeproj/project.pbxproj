@@ -31,6 +31,7 @@
 		9A7E8C74C205BD7E4329689D /* MainMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = D96AFD79CE59690C239E10B5 /* MainMenu.swift */; };
 		9AA9CE7723F2ABB70173493D /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 7CE7EDB3AA040F6F2534E97D /* SwiftTerm */; };
 		A20D4EC7B5F8E3D1DDBB8D4E /* SettingsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C7501DB8ABDB113A9CF35C8 /* SettingsManager.swift */; };
+		B3A1C7D9E4F2A8B1C5D6E7F0 /* TerminalColorTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4B2E8F0A1C3D5E7F9B0A2C4 /* TerminalColorTheme.swift */; };
 		A6BAB2D0EEA7255F463D8F1E /* SessionSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73B3B51B18B326C9BFD98925 /* SessionSidebar.swift */; };
 		B1E71F47DE9403A1808277EC /* WatermarkBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6658F001C5C56071EC60514E /* WatermarkBackground.swift */; };
 		C3434D97E3E1783843E50797 /* SessionRowDragHandle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E474100EA691402E8DF51F3A /* SessionRowDragHandle.swift */; };
@@ -44,6 +45,7 @@
 		0663E09051C220DBD5E80CD2 /* EventCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventCoordinator.swift; sourceTree = "<group>"; };
 		1222FD00CE1FBF7DC99BD683 /* EventDebouncer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventDebouncer.swift; sourceTree = "<group>"; };
 		1C7501DB8ABDB113A9CF35C8 /* SettingsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsManager.swift; sourceTree = "<group>"; };
+		D4B2E8F0A1C3D5E7F9B0A2C4 /* TerminalColorTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalColorTheme.swift; sourceTree = "<group>"; };
 		1F39F262BB7D593079DE0602 /* GalaxyApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GalaxyApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		260E4993B113CBAABADA519B /* EnrichmentService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnrichmentService.swift; sourceTree = "<group>"; };
 		2C599534AAFC2570BC5F292A /* StoppedSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoppedSessionView.swift; sourceTree = "<group>"; };
@@ -103,6 +105,7 @@
 				1C7501DB8ABDB113A9CF35C8 /* SettingsManager.swift */,
 				CA7C61AE6C010B6F8091B0B3 /* SocketListener.swift */,
 				5702E8641291E687147723FD /* StatusLineService.swift */,
+				D4B2E8F0A1C3D5E7F9B0A2C4 /* TerminalColorTheme.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -260,6 +263,7 @@
 				A6BAB2D0EEA7255F463D8F1E /* SessionSidebar.swift in Sources */,
 				A20D4EC7B5F8E3D1DDBB8D4E /* SettingsManager.swift in Sources */,
 				55C2F61C9B63ACCE613CBC37 /* SettingsView.swift in Sources */,
+				B3A1C7D9E4F2A8B1C5D6E7F0 /* TerminalColorTheme.swift in Sources */,
 				CC27D1B9C8318928AE6187FE /* SocketListener.swift in Sources */,
 				3F6C193D5824A2FC5BDB2792 /* StatusLineService.swift in Sources */,
 				951191037547FFAFD104A99F /* StoppedSessionView.swift in Sources */,

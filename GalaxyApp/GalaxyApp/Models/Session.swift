@@ -96,16 +96,8 @@ class Session: Identifiable, ObservableObject {
         // This lets the system font fallback produce glyphs that match Terminal.app.
         terminalView.customBlockGlyphs = false
 
-        // Match Terminal.app's default text colors: pure white on black.
-        // SwiftTerm defaults to NSColor.textColor (system dynamic color) which
-        // can be slightly off from pure white depending on appearance context.
-        terminalView.nativeForegroundColor = NSColor.white
-        terminalView.nativeBackgroundColor = NSColor.black
-
-        // Install Terminal.app's actual ANSI palette. SwiftTerm's built-in
-        // "terminalAppColors" don't match Terminal.app's hardcoded defaults —
-        // these values were pixel-sampled from Terminal.app on macOS 15.
-        terminalView.installColors(Self.terminalAppPalette)
+        // Apply color theme from settings
+        applyColorTheme()
 
         // Apply initial font
         applyTerminalFontSize()
@@ -121,34 +113,29 @@ class Session: Identifiable, ObservableObject {
             }
             .store(in: &cancellables)
 
-        // Terminal colors are controlled by Claude Code's own settings
-        // We don't override them here - let Claude Code manage its appearance
+        // Observe color theme changes
+        SettingsManager.shared.$settings
+            .map(\.terminalColorThemeName)
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.applyColorTheme()
+            }
+            .store(in: &cancellables)
     }
 
-    // Terminal.app's actual default ANSI palette (pixel-sampled from macOS 15).
-    // SwiftTerm's built-in "terminalAppColors" values are inaccurate.
-    // Values are 8-bit RGB * 257 to convert to UInt16 (0-65535) range.
-    private static func c(_ r: UInt16, _ g: UInt16, _ b: UInt16) -> Color {
-        Color(red: r * 257, green: g * 257, blue: b * 257)
+    /// Apply the selected color theme to the terminal view.
+    private func applyColorTheme() {
+        let theme = TerminalColorTheme.theme(
+            named: SettingsManager.shared.settings.terminalColorThemeName
+        )
+        terminalView.nativeForegroundColor = theme.foregroundColor
+        terminalView.nativeBackgroundColor = theme.backgroundColorValue
+        terminalView.installColors(theme.swiftTermPalette)
+        terminalView.galaxyBoldForegroundColor = theme.boldForegroundColor
+        NSLog("Session[%@]: Applied color theme '%@'", name, theme.name)
     }
-    private static let terminalAppPalette: [Color] = [
-        c(  0,   0,   0),   // 0  Black
-        c(140,  27,  16),   // 1  Red
-        c( 74, 163,  46),   // 2  Green
-        c(153, 153,  47),   // 3  Yellow
-        c(  0,   0, 171),   // 4  Blue
-        c(163,  32, 172),   // 5  Magenta
-        c( 74, 163, 176),   // 6  Cyan
-        c(191, 191, 191),   // 7  White
-        c(102, 102, 102),   // 8  Bright Black
-        c(211,  45,  31),   // 9  Bright Red
-        c( 98, 214,  64),   // 10 Bright Green
-        c(229, 229,  75),   // 11 Bright Yellow
-        c(  0,   0, 245),   // 12 Bright Blue
-        c(211,  45, 222),   // 13 Bright Magenta
-        c(105, 226, 227),   // 14 Bright Cyan
-        c(229, 229, 229),   // 15 Bright White
-    ]
 
     /// Apply the current terminal font to the terminal view
     private func applyTerminalFontSize() {

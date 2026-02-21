@@ -1,12 +1,103 @@
 import SwiftUI
 
+// MARK: - Settings Tab Definition
+
+enum SettingsTab: String, CaseIterable {
+    case general
+    case terminal
+    case alerts
+
+    var title: String {
+        switch self {
+        case .general: return "General"
+        case .terminal: return "Terminal"
+        case .alerts: return "Alerts"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .general: return "gear"
+        case .terminal: return "apple.terminal"
+        case .alerts: return "bell"
+        }
+    }
+}
+
 struct SettingsView: View {
     @ObservedObject var settingsManager = SettingsManager.shared
     @State private var fontSizeText: String = ""
+    @State private var selectedTab: SettingsTab = .general
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Icon tab bar
+            HStack(spacing: 0) {
+                ForEach(SettingsTab.allCases, id: \.self) { tab in
+                    SettingsTabButton(tab: tab, isSelected: selectedTab == tab) {
+                        selectedTab = tab
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 4)
+
+            Divider()
+
+            // Tab content
+            Group {
+                switch selectedTab {
+                case .general:
+                    GeneralSettingsTab(settingsManager: settingsManager)
+                case .terminal:
+                    TerminalSettingsTab(
+                        settingsManager: settingsManager,
+                        fontSizeText: $fontSizeText
+                    )
+                case .alerts:
+                    AlertsSettingsTab(settingsManager: settingsManager)
+                }
+            }
+        }
+        .frame(width: 420)
+    }
+}
+
+struct SettingsTabButton: View {
+    let tab: SettingsTab
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 2) {
+                Image(systemName: tab.icon)
+                    .font(.system(size: 18))
+                    .frame(height: 22)
+                Text(tab.title)
+                    .font(.system(size: 10))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundColor(isSelected ? .primary : .secondary)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isSelected ? Color.primary.opacity(0.1) : Color.clear)
+        )
+    }
+}
+
+// MARK: - General Tab
+
+struct GeneralSettingsTab: View {
+    @ObservedObject var settingsManager: SettingsManager
 
     var body: some View {
         VStack(spacing: 16) {
-            // Layout section
             SettingsCard(title: "Layout") {
                 VStack(alignment: .leading, spacing: 12) {
                     SettingsRow(label: "Sessions panel") {
@@ -32,11 +123,24 @@ struct SettingsView: View {
                     }
                 }
             }
+            Spacer()
+        }
+        .padding(20)
+    }
+}
 
-            // Terminal section
-            SettingsCard(title: "Terminal") {
+// MARK: - Terminal Tab
+
+struct TerminalSettingsTab: View {
+    @ObservedObject var settingsManager: SettingsManager
+    @Binding var fontSizeText: String
+
+    var body: some View {
+        VStack(spacing: 16) {
+            // Font settings
+            SettingsCard(title: "Font") {
                 VStack(alignment: .leading, spacing: 12) {
-                    SettingsRow(label: "Font") {
+                    SettingsRow(label: "Family") {
                         Picker("", selection: $settingsManager.settings.terminalFontFamily) {
                             ForEach(Self.monospacedFontFamilies, id: \.self) { family in
                                 Text(family)
@@ -48,7 +152,7 @@ struct SettingsView: View {
                         .frame(width: 160)
                     }
 
-                    SettingsRow(label: "Default font size") {
+                    SettingsRow(label: "Default size") {
                         HStack(spacing: 4) {
                             TextField("", text: $fontSizeText)
                                 .textFieldStyle(.roundedBorder)
@@ -83,63 +187,41 @@ struct SettingsView: View {
                 }
             }
 
-            // Notifications section
-            SettingsCard(title: "Notifications") {
+            // Color theme settings
+            SettingsCard(title: "Colors") {
                 VStack(alignment: .leading, spacing: 12) {
-                    SettingsRow(label: "Terminal bell") {
-                        HStack(spacing: 8) {
-                            Picker("", selection: $settingsManager.settings.bellPreference) {
-                                Text(BellPreference.system.displayName).tag(BellPreference.system)
-                                Text(BellPreference.visualBell.displayName).tag(BellPreference.visualBell)
-                                Text(BellPreference.none.displayName).tag(BellPreference.none)
-
-                                Divider()
-
-                                ForEach(BellPreference.allCases.filter { $0.isSound }, id: \.self) { pref in
-                                    Text(pref.displayName).tag(pref)
-                                }
+                    SettingsRow(label: "Theme") {
+                        Picker("", selection: $settingsManager.settings.terminalColorThemeName) {
+                            ForEach(TerminalColorTheme.builtIn) { theme in
+                                Text(theme.name).tag(theme.id)
                             }
-                            .labelsHidden()
-                            .frame(width: 130)
-
-                            Button(action: previewBell) {
-                                Image(systemName: "play.fill")
-                                    .font(.system(size: 10))
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                            .help("Preview bell sound")
                         }
+                        .labelsHidden()
+                        .frame(width: 180)
                     }
 
-                    HStack {
-                        Toggle("Show unread indicator", isOn: $settingsManager.settings.showBellBadge)
-                            .toggleStyle(.checkbox)
-                        Spacer()
-                    }
+                    ThemePreviewView(
+                        theme: TerminalColorTheme.theme(
+                            named: settingsManager.settings.terminalColorThemeName
+                        )
+                    )
                 }
             }
 
             Spacer()
         }
         .padding(20)
-        .frame(width: 340)
-        .fixedSize()
-    }
-
-    private func previewBell() {
-        settingsManager.handleBell()
     }
 
     /// CJK font families that report as fixed-pitch but aren't suitable for terminal display
     private static let cjkFontFamilies: Set<String> = [
         "Lantinghei TC", "Lantinghei SC", "PCMyungjo",
-        "Osaka", "Osaka−等幅",
+        "Osaka", "Osaka\u{2212}\u{7B49}\u{5E45}",
     ]
 
     /// All monospaced font families suitable for terminal display, sorted alphabetically.
     /// Includes SF Mono (the system monospaced font) which requires special API access.
-    private static let monospacedFontFamilies: [String] = {
+    static let monospacedFontFamilies: [String] = {
         let fontManager = NSFontManager.shared
 
         var families = fontManager.availableFontFamilies.filter { family in
@@ -159,6 +241,121 @@ struct SettingsView: View {
 
         return families.sorted()
     }()
+}
+
+// MARK: - Alerts Tab
+
+struct AlertsSettingsTab: View {
+    @ObservedObject var settingsManager: SettingsManager
+
+    var body: some View {
+        VStack(spacing: 16) {
+            SettingsCard(title: "Notifications") {
+                VStack(alignment: .leading, spacing: 12) {
+                    SettingsRow(label: "Terminal bell") {
+                        HStack(spacing: 8) {
+                            Picker("", selection: $settingsManager.settings.bellPreference) {
+                                Text(BellPreference.system.displayName).tag(BellPreference.system)
+                                Text(BellPreference.visualBell.displayName).tag(BellPreference.visualBell)
+                                Text(BellPreference.none.displayName).tag(BellPreference.none)
+
+                                Divider()
+
+                                ForEach(BellPreference.allCases.filter { $0.isSound }, id: \.self) { pref in
+                                    Text(pref.displayName).tag(pref)
+                                }
+                            }
+                            .labelsHidden()
+                            .frame(width: 130)
+
+                            Button(action: { settingsManager.handleBell() }) {
+                                Image(systemName: "play.fill")
+                                    .font(.system(size: 10))
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .help("Preview bell sound")
+                        }
+                    }
+
+                    HStack {
+                        Toggle("Show unread indicator", isOn: $settingsManager.settings.showBellBadge)
+                            .toggleStyle(.checkbox)
+                        Spacer()
+                    }
+                }
+            }
+            Spacer()
+        }
+        .padding(20)
+    }
+}
+
+// MARK: - Theme Preview
+
+struct ThemePreviewView: View {
+    let theme: TerminalColorTheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            // Sample terminal output using theme colors
+            HStack(spacing: 0) {
+                coloredText("$ ", index: 2)    // green prompt
+                coloredText("ls", index: nil)  // default fg
+            }
+            HStack(spacing: 0) {
+                coloredText("src/", index: 4)       // blue (dir)
+                coloredText("  ", index: nil)
+                coloredText("README.md", index: nil) // default
+                coloredText("  ", index: nil)
+                coloredText("tests/", index: 4)      // blue (dir)
+            }
+            HStack(spacing: 0) {
+                coloredText("error:", index: 1)       // red
+                coloredText(" not found", index: nil)
+            }
+            HStack(spacing: 0) {
+                coloredText("success:", index: 2)     // green
+                coloredText(" build complete", index: nil)
+            }
+            HStack(spacing: 0) {
+                coloredText("warning:", index: 3)     // yellow
+                coloredText(" deprecated", index: nil)
+            }
+
+            // ANSI color swatch row
+            HStack(spacing: 2) {
+                ForEach(0..<8, id: \.self) { i in
+                    swatch(index: i)
+                }
+                Spacer().frame(width: 4)
+                ForEach(8..<16, id: \.self) { i in
+                    swatch(index: i)
+                }
+            }
+            .padding(.top, 4)
+        }
+        .font(.system(size: 11, design: .monospaced))
+        .padding(8)
+        .background(Color(theme.backgroundColorValue))
+        .cornerRadius(6)
+    }
+
+    private func coloredText(_ text: String, index: Int?) -> some View {
+        let color: NSColor = if let index {
+            TerminalColorTheme.nsColor(from: theme.ansiColors[index])
+        } else {
+            theme.foregroundColor
+        }
+        return Text(text).foregroundColor(Color(color))
+    }
+
+    private func swatch(index: Int) -> some View {
+        let color = TerminalColorTheme.nsColor(from: theme.ansiColors[index])
+        return RoundedRectangle(cornerRadius: 2)
+            .fill(Color(color))
+            .frame(width: 14, height: 14)
+    }
 }
 
 // MARK: - Supporting Views

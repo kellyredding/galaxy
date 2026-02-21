@@ -1,5 +1,51 @@
+diff --git a/Package.swift b/Package.swift
+index deca240..4f8f287 100644
+--- a/Package.swift
++++ b/Package.swift
+@@ -22,12 +22,9 @@ let targets: [Target] = [
+         name: "SwiftTerm",
+         dependencies: [],
+         path: "Sources/SwiftTerm",
+-        exclude: platformExcludes + ["Mac/README.md"],
+-//        swiftSettings: [
+-//            .unsafeFlags(["-enforce-exclusivity=none"])
+-//        ]
++        exclude: platformExcludes + ["Mac/README.md"]
+     ),
+-    .executableTarget (
++    .executableTarget(
+         name: "SwiftTermFuzz",
+         dependencies: ["SwiftTerm"],
+         path: "Sources/SwiftTermFuzz"
+@@ -52,23 +49,15 @@ let targets: [Target] = [
+     .target(
+         name: "SwiftTerm",
+         //
+-        // We can not use Swift Subprocess, because there is no way of configuring the child process to
+-        // be a controlling terminal, as it is posix-spawn based.
+-//        dependencies: [
+-//            .product(name: "Subprocess", package: "swift-subprocess", condition: .when(platforms: [.macOS, .linux]))
+-//        ],
+         path: "Sources/SwiftTerm",
+-        exclude: platformExcludes + ["Mac/README.md"],
+-//        swiftSettings: [
+-//            .unsafeFlags(["-enforce-exclusivity=none"])
+-//        ]
++        exclude: platformExcludes + ["Mac/README.md"]
+     ),
+-    .executableTarget (
++    .executableTarget(
+         name: "SwiftTermFuzz",
+         dependencies: ["SwiftTerm"],
+         path: "Sources/SwiftTermFuzz"
+     ),
+-    .executableTarget (
++    .executableTarget(
+         name: "Termcast",
+         dependencies: [
+             "SwiftTerm",
 diff --git a/Sources/SwiftTerm/Apple/AppleTerminalView.swift b/Sources/SwiftTerm/Apple/AppleTerminalView.swift
-index 553a94c..79461fd 100644
+index 553a94c..5e36d5f 100644
 --- a/Sources/SwiftTerm/Apple/AppleTerminalView.swift
 +++ b/Sources/SwiftTerm/Apple/AppleTerminalView.swift
 @@ -14,6 +14,13 @@ import ImageIO
@@ -20,10 +66,10 @@ index 553a94c..79461fd 100644
          switch color {
          case .defaultColor:
              if isFg {
-+                // GALAXY: Brighten default foreground for bold text, matching Terminal.app behavior.
-+                // Without this, bold text using the default color looks the same brightness as regular text.
-+                if isBold && useBrightColors {
-+                    return nativeForegroundColor.brightened()
++                // GALAXY: Use theme-provided bold foreground color (ANSI bright
++                // white from the active theme) instead of algorithmic brightening.
++                if isBold && useBrightColors, let boldFg = galaxyBoldForegroundColor {
++                    return boldFg
 +                }
                  return nativeForegroundColor
              } else {
@@ -67,7 +113,7 @@ index 553a94c..79461fd 100644
 +            // to thicken text, compensating for layer-backed view thinning.
 +            // Set to 0.0 to disable. Typical range: 0.2-0.75.
 +            let galaxyFontThickenAmount: CGFloat = 0.3
-+            let galaxyBoldExtraThicken: CGFloat = 0.7
++            let galaxyBoldExtraThicken: CGFloat = 0.3
              #endif
  
              for segment in lineInfo.segments {
@@ -111,35 +157,10 @@ index 553a94c..79461fd 100644
  
                      // Draw other attributes
 diff --git a/Sources/SwiftTerm/Mac/MacExtensions.swift b/Sources/SwiftTerm/Mac/MacExtensions.swift
-index 90402c0..3844af8 100644
+index 90402c0..d53edd9 100644
 --- a/Sources/SwiftTerm/Mac/MacExtensions.swift
 +++ b/Sources/SwiftTerm/Mac/MacExtensions.swift
-@@ -29,6 +29,24 @@ extension NSColor {
-         return NSColor(calibratedRed: 1.0 - red, green: 1.0 - green, blue: 1.0 - blue, alpha: alpha)
-     }
- 
-+    // GALAXY: Returns a brightened version of the color for bold text.
-+    // Blends toward white, matching Terminal.app's behavior of showing bold
-+    // text at higher intensity when using the default foreground color.
-+    func brightened() -> NSColor {
-+        guard let color = self.usingColorSpace(.deviceRGB) else {
-+            return self
-+        }
-+
-+        var red: CGFloat = 0.0, green: CGFloat = 0.0, blue: CGFloat = 0.0, alpha: CGFloat = 1.0
-+        color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
-+        // GALAXY: Blend toward white — tune this for bold text brightness (0.0-1.0)
-+        let brightFactor: CGFloat = 0.6
-+        return NSColor(calibratedRed: red + (1.0 - red) * brightFactor,
-+                       green: green + (1.0 - green) * brightFactor,
-+                       blue: blue + (1.0 - blue) * brightFactor,
-+                       alpha: alpha)
-+    }
-+
-     /// Returns a dimmed version of the color (for SGR 2 faint/dim text attribute)
-     /// Reduces the color intensity by approximately 50%
-     func dimmedColor() -> NSColor {
-@@ -45,7 +63,8 @@ extension NSColor {
+@@ -45,7 +45,8 @@ extension NSColor {
  
      static func make (red: CGFloat, green: CGFloat, blue: CGFloat, alpha: CGFloat) -> NSColor
      {
@@ -149,7 +170,7 @@ index 90402c0..3844af8 100644
      }
      
      static func make (hue: CGFloat, saturation: CGFloat, brightness: CGFloat, alpha: CGFloat) -> TTColor
-@@ -59,7 +78,11 @@ extension NSColor {
+@@ -59,7 +60,11 @@ extension NSColor {
  
      static func make (color: Color) -> NSColor
      {
@@ -162,3 +183,30 @@ index 90402c0..3844af8 100644
                          green: CGFloat (color.green) / 65535.0,
                          blue: CGFloat (color.blue) / 65535.0,
                          alpha: 1.0)
+diff --git a/Sources/SwiftTerm/Mac/MacTerminalView.swift b/Sources/SwiftTerm/Mac/MacTerminalView.swift
+index 412b95a..139ea67 100644
+--- a/Sources/SwiftTerm/Mac/MacTerminalView.swift
++++ b/Sources/SwiftTerm/Mac/MacTerminalView.swift
+@@ -305,6 +305,9 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+             settingBg = true
+             _nativeBg = newValue
+             terminal.backgroundColor = nativeBackgroundColor.getTerminalColor ()
++            // GALAXY: Sync the CALayer background so empty areas above content
++            // update when the background color changes (e.g. via OSC 11 or theme switch).
++            layer?.backgroundColor = newValue.cgColor
+             settingBg = false
+         }
+     }
+@@ -312,6 +315,12 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+     /// Controls weather to use high ansi colors, if false terminal will use bold text instead of high ansi colors
+     public var useBrightColors: Bool = true
+ 
++    // GALAXY: Bold foreground color from the active terminal color theme.
++    // Set to the theme's bright white (ANSI 15) so bold text uses
++    // theme-designed colors instead of algorithmic brightening.
++    // When nil, bold default foreground renders the same as non-bold.
++    public var galaxyBoldForegroundColor: NSColor?
++
+     /// When true, block element (U+2580-U+259F) and box drawing (U+2500-U+257F) characters use custom rendering.
+     public var customBlockGlyphs: Bool = true {
+         didSet {
