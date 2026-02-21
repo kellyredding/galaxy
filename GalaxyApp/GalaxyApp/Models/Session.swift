@@ -138,6 +138,7 @@ class Session: Identifiable, ObservableObject {
         self.sessionRef = sessionRef
         self.personaName = personaName
         self.isVibe = isVibe
+        self.claudeSessionId = self.id.uuidString.lowercased()
         self.createdAt = Date()
         self.workingDirectory = workingDirectory
 
@@ -241,10 +242,13 @@ class Session: Identifiable, ObservableObject {
         terminalFontSize = SettingsManager.shared.settings.defaultTerminalFontSize
     }
 
-    /// Claude's session ID (UUID string) for --session-id / --resume flags
-    var claudeSessionId: String {
-        id.uuidString.lowercased()
-    }
+    /// Claude's session ID used for --session-id / --resume flags
+    /// and event matching. Updated from ledger enrichment when the
+    /// session identifier changes (e.g., after /clear or resume).
+    /// Initialized from session.id at creation.
+    /// Promoted to @Published so StoppedSessionView re-renders
+    /// resumeCommand when the identifier changes.
+    @Published var claudeSessionId: String
 
     /// Send a slash command to the terminal (e.g., "/clear", "/compact")
     /// Only works when session is running

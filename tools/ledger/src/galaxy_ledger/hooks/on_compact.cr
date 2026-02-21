@@ -16,7 +16,7 @@ module GalaxyLedger
         return if ENV["GALAXY_SKIP_HOOKS"]? == "1"
 
         parse_hook_input
-        ContextHandoff.run(@stdin_session_identifier, @source)
+        ContextHandoff.run(@stdin_session_identifier, @source, event_name: "session.compact")
       end
 
       private def parse_hook_input

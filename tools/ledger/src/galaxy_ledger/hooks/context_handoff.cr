@@ -15,6 +15,7 @@ module GalaxyLedger
       def self.run(
         stdin_session_identifier : String?,
         source : String?,
+        event_name : String? = nil,
       )
         # Resolve session via 3-tier chain (env var → PID → hook session_id),
         # creating a new session as last resort.
@@ -39,6 +40,14 @@ module GalaxyLedger
             Database.register_session_identifier(ledger_session_id, stdin_id)
             Database.update_session(ledger_session_id, session_identifier: stdin_id)
           end
+        end
+
+        # Notify Galaxy.app of the session identity change (fire-and-forget)
+        if evt = event_name
+          EventPublisher.publish(
+            ledger_session_id: ledger_session_id,
+            event: evt,
+          )
         end
 
         # Fetch session record for cwd/git_branch and last_interaction

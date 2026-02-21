@@ -81,6 +81,12 @@ module GalaxyLedger
           end
         end
 
+        # Notify Galaxy.app of the new/resumed session (fire-and-forget)
+        EventPublisher.publish(
+          ledger_session_id: ledger_session_id,
+          event: "session.startup",
+        )
+
         # Query existing session data (will be empty for fresh session)
         restoration = Database.query_for_restoration(ledger_session_id)
         files = Database.session_files(ledger_session_id)

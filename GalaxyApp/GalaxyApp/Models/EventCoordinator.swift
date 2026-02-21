@@ -25,6 +25,10 @@ final class EventCoordinator {
     /// Known event names that we handle
     private static let knownEvents: Set<String> = [
         "session.metrics",
+        "session.startup",
+        "session.resume",
+        "session.clear",
+        "session.compact",
         "snapshot.created",
         "ledger.entry",
     ]
@@ -221,6 +225,17 @@ final class EventCoordinator {
                     appSession.ledgerStartedAt = sessionData.startedAt
                     appSession.ledgerUpdatedAt = sessionData.updatedAt
                     appSession.ledgerLastInteraction = sessionData.lastInteraction
+
+                    // Keep claudeSessionId current with the ledger's
+                    // latest session identifier (tracks /clear and resumes)
+                    if let current = sessionData.currentSessionIdentifier,
+                       appSession.claudeSessionId != current {
+                        GalaxyLog.events(
+                            "Updating claudeSessionId: "
+                            + "\(appSession.claudeSessionId) → \(current)"
+                        )
+                        appSession.claudeSessionId = current
+                    }
 
                     // Refresh git status for this session only
                     StatusLineService.shared.refreshSession(appSession)
