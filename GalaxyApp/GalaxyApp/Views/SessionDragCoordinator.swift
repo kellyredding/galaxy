@@ -11,7 +11,7 @@ class SessionDragCoordinator: ObservableObject {
 
     var dragStartY: CGFloat = 0                      // Screen Y at drag start
     var dragStartIndex: Int = 0                      // Original array index
-    var rowHeight: CGFloat = 44                      // Height of one session row
+    var rowHeight: CGFloat = 0                       // Height of one session row (set by SessionSidebar)
     var totalSessionCount: Int = 0                   // Total sessions (for boundary clamping)
 
     /// Called when preview crosses 50% threshold and a swap is needed

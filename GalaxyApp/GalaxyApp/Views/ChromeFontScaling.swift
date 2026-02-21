@@ -56,6 +56,14 @@ struct ChromeFontSize {
     /// Large title
     var largeTitle: CGFloat { 24 * scaleFactor }
 
+    // MARK: - Fixed Line Heights (for deterministic row layout)
+
+    /// Line height for tiny text (font size + 4pt padding)
+    var tinyLineHeight: CGFloat { ceil(tiny) + 4 }
+
+    /// Line height for caption2 text (font size + 4pt padding)
+    var caption2LineHeight: CGFloat { ceil(caption2) + 4 }
+
     /// Icon sizes
     var iconSmall: CGFloat { 12 * scaleFactor }
     var iconMedium: CGFloat { 18 * scaleFactor }

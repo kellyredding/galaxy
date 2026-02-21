@@ -44,22 +44,31 @@ struct SessionRow: View {
             // Session info with bell indicator overlay
             ZStack(alignment: .topLeading) {
                 VStack(alignment: .leading, spacing: 2) {
-                    // User session ID (human-readable)
+                    // Session ref (human-readable)
                     Text(session.sessionRef)
                         .chromeFontMono(size: fontSize.caption2, weight: .medium)
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .foregroundColor(isSelected ? .white : .primary)
+                        .frame(height: fontSize.caption2LineHeight)
+
+                    // Persona name (or "--" for vanilla Claude sessions)
+                    Text(session.personaName ?? "--")
+                        .chromeFontMono(size: fontSize.tiny, weight: .regular)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .foregroundColor(isSelected ? .white.opacity(0.8) : .secondary)
+                        .frame(height: fontSize.tinyLineHeight)
 
                     // Directory name + git status (single line, truncates if needed)
                     HStack(spacing: 4) {
                         Text(session.name)
-                            .chromeFontMono(size: fontSize.caption)
+                            .chromeFontMono(size: fontSize.tiny)
                             .lineLimit(1)
 
                         if let info = statusInfo, !info.gitStatusDisplay.isEmpty {
                             Text(info.gitStatusDisplay)
-                                .chromeFontMono(size: fontSize.caption)
+                                .chromeFontMono(size: fontSize.tiny)
                                 .foregroundColor(gitStatusColor(info: info, isSelected: isSelected))
                                 .lineLimit(1)
                         }
@@ -67,6 +76,7 @@ struct SessionRow: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .foregroundColor(isSelected ? .white.opacity(0.8) : .secondary)
+                    .frame(height: fontSize.tinyLineHeight)
                 }
 
                 // Unread bell indicator - bright red dot, tight to top-left corner
@@ -79,7 +89,8 @@ struct SessionRow: View {
                     .opacity(session.hasUnreadBell ? 1 : 0)
             }
         }
-        .padding(.vertical, 6)
+        .padding(.top, 6)
+        .padding(.bottom, 7)  // Extra 1pt to account for bottom separator
         .padding(.leading, 4)
         .padding(.trailing, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -100,6 +111,12 @@ struct SessionRow: View {
                 }
             }
         )
+        .overlay(alignment: .bottom) {
+            // Subtle separator between session rows (theme-aware, drawn over background)
+            Rectangle()
+                .fill(Color.primary.opacity(0.15))
+                .frame(height: 1)
+        }
         .overlay(alignment: .trailing) {
             // Hover buttons float over content on the right (disabled during drag)
             if isHovered && !isDragging {

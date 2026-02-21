@@ -6,8 +6,14 @@ struct SessionSidebar: View {
     @ObservedObject var statusLineService = StatusLineService.shared
     @StateObject private var dragCoordinator = SessionDragCoordinator()
 
-    // Row height for drag calculations (must match SessionRow layout)
-    private let rowHeight: CGFloat = 44
+    @Environment(\.chromeFontSize) private var chromeFontSize
+
+    // Row height derived from fixed line heights (deterministic, font-independent)
+    private var rowHeight: CGFloat {
+        let fontSize = ChromeFontSize(chromeFontSize)
+        // top(6) + caption2Line + spacing(2) + tinyLine + spacing(2) + tinyLine + bottom(7)
+        return 6 + fontSize.caption2LineHeight + 2 + fontSize.tinyLineHeight + 2 + fontSize.tinyLineHeight + 7
+    }
 
     // Only show drag handles when there's more than one session
     private var showDragHandles: Bool {
@@ -105,6 +111,10 @@ struct SessionSidebar: View {
         .background(Color(NSColor.windowBackgroundColor))  // Solid background to prevent watermark bleed
         // Width is controlled by ContentView via settingsManager.settings.sidebarWidth
         // Note: sidebar frame for auto-scroll is captured by DragHandleNSView during drag
+        .onChange(of: chromeFontSize) { _, _ in
+            // Keep drag coordinator in sync when chrome font size changes
+            dragCoordinator.rowHeight = rowHeight
+        }
         .onChange(of: sessionManager.sessions.count) { _, newCount in
             // Update drag coordinator with new count and session IDs
             dragCoordinator.totalSessionCount = newCount
