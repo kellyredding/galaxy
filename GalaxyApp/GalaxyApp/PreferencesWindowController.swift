@@ -14,17 +14,17 @@ class PreferencesWindowController: NSWindowController {
             shared = PreferencesWindowController()
         }
 
-        shared?.updateContent(theme: SettingsManager.shared.settings.themePreference)
+        shared?.applyAppearance(SettingsManager.shared.settings.themePreference)
         shared?.showWindow(nil)
         shared?.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    private func preferredScheme(for theme: ThemePreference) -> ColorScheme? {
+    private func nsAppearance(for theme: ThemePreference) -> NSAppearance? {
         switch theme {
         case .system: return nil
-        case .light: return .light
-        case .dark: return .dark
+        case .light: return NSAppearance(named: .aqua)
+        case .dark: return NSAppearance(named: .darkAqua)
         }
     }
 
@@ -45,43 +45,34 @@ class PreferencesWindowController: NSWindowController {
         // Set window delegate
         window.delegate = self
 
-        // Initial content
-        updateContent(theme: SettingsManager.shared.settings.themePreference)
+        // Create the hosting view once — never recreated on theme changes
+        let settingsView = SettingsView()
+            .environmentObject(SettingsManager.shared)
+        let hostingView = NSHostingView(rootView: settingsView)
+        hostingView.translatesAutoresizingMaskIntoConstraints = false
+        window.contentView = hostingView
 
-        // Observe theme changes to update appearance
-        // Note: @Published fires with the NEW value before the property is set,
-        // so we must use the value passed to sink, not re-read from the instance
+        // Size window to fit content and center on first show
+        let fittingSize = hostingView.fittingSize
+        window.setContentSize(fittingSize)
+        window.center()
+
+        // Apply initial appearance
+        applyAppearance(SettingsManager.shared.settings.themePreference)
+
+        // Observe theme changes to update window appearance
         themeObserver = SettingsManager.shared.$settings
             .map(\.themePreference)
             .removeDuplicates()
             .sink { [weak self] newTheme in
-                self?.updateContent(theme: newTheme)
+                self?.applyAppearance(newTheme)
             }
     }
 
-    private func updateContent(theme: ThemePreference) {
-        guard let window = window else { return }
-
-        // Create SwiftUI settings view with theme applied
-        let settingsView = SettingsView()
-            .environmentObject(SettingsManager.shared)
-            .preferredColorScheme(preferredScheme(for: theme))
-
-        // Wrap in NSHostingView
-        let hostingView = NSHostingView(rootView: settingsView)
-
-        // Allow the hosting view to determine size
-        hostingView.translatesAutoresizingMaskIntoConstraints = false
-        window.contentView = hostingView
-
-        // Size window to fit content
-        let fittingSize = hostingView.fittingSize
-        window.setContentSize(fittingSize)
-
-        // Center only on first show
-        if !window.isVisible {
-            window.center()
-        }
+    /// Update the window's NSAppearance without recreating the view hierarchy.
+    /// Setting window.appearance to nil inherits the system appearance.
+    private func applyAppearance(_ theme: ThemePreference) {
+        window?.appearance = nsAppearance(for: theme)
     }
 
     required init?(coder: NSCoder) {
