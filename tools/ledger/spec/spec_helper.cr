@@ -83,6 +83,10 @@ def run_binary(
     # the parent environment (e.g., when specs run inside a Claude Persona
     # session). Tests that need it set should pass it via extra_env.
     "CLAUDE_CLI_SESSION_ID" => "",
+    # Clear CLAUDECODE so subprocesses (e.g., extraction evals that spawn
+    # Claude CLI) don't hit the "nested session" detection and refuse to
+    # start. Galaxy.app does the same when launching child processes.
+    "CLAUDECODE" => "",
     # Clear editor env vars so they don't leak into snapshot open tests.
     # Tests that need these set should pass them via extra_env.
     "VISUAL" => "",

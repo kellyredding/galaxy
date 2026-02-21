@@ -94,6 +94,10 @@ module GalaxyLedger
         handle_list_files_command(rest)
       when "update-session-metrics"
         handle_update_session_metrics_command(rest)
+      when "publish"
+        handle_publish_command(rest)
+      when "sessions"
+        handle_sessions_command(rest)
       when "spend"
         handle_spend_command(rest)
       when "snapshot"
@@ -148,6 +152,12 @@ module GalaxyLedger
 
       Session Metrics:
         update-session-metrics  Update session metrics from stdin JSON
+
+      Event Publishing:
+        publish                 Publish an event to Galaxy.app
+
+      Session Data:
+        sessions                Query session state as JSON
 
       Run 'galaxy-ledger <command> --help' for detailed command usage.
       BANNER
@@ -2360,6 +2370,12 @@ module GalaxyLedger
         unless success
           exit(1)
         end
+
+        # Publish event notification to Galaxy.app (fire-and-forget)
+        EventPublisher.publish(
+          ledger_session_id: ledger_session_id,
+          event: "session.metrics",
+        )
       rescue ex
         STDERR.puts "Error: #{ex.message}"
         exit(1)
@@ -2404,6 +2420,249 @@ module GalaxyLedger
             "usd": 0.15
           }
         }
+      HELP
+    end
+
+    # ========================================
+    # Event Publishing
+    # ========================================
+
+    private def self.handle_publish_command(args : Array(String))
+      if args.first? == "-h" || args.first? == "--help"
+        show_publish_help
+        return
+      end
+
+      # Parse args
+      event : String? = nil
+      session_id : String? = nil
+      pid_str : String? = nil
+      ref : String? = nil
+      i = 0
+      while i < args.size
+        arg = args[i]
+        if arg == "--event" && i + 1 < args.size
+          event = args[i + 1]
+          i += 2
+        elsif arg == "--session" && i + 1 < args.size
+          session_id = args[i + 1]
+          i += 2
+        elsif arg == "--pid" && i + 1 < args.size
+          pid_str = args[i + 1]
+          i += 2
+        elsif arg == "--ref" && i + 1 < args.size
+          ref = args[i + 1]
+          i += 2
+        else
+          i += 1
+        end
+      end
+
+      # Validate --event is required
+      unless event
+        STDERR.puts "Error: --event is required"
+        STDERR.puts "Run 'galaxy-ledger publish --help' for usage"
+        exit(1)
+      end
+
+      # Resolve --pid or --session to ledger_session_id
+      ledger_session_id : Int64? = nil
+      if ps = pid_str
+        ledger_session_id = resolve_pid_to_ledger_session_id(ps)
+      elsif sid = session_id
+        ledger_session_id = resolve_session_to_ledger_session_id(sid)
+      end
+
+      unless ledger_session_id
+        STDERR.puts "Error: --session or --pid is required"
+        STDERR.puts "Run 'galaxy-ledger publish --help' for usage"
+        exit(1)
+      end
+
+      EventPublisher.publish(
+        ledger_session_id: ledger_session_id,
+        event: event,
+        ref: ref,
+      )
+    end
+
+    private def self.show_publish_help
+      puts <<-HELP
+      galaxy-ledger publish - Publish an event to Galaxy.app
+
+      USAGE:
+        galaxy-ledger publish --event EVENT --pid PID [--ref REF]
+        galaxy-ledger publish --event EVENT --session SESSION_ID [--ref REF]
+
+      REQUIRED:
+        --event EVENT           Event name (e.g., session.metrics, snapshot.created)
+
+      REQUIRED (one of):
+        --pid PID               Session by Claude Code process PID
+        --session SESSION_ID    Session by identifier
+
+      OPTIONAL:
+        --ref REF               Supplemental reference (snapshot number, entry ID, etc.)
+
+      DESCRIPTION:
+        Publishes an event notification over the Galaxy Unix domain socket
+        to Galaxy.app for real-time UI updates. Events are thin signals —
+        they carry session identity and event name but no data payload.
+
+        Silent on success (exit 0) whether or not Galaxy.app is running.
+        Non-zero exit only if the session cannot be resolved.
+
+      EXAMPLES:
+        galaxy-ledger publish --event session.metrics --pid 12345
+        galaxy-ledger publish --event snapshot.created --pid 12345 --ref 3
+        galaxy-ledger publish --event session.metrics --session abc-123-def
+      HELP
+    end
+
+    # ========================================
+    # Session Data
+    # ========================================
+
+    private def self.handle_sessions_command(args : Array(String))
+      if args.first? == "-h" || args.first? == "--help"
+        show_sessions_help
+        return
+      end
+
+      # Parse args — --session is repeatable, --json is required
+      session_ids = [] of String
+      json_flag = false
+      i = 0
+      while i < args.size
+        arg = args[i]
+        if arg == "--session" && i + 1 < args.size
+          session_ids << args[i + 1]
+          i += 2
+        elsif arg == "--json"
+          json_flag = true
+          i += 1
+        else
+          i += 1
+        end
+      end
+
+      unless json_flag
+        STDERR.puts "Error: --json is required"
+        STDERR.puts "Run 'galaxy-ledger sessions --help' for usage"
+        exit(1)
+      end
+
+      if session_ids.empty?
+        STDERR.puts "Error: at least one --session is required"
+        STDERR.puts "Run 'galaxy-ledger sessions --help' for usage"
+        exit(1)
+      end
+
+      # Resolve each session identifier to a ledger_session_id, deduplicate
+      resolved = {} of Int64 => Database::SessionRecord
+      session_ids.each do |sid|
+        ledger_session_id = Database.resolve_session_identifier(sid)
+        next unless ledger_session_id
+        next if resolved.has_key?(ledger_session_id)
+
+        record = Database.get_session_by_id(ledger_session_id)
+        next unless record
+
+        resolved[ledger_session_id] = record
+      end
+
+      # Build JSON output
+      io = IO::Memory.new
+      builder = JSON::Builder.new(io)
+      builder.document do
+        builder.object do
+          builder.field("sessions") do
+            builder.array do
+              resolved.each do |ledger_session_id, record|
+                identifiers = Database.session_identifiers(ledger_session_id)
+                pids = Database.session_pids(ledger_session_id)
+
+                builder.object do
+                  builder.field("ledger_session_id", record.id)
+                  builder.field("session_identifiers") do
+                    builder.array do
+                      identifiers.each { |sid| builder.scalar(sid) }
+                    end
+                  end
+                  builder.field("current_session_identifier", record.current_session_identifier)
+                  builder.field("claude_pids") do
+                    builder.array do
+                      pids.each { |pid| builder.number(pid) }
+                    end
+                  end
+                  builder.field("current_claude_pid", record.current_claude_pid)
+                  builder.field("cwd", record.cwd)
+                  builder.field("project_dir", record.project_dir)
+                  builder.field("git_branch", record.git_branch)
+                  builder.field("model_id", record.model_id)
+                  builder.field("model_display_name", record.model_display_name)
+                  builder.field("claude_version", record.claude_version)
+                  builder.field("context_percentage", record.context_percentage)
+                  builder.field("tokens_used", record.tokens_used)
+                  builder.field("tokens_max", record.tokens_max)
+                  builder.field("cost_usd", record.cost_usd)
+                  builder.field("lines_added", record.lines_added)
+                  builder.field("lines_removed", record.lines_removed)
+                  builder.field("started_at", record.started_at)
+                  builder.field("updated_at", record.updated_at)
+                  builder.field("last_interaction", record.last_interaction)
+                end
+              end
+            end
+          end
+        end
+      end
+
+      puts io.to_s
+    end
+
+    private def self.show_sessions_help
+      puts <<-HELP
+      galaxy-ledger sessions - Query session state as JSON
+
+      USAGE:
+        galaxy-ledger sessions --json --session ID1 [--session ID2 ...]
+
+      REQUIRED:
+        --json                  Output format (currently the only format)
+        --session SESSION_ID    Session identifier to query (repeatable)
+
+      DESCRIPTION:
+        Returns session state data in JSON format for Galaxy.app enrichment.
+        Each --session flag specifies a Claude session identifier that gets
+        resolved through the ledger_session_identifiers table.
+
+        Multiple identifiers that resolve to the same ledger session are
+        deduplicated in the output. Unknown session identifiers are silently
+        omitted (no error).
+
+        Used by Galaxy.app for:
+        - Startup sync (passing all known session UUIDs)
+        - Event enrichment (passing identifiers from received events)
+
+      OUTPUT:
+        {
+          "sessions": [
+            {
+              "ledger_session_id": 42,
+              "session_identifiers": ["abc-123", "def-456"],
+              "current_session_identifier": "def-456",
+              "claude_pids": [12345, 11000],
+              "current_claude_pid": 12345,
+              "cwd": "/Users/kelly/projects/kajabi",
+              ...
+            }
+          ]
+        }
+
+      EXAMPLES:
+        galaxy-ledger sessions --json --session abc-123
+        galaxy-ledger sessions --json --session abc-123 --session def-456
       HELP
     end
 

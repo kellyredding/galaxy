@@ -85,7 +85,13 @@ module GalaxyLedger
             input: Process::Redirect::Close,
             output: Process::Redirect::Pipe,
             error: Process::Redirect::Pipe,
-            env: {"GALAXY_SKIP_HOOKS" => "1"},
+            env: {
+              "GALAXY_SKIP_HOOKS" => "1",
+              # Clear CLAUDECODE so the one-shot Claude CLI call doesn't hit
+              # nested-session detection when running inside a Claude session
+              # (e.g., extraction eval specs or Galaxy.app-launched sessions).
+              "CLAUDECODE" => "",
+            },
           )
 
           # Read output with timeout
