@@ -118,6 +118,7 @@ final class EnrichmentService {
 
         // Check circuit breaker
         guard circuitBreaker.shouldAllow else {
+            GalaxyLog.enrichment("Call blocked by circuit breaker (state=open)")
             DispatchQueue.main.async { completion(nil) }
             return
         }
@@ -155,17 +156,20 @@ final class EnrichmentService {
             task.standardError = stderrPipe
 
             // Timeout: terminate after self.timeout seconds
-            let timeoutWorkItem = DispatchWorkItem {
+            let timeoutWorkItem = DispatchWorkItem { [weak self] in
                 if task.isRunning {
+                    GalaxyLog.enrichment("Subprocess timed out after \(self?.timeout ?? 0)s")
                     task.terminate()
                 }
             }
             DispatchQueue.global().asyncAfter(deadline: .now() + self.timeout, execute: timeoutWorkItem)
 
+            let startTime = CFAbsoluteTimeGetCurrent()
             do {
                 try task.run()
                 task.waitUntilExit()
                 timeoutWorkItem.cancel()
+                let duration = CFAbsoluteTimeGetCurrent() - startTime
 
                 if task.terminationStatus == 0 {
                     let data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
@@ -173,18 +177,23 @@ final class EnrichmentService {
                     do {
                         let response = try JSONDecoder().decode(EnrichmentResponse.self, from: data)
                         self.circuitBreaker.recordSuccess()
+                        GalaxyLog.enrichment("Success in \(String(format: "%.1f", duration * 1000))ms — \(response.sessions.count) session(s)")
                         DispatchQueue.main.async { completion(response) }
                     } catch {
+                        GalaxyLog.enrichment("JSON parse failed: \(error.localizedDescription)")
                         self.circuitBreaker.recordFailure()
                         DispatchQueue.main.async { completion(nil) }
                     }
                 } else {
-                    _ = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+                    let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+                    let stderrStr = String(data: stderrData, encoding: .utf8) ?? ""
+                    GalaxyLog.enrichment("Subprocess exited \(task.terminationStatus) in \(String(format: "%.1f", duration * 1000))ms — stderr: \(String(stderrStr.prefix(300)))")
                     self.circuitBreaker.recordFailure()
                     DispatchQueue.main.async { completion(nil) }
                 }
             } catch {
                 timeoutWorkItem.cancel()
+                GalaxyLog.enrichment("Failed to launch subprocess: \(error.localizedDescription)")
                 self.circuitBreaker.recordFailure()
                 DispatchQueue.main.async { completion(nil) }
             }

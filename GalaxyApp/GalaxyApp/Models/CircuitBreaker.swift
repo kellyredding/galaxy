@@ -42,6 +42,7 @@ final class CircuitBreaker {
             // Check if reset timeout has passed → transition to half-open
             if let openedAt = openedAt, Date().timeIntervalSince(openedAt) >= resetTimeout {
                 state = .halfOpen
+                GalaxyLog.circuit("open → halfOpen (timeout elapsed)")
                 return true
             }
             return false
@@ -53,9 +54,13 @@ final class CircuitBreaker {
 
     /// Record a successful call. Resets failure count and closes the circuit.
     func recordSuccess() {
+        let previousState = state
         failureCount = 0
         openedAt = nil
         state = .closed
+        if previousState != .closed {
+            GalaxyLog.circuit("\(previousState.rawValue) → closed (success)")
+        }
     }
 
     /// Record a failed call. Increments failure count and may open the circuit.
@@ -67,11 +72,13 @@ final class CircuitBreaker {
             if failureCount >= failureThreshold {
                 state = .open
                 openedAt = Date()
+                GalaxyLog.circuit("closed → open (\(failureCount) consecutive failures)")
             }
         case .halfOpen:
             // Trial call failed → back to open
             state = .open
             openedAt = Date()
+            GalaxyLog.circuit("halfOpen → open (trial call failed)")
         case .open:
             // Already open, just update timestamp
             openedAt = Date()

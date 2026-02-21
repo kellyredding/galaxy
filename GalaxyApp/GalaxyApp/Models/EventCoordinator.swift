@@ -70,18 +70,26 @@ final class EventCoordinator {
 
     /// Start the event system. Call during applicationDidFinishLaunching.
     func start() {
-        guard phase == .idle else { return }
+        guard phase == .idle else {
+            GalaxyLog.events("start() called but phase=\(phase.rawValue), ignoring")
+            return
+        }
+
+        GalaxyLog.events("Starting event system")
 
         // Step 1: Start listening (events buffer until sync completes)
         phase = .listening
+        GalaxyLog.events("Phase → listening")
 
         guard socketListener.start() else {
+            GalaxyLog.events("Socket listener failed to start — event system disabled")
             phase = .idle
             return
         }
 
         // Step 2: Perform startup sync on background queue
         phase = .syncing
+        GalaxyLog.events("Phase → syncing")
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             self?.performStartupSync()
@@ -90,6 +98,7 @@ final class EventCoordinator {
 
     /// Stop the event system. Call during applicationWillTerminate.
     func stop() {
+        GalaxyLog.events("Stopping event system")
         debouncer.cancelAll()
         socketListener.stop()
         eventBuffer.removeAll()
@@ -121,7 +130,6 @@ final class EventCoordinator {
 
         // Check if we handle this event type
         guard Self.knownEvents.contains(envelope.event) else { return }
-
         // All known events go through debouncer → enrichment
         debouncer.submit(envelope)
     }
@@ -146,6 +154,7 @@ final class EventCoordinator {
                 ledgerSessionIdCache[envelope.ledgerSessionId] = session.id
                 // Also store on the session itself
                 session.ledgerSessionId = envelope.ledgerSessionId
+                GalaxyLog.events("Matched session \(claudeId) → ledger_session_id=\(envelope.ledgerSessionId), cached")
                 return true
             }
         }
@@ -211,12 +220,14 @@ final class EventCoordinator {
         }
 
         guard !sessionIds.isEmpty else {
+            GalaxyLog.events("No app sessions to sync — skipping startup enrichment")
             DispatchQueue.main.async { [weak self] in
                 self?.transitionToLive()
             }
             return
         }
 
+        GalaxyLog.events("Startup sync — querying \(sessionIds.count) session(s)")
         let response = enrichmentService.enrichSync(sessionIdentifiers: sessionIds)
 
         DispatchQueue.main.async { [weak self] in
@@ -224,14 +235,18 @@ final class EventCoordinator {
 
             // Apply snapshot data
             if let response = response {
+                GalaxyLog.events("Startup sync complete — \(response.sessions.count) session(s) enriched")
                 self.applyEnrichmentData(response, sessionManager: sessionManager)
 
                 // Validate process liveness for sessions that claim to be running
                 self.validateProcessLiveness(sessionManager: sessionManager, enrichmentData: response)
+            } else {
+                GalaxyLog.events("Startup sync returned no data")
             }
 
             // Step 3: Drain buffer
             self.phase = .draining
+            GalaxyLog.events("Phase → draining (\(self.eventBuffer.count) buffered events)")
 
             for envelope in self.eventBuffer {
                 self.routeEvent(envelope)
@@ -246,6 +261,7 @@ final class EventCoordinator {
     /// Transition to live mode — real-time event processing
     private func transitionToLive() {
         phase = .live
+        GalaxyLog.events("Phase → live — real-time event processing active")
     }
 
     /// Validate that sessions claiming to be running actually have live processes.

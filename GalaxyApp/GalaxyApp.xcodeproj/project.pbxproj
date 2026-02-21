@@ -19,6 +19,7 @@
 		59C4461354F92AEF376C88AA /* DragHandleNSView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43C2EE51F5ED8F5A44D27580 /* DragHandleNSView.swift */; };
 		5BE31FF52EF968E62B31F97C /* CircuitBreaker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3463B095E6622E31AF317063 /* CircuitBreaker.swift */; };
 		64AB450ECD5FB1FF3D5E16EB /* EnrichmentService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260E4993B113CBAABADA519B /* EnrichmentService.swift */; };
+		67A3F1DC4E8B29A0C7D51E3F /* GalaxyLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B91E7A2D3F60C8519AE4B72 /* GalaxyLog.swift */; };
 		69C769B61E2BA6F9BD8DA6FB /* MainWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEB9F0C617C86CE1FDD05FF3 /* MainWindowController.swift */; };
 		82B876DF7C1A77E1A811C62A /* EventEnvelope.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBD7729C400FAFC8E4EFFE94 /* EventEnvelope.swift */; };
 		830B36A8A4CD211AC3DF03F3 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9DD26C1047DBD42B5051047 /* main.swift */; };
@@ -49,6 +50,7 @@
 		2E9CD7B5767024AE0C85E433 /* PreferencesWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesWindowController.swift; sourceTree = "<group>"; };
 		3463B095E6622E31AF317063 /* CircuitBreaker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CircuitBreaker.swift; sourceTree = "<group>"; };
 		43C2EE51F5ED8F5A44D27580 /* DragHandleNSView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragHandleNSView.swift; sourceTree = "<group>"; };
+		4B91E7A2D3F60C8519AE4B72 /* GalaxyLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxyLog.swift; sourceTree = "<group>"; };
 		5702E8641291E687147723FD /* StatusLineService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusLineService.swift; sourceTree = "<group>"; };
 		6658F001C5C56071EC60514E /* WatermarkBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatermarkBackground.swift; sourceTree = "<group>"; };
 		73B3B51B18B326C9BFD98925 /* SessionSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionSidebar.swift; sourceTree = "<group>"; };
@@ -94,6 +96,7 @@
 				0663E09051C220DBD5E80CD2 /* EventCoordinator.swift */,
 				1222FD00CE1FBF7DC99BD683 /* EventDebouncer.swift */,
 				FBD7729C400FAFC8E4EFFE94 /* EventEnvelope.swift */,
+				4B91E7A2D3F60C8519AE4B72 /* GalaxyLog.swift */,
 				F36B97B02F23D9DBF2C2F2E2 /* Session.swift */,
 				EA542FF52DF4733279284AB3 /* SessionIDGenerator.swift */,
 				9EB1B25ADB386E0B834FA6B0 /* SessionManager.swift */,
@@ -243,6 +246,7 @@
 				D1752B86BB1A44AFB5E75F00 /* EventDebouncer.swift in Sources */,
 				82B876DF7C1A77E1A811C62A /* EventEnvelope.swift in Sources */,
 				95B87341788CFD115DCAC557 /* GalaxyApp.swift in Sources */,
+				67A3F1DC4E8B29A0C7D51E3F /* GalaxyLog.swift in Sources */,
 				87FFE54A9802FACDDA0F15D9 /* GalaxyTerminalView.swift in Sources */,
 				9A7E8C74C205BD7E4329689D /* MainMenu.swift in Sources */,
 				69C769B61E2BA6F9BD8DA6FB /* MainWindowController.swift in Sources */,

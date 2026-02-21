@@ -53,8 +53,11 @@ final class SocketListener {
     /// Returns false if another Galaxy.app instance owns the lock.
     @discardableResult
     func start() -> Bool {
+        GalaxyLog.socket("Starting listener on \(socketPath)")
+
         // Step 1: Acquire lock
         guard acquireLock() else {
+            GalaxyLog.socket("Lock acquisition failed — another instance owns the socket")
             return false
         }
 
@@ -70,11 +73,13 @@ final class SocketListener {
         do {
             listener = try NWListener(using: params)
         } catch {
+            GalaxyLog.socket("Failed to create NWListener: \(error.localizedDescription)")
             return false
         }
 
         listener?.stateUpdateHandler = { [weak self] state in
-            if case .failed = state {
+            if case .failed(let error) = state {
+                GalaxyLog.socket("Listener entered failed state: \(error.localizedDescription)")
                 self?.restartAfterFailure()
             }
         }
@@ -84,11 +89,13 @@ final class SocketListener {
         }
 
         listener?.start(queue: queue)
+        GalaxyLog.socket("Listener started")
         return true
     }
 
     /// Stop the listener and clean up resources.
     func stop() {
+        GalaxyLog.socket("Listener stopping")
         // Cancel all active connections
         for connection in activeConnections {
             connection.cancel()
@@ -196,7 +203,10 @@ final class SocketListener {
 
     /// Parse received data as newline-delimited JSON and decode event envelopes.
     private func processReceivedData(_ data: Data) {
-        guard let text = String(data: data, encoding: .utf8) else { return }
+        guard let text = String(data: data, encoding: .utf8) else {
+            GalaxyLog.socket("Failed to decode received data as UTF-8")
+            return
+        }
 
         let lines = text.components(separatedBy: "\n")
         for line in lines {
@@ -211,7 +221,7 @@ final class SocketListener {
                     self?.onEvent?(envelope)
                 }
             } catch {
-                // Tolerant reader: can't parse → skip
+                GalaxyLog.socket("Failed to decode envelope: \(error.localizedDescription) — line: \(trimmed)")
             }
         }
     }
@@ -219,6 +229,7 @@ final class SocketListener {
     // MARK: - Error Recovery
 
     private func restartAfterFailure() {
+        GalaxyLog.socket("Attempting restart after failure")
         // Small delay before restart attempt
         queue.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             guard let self = self else { return }
