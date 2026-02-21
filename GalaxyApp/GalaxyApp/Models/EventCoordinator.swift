@@ -201,7 +201,12 @@ final class EventCoordinator {
                     appSession.ledgerCurrentSessionIdentifier = sessionData.currentSessionIdentifier
                     appSession.ledgerClaudePids = sessionData.claudePids
                     appSession.ledgerCurrentClaudePid = sessionData.currentClaudePid
-                    appSession.ledgerCwd = sessionData.cwd
+
+                    // Guard @Published property — only assign when value changed
+                    if appSession.ledgerCwd != sessionData.cwd {
+                        appSession.ledgerCwd = sessionData.cwd
+                    }
+
                     appSession.ledgerProjectDir = sessionData.projectDir
                     appSession.ledgerGitBranch = sessionData.gitBranch
                     appSession.ledgerModelId = sessionData.modelId

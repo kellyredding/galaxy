@@ -60,21 +60,24 @@ struct SessionRow: View {
                         .foregroundColor(isSelected ? .white.opacity(0.8) : .secondary)
                         .frame(height: fontSize.tinyLineHeight)
 
-                    // Directory name + git status (single line, truncates if needed)
-                    HStack(spacing: 4) {
-                        Text(session.name)
-                            .chromeFontMono(size: fontSize.tiny)
-                            .lineLimit(1)
+                    // Line 3: CWD + git status (always occupies height)
+                    Group {
+                        if let cwd = session.ledgerCwd {
+                            let homePath = NSHomeDirectory()
+                            let displayPath = cwd.hasPrefix(homePath)
+                                ? "~" + cwd.dropFirst(homePath.count)
+                                : cwd
+                            let gitPart = statusInfo?.gitStatusDisplay ?? ""
 
-                        if let info = statusInfo, !info.gitStatusDisplay.isEmpty {
-                            Text(info.gitStatusDisplay)
+                            Text(displayPath + gitPart)
                                 .chromeFontMono(size: fontSize.tiny)
-                                .foregroundColor(gitStatusColor(info: info, isSelected: isSelected))
                                 .lineLimit(1)
+                                .truncationMode(.tail)
+                        } else {
+                            Text("")
+                                .chromeFontMono(size: fontSize.tiny)
                         }
                     }
-                    .lineLimit(1)
-                    .truncationMode(.tail)
                     .foregroundColor(isSelected ? .white.opacity(0.8) : .secondary)
                     .frame(height: fontSize.tinyLineHeight)
                 }
@@ -214,16 +217,4 @@ struct SessionRow: View {
         }
     }
 
-    private func gitStatusColor(info: StatusLineService.SessionStatusInfo, isSelected: Bool) -> Color {
-        if isSelected {
-            // Use slightly different shades when selected
-            if info.isDirty { return .yellow }
-            if info.hasStaged { return .green }
-            return .white.opacity(0.8)
-        } else {
-            if info.isDirty { return .orange }
-            if info.hasStaged { return .green }
-            return .secondary
-        }
-    }
 }

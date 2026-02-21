@@ -15,7 +15,6 @@ class Session: Identifiable, ObservableObject {
 
     /// Human-readable session reference for display (e.g., "rich-grass-hides")
     let sessionRef: String
-    @Published var name: String
     @Published var isRunning: Bool = false
     @Published var hasExited: Bool = false
     @Published var exitCode: Int32?
@@ -46,8 +45,10 @@ class Session: Identifiable, ObservableObject {
     /// Currently active Claude process PID
     var ledgerCurrentClaudePid: Int?
 
-    /// Working directory reported by the ledger
-    var ledgerCwd: String?
+    /// Working directory reported by the ledger.
+    /// Promoted to @Published — drives sidebar line 3 display and
+    /// StatusLineService polling directory.
+    @Published var ledgerCwd: String?
 
     /// Git root / project directory
     var ledgerProjectDir: String?
@@ -140,10 +141,6 @@ class Session: Identifiable, ObservableObject {
         self.createdAt = Date()
         self.workingDirectory = workingDirectory
 
-        // Use directory basename as display name
-        let dirName = (workingDirectory as NSString).lastPathComponent
-        self.name = dirName.isEmpty ? "~" : dirName
-
         // Initialize terminal font size from settings default
         self.terminalFontSize = SettingsManager.shared.settings.defaultTerminalFontSize
 
@@ -197,7 +194,7 @@ class Session: Identifiable, ObservableObject {
         terminalView.nativeBackgroundColor = theme.backgroundColorValue
         terminalView.installColors(theme.swiftTermPalette)
         terminalView.galaxyBoldForegroundColor = theme.boldForegroundColor
-        NSLog("Session[%@]: Applied color theme '%@'", name, theme.name)
+        NSLog("Session[%@]: Applied color theme '%@'", sessionRef, theme.name)
     }
 
     /// Apply the current terminal font to the terminal view
@@ -213,7 +210,7 @@ class Session: Identifiable, ObservableObject {
             font = NSFont(name: family, size: terminalFontSize)
                 ?? NSFont.monospacedSystemFont(ofSize: terminalFontSize, weight: .regular)
         }
-        NSLog("Session[%@]: applyFont family=%@ -> fontName=%@ size=%.0f", name, family, font.fontName, terminalFontSize)
+        NSLog("Session[%@]: applyFont family=%@ -> fontName=%@ size=%.0f", sessionRef, family, font.fontName, terminalFontSize)
         terminalView.font = font
     }
 
@@ -404,7 +401,7 @@ class Session: Identifiable, ObservableObject {
         )
 
         isRunning = true
-        NSLog("Session: Started process for %@ in %@", name, workingDirectory)
+        NSLog("Session: Started process for %@ in %@", sessionRef, workingDirectory)
 
         // Capture the child PID after a short delay to allow fork to complete
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
@@ -476,9 +473,9 @@ class Session: Identifiable, ObservableObject {
             if let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
                let pid = Int32(output), pid > 0 {
                 self.childPid = pid
-                NSLog("Session: Captured child PID %d for %@", pid, name)
+                NSLog("Session: Captured child PID %d for %@", pid, sessionRef)
             } else {
-                NSLog("Session: Could not find child PID for %@", name)
+                NSLog("Session: Could not find child PID for %@", sessionRef)
             }
         } catch {
             NSLog("Session: Error running pgrep: %@", error.localizedDescription)

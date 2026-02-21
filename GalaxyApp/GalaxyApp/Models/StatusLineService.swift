@@ -86,7 +86,7 @@ class StatusLineService: ObservableObject {
             var newStatusInfo: [UUID: SessionStatusInfo] = [:]
 
             for session in sessions {
-                let info = self?.fetchGitStatus(for: session.workingDirectory)
+                let info = self?.fetchGitStatus(for: session.ledgerCwd ?? session.workingDirectory)
                 newStatusInfo[session.id] = info
             }
 

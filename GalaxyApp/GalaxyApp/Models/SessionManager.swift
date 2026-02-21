@@ -445,7 +445,7 @@ class TerminalProcessHandler: NSObject, LocalProcessTerminalViewDelegate {
     init(session: Session, sessionManager: SessionManager) {
         self.session = session
         self.sessionManager = sessionManager
-        NSLog("TerminalProcessHandler: Created for session %@", session.name)
+        NSLog("TerminalProcessHandler: Created for session %@", session.sessionRef)
     }
 
     func processTerminated(source: SwiftTerm.TerminalView, exitCode: Int32?) {
@@ -456,7 +456,7 @@ class TerminalProcessHandler: NSObject, LocalProcessTerminalViewDelegate {
             return
         }
 
-        NSLog("TerminalProcessHandler: Notifying session %@ of exit", session.name)
+        NSLog("TerminalProcessHandler: Notifying session %@ of exit", session.sessionRef)
         session.processDidExit(exitCode: exitCode ?? -1)
 
         // Notify SessionManager to update menu state
