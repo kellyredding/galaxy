@@ -1,7 +1,8 @@
 import Foundation
 import Combine
 
-/// Service that periodically fetches git status for sessions
+/// Service that fetches git status for sessions on demand.
+/// Triggered by EventCoordinator after enrichment completes — no polling timer.
 class StatusLineService: ObservableObject {
     static let shared = StatusLineService()
 
@@ -12,76 +13,19 @@ class StatusLineService: ObservableObject {
     private var isPaused: Bool = false
     private var pendingStatusInfo: [UUID: SessionStatusInfo]?
 
-    private var timer: Timer?
-    private let updateInterval: TimeInterval = 5.0  // 5 seconds
-
     struct SessionStatusInfo {
         let gitBranch: String?
         let isDirty: Bool
         let hasStaged: Bool
         let aheadCount: Int
         let behindCount: Int
-
-        var gitStatusDisplay: String {
-            guard let branch = gitBranch else { return "" }
-
-            var display = branch
-
-            // Add dirty/staged indicators
-            var indicators = ""
-            if isDirty { indicators += "*" }
-            if hasStaged { indicators += "+" }
-
-            // Add ahead/behind counts
-            if aheadCount > 0 || behindCount > 0 {
-                if behindCount > 0 { indicators += "↓\(behindCount)" }
-                if aheadCount > 0 { indicators += "↑\(aheadCount)" }
-            }
-
-            if !indicators.isEmpty {
-                display += indicators
-            }
-
-            return "[\(display)]"
-        }
     }
 
     private init() {}
 
-    func startMonitoring(sessions: [Session]) {
-        // Stop existing timer
-        stopMonitoring()
-
-        // Initial update
-        updateAllSessions(sessions)
-
-        // Schedule periodic updates
-        timer = Timer.scheduledTimer(withTimeInterval: updateInterval, repeats: true) { [weak self] _ in
-            self?.updateAllSessions(sessions)
-        }
-    }
-
-    func stopMonitoring() {
-        timer?.invalidate()
-        timer = nil
-    }
-
-    /// Pause publishing updates during drag operations for performance
-    func pauseUpdates() {
-        isPaused = true
-    }
-
-    /// Resume publishing updates after drag operations complete
-    func resumeUpdates() {
-        isPaused = false
-        // Apply any pending updates
-        if let pending = pendingStatusInfo {
-            statusInfo = pending
-            pendingStatusInfo = nil
-        }
-    }
-
-    func updateAllSessions(_ sessions: [Session]) {
+    /// Refresh git status for all sessions. Called by SessionSidebar
+    /// on appear and session count changes.
+    func refreshSessions(_ sessions: [Session]) {
         DispatchQueue.global(qos: .utility).async { [weak self] in
             var newStatusInfo: [UUID: SessionStatusInfo] = [:]
 
@@ -99,6 +43,43 @@ class StatusLineService: ObservableObject {
                     self.statusInfo = newStatusInfo
                 }
             }
+        }
+    }
+
+    /// Refresh git status for a single session. Called by
+    /// EventCoordinator after enrichment completes — only the
+    /// session that matched the event gets refreshed.
+    func refreshSession(_ session: Session) {
+        let sessionId = session.id
+        let directory = session.ledgerCwd ?? session.workingDirectory
+
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let info = self?.fetchGitStatus(for: directory)
+
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                if self.isPaused {
+                    self.pendingStatusInfo = self.pendingStatusInfo ?? self.statusInfo
+                    self.pendingStatusInfo?[sessionId] = info
+                } else {
+                    self.statusInfo[sessionId] = info
+                }
+            }
+        }
+    }
+
+    /// Pause publishing updates during drag operations for performance
+    func pauseUpdates() {
+        isPaused = true
+    }
+
+    /// Resume publishing updates after drag operations complete
+    func resumeUpdates() {
+        isPaused = false
+        // Apply any pending updates
+        if let pending = pendingStatusInfo {
+            statusInfo = pending
+            pendingStatusInfo = nil
         }
     }
 

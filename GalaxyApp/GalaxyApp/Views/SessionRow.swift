@@ -18,10 +18,29 @@ struct SessionRow: View {
     let statusInfo: StatusLineService.SessionStatusInfo?
 
     @Environment(\.chromeFontSize) private var chromeFontSize
+    @Environment(\.colorScheme) private var colorScheme
     @State private var isHovered = false
     @State private var isPulsePhase = false
 
     private var fontSize: ChromeFontSize { ChromeFontSize(chromeFontSize) }
+    private var isDark: Bool { colorScheme == .dark }
+
+    // MARK: - Adaptive Colors
+
+    /// CWD path + dirty indicator color
+    private var cwdColor: Color {
+        isDark ? .yellow : Color(red: 0.55, green: 0.35, blue: 0.0)
+    }
+
+    /// Branch name + staged indicator color
+    private var branchColor: Color {
+        isDark ? .green : Color(red: 0.0, green: 0.45, blue: 0.0)
+    }
+
+    /// Ahead/behind indicator color
+    private var upstreamColor: Color {
+        isDark ? .cyan : Color(red: 0.0, green: 0.35, blue: 0.5)
+    }
 
     var body: some View {
         HStack(spacing: 6) {
@@ -49,7 +68,7 @@ struct SessionRow: View {
                         .chromeFontMono(size: fontSize.caption2, weight: .medium)
                         .lineLimit(1)
                         .truncationMode(.tail)
-                        .foregroundColor(isSelected ? .white : .primary)
+                        .foregroundColor(isSelected && isDark ? .white : .primary)
                         .frame(height: fontSize.caption2LineHeight)
 
                     // Persona name (or "--" for vanilla Claude sessions)
@@ -57,29 +76,14 @@ struct SessionRow: View {
                         .chromeFontMono(size: fontSize.tiny, weight: .regular)
                         .lineLimit(1)
                         .truncationMode(.tail)
-                        .foregroundColor(isSelected ? .white.opacity(0.8) : .secondary)
+                        .foregroundColor(isSelected && isDark ? .white.opacity(0.8) : .secondary)
                         .frame(height: fontSize.tinyLineHeight)
 
                     // Line 3: CWD + git status (always occupies height)
-                    Group {
-                        if let cwd = session.ledgerCwd {
-                            let homePath = NSHomeDirectory()
-                            let displayPath = cwd.hasPrefix(homePath)
-                                ? "~" + cwd.dropFirst(homePath.count)
-                                : cwd
-                            let gitPart = statusInfo?.gitStatusDisplay ?? ""
-
-                            Text(displayPath + gitPart)
-                                .chromeFontMono(size: fontSize.tiny)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                        } else {
-                            Text("")
-                                .chromeFontMono(size: fontSize.tiny)
-                        }
-                    }
-                    .foregroundColor(isSelected ? .white.opacity(0.8) : .secondary)
-                    .frame(height: fontSize.tinyLineHeight)
+                    buildLine3(info: statusInfo)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(height: fontSize.tinyLineHeight)
                 }
 
                 // Unread bell indicator - bright red dot, tight to top-left corner
@@ -105,7 +109,7 @@ struct SessionRow: View {
                 Rectangle()
                     .fill(isPlaceholder
                         ? Color(NSColor.windowBackgroundColor)
-                        : (isSelected ? Color.accentColor : Color.clear))
+                        : (isSelected ? Color.accentColor.opacity(0.25) : Color.clear))
 
                 // Visual bell pulse overlay (only for selected session, not during drag)
                 if !isPlaceholder && isSelected && session.visualBellActive {
@@ -217,4 +221,54 @@ struct SessionRow: View {
         }
     }
 
+    // MARK: - Line 3: CWD + Git Status
+
+    /// Build styled line 3 with color-coded segments.
+    /// Colors adapt to light/dark mode via computed color properties.
+    private func buildLine3(
+        info: StatusLineService.SessionStatusInfo?
+    ) -> Text {
+        let mono = Font.system(size: fontSize.tiny, weight: .regular, design: .monospaced)
+        let monoBold = Font.system(size: fontSize.tiny, weight: .bold, design: .monospaced)
+        let bracketColor: Color = isSelected && isDark ? .white.opacity(0.5) : .secondary
+
+        guard let cwd = session.ledgerCwd else {
+            return Text("").font(mono)
+        }
+
+        // CWD with ~ substitution
+        let homePath = NSHomeDirectory()
+        let displayPath = cwd.hasPrefix(homePath)
+            ? "~" + cwd.dropFirst(homePath.count)
+            : cwd
+        var result = Text(displayPath)
+            .font(monoBold)
+            .foregroundColor(cwdColor)
+
+        // Git bracket section — only if we have a branch
+        guard let branch = info?.gitBranch, !branch.isEmpty else {
+            return result
+        }
+
+        result = result + Text("[").font(mono).foregroundColor(bracketColor)
+        result = result + Text(branch).font(monoBold).foregroundColor(branchColor)
+
+        if let info = info {
+            if info.isDirty {
+                result = result + Text("*").font(mono).foregroundColor(cwdColor)
+            }
+            if info.hasStaged {
+                result = result + Text("+").font(mono).foregroundColor(branchColor)
+            }
+            if info.behindCount > 0 {
+                result = result + Text("↓\(info.behindCount)").font(monoBold).foregroundColor(upstreamColor)
+            }
+            if info.aheadCount > 0 {
+                result = result + Text("↑\(info.aheadCount)").font(monoBold).foregroundColor(upstreamColor)
+            }
+        }
+
+        result = result + Text("]").font(mono).foregroundColor(bracketColor)
+        return result
+    }
 }

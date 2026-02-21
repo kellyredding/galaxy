@@ -222,6 +222,9 @@ final class EventCoordinator {
                     appSession.ledgerUpdatedAt = sessionData.updatedAt
                     appSession.ledgerLastInteraction = sessionData.lastInteraction
 
+                    // Refresh git status for this session only
+                    StatusLineService.shared.refreshSession(appSession)
+
                     break
                 }
             }

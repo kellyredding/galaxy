@@ -119,8 +119,8 @@ struct SessionSidebar: View {
             // Update drag coordinator with new count and session IDs
             dragCoordinator.totalSessionCount = newCount
             dragCoordinator.sessionIds = sessionManager.sessions.map { $0.id }
-            // Restart monitoring when sessions change
-            statusLineService.startMonitoring(sessions: sessionManager.sessions)
+            // Refresh git status when session count changes
+            statusLineService.refreshSessions(sessionManager.sessions)
         }
         .onAppear {
             // Configure drag coordinator
@@ -131,13 +131,10 @@ struct SessionSidebar: View {
                 sessionManager.swapSessions(fromIndex, toIndex)
             }
 
-            // Start monitoring on appear
+            // Initial git status fetch on appear
             if !sessionManager.sessions.isEmpty {
-                statusLineService.startMonitoring(sessions: sessionManager.sessions)
+                statusLineService.refreshSessions(sessionManager.sessions)
             }
-        }
-        .onDisappear {
-            statusLineService.stopMonitoring()
         }
     }
 }

@@ -63,6 +63,11 @@ struct ContentView: View {
         .padding(.horizontal, 8)
         .frame(height: toolbarHeight)
         .background(Color(NSColor.windowBackgroundColor))
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color.primary.opacity(0.15))
+                .frame(height: 1)
+        }
     }
 
     private var sidebarToggleButton: some View {
