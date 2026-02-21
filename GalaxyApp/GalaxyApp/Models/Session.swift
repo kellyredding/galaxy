@@ -23,6 +23,11 @@ class Session: Identifiable, ObservableObject {
     @Published var visualBellActive: Bool = false
     @Published var isBusy: Bool = false
 
+    /// Ledger session ID for fast event matching. Set when the event system
+    /// first matches this session via session_identifiers array.
+    /// Optional because it's not known until the first event or enrichment call.
+    var ledgerSessionId: Int64?
+
     /// Persona name for this session (nil for vanilla Claude sessions)
     let personaName: String?
 

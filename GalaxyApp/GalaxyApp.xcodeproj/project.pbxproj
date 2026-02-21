@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		0382B41CACCDA9E37EBABA4C /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 922A89B10E14E165A50C1F4F /* ContentView.swift */; };
 		287B04EB0B71772D4E0594CD /* SessionIDGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA542FF52DF4733279284AB3 /* SessionIDGenerator.swift */; };
+		2BC2B13218D48BB00EEF761B /* EventCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0663E09051C220DBD5E80CD2 /* EventCoordinator.swift */; };
 		3F6C193D5824A2FC5BDB2792 /* StatusLineService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5702E8641291E687147723FD /* StatusLineService.swift */; };
 		3FCE06C0F8AE9134D99D090A /* TerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCE6073F39BD2A2E08FD007F /* TerminalView.swift */; };
 		487179062AB63CC1EBAD20CB /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8930E8F0C6702946D87082BD /* Assets.xcassets */; };
@@ -16,7 +17,10 @@
 		5726799F4CAC18544C8FB957 /* SessionRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 930CA7E2539E197A2DF03CE4 /* SessionRow.swift */; };
 		57F83F8FAFBFC9B625678AE5 /* PreferencesWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E9CD7B5767024AE0C85E433 /* PreferencesWindowController.swift */; };
 		59C4461354F92AEF376C88AA /* DragHandleNSView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43C2EE51F5ED8F5A44D27580 /* DragHandleNSView.swift */; };
+		5BE31FF52EF968E62B31F97C /* CircuitBreaker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3463B095E6622E31AF317063 /* CircuitBreaker.swift */; };
+		64AB450ECD5FB1FF3D5E16EB /* EnrichmentService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260E4993B113CBAABADA519B /* EnrichmentService.swift */; };
 		69C769B61E2BA6F9BD8DA6FB /* MainWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEB9F0C617C86CE1FDD05FF3 /* MainWindowController.swift */; };
+		82B876DF7C1A77E1A811C62A /* EventEnvelope.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBD7729C400FAFC8E4EFFE94 /* EventEnvelope.swift */; };
 		830B36A8A4CD211AC3DF03F3 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9DD26C1047DBD42B5051047 /* main.swift */; };
 		87FFE54A9802FACDDA0F15D9 /* GalaxyTerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7704E47DFEE80B330501660 /* GalaxyTerminalView.swift */; };
 		88B1D264363994AD24AC8CC6 /* SessionDragCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA80B868DED26B32D6DEB65D /* SessionDragCoordinator.swift */; };
@@ -30,14 +34,20 @@
 		B1E71F47DE9403A1808277EC /* WatermarkBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6658F001C5C56071EC60514E /* WatermarkBackground.swift */; };
 		C3434D97E3E1783843E50797 /* SessionRowDragHandle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E474100EA691402E8DF51F3A /* SessionRowDragHandle.swift */; };
 		C72E6931FE46DAAFE486C09E /* Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = F36B97B02F23D9DBF2C2F2E2 /* Session.swift */; };
+		CC27D1B9C8318928AE6187FE /* SocketListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA7C61AE6C010B6F8091B0B3 /* SocketListener.swift */; };
+		D1752B86BB1A44AFB5E75F00 /* EventDebouncer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1222FD00CE1FBF7DC99BD683 /* EventDebouncer.swift */; };
 		D1DBDDFE86F84375BCFD9078 /* SessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EB1B25ADB386E0B834FA6B0 /* SessionManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		0663E09051C220DBD5E80CD2 /* EventCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventCoordinator.swift; sourceTree = "<group>"; };
+		1222FD00CE1FBF7DC99BD683 /* EventDebouncer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventDebouncer.swift; sourceTree = "<group>"; };
 		1C7501DB8ABDB113A9CF35C8 /* SettingsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsManager.swift; sourceTree = "<group>"; };
 		1F39F262BB7D593079DE0602 /* GalaxyApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GalaxyApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		260E4993B113CBAABADA519B /* EnrichmentService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnrichmentService.swift; sourceTree = "<group>"; };
 		2C599534AAFC2570BC5F292A /* StoppedSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoppedSessionView.swift; sourceTree = "<group>"; };
 		2E9CD7B5767024AE0C85E433 /* PreferencesWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesWindowController.swift; sourceTree = "<group>"; };
+		3463B095E6622E31AF317063 /* CircuitBreaker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CircuitBreaker.swift; sourceTree = "<group>"; };
 		43C2EE51F5ED8F5A44D27580 /* DragHandleNSView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragHandleNSView.swift; sourceTree = "<group>"; };
 		5702E8641291E687147723FD /* StatusLineService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusLineService.swift; sourceTree = "<group>"; };
 		6658F001C5C56071EC60514E /* WatermarkBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatermarkBackground.swift; sourceTree = "<group>"; };
@@ -52,6 +62,7 @@
 		AFBB4BD044AC373BB324C7F7 /* GalaxyApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxyApp.swift; sourceTree = "<group>"; };
 		B9DD26C1047DBD42B5051047 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		C7704E47DFEE80B330501660 /* GalaxyTerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxyTerminalView.swift; sourceTree = "<group>"; };
+		CA7C61AE6C010B6F8091B0B3 /* SocketListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocketListener.swift; sourceTree = "<group>"; };
 		CEB9F0C617C86CE1FDD05FF3 /* MainWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowController.swift; sourceTree = "<group>"; };
 		D96AFD79CE59690C239E10B5 /* MainMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainMenu.swift; sourceTree = "<group>"; };
 		DCE6073F39BD2A2E08FD007F /* TerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalView.swift; sourceTree = "<group>"; };
@@ -60,6 +71,7 @@
 		EA80B868DED26B32D6DEB65D /* SessionDragCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionDragCoordinator.swift; sourceTree = "<group>"; };
 		F0269FFB63DF2EC261DC5B6A /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		F36B97B02F23D9DBF2C2F2E2 /* Session.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Session.swift; sourceTree = "<group>"; };
+		FBD7729C400FAFC8E4EFFE94 /* EventEnvelope.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventEnvelope.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -77,10 +89,16 @@
 		10D8D5FBF1EB5E3155ABADCB /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				3463B095E6622E31AF317063 /* CircuitBreaker.swift */,
+				260E4993B113CBAABADA519B /* EnrichmentService.swift */,
+				0663E09051C220DBD5E80CD2 /* EventCoordinator.swift */,
+				1222FD00CE1FBF7DC99BD683 /* EventDebouncer.swift */,
+				FBD7729C400FAFC8E4EFFE94 /* EventEnvelope.swift */,
 				F36B97B02F23D9DBF2C2F2E2 /* Session.swift */,
 				EA542FF52DF4733279284AB3 /* SessionIDGenerator.swift */,
 				9EB1B25ADB386E0B834FA6B0 /* SessionManager.swift */,
 				1C7501DB8ABDB113A9CF35C8 /* SettingsManager.swift */,
+				CA7C61AE6C010B6F8091B0B3 /* SocketListener.swift */,
 				5702E8641291E687147723FD /* StatusLineService.swift */,
 			);
 			path = Models;
@@ -217,8 +235,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				9570B4EFEC53463C1B6A01E5 /* ChromeFontScaling.swift in Sources */,
+				5BE31FF52EF968E62B31F97C /* CircuitBreaker.swift in Sources */,
 				0382B41CACCDA9E37EBABA4C /* ContentView.swift in Sources */,
 				59C4461354F92AEF376C88AA /* DragHandleNSView.swift in Sources */,
+				64AB450ECD5FB1FF3D5E16EB /* EnrichmentService.swift in Sources */,
+				2BC2B13218D48BB00EEF761B /* EventCoordinator.swift in Sources */,
+				D1752B86BB1A44AFB5E75F00 /* EventDebouncer.swift in Sources */,
+				82B876DF7C1A77E1A811C62A /* EventEnvelope.swift in Sources */,
 				95B87341788CFD115DCAC557 /* GalaxyApp.swift in Sources */,
 				87FFE54A9802FACDDA0F15D9 /* GalaxyTerminalView.swift in Sources */,
 				9A7E8C74C205BD7E4329689D /* MainMenu.swift in Sources */,
@@ -233,6 +256,7 @@
 				A6BAB2D0EEA7255F463D8F1E /* SessionSidebar.swift in Sources */,
 				A20D4EC7B5F8E3D1DDBB8D4E /* SettingsManager.swift in Sources */,
 				55C2F61C9B63ACCE613CBC37 /* SettingsView.swift in Sources */,
+				CC27D1B9C8318928AE6187FE /* SocketListener.swift in Sources */,
 				3F6C193D5824A2FC5BDB2792 /* StatusLineService.swift in Sources */,
 				951191037547FFAFD104A99F /* StoppedSessionView.swift in Sources */,
 				3FCE06C0F8AE9134D99D090A /* TerminalView.swift in Sources */,

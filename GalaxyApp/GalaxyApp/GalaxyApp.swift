@@ -7,6 +7,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var mainWindowController: MainWindowController?
     private var mainMenu: MainMenu?
     private var cancellables = Set<AnyCancellable>()
+    private var eventCoordinator: EventCoordinator?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Probe the file system to trigger the macOS TCC permission dialog
@@ -56,11 +57,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .store(in: &cancellables)
 
+        // Start the event system (socket listener + enrichment pipeline)
+        eventCoordinator = EventCoordinator(sessionManager: SessionManager.shared)
+        eventCoordinator?.start()
+
+        // Wire session close → event coordinator cache cleanup
+        SessionManager.shared.onSessionClosed = { [weak self] sessionId in
+            self?.eventCoordinator?.sessionClosed(sessionId)
+        }
+
         NSLog("AppDelegate: Application launched")
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         NSLog("AppDelegate: Application will terminate")
+        eventCoordinator?.stop()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

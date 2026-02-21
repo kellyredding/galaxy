@@ -87,8 +87,17 @@ module GalaxyLedger
     ) : Bool
       socket = UNIXSocket.new(socket_path)
       begin
+        socket.sync = true
         socket.write_timeout = WRITE_TIMEOUT
         socket.puts(envelope)
+        # Read the server's close to ensure data was received before
+        # we close our end. This blocks until NWListener processes the
+        # data and closes the connection (isComplete=true), or until
+        # read_timeout. Prevents the FIN/RST race where close()
+        # destroys the socket before NWListener reads from it.
+        socket.read_timeout = WRITE_TIMEOUT
+        buf = Bytes.new(1)
+        socket.read(buf) rescue nil
         true
       ensure
         socket.close

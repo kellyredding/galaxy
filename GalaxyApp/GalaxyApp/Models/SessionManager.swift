@@ -15,6 +15,10 @@ class SessionManager: ObservableObject {
     // Track sidebar visibility (for View menu toggle)
     @Published var isSidebarVisible: Bool = true
 
+    /// Called when a session is removed from the session list.
+    /// Used by EventCoordinator to clean up cached ledger_session_id mappings.
+    var onSessionClosed: ((UUID) -> Void)?
+
     // Track if active session can be resumed (for menu updates)
     @Published var activeSessionCanResume: Bool = false
 
@@ -339,6 +343,9 @@ class SessionManager: ObservableObject {
                 nextActiveId = sessions[index + 1].id
             }
         }
+
+        // Notify observers before removal (e.g., EventCoordinator cache cleanup)
+        onSessionClosed?(sessionId)
 
         // Remove the session (this will deallocate the terminal view which kills the process)
         sessions.remove(at: index)
