@@ -2,6 +2,8 @@ import SwiftUI
 import AppKit
 
 struct SessionSidebar: View {
+    let sidebarWidth: CGFloat
+
     @EnvironmentObject var sessionManager: SessionManager
     @ObservedObject var statusLineService = StatusLineService.shared
     @StateObject private var dragCoordinator = SessionDragCoordinator()
@@ -42,7 +44,8 @@ struct SessionSidebar: View {
                                     rowIndex: index,
                                     showDragHandle: showDragHandles,
                                     isDragging: dragCoordinator.isDragging,
-                                    statusInfo: statusLineService.statusInfo[session.id]
+                                    statusInfo: statusLineService.statusInfo[session.id],
+                                    sidebarWidth: sidebarWidth
                                 )
                                 .id(session.id)
                                 .animation(.easeInOut(duration: 0.2), value: showDragHandles)
@@ -75,7 +78,8 @@ struct SessionSidebar: View {
                                 rowIndex: displayIndex,
                                 showDragHandle: true,
                                 isDragging: true,
-                                statusInfo: statusLineService.statusInfo[session.id]
+                                statusInfo: statusLineService.statusInfo[session.id],
+                                sidebarWidth: sidebarWidth
                             )
                             .environmentObject(dragCoordinator)  // Inject for SessionRowDragHandle
                             .background(Color(NSColor.windowBackgroundColor))

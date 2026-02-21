@@ -17,6 +17,9 @@ struct SessionRow: View {
     // Status info passed from SessionSidebar (not observed to prevent mass re-renders)
     let statusInfo: StatusLineService.SessionStatusInfo?
 
+    // Sidebar width for adaptive CWD truncation
+    let sidebarWidth: CGFloat
+
     @Environment(\.chromeFontSize) private var chromeFontSize
     @Environment(\.colorScheme) private var colorScheme
     @State private var isHovered = false
@@ -224,7 +227,11 @@ struct SessionRow: View {
     // MARK: - Line 3: CWD + Git Status
 
     /// Build styled line 3 with color-coded segments.
-    /// Colors adapt to light/dark mode via computed color properties.
+    /// Uses adaptive 3-tier CWD truncation matching the statusline algorithm:
+    ///   Tier 1: full path — ~/projects/kajabi/products
+    ///   Tier 2: abbreviated — ~/p/k/products
+    ///   Tier 3: basename only — products
+    /// Git portion is never truncated. After tier 3, .truncationMode(.tail) clips.
     private func buildLine3(
         info: StatusLineService.SessionStatusInfo?
     ) -> Text {
@@ -236,11 +243,26 @@ struct SessionRow: View {
             return Text("").font(mono)
         }
 
-        // CWD with ~ substitution
-        let homePath = NSHomeDirectory()
-        let displayPath = cwd.hasPrefix(homePath)
-            ? "~" + cwd.dropFirst(homePath.count)
-            : cwd
+        // Build git suffix string for width measurement
+        let gitSuffix = buildGitSuffix(info: info)
+
+        // Available pixel width for line 3 text content
+        let textBudget = availableTextWidth
+
+        // Measure font for width calculations
+        let measureFont = NSFont.monospacedSystemFont(
+            ofSize: fontSize.tiny, weight: .regular
+        )
+
+        // Pick the best CWD display tier that fits
+        let displayPath = adaptiveCwdDisplay(
+            cwd: cwd,
+            gitSuffix: gitSuffix,
+            budget: textBudget,
+            font: measureFont
+        )
+
+        // Render CWD with styling
         var result = Text(displayPath)
             .font(monoBold)
             .foregroundColor(cwdColor)
@@ -270,5 +292,84 @@ struct SessionRow: View {
 
         result = result + Text("]").font(mono).foregroundColor(bracketColor)
         return result
+    }
+
+    // MARK: - Adaptive CWD Truncation
+
+    /// Available pixel width for line 3 text, accounting for row layout chrome.
+    private var availableTextWidth: CGFloat {
+        // HStack(spacing: 6): leading(4) + trailing(8) + circle(8) + spacing(6)
+        // With drag handle: + handle(18) + extra spacing(6)
+        let chrome: CGFloat = showDragHandle ? 50 : 26
+        return max(sidebarWidth - chrome, 0)
+    }
+
+    /// Pick the best CWD display string using 3-tier cascade.
+    /// Tries full path → abbreviated → basename, always appending git suffix
+    /// for width measurement. Returns only the CWD portion (git is styled separately).
+    private func adaptiveCwdDisplay(
+        cwd: String,
+        gitSuffix: String,
+        budget: CGFloat,
+        font: NSFont
+    ) -> String {
+        let homePath = NSHomeDirectory()
+        let fullPath = cwd.hasPrefix(homePath)
+            ? "~" + cwd.dropFirst(homePath.count)
+            : cwd
+
+        // Tier 1: full path
+        if measureWidth(fullPath + gitSuffix, font: font) <= budget {
+            return fullPath
+        }
+
+        // Tier 2: abbreviated intermediates (first char), full basename
+        let abbreviated = abbreviatePath(fullPath)
+        if measureWidth(abbreviated + gitSuffix, font: font) <= budget {
+            return abbreviated
+        }
+
+        // Tier 3 (floor): basename only — .truncationMode(.tail) clips from here
+        return (cwd as NSString).lastPathComponent
+    }
+
+    /// Abbreviate path: first char of each intermediate dir, keep full basename.
+    /// ~/projects/kajabi/products → ~/p/k/products
+    private func abbreviatePath(_ path: String) -> String {
+        let parts = path.split(separator: "/", omittingEmptySubsequences: false)
+        guard parts.count > 2 else { return path }
+
+        var abbreviated = parts.dropLast().map { part in
+            part.isEmpty ? "" : String(part.prefix(1))
+        }
+        abbreviated.append(String(parts.last!))
+
+        return abbreviated.joined(separator: "/")
+    }
+
+    /// Build the plain-text git suffix for width measurement.
+    /// Mirrors the styled rendering logic but as a single string.
+    private func buildGitSuffix(
+        info: StatusLineService.SessionStatusInfo?
+    ) -> String {
+        guard let branch = info?.gitBranch, !branch.isEmpty else {
+            return ""
+        }
+
+        var suffix = "[\(branch)"
+        if let info = info {
+            if info.isDirty { suffix += "*" }
+            if info.hasStaged { suffix += "+" }
+            if info.behindCount > 0 { suffix += "↓\(info.behindCount)" }
+            if info.aheadCount > 0 { suffix += "↑\(info.aheadCount)" }
+        }
+        suffix += "]"
+        return suffix
+    }
+
+    /// Measure string width using NSString size calculation.
+    private func measureWidth(_ string: String, font: NSFont) -> CGFloat {
+        let attributes: [NSAttributedString.Key: Any] = [.font: font]
+        return (string as NSString).size(withAttributes: attributes).width
     }
 }

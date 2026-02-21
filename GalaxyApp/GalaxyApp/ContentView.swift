@@ -87,7 +87,7 @@ struct ContentView: View {
     @ViewBuilder
     private var sidebarSection: some View {
         if isSidebarVisible {
-            SessionSidebar()
+            SessionSidebar(sidebarWidth: sidebarWidth)
                 .frame(width: sidebarWidth)
                 .transaction { t in
                     // Disable animations during drag for smooth tracking
