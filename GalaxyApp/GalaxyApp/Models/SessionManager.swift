@@ -116,7 +116,7 @@ class SessionManager: ObservableObject {
 
         let session = Session(
             workingDirectory: directory,
-            userSessionId: sessionId,
+            sessionRef: sessionId,
             personaName: personaName,
             isVibe: isVibe,
             resumeSessionId: resumeUUID
@@ -205,7 +205,7 @@ class SessionManager: ObservableObject {
             return
         }
 
-        NSLog("SessionManager: Stopping session %@", session.userSessionId)
+        NSLog("SessionManager: Stopping session %@", session.sessionRef)
 
         // Terminate the process using our tracked PID (sends SIGTERM)
         session.terminateProcess()
@@ -226,9 +226,9 @@ class SessionManager: ObservableObject {
         let canResume = claudeSessionExists(sessionId: session.claudeSessionId, workingDirectory: session.workingDirectory)
 
         if canResume {
-            NSLog("SessionManager: Resuming session %@ (found in Claude storage)", session.userSessionId)
+            NSLog("SessionManager: Resuming session %@ (found in Claude storage)", session.sessionRef)
         } else {
-            NSLog("SessionManager: Session %@ not found in Claude storage, starting fresh", session.userSessionId)
+            NSLog("SessionManager: Session %@ not found in Claude storage, starting fresh", session.sessionRef)
         }
 
         // Reset session state

@@ -13,8 +13,8 @@ class Session: Identifiable, ObservableObject {
     /// UUID used for SwiftUI Identifiable AND as Claude's session ID
     let id: UUID
 
-    /// Human-readable session identifier for display (e.g., "rich-grass-hides")
-    let userSessionId: String
+    /// Human-readable session reference for display (e.g., "rich-grass-hides")
+    let sessionRef: String
     @Published var name: String
     @Published var isRunning: Bool = false
     @Published var hasExited: Bool = false
@@ -63,10 +63,10 @@ class Session: Identifiable, ObservableObject {
     // Track the child process PID for termination (SwiftTerm doesn't expose this)
     private var childPid: pid_t = 0
 
-    init(workingDirectory: String, userSessionId: String, personaName: String? = nil, isVibe: Bool = false, resumeSessionId: UUID? = nil) {
+    init(workingDirectory: String, sessionRef: String, personaName: String? = nil, isVibe: Bool = false, resumeSessionId: UUID? = nil) {
         // Use provided resume UUID if resuming a specific session, otherwise generate new
         self.id = resumeSessionId ?? UUID()
-        self.userSessionId = userSessionId
+        self.sessionRef = sessionRef
         self.personaName = personaName
         self.isVibe = isVibe
         self.createdAt = Date()

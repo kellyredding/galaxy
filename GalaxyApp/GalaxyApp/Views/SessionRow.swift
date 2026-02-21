@@ -45,7 +45,7 @@ struct SessionRow: View {
             ZStack(alignment: .topLeading) {
                 VStack(alignment: .leading, spacing: 2) {
                     // User session ID (human-readable)
-                    Text(session.userSessionId)
+                    Text(session.sessionRef)
                         .chromeFontMono(size: fontSize.caption2, weight: .medium)
                         .lineLimit(1)
                         .truncationMode(.tail)
