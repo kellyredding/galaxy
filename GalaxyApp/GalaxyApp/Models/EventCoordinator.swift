@@ -240,6 +240,9 @@ final class EventCoordinator {
                     // Refresh git status for this session only
                     StatusLineService.shared.refreshSession(appSession)
 
+                    // Persist updated enrichment data
+                    SessionPersistence.shared.markDirty()
+
                     break
                 }
             }

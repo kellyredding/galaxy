@@ -399,6 +399,78 @@ class Session: Identifiable, ObservableObject {
         return cmd
     }
 
+    // MARK: - Persistence
+
+    /// Snapshot this session's persistable state.
+    func toPersistedState() -> PersistedSession {
+        PersistedSession(
+            id: id,
+            sessionRef: sessionRef,
+            givenName: givenName,
+            claudeSessionId: claudeSessionId,
+            workingDirectory: workingDirectory,
+            personaName: personaName,
+            isVibe: isVibe,
+            createdAt: createdAt,
+            ledgerSessionId: ledgerSessionId,
+            ledgerSessionIdentifiers: ledgerSessionIdentifiers,
+            ledgerCwd: ledgerCwd,
+            ledgerProjectDir: ledgerProjectDir,
+            ledgerGitBranch: ledgerGitBranch,
+            ledgerModelDisplayName: ledgerModelDisplayName,
+            ledgerContextPercentage: ledgerContextPercentage,
+            ledgerTokensUsed: ledgerTokensUsed,
+            ledgerTokensMax: ledgerTokensMax,
+            ledgerCostUsd: ledgerCostUsd,
+            ledgerLinesAdded: ledgerLinesAdded,
+            ledgerLinesRemoved: ledgerLinesRemoved,
+            ledgerStartedAt: ledgerStartedAt,
+            ledgerUpdatedAt: ledgerUpdatedAt
+        )
+    }
+
+    /// Restore a session from persisted state. Creates in stopped
+    /// state with a fresh terminal view and no running process.
+    init(restoring state: PersistedSession) {
+        self.id = state.id
+        self.sessionRef = state.sessionRef
+        self.claudeSessionId = state.claudeSessionId
+        self.createdAt = state.createdAt
+        self.workingDirectory = state.workingDirectory
+        self.personaName = state.personaName
+        self.isVibe = state.isVibe
+        self.terminalFontSize = SettingsManager.shared
+            .settings.defaultTerminalFontSize
+        self.terminalView = GalaxyTerminalView(
+            frame: NSRect(x: 0, y: 0, width: 800, height: 600)
+        )
+
+        // Restore Galaxy-only state
+        self.givenName = state.givenName
+
+        // Stopped state — no running process
+        self.isRunning = false
+        self.hasExited = true
+
+        // Restore ledger enrichment data (immediate sidebar content)
+        self.ledgerSessionId = state.ledgerSessionId
+        self.ledgerSessionIdentifiers = state.ledgerSessionIdentifiers
+        self.ledgerCwd = state.ledgerCwd
+        self.ledgerProjectDir = state.ledgerProjectDir
+        self.ledgerGitBranch = state.ledgerGitBranch
+        self.ledgerModelDisplayName = state.ledgerModelDisplayName
+        self.ledgerContextPercentage = state.ledgerContextPercentage
+        self.ledgerTokensUsed = state.ledgerTokensUsed
+        self.ledgerTokensMax = state.ledgerTokensMax
+        self.ledgerCostUsd = state.ledgerCostUsd
+        self.ledgerLinesAdded = state.ledgerLinesAdded
+        self.ledgerLinesRemoved = state.ledgerLinesRemoved
+        self.ledgerStartedAt = state.ledgerStartedAt
+        self.ledgerUpdatedAt = state.ledgerUpdatedAt
+
+        configureTerminal()
+    }
+
     func startProcess(executablePath: String, resume: Bool = false) {
         // Build environment as array of "KEY=VALUE" strings
         var envArray: [String] = ProcessInfo.processInfo.environment.map { "\($0.key)=\($0.value)" }
@@ -424,6 +496,20 @@ class Session: Identifiable, ObservableObject {
         // Without it, Claude Code falls back to ANSI indexed colors, which are
         // controlled by our installed palette and match Terminal.app's rendering.
         envArray.append("LANG=en_US.UTF-8")
+
+        // Ensure ~/.local/bin is in PATH. Galaxy.app inherits launchd's
+        // minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin)
+        // which doesn't include ~/.local/bin. Child processes like
+        // claude-persona need to find `claude` via PATH lookup.
+        let localBin = "\(NSHomeDirectory())/.local/bin"
+        if let pathIndex = envArray.firstIndex(where: { $0.hasPrefix("PATH=") }) {
+            let existing = envArray[pathIndex]
+            if !existing.contains(localBin) {
+                envArray[pathIndex] = "\(existing):\(localBin)"
+            }
+        } else {
+            envArray.append("PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:\(localBin)")
+        }
 
         // Build args and determine executable
         var args: [String] = []

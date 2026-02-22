@@ -463,6 +463,7 @@ struct SessionRow: View {
     private func commitNameEdit() {
         let trimmed = editingNameText.trimmingCharacters(in: .whitespacesAndNewlines)
         session.givenName = trimmed.isEmpty ? nil : trimmed
+        SessionPersistence.shared.markDirty()
         isEditingName = false
         isNameFieldFocused = false
         restoreTerminalFocus()

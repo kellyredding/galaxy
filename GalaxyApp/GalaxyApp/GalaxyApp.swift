@@ -71,6 +71,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         NSLog("AppDelegate: Application will terminate")
+        SessionPersistence.shared.flushSync()
         eventCoordinator?.stop()
     }
 

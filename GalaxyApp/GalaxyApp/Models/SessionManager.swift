@@ -60,6 +60,21 @@ class SessionManager: ObservableObject {
             fallback: "\(NSHomeDirectory())/.local/bin/claude"
         )
         self.claudePersonaPath = SessionManager.findBinaryPath(name: "claude-persona")
+
+        // Restore persisted sessions (all as stopped)
+        if let persisted = SessionPersistence.shared.load() {
+            for state in persisted.sessions {
+                let session = Session(restoring: state)
+                sessions.append(session)
+            }
+            if let activeId = persisted.activeSessionId {
+                activeSessionId = activeId
+            }
+            NSLog(
+                "SessionManager: Restored %d session(s) from disk",
+                sessions.count
+            )
+        }
     }
 
     /// Find a binary by checking common paths, then falling back to `which`.
@@ -193,6 +208,7 @@ class SessionManager: ObservableObject {
 
         sessions.append(session)
         activeSessionId = session.id
+        SessionPersistence.shared.markDirty()
 
         return session
     }
@@ -203,9 +219,10 @@ class SessionManager: ObservableObject {
         // Sessions are kept in sidebar when they exit (no removal)
         // The session's hasExited flag is already set by the process handler
 
-        // Update menu state
+        // Update menu state and persist
         DispatchQueue.main.async {
             self.updateActiveSessionCanResume()
+            SessionPersistence.shared.markDirty()
         }
 
         NSLog("SessionManager: Session marked as exited, keeping in sidebar")
@@ -236,6 +253,27 @@ class SessionManager: ObservableObject {
 
         guard session.hasExited else {
             NSLog("SessionManager: Cannot resume - session is still running")
+            return
+        }
+
+        // Check if working directory still exists
+        if !FileManager.default.fileExists(atPath: session.workingDirectory) {
+            DispatchQueue.main.async {
+                let alert = NSAlert()
+                alert.messageText = "Cannot Resume Session"
+                alert.informativeText = """
+                    The working directory for this session no longer \
+                    exists:
+
+                    \(session.workingDirectory)
+
+                    You can close this session or copy the resume \
+                    command to restart it manually.
+                    """
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "OK")
+                alert.runModal()
+            }
             return
         }
 
@@ -329,6 +367,7 @@ class SessionManager: ObservableObject {
 
         // Make this the active session
         activeSessionId = session.id
+        SessionPersistence.shared.markDirty()
 
         // Update menu state (session is now running, not resumable)
         updateActiveSessionCanResume()
@@ -410,6 +449,7 @@ class SessionManager: ObservableObject {
     func switchTo(sessionId: UUID) {
         guard let session = sessions.first(where: { $0.id == sessionId }) else { return }
         activeSessionId = sessionId
+        SessionPersistence.shared.markDirty()
 
         // Clear unread bell immediately on switch (with fade animation).
         // Done here rather than solely in SessionRow's onChange(of: isSelected)
@@ -448,6 +488,7 @@ class SessionManager: ObservableObject {
 
         // Remove the session (this will deallocate the terminal view which kills the process)
         sessions.remove(at: index)
+        SessionPersistence.shared.markDirty()
 
         // Update active session
         if activeSessionId == sessionId {
@@ -496,6 +537,7 @@ class SessionManager: ObservableObject {
         guard indexA >= 0 && indexA < sessions.count else { return }
         guard indexB >= 0 && indexB < sessions.count else { return }
         sessions.swapAt(indexA, indexB)
+        SessionPersistence.shared.markDirty()
     }
 
     /// Pause busy state observation on all sessions (during drag/resize)

@@ -225,7 +225,7 @@ class SettingsManager: ObservableObject {
     private func save() {
         do {
             let data = try JSONEncoder().encode(settings)
-            try data.write(to: settingsURL)
+            try data.write(to: settingsURL, options: .atomic)
             NSLog("SettingsManager: Settings saved")
         } catch {
             NSLog("SettingsManager: Failed to save settings: %@", error.localizedDescription)
