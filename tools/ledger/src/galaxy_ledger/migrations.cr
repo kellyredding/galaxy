@@ -141,6 +141,10 @@ module GalaxyLedger
         SQL
         db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_artifacts_source_path ON ledger_artifacts(ledger_session_id, source_path) WHERE source_path IS NOT NULL")
       },
+      "0.3.5" => ->(db : DB::Database) {
+        db.exec("ALTER TABLE ledger_sessions RENAME COLUMN title TO suggested_name")
+        db.exec("ALTER TABLE ledger_sessions ADD COLUMN suggested_name_data TEXT NOT NULL DEFAULT '{}'")
+      },
     }
 
     # ==========================================================================
@@ -197,6 +201,15 @@ module GalaxyLedger
             "enabled"       => JSON::Any.new(true),
             "auto_detect"   => JSON::Any.new(true),
             "max_file_size" => JSON::Any.new(52_428_800_i64),
+          })
+        end
+        JSON::Any.new(obj)
+      },
+      "0.3.5" => Proc(JSON::Any, JSON::Any).new { |config_json|
+        obj = config_json.as_h.dup
+        unless obj.has_key?("suggested_name")
+          obj["suggested_name"] = JSON::Any.new({
+            "enabled" => JSON::Any.new(true),
           })
         end
         JSON::Any.new(obj)

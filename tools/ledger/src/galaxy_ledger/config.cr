@@ -20,6 +20,9 @@ module GalaxyLedger
     property backups : Backups = Backups.new
     property artifacts : Artifacts = Artifacts.new
 
+    @[JSON::Field(key: "suggested_name")]
+    property suggested_name : SuggestedNameConfig = SuggestedNameConfig.new
+
     class Thresholds
       include JSON::Serializable
 
@@ -187,6 +190,15 @@ module GalaxyLedger
       end
     end
 
+    class SuggestedNameConfig
+      include JSON::Serializable
+
+      property enabled : Bool
+
+      def initialize(@enabled = true)
+      end
+    end
+
     def initialize(
       @schema_version = VERSION,
       @version = VERSION,
@@ -198,6 +210,7 @@ module GalaxyLedger
       @snapshots = Snapshots.new,
       @backups = Backups.new,
       @artifacts = Artifacts.new,
+      @suggested_name = SuggestedNameConfig.new,
     )
     end
 
@@ -281,6 +294,8 @@ module GalaxyLedger
         set_backups(parts[1]?, value)
       when "artifacts"
         set_artifacts(parts[1]?, value)
+      when "suggested_name"
+        set_suggested_name(parts[1]?, value)
       else
         raise "Unknown setting: #{key}"
       end
@@ -308,6 +323,8 @@ module GalaxyLedger
         get_backups(parts[1]?)
       when "artifacts"
         get_artifacts(parts[1]?)
+      when "suggested_name"
+        get_suggested_name(parts[1]?)
       else
         raise "Unknown setting: #{key}"
       end
@@ -591,6 +608,27 @@ module GalaxyLedger
       when "max_file_size" then artifacts.max_file_size.to_s
       else
         raise "Unknown artifacts field: artifacts.#{field}"
+      end
+    end
+
+    private def set_suggested_name(field : String?, value : String)
+      raise "Missing suggested_name field (e.g., suggested_name.enabled)" unless field
+
+      case field
+      when "enabled"
+        suggested_name.enabled = parse_bool(value)
+      else
+        raise "Unknown suggested_name field: suggested_name.#{field}"
+      end
+    end
+
+    private def get_suggested_name(field : String?) : String
+      raise "Missing suggested_name field (e.g., suggested_name.enabled)" unless field
+
+      case field
+      when "enabled" then suggested_name.enabled.to_s
+      else
+        raise "Unknown suggested_name field: suggested_name.#{field}"
       end
     end
 

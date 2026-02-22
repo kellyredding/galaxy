@@ -97,7 +97,8 @@ module GalaxyLedger
         db.exec(<<-SQL)
           CREATE TABLE IF NOT EXISTS ledger_sessions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT,
+            suggested_name TEXT,
+            suggested_name_data TEXT NOT NULL DEFAULT '{}',
             current_session_identifier TEXT,
             current_claude_pid INTEGER,
             started_at TEXT DEFAULT (datetime('now')),
@@ -975,17 +976,57 @@ module GalaxyLedger
       end
     end
 
-    # Update the title for a session. Direct write (not COALESCE) because
-    # extraction should always reflect the latest session topic.
-    def self.update_session_title(ledger_session_id : Int64, title : String?) : Bool
+    # Update the suggested name for a session.
+    def self.update_suggested_name(ledger_session_id : Int64, name : String?) : Bool
       return false if ledger_session_id <= 0
-      return false unless title
+      return false unless name
 
       begin
         open do |db|
           db.exec(
-            "UPDATE ledger_sessions SET title = ?, updated_at = datetime('now') WHERE id = ?",
-            title,
+            "UPDATE ledger_sessions SET suggested_name = ?, updated_at = datetime('now') WHERE id = ?",
+            name,
+            ledger_session_id,
+          )
+          true
+        end
+      rescue
+        false
+      end
+    end
+
+    # Update the suggested name state machine data for a session.
+    def self.update_suggested_name_data(ledger_session_id : Int64, data_json : String) : Bool
+      return false if ledger_session_id <= 0
+
+      begin
+        open do |db|
+          db.exec(
+            "UPDATE ledger_sessions SET suggested_name_data = ?, updated_at = datetime('now') WHERE id = ?",
+            data_json,
+            ledger_session_id,
+          )
+          true
+        end
+      rescue
+        false
+      end
+    end
+
+    # Update both suggested name and state machine data atomically.
+    def self.update_suggested_name_with_data(
+      ledger_session_id : Int64,
+      name : String?,
+      data_json : String,
+    ) : Bool
+      return false if ledger_session_id <= 0
+
+      begin
+        open do |db|
+          db.exec(
+            "UPDATE ledger_sessions SET suggested_name = ?, suggested_name_data = ?, updated_at = datetime('now') WHERE id = ?",
+            name,
+            data_json,
             ledger_session_id,
           )
           true
@@ -1101,7 +1142,7 @@ module GalaxyLedger
         open do |db|
           db.query_one?(
             <<-SQL,
-              SELECT id, title, current_session_identifier, current_claude_pid, started_at, updated_at, cwd, project_dir,
+              SELECT id, suggested_name, suggested_name_data, current_session_identifier, current_claude_pid, started_at, updated_at, cwd, project_dir,
                      git_branch, model_id, model_display_name, claude_version,
                      context_percentage, tokens_used, tokens_max, cost_usd,
                      lines_added, lines_removed, context, last_interaction
@@ -1135,7 +1176,7 @@ module GalaxyLedger
         open do |db|
           db.query(
             <<-SQL,
-              SELECT id, title, current_session_identifier, current_claude_pid, started_at, updated_at, cwd, project_dir,
+              SELECT id, suggested_name, suggested_name_data, current_session_identifier, current_claude_pid, started_at, updated_at, cwd, project_dir,
                      git_branch, model_id, model_display_name, claude_version,
                      context_percentage, tokens_used, tokens_max, cost_usd,
                      lines_added, lines_removed, context, last_interaction
@@ -2624,7 +2665,8 @@ module GalaxyLedger
     # A session record from the database
     struct SessionRecord
       getter id : Int64
-      getter title : String?
+      getter suggested_name : String?
+      getter suggested_name_data : String
       getter current_session_identifier : String?
       getter current_claude_pid : Int64?
       getter started_at : String?
@@ -2645,7 +2687,7 @@ module GalaxyLedger
       getter last_interaction : String?
 
       def initialize(
-        @id, @title, @current_session_identifier, @current_claude_pid, @started_at, @updated_at,
+        @id, @suggested_name, @suggested_name_data, @current_session_identifier, @current_claude_pid, @started_at, @updated_at,
         @cwd, @project_dir, @git_branch,
         @model_id, @model_display_name, @claude_version,
         @context_percentage, @tokens_used, @tokens_max, @cost_usd,
@@ -2656,7 +2698,8 @@ module GalaxyLedger
       def self.from_row(rs) : SessionRecord
         SessionRecord.new(
           id: rs.read(Int64),
-          title: rs.read(String?),
+          suggested_name: rs.read(String?),
+          suggested_name_data: rs.read(String),
           current_session_identifier: rs.read(String?),
           current_claude_pid: rs.read(Int64?),
           started_at: rs.read(String?),

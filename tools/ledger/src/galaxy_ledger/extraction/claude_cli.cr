@@ -46,10 +46,12 @@ module GalaxyLedger
       # Run a Claude CLI one-shot command
       # Returns a RunResult with the extracted content and usage metadata.
       # On error/timeout, returns a RunResult with result: nil and zero usage.
+      # Optional model parameter overrides the default model for the one-shot call.
       def self.run(
         content : String,
         prompt : String,
         timeout : Time::Span = DEFAULT_TIMEOUT,
+        model : String? = nil,
       ) : RunResult
         return ZERO_USAGE_RESULT if content.strip.empty?
         return ZERO_USAGE_RESULT if prompt.strip.empty?
@@ -75,13 +77,20 @@ module GalaxyLedger
           # Claude CLI expects the full prompt as an argument, not piped input
           full_prompt = "#{prompt}\n\nContent to analyze:\n#{content}"
 
+          # Build args with optional model override
+          args = ["-p", "--output-format", "json"]
+          if m = model
+            args.concat(["--model", m])
+          end
+          args << full_prompt
+
           # Build the command
-          # claude -p --output-format json "$full_prompt"
+          # claude -p --output-format json [--model MODEL] "$full_prompt"
           # Set GALAXY_SKIP_HOOKS=1 to prevent recursion - the claude -p session
           # would otherwise trigger hooks, which spawn more extractions, infinitely
           process = Process.new(
             "claude",
-            args: ["-p", "--output-format", "json", full_prompt],
+            args: args,
             input: Process::Redirect::Close,
             output: Process::Redirect::Pipe,
             error: Process::Redirect::Pipe,

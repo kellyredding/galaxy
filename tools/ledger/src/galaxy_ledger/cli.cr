@@ -108,6 +108,8 @@ module GalaxyLedger
         handle_prune_command(rest)
       when "backup"
         handle_backup_command(rest)
+      when "suggest-name"
+        handle_suggest_name_command(rest)
       when "version"
         puts "galaxy-ledger #{VERSION}"
       when "help"
@@ -136,6 +138,7 @@ module GalaxyLedger
         prune               Prune old session entries and files
         backup              Manage database backups
         config              Manage configuration
+        suggest-name        Generate/improve session name via LLM one-shot
         install             Install hooks and skills into Claude Code
         uninstall           Remove hooks and skills from Claude Code
         version             Show version
@@ -1777,12 +1780,6 @@ module GalaxyLedger
           end
         end
 
-        # Update session title if the extraction generated one
-        if session_title = result.session_title
-          Database.update_session_title(ledger_session_id, session_title)
-          STDERR.puts "[galaxy-ledger] Updated session title: #{session_title}"
-        end
-
         # Update last interaction with summary if we got one
         if summary = result.summary
           session_record = Database.get_session_by_id(ledger_session_id)
@@ -2681,6 +2678,7 @@ module GalaxyLedger
 
                 builder.object do
                   builder.field("ledger_session_id", record.id)
+                  builder.field("suggested_name", record.suggested_name)
                   builder.field("session_identifiers") do
                     builder.array do
                       identifiers.each { |sid| builder.scalar(sid) }
@@ -2761,6 +2759,155 @@ module GalaxyLedger
         galaxy-ledger sessions --json --session abc-123
         galaxy-ledger sessions --json --session abc-123 --session def-456
       HELP
+    end
+
+    # ========================================
+    # Suggest Name Command
+    # ========================================
+
+    private def self.handle_suggest_name_command(args : Array(String))
+      if args.first? == "-h" || args.first? == "--help"
+        show_suggest_name_help
+        return
+      end
+
+      # Parse args
+      session_id : String? = nil
+      transcript_path : String? = nil
+      i = 0
+      while i < args.size
+        arg = args[i]
+        if arg == "--session" && i + 1 < args.size
+          session_id = args[i + 1]
+          i += 2
+        elsif arg == "--transcript-path" && i + 1 < args.size
+          transcript_path = args[i + 1]
+          i += 2
+        else
+          i += 1
+        end
+      end
+
+      unless session_id
+        STDERR.puts "Error: --session is required"
+        exit(1)
+      end
+
+      unless transcript_path
+        STDERR.puts "Error: --transcript-path is required"
+        exit(1)
+      end
+
+      # Check config
+      config = Config.load
+      return unless config.suggested_name.enabled
+
+      # Resolve session
+      ledger_session_id = Database.resolve_session_identifier(session_id)
+      unless ledger_session_id
+        STDERR.puts "Error: no session found for identifier '#{session_id}'"
+        exit(1)
+      end
+
+      # Load current state — short-circuit if finalized
+      session = Database.get_session_by_id(ledger_session_id)
+      return unless session
+
+      state = SuggestedName::StateData.from_json_safe(session.suggested_name_data)
+      unless state.should_suggest?
+        STDERR.puts "[galaxy-ledger] Name suggestion complete (#{state.status}), skipping"
+        return
+      end
+
+      # Parse transcript and extract recent exchanges
+      entries = read_transcript_entries_with_backoff(transcript_path)
+      return if entries.empty?
+
+      exchanges = Transcript.extract_recent_exchanges(entries, SuggestedName::MAX_EXCHANGES_FOR_CONTEXT)
+      if exchanges.empty?
+        STDERR.puts "[galaxy-ledger] No exchanges found in transcript, skipping"
+        return
+      end
+
+      # Build context
+      context, exchange_count = SuggestedName.build_context(exchanges)
+      if context.strip.empty?
+        return
+      end
+
+      # Call Claude Haiku one-shot
+      begin
+        run_result = Extraction::ClaudeCLI.run(
+          content: context,
+          prompt: SuggestedName.suggestion_prompt,
+          model: SuggestedName::SUGGESTION_MODEL,
+        )
+
+        suggestion = SuggestedName.parse_response(run_result[:result])
+
+        if suggestion.needs_more_context
+          state.set_needs_more_context
+          Database.update_suggested_name_data(ledger_session_id, state.to_json)
+          STDERR.puts "[galaxy-ledger] Name suggestion: needs more context"
+        elsif SuggestedName.name_appears_to_be_code?(suggestion.name)
+          state.set_code_detected
+          Database.update_suggested_name_data(ledger_session_id, state.to_json)
+          STDERR.puts "[galaxy-ledger] Name suggestion: code detected, rejected"
+        elsif name = suggestion.name
+          should_save = state.set_name_generated(suggestion.quality, exchange_count)
+          if should_save
+            Database.update_suggested_name_with_data(ledger_session_id, name, state.to_json)
+            STDERR.puts "[galaxy-ledger] Suggested name: #{name} (quality: #{suggestion.quality})"
+
+            # Notify Galaxy.app so it re-fetches session data with the new name
+            EventPublisher.publish(
+              ledger_session_id: ledger_session_id,
+              event: "session.metrics",
+            )
+          else
+            Database.update_suggested_name_data(ledger_session_id, state.to_json)
+            STDERR.puts "[galaxy-ledger] Name suggestion: quality #{suggestion.quality} < current #{state.quality}, keeping existing"
+          end
+        else
+          STDERR.puts "[galaxy-ledger] Name suggestion: empty result"
+        end
+
+        # Record one-shot usage
+        if run_result[:cost_usd] > 0.0
+          total_tokens = run_result[:input_tokens] + run_result[:output_tokens] +
+                         run_result[:cache_creation_tokens] + run_result[:cache_read_tokens]
+          Database.record_oneshot_usage(ledger_session_id, run_result[:cost_usd], total_tokens)
+        end
+      rescue ex
+        STDERR.puts "[galaxy-ledger] Name suggestion error: #{ex.message}"
+      end
+    end
+
+    private def self.show_suggest_name_help
+      puts <<-HELP
+      Usage: galaxy-ledger suggest-name --session <ID> --transcript-path <PATH>
+
+      Generate or improve a suggested session name using a Claude Haiku one-shot.
+      Spawned as a subprocess by the on-stop hook. Short-circuits immediately if
+      the session name is already finalized (quality >= 4 or max attempts reached).
+
+      Options:
+        --session          Claude session identifier (required)
+        --transcript-path  Path to the session transcript JSONL file (required)
+        -h, --help         Show this help
+      HELP
+    end
+
+    # Read transcript entries with backoff (reusable for extraction and suggest-name)
+    private def self.read_transcript_entries_with_backoff(transcript_path : String) : Array(Transcript::TranscriptEntry)
+      TRANSCRIPT_BACKOFF_DELAYS.each_with_index do |delay, attempt|
+        sleep (delay * 1000).to_i.milliseconds if delay > 0
+
+        entries = Transcript.parse(transcript_path)
+        return entries if entries.any?
+      end
+
+      [] of Transcript::TranscriptEntry
     end
 
     # ========================================

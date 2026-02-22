@@ -717,6 +717,152 @@ describe "OnStop last_stop_cwd stamping" do
   end
 end
 
+# Helper: build a complete config JSON with overrides for on_stop tests.
+# Partial JSONs fall back to Config.default (everything enabled),
+# so tests that need to disable features must write a full config.
+def build_on_stop_config(extraction_on_stop : Bool, suggested_name_enabled : Bool) : String
+  config = GalaxyLedger::Config.new
+  config.extraction.on_stop = extraction_on_stop
+  config.extraction.on_guideline_read = false
+  config.suggested_name.enabled = suggested_name_enabled
+  config.to_pretty_json
+end
+
+describe "OnStop background task count in systemMessage" do
+  test_session_id = "bg-task-count-#{Random.rand(10000)}"
+  ledger_session_id = 0_i64
+
+  before_each do
+    GalaxyLedger::Database.delete_session(test_session_id)
+    ledger_session_id = GalaxyLedger::Database.create_session(test_session_id)
+  end
+
+  after_each do
+    GalaxyLedger::Database.delete_session(test_session_id)
+  end
+
+  it "shows no background tasks when both extraction and suggestion are disabled" do
+    File.write(SPEC_CONFIG_DIR / "config.json", build_on_stop_config(
+      extraction_on_stop: false,
+      suggested_name_enabled: false,
+    ))
+
+    transcript_file = File.tempfile("transcript", ".jsonl")
+    transcript_file.print(%|{"type": "user", "timestamp": "2026-02-01T10:00:00Z", "message": {"role": "user", "content": "Test message"}}\n|)
+    transcript_file.print(%|{"type": "assistant", "timestamp": "2026-02-01T10:01:00Z", "message": {"role": "assistant", "content": "Test response"}}\n|)
+    transcript_file.close
+
+    hook_input = {
+      "session_id"       => test_session_id,
+      "transcript_path"  => transcript_file.path,
+      "stop_hook_active" => false,
+    }.to_json
+
+    result = run_binary(["on-stop"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    json = JSON.parse(result[:output])
+    msg = json["systemMessage"].as_s
+    msg.should_not contain("background")
+
+    File.delete(transcript_file.path)
+  end
+
+  it "shows singular 'task' when exactly one background task spawns" do
+    File.write(SPEC_CONFIG_DIR / "config.json", build_on_stop_config(
+      extraction_on_stop: true,
+      suggested_name_enabled: false,
+    ))
+
+    transcript_file = File.tempfile("transcript", ".jsonl")
+    transcript_file.print(%|{"type": "user", "timestamp": "2026-02-01T10:00:00Z", "message": {"role": "user", "content": "Test message"}}\n|)
+    transcript_file.print(%|{"type": "assistant", "timestamp": "2026-02-01T10:01:00Z", "message": {"role": "assistant", "content": "Test response"}}\n|)
+    transcript_file.close
+
+    hook_input = {
+      "session_id"       => test_session_id,
+      "transcript_path"  => transcript_file.path,
+      "stop_hook_active" => false,
+    }.to_json
+
+    result = run_binary(["on-stop"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    json = JSON.parse(result[:output])
+    msg = json["systemMessage"].as_s
+    msg.should contain("1 background task spawned")
+    msg.should_not contain("tasks")
+
+    File.delete(transcript_file.path)
+  end
+
+  it "shows plural 'tasks' when multiple background tasks spawn" do
+    File.write(SPEC_CONFIG_DIR / "config.json", build_on_stop_config(
+      extraction_on_stop: true,
+      suggested_name_enabled: true,
+    ))
+
+    transcript_file = File.tempfile("transcript", ".jsonl")
+    transcript_file.print(%|{"type": "user", "timestamp": "2026-02-01T10:00:00Z", "message": {"role": "user", "content": "Test message"}}\n|)
+    transcript_file.print(%|{"type": "assistant", "timestamp": "2026-02-01T10:01:00Z", "message": {"role": "assistant", "content": "Test response"}}\n|)
+    transcript_file.close
+
+    hook_input = {
+      "session_id"       => test_session_id,
+      "transcript_path"  => transcript_file.path,
+      "stop_hook_active" => false,
+    }.to_json
+
+    result = run_binary(["on-stop"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    json = JSON.parse(result[:output])
+    msg = json["systemMessage"].as_s
+    msg.should contain("background tasks spawned")
+    # Should be at least 2 (extraction + name suggestion)
+    msg.should_not contain("1 background")
+
+    File.delete(transcript_file.path)
+  end
+
+  it "skips name suggestion when already finalized" do
+    File.write(SPEC_CONFIG_DIR / "config.json", build_on_stop_config(
+      extraction_on_stop: false,
+      suggested_name_enabled: true,
+    ))
+
+    # Finalize the name so the pre-check short-circuits
+    state_data = {
+      "attempts"  => 1,
+      "quality"   => 4,
+      "finalized" => true,
+      "status"    => "finalized_quality_met",
+    }.to_json
+    GalaxyLedger::Database.update_suggested_name_with_data(ledger_session_id, "Test Name", state_data)
+
+    transcript_file = File.tempfile("transcript", ".jsonl")
+    transcript_file.print(%|{"type": "user", "timestamp": "2026-02-01T10:00:00Z", "message": {"role": "user", "content": "Test message"}}\n|)
+    transcript_file.print(%|{"type": "assistant", "timestamp": "2026-02-01T10:01:00Z", "message": {"role": "assistant", "content": "Test response"}}\n|)
+    transcript_file.close
+
+    hook_input = {
+      "session_id"       => test_session_id,
+      "transcript_path"  => transcript_file.path,
+      "stop_hook_active" => false,
+    }.to_json
+
+    result = run_binary(["on-stop"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    json = JSON.parse(result[:output])
+    msg = json["systemMessage"].as_s
+    # No background tasks — extraction disabled, name already finalized
+    msg.should_not contain("background")
+
+    File.delete(transcript_file.path)
+  end
+end
+
 describe "OnStop CLI help" do
   it "shows help with -h flag" do
     result = run_binary(["on-stop", "-h"])

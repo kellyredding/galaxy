@@ -75,16 +75,8 @@ module GalaxyLedger
         - Focus on what was accomplished, not the process
         - For multi-step exchanges, capture the final outcome
 
-        ## Session title guidelines:
-        - 3-8 words capturing the overall session topic
-        - Use title case
-        - Focus on the subject matter, not the action
-        - Examples: "Checkout Upsells Theming", "Galaxy Ledger Session Title",
-          "Fix Account Setup Race Conditions"
-
         ## Output format (JSON only, no markdown):
         {
-          "session_title": "Short 3-8 word title for the session topic",
           "summary": {
             "user_request": "What the user asked for",
             "assistant_response": "What was accomplished (1-2 sentences)",

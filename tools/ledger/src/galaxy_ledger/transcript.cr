@@ -87,6 +87,51 @@ module GalaxyLedger
       )
     end
 
+    # Extract the last N user/assistant exchanges from transcript entries.
+    # Returns exchanges in chronological order (oldest first).
+    # Skips system-generated entries (commands, tool results, local commands).
+    def self.extract_recent_exchanges(entries : Array(TranscriptEntry), limit : Int32 = 5) : Array(ExtractedExchange)
+      exchanges = [] of ExtractedExchange
+
+      # Walk backwards through entries, collecting user messages
+      # and their corresponding assistant responses
+      i = entries.size - 1
+      while i >= 0 && exchanges.size < limit
+        entry = entries[i]
+
+        if entry.type == "user" && entry.message
+          content = entry.message.try(&.content)
+          if content &&
+             !content.includes?("<command-name>") &&
+             !content.includes?("<local-command") &&
+             !entry.message.try(&.is_tool_result?)
+            # Found a real user message — collect assistant responses after it
+            assistant_entries = [] of AssistantEntry
+            ((i + 1)...entries.size).each do |j|
+              aentry = entries[j]
+              break if aentry.type == "user" # Stop at next user message
+
+              if aentry.type == "assistant" && aentry.message
+                acontent = aentry.message.try(&.content)
+                next unless acontent
+                assistant_entries << AssistantEntry.new(content: acontent, timestamp: aentry.timestamp)
+              end
+            end
+
+            exchanges.unshift(ExtractedExchange.new(
+              user_message: content,
+              user_timestamp: entry.timestamp,
+              assistant_entries: assistant_entries,
+            ))
+          end
+        end
+
+        i -= 1
+      end
+
+      exchanges
+    end
+
     # Convert extracted exchange to LastExchange format for storage
     def self.to_last_exchange(extracted : ExtractedExchange) : Exchange::LastExchange
       # Combine all assistant messages into full_content

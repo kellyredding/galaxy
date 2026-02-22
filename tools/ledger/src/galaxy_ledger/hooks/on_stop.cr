@@ -61,6 +61,10 @@ module GalaxyLedger
         # Claude Code writes the assistant response to the transcript AFTER the stop hook fires.
         extraction_spawned = spawn_extraction_async(ledger_session_id, current_sid)
 
+        # Spawn async name suggestion process.
+        # Short-circuits internally if name already finalized.
+        name_suggestion_spawned = spawn_name_suggestion_async(ledger_session_id, current_sid)
+
         # Re-extract any guideline/implementation plan files that were
         # edited during this session (stale entries)
         re_extracted_files = re_extract_stale_files(ledger_session_id, current_sid)
@@ -73,6 +77,7 @@ module GalaxyLedger
         system_message = build_system_message(
           percentage: session_record.context_percentage,
           extraction_spawned: extraction_spawned,
+          name_suggestion_spawned: name_suggestion_spawned,
           re_extracted_files: re_extracted_files,
         )
         puts output_stop_json(system_message)
@@ -149,16 +154,21 @@ module GalaxyLedger
       private def build_system_message(
         percentage : Float64,
         extraction_spawned : Bool,
+        name_suggestion_spawned : Bool,
         re_extracted_files : Array(String),
       ) : String
         parts = [] of String
         indicator = build_context_indicator(percentage)
         parts << indicator if indicator
-        parts << "Extraction spawned" if extraction_spawned
 
-        if re_extracted_files.any?
-          names = re_extracted_files.map { |f| File.basename(f) }
-          parts << "Re-extracting: #{names.join(", ")}"
+        # Collapse all background subprocesses into a single count
+        bg_count = 0
+        bg_count += 1 if extraction_spawned
+        bg_count += 1 if name_suggestion_spawned
+        bg_count += re_extracted_files.size
+        if bg_count > 0
+          label = bg_count == 1 ? "task" : "tasks"
+          parts << "#{bg_count} background #{label} spawned"
         end
 
         parts.join(" \u2502 ")
@@ -190,6 +200,37 @@ module GalaxyLedger
           Process.new(
             binary,
             args: ["extract-assistant", "--session", current_sid, "--transcript-path", transcript_path],
+            input: Process::Redirect::Close,
+            output: Process::Redirect::Close,
+            error: Process::Redirect::Close,
+          )
+          true
+        rescue
+          false
+        end
+      end
+
+      private def spawn_name_suggestion_async(ledger_session_id : Int64, current_sid : String) : Bool
+        transcript_path = @transcript_path
+        return false unless transcript_path
+
+        # Check if suggestion is enabled in config
+        config = Config.load
+        return false unless config.suggested_name.enabled
+
+        # Pre-check: skip if already finalized (avoid subprocess overhead)
+        session = Database.get_session_by_id(ledger_session_id)
+        if session
+          state = SuggestedName::StateData.from_json_safe(session.suggested_name_data)
+          return false if state.generation_complete?
+        end
+
+        begin
+          binary = Process.executable_path || "galaxy-ledger"
+
+          Process.new(
+            binary,
+            args: ["suggest-name", "--session", current_sid, "--transcript-path", transcript_path],
             input: Process::Redirect::Close,
             output: Process::Redirect::Close,
             error: Process::Redirect::Close,

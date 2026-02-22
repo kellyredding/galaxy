@@ -73,6 +73,29 @@ describe "CLI Integration: sessions" do
       session["lines_removed"].as_i64.should eq(0)
     end
 
+    it "includes suggested_name field (nil by default)" do
+      session_id = "sessions-name-#{Random.rand(100000)}"
+      GalaxyLedger::Database.create_session(session_id)
+
+      result = run_binary(["sessions", "--json", "--session", session_id])
+      result[:status].should eq(0)
+
+      session = JSON.parse(result[:output])["sessions"].as_a[0]
+      session["suggested_name"].as_s?.should be_nil
+    end
+
+    it "includes suggested_name when set" do
+      session_id = "sessions-name-set-#{Random.rand(100000)}"
+      ledger_session_id = GalaxyLedger::Database.create_session(session_id)
+      GalaxyLedger::Database.update_suggested_name(ledger_session_id, "Event System Design")
+
+      result = run_binary(["sessions", "--json", "--session", session_id])
+      result[:status].should eq(0)
+
+      session = JSON.parse(result[:output])["sessions"].as_a[0]
+      session["suggested_name"].as_s.should eq("Event System Design")
+    end
+
     it "includes session_identifiers array with all registered identifiers" do
       session_id = "sessions-ids-#{Random.rand(100000)}"
       ledger_session_id = GalaxyLedger::Database.create_session(session_id)

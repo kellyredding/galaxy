@@ -263,6 +263,119 @@ describe GalaxyLedger::Transcript do
       extracted.combined_content.should eq("Part 1\n\nPart 2\n\nPart 3")
     end
   end
+
+  # ---------------------------------------------------------------------------
+  # extract_recent_exchanges
+  # ---------------------------------------------------------------------------
+  describe ".extract_recent_exchanges" do
+    it "returns empty for empty entries" do
+      result = GalaxyLedger::Transcript.extract_recent_exchanges([] of GalaxyLedger::Transcript::TranscriptEntry)
+      result.size.should eq(0)
+    end
+
+    it "returns last N exchanges in chronological order" do
+      entries = [
+        create_entry("user", "First question"),
+        create_entry("assistant", "First answer"),
+        create_entry("user", "Second question"),
+        create_entry("assistant", "Second answer"),
+        create_entry("user", "Third question"),
+        create_entry("assistant", "Third answer"),
+      ]
+
+      result = GalaxyLedger::Transcript.extract_recent_exchanges(entries, limit: 2)
+      result.size.should eq(2)
+      result[0].user_message.should eq("Second question")
+      result[1].user_message.should eq("Third question")
+    end
+
+    it "returns all exchanges when fewer than limit" do
+      entries = [
+        create_entry("user", "Only question"),
+        create_entry("assistant", "Only answer"),
+      ]
+
+      result = GalaxyLedger::Transcript.extract_recent_exchanges(entries, limit: 5)
+      result.size.should eq(1)
+      result[0].user_message.should eq("Only question")
+    end
+
+    it "skips command entries" do
+      entries = [
+        create_entry("user", "Real question"),
+        create_entry("assistant", "Real answer"),
+        create_entry("user", "<command-name>/clear</command-name>"),
+        create_entry("user", "After clear question"),
+        create_entry("assistant", "After clear answer"),
+      ]
+
+      result = GalaxyLedger::Transcript.extract_recent_exchanges(entries, limit: 5)
+      result.size.should eq(2)
+      result[0].user_message.should eq("Real question")
+      result[1].user_message.should eq("After clear question")
+    end
+
+    it "skips local-command entries" do
+      entries = [
+        create_entry("user", "<local-command>something</local-command>"),
+        create_entry("user", "Real question"),
+        create_entry("assistant", "Real answer"),
+      ]
+
+      result = GalaxyLedger::Transcript.extract_recent_exchanges(entries, limit: 5)
+      result.size.should eq(1)
+      result[0].user_message.should eq("Real question")
+    end
+
+    it "collects assistant responses for each user message" do
+      entries = [
+        create_entry("user", "Question"),
+        create_entry("assistant", "Part 1"),
+        create_entry("assistant", "Part 2"),
+      ]
+
+      result = GalaxyLedger::Transcript.extract_recent_exchanges(entries, limit: 5)
+      result.size.should eq(1)
+      result[0].assistant_entries.size.should eq(2)
+      result[0].assistant_entries[0].content.should eq("Part 1")
+      result[0].assistant_entries[1].content.should eq("Part 2")
+    end
+
+    it "stops collecting assistant entries at next user message" do
+      entries = [
+        create_entry("user", "First question"),
+        create_entry("assistant", "First answer"),
+        create_entry("user", "Second question"),
+        create_entry("assistant", "Second answer"),
+      ]
+
+      result = GalaxyLedger::Transcript.extract_recent_exchanges(entries, limit: 5)
+      result.size.should eq(2)
+      result[0].assistant_entries.size.should eq(1)
+      result[0].assistant_entries[0].content.should eq("First answer")
+      result[1].assistant_entries.size.should eq(1)
+      result[1].assistant_entries[0].content.should eq("Second answer")
+    end
+
+    it "respects limit parameter" do
+      entries = [
+        create_entry("user", "Q1"),
+        create_entry("assistant", "A1"),
+        create_entry("user", "Q2"),
+        create_entry("assistant", "A2"),
+        create_entry("user", "Q3"),
+        create_entry("assistant", "A3"),
+        create_entry("user", "Q4"),
+        create_entry("assistant", "A4"),
+      ]
+
+      result = GalaxyLedger::Transcript.extract_recent_exchanges(entries, limit: 3)
+      result.size.should eq(3)
+      result[0].user_message.should eq("Q2")
+      result[1].user_message.should eq("Q3")
+      result[2].user_message.should eq("Q4")
+    end
+  end
 end
 
 # Helper to create transcript entries for testing

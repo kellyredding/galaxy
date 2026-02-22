@@ -1750,43 +1750,96 @@ describe GalaxyLedger::Database do
     end
   end
 
-  describe ".update_session_title" do
-    it "writes title to DB when provided" do
-      ledger_session_id = GalaxyLedger::Database.create_session("sess-title-write")
+  describe ".update_suggested_name" do
+    it "writes suggested name to DB when provided" do
+      ledger_session_id = GalaxyLedger::Database.create_session("sess-name-write")
 
-      result = GalaxyLedger::Database.update_session_title(ledger_session_id, "Checkout Upsells Theming")
+      result = GalaxyLedger::Database.update_suggested_name(ledger_session_id, "Checkout Upsells Theming")
       result.should be_true
 
-      session = GalaxyLedger::Database.get_session("sess-title-write")
+      session = GalaxyLedger::Database.get_session("sess-name-write")
       session.should_not be_nil
-      session.not_nil!.title.should eq("Checkout Upsells Theming")
+      session.not_nil!.suggested_name.should eq("Checkout Upsells Theming")
     end
 
-    it "overwrites existing title with new value" do
-      ledger_session_id = GalaxyLedger::Database.create_session("sess-title-overwrite")
+    it "overwrites existing name with new value" do
+      ledger_session_id = GalaxyLedger::Database.create_session("sess-name-overwrite")
 
-      GalaxyLedger::Database.update_session_title(ledger_session_id, "Original Title")
-      GalaxyLedger::Database.update_session_title(ledger_session_id, "Updated Title")
+      GalaxyLedger::Database.update_suggested_name(ledger_session_id, "Original Name")
+      GalaxyLedger::Database.update_suggested_name(ledger_session_id, "Updated Name")
 
-      session = GalaxyLedger::Database.get_session("sess-title-overwrite")
+      session = GalaxyLedger::Database.get_session("sess-name-overwrite")
       session.should_not be_nil
-      session.not_nil!.title.should eq("Updated Title")
+      session.not_nil!.suggested_name.should eq("Updated Name")
     end
 
-    it "returns false for nil title" do
-      ledger_session_id = GalaxyLedger::Database.create_session("sess-title-nil")
+    it "returns false for nil name" do
+      ledger_session_id = GalaxyLedger::Database.create_session("sess-name-nil")
 
-      result = GalaxyLedger::Database.update_session_title(ledger_session_id, nil)
+      result = GalaxyLedger::Database.update_suggested_name(ledger_session_id, nil)
       result.should be_false
     end
 
     it "returns false for invalid session ID (0)" do
-      result = GalaxyLedger::Database.update_session_title(0_i64, "Some Title")
+      result = GalaxyLedger::Database.update_suggested_name(0_i64, "Some Name")
       result.should be_false
     end
 
     it "returns false for negative session ID" do
-      result = GalaxyLedger::Database.update_session_title(-1_i64, "Some Title")
+      result = GalaxyLedger::Database.update_suggested_name(-1_i64, "Some Name")
+      result.should be_false
+    end
+  end
+
+  describe ".update_suggested_name_data" do
+    it "writes state data to DB" do
+      ledger_session_id = GalaxyLedger::Database.create_session("sess-name-data-write")
+
+      data = %({"attempts":1,"quality":3,"finalized":false,"status":"awaiting_improvement"})
+      result = GalaxyLedger::Database.update_suggested_name_data(ledger_session_id, data)
+      result.should be_true
+
+      session = GalaxyLedger::Database.get_session("sess-name-data-write")
+      session.should_not be_nil
+      session.not_nil!.suggested_name_data.should eq(data)
+    end
+
+    it "returns false for invalid session ID (0)" do
+      result = GalaxyLedger::Database.update_suggested_name_data(0_i64, "{}")
+      result.should be_false
+    end
+  end
+
+  describe ".update_suggested_name_with_data" do
+    it "writes both name and state data atomically" do
+      ledger_session_id = GalaxyLedger::Database.create_session("sess-name-both")
+
+      data = %({"attempts":1,"quality":4,"finalized":true,"status":"finalized_quality_met"})
+      result = GalaxyLedger::Database.update_suggested_name_with_data(ledger_session_id, "Event System Design", data)
+      result.should be_true
+
+      session = GalaxyLedger::Database.get_session("sess-name-both")
+      session.should_not be_nil
+      session.not_nil!.suggested_name.should eq("Event System Design")
+      session.not_nil!.suggested_name_data.should eq(data)
+    end
+
+    it "allows nil name (clears suggested name while updating data)" do
+      ledger_session_id = GalaxyLedger::Database.create_session("sess-name-nil-both")
+
+      GalaxyLedger::Database.update_suggested_name(ledger_session_id, "Old Name")
+      data = %({"attempts":1,"quality":0,"finalized":false,"status":"code_detected"})
+      result = GalaxyLedger::Database.update_suggested_name_with_data(ledger_session_id, nil, data)
+      result.should be_true
+
+      session = GalaxyLedger::Database.get_session("sess-name-nil-both")
+      session.should_not be_nil
+      session.not_nil!.suggested_name.should be_nil
+      session.not_nil!.suggested_name_data.should eq(data)
+    end
+
+    it "returns false for invalid session ID (0)" do
+      result = GalaxyLedger::Database.update_suggested_name_with_data(0_i64, "Name", "{}")
       result.should be_false
     end
   end
@@ -1976,7 +2029,7 @@ describe GalaxyLedger::Database do
       session.should_not be_nil
       session.not_nil!.current_session_identifier.should eq("sess-get-1")
       session.not_nil!.cwd.should eq("/home/user/proj1")
-      session.not_nil!.title.should be_nil
+      session.not_nil!.suggested_name.should be_nil
     end
 
     it "returns nil when session does not exist" do

@@ -149,26 +149,9 @@ describe GalaxyLedger::Extraction do
         result.empty?.should be_false
       end
 
-      it "returns true when has only session_title (title alone is not enough)" do
-        result = GalaxyLedger::Extraction::Result.new(session_title: "Some Title")
-        result.empty?.should be_true
-      end
-
       it "returns true when has only usage data (usage alone is not content)" do
         result = GalaxyLedger::Extraction::Result.new(cost_usd: 5.0, total_tokens: 10000_i64)
         result.empty?.should be_true
-      end
-    end
-
-    describe "#session_title" do
-      it "stores session_title when provided" do
-        result = GalaxyLedger::Extraction::Result.new(session_title: "Galaxy Ledger Session Title")
-        result.session_title.should eq("Galaxy Ledger Session Title")
-      end
-
-      it "defaults session_title to nil" do
-        result = GalaxyLedger::Extraction::Result.new
-        result.session_title.should be_nil
       end
     end
 
@@ -226,10 +209,9 @@ describe GalaxyLedger::Extraction do
         prompt.should contain("summary")
       end
 
-      it "includes session_title in the output format" do
+      it "does not include session_title in the output format" do
         prompt = GalaxyLedger::Extraction::Prompts.assistant_response_extraction("test")
-        prompt.should contain("session_title")
-        prompt.should contain("title case")
+        prompt.should_not contain("session_title")
       end
     end
 
