@@ -127,7 +127,7 @@ class StatusLineService: ObservableObject {
         var behindCount = 0
 
         if let revList = runGitCommand(["rev-list", "--left-right", "--count", "@{upstream}...HEAD"], in: directory) {
-            let counts = revList.components(separatedBy: CharacterSet.whitespaces).compactMap { Int($0) }
+            let counts = revList.components(separatedBy: CharacterSet.whitespacesAndNewlines).compactMap { Int($0) }
             if counts.count == 2 {
                 behindCount = counts[0]
                 aheadCount = counts[1]

@@ -280,13 +280,8 @@ struct SessionRow: View {
         result = result + Text("[").font(mono).foregroundColor(bracketColor)
         result = result + Text(branch).font(monoBold).foregroundColor(branchColor)
 
+        // Order matches PS1: stash, upstream, staged, dirty
         if let info = info {
-            if info.isDirty {
-                result = result + Text("*").font(mono).foregroundColor(cwdColor)
-            }
-            if info.hasStaged {
-                result = result + Text("+").font(mono).foregroundColor(branchColor)
-            }
             if info.hasStashed {
                 result = result + Text("^").font(mono).foregroundColor(stashColor)
             }
@@ -295,6 +290,12 @@ struct SessionRow: View {
             }
             if info.aheadCount > 0 {
                 result = result + Text("↑\(info.aheadCount)").font(monoBold).foregroundColor(upstreamColor)
+            }
+            if info.hasStaged {
+                result = result + Text("+").font(mono).foregroundColor(branchColor)
+            }
+            if info.isDirty {
+                result = result + Text("*").font(mono).foregroundColor(cwdColor)
             }
         }
 
@@ -366,11 +367,11 @@ struct SessionRow: View {
 
         var suffix = "[\(branch)"
         if let info = info {
-            if info.isDirty { suffix += "*" }
-            if info.hasStaged { suffix += "+" }
             if info.hasStashed { suffix += "^" }
             if info.behindCount > 0 { suffix += "↓\(info.behindCount)" }
             if info.aheadCount > 0 { suffix += "↑\(info.aheadCount)" }
+            if info.hasStaged { suffix += "+" }
+            if info.isDirty { suffix += "*" }
         }
         suffix += "]"
         return suffix

@@ -248,7 +248,12 @@ module GalaxyStatusline
     end
 
     private def render_symbolic_branch(branch : String) : String
+      # Order matches PS1: branch, stash, upstream, staged, dirty
       status = ""
+
+      if @git.stashed
+        status += Colors.colorize("^", @config.colors.stashed)
+      end
 
       # Upstream status
       if @git.behind > 0 && @git.ahead > 0
@@ -261,15 +266,11 @@ module GalaxyStatusline
         status += Colors.colorize("=", @config.colors.upstream_synced)
       end
 
-      # Working tree status
-      if @git.dirty
-        status += Colors.colorize("*", @config.colors.dirty)
-      end
       if @git.staged
         status += Colors.colorize("+", @config.colors.staged)
       end
-      if @git.stashed
-        status += Colors.colorize("^", @config.colors.stashed)
+      if @git.dirty
+        status += Colors.colorize("*", @config.colors.dirty)
       end
 
       colored_branch = Colors.colorize(branch, @config.colors.branch)
