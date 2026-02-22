@@ -17,6 +17,7 @@ class StatusLineService: ObservableObject {
         let gitBranch: String?
         let isDirty: Bool
         let hasStaged: Bool
+        let hasStashed: Bool
         let aheadCount: Int
         let behindCount: Int
     }
@@ -118,6 +119,9 @@ class StatusLineService: ObservableObject {
             }
         }
 
+        // Check for stashed changes (matches statusline: git rev-parse --verify refs/stash)
+        let hasStashed = runGitCommand(["rev-parse", "--verify", "refs/stash"], in: directory) != nil
+
         // Get ahead/behind counts
         var aheadCount = 0
         var behindCount = 0
@@ -134,6 +138,7 @@ class StatusLineService: ObservableObject {
             gitBranch: branch?.trimmingCharacters(in: .whitespacesAndNewlines),
             isDirty: isDirty,
             hasStaged: hasStaged,
+            hasStashed: hasStashed,
             aheadCount: aheadCount,
             behindCount: behindCount
         )

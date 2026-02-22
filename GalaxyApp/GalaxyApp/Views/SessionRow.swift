@@ -40,6 +40,11 @@ struct SessionRow: View {
         isDark ? .green : Color(red: 0.0, green: 0.45, blue: 0.0)
     }
 
+    /// Stash indicator color
+    private var stashColor: Color {
+        isDark ? .red : Color(red: 0.7, green: 0.0, blue: 0.0)
+    }
+
     /// Ahead/behind indicator color
     private var upstreamColor: Color {
         isDark ? .cyan : Color(red: 0.0, green: 0.35, blue: 0.5)
@@ -282,6 +287,9 @@ struct SessionRow: View {
             if info.hasStaged {
                 result = result + Text("+").font(mono).foregroundColor(branchColor)
             }
+            if info.hasStashed {
+                result = result + Text("^").font(mono).foregroundColor(stashColor)
+            }
             if info.behindCount > 0 {
                 result = result + Text("↓\(info.behindCount)").font(monoBold).foregroundColor(upstreamColor)
             }
@@ -360,6 +368,7 @@ struct SessionRow: View {
         if let info = info {
             if info.isDirty { suffix += "*" }
             if info.hasStaged { suffix += "+" }
+            if info.hasStashed { suffix += "^" }
             if info.behindCount > 0 { suffix += "↓\(info.behindCount)" }
             if info.aheadCount > 0 { suffix += "↑\(info.aheadCount)" }
         }
