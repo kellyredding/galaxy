@@ -19,6 +19,7 @@ struct PersistedSession: Codable {
     // immediate sidebar content on restore before sync completes)
     let ledgerSessionId: Int64?
     let ledgerSessionIdentifiers: [String]?
+    let ledgerSuggestedName: String?
     let ledgerCwd: String?
     let ledgerProjectDir: String?
     let ledgerGitBranch: String?

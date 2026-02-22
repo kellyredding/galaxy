@@ -21,10 +21,18 @@ class Session: Identifiable, ObservableObject {
     @Published var givenName: String?
 
     /// Display string for user-facing contexts (sidebar, menu, stopped screen).
-    /// Shows given name with ref suffix when named, or bare ref when not.
+    ///
+    /// Three-state givenName logic:
+    /// - givenName is non-empty string → "givenName (sessionRef)"
+    /// - givenName is nil + suggested name exists → "suggestedName (sessionRef)"
+    /// - givenName is nil + no suggested name → bare sessionRef
+    /// - givenName is "" (explicitly cleared) → bare sessionRef
     var displayName: String {
-        if let name = givenName {
+        if let name = givenName, !name.isEmpty {
             return "\(name) (\(sessionRef))"
+        }
+        if givenName == nil, let suggested = ledgerSuggestedName, !suggested.isEmpty {
+            return "\(suggested) (\(sessionRef))"
         }
         return sessionRef
     }
@@ -52,6 +60,12 @@ class Session: Identifiable, ObservableObject {
 
     /// Most recent Claude session UUID
     var ledgerCurrentSessionIdentifier: String?
+
+    /// LLM-suggested session name from the ledger. Iteratively improves
+    /// across enrichment cycles. Used as the display name fallback when
+    /// givenName is nil (never set). Promoted to @Published because it
+    /// drives sidebar row 1 display via displayName.
+    @Published var ledgerSuggestedName: String?
 
     /// All known Claude process IDs for this session
     var ledgerClaudePids: [Int]?
@@ -414,6 +428,7 @@ class Session: Identifiable, ObservableObject {
             createdAt: createdAt,
             ledgerSessionId: ledgerSessionId,
             ledgerSessionIdentifiers: ledgerSessionIdentifiers,
+            ledgerSuggestedName: ledgerSuggestedName,
             ledgerCwd: ledgerCwd,
             ledgerProjectDir: ledgerProjectDir,
             ledgerGitBranch: ledgerGitBranch,
@@ -455,6 +470,7 @@ class Session: Identifiable, ObservableObject {
         // Restore ledger enrichment data (immediate sidebar content)
         self.ledgerSessionId = state.ledgerSessionId
         self.ledgerSessionIdentifiers = state.ledgerSessionIdentifiers
+        self.ledgerSuggestedName = state.ledgerSuggestedName
         self.ledgerCwd = state.ledgerCwd
         self.ledgerProjectDir = state.ledgerProjectDir
         self.ledgerGitBranch = state.ledgerGitBranch

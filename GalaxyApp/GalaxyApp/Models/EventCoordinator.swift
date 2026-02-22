@@ -203,6 +203,12 @@ final class EventCoordinator {
                     appSession.ledgerSessionId = sessionData.ledgerSessionId
                     appSession.ledgerSessionIdentifiers = sessionData.sessionIdentifiers
                     appSession.ledgerCurrentSessionIdentifier = sessionData.currentSessionIdentifier
+
+                    // Guard @Published property — only assign when value changed
+                    if appSession.ledgerSuggestedName != sessionData.suggestedName {
+                        appSession.ledgerSuggestedName = sessionData.suggestedName
+                    }
+
                     appSession.ledgerClaudePids = sessionData.claudePids
                     appSession.ledgerCurrentClaudePid = sessionData.currentClaudePid
 

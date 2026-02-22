@@ -452,7 +452,13 @@ struct SessionRow: View {
     // MARK: - Name Editing
 
     private func beginNameEdit() {
-        editingNameText = session.givenName ?? ""
+        if let given = session.givenName {
+            // Explicit name set (including "" opt-out) — edit that value
+            editingNameText = given
+        } else {
+            // Never set — default to suggested name for easy confirmation
+            editingNameText = session.ledgerSuggestedName ?? ""
+        }
         isEditingName = true
         // Focus after next layout pass so the TextField exists
         DispatchQueue.main.async {
@@ -462,7 +468,9 @@ struct SessionRow: View {
 
     private func commitNameEdit() {
         let trimmed = editingNameText.trimmingCharacters(in: .whitespacesAndNewlines)
-        session.givenName = trimmed.isEmpty ? nil : trimmed
+        // Three-state: non-empty → set name, empty → explicit opt-out ("")
+        // (nil means "never set" and is only the initial state)
+        session.givenName = trimmed.isEmpty ? "" : trimmed
         SessionPersistence.shared.markDirty()
         isEditingName = false
         isNameFieldFocused = false
