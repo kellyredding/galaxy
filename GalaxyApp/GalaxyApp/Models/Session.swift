@@ -376,7 +376,7 @@ class Session: Identifiable, ObservableObject {
         if let persona = personaName {
             cmd += " && claude-persona \(persona)"
         } else {
-            cmd += " && claude"
+            cmd += " && CLAUDE_CLI_SESSION_ID=\(claudeSessionId) claude"
         }
         cmd += " --resume \(claudeSessionId)"
         if isVibe {
@@ -394,11 +394,15 @@ class Session: Identifiable, ObservableObject {
         // - CLAUDECODE: set by running Claude Code sessions; if Galaxy.app
         //   was launched from within a Claude session, this prevents child
         //   processes from starting ("nested session" detection)
+        // - CLAUDE_CLI_SESSION_ID: set by Claude Persona sessions; if Galaxy.app
+        //   was launched from within such a session, the inherited value would
+        //   cause ledger hooks to resolve to the parent session instead of this one
         envArray = envArray.filter {
             !$0.hasPrefix("TERM=") &&
             !$0.hasPrefix("COLORTERM=") &&
             !$0.hasPrefix("LANG=") &&
-            !$0.hasPrefix("CLAUDECODE=")
+            !$0.hasPrefix("CLAUDECODE=") &&
+            !$0.hasPrefix("CLAUDE_CLI_SESSION_ID=")
         }
         envArray.append("TERM=xterm-256color")
         // Don't set COLORTERM=truecolor — this makes Claude Code use 24-bit
@@ -442,6 +446,12 @@ class Session: Identifiable, ObservableObject {
                 args.append(claudeSessionId)
                 NSLog("Session: Starting new Claude session with ID %@", claudeSessionId)
             }
+
+            // Inject CLAUDE_CLI_SESSION_ID into process environment so ledger
+            // hooks resolve via Tier 1 (env var) instead of Tier 2 (PID).
+            // This prevents PID-recycling from cross-linking ledger sessions.
+            // Persona sessions get this via claude-persona's --settings mechanism.
+            envArray.append("CLAUDE_CLI_SESSION_ID=\(claudeSessionId)")
         }
 
         // Start process directly (not via shell) so SwiftTerm can properly monitor it
