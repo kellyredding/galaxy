@@ -2151,9 +2151,9 @@ describe GalaxyLedger::Database do
       today = Time.utc.to_s("%Y-%m-%d")
       daily = GalaxyLedger::Database.spend_daily(today, today)
       daily.size.should eq(1)
-      # Cost: recalculated from baseline (0.0) → 1.20
+      # Cost: 0.50 + (1.20 - 0.50) = 1.20 via dynamic diffing
       daily[0].cost.should eq(1.20)
-      # Tokens: cumulative from incremental diffs: 5000 + 7000 = 12000
+      # Tokens: 5000 + (12000 - 5000) = 12000 via incremental diffs
       daily[0].tokens.should eq(12000_i64)
     end
 
@@ -2286,6 +2286,42 @@ describe GalaxyLedger::Database do
       GalaxyLedger::Database.spend_daily(today, today).size.should eq(0)
     end
 
+    it "handles multiple cost resets in one day — accumulates all segments" do
+      ledger_session_id = GalaxyLedger::Database.create_session("sess-daily-multi-reset")
+
+      # Tick 1: cost=0.50
+      s1 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":5000},"cost":{"usd":0.50}}))
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, s1)
+
+      # Tick 2: cost=1.00 (normal increase)
+      s2 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":12000},"cost":{"usd":1.00}}))
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, s2)
+
+      # Tick 3: cost=0.30 (first reset)
+      s3 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":3000},"cost":{"usd":0.30}}))
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, s3)
+
+      # Tick 4: cost=0.80 (first reset process accumulates)
+      s4 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":9000},"cost":{"usd":0.80}}))
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, s4)
+
+      # Tick 5: cost=0.20 (second reset)
+      s5 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":2000},"cost":{"usd":0.20}}))
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, s5)
+
+      # Tick 6: cost=0.60 (second reset process accumulates)
+      s6 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":7000},"cost":{"usd":0.60}}))
+      GalaxyLedger::Database.update_session_metrics(ledger_session_id, s6)
+
+      today = Time.utc.to_s("%Y-%m-%d")
+      daily = GalaxyLedger::Database.spend_daily(today, today)
+      daily.size.should eq(1)
+      # Cost: 1.00(segment1) + 0.80(segment2) + 0.60(segment3) = 2.40
+      daily[0].cost.should eq(2.40)
+      # Tokens: 5000 + 7000 + 0(compact) + 6000 + 0(compact) + 5000 = 23000
+      daily[0].tokens.should eq(23000_i64)
+    end
+
     it "handles cost compaction correctly — cost drops mid-day, cumulative preserved" do
       ledger_session_id = GalaxyLedger::Database.create_session("sess-daily-cost-compact")
 
@@ -2378,6 +2414,53 @@ describe GalaxyLedger::Database do
       daily.size.should eq(1)
       daily[0].cost.should eq(0.0)
       daily[0].tokens.should eq(0_i64)
+    end
+
+    it "handles cross-day cost reset with multiple Day 2 ticks" do
+      lid = GalaxyLedger::Database.create_session("sess-daily-crossday-multi")
+      today = Time.utc.to_s("%Y-%m-%d")
+      yesterday = (Time.utc - 1.day).to_s("%Y-%m-%d")
+
+      # Day 1: session ran with cost=2.50, tokens=10000
+      GalaxyLedger::Database.open do |db|
+        db.exec(
+          <<-SQL,
+            INSERT INTO ledger_session_daily_usages (
+              ledger_session_id, date,
+              baseline_cost_usd, current_cost_usd, cumulative_cost_usd,
+              baseline_tokens, current_tokens, cumulative_tokens
+            ) VALUES (?, ?, 2.50, 2.50, 2.50, 10000, 10000, 10000)
+          SQL
+          lid, yesterday,
+        )
+      end
+
+      # Day 2, tick 1: reset detected (cost=0.75 < prev day's 2.50)
+      s1 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":3000},"cost":{"usd":0.75}}))
+      GalaxyLedger::Database.update_session_metrics(lid, s1)
+
+      # Day 2, tick 2: normal increase within new process
+      s2 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":8000},"cost":{"usd":1.50}}))
+      GalaxyLedger::Database.update_session_metrics(lid, s2)
+
+      # Day 2, tick 3: another reset mid-day (second process)
+      s3 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":2000},"cost":{"usd":0.40}}))
+      GalaxyLedger::Database.update_session_metrics(lid, s3)
+
+      # Day 2, tick 4: second process accumulates
+      s4 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":6000},"cost":{"usd":0.90}}))
+      GalaxyLedger::Database.update_session_metrics(lid, s4)
+
+      daily = GalaxyLedger::Database.spend_daily(today, today)
+      daily.size.should eq(1)
+      # Cost: 0.75(initial) + 0.75(increase) + 0.40(reset) + 0.50(increase) = 2.40
+      daily[0].cost.should eq(2.40)
+      # Tokens: 0(cross-day reset) + 5000 + 0(compaction) + 4000 = 9000
+      daily[0].tokens.should eq(9000_i64)
+
+      # Day 1 unchanged
+      daily_prev = GalaxyLedger::Database.spend_daily(yesterday, yesterday)
+      daily_prev[0].cost.should eq(2.50)
     end
 
     it "handles cross-day normal continuation — cost increases monotonically" do

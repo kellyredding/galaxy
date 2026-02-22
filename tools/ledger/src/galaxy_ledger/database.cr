@@ -662,8 +662,10 @@ module GalaxyLedger
     end
 
     # Record daily usage for the current UTC day.
-    # Uses static baseline for cost (monotonically increasing) and
-    # dynamic baseline for tokens (can decrease on compaction).
+    # Uses dynamic baseline for both cost and tokens: each tick diffs
+    # from the last observed value and accumulates positive deltas.
+    # On reset (compaction/new process), the baseline resets to the
+    # new value and previously accumulated totals are preserved.
     private def self.record_daily_usage(
       db : DB::Database,
       ledger_session_id : Int64,
@@ -717,27 +719,27 @@ module GalaxyLedger
           {cost: rs.read(Float64), tokens: rs.read(Int64)}
         end
 
-        baseline_cost = prev ? prev[:cost] : 0.0
-        baseline_tokens = prev ? prev[:tokens] : 0_i64
+        prev_cost = prev ? prev[:cost] : 0.0
+        prev_tokens = prev ? prev[:tokens] : 0_i64
 
-        # Cost: simple diff from static baseline
-        cumulative_cost = cost_val - baseline_cost
-
-        # Handle cost reset (session resumed with new process/compacted context)
-        if cumulative_cost < 0
-          baseline_cost = 0.0
-          cumulative_cost = cost_val
+        # Cost: initial diff from previous day's final value
+        cost_diff = cost_val - prev_cost
+        if cost_diff < 0
+          # Reset happened between days — cost_val is from a fresh process
+          cost_diff = cost_val
         end
+        cumulative_cost = cost_diff
 
         # Tokens: handle potential cross-day compaction
-        token_diff = tokens_val - baseline_tokens
+        token_diff = tokens_val - prev_tokens
         if token_diff < 0
           # Compaction happened between days — reset baseline
           token_diff = 0_i64
         end
         cumulative_tokens = token_diff
 
-        # Set baseline_tokens to current value so next update diffs correctly
+        # Store baselines as current values for dynamic diffing
+        insert_baseline_cost = cost_val
         insert_baseline_tokens = tokens_val
 
         db.exec(
@@ -749,24 +751,23 @@ module GalaxyLedger
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
           SQL
           ledger_session_id, today,
-          baseline_cost, cost_val, cumulative_cost,
+          insert_baseline_cost, cost_val, cumulative_cost,
           insert_baseline_tokens, tokens_val, cumulative_tokens,
         )
       else
         # --- Existing record for today ---
 
-        # Cost: recalculate from static baseline (idempotent)
-        cumulative_cost = cost_val - existing[:baseline_cost_usd]
-
-        if cumulative_cost < 0 || cost_val < existing[:current_cost_usd]
-          # Cost counter reset (session resumed with new process/compacted context)
-          # Preserve accumulated cost, set negative baseline so future static
-          # calculations automatically include the preserved amount:
-          #   future_cost - (-cumulative) = future_cost + cumulative
-          cumulative_cost = existing[:cumulative_cost_usd]
-          new_baseline_cost = -existing[:cumulative_cost_usd]
+        # Cost: incremental diff from dynamic baseline
+        cost_diff = cost_val - existing[:baseline_cost_usd]
+        if cost_diff >= 0
+          cumulative_cost = existing[:cumulative_cost_usd] + cost_diff
+          new_baseline_cost = cost_val
         else
-          new_baseline_cost = existing[:baseline_cost_usd]
+          # Cost counter reset (new process) — preserve accumulated total
+          # and add the new process's initial cost (already incurred but
+          # not yet counted since this is our first observation of it)
+          cumulative_cost = existing[:cumulative_cost_usd] + cost_val
+          new_baseline_cost = cost_val
         end
 
         # Tokens: incremental diff from dynamic baseline
