@@ -26,6 +26,7 @@
 		830B36A8A4CD211AC3DF03F3 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9DD26C1047DBD42B5051047 /* main.swift */; };
 		87FFE54A9802FACDDA0F15D9 /* GalaxyTerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7704E47DFEE80B330501660 /* GalaxyTerminalView.swift */; };
 		88B1D264363994AD24AC8CC6 /* SessionDragCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA80B868DED26B32D6DEB65D /* SessionDragCoordinator.swift */; };
+		89EE54398E22AEA37B416F21 /* WindowStatePersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 899A0FEF2AD224B0D5701B42 /* WindowStatePersistence.swift */; };
 		951191037547FFAFD104A99F /* StoppedSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C599534AAFC2570BC5F292A /* StoppedSessionView.swift */; };
 		9570B4EFEC53463C1B6A01E5 /* ChromeFontScaling.swift in Sources */ = {isa = PBXBuildFile; fileRef = A43C7742A36C8BAB7C4C6419 /* ChromeFontScaling.swift */; };
 		95B87341788CFD115DCAC557 /* GalaxyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFBB4BD044AC373BB324C7F7 /* GalaxyApp.swift */; };
@@ -56,6 +57,7 @@
 		6658F001C5C56071EC60514E /* WatermarkBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatermarkBackground.swift; sourceTree = "<group>"; };
 		73B3B51B18B326C9BFD98925 /* SessionSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionSidebar.swift; sourceTree = "<group>"; };
 		8930E8F0C6702946D87082BD /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		899A0FEF2AD224B0D5701B42 /* WindowStatePersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowStatePersistence.swift; sourceTree = "<group>"; };
 		8CC9D0AFA07CC0E764CBDAE3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		8DE2A15976B77FC2E24FB3B7 /* SwiftTerm */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SwiftTerm; path = Vendor/SwiftTerm; sourceTree = SOURCE_ROOT; };
 		922A89B10E14E165A50C1F4F /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -109,6 +111,7 @@
 				CA7C61AE6C010B6F8091B0B3 /* SocketListener.swift */,
 				5702E8641291E687147723FD /* StatusLineService.swift */,
 				BAD14A629CEF3AA730CD6237 /* TerminalColorTheme.swift */,
+				899A0FEF2AD224B0D5701B42 /* WindowStatePersistence.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -273,6 +276,7 @@
 				7A28B8F016D429863BF35F22 /* TerminalColorTheme.swift in Sources */,
 				3FCE06C0F8AE9134D99D090A /* TerminalView.swift in Sources */,
 				B1E71F47DE9403A1808277EC /* WatermarkBackground.swift in Sources */,
+				89EE54398E22AEA37B416F21 /* WindowStatePersistence.swift in Sources */,
 				830B36A8A4CD211AC3DF03F3 /* main.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

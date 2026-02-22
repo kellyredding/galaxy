@@ -13,7 +13,7 @@ class MainWindowController: NSWindowController {
 
         // Create the window
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800),
+            contentRect: NSRect(x: 0, y: 0, width: 1680, height: 840),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
@@ -21,7 +21,9 @@ class MainWindowController: NSWindowController {
 
         window.title = "Galaxy"
         window.minSize = NSSize(width: 800, height: 500)
-        window.setFrameAutosaveName("MainWindow")
+
+        // Default position for first launch (no saved state)
+        window.center()
 
         super.init(window: window)
 
@@ -36,11 +38,11 @@ class MainWindowController: NSWindowController {
         let hostingView = NSHostingView(rootView: contentView)
         window.contentView = hostingView
 
-        // Center the window on first launch
-        window.center()
-
         // Set up window delegate for close behavior
         window.delegate = self
+
+        // Restore saved window frame + screen position
+        restoreWindowState()
     }
 
     required init?(coder: NSCoder) {
@@ -56,6 +58,114 @@ class MainWindowController: NSWindowController {
         case .dark:
             return .dark
         }
+    }
+
+    // MARK: - Window State Restoration
+
+    /// Restore window frame and screen position from persisted
+    /// state. Called once during init. On first launch (no saved
+    /// state), the window stays centered at its default size.
+    private func restoreWindowState() {
+        guard let window = window,
+              let saved = WindowStatePersistence.shared.load()
+        else { return }
+
+        let screens = NSScreen.screens
+        guard !screens.isEmpty else { return }
+
+        // Restore the saved window frame first
+        let savedFrame = NSRect(
+            x: saved.windowFrame.x,
+            y: saved.windowFrame.y,
+            width: saved.windowFrame.width,
+            height: saved.windowFrame.height
+        )
+        window.setFrame(savedFrame, display: false)
+
+        // Try to find the saved screen by localizedName
+        if let targetScreen = screens.first(where: {
+            $0.localizedName == saved.screenIdentifier
+        }) {
+            // Screen found — move window there if needed
+            if window.screen != targetScreen {
+                moveWindow(window, toScreen: targetScreen)
+            }
+        } else {
+            // Screen not found — proportionally scale to current screen
+            let currentScreen = window.screen ?? NSScreen.screens[0]
+            scaleWindowProportionally(
+                window,
+                fromScreenFrame: saved.screenFrame,
+                toScreen: currentScreen
+            )
+        }
+
+        // Final safety: ensure title bar is accessible
+        let constrained = window.constrainFrameRect(
+            window.frame,
+            to: window.screen
+        )
+        if constrained != window.frame {
+            window.setFrame(constrained, display: true)
+        }
+    }
+
+    /// Move window to a target screen, preserving its relative
+    /// position within the screen.
+    private func moveWindow(
+        _ window: NSWindow,
+        toScreen target: NSScreen
+    ) {
+        guard let currentScreen = window.screen else { return }
+
+        // Calculate relative position within current screen
+        let currentFrame = currentScreen.visibleFrame
+        let relX = (window.frame.origin.x - currentFrame.origin.x)
+            / currentFrame.width
+        let relY = (window.frame.origin.y - currentFrame.origin.y)
+            / currentFrame.height
+
+        // Apply same relative position on target screen
+        let targetFrame = target.visibleFrame
+        let newX = targetFrame.origin.x + (relX * targetFrame.width)
+        let newY = targetFrame.origin.y + (relY * targetFrame.height)
+
+        var newFrame = window.frame
+        newFrame.origin = NSPoint(x: newX, y: newY)
+        window.setFrame(newFrame, display: true)
+    }
+
+    /// Proportionally scale window position and size when the
+    /// original screen is no longer available.
+    private func scaleWindowProportionally(
+        _ window: NSWindow,
+        fromScreenFrame saved: PersistedScreenFrame,
+        toScreen current: NSScreen
+    ) {
+        let currentFrame = current.visibleFrame
+
+        // Calculate relative position and size on the old screen
+        let relX = (window.frame.origin.x - saved.x) / saved.width
+        let relY = (window.frame.origin.y - saved.y) / saved.height
+        let relW = window.frame.width / saved.width
+        let relH = window.frame.height / saved.height
+
+        // Scale to current screen
+        var newW = relW * currentFrame.width
+        var newH = relH * currentFrame.height
+        let newX = currentFrame.origin.x
+            + (relX * currentFrame.width)
+        let newY = currentFrame.origin.y
+            + (relY * currentFrame.height)
+
+        // Clamp to minimum window size
+        newW = max(newW, window.minSize.width)
+        newH = max(newH, window.minSize.height)
+
+        let newFrame = NSRect(
+            x: newX, y: newY, width: newW, height: newH
+        )
+        window.setFrame(newFrame, display: true)
     }
 
     /// Updates the content view's color scheme when settings change
@@ -99,5 +209,21 @@ extension MainWindowController: NSWindowDelegate {
         // Resume status line updates and busy observers after resize completes
         StatusLineService.shared.resumeUpdates()
         SessionManager.shared.resumeAllBusyObservers()
+
+        // Persist new window size
+        guard let window = window else { return }
+        WindowStatePersistence.shared.saveWindowState(for: window)
+    }
+
+    // MARK: - Screen State Tracking
+
+    func windowDidMove(_ notification: Notification) {
+        guard let window = window else { return }
+        WindowStatePersistence.shared.saveWindowState(for: window)
+    }
+
+    func windowDidChangeScreen(_ notification: Notification) {
+        guard let window = window else { return }
+        WindowStatePersistence.shared.saveWindowState(for: window)
     }
 }
