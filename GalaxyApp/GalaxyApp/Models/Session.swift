@@ -369,11 +369,14 @@ class Session: Identifiable, ObservableObject {
         afterNextIdleArmed = false
     }
 
-    /// Returns the CLI command to resume this session from another terminal
+    /// Returns the CLI command to resume this session outside of Galaxy.
+    /// Uses `claude-persona <name>` for persona sessions, `claude` for vanilla.
     var resumeCommand: String {
-        var cmd = "cd \(workingDirectory) && galaxy"
+        var cmd = "cd \(workingDirectory)"
         if let persona = personaName {
-            cmd += " \(persona)"
+            cmd += " && claude-persona \(persona)"
+        } else {
+            cmd += " && claude"
         }
         cmd += " --resume \(claudeSessionId)"
         if isVibe {
