@@ -8,7 +8,7 @@ class Session: Identifiable, ObservableObject {
     /// Without this delay, the text and CR can get batched together, causing
     /// Ink (Claude Code's TUI framework) to not recognize the CR as a submit action.
     /// Tuned experimentally - shorter values may fail on loaded systems.
-    private static let commandSubmitDelay: TimeInterval = 0.001  // 1ms - testing
+    private static let commandSubmitDelay: TimeInterval = 0.1  // 100ms
 
     /// UUID used for SwiftUI Identifiable AND as Claude's session ID
     let id: UUID
@@ -112,6 +112,20 @@ class Session: Identifiable, ObservableObject {
 
     /// When true, busy state changes are frozen (during drag/resize operations)
     private var isBusyPaused: Bool = false
+
+    /// One-shot closures to fire on the next busy→idle transition.
+    /// Armed when the session transitions idle→busy after being set.
+    /// Fired and cleared on the subsequent busy→idle transition.
+    private var afterNextIdleActions: [() -> Void] = []
+
+    /// Whether the afterNextIdle actions have been armed (session went
+    /// busy after they were registered). Prevents firing on a stale
+    /// idle transition that was already in progress when actions were set.
+    private var afterNextIdleArmed: Bool = false
+
+    /// Persistent callback fired on every busy→idle transition.
+    /// Set once by SessionManager for auto-clear context checks.
+    var onIdleTransition: ((Session) -> Void)?
 
     /// Current terminal font size for this session (transient, not persisted)
     @Published var terminalFontSize: CGFloat {
@@ -278,12 +292,19 @@ class Session: Identifiable, ObservableObject {
     /// Dispatches to main thread for all state mutation.
     func markBusy() {
         DispatchQueue.main.async { [weak self] in
-            guard let self = self, self.isRunning, !self.hasExited, !self.isBusyPaused else { return }
+            guard let self = self, self.isRunning, !self.hasExited, !self.isBusyPaused else {
+                return
+            }
 
             // Only trigger @Published when actually changing (idle → busy)
             // This prevents unnecessary SessionRow re-renders during sustained output
             if !self.isBusy {
                 self.isBusy = true
+
+                // Arm pending one-shot actions on idle→busy transition
+                if !self.afterNextIdleActions.isEmpty {
+                    self.afterNextIdleArmed = true
+                }
             }
 
             // Always reset the debounce timer (even when already busy)
@@ -292,7 +313,23 @@ class Session: Identifiable, ObservableObject {
                 withTimeInterval: Self.busyDebounceInterval,
                 repeats: false
             ) { [weak self] _ in
-                self?.isBusy = false
+                guard let self = self else { return }
+                self.isBusy = false
+
+                // Fire armed one-shot actions
+                if self.afterNextIdleArmed && !self.afterNextIdleActions.isEmpty {
+                    let actions = self.afterNextIdleActions
+                    self.afterNextIdleActions.removeAll()
+                    self.afterNextIdleArmed = false
+                    for action in actions {
+                        action()
+                    }
+                } else if !self.afterNextIdleActions.isEmpty {
+                    // Actions pending but not armed — skip (no busy→idle cycle yet)
+                }
+
+                // Fire persistent idle callback
+                self.onIdleTransition?(self)
             }
         }
     }
@@ -320,6 +357,16 @@ class Session: Identifiable, ObservableObject {
                 self?.isBusy = false
             }
         }
+    }
+
+    /// Register a one-shot action to fire after the next complete
+    /// busy→idle cycle. Multiple actions can be queued; all fire
+    /// together. The armed pattern ensures we wait for the session
+    /// to go busy first, preventing premature fires if the session
+    /// is already idle when this is called.
+    func afterNextIdle(_ action: @escaping () -> Void) {
+        afterNextIdleActions.append(action)
+        afterNextIdleArmed = false
     }
 
     /// Returns the CLI command to resume this session from another terminal
@@ -426,6 +473,11 @@ class Session: Identifiable, ObservableObject {
             if self.isBusy {
                 self.isBusy = false
             }
+
+            // Clear any pending idle actions — session is dead
+            // Discard any pending idle actions — session is dead
+            self.afterNextIdleActions.removeAll()
+            self.afterNextIdleArmed = false
         }
     }
 

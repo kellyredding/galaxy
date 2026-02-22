@@ -300,6 +300,15 @@ class SessionManager: ObservableObject {
         // Start process: --resume if session exists in Claude storage, --session-id if not
         session.startProcess(executablePath: executablePath, resume: canResume)
 
+        // Auto-handoff: send /handoff after Claude finishes booting.
+        // Extra 1s delay after idle gives the TUI time to fully
+        // initialize its input field after resume redraw.
+        session.afterNextIdle { [weak session] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak session] in
+                session?.sendCommand("/handoff")
+            }
+        }
+
         // Make this the active session
         activeSessionId = session.id
 
