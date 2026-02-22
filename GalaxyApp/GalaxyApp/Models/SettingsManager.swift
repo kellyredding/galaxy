@@ -79,6 +79,21 @@ enum BellPreference: String, Codable, CaseIterable {
     }
 }
 
+/// Git status display style for sidebar session rows
+enum GitStatusStyle: String, Codable, CaseIterable {
+    case symbolic = "symbolic"
+    case arrows = "arrows"
+    case minimal = "minimal"
+
+    var displayName: String {
+        switch self {
+        case .symbolic: return "Symbolic"
+        case .arrows: return "Arrows"
+        case .minimal: return "Minimal"
+        }
+    }
+}
+
 /// Persistent settings for the Galaxy app
 struct AppSettings: Codable {
     var sidebarPosition: SidebarPosition = .left
@@ -94,6 +109,9 @@ struct AppSettings: Codable {
 
     // Terminal color settings
     var terminalColorThemeName: String = "terminal-classic"  // Active color theme
+
+    // Session sidebar settings
+    var gitStatusStyle: GitStatusStyle = .symbolic  // Git status display style
 
     // Sidebar width constraints
     static let sidebarWidthRange: ClosedRange<CGFloat> = 150...500
@@ -118,6 +136,7 @@ struct AppSettings: Codable {
         chromeFontSize = try container.decodeIfPresent(CGFloat.self, forKey: .chromeFontSize) ?? 13.0
         defaultTerminalFontSize = try container.decodeIfPresent(CGFloat.self, forKey: .defaultTerminalFontSize) ?? 13.0
         terminalColorThemeName = try container.decodeIfPresent(String.self, forKey: .terminalColorThemeName) ?? "terminal-classic"
+        gitStatusStyle = try container.decodeIfPresent(GitStatusStyle.self, forKey: .gitStatusStyle) ?? .symbolic
     }
 
     init() {

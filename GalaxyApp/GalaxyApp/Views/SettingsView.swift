@@ -123,9 +123,91 @@ struct GeneralSettingsTab: View {
                     }
                 }
             }
+
+            SettingsCard(title: "Sessions") {
+                VStack(alignment: .leading, spacing: 12) {
+                    SettingsRow(label: "Git status") {
+                        Picker("", selection: $settingsManager.settings.gitStatusStyle) {
+                            ForEach(GitStatusStyle.allCases, id: \.self) { style in
+                                Text(style.displayName).tag(style)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 140)
+                    }
+
+                    GitStatusPreviewView(
+                        style: settingsManager.settings.gitStatusStyle
+                    )
+                }
+            }
+
             Spacer()
         }
         .padding(20)
+    }
+}
+
+// MARK: - Git Status Preview
+
+struct GitStatusPreviewView: View {
+    let style: GitStatusStyle
+
+    @Environment(\.colorScheme) private var colorScheme
+    private var isDark: Bool { colorScheme == .dark }
+
+    // Match SessionRow color definitions
+    private var cwdColor: Color {
+        isDark ? .yellow : Color(red: 0.55, green: 0.35, blue: 0.0)
+    }
+    private var branchColor: Color {
+        isDark ? .green : Color(red: 0.0, green: 0.45, blue: 0.0)
+    }
+    private var stashColor: Color {
+        isDark ? .red : Color(red: 0.7, green: 0.0, blue: 0.0)
+    }
+    private var upstreamColor: Color {
+        isDark ? .cyan : Color(red: 0.0, green: 0.35, blue: 0.5)
+    }
+    private var bracketColor: Color { .secondary }
+
+    var body: some View {
+        let mono = Font.system(size: 11, weight: .regular, design: .monospaced)
+        let monoBold = Font.system(size: 11, weight: .bold, design: .monospaced)
+
+        HStack(spacing: 0) {
+            // Fabricated CWD
+            Text("~/p/app")
+                .font(monoBold)
+                .foregroundColor(cwdColor)
+
+            Text("[").font(mono).foregroundColor(bracketColor)
+            Text("main").font(monoBold).foregroundColor(branchColor)
+
+            switch style {
+            case .symbolic:
+                Text("^").font(mono).foregroundColor(stashColor)
+                Text("<>").font(monoBold).foregroundColor(upstreamColor)
+                Text("+").font(mono).foregroundColor(branchColor)
+                Text("*").font(mono).foregroundColor(cwdColor)
+
+            case .arrows:
+                Text("^").font(mono).foregroundColor(stashColor)
+                Text("↓1").font(monoBold).foregroundColor(upstreamColor)
+                Text("↑2").font(monoBold).foregroundColor(upstreamColor)
+                Text("+").font(mono).foregroundColor(branchColor)
+                Text("*").font(mono).foregroundColor(cwdColor)
+
+            case .minimal:
+                Text("*").font(mono).foregroundColor(cwdColor)
+            }
+
+            Text("]").font(mono).foregroundColor(bracketColor)
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(NSColor.textBackgroundColor).opacity(0.5))
+        .cornerRadius(6)
     }
 }
 

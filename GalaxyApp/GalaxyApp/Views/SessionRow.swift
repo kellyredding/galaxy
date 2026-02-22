@@ -277,25 +277,55 @@ struct SessionRow: View {
             return result
         }
 
+        let style = SettingsManager.shared.settings.gitStatusStyle
+
         result = result + Text("[").font(mono).foregroundColor(bracketColor)
         result = result + Text(branch).font(monoBold).foregroundColor(branchColor)
 
-        // Order matches PS1: stash, upstream, staged, dirty
         if let info = info {
-            if info.hasStashed {
-                result = result + Text("^").font(mono).foregroundColor(stashColor)
-            }
-            if info.behindCount > 0 {
-                result = result + Text("↓\(info.behindCount)").font(monoBold).foregroundColor(upstreamColor)
-            }
-            if info.aheadCount > 0 {
-                result = result + Text("↑\(info.aheadCount)").font(monoBold).foregroundColor(upstreamColor)
-            }
-            if info.hasStaged {
-                result = result + Text("+").font(mono).foregroundColor(branchColor)
-            }
-            if info.isDirty {
-                result = result + Text("*").font(mono).foregroundColor(cwdColor)
+            switch style {
+            case .symbolic:
+                // All indicators, symbolic upstream: [branch^<>+*]
+                if info.hasStashed {
+                    result = result + Text("^").font(mono).foregroundColor(stashColor)
+                }
+                if info.behindCount > 0 && info.aheadCount > 0 {
+                    result = result + Text("<>").font(monoBold).foregroundColor(upstreamColor)
+                } else if info.behindCount > 0 {
+                    result = result + Text("<").font(monoBold).foregroundColor(upstreamColor)
+                } else if info.aheadCount > 0 {
+                    result = result + Text(">").font(monoBold).foregroundColor(upstreamColor)
+                }
+                if info.hasStaged {
+                    result = result + Text("+").font(mono).foregroundColor(branchColor)
+                }
+                if info.isDirty {
+                    result = result + Text("*").font(mono).foregroundColor(cwdColor)
+                }
+
+            case .arrows:
+                // All indicators, arrow upstream: [branch^↑1↓2+*]
+                if info.hasStashed {
+                    result = result + Text("^").font(mono).foregroundColor(stashColor)
+                }
+                if info.behindCount > 0 {
+                    result = result + Text("↓\(info.behindCount)").font(monoBold).foregroundColor(upstreamColor)
+                }
+                if info.aheadCount > 0 {
+                    result = result + Text("↑\(info.aheadCount)").font(monoBold).foregroundColor(upstreamColor)
+                }
+                if info.hasStaged {
+                    result = result + Text("+").font(mono).foregroundColor(branchColor)
+                }
+                if info.isDirty {
+                    result = result + Text("*").font(mono).foregroundColor(cwdColor)
+                }
+
+            case .minimal:
+                // Just dirty asterisk: [branch*]
+                if info.isDirty || info.hasStaged {
+                    result = result + Text("*").font(mono).foregroundColor(cwdColor)
+                }
             }
         }
 
@@ -365,13 +395,26 @@ struct SessionRow: View {
             return ""
         }
 
+        let style = SettingsManager.shared.settings.gitStatusStyle
         var suffix = "[\(branch)"
         if let info = info {
-            if info.hasStashed { suffix += "^" }
-            if info.behindCount > 0 { suffix += "↓\(info.behindCount)" }
-            if info.aheadCount > 0 { suffix += "↑\(info.aheadCount)" }
-            if info.hasStaged { suffix += "+" }
-            if info.isDirty { suffix += "*" }
+            switch style {
+            case .symbolic:
+                if info.hasStashed { suffix += "^" }
+                if info.behindCount > 0 && info.aheadCount > 0 { suffix += "<>" }
+                else if info.behindCount > 0 { suffix += "<" }
+                else if info.aheadCount > 0 { suffix += ">" }
+                if info.hasStaged { suffix += "+" }
+                if info.isDirty { suffix += "*" }
+            case .arrows:
+                if info.hasStashed { suffix += "^" }
+                if info.behindCount > 0 { suffix += "↓\(info.behindCount)" }
+                if info.aheadCount > 0 { suffix += "↑\(info.aheadCount)" }
+                if info.hasStaged { suffix += "+" }
+                if info.isDirty { suffix += "*" }
+            case .minimal:
+                if info.isDirty || info.hasStaged { suffix += "*" }
+            }
         }
         suffix += "]"
         return suffix
