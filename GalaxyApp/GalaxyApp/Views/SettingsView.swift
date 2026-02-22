@@ -142,6 +142,29 @@ struct GeneralSettingsTab: View {
                 }
             }
 
+            SettingsCard(title: "Auto-Clear") {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Toggle("Auto-clear at high context usage", isOn: $settingsManager.settings.autoClearEnabled)
+                            .toggleStyle(.checkbox)
+                        Spacer()
+                    }
+
+                    if settingsManager.settings.autoClearEnabled {
+                        SettingsRow(label: "Context threshold") {
+                            HStack(spacing: 4) {
+                                Stepper(
+                                    "\(settingsManager.settings.autoClearThreshold)%",
+                                    value: $settingsManager.settings.autoClearThreshold,
+                                    in: AppSettings.autoClearThresholdRange
+                                )
+                                .frame(width: 100)
+                            }
+                        }
+                    }
+                }
+            }
+
             Spacer()
         }
         .padding(20)

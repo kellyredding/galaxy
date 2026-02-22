@@ -65,7 +65,7 @@ class Session: Identifiable, ObservableObject {
     /// Claude CLI version string
     var ledgerClaudeVersion: String?
 
-    /// Context window usage (0.0–1.0)
+    /// Context window usage (0–100)
     var ledgerContextPercentage: Double?
 
     /// Tokens consumed so far

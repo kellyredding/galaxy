@@ -113,6 +113,10 @@ struct AppSettings: Codable {
     // Session sidebar settings
     var gitStatusStyle: GitStatusStyle = .symbolic  // Git status display style
 
+    // Session behavior settings
+    var autoClearEnabled: Bool = true  // Auto-clear when context exceeds threshold
+    var autoClearThreshold: Int = 97   // Context percentage (0-100) that triggers auto-clear
+
     // Sidebar width constraints
     static let sidebarWidthRange: ClosedRange<CGFloat> = 150...500
 
@@ -121,6 +125,9 @@ struct AppSettings: Codable {
     static let chromeFontSizeStep: CGFloat = 2
     static let terminalFontSizeRange: ClosedRange<CGFloat> = 10...24
     static let terminalFontSizeStep: CGFloat = 1
+
+    // Auto-clear threshold constraints
+    static let autoClearThresholdRange: ClosedRange<Int> = 50...99
 
     static let `default` = AppSettings()
 
@@ -137,6 +144,8 @@ struct AppSettings: Codable {
         defaultTerminalFontSize = try container.decodeIfPresent(CGFloat.self, forKey: .defaultTerminalFontSize) ?? 13.0
         terminalColorThemeName = try container.decodeIfPresent(String.self, forKey: .terminalColorThemeName) ?? "terminal-classic"
         gitStatusStyle = try container.decodeIfPresent(GitStatusStyle.self, forKey: .gitStatusStyle) ?? .symbolic
+        autoClearEnabled = try container.decodeIfPresent(Bool.self, forKey: .autoClearEnabled) ?? true
+        autoClearThreshold = try container.decodeIfPresent(Int.self, forKey: .autoClearThreshold) ?? 97
     }
 
     init() {

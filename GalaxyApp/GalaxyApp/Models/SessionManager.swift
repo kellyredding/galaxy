@@ -22,6 +22,13 @@ class SessionManager: ObservableObject {
     // Track if active session can be resumed (for menu updates)
     @Published var activeSessionCanResume: Bool = false
 
+    /// Tracks last auto-clear time per session to prevent re-triggering
+    /// before enrichment updates with fresh post-clear context percentage.
+    private var lastAutoClearTime: [UUID: Date] = [:]
+
+    /// Minimum seconds between auto-clears for the same session.
+    private static let autoClearCooldown: TimeInterval = 30
+
     // Path to claude binary - detected at init
     let claudePath: String
 
@@ -172,6 +179,11 @@ class SessionManager: ObservableObject {
             session?.markBusy()
         }
 
+        // Register persistent idle callback for auto-clear context check
+        session.onIdleTransition = { [weak self] session in
+            self?.handleIdleTransition(for: session)
+        }
+
         // Determine if this is a resume (resumeSessionId provided means URL had resume param)
         let isResume = resumeSessionId != nil
 
@@ -289,6 +301,11 @@ class SessionManager: ObservableObject {
             session?.markBusy()
         }
 
+        // Register persistent idle callback for auto-clear context check
+        session.onIdleTransition = { [weak self] session in
+            self?.handleIdleTransition(for: session)
+        }
+
         // Determine executable path: claude-persona for persona sessions, claude for vanilla
         let executablePath: String
         if session.personaName != nil, let cpPath = claudePersonaPath {
@@ -319,14 +336,7 @@ class SessionManager: ObservableObject {
     /// Clear the active session and auto-handoff when Claude settles.
     func clearActiveSession() {
         guard let session = activeSession, session.isRunning, !session.hasExited else { return }
-        session.sendCommand("/clear")
-        // Extra 1s delay after idle gives the TUI time to fully
-        // settle after the clear operation completes.
-        session.afterNextIdle { [weak session] in
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak session] in
-                session?.sendCommand("/handoff")
-            }
-        }
+        clearAndHandoff(session)
     }
 
     /// Compact the active session and auto-handoff when Claude settles.
@@ -340,6 +350,41 @@ class SessionManager: ObservableObject {
                 session?.sendCommand("/handoff")
             }
         }
+    }
+
+    /// Send /clear to a session and queue /handoff after it settles.
+    /// Used by clearActiveSession, compactActiveSession, and auto-clear.
+    private func clearAndHandoff(_ session: Session) {
+        session.sendCommand("/clear")
+        session.afterNextIdle { [weak session] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak session] in
+                session?.sendCommand("/handoff")
+            }
+        }
+    }
+
+    /// Called on every busy→idle transition for a session.
+    /// Checks context usage and auto-clears if above threshold.
+    private func handleIdleTransition(for session: Session) {
+        let settings = SettingsManager.shared.settings
+        guard settings.autoClearEnabled else { return }
+
+        // ledgerContextPercentage is 0–100 (integer scale), matching the setting
+        let threshold = Double(settings.autoClearThreshold)
+        guard let contextPct = session.ledgerContextPercentage,
+              contextPct > threshold else { return }
+
+        // Cooldown: don't re-trigger within 30 seconds of last auto-clear
+        if let lastClear = lastAutoClearTime[session.id],
+           Date().timeIntervalSince(lastClear) < Self.autoClearCooldown {
+            return
+        }
+
+        NSLog("SessionManager: Auto-clearing %@ — context at %.0f%%",
+              session.sessionRef, contextPct * 100)
+
+        lastAutoClearTime[session.id] = Date()
+        clearAndHandoff(session)
     }
 
     /// Check if Claude has a session saved on disk for the given session ID and working directory
@@ -388,6 +433,9 @@ class SessionManager: ObservableObject {
 
         // Notify observers before removal (e.g., EventCoordinator cache cleanup)
         onSessionClosed?(sessionId)
+
+        // Clean up auto-clear cooldown tracking
+        lastAutoClearTime.removeValue(forKey: sessionId)
 
         // Remove the session (this will deallocate the terminal view which kills the process)
         sessions.remove(at: index)
