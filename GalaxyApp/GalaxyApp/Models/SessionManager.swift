@@ -240,6 +240,13 @@ class SessionManager: ObservableObject {
         session.exitCode = nil
         session.isRunning = false
 
+        // Disable focus reporting (mode 1004) before the view transition.
+        // Claude Code enables mode 1004 so SwiftTerm sends ESC[I on focus-in.
+        // During resume, the view swap triggers a focus event before the new
+        // process is ready to parse it, leaking a stray "I" into the input.
+        // The new Claude process will re-enable mode 1004 when it initializes.
+        session.terminalView.feed(text: "\u{1b}[?1004l")
+
         // Clear the terminal buffer before resuming
         // This prevents duplicate content when Claude redraws after resume
         // ESC[2J = clear screen, ESC[3J = clear scrollback, ESC[H = cursor home
