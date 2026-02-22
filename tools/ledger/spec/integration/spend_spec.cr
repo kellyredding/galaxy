@@ -172,4 +172,96 @@ describe "CLI Integration - spend" do
       result[:status].should eq(0)
     end
   end
+
+  describe "spend gap-fills calendar days" do
+    it "shows all days in a custom range including gaps" do
+      lid = GalaxyLedger::Database.create_session("sess-gap-fill")
+      seed_daily_usage(lid, "2025-03-01", 5.00, 100000_i64)
+      seed_daily_usage(lid, "2025-03-03", 3.00, 50000_i64)
+
+      result = run_binary(["spend", "2025-03-01..2025-03-03"])
+      result[:status].should eq(0)
+      # All three days should appear in the bar chart
+      result[:output].should contain("Mar 01")
+      result[:output].should contain("Mar 02")
+      result[:output].should contain("Mar 03")
+    end
+
+    it "does not gap-fill JSON output" do
+      lid = GalaxyLedger::Database.create_session("sess-json-no-gap")
+      seed_daily_usage(lid, "2025-03-01", 5.00, 100000_i64)
+      seed_daily_usage(lid, "2025-03-05", 3.00, 50000_i64)
+
+      result = run_binary(["spend", "2025-03-01..2025-03-07", "--json"])
+      result[:status].should eq(0)
+
+      json = JSON.parse(result[:output])
+      json["daily"].as_a.size.should eq(2)
+    end
+  end
+
+  describe "spend avg daily rate excludes zero-cost days" do
+    it "computes average from non-zero days only" do
+      lid = GalaxyLedger::Database.create_session("sess-avg-nonzero")
+      seed_daily_usage(lid, "2025-03-01", 10.00, 100000_i64)
+      seed_daily_usage(lid, "2025-03-02", 0.00, 0_i64)
+      seed_daily_usage(lid, "2025-03-03", 20.00, 200000_i64)
+
+      result = run_binary(["spend", "2025-03-01..2025-03-03"])
+      result[:status].should eq(0)
+      # Avg should be (10 + 20) / 2 = $15.00, not (10 + 0 + 20) / 3 = $10.00
+      result[:output].should contain("Avg Daily Rate:   $15.00")
+    end
+
+    it "returns $0.00 avg when all days have zero cost" do
+      lid = GalaxyLedger::Database.create_session("sess-all-zeros")
+      seed_daily_usage(lid, "2025-03-01", 0.00, 0_i64)
+      seed_daily_usage(lid, "2025-03-02", 0.00, 0_i64)
+
+      result = run_binary(["spend", "2025-03-01..2025-03-02"])
+      result[:status].should eq(0)
+      result[:output].should contain("Avg Daily Rate:   $0.00")
+    end
+  end
+
+  describe "spend sparkline stats exclude zero-cost days" do
+    it "excludes zero days from Low/High/Avg" do
+      lid = GalaxyLedger::Database.create_session("sess-spark-nonzero")
+      seed_daily_usage(lid, "2025-03-01", 10.00, 100000_i64)
+      seed_daily_usage(lid, "2025-03-03", 20.00, 200000_i64)
+
+      # Range includes 3 days, but only 2 have data
+      result = run_binary(["spend", "2025-03-01..2025-03-03"])
+      result[:status].should eq(0)
+      # Low should be $10.00 (not $0.00 from gap-filled day)
+      result[:output].should contain("Low: $10.00")
+      # Avg should be (10 + 20) / 2 = $15.00
+      result[:output].should contain("Avg: $15.00")
+    end
+  end
+
+  describe "spend footnote" do
+    it "shows dagger footnote for short periods" do
+      lid = GalaxyLedger::Database.create_session("sess-footnote")
+      today = Time.utc.to_s("%Y-%m-%d")
+      seed_daily_usage(lid, today, 5.00, 100000_i64)
+
+      result = run_binary(["spend", "today"])
+      result[:status].should eq(0)
+      result[:output].should contain("\u2020")
+      result[:output].should contain("excludes days with no usage")
+    end
+
+    it "shows days/weeks footnote for long periods" do
+      lid = GalaxyLedger::Database.create_session("sess-footnote-long")
+      today = Time.utc
+      jan_first = Time.utc(today.year, 1, 1)
+      seed_daily_usage(lid, jan_first.to_s("%Y-%m-%d"), 3.00, 50000_i64)
+      seed_daily_usage(lid, today.to_s("%Y-%m-%d"), 5.00, 100000_i64)
+
+      result = run_binary(["spend", "ytd"])
+      result[:status].should eq(0)
+      result[:output].should contain("excludes days/weeks with no usage")
+    end
+  end
 end

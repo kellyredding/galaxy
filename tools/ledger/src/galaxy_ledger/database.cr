@@ -960,6 +960,7 @@ module GalaxyLedger
                 FROM ledger_session_daily_usages
                 WHERE date >= ? AND date <= ?
                 GROUP BY date
+                HAVING daily_cost > 0
               )
             SQL
             from_date, to_date,

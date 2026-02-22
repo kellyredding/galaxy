@@ -1968,17 +1968,27 @@ module GalaxyLedger
       daily = Database.spend_daily(from_date, to_date)
       avg_daily = Database.spend_avg_daily(from_date, to_date)
 
+      # For "all" period, use earliest actual data date instead of "0000-01-01"
+      # for gap-filling and total_days calculation
+      effective_from = from_date
+      if period == "all" && !daily.empty?
+        effective_from = daily.first.date
+      end
+
       # Calculate total days in range
-      from_time = Time.parse(from_date, "%Y-%m-%d", Time::Location::UTC)
+      from_time = Time.parse(effective_from, "%Y-%m-%d", Time::Location::UTC)
       to_time = Time.parse(to_date, "%Y-%m-%d", Time::Location::UTC)
       total_days = ((to_time - from_time).total_days + 1).to_i
 
       if json_output
         render_spend_json(period, from_date, to_date, summary, daily, avg_daily, total_days)
       else
+        # Gap-fill daily data for terminal visualizations
+        display_daily = gap_fill_daily(daily, effective_from, to_date)
+
         render_spend_terminal(
           period, period_label, from_date, to_date,
-          summary, daily, avg_daily, total_days,
+          summary, display_daily, avg_daily, total_days,
           show_chart: !no_chart,
           show_sparkline: !no_sparkline,
         )
@@ -2105,7 +2115,7 @@ module GalaxyLedger
       puts "  Total Tokens:     #{format_number(summary.total_tokens)}"
       puts "  Active Days:      #{summary.active_days} / #{total_days}"
       puts "  Active Sessions:  #{summary.active_sessions}"
-      puts "  Avg Daily Rate:   #{Chart.format_cost(avg_daily)}"
+      puts "  Avg Daily Rate:   #{Chart.format_cost(avg_daily)} \u2020"
 
       return if daily.empty?
 
@@ -2122,20 +2132,34 @@ module GalaxyLedger
           spark = Chart.sparkline(values)
           puts "  Weekly:"
           puts "  #{spark}"
-          low = values.min
-          high = values.max
-          avg = values.sum / values.size
-          puts "  Low: #{Chart.format_cost(low)}/wk    High: #{Chart.format_cost(high)}/wk    Avg: #{Chart.format_cost(avg)}/wk"
+          nonzero = values.select { |v| v > 0.0 }
+          if nonzero.empty?
+            low = 0.0
+            high = 0.0
+            avg = 0.0
+          else
+            low = nonzero.min
+            high = nonzero.max
+            avg = nonzero.sum / nonzero.size
+          end
+          puts "  Low: #{Chart.format_cost(low)}/wk    High: #{Chart.format_cost(high)}/wk    Avg: #{Chart.format_cost(avg)}/wk \u2020"
         else
           # Daily sparkline for short periods
           values = daily.map(&.cost)
           spark = Chart.sparkline(values)
           puts "  Daily:"
           puts "  #{spark}"
-          low = values.min
-          high = values.max
-          avg = values.sum / values.size
-          puts "  Low: #{Chart.format_cost(low)}   High: #{Chart.format_cost(high)}   Avg: #{Chart.format_cost(avg)}"
+          nonzero = values.select { |v| v > 0.0 }
+          if nonzero.empty?
+            low = 0.0
+            high = 0.0
+            avg = 0.0
+          else
+            low = nonzero.min
+            high = nonzero.max
+            avg = nonzero.sum / nonzero.size
+          end
+          puts "  Low: #{Chart.format_cost(low)}   High: #{Chart.format_cost(high)}   Avg: #{Chart.format_cost(avg)} \u2020"
         end
       end
 
@@ -2184,6 +2208,13 @@ module GalaxyLedger
           puts ""
           puts "  #{footnote}"
         end
+      end
+
+      # Footnote for zero-exclusion markers
+      if is_long_period
+        puts "  \u2020 excludes days/weeks with no usage"
+      else
+        puts "  \u2020 excludes days with no usage"
       end
 
       puts ""
@@ -2247,6 +2278,35 @@ module GalaxyLedger
         label = date.to_s("%b %y")
         {label: label, cost: vals[:cost], tokens: vals[:tokens]}
       end
+    end
+
+    # Fill calendar gaps in daily data so every date from from_date to to_date
+    # has an entry. Missing dates get SpendDay with zero cost/tokens.
+    private def self.gap_fill_daily(
+      daily : Array(Database::SpendDay),
+      from_date : String,
+      to_date : String,
+    ) : Array(Database::SpendDay)
+      return daily if daily.empty?
+
+      existing = {} of String => Database::SpendDay
+      daily.each { |d| existing[d.date] = d }
+
+      filled = [] of Database::SpendDay
+      current = Time.parse(from_date, "%Y-%m-%d", Time::Location::UTC)
+      end_date = Time.parse(to_date, "%Y-%m-%d", Time::Location::UTC)
+
+      while current <= end_date
+        key = current.to_s("%Y-%m-%d")
+        if found = existing[key]?
+          filled << found
+        else
+          filled << Database::SpendDay.new(date: key, cost: 0.0, tokens: 0_i64)
+        end
+        current += 1.day
+      end
+
+      filled
     end
 
     # Format a date for display (e.g., "Feb 17, 2025")
