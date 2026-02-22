@@ -316,6 +316,32 @@ class SessionManager: ObservableObject {
         updateActiveSessionCanResume()
     }
 
+    /// Clear the active session and auto-handoff when Claude settles.
+    func clearActiveSession() {
+        guard let session = activeSession, session.isRunning, !session.hasExited else { return }
+        session.sendCommand("/clear")
+        // Extra 1s delay after idle gives the TUI time to fully
+        // settle after the clear operation completes.
+        session.afterNextIdle { [weak session] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak session] in
+                session?.sendCommand("/handoff")
+            }
+        }
+    }
+
+    /// Compact the active session and auto-handoff when Claude settles.
+    func compactActiveSession() {
+        guard let session = activeSession, session.isRunning, !session.hasExited else { return }
+        session.sendCommand("/compact")
+        // Extra 1s delay after idle gives the TUI time to fully
+        // settle after the compact operation completes.
+        session.afterNextIdle { [weak session] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak session] in
+                session?.sendCommand("/handoff")
+            }
+        }
+    }
+
     /// Check if Claude has a session saved on disk for the given session ID and working directory
     private func claudeSessionExists(sessionId: String, workingDirectory: String) -> Bool {
         // Claude stores session data in ~/.claude/projects/<escaped-path>/<session-id>.jsonl

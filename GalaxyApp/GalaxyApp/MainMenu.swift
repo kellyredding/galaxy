@@ -379,11 +379,11 @@ class MenuActions: NSObject {
     }
 
     @objc func clearSession(_ sender: Any?) {
-        SessionManager.shared.activeSession?.sendCommand("/clear")
+        SessionManager.shared.clearActiveSession()
     }
 
     @objc func compactSession(_ sender: Any?) {
-        SessionManager.shared.activeSession?.sendCommand("/compact")
+        SessionManager.shared.compactActiveSession()
     }
 
     // MARK: - View Menu Actions
