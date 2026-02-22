@@ -68,7 +68,7 @@ module GalaxyLedger
     is given, default to `mtd` (month to date).
 
     If the argument is `help`, show the available periods:
-    `today`, `wtd`, `mtd` (default), `qtd`, `ytd`, `1y`, `all`,
+    `wtd`, `mtd` (default), `qtd`, `ytd`, `1y`, `all`,
     `YYYY-MM-DD..YYYY-MM-DD`
 
     ## Execution

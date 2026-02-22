@@ -56,9 +56,30 @@ describe GalaxyLedger::CLI do
       end
     end
 
+    describe "weekly grouping" do
+      it "returns nil when UTC and local dates match" do
+        result = GalaxyLedger::CLI.utc_bar_footnote("2026-02-18", "2026-02-18", :weekly)
+        result.should be_nil
+      end
+
+      it "returns annotation when UTC day is ahead of local day" do
+        result = GalaxyLedger::CLI.utc_bar_footnote("2026-02-18", "2026-02-17", :weekly)
+        result.should_not be_nil
+        result.not_nil!.should contain("local date is still")
+        result.not_nil!.should contain("Feb 17")
+      end
+
+      it "returns annotation at week boundary crossing month" do
+        result = GalaxyLedger::CLI.utc_bar_footnote("2026-03-01", "2026-02-28", :weekly)
+        result.should_not be_nil
+        result.not_nil!.should contain("local date is still")
+        result.not_nil!.should contain("Feb 28")
+      end
+    end
+
     describe "unknown grouping" do
       it "returns nil for unrecognized grouping" do
-        result = GalaxyLedger::CLI.utc_bar_footnote("2026-02-18", "2026-02-17", :weekly)
+        result = GalaxyLedger::CLI.utc_bar_footnote("2026-02-18", "2026-02-17", :bogus)
         result.should be_nil
       end
     end

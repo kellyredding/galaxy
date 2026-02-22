@@ -2000,8 +2000,6 @@ module GalaxyLedger
       today_str = today.to_s("%Y-%m-%d")
 
       case period
-      when "today"
-        {today_str, today_str, "Today"}
       when "wtd"
         # Monday of current week
         days_since_monday = (today.day_of_week.value - 1) % 7
@@ -2120,13 +2118,34 @@ module GalaxyLedger
       return if daily.empty?
 
       # Determine grouping strategy based on period
-      is_long_period = ["qtd", "ytd", "1y", "all"].includes?(period)
+      grouping = case period
+                 when "qtd", "ytd" then :weekly
+                 when "1y", "all"  then :monthly
+                 else                   :daily
+                 end
 
       if show_sparkline && daily.size > 1
         puts ""
 
-        if is_long_period
-          # Weekly sparkline for long periods
+        case grouping
+        when :monthly
+          monthly = group_by_month(daily)
+          values = monthly.map(&.[:cost])
+          spark = Chart.sparkline(values)
+          puts "  Monthly:"
+          puts "  #{spark}"
+          nonzero = values.select { |v| v > 0.0 }
+          if nonzero.empty?
+            low = 0.0
+            high = 0.0
+            avg = 0.0
+          else
+            low = nonzero.min
+            high = nonzero.max
+            avg = nonzero.sum / nonzero.size
+          end
+          puts "  Low: #{Chart.format_cost(low)}/mo    High: #{Chart.format_cost(high)}/mo    Avg: #{Chart.format_cost(avg)}/mo \u2020"
+        when :weekly
           weekly = group_by_week(daily)
           values = weekly.map(&.[:cost])
           spark = Chart.sparkline(values)
@@ -2144,7 +2163,6 @@ module GalaxyLedger
           end
           puts "  Low: #{Chart.format_cost(low)}/wk    High: #{Chart.format_cost(high)}/wk    Avg: #{Chart.format_cost(avg)}/wk \u2020"
         else
-          # Daily sparkline for short periods
           values = daily.map(&.cost)
           spark = Chart.sparkline(values)
           puts "  Daily:"
@@ -2169,11 +2187,10 @@ module GalaxyLedger
         # Determine UTC annotation for last bar row
         utc_today = Time.utc.to_s("%Y-%m-%d")
         local_today = Time.local.to_s("%Y-%m-%d")
-        grouping = is_long_period ? :monthly : :daily
         footnote = utc_bar_footnote(utc_today, local_today, grouping)
 
-        if is_long_period
-          # Monthly bar chart for long periods
+        case grouping
+        when :monthly
           monthly = group_by_month(daily)
           rows = monthly.map_with_index do |m, idx|
             extra = "#{Chart.format_cost(m[:cost])}    #{Chart.format_tokens(m[:tokens])}"
@@ -2185,8 +2202,23 @@ module GalaxyLedger
             )
           end
           puts Chart.bar_chart(rows)
+        when :weekly
+          weekly = group_by_week(daily)
+          rows = weekly.map_with_index do |w, idx|
+            if w[:cost] > 0.0
+              extra = "#{Chart.format_cost(w[:cost])}    #{Chart.format_tokens(w[:tokens])}"
+              extra += "  *" if footnote && idx == weekly.size - 1
+              Chart::BarRow.new(
+                label: format_bar_date(w[:label]),
+                value: w[:cost],
+                extra: extra,
+              )
+            else
+              Chart::BarRow.new(label: format_bar_date(w[:label]), value: 0.0)
+            end
+          end
+          puts Chart.bar_chart(rows)
         else
-          # Daily bar chart for short periods
           rows = daily.map_with_index do |d, idx|
             label = format_bar_date(d.date)
             if d.cost > 0.0
@@ -2211,8 +2243,11 @@ module GalaxyLedger
       end
 
       # Footnote for zero-exclusion markers
-      if is_long_period
-        puts "  \u2020 excludes days/weeks with no usage"
+      case grouping
+      when :monthly
+        puts "  \u2020 excludes months with no usage"
+      when :weekly
+        puts "  \u2020 excludes weeks with no usage"
       else
         puts "  \u2020 excludes days with no usage"
       end
@@ -2230,6 +2265,10 @@ module GalaxyLedger
     ) : String?
       case grouping
       when :daily
+        if utc_today != local_today
+          "* UTC — local date is still #{format_date_display(local_today)}"
+        end
+      when :weekly
         if utc_today != local_today
           "* UTC — local date is still #{format_date_display(local_today)}"
         end
@@ -2350,7 +2389,6 @@ module GalaxyLedger
         galaxy-ledger spend [PERIOD] [options]
 
       PERIODS:
-        today                        Current UTC day
         wtd                          Week to date (Monday → today)
         mtd                          Month to date (default)
         qtd                          Quarter to date
@@ -2367,7 +2405,6 @@ module GalaxyLedger
 
       EXAMPLES:
         galaxy-ledger spend
-        galaxy-ledger spend today
         galaxy-ledger spend ytd
         galaxy-ledger spend ytd --json
         galaxy-ledger spend 2025-01-01..2025-01-31

@@ -42,7 +42,7 @@ describe "CLI Integration - spend" do
 
   describe "spend with no data" do
     it "outputs header and zero summary" do
-      result = run_binary(["spend", "today"])
+      result = run_binary(["spend", "wtd"])
       result[:output].should contain("Spend")
       result[:output].should contain("$0.00")
       result[:output].should contain("Active Days:")
@@ -51,14 +51,14 @@ describe "CLI Integration - spend" do
   end
 
   describe "spend with data" do
-    it "shows summary for today" do
-      lid = GalaxyLedger::Database.create_session("sess-spend-today")
+    it "shows WTD summary" do
+      lid = GalaxyLedger::Database.create_session("sess-spend-wtd")
       today = Time.utc.to_s("%Y-%m-%d")
       seed_daily_usage(lid, today, 5.50, 150000_i64)
 
-      result = run_binary(["spend", "today"])
+      result = run_binary(["spend", "wtd"])
+      result[:output].should contain("Week to Date")
       result[:output].should contain("$5.50")
-      result[:output].should contain("150.0k tok")
       result[:output].should contain("Active Sessions:  1")
       result[:status].should eq(0)
     end
@@ -81,11 +81,11 @@ describe "CLI Integration - spend" do
       today = Time.utc.to_s("%Y-%m-%d")
       seed_daily_usage(lid, today, 2.00, 80000_i64)
 
-      result = run_binary(["spend", "today", "--json"])
+      result = run_binary(["spend", "mtd", "--json"])
       result[:status].should eq(0)
 
       json = JSON.parse(result[:output])
-      json["period"].as_s.should eq("today")
+      json["period"].as_s.should eq("mtd")
       json["summary"]["total_cost_usd"].as_f.should eq(2.0)
       json["summary"]["total_tokens"].as_i64.should eq(80000_i64)
       json["summary"]["active_sessions"].as_i.should eq(1)
@@ -94,7 +94,7 @@ describe "CLI Integration - spend" do
     end
 
     it "outputs empty daily array when no data" do
-      result = run_binary(["spend", "today", "--json"])
+      result = run_binary(["spend", "mtd", "--json"])
       result[:status].should eq(0)
 
       json = JSON.parse(result[:output])
@@ -128,7 +128,7 @@ describe "CLI Integration - spend" do
       today = Time.utc.to_s("%Y-%m-%d")
       seed_daily_usage(lid, today, 5.00, 100000_i64)
 
-      result = run_binary(["spend", "today", "--no-chart", "--no-sparkline"])
+      result = run_binary(["spend", "mtd", "--no-chart", "--no-sparkline"])
       result[:output].should contain("$5.00")
       # Should still have the summary
       result[:output].should contain("Total Cost:")
@@ -142,7 +142,7 @@ describe "CLI Integration - spend" do
       today = Time.utc.to_s("%Y-%m-%d")
       seed_daily_usage(lid, today, 5.00, 100000_i64, oneshot_cost: 0.50, oneshot_tokens: 10000_i64)
 
-      result = run_binary(["spend", "today"])
+      result = run_binary(["spend", "mtd"])
       result[:output].should contain("$5.50")
       result[:output].should contain("110.0k tok")
       result[:status].should eq(0)
@@ -153,7 +153,7 @@ describe "CLI Integration - spend" do
       today = Time.utc.to_s("%Y-%m-%d")
       seed_daily_usage(lid, today, 5.00, 100000_i64, oneshot_cost: 0.50, oneshot_tokens: 10000_i64)
 
-      result = run_binary(["spend", "today", "--json"])
+      result = run_binary(["spend", "mtd", "--json"])
       result[:status].should eq(0)
 
       json = JSON.parse(result[:output])
@@ -166,7 +166,7 @@ describe "CLI Integration - spend" do
       today = Time.utc.to_s("%Y-%m-%d")
       seed_daily_usage(lid, today, 0.0, 0_i64, oneshot_cost: 0.25, oneshot_tokens: 5000_i64)
 
-      result = run_binary(["spend", "today"])
+      result = run_binary(["spend", "mtd"])
       result[:output].should contain("$0.25")
       result[:output].should contain("5.0k tok")
       result[:status].should eq(0)
@@ -240,20 +240,59 @@ describe "CLI Integration - spend" do
     end
   end
 
-  describe "spend footnote" do
-    it "shows dagger footnote for short periods" do
-      lid = GalaxyLedger::Database.create_session("sess-footnote")
-      today = Time.utc.to_s("%Y-%m-%d")
-      seed_daily_usage(lid, today, 5.00, 100000_i64)
-
+  describe "spend today is no longer valid" do
+    it "exits with error for today period" do
       result = run_binary(["spend", "today"])
+      result[:error].should contain("unknown period")
+      result[:status].should_not eq(0)
+    end
+  end
+
+  describe "spend grouping tiers" do
+    it "shows daily sparkline and daily bars for mtd" do
+      lid = GalaxyLedger::Database.create_session("sess-tier-daily")
+      today = Time.utc
+      yesterday = today - 1.day
+      seed_daily_usage(lid, yesterday.to_s("%Y-%m-%d"), 4.00, 80000_i64)
+      seed_daily_usage(lid, today.to_s("%Y-%m-%d"), 6.00, 120000_i64)
+
+      result = run_binary(["spend", "mtd"])
       result[:status].should eq(0)
-      result[:output].should contain("\u2020")
+      result[:output].should contain("Daily:")
       result[:output].should contain("excludes days with no usage")
     end
 
-    it "shows days/weeks footnote for long periods" do
-      lid = GalaxyLedger::Database.create_session("sess-footnote-long")
+    it "shows weekly sparkline and weekly bars for qtd" do
+      lid = GalaxyLedger::Database.create_session("sess-tier-weekly")
+      today = Time.utc
+      quarter_month = ((today.month - 1) // 3) * 3 + 1
+      q_first = Time.utc(today.year, quarter_month, 1)
+      seed_daily_usage(lid, q_first.to_s("%Y-%m-%d"), 4.00, 80000_i64)
+      seed_daily_usage(lid, today.to_s("%Y-%m-%d"), 6.00, 120000_i64)
+
+      result = run_binary(["spend", "qtd"])
+      result[:status].should eq(0)
+      result[:output].should contain("Weekly:")
+      result[:output].should contain("/wk")
+      result[:output].should contain("excludes weeks with no usage")
+    end
+
+    it "shows monthly sparkline and monthly bars for 1y" do
+      lid = GalaxyLedger::Database.create_session("sess-tier-monthly")
+      today = Time.utc
+      six_months_ago = today - 180.days
+      seed_daily_usage(lid, six_months_ago.to_s("%Y-%m-%d"), 4.00, 80000_i64)
+      seed_daily_usage(lid, today.to_s("%Y-%m-%d"), 6.00, 120000_i64)
+
+      result = run_binary(["spend", "1y"])
+      result[:status].should eq(0)
+      result[:output].should contain("Monthly:")
+      result[:output].should contain("/mo")
+      result[:output].should contain("excludes months with no usage")
+    end
+
+    it "shows weekly sparkline and weekly bars for ytd" do
+      lid = GalaxyLedger::Database.create_session("sess-tier-ytd")
       today = Time.utc
       jan_first = Time.utc(today.year, 1, 1)
       seed_daily_usage(lid, jan_first.to_s("%Y-%m-%d"), 3.00, 50000_i64)
@@ -261,7 +300,49 @@ describe "CLI Integration - spend" do
 
       result = run_binary(["spend", "ytd"])
       result[:status].should eq(0)
-      result[:output].should contain("excludes days/weeks with no usage")
+      result[:output].should contain("Weekly:")
+      result[:output].should contain("/wk")
+      result[:output].should contain("excludes weeks with no usage")
+    end
+  end
+
+  describe "spend footnote" do
+    it "shows days footnote for daily periods" do
+      lid = GalaxyLedger::Database.create_session("sess-footnote-daily")
+      today = Time.utc
+      first = Time.utc(today.year, today.month, 1)
+      seed_daily_usage(lid, first.to_s("%Y-%m-%d"), 3.00, 50000_i64)
+      seed_daily_usage(lid, today.to_s("%Y-%m-%d"), 5.00, 100000_i64)
+
+      result = run_binary(["spend", "mtd"])
+      result[:status].should eq(0)
+      result[:output].should contain("\u2020")
+      result[:output].should contain("excludes days with no usage")
+    end
+
+    it "shows weeks footnote for weekly periods" do
+      lid = GalaxyLedger::Database.create_session("sess-footnote-weekly")
+      today = Time.utc
+      quarter_month = ((today.month - 1) // 3) * 3 + 1
+      q_first = Time.utc(today.year, quarter_month, 1)
+      seed_daily_usage(lid, q_first.to_s("%Y-%m-%d"), 3.00, 50000_i64)
+      seed_daily_usage(lid, today.to_s("%Y-%m-%d"), 5.00, 100000_i64)
+
+      result = run_binary(["spend", "qtd"])
+      result[:status].should eq(0)
+      result[:output].should contain("excludes weeks with no usage")
+    end
+
+    it "shows months footnote for monthly periods" do
+      lid = GalaxyLedger::Database.create_session("sess-footnote-monthly")
+      today = Time.utc
+      year_ago = today - 365.days
+      seed_daily_usage(lid, year_ago.to_s("%Y-%m-%d"), 3.00, 50000_i64)
+      seed_daily_usage(lid, today.to_s("%Y-%m-%d"), 5.00, 100000_i64)
+
+      result = run_binary(["spend", "1y"])
+      result[:status].should eq(0)
+      result[:output].should contain("excludes months with no usage")
     end
   end
 end
