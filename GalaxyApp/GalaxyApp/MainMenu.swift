@@ -177,7 +177,7 @@ class MainMenu: NSObject, NSMenuDelegate {
         // Session switching: ⌘1-9
         for (index, session) in sessionManager.sessions.enumerated() where index < 9 {
             let item = NSMenuItem(
-                title: session.sessionRef,
+                title: session.displayName,
                 action: #selector(MenuActions.switchToSession(_:)),
                 keyEquivalent: "\(index + 1)"
             )

@@ -28,7 +28,7 @@ struct StoppedSessionView: View {
                     Text("Session stopped")
                         .chromeFont(size: fontSize.title2, weight: .semibold)
 
-                    Text(session.sessionRef)
+                    Text(session.displayName)
                         .chromeFontMono(size: fontSize.title3)
                         .foregroundColor(.secondary)
 

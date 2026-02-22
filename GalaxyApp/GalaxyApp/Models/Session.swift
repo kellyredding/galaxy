@@ -15,6 +15,20 @@ class Session: Identifiable, ObservableObject {
 
     /// Human-readable session reference for display (e.g., "rich-grass-hides")
     let sessionRef: String
+
+    /// User-assigned name for this session. Galaxy-only — not shared with ledger.
+    /// When set, displayName shows "givenName (sessionRef)".
+    @Published var givenName: String?
+
+    /// Display string for user-facing contexts (sidebar, menu, stopped screen).
+    /// Shows given name with ref suffix when named, or bare ref when not.
+    var displayName: String {
+        if let name = givenName {
+            return "\(name) (\(sessionRef))"
+        }
+        return sessionRef
+    }
+
     @Published var isRunning: Bool = false
     @Published var hasExited: Bool = false
     @Published var exitCode: Int32?

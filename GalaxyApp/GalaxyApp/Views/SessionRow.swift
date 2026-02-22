@@ -24,6 +24,9 @@ struct SessionRow: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var isHovered = false
     @State private var isPulsePhase = false
+    @State private var isEditingName = false
+    @State private var editingNameText = ""
+    @FocusState private var isNameFieldFocused: Bool
 
     private var fontSize: ChromeFontSize { ChromeFontSize(chromeFontSize) }
     private var isDark: Bool { colorScheme == .dark }
@@ -71,13 +74,33 @@ struct SessionRow: View {
             // Session info with bell indicator overlay
             ZStack(alignment: .topLeading) {
                 VStack(alignment: .leading, spacing: 2) {
-                    // Session ref (human-readable)
-                    Text(session.sessionRef)
-                        .chromeFontMono(size: fontSize.caption2, weight: .medium)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .foregroundColor(isSelected && isDark ? .white : .primary)
-                        .frame(height: fontSize.caption2LineHeight)
+                    // Line 1: Session name (double-click to edit)
+                    if isEditingName {
+                        TextField("", text: $editingNameText)
+                            .chromeFontMono(size: fontSize.caption2, weight: .medium)
+                            .textFieldStyle(.plain)
+                            .focused($isNameFieldFocused)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .foregroundColor(isSelected && isDark ? .white : .primary)
+                            .frame(height: fontSize.caption2LineHeight)
+                            .onSubmit {
+                                commitNameEdit()
+                            }
+                            .onExitCommand {
+                                cancelNameEdit()
+                            }
+                    } else {
+                        Text(session.displayName)
+                            .chromeFontMono(size: fontSize.caption2, weight: .medium)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .foregroundColor(isSelected && isDark ? .white : .primary)
+                            .frame(height: fontSize.caption2LineHeight)
+                            .onTapGesture(count: 2) {
+                                beginNameEdit()
+                            }
+                    }
 
                     // Persona name (or "--" for vanilla Claude sessions)
                     Text(session.personaName ?? "--")
@@ -424,5 +447,39 @@ struct SessionRow: View {
     private func measureWidth(_ string: String, font: NSFont) -> CGFloat {
         let attributes: [NSAttributedString.Key: Any] = [.font: font]
         return (string as NSString).size(withAttributes: attributes).width
+    }
+
+    // MARK: - Name Editing
+
+    private func beginNameEdit() {
+        editingNameText = session.givenName ?? ""
+        isEditingName = true
+        // Focus after next layout pass so the TextField exists
+        DispatchQueue.main.async {
+            isNameFieldFocused = true
+        }
+    }
+
+    private func commitNameEdit() {
+        let trimmed = editingNameText.trimmingCharacters(in: .whitespacesAndNewlines)
+        session.givenName = trimmed.isEmpty ? nil : trimmed
+        isEditingName = false
+        isNameFieldFocused = false
+        restoreTerminalFocus()
+    }
+
+    private func cancelNameEdit() {
+        isEditingName = false
+        isNameFieldFocused = false
+        restoreTerminalFocus()
+    }
+
+    /// Return focus to the terminal if it's visible (running, not exited).
+    /// If the session is stopped, the terminal isn't in the view hierarchy
+    /// so window will be nil — natural no-op.
+    private func restoreTerminalFocus() {
+        DispatchQueue.main.async {
+            session.terminalView.window?.makeFirstResponder(session.terminalView)
+        }
     }
 }

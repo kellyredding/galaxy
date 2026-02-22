@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import SwiftUI
 import SwiftTerm
 
 class SessionManager: ObservableObject {
@@ -407,13 +408,21 @@ class SessionManager: ObservableObject {
     }
 
     func switchTo(sessionId: UUID) {
-        if sessions.contains(where: { $0.id == sessionId }) {
-            activeSessionId = sessionId
-            // Note: SessionRow handles clearing hasUnreadBell with fade animation
+        guard let session = sessions.first(where: { $0.id == sessionId }) else { return }
+        activeSessionId = sessionId
 
-            // Update menu state for the newly active session
-            updateActiveSessionCanResume()
+        // Clear unread bell immediately on switch (with fade animation).
+        // Done here rather than solely in SessionRow's onChange(of: isSelected)
+        // to avoid gesture disambiguation delays when double-click gestures
+        // exist on child views.
+        if session.hasUnreadBell && isWindowFocused {
+            withAnimation(.easeOut(duration: 3.0)) {
+                session.hasUnreadBell = false
+            }
         }
+
+        // Update menu state for the newly active session
+        updateActiveSessionCanResume()
     }
 
     func closeSession(sessionId: UUID) {
