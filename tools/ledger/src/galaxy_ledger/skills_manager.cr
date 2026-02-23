@@ -166,7 +166,7 @@ module GalaxyLedger
     from the "Ledger PID" value in your session context:
 
     ```bash
-    galaxy-ledger snapshot save \
+    galaxy-ledger snapshot create \
       --pid $LEDGER_PID \
       --title "Generated title here" \
       --exchanges N \
@@ -176,7 +176,7 @@ module GalaxyLedger
     For multi-line content, use a heredoc:
 
     ```bash
-    galaxy-ledger snapshot save \
+    galaxy-ledger snapshot create \
       --pid $LEDGER_PID \
       --title "Title" \
       --exchanges 2 \

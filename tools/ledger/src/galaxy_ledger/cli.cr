@@ -3078,11 +3078,11 @@ module GalaxyLedger
       rest = args[1..]? || [] of String
 
       case subcommand
-      when "save"
+      when "create"
         if rest.includes?("-h") || rest.includes?("--help")
-          show_snapshot_save_help
+          show_snapshot_create_help
         else
-          snapshot_save(rest)
+          snapshot_create(rest)
         end
       when "list"
         if rest.includes?("-h") || rest.includes?("--help")
@@ -3115,7 +3115,7 @@ module GalaxyLedger
       end
     end
 
-    private def self.snapshot_save(args : Array(String))
+    private def self.snapshot_create(args : Array(String))
       pid_str : String? = nil
       title : String? = nil
       exchange_count = 1
@@ -3150,20 +3150,20 @@ module GalaxyLedger
           end
         else
           STDERR.puts "Error: Unknown option '#{arg}'"
-          STDERR.puts "Run 'galaxy-ledger snapshot save --help' for usage"
+          STDERR.puts "Run 'galaxy-ledger snapshot create --help' for usage"
           exit(1)
         end
       end
 
       unless pid_str
         STDERR.puts "Error: --pid is required"
-        STDERR.puts "Run 'galaxy-ledger snapshot save --help' for usage"
+        STDERR.puts "Run 'galaxy-ledger snapshot create --help' for usage"
         exit(1)
       end
 
       unless title
         STDERR.puts "Error: --title is required"
-        STDERR.puts "Run 'galaxy-ledger snapshot save --help' for usage"
+        STDERR.puts "Run 'galaxy-ledger snapshot create --help' for usage"
         exit(1)
       end
 
@@ -3185,6 +3185,13 @@ module GalaxyLedger
 
       if number > 0
         puts "Snapshot ##{number} saved (title: \"#{title}\", chars: #{content.size})"
+
+        # Publish event for Galaxy.app (fire-and-forget)
+        EventPublisher.publish(
+          ledger_session_id: ledger_session_id,
+          event: "snapshot.created",
+          ref: number.to_s,
+        )
       else
         STDERR.puts "Error: failed to save snapshot"
         exit(1)
@@ -3194,6 +3201,8 @@ module GalaxyLedger
     private def self.snapshot_list(args : Array(String))
       pid_str : String? = nil
       session_id : String? = nil
+      ledger_session_id_str : String? = nil
+      json_output = false
 
       i = 0
       while i < args.size
@@ -3215,6 +3224,17 @@ module GalaxyLedger
             STDERR.puts "Error: --session requires a value"
             exit(1)
           end
+        when "--ledger-session-id"
+          if i + 1 < args.size
+            ledger_session_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --ledger-session-id requires a value"
+            exit(1)
+          end
+        when "--json"
+          json_output = true
+          i += 1
         else
           STDERR.puts "Error: Unknown option '#{arg}'"
           STDERR.puts "Run 'galaxy-ledger snapshot list --help' for usage"
@@ -3224,19 +3244,44 @@ module GalaxyLedger
 
       # Resolve to ledger_session_id
       ledger_session_id : Int64? = nil
-      if ps = pid_str
+      if lsid_str = ledger_session_id_str
+        ledger_session_id = resolve_ledger_session_id_str(lsid_str)
+      elsif ps = pid_str
         ledger_session_id = resolve_pid_to_ledger_session_id(ps)
       elsif sid = session_id
         ledger_session_id = resolve_session_to_ledger_session_id(sid)
       end
 
       unless ledger_session_id
-        STDERR.puts "Error: --pid or --session is required"
+        STDERR.puts "Error: --pid, --session, or --ledger-session-id is required"
         STDERR.puts "Run 'galaxy-ledger snapshot list --help' for usage"
         exit(1)
       end
 
       snapshots = Database.list_snapshots(ledger_session_id)
+
+      if json_output
+        JSON.build(STDOUT, indent: "  ") do |json|
+          json.object do
+            json.field "snapshots" do
+              json.array do
+                snapshots.each do |snap|
+                  json.object do
+                    json.field "id", snap.id
+                    json.field "number", snap.number
+                    json.field "title", snap.title
+                    json.field "exchange_count", snap.exchange_count
+                    json.field "char_count", snap.char_count
+                    json.field "created_at", snap.created_at
+                  end
+                end
+              end
+            end
+          end
+        end
+        puts ""
+        return
+      end
 
       if snapshots.empty?
         puts "No snapshots for this session."
@@ -3256,6 +3301,8 @@ module GalaxyLedger
 
     private def self.snapshot_view(args : Array(String))
       pid_str : String? = nil
+      ledger_session_id_str : String? = nil
+      json_output = false
       number : Int32? = nil
 
       i = 0
@@ -3270,6 +3317,17 @@ module GalaxyLedger
             STDERR.puts "Error: --pid requires a value"
             exit(1)
           end
+        when "--ledger-session-id"
+          if i + 1 < args.size
+            ledger_session_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --ledger-session-id requires a value"
+            exit(1)
+          end
+        when "--json"
+          json_output = true
+          i += 1
         else
           # Try as positional number
           if n = arg.to_i?
@@ -3283,8 +3341,16 @@ module GalaxyLedger
         end
       end
 
-      unless pid_str
-        STDERR.puts "Error: --pid is required"
+      # Resolve to ledger_session_id
+      ledger_session_id : Int64? = nil
+      if lsid_str = ledger_session_id_str
+        ledger_session_id = resolve_ledger_session_id_str(lsid_str)
+      elsif ps = pid_str
+        ledger_session_id = resolve_pid_to_ledger_session_id(ps)
+      end
+
+      unless ledger_session_id
+        STDERR.puts "Error: --pid or --ledger-session-id is required"
         STDERR.puts "Run 'galaxy-ledger snapshot view --help' for usage"
         exit(1)
       end
@@ -3295,7 +3361,6 @@ module GalaxyLedger
         exit(1)
       end
 
-      ledger_session_id = resolve_pid_to_ledger_session_id(pid_str)
       snapshot = Database.get_snapshot_by_number(ledger_session_id, number)
 
       unless snapshot
@@ -3303,11 +3368,35 @@ module GalaxyLedger
         exit(1)
       end
 
-      puts snapshot.content
+      if json_output
+        JSON.build(STDOUT, indent: "  ") do |json|
+          json.object do
+            json.field "snapshot" do
+              json.object do
+                json.field "id", snapshot.id
+                json.field "number", snapshot.number
+                json.field "title", snapshot.title
+                json.field "content", snapshot.content
+                json.field "exchange_count", snapshot.exchange_count
+                json.field "char_count", snapshot.char_count
+                json.field "created_at", snapshot.created_at
+                json.field "updated_at", snapshot.updated_at
+                if m = snapshot.metadata
+                  json.field "metadata", m
+                end
+              end
+            end
+          end
+        end
+        puts ""
+      else
+        puts snapshot.content
+      end
     end
 
     private def self.snapshot_delete(args : Array(String))
       pid_str : String? = nil
+      ledger_session_id_str : String? = nil
       number : Int32? = nil
 
       i = 0
@@ -3320,6 +3409,14 @@ module GalaxyLedger
             i += 2
           else
             STDERR.puts "Error: --pid requires a value"
+            exit(1)
+          end
+        when "--ledger-session-id"
+          if i + 1 < args.size
+            ledger_session_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --ledger-session-id requires a value"
             exit(1)
           end
         else
@@ -3335,8 +3432,16 @@ module GalaxyLedger
         end
       end
 
-      unless pid_str
-        STDERR.puts "Error: --pid is required"
+      # Resolve to ledger_session_id
+      ledger_session_id : Int64? = nil
+      if lsid_str = ledger_session_id_str
+        ledger_session_id = resolve_ledger_session_id_str(lsid_str)
+      elsif ps = pid_str
+        ledger_session_id = resolve_pid_to_ledger_session_id(ps)
+      end
+
+      unless ledger_session_id
+        STDERR.puts "Error: --pid or --ledger-session-id is required"
         STDERR.puts "Run 'galaxy-ledger snapshot delete --help' for usage"
         exit(1)
       end
@@ -3347,7 +3452,6 @@ module GalaxyLedger
         exit(1)
       end
 
-      ledger_session_id = resolve_pid_to_ledger_session_id(pid_str)
       result = Database.delete_snapshot_by_number(ledger_session_id, number)
 
       if result
@@ -3360,6 +3464,7 @@ module GalaxyLedger
 
     private def self.snapshot_open(args : Array(String))
       pid_str : String? = nil
+      ledger_session_id_str : String? = nil
       number : Int32? = nil
 
       i = 0
@@ -3372,6 +3477,14 @@ module GalaxyLedger
             i += 2
           else
             STDERR.puts "Error: --pid requires a value"
+            exit(1)
+          end
+        when "--ledger-session-id"
+          if i + 1 < args.size
+            ledger_session_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --ledger-session-id requires a value"
             exit(1)
           end
         else
@@ -3387,8 +3500,16 @@ module GalaxyLedger
         end
       end
 
-      unless pid_str
-        STDERR.puts "Error: --pid is required"
+      # Resolve to ledger_session_id
+      ledger_session_id : Int64? = nil
+      if lsid_str = ledger_session_id_str
+        ledger_session_id = resolve_ledger_session_id_str(lsid_str)
+      elsif ps = pid_str
+        ledger_session_id = resolve_pid_to_ledger_session_id(ps)
+      end
+
+      unless ledger_session_id
+        STDERR.puts "Error: --pid or --ledger-session-id is required"
         STDERR.puts "Run 'galaxy-ledger snapshot open --help' for usage"
         exit(1)
       end
@@ -3399,7 +3520,6 @@ module GalaxyLedger
         exit(1)
       end
 
-      ledger_session_id = resolve_pid_to_ledger_session_id(pid_str)
       snapshot = Database.get_snapshot_by_number(ledger_session_id, number)
 
       unless snapshot
@@ -3500,7 +3620,7 @@ module GalaxyLedger
         galaxy-ledger snapshot <command> [options]
 
       COMMANDS:
-        save     Save a snapshot from stdin
+        create   Create a snapshot from stdin
         list     List snapshots for a session
         view     View a snapshot's content
         open     Open a snapshot in an editor
@@ -3510,12 +3630,12 @@ module GalaxyLedger
       HELP
     end
 
-    private def self.show_snapshot_save_help
+    private def self.show_snapshot_create_help
       puts <<-HELP
-      galaxy-ledger snapshot save - Save a snapshot
+      galaxy-ledger snapshot create - Create a snapshot
 
       USAGE:
-        galaxy-ledger snapshot save --pid PID --title TITLE [--exchanges N] < content
+        galaxy-ledger snapshot create --pid PID --title TITLE [--exchanges N] < content
 
       REQUIRED:
         --pid PID           Claude Code process ID
@@ -3530,8 +3650,8 @@ module GalaxyLedger
         on context handoff (/clear, /compact).
 
       EXAMPLES:
-        echo "## Exchange 1..." | galaxy-ledger snapshot save --pid 12345 --title "Design discussion"
-        galaxy-ledger snapshot save --pid 12345 --title "Style correction" --exchanges 2 < content.md
+        echo "## Exchange 1..." | galaxy-ledger snapshot create --pid 12345 --title "Design discussion"
+        galaxy-ledger snapshot create --pid 12345 --title "Style correction" --exchanges 2 < content.md
       HELP
     end
 
@@ -3542,10 +3662,15 @@ module GalaxyLedger
       USAGE:
         galaxy-ledger snapshot list --pid PID
         galaxy-ledger snapshot list --session SESSION_ID
+        galaxy-ledger snapshot list --ledger-session-id ID
 
       REQUIRED (one of):
-        --pid PID           Claude Code process ID
-        --session ID        Session identifier
+        --pid PID                Claude Code process ID
+        --session ID             Session identifier
+        --ledger-session-id ID   Direct ledger session ID
+
+      OPTIONS:
+        --json                   Output as JSON (envelope: {"snapshots":[...]})
 
       DESCRIPTION:
         Lists all snapshots for the specified session with number, title,
@@ -3559,10 +3684,15 @@ module GalaxyLedger
 
       USAGE:
         galaxy-ledger snapshot view --pid PID NUMBER
+        galaxy-ledger snapshot view --ledger-session-id ID NUMBER
 
       REQUIRED:
-        --pid PID           Claude Code process ID
-        NUMBER              Snapshot number (session-scoped)
+        --pid PID                Claude Code process ID (or use --ledger-session-id)
+        --ledger-session-id ID   Direct ledger session ID (or use --pid)
+        NUMBER                   Snapshot number (session-scoped)
+
+      OPTIONS:
+        --json                   Output as JSON (envelope: {"snapshot":{...}})
 
       DESCRIPTION:
         Outputs the full markdown content of a snapshot to stdout.
@@ -3575,10 +3705,12 @@ module GalaxyLedger
 
       USAGE:
         galaxy-ledger snapshot delete --pid PID NUMBER
+        galaxy-ledger snapshot delete --ledger-session-id ID NUMBER
 
       REQUIRED:
-        --pid PID           Claude Code process ID
-        NUMBER              Snapshot number (session-scoped)
+        --pid PID                Claude Code process ID (or use --ledger-session-id)
+        --ledger-session-id ID   Direct ledger session ID (or use --pid)
+        NUMBER                   Snapshot number (session-scoped)
 
       DESCRIPTION:
         Permanently deletes a snapshot from the session.
@@ -3591,10 +3723,12 @@ module GalaxyLedger
 
       USAGE:
         galaxy-ledger snapshot open --pid PID NUMBER
+        galaxy-ledger snapshot open --ledger-session-id ID NUMBER
 
       REQUIRED:
-        --pid PID           Claude Code process ID
-        NUMBER              Snapshot number (session-scoped)
+        --pid PID                Claude Code process ID (or use --ledger-session-id)
+        --ledger-session-id ID   Direct ledger session ID (or use --pid)
+        NUMBER                   Snapshot number (session-scoped)
 
       DESCRIPTION:
         Writes the snapshot content to a stable temp file and opens it

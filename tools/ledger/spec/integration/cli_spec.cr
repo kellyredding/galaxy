@@ -1089,7 +1089,7 @@ describe "CLI Integration" do
         result = run_binary(["snapshot", "--help"])
         result[:status].should eq(0)
         result[:output].should contain("snapshot")
-        result[:output].should contain("save")
+        result[:output].should contain("create")
         result[:output].should contain("list")
         result[:output].should contain("view")
         result[:output].should contain("open")
@@ -1097,13 +1097,13 @@ describe "CLI Integration" do
       end
     end
 
-    describe "snapshot save" do
-      it "saves snapshot with valid PID, title, and stdin content" do
+    describe "snapshot create" do
+      it "creates snapshot with valid PID, title, and stdin content" do
         pid = Random.rand(10000).to_i64 + 90000
         ledger_session_id = create_session_with_pid(pid)
 
         result = run_binary(
-          ["snapshot", "save", "--pid", pid.to_s, "--title", "Test snapshot"],
+          ["snapshot", "create", "--pid", pid.to_s, "--title", "Test snapshot"],
           stdin: "## Exchange 1\n\n### User\nHello\n\n### Assistant\nHi there!",
         )
         result[:status].should eq(0)
@@ -1111,38 +1111,38 @@ describe "CLI Integration" do
         result[:output].should contain("Test snapshot")
       end
 
-      it "returns number 2 for second save to same session" do
+      it "returns number 2 for second create to same session" do
         pid = Random.rand(10000).to_i64 + 90000
         ledger_session_id = create_session_with_pid(pid)
 
         result1 = run_binary(
-          ["snapshot", "save", "--pid", pid.to_s, "--title", "First"],
+          ["snapshot", "create", "--pid", pid.to_s, "--title", "First"],
           stdin: "content 1",
         )
         result1[:status].should eq(0)
         result1[:output].should contain("Snapshot #1")
 
         result2 = run_binary(
-          ["snapshot", "save", "--pid", pid.to_s, "--title", "Second"],
+          ["snapshot", "create", "--pid", pid.to_s, "--title", "Second"],
           stdin: "content 2",
         )
         result2[:status].should eq(0)
         result2[:output].should contain("Snapshot #2")
       end
 
-      it "returns number 1 for save to different session" do
+      it "returns number 1 for create to different session" do
         pid_a = Random.rand(10000).to_i64 + 90000
         pid_b = pid_a + 1
         create_session_with_pid(pid_a)
         create_session_with_pid(pid_b)
 
         run_binary(
-          ["snapshot", "save", "--pid", pid_a.to_s, "--title", "A snap"],
+          ["snapshot", "create", "--pid", pid_a.to_s, "--title", "A snap"],
           stdin: "content a",
         )
 
         result = run_binary(
-          ["snapshot", "save", "--pid", pid_b.to_s, "--title", "B snap"],
+          ["snapshot", "create", "--pid", pid_b.to_s, "--title", "B snap"],
           stdin: "content b",
         )
         result[:status].should eq(0)
@@ -1151,7 +1151,7 @@ describe "CLI Integration" do
 
       it "errors without --pid" do
         result = run_binary(
-          ["snapshot", "save", "--title", "No PID"],
+          ["snapshot", "create", "--title", "No PID"],
           stdin: "content",
         )
         result[:status].should_not eq(0)
@@ -1163,7 +1163,7 @@ describe "CLI Integration" do
         create_session_with_pid(pid)
 
         result = run_binary(
-          ["snapshot", "save", "--pid", pid.to_s],
+          ["snapshot", "create", "--pid", pid.to_s],
           stdin: "content",
         )
         result[:status].should_not eq(0)
@@ -1172,7 +1172,7 @@ describe "CLI Integration" do
 
       it "errors with invalid PID" do
         result = run_binary(
-          ["snapshot", "save", "--pid", "99999999", "--title", "Bad PID"],
+          ["snapshot", "create", "--pid", "99999999", "--title", "Bad PID"],
           stdin: "content",
         )
         result[:status].should_not eq(0)
@@ -1180,9 +1180,9 @@ describe "CLI Integration" do
       end
 
       it "shows help with --help" do
-        result = run_binary(["snapshot", "save", "--help"])
+        result = run_binary(["snapshot", "create", "--help"])
         result[:status].should eq(0)
-        result[:output].should contain("snapshot save")
+        result[:output].should contain("snapshot create")
         result[:output].should contain("--pid")
         result[:output].should contain("--title")
       end
@@ -1194,11 +1194,11 @@ describe "CLI Integration" do
         ledger_session_id = create_session_with_pid(pid)
 
         run_binary(
-          ["snapshot", "save", "--pid", pid.to_s, "--title", "First snap"],
+          ["snapshot", "create", "--pid", pid.to_s, "--title", "First snap"],
           stdin: "content one",
         )
         run_binary(
-          ["snapshot", "save", "--pid", pid.to_s, "--title", "Second snap", "--exchanges", "2"],
+          ["snapshot", "create", "--pid", pid.to_s, "--title", "Second snap", "--exchanges", "2"],
           stdin: "content two is longer",
         )
 
@@ -1220,6 +1220,111 @@ describe "CLI Integration" do
         result[:status].should eq(0)
         result[:output].should contain("No snapshots")
       end
+
+      it "outputs JSON with --json flag" do
+        pid = Random.rand(10000).to_i64 + 90000
+        ledger_session_id = create_session_with_pid(pid)
+
+        run_binary(
+          ["snapshot", "create", "--pid", pid.to_s, "--title", "JSON test"],
+          stdin: "content for json",
+        )
+        run_binary(
+          ["snapshot", "create", "--pid", pid.to_s, "--title", "Second JSON", "--exchanges", "3"],
+          stdin: "more content here",
+        )
+
+        result = run_binary(["snapshot", "list", "--pid", pid.to_s, "--json"])
+        result[:status].should eq(0)
+
+        parsed = JSON.parse(result[:output])
+        snapshots = parsed["snapshots"].as_a
+        snapshots.size.should eq(2)
+
+        first = snapshots[0]
+        first["number"].as_i.should eq(1)
+        first["title"].as_s.should eq("JSON test")
+        first["exchange_count"].as_i.should eq(1)
+        first["char_count"].as_i.should eq(16)
+        first["id"].as_i64.should be > 0
+        first["created_at"].as_s.should_not be_empty
+
+        second = snapshots[1]
+        second["number"].as_i.should eq(2)
+        second["title"].as_s.should eq("Second JSON")
+        second["exchange_count"].as_i.should eq(3)
+      end
+
+      it "outputs JSON with empty array when no snapshots" do
+        pid = Random.rand(10000).to_i64 + 90000
+        create_session_with_pid(pid)
+
+        result = run_binary(["snapshot", "list", "--pid", pid.to_s, "--json"])
+        result[:status].should eq(0)
+
+        parsed = JSON.parse(result[:output])
+        parsed["snapshots"].as_a.size.should eq(0)
+      end
+
+      it "does not include content field in JSON output" do
+        pid = Random.rand(10000).to_i64 + 90000
+        create_session_with_pid(pid)
+
+        run_binary(
+          ["snapshot", "create", "--pid", pid.to_s, "--title", "No content test"],
+          stdin: "this should not appear in list JSON",
+        )
+
+        result = run_binary(["snapshot", "list", "--pid", pid.to_s, "--json"])
+        result[:status].should eq(0)
+
+        parsed = JSON.parse(result[:output])
+        first = parsed["snapshots"].as_a[0]
+        first["title"].as_s.should eq("No content test")
+        first.as_h.has_key?("content").should be_false
+      end
+
+      it "resolves session via --ledger-session-id" do
+        pid = Random.rand(10000).to_i64 + 90000
+        ledger_session_id = create_session_with_pid(pid)
+
+        run_binary(
+          ["snapshot", "create", "--pid", pid.to_s, "--title", "LSID test"],
+          stdin: "content",
+        )
+
+        result = run_binary(["snapshot", "list", "--ledger-session-id", ledger_session_id.to_s])
+        result[:status].should eq(0)
+        result[:output].should contain("LSID test")
+      end
+
+      it "outputs JSON via --ledger-session-id" do
+        pid = Random.rand(10000).to_i64 + 90000
+        ledger_session_id = create_session_with_pid(pid)
+
+        run_binary(
+          ["snapshot", "create", "--pid", pid.to_s, "--title", "LSID JSON"],
+          stdin: "content",
+        )
+
+        result = run_binary([
+          "snapshot", "list",
+          "--ledger-session-id", ledger_session_id.to_s,
+          "--json",
+        ])
+        result[:status].should eq(0)
+
+        parsed = JSON.parse(result[:output])
+        parsed["snapshots"].as_a[0]["title"].as_s.should eq("LSID JSON")
+      end
+
+      it "shows help with --help" do
+        result = run_binary(["snapshot", "list", "--help"])
+        result[:status].should eq(0)
+        result[:output].should contain("snapshot list")
+        result[:output].should contain("--ledger-session-id")
+        result[:output].should contain("--json")
+      end
     end
 
     describe "snapshot view" do
@@ -1229,7 +1334,7 @@ describe "CLI Integration" do
 
         content = "## Exchange 1\n\n### User\nHello world\n\n### Assistant\nHi!"
         run_binary(
-          ["snapshot", "save", "--pid", pid.to_s, "--title", "View test"],
+          ["snapshot", "create", "--pid", pid.to_s, "--title", "View test"],
           stdin: content,
         )
 
@@ -1237,6 +1342,69 @@ describe "CLI Integration" do
         result[:status].should eq(0)
         result[:output].should contain("## Exchange 1")
         result[:output].should contain("Hello world")
+      end
+
+      it "outputs JSON with --json flag including content" do
+        pid = Random.rand(10000).to_i64 + 90000
+        create_session_with_pid(pid)
+
+        content = "## Exchange 1\n\n### User\nHello JSON\n\n### Assistant\nHi!"
+        run_binary(
+          ["snapshot", "create", "--pid", pid.to_s, "--title", "View JSON test"],
+          stdin: content,
+        )
+
+        result = run_binary(["snapshot", "view", "--pid", pid.to_s, "--json", "1"])
+        result[:status].should eq(0)
+
+        parsed = JSON.parse(result[:output])
+        snapshot = parsed["snapshot"]
+        snapshot["number"].as_i.should eq(1)
+        snapshot["title"].as_s.should eq("View JSON test")
+        snapshot["content"].as_s.should contain("Hello JSON")
+        snapshot["exchange_count"].as_i.should eq(1)
+        snapshot["char_count"].as_i.should be > 0
+        snapshot["created_at"].as_s.should_not be_empty
+        snapshot["updated_at"].as_s.should_not be_empty
+      end
+
+      it "resolves session via --ledger-session-id" do
+        pid = Random.rand(10000).to_i64 + 90000
+        ledger_session_id = create_session_with_pid(pid)
+
+        run_binary(
+          ["snapshot", "create", "--pid", pid.to_s, "--title", "LSID view"],
+          stdin: "content for lsid view",
+        )
+
+        result = run_binary([
+          "snapshot", "view",
+          "--ledger-session-id", ledger_session_id.to_s,
+          "1",
+        ])
+        result[:status].should eq(0)
+        result[:output].should contain("content for lsid view")
+      end
+
+      it "outputs JSON via --ledger-session-id" do
+        pid = Random.rand(10000).to_i64 + 90000
+        ledger_session_id = create_session_with_pid(pid)
+
+        run_binary(
+          ["snapshot", "create", "--pid", pid.to_s, "--title", "LSID view JSON"],
+          stdin: "lsid json content",
+        )
+
+        result = run_binary([
+          "snapshot", "view",
+          "--ledger-session-id", ledger_session_id.to_s,
+          "--json", "1",
+        ])
+        result[:status].should eq(0)
+
+        parsed = JSON.parse(result[:output])
+        parsed["snapshot"]["title"].as_s.should eq("LSID view JSON")
+        parsed["snapshot"]["content"].as_s.should contain("lsid json content")
       end
 
       it "errors with invalid number" do
@@ -1247,6 +1415,14 @@ describe "CLI Integration" do
         result[:status].should_not eq(0)
         result[:error].should contain("not found")
       end
+
+      it "shows help with --help" do
+        result = run_binary(["snapshot", "view", "--help"])
+        result[:status].should eq(0)
+        result[:output].should contain("snapshot view")
+        result[:output].should contain("--ledger-session-id")
+        result[:output].should contain("--json")
+      end
     end
 
     describe "snapshot delete" do
@@ -1255,7 +1431,7 @@ describe "CLI Integration" do
         create_session_with_pid(pid)
 
         run_binary(
-          ["snapshot", "save", "--pid", pid.to_s, "--title", "To delete"],
+          ["snapshot", "create", "--pid", pid.to_s, "--title", "To delete"],
           stdin: "content",
         )
 
@@ -1268,6 +1444,24 @@ describe "CLI Integration" do
         view_result[:status].should_not eq(0)
       end
 
+      it "deletes snapshot via --ledger-session-id" do
+        pid = Random.rand(10000).to_i64 + 90000
+        ledger_session_id = create_session_with_pid(pid)
+
+        run_binary(
+          ["snapshot", "create", "--pid", pid.to_s, "--title", "LSID delete"],
+          stdin: "content",
+        )
+
+        result = run_binary([
+          "snapshot", "delete",
+          "--ledger-session-id", ledger_session_id.to_s,
+          "1",
+        ])
+        result[:status].should eq(0)
+        result[:output].should contain("Snapshot #1 deleted")
+      end
+
       it "errors when snapshot not found" do
         pid = Random.rand(10000).to_i64 + 90000
         create_session_with_pid(pid)
@@ -1275,6 +1469,13 @@ describe "CLI Integration" do
         result = run_binary(["snapshot", "delete", "--pid", pid.to_s, "99"])
         result[:status].should_not eq(0)
         result[:error].should contain("not found")
+      end
+
+      it "shows help with --help" do
+        result = run_binary(["snapshot", "delete", "--help"])
+        result[:status].should eq(0)
+        result[:output].should contain("snapshot delete")
+        result[:output].should contain("--ledger-session-id")
       end
     end
 
@@ -1285,7 +1486,7 @@ describe "CLI Integration" do
 
         content = "## Exchange 1\n\n### User\nHello\n\n### Assistant\nHi!"
         run_binary(
-          ["snapshot", "save", "--pid", pid.to_s, "--title", "Open test"],
+          ["snapshot", "create", "--pid", pid.to_s, "--title", "Open test"],
           stdin: content,
         )
 
@@ -1309,7 +1510,7 @@ describe "CLI Integration" do
         ledger_session_id = create_session_with_pid(pid)
 
         run_binary(
-          ["snapshot", "save", "--pid", pid.to_s, "--title", "Stability test"],
+          ["snapshot", "create", "--pid", pid.to_s, "--title", "Stability test"],
           stdin: "content",
         )
 
@@ -1329,6 +1530,24 @@ describe "CLI Integration" do
         result2[:output].should contain(temp_path)
       end
 
+      it "opens snapshot via --ledger-session-id" do
+        pid = Random.rand(10000).to_i64 + 90000
+        ledger_session_id = create_session_with_pid(pid)
+
+        run_binary(
+          ["snapshot", "create", "--pid", pid.to_s, "--title", "LSID open"],
+          stdin: "lsid open content",
+        )
+
+        result = run_binary(
+          ["snapshot", "open", "--ledger-session-id", ledger_session_id.to_s, "1"],
+          extra_env: {"EDITOR" => "true"},
+        )
+        result[:status].should eq(0)
+        result[:output].should contain("Opened snapshot #1")
+        result[:output].should contain("LSID open")
+      end
+
       it "errors when snapshot not found" do
         pid = Random.rand(10000).to_i64 + 90000
         create_session_with_pid(pid)
@@ -1341,13 +1560,13 @@ describe "CLI Integration" do
         result[:error].should contain("not found")
       end
 
-      it "errors without --pid" do
+      it "errors without --pid or --ledger-session-id" do
         result = run_binary(
           ["snapshot", "open", "1"],
           extra_env: {"EDITOR" => "true"},
         )
         result[:status].should_not eq(0)
-        result[:error].should contain("--pid is required")
+        result[:error].should contain("is required")
       end
 
       it "errors without snapshot number" do
@@ -1367,7 +1586,7 @@ describe "CLI Integration" do
         create_session_with_pid(pid)
 
         run_binary(
-          ["snapshot", "save", "--pid", pid.to_s, "--title", "Bad editor"],
+          ["snapshot", "create", "--pid", pid.to_s, "--title", "Bad editor"],
           stdin: "content",
         )
 
@@ -1384,6 +1603,7 @@ describe "CLI Integration" do
         result[:status].should eq(0)
         result[:output].should contain("snapshot open")
         result[:output].should contain("--pid")
+        result[:output].should contain("--ledger-session-id")
         result[:output].should contain("EDITOR RESOLUTION")
       end
     end
