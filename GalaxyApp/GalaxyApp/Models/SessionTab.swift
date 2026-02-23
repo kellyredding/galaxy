@@ -20,4 +20,12 @@ enum SessionTab: String, CaseIterable {
         case .ledger: return "book.closed"
         }
     }
+
+    /// Whether this view has inner tabs that can be cycled with ⌘⌥←/→.
+    var hasInnerTabs: Bool {
+        switch self {
+        case .terminal: return false
+        case .ledger: return true
+        }
+    }
 }

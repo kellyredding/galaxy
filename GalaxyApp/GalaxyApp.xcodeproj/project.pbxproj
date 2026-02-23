@@ -40,6 +40,12 @@
 		AA1111110000000000000004 /* BellIndicatorBehavior.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2222220000000000000004 /* BellIndicatorBehavior.swift */; };
 		AA1111110000000000000005 /* CollapsedSessionSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2222220000000000000005 /* CollapsedSessionSidebar.swift */; };
 		AA1111110000000000000006 /* LedgerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2222220000000000000006 /* LedgerView.swift */; };
+		BB1111110000000000000001 /* LedgerSubTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2222220000000000000001 /* LedgerSubTab.swift */; };
+		BB1111110000000000000002 /* LedgerQueryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2222220000000000000002 /* LedgerQueryService.swift */; };
+		BB1111110000000000000003 /* LedgerLastActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2222220000000000000003 /* LedgerLastActivityView.swift */; };
+		BB1111110000000000000004 /* LedgerFilesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2222220000000000000004 /* LedgerFilesView.swift */; };
+		BB1111110000000000000005 /* LedgerEntriesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2222220000000000000005 /* LedgerEntriesView.swift */; };
+		BB1111110000000000000006 /* LedgerIdentifiersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2222220000000000000006 /* LedgerIdentifiersView.swift */; };
 		B1E71F47DE9403A1808277EC /* WatermarkBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6658F001C5C56071EC60514E /* WatermarkBackground.swift */; };
 		C27788ECAC3C2D2A1DA2024E /* GalaxyLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5D457946288879168E5D913 /* GalaxyLog.swift */; };
 		C3434D97E3E1783843E50797 /* SessionRowDragHandle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E474100EA691402E8DF51F3A /* SessionRowDragHandle.swift */; };
@@ -92,6 +98,12 @@
 		AA2222220000000000000004 /* BellIndicatorBehavior.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BellIndicatorBehavior.swift; sourceTree = "<group>"; };
 		AA2222220000000000000005 /* CollapsedSessionSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollapsedSessionSidebar.swift; sourceTree = "<group>"; };
 		AA2222220000000000000006 /* LedgerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerView.swift; sourceTree = "<group>"; };
+		BB2222220000000000000001 /* LedgerSubTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerSubTab.swift; sourceTree = "<group>"; };
+		BB2222220000000000000002 /* LedgerQueryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerQueryService.swift; sourceTree = "<group>"; };
+		BB2222220000000000000003 /* LedgerLastActivityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerLastActivityView.swift; sourceTree = "<group>"; };
+		BB2222220000000000000004 /* LedgerFilesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerFilesView.swift; sourceTree = "<group>"; };
+		BB2222220000000000000005 /* LedgerEntriesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerEntriesView.swift; sourceTree = "<group>"; };
+		BB2222220000000000000006 /* LedgerIdentifiersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerIdentifiersView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -115,6 +127,8 @@
 				1222FD00CE1FBF7DC99BD683 /* EventDebouncer.swift */,
 				FBD7729C400FAFC8E4EFFE94 /* EventEnvelope.swift */,
 				A5D457946288879168E5D913 /* GalaxyLog.swift */,
+				BB2222220000000000000002 /* LedgerQueryService.swift */,
+				BB2222220000000000000001 /* LedgerSubTab.swift */,
 				F36B97B02F23D9DBF2C2F2E2 /* Session.swift */,
 				EA542FF52DF4733279284AB3 /* SessionIDGenerator.swift */,
 				9EB1B25ADB386E0B834FA6B0 /* SessionManager.swift */,
@@ -146,6 +160,10 @@
 				43C2EE51F5ED8F5A44D27580 /* DragHandleNSView.swift */,
 				73B3B51B18B326C9BFD98925 /* ExpandedSessionSidebar.swift */,
 				C7704E47DFEE80B330501660 /* GalaxyTerminalView.swift */,
+				BB2222220000000000000005 /* LedgerEntriesView.swift */,
+				BB2222220000000000000004 /* LedgerFilesView.swift */,
+				BB2222220000000000000006 /* LedgerIdentifiersView.swift */,
+				BB2222220000000000000003 /* LedgerLastActivityView.swift */,
 				AA2222220000000000000006 /* LedgerView.swift */,
 				EA80B868DED26B32D6DEB65D /* SessionDragCoordinator.swift */,
 				930CA7E2539E197A2DF03CE4 /* SessionRow.swift */,
@@ -277,6 +295,12 @@
 				95B87341788CFD115DCAC557 /* GalaxyApp.swift in Sources */,
 				C27788ECAC3C2D2A1DA2024E /* GalaxyLog.swift in Sources */,
 				87FFE54A9802FACDDA0F15D9 /* GalaxyTerminalView.swift in Sources */,
+				BB1111110000000000000005 /* LedgerEntriesView.swift in Sources */,
+				BB1111110000000000000004 /* LedgerFilesView.swift in Sources */,
+				BB1111110000000000000006 /* LedgerIdentifiersView.swift in Sources */,
+				BB1111110000000000000003 /* LedgerLastActivityView.swift in Sources */,
+				BB1111110000000000000002 /* LedgerQueryService.swift in Sources */,
+				BB1111110000000000000001 /* LedgerSubTab.swift in Sources */,
 				AA1111110000000000000006 /* LedgerView.swift in Sources */,
 				9A7E8C74C205BD7E4329689D /* MainMenu.swift in Sources */,
 				69C769B61E2BA6F9BD8DA6FB /* MainWindowController.swift in Sources */,

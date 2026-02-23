@@ -25,6 +25,10 @@ class SessionManager: ObservableObject {
     // Not persisted — always starts on Terminal at launch
     @Published var activeTab: SessionTab = .terminal
 
+    // Active subtab within Ledger view (global, not per-session)
+    // Not persisted — always starts on Last Activity at launch
+    @Published var activeLedgerSubTab: LedgerSubTab = .lastActivity
+
     /// Called when a session is removed from the session list.
     /// Used by EventCoordinator to clean up cached ledger_session_id mappings.
     var onSessionClosed: ((UUID) -> Void)?
@@ -559,6 +563,36 @@ class SessionManager: ObservableObject {
         activeTab = nextIndex < allTabs.endIndex
             ? allTabs[nextIndex]
             : allTabs[allTabs.startIndex]
+    }
+
+    /// Switch to the previous inner tab within the active view (wraps around)
+    func switchToPreviousInnerTab() {
+        switch activeTab {
+        case .ledger:
+            let allTabs = LedgerSubTab.allCases
+            guard let currentIndex = allTabs.firstIndex(of: activeLedgerSubTab) else { return }
+            let prevIndex = currentIndex == allTabs.startIndex
+                ? allTabs.index(before: allTabs.endIndex)
+                : allTabs.index(before: currentIndex)
+            activeLedgerSubTab = allTabs[prevIndex]
+        default:
+            break
+        }
+    }
+
+    /// Switch to the next inner tab within the active view (wraps around)
+    func switchToNextInnerTab() {
+        switch activeTab {
+        case .ledger:
+            let allTabs = LedgerSubTab.allCases
+            guard let currentIndex = allTabs.firstIndex(of: activeLedgerSubTab) else { return }
+            let nextIndex = allTabs.index(after: currentIndex)
+            activeLedgerSubTab = nextIndex < allTabs.endIndex
+                ? allTabs[nextIndex]
+                : allTabs[allTabs.startIndex]
+        default:
+            break
+        }
     }
 
     /// Swap two sessions in the array (used during drag-to-reorder)

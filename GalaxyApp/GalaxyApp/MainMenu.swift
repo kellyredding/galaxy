@@ -261,44 +261,68 @@ class MainMenu: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        // Tab switching: ⌘⇧[ / ⌘⇧] and ⌘⇧← / ⌘⇧→
-        let prevTabItem = NSMenuItem(
-            title: "Previous tab",
-            action: #selector(MenuActions.previousTab(_:)),
+        // View switching: ⌘⇧[ / ⌘⇧] and ⌘⇧← / ⌘⇧→
+        let prevViewItem = NSMenuItem(
+            title: "Previous view",
+            action: #selector(MenuActions.previousView(_:)),
             keyEquivalent: "["
         )
-        prevTabItem.target = MenuActions.shared
-        prevTabItem.keyEquivalentModifierMask = [.command, .shift]
-        menu.addItem(prevTabItem)
+        prevViewItem.target = MenuActions.shared
+        prevViewItem.keyEquivalentModifierMask = [.command, .shift]
+        menu.addItem(prevViewItem)
 
-        let prevTabArrowItem = NSMenuItem(
+        let prevViewArrowItem = NSMenuItem(
+            title: "Previous view",
+            action: #selector(MenuActions.previousView(_:)),
+            keyEquivalent: String(UnicodeScalar(NSLeftArrowFunctionKey)!)
+        )
+        prevViewArrowItem.target = MenuActions.shared
+        prevViewArrowItem.keyEquivalentModifierMask = [.command, .shift]
+        prevViewArrowItem.isAlternate = true
+        menu.addItem(prevViewArrowItem)
+
+        let nextViewItem = NSMenuItem(
+            title: "Next view",
+            action: #selector(MenuActions.nextView(_:)),
+            keyEquivalent: "]"
+        )
+        nextViewItem.target = MenuActions.shared
+        nextViewItem.keyEquivalentModifierMask = [.command, .shift]
+        menu.addItem(nextViewItem)
+
+        let nextViewArrowItem = NSMenuItem(
+            title: "Next view",
+            action: #selector(MenuActions.nextView(_:)),
+            keyEquivalent: String(UnicodeScalar(NSRightArrowFunctionKey)!)
+        )
+        nextViewArrowItem.target = MenuActions.shared
+        nextViewArrowItem.keyEquivalentModifierMask = [.command, .shift]
+        nextViewArrowItem.isAlternate = true
+        menu.addItem(nextViewArrowItem)
+
+        // Tab switching within views: ⌘⌥← / ⌘⌥→
+        // Only enabled when the active view has inner tabs
+        let hasInnerTabs = sessionManager.activeTab.hasInnerTabs
+
+        let prevTabItem = NSMenuItem(
             title: "Previous tab",
             action: #selector(MenuActions.previousTab(_:)),
             keyEquivalent: String(UnicodeScalar(NSLeftArrowFunctionKey)!)
         )
-        prevTabArrowItem.target = MenuActions.shared
-        prevTabArrowItem.keyEquivalentModifierMask = [.command, .shift]
-        prevTabArrowItem.isAlternate = true
-        menu.addItem(prevTabArrowItem)
+        prevTabItem.target = MenuActions.shared
+        prevTabItem.keyEquivalentModifierMask = [.command, .option]
+        prevTabItem.isEnabled = hasInnerTabs
+        menu.addItem(prevTabItem)
 
         let nextTabItem = NSMenuItem(
             title: "Next tab",
             action: #selector(MenuActions.nextTab(_:)),
-            keyEquivalent: "]"
-        )
-        nextTabItem.target = MenuActions.shared
-        nextTabItem.keyEquivalentModifierMask = [.command, .shift]
-        menu.addItem(nextTabItem)
-
-        let nextTabArrowItem = NSMenuItem(
-            title: "Next tab",
-            action: #selector(MenuActions.nextTab(_:)),
             keyEquivalent: String(UnicodeScalar(NSRightArrowFunctionKey)!)
         )
-        nextTabArrowItem.target = MenuActions.shared
-        nextTabArrowItem.keyEquivalentModifierMask = [.command, .shift]
-        nextTabArrowItem.isAlternate = true
-        menu.addItem(nextTabArrowItem)
+        nextTabItem.target = MenuActions.shared
+        nextTabItem.keyEquivalentModifierMask = [.command, .option]
+        nextTabItem.isEnabled = hasInnerTabs
+        menu.addItem(nextTabItem)
 
         menu.addItem(.separator())
 
@@ -449,12 +473,20 @@ class MenuActions: NSObject {
         SessionManager.shared.switchToNextSession()
     }
 
-    @objc func previousTab(_ sender: Any?) {
+    @objc func previousView(_ sender: Any?) {
         SessionManager.shared.switchToPreviousTab()
     }
 
-    @objc func nextTab(_ sender: Any?) {
+    @objc func nextView(_ sender: Any?) {
         SessionManager.shared.switchToNextTab()
+    }
+
+    @objc func previousTab(_ sender: Any?) {
+        SessionManager.shared.switchToPreviousInnerTab()
+    }
+
+    @objc func nextTab(_ sender: Any?) {
+        SessionManager.shared.switchToNextInnerTab()
     }
 
     @objc func defaultTerminalFontSize(_ sender: Any?) {
