@@ -59,6 +59,7 @@ struct StoppedSessionView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
+                    .focusable(false)
 
                     Text("or resume elsewhere:")
                         .chromeFont(size: fontSize.caption)

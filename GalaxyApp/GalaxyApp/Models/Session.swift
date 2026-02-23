@@ -120,6 +120,13 @@ class Session: Identifiable, ObservableObject {
     /// ISO timestamp of last user interaction
     var ledgerLastInteraction: String?
 
+    /// Monotonically increasing counter bumped after each enrichment
+    /// batch. LedgerView observes this single @Published property
+    /// instead of promoting all ledger fields to @Published.
+    /// Lifecycle: starts at 0, increments on each enrichment,
+    /// resets to 0 on app relaunch (Session objects are recreated).
+    @Published var ledgerVersion: Int = 0
+
     /// Persona name for this session (nil for vanilla Claude sessions)
     let personaName: String?
 

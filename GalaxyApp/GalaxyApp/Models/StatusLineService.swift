@@ -24,7 +24,7 @@ class StatusLineService: ObservableObject {
 
     private init() {}
 
-    /// Refresh git status for all sessions. Called by SessionSidebar
+    /// Refresh git status for all sessions. Called by ExpandedSessionSidebar
     /// on appear and session count changes.
     func refreshSessions(_ sessions: [Session]) {
         DispatchQueue.global(qos: .utility).async { [weak self] in

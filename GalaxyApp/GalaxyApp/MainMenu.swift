@@ -215,7 +215,7 @@ class MainMenu: NSObject, NSMenuDelegate {
         menu.removeAllItems()
 
         let panelOnLeft = settingsManager.settings.sidebarPosition == .left
-        let isVisible = sessionManager.isSidebarVisible
+        let isVisible = settingsManager.settings.isSidebarVisible
 
         // Hide sessions: ⌘[ if panel on left, ⌘] if panel on right
         let hideItem = NSMenuItem(title: "Hide sessions", action: #selector(MenuActions.hideSessions(_:)), keyEquivalent: panelOnLeft ? "[" : "]")
@@ -258,6 +258,47 @@ class MainMenu: NSObject, NSMenuDelegate {
         nextArrowItem.isEnabled = canGoNext
         nextArrowItem.isAlternate = true
         menu.addItem(nextArrowItem)
+
+        menu.addItem(.separator())
+
+        // Tab switching: ⌘⇧[ / ⌘⇧] and ⌘⇧← / ⌘⇧→
+        let prevTabItem = NSMenuItem(
+            title: "Previous tab",
+            action: #selector(MenuActions.previousTab(_:)),
+            keyEquivalent: "["
+        )
+        prevTabItem.target = MenuActions.shared
+        prevTabItem.keyEquivalentModifierMask = [.command, .shift]
+        menu.addItem(prevTabItem)
+
+        let prevTabArrowItem = NSMenuItem(
+            title: "Previous tab",
+            action: #selector(MenuActions.previousTab(_:)),
+            keyEquivalent: String(UnicodeScalar(NSLeftArrowFunctionKey)!)
+        )
+        prevTabArrowItem.target = MenuActions.shared
+        prevTabArrowItem.keyEquivalentModifierMask = [.command, .shift]
+        prevTabArrowItem.isAlternate = true
+        menu.addItem(prevTabArrowItem)
+
+        let nextTabItem = NSMenuItem(
+            title: "Next tab",
+            action: #selector(MenuActions.nextTab(_:)),
+            keyEquivalent: "]"
+        )
+        nextTabItem.target = MenuActions.shared
+        nextTabItem.keyEquivalentModifierMask = [.command, .shift]
+        menu.addItem(nextTabItem)
+
+        let nextTabArrowItem = NSMenuItem(
+            title: "Next tab",
+            action: #selector(MenuActions.nextTab(_:)),
+            keyEquivalent: String(UnicodeScalar(NSRightArrowFunctionKey)!)
+        )
+        nextTabArrowItem.target = MenuActions.shared
+        nextTabArrowItem.keyEquivalentModifierMask = [.command, .shift]
+        nextTabArrowItem.isAlternate = true
+        menu.addItem(nextTabArrowItem)
 
         menu.addItem(.separator())
 
@@ -406,6 +447,14 @@ class MenuActions: NSObject {
 
     @objc func nextSession(_ sender: Any?) {
         SessionManager.shared.switchToNextSession()
+    }
+
+    @objc func previousTab(_ sender: Any?) {
+        SessionManager.shared.switchToPreviousTab()
+    }
+
+    @objc func nextTab(_ sender: Any?) {
+        SessionManager.shared.switchToNextTab()
     }
 
     @objc func defaultTerminalFontSize(_ sender: Any?) {

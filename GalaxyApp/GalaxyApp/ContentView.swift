@@ -4,19 +4,32 @@ import AppKit
 struct ContentView: View {
     @EnvironmentObject var sessionManager: SessionManager
     @EnvironmentObject var settingsManager: SettingsManager
+    @Environment(\.chromeFontSize) private var chromeFontSize
 
     // Track width during drag (nil when not dragging, uses settings value)
     @State private var draggingWidth: CGFloat? = nil
 
     private let toolbarHeight: CGFloat = 28
+    private let collapsedSidebarWidth: CGFloat = 32
 
     private var isSidebarVisible: Bool {
-        sessionManager.isSidebarVisible
+        settingsManager.settings.isSidebarVisible
     }
 
     private var sidebarWidth: CGFloat {
         // Use live dragging width if actively dragging, otherwise use persisted setting
         draggingWidth ?? settingsManager.settings.sidebarWidth
+    }
+
+    /// Effective width of the sidebar column. When dragging, uses the
+    /// live drag value. When expanded, uses the persisted setting.
+    /// When collapsed, uses the fixed collapsed width.
+    private var sidebarColumnWidth: CGFloat {
+        if isSidebarVisible {
+            return draggingWidth ?? settingsManager.settings.sidebarWidth
+        } else {
+            return collapsedSidebarWidth
+        }
     }
 
     /// The currently active session (for terminal font control)
@@ -30,37 +43,33 @@ struct ContentView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Control bar
-            controlBar
-
-            // Main content area
-            HStack(spacing: 0) {
-                if sidebarOnLeft {
-                    sidebarSection
-                    resizeHandle
-                    detailSection
-                } else {
-                    detailSection
-                    resizeHandle
-                    sidebarSection
-                }
+        HStack(spacing: 0) {
+            if sidebarOnLeft {
+                sidebarColumn
+                resizeHandle
+                viewsColumn
+            } else {
+                viewsColumn
+                resizeHandle
+                sidebarColumn
             }
         }
         .frame(minWidth: 800, minHeight: 500)
     }
 
-    private var controlBar: some View {
-        HStack(spacing: 8) {
+    // MARK: - Sidebar Column
+
+    private var sidebarControlBar: some View {
+        HStack(spacing: 0) {
             if sidebarOnLeft {
                 sidebarToggleButton
-                Spacer()
+                Spacer(minLength: 0)
             } else {
-                Spacer()
+                Spacer(minLength: 0)
                 sidebarToggleButton
             }
         }
-        .padding(.horizontal, 8)
+        .padding(sidebarOnLeft ? .leading : .trailing, 5)
         .frame(height: toolbarHeight)
         .background(Color(NSColor.windowBackgroundColor))
         .overlay(alignment: .bottom) {
@@ -73,7 +82,7 @@ struct ContentView: View {
     private var sidebarToggleButton: some View {
         Button(action: {
             withAnimation(.easeInOut(duration: 0.2)) {
-                sessionManager.isSidebarVisible.toggle()
+                settingsManager.settings.isSidebarVisible.toggle()
             }
         }) {
             Image(systemName: sidebarOnLeft ? "sidebar.left" : "sidebar.right")
@@ -84,29 +93,105 @@ struct ContentView: View {
         .help(isSidebarVisible ? "Hide Sessions" : "Show Sessions")
     }
 
-    @ViewBuilder
-    private var sidebarSection: some View {
-        if isSidebarVisible {
-            SessionSidebar(sidebarWidth: sidebarWidth)
-                .frame(width: sidebarWidth)
-                .transaction { t in
-                    // Disable animations during drag for smooth tracking
-                    if draggingWidth != nil {
-                        t.animation = nil
-                    }
-                }
-                .transition(.move(edge: sidebarOnLeft ? .leading : .trailing))
+    private var sidebarColumn: some View {
+        VStack(spacing: 0) {
+            sidebarControlBar
+            if isSidebarVisible {
+                ExpandedSessionSidebar(sidebarWidth: sidebarColumnWidth)
+            } else {
+                CollapsedSessionSidebar()
+            }
+        }
+        .frame(width: sidebarColumnWidth)
+        .clipped()
+        .transaction { t in
+            // Disable animations during sidebar resize drag
+            if draggingWidth != nil {
+                t.animation = nil
+            }
         }
     }
 
-    @ViewBuilder
-    private var resizeHandle: some View {
-        if isSidebarVisible {
-            // Visual separator line with invisible drag handle overlay
+    // MARK: - Views Column
+
+    private var viewsControlBar: some View {
+        HStack(spacing: 8) {
+            Spacer()
+            tabPicker
+            Spacer()
+        }
+        .padding(.horizontal, 8)
+        .frame(height: toolbarHeight)
+        .background(Color(NSColor.windowBackgroundColor))
+        .overlay(alignment: .bottom) {
             Rectangle()
-                .fill(Color(NSColor.separatorColor))
-                .frame(width: 1)
-                .overlay(
+                .fill(Color.primary.opacity(0.15))
+                .frame(height: 1)
+        }
+    }
+
+    private var viewsColumn: some View {
+        VStack(spacing: 0) {
+            viewsControlBar
+            activeViewContent
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private var activeViewContent: some View {
+        if sessionManager.sessions.isEmpty {
+            EmptyStateView()
+        } else {
+            switch sessionManager.activeTab {
+            case .terminal:
+                TerminalContainerView()
+            case .ledger:
+                LedgerContainerView()
+            }
+        }
+    }
+
+    // MARK: - Tab Picker
+
+    private var tabPicker: some View {
+        HStack(spacing: 0) {
+            ForEach(SessionTab.allCases, id: \.self) { tab in
+                Button(action: { sessionManager.activeTab = tab }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: tab.icon)
+                        Text(tab.title)
+                    }
+                    .chromeFont(size: ChromeFontSize(chromeFontSize).caption2)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(
+                                sessionManager.activeTab == tab
+                                    ? Color.primary.opacity(0.1)
+                                    : Color.clear
+                            )
+                    )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(
+                    sessionManager.activeTab == tab ? .primary : .secondary
+                )
+            }
+        }
+    }
+
+    // MARK: - Resize Handle
+
+    private var resizeHandle: some View {
+        Rectangle()
+            .fill(Color(NSColor.separatorColor))
+            .frame(width: 1)
+            .overlay {
+                // Invisible drag handle — only when sidebar is expanded
+                if isSidebarVisible {
                     SidebarResizeHandle(
                         currentWidth: sidebarWidth,
                         sidebarOnLeft: sidebarOnLeft,
@@ -118,21 +203,10 @@ struct ContentView: View {
                             draggingWidth = nil
                         }
                     )
-                    .frame(width: 9)  // Wider hit area
-                )
-                .zIndex(100)  // Ensure resize handle is above terminal view
-        }
-    }
-
-    private var detailSection: some View {
-        Group {
-            if sessionManager.sessions.isEmpty {
-                EmptyStateView()
-            } else {
-                TerminalContainerView()
+                    .frame(width: 9)
+                }
             }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .zIndex(100)
     }
 }
 

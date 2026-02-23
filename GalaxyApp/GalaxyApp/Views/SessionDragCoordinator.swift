@@ -11,7 +11,7 @@ class SessionDragCoordinator: ObservableObject {
 
     var dragStartY: CGFloat = 0                      // Screen Y at drag start
     var dragStartIndex: Int = 0                      // Original array index
-    var rowHeight: CGFloat = 0                       // Height of one session row (set by SessionSidebar)
+    var rowHeight: CGFloat = 0                       // Height of one session row (set by ExpandedSessionSidebar)
     var totalSessionCount: Int = 0                   // Total sessions (for boundary clamping)
 
     /// Called when preview crosses 50% threshold and a swap is needed
@@ -19,7 +19,7 @@ class SessionDragCoordinator: ObservableObject {
 
     // MARK: - Auto-scroll support
 
-    /// Sidebar visible bounds in screen coordinates (set by SessionSidebar)
+    /// Sidebar visible bounds in screen coordinates (set by ExpandedSessionSidebar)
     var sidebarScreenFrame: CGRect = .zero
 
     /// Edge zone size for triggering auto-scroll
@@ -28,7 +28,7 @@ class SessionDragCoordinator: ObservableObject {
     /// Called when auto-scroll should happen (passes session ID to scroll to)
     var onScrollToSession: ((UUID) -> Void)?
 
-    /// All session IDs in order (set by SessionSidebar for scroll targeting)
+    /// All session IDs in order (set by ExpandedSessionSidebar for scroll targeting)
     var sessionIds: [UUID] = []
 
     /// Timer for continuous auto-scrolling

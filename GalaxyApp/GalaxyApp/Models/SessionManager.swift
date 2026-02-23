@@ -13,8 +13,17 @@ class SessionManager: ObservableObject {
     // Track whether the main window is focused (for bell indicator logic)
     @Published var isWindowFocused: Bool = true
 
-    // Track sidebar visibility (for View menu toggle)
-    @Published var isSidebarVisible: Bool = true
+    // Sidebar visibility — persisted in AppSettings, accessed via
+    // SettingsManager. Computed property delegates read/write so
+    // existing view code (ContentView, MainMenu) works unchanged.
+    var isSidebarVisible: Bool {
+        get { SettingsManager.shared.settings.isSidebarVisible }
+        set { SettingsManager.shared.settings.isSidebarVisible = newValue }
+    }
+
+    // Active tab in the views area (global, not per-session)
+    // Not persisted — always starts on Terminal at launch
+    @Published var activeTab: SessionTab = .terminal
 
     /// Called when a session is removed from the session list.
     /// Used by EventCoordinator to clean up cached ledger_session_id mappings.
@@ -530,6 +539,26 @@ class SessionManager: ObservableObject {
               let currentIndex = sessions.firstIndex(where: { $0.id == currentId }) else { return }
 
         switchTo(sessionId: sessions[currentIndex + 1].id)
+    }
+
+    /// Switch to the previous tab (wraps around)
+    func switchToPreviousTab() {
+        let allTabs = SessionTab.allCases
+        guard let currentIndex = allTabs.firstIndex(of: activeTab) else { return }
+        let prevIndex = currentIndex == allTabs.startIndex
+            ? allTabs.index(before: allTabs.endIndex)
+            : allTabs.index(before: currentIndex)
+        activeTab = allTabs[prevIndex]
+    }
+
+    /// Switch to the next tab (wraps around)
+    func switchToNextTab() {
+        let allTabs = SessionTab.allCases
+        guard let currentIndex = allTabs.firstIndex(of: activeTab) else { return }
+        let nextIndex = allTabs.index(after: currentIndex)
+        activeTab = nextIndex < allTabs.endIndex
+            ? allTabs[nextIndex]
+            : allTabs[allTabs.startIndex]
     }
 
     /// Swap two sessions in the array (used during drag-to-reorder)

@@ -14,7 +14,7 @@ struct SessionRow: View {
     let showDragHandle: Bool  // Only show when multiple sessions exist
     let isDragging: Bool      // Whether any drag is in progress (disables hover)
 
-    // Status info passed from SessionSidebar (not observed to prevent mass re-renders)
+    // Status info passed from ExpandedSessionSidebar (not observed to prevent mass re-renders)
     let statusInfo: StatusLineService.SessionStatusInfo?
 
     // Sidebar width for adaptive CWD truncation
@@ -23,7 +23,6 @@ struct SessionRow: View {
     @Environment(\.chromeFontSize) private var chromeFontSize
     @Environment(\.colorScheme) private var colorScheme
     @State private var isHovered = false
-    @State private var isPulsePhase = false
     @State private var isEditingName = false
     @State private var editingNameText = ""
     @FocusState private var isNameFieldFocused: Bool
@@ -66,10 +65,7 @@ struct SessionRow: View {
             }
 
             // Status indicator (pulses opacity when session is busy)
-            Circle()
-                .fill(statusColor)
-                .frame(width: 8, height: 8)
-                .opacity(isPulsePhase ? 0.3 : 1.0)
+            SessionStatusDot(session: session)
 
             // Session info with bell indicator overlay
             ZStack(alignment: .topLeading) {
@@ -119,11 +115,8 @@ struct SessionRow: View {
 
                 // Unread bell indicator - bright red dot, tight to top-left corner
                 // Shows instantly, fades out over 3 seconds (animation applied via withAnimation when clearing)
-                Circle()
-                    .fill(Color(red: 1.0, green: 0.2, blue: 0.2))  // Bright, saturated red
-                    .frame(width: 8, height: 8)
-                    .shadow(color: Color.red.opacity(0.6), radius: 3, x: 0, y: 0)  // Subtle glow
-                    .offset(x: -6, y: -2)  // Right edge overlaps first letter of session name
+                UnreadBellIndicator()
+                    .offset(x: -6, y: -2)
                     .opacity(session.hasUnreadBell ? 1 : 0)
             }
         }
@@ -200,56 +193,11 @@ struct SessionRow: View {
                 isHovered = true
             }
         }
-        .onChange(of: isSelected) { _, newValue in
-            // When session becomes selected and window is focused, clear the indicator (with fade)
-            if newValue && isWindowFocused && session.hasUnreadBell {
-                withAnimation(.easeOut(duration: 3.0)) {
-                    session.hasUnreadBell = false
-                }
-            }
-        }
-        .onChange(of: isWindowFocused) { _, newValue in
-            // When window becomes focused and this session is selected, clear the indicator (with fade)
-            if newValue && isSelected && session.hasUnreadBell {
-                withAnimation(.easeOut(duration: 3.0)) {
-                    session.hasUnreadBell = false
-                }
-            }
-        }
-        .onChange(of: session.hasUnreadBell) { _, newValue in
-            // When bell indicator appears and session is already selected + focused, start fade
-            // Small delay lets the indicator render at full opacity before fading
-            if newValue && isSelected && isWindowFocused {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    withAnimation(.easeOut(duration: 3.0)) {
-                        session.hasUnreadBell = false
-                    }
-                }
-            }
-        }
-        .onChange(of: session.isBusy) { _, newValue in
-            if newValue {
-                // Start continuous pulse: smooth fade between full and dim opacity
-                withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) {
-                    isPulsePhase = true
-                }
-            } else {
-                // Stop pulsing: smoothly return to full opacity
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    isPulsePhase = false
-                }
-            }
-        }
-    }
-
-    private var statusColor: Color {
-        if session.hasExited {
-            return .red  // Stopped sessions
-        } else if session.isRunning {
-            return .green
-        } else {
-            return .yellow
-        }
+        .bellIndicatorBehavior(
+            session: session,
+            isSelected: isSelected,
+            isWindowFocused: isWindowFocused
+        )
     }
 
     // MARK: - Line 3: CWD + Git Status

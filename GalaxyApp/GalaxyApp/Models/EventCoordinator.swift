@@ -249,6 +249,10 @@ final class EventCoordinator {
                     // Persist updated enrichment data
                     SessionPersistence.shared.markDirty()
 
+                    // Bump version counter so LedgerView re-renders
+                    // with the latest enrichment data
+                    appSession.ledgerVersion += 1
+
                     break
                 }
             }

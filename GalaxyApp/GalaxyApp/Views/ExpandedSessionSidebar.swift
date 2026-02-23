@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-struct SessionSidebar: View {
+struct ExpandedSessionSidebar: View {
     let sidebarWidth: CGFloat
 
     @EnvironmentObject var sessionManager: SessionManager

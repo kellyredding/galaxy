@@ -98,6 +98,7 @@ enum GitStatusStyle: String, Codable, CaseIterable {
 struct AppSettings: Codable {
     var sidebarPosition: SidebarPosition = .left
     var sidebarWidth: CGFloat = 220.0  // Width of sessions panel
+    var isSidebarVisible: Bool = true  // Sidebar expanded/collapsed state
     var themePreference: ThemePreference = .system
     var bellPreference: BellPreference = .system
     var showBellBadge: Bool = true
@@ -136,6 +137,7 @@ struct AppSettings: Codable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         sidebarPosition = try container.decodeIfPresent(SidebarPosition.self, forKey: .sidebarPosition) ?? .left
         sidebarWidth = try container.decodeIfPresent(CGFloat.self, forKey: .sidebarWidth) ?? 220.0
+        isSidebarVisible = try container.decodeIfPresent(Bool.self, forKey: .isSidebarVisible) ?? true
         themePreference = try container.decodeIfPresent(ThemePreference.self, forKey: .themePreference) ?? .system
         bellPreference = try container.decodeIfPresent(BellPreference.self, forKey: .bellPreference) ?? .system
         showBellBadge = try container.decodeIfPresent(Bool.self, forKey: .showBellBadge) ?? true

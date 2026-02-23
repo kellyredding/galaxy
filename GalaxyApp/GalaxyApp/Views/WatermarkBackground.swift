@@ -19,6 +19,7 @@ struct WatermarkBackground: View {
             .aspectRatio(contentMode: .fit)
             .scaleEffect(1.75)  // Scale up from center
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .allowsHitTesting(false)  // Decorative only — scaleEffect extends hit area beyond layout bounds
     }
 }
 
