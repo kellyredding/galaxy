@@ -165,7 +165,7 @@ module GalaxyLedger
           lines << ""
           lines << "---"
           lines << "\u{1f4da} Search this session: `galaxy-ledger search --query \"QUERY\" --pid #{claude_pid}`"
-          lines << "\u{1f4cb} List this session: `galaxy-ledger list --pid #{claude_pid}`"
+          lines << "\u{1f4cb} List this session: `galaxy-ledger list-entries --pid #{claude_pid}`"
           return lines.join("\n")
         end
 

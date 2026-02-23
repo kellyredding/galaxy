@@ -24,9 +24,9 @@ describe "CLI Integration: sessions" do
       result[:status].should_not eq(0)
     end
 
-    it "errors when no --session flags provided" do
+    it "errors when no --session or --ledger-session-id provided" do
       result = run_binary(["sessions", "--json"])
-      result[:error].should contain("at least one --session is required")
+      result[:error].should contain("at least one --session or --ledger-session-id is required")
       result[:status].should_not eq(0)
     end
   end
@@ -174,6 +174,78 @@ describe "CLI Integration: sessions" do
 
       sessions = JSON.parse(result[:output])["sessions"].as_a
       sessions.size.should eq(1)
+    end
+  end
+
+  describe "--ledger-session-id flag" do
+    it "queries session by internal DB ID" do
+      session_id = "sessions-lsid-#{Random.rand(100000)}"
+      ledger_session_id = GalaxyLedger::Database.create_session(
+        session_id,
+        cwd: "/tmp/lsid-project",
+        project_dir: "/tmp/lsid-project",
+        git_branch: "main",
+      )
+
+      result = run_binary(["sessions", "--json", "--ledger-session-id", ledger_session_id.to_s])
+      result[:status].should eq(0)
+
+      parsed = JSON.parse(result[:output])
+      sessions = parsed["sessions"].as_a
+      sessions.size.should eq(1)
+
+      session = sessions[0]
+      session["ledger_session_id"].as_i64.should eq(ledger_session_id)
+      session["cwd"].as_s.should eq("/tmp/lsid-project")
+      session["session_identifiers"].as_a.map(&.as_s).should contain(session_id)
+    end
+
+    it "includes all session fields" do
+      pid = Random.rand(10000).to_i64 + 50000
+      session_id = "sessions-lsid-fields-#{Random.rand(100000)}"
+      ledger_session_id = GalaxyLedger::Database.create_session(session_id, claude_pid: pid)
+      GalaxyLedger::Database.register_session_identifier(ledger_session_id, "resumed-lsid-1")
+
+      result = run_binary(["sessions", "--json", "--ledger-session-id", ledger_session_id.to_s])
+      result[:status].should eq(0)
+
+      session = JSON.parse(result[:output])["sessions"].as_a[0]
+      session["session_identifiers"].as_a.size.should be >= 2
+      session["claude_pids"].as_a.size.should be >= 1
+      session["current_claude_pid"].as_i64.should eq(pid)
+    end
+
+    it "can be combined with --session flags" do
+      sid1 = "sessions-lsid-combo-1-#{Random.rand(100000)}"
+      sid2 = "sessions-lsid-combo-2-#{Random.rand(100000)}"
+      lsid1 = GalaxyLedger::Database.create_session(sid1)
+      GalaxyLedger::Database.create_session(sid2)
+
+      result = run_binary(["sessions", "--json", "--ledger-session-id", lsid1.to_s, "--session", sid2])
+      result[:status].should eq(0)
+
+      sessions = JSON.parse(result[:output])["sessions"].as_a
+      sessions.size.should eq(2)
+    end
+
+    it "returns empty array for nonexistent ledger session ID" do
+      result = run_binary(["sessions", "--json", "--ledger-session-id", "999999999"])
+      result[:status].should eq(0)
+
+      sessions = JSON.parse(result[:output])["sessions"].as_a
+      sessions.size.should eq(0)
+    end
+
+    it "errors with invalid (non-integer) ledger session ID" do
+      result = run_binary(["sessions", "--json", "--ledger-session-id", "not-a-number"])
+      result[:status].should_not eq(0)
+      result[:error].should contain("invalid --ledger-session-id")
+    end
+
+    it "shows --ledger-session-id in help text" do
+      result = run_binary(["sessions", "--help"])
+      result[:status].should eq(0)
+      result[:output].should contain("--ledger-session-id")
     end
   end
 end

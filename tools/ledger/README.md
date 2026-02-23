@@ -31,7 +31,7 @@ galaxy-ledger hooks uninstall # Remove hooks
 ## Commands
 
 ```bash
-galaxy-ledger list                    # List recent entries
+galaxy-ledger list-entries             # List recent entries
 galaxy-ledger search "query"          # Search the ledger (FTS)
 galaxy-ledger session list            # List all sessions
 galaxy-ledger session show SESSION_ID # Show session details

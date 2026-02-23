@@ -268,7 +268,7 @@ describe "CLI Integration" do
     end
   end
 
-  describe "list subcommand" do
+  describe "list-entries subcommand" do
     before_each do
       # Clean database for isolation
       db_path = GalaxyLedger::Database.database_path
@@ -279,7 +279,7 @@ describe "CLI Integration" do
       run_binary(["add", "--type", "learning", "--content", "First learning"])
       run_binary(["add", "--type", "decision", "--content", "First decision"])
 
-      result = run_binary(["list"])
+      result = run_binary(["list-entries"])
       result[:status].should eq(0)
       result[:output].should contain("Recent ledger entries")
       result[:output].should contain("learning")
@@ -287,7 +287,7 @@ describe "CLI Integration" do
     end
 
     it "shows empty message when no entries" do
-      result = run_binary(["list"])
+      result = run_binary(["list-entries"])
       result[:status].should eq(0)
       result[:output].should contain("No entries in ledger")
     end
@@ -297,7 +297,7 @@ describe "CLI Integration" do
         run_binary(["add", "--type", "learning", "--content", "Learning number #{i + 1}"])
       end
 
-      result = run_binary(["list", "--limit", "2"])
+      result = run_binary(["list-entries", "--limit", "2"])
       result[:status].should eq(0)
       result[:output].should contain("showing 2 of 5")
     end
@@ -307,13 +307,13 @@ describe "CLI Integration" do
         run_binary(["add", "--type", "learning", "--content", "Learning number #{i + 1}"])
       end
 
-      result = run_binary(["list", "2"])
+      result = run_binary(["list-entries", "2"])
       result[:status].should eq(0)
       result[:output].should contain("showing 2 of 5")
     end
 
     it "shows help with --help flag" do
-      result = run_binary(["list", "--help"])
+      result = run_binary(["list-entries", "--help"])
       result[:status].should eq(0)
       result[:output].should contain("USAGE")
       result[:output].should contain("--limit N")
@@ -321,7 +321,7 @@ describe "CLI Integration" do
     end
 
     it "shows help with -h flag" do
-      result = run_binary(["list", "-h"])
+      result = run_binary(["list-entries", "-h"])
       result[:status].should eq(0)
       result[:output].should contain("USAGE")
     end
@@ -495,7 +495,7 @@ describe "CLI Integration" do
     end
   end
 
-  describe "list with filters" do
+  describe "list-entries with filters" do
     before_each do
       db_path = GalaxyLedger::Database.database_path
       File.delete(db_path) if File.exists?(db_path)
@@ -508,7 +508,7 @@ describe "CLI Integration" do
     end
 
     it "filters by --type" do
-      result = run_binary(["list", "--type", "learning"])
+      result = run_binary(["list-entries", "--type", "learning"])
       result[:status].should eq(0)
       result[:output].should contain("Filters: type=learning")
       result[:output].should contain("Learning 1")
@@ -517,7 +517,7 @@ describe "CLI Integration" do
     end
 
     it "filters by --importance" do
-      result = run_binary(["list", "--importance", "high"])
+      result = run_binary(["list-entries", "--importance", "high"])
       result[:status].should eq(0)
       result[:output].should contain("Filters: importance=high")
       result[:output].should contain("Learning 1")
@@ -526,20 +526,20 @@ describe "CLI Integration" do
     end
 
     it "combines limit with filters" do
-      result = run_binary(["list", "--limit", "1", "--type", "learning"])
+      result = run_binary(["list-entries", "--limit", "1", "--type", "learning"])
       result[:status].should eq(0)
       result[:output].should contain("showing 1)")
     end
 
     it "shows --help" do
-      result = run_binary(["list", "--help"])
+      result = run_binary(["list-entries", "--help"])
       result[:status].should eq(0)
       result[:output].should contain("--type TYPE")
       result[:output].should contain("--importance LEVEL")
     end
 
     it "shows error for invalid type filter" do
-      result = run_binary(["list", "--type", "invalid"])
+      result = run_binary(["list-entries", "--type", "invalid"])
       result[:error].should contain("Invalid type")
       result[:status].should_not eq(0)
     end
@@ -856,9 +856,9 @@ describe "CLI Integration" do
       GalaxyLedger::Database.delete_session(session_id)
     end
 
-    it "requires --session or --pid flag" do
+    it "requires --session, --pid, or --ledger-session-id flag" do
       result = run_binary(["list-files"])
-      result[:error].should contain("--session or --pid is required")
+      result[:error].should contain("--session, --pid, or --ledger-session-id is required")
       result[:status].should_not eq(0)
     end
 
@@ -896,7 +896,7 @@ describe "CLI Integration" do
       result = run_binary(["--help"])
       result[:status].should eq(0)
       result[:output].should contain("search")
-      result[:output].should contain("list")
+      result[:output].should contain("list-entries")
       result[:output].should contain("list-files")
       result[:output].should contain("add")
       result[:output].should contain("config")
@@ -1501,6 +1501,248 @@ describe "CLI Integration" do
       result = run_binary(["backup"])
       result[:status].should eq(0)
       result[:output].should contain("disabled")
+    end
+  end
+
+  describe "list-entries --json" do
+    it "outputs valid JSON with entries array" do
+      session_id = "json-entries-#{Random.rand(100000)}"
+      ledger_session_id = GalaxyLedger::Database.create_session(session_id)
+
+      entry = GalaxyLedger::Entry.new(
+        entry_type: "learning",
+        content: "JWT tokens expire after 15 minutes",
+        importance: "high",
+        source: "assistant",
+        category: "auth",
+        keywords: ["jwt", "auth"],
+        source_file: "/home/user/notes.md",
+      )
+      GalaxyLedger::Database.insert(ledger_session_id, entry)
+
+      result = run_binary(["list-entries", "--json", "--session", session_id])
+      result[:status].should eq(0)
+
+      parsed = JSON.parse(result[:output])
+      entries = parsed["entries"].as_a
+      entries.size.should eq(1)
+
+      e = entries[0]
+      e["id"].as_i64.should be > 0
+      e["entry_type"].as_s.should eq("learning")
+      e["source"].as_s.should eq("assistant")
+      e["content"].as_s.should eq("JWT tokens expire after 15 minutes")
+      e["importance"].as_s.should eq("high")
+      e["category"].as_s.should eq("auth")
+      e["keywords"].as_s.should contain("jwt")
+      e["source_file"].as_s.should eq("/home/user/notes.md")
+      e["ledger_session_id"].as_i64.should eq(ledger_session_id)
+      e["created_at"].as_s.should_not be_empty
+    end
+
+    it "outputs empty entries array when no data" do
+      session_id = "json-entries-empty-#{Random.rand(100000)}"
+      GalaxyLedger::Database.create_session(session_id)
+
+      result = run_binary(["list-entries", "--json", "--session", session_id])
+      result[:status].should eq(0)
+
+      parsed = JSON.parse(result[:output])
+      parsed["entries"].as_a.size.should eq(0)
+    end
+
+    it "handles null fields in JSON output" do
+      session_id = "json-entries-null-#{Random.rand(100000)}"
+      ledger_session_id = GalaxyLedger::Database.create_session(session_id)
+
+      entry = GalaxyLedger::Entry.new(
+        entry_type: "decision",
+        content: "Use SQLite for storage",
+        importance: "medium",
+      )
+      GalaxyLedger::Database.insert(ledger_session_id, entry)
+
+      result = run_binary(["list-entries", "--json", "--session", session_id])
+      result[:status].should eq(0)
+
+      e = JSON.parse(result[:output])["entries"].as_a[0]
+      e["source"].as_s?.should be_nil
+      e["category"].as_s?.should be_nil
+      e["keywords"].as_s?.should be_nil
+      e["source_file"].as_s?.should be_nil
+    end
+  end
+
+  describe "list-entries --ledger-session-id" do
+    it "resolves session by internal DB ID" do
+      session_id = "lsid-entries-#{Random.rand(100000)}"
+      ledger_session_id = GalaxyLedger::Database.create_session(session_id)
+
+      entry = GalaxyLedger::Entry.new(
+        entry_type: "learning",
+        content: "Direct ID resolution works",
+        importance: "medium",
+      )
+      GalaxyLedger::Database.insert(ledger_session_id, entry)
+
+      result = run_binary(["list-entries", "--json", "--ledger-session-id", ledger_session_id.to_s])
+      result[:status].should eq(0)
+
+      entries = JSON.parse(result[:output])["entries"].as_a
+      entries.size.should eq(1)
+      entries[0]["content"].as_s.should eq("Direct ID resolution works")
+    end
+  end
+
+  describe "list-files --json" do
+    it "outputs valid JSON with files array" do
+      session_id = "json-files-#{Random.rand(100000)}"
+      ledger_session_id = GalaxyLedger::Database.create_session(session_id)
+
+      GalaxyLedger::Database.upsert_session_file(ledger_session_id, "/home/user/src/app.cr", :edit)
+      GalaxyLedger::Database.upsert_session_file(ledger_session_id, "/home/user/src/app.cr", :read)
+      GalaxyLedger::Database.upsert_session_file(ledger_session_id, "/home/user/README.md", :read)
+
+      result = run_binary(["list-files", "--json", "--session", session_id])
+      result[:status].should eq(0)
+
+      parsed = JSON.parse(result[:output])
+      files = parsed["files"].as_a
+      files.size.should eq(2)
+
+      app_file = files.find { |f| f["file_path"].as_s.includes?("app.cr") }
+      app_file.should_not be_nil
+      if af = app_file
+        af["id"].as_i64.should be > 0
+        af["file_path"].as_s.should eq("/home/user/src/app.cr")
+        af["is_read"].as_bool.should be_true
+        af["is_edited"].as_bool.should be_true
+        af["is_written"].as_bool.should be_false
+        af["is_searched"].as_bool.should be_false
+        af["access_count"].as_i64.should be >= 2
+      end
+    end
+
+    it "outputs empty files array when no data" do
+      session_id = "json-files-empty-#{Random.rand(100000)}"
+      GalaxyLedger::Database.create_session(session_id)
+
+      result = run_binary(["list-files", "--json", "--session", session_id])
+      result[:status].should eq(0)
+
+      parsed = JSON.parse(result[:output])
+      parsed["files"].as_a.size.should eq(0)
+    end
+
+    it "fetches all files without limit when --json is used" do
+      session_id = "json-files-nolimit-#{Random.rand(100000)}"
+      ledger_session_id = GalaxyLedger::Database.create_session(session_id)
+
+      60.times do |i|
+        GalaxyLedger::Database.upsert_session_file(ledger_session_id, "/home/user/file#{i}.rb", :read)
+      end
+
+      result = run_binary(["list-files", "--json", "--session", session_id])
+      result[:status].should eq(0)
+
+      files = JSON.parse(result[:output])["files"].as_a
+      files.size.should eq(60)
+    end
+
+    it "includes search_pattern for searched files" do
+      session_id = "json-files-search-#{Random.rand(100000)}"
+      ledger_session_id = GalaxyLedger::Database.create_session(session_id)
+
+      GalaxyLedger::Database.upsert_session_file(
+        ledger_session_id, "/home/user/src/", :search,
+        search_pattern: "extraction_marker"
+      )
+
+      result = run_binary(["list-files", "--json", "--session", session_id])
+      result[:status].should eq(0)
+
+      f = JSON.parse(result[:output])["files"].as_a[0]
+      f["is_searched"].as_bool.should be_true
+      f["search_pattern"].as_s.should eq("extraction_marker")
+    end
+  end
+
+  describe "list-files --ledger-session-id" do
+    it "resolves session by internal DB ID" do
+      session_id = "lsid-files-#{Random.rand(100000)}"
+      ledger_session_id = GalaxyLedger::Database.create_session(session_id)
+
+      GalaxyLedger::Database.upsert_session_file(ledger_session_id, "/home/user/test.rb", :read)
+
+      result = run_binary(["list-files", "--json", "--ledger-session-id", ledger_session_id.to_s])
+      result[:status].should eq(0)
+
+      files = JSON.parse(result[:output])["files"].as_a
+      files.size.should eq(1)
+      files[0]["file_path"].as_s.should eq("/home/user/test.rb")
+    end
+  end
+
+  describe "search --json" do
+    it "outputs valid JSON with entries array" do
+      session_id = "json-search-#{Random.rand(100000)}"
+      ledger_session_id = GalaxyLedger::Database.create_session(session_id)
+
+      entry = GalaxyLedger::Entry.new(
+        entry_type: "learning",
+        content: "JWT tokens expire after 15 minutes",
+        importance: "high",
+        source: "assistant",
+      )
+      GalaxyLedger::Database.insert(ledger_session_id, entry)
+
+      result = run_binary(["search", "--json", "--query", "JWT"])
+      result[:status].should eq(0)
+
+      parsed = JSON.parse(result[:output])
+      entries = parsed["entries"].as_a
+      entries.size.should eq(1)
+      entries[0]["content"].as_s.should contain("JWT")
+      entries[0]["entry_type"].as_s.should eq("learning")
+    end
+
+    it "outputs empty entries array when no matches" do
+      result = run_binary(["search", "--json", "--query", "nonexistent-query-xyz"])
+      result[:status].should eq(0)
+
+      parsed = JSON.parse(result[:output])
+      parsed["entries"].as_a.size.should eq(0)
+    end
+  end
+
+  describe "search --ledger-session-id" do
+    it "scopes search by internal DB ID" do
+      session_id = "lsid-search-#{Random.rand(100000)}"
+      ledger_session_id = GalaxyLedger::Database.create_session(session_id)
+
+      entry = GalaxyLedger::Entry.new(
+        entry_type: "learning",
+        content: "Scoped search via ledger session ID",
+        importance: "medium",
+      )
+      GalaxyLedger::Database.insert(ledger_session_id, entry)
+
+      # Also add entry to a different session
+      other_session_id = "lsid-search-other-#{Random.rand(100000)}"
+      other_lsid = GalaxyLedger::Database.create_session(other_session_id)
+      other_entry = GalaxyLedger::Entry.new(
+        entry_type: "learning",
+        content: "Different scoped search entry",
+        importance: "medium",
+      )
+      GalaxyLedger::Database.insert(other_lsid, other_entry)
+
+      result = run_binary(["search", "--json", "--query", "scoped", "--ledger-session-id", ledger_session_id.to_s])
+      result[:status].should eq(0)
+
+      entries = JSON.parse(result[:output])["entries"].as_a
+      entries.size.should eq(1)
+      entries[0]["content"].as_s.should contain("Scoped search via ledger session ID")
     end
   end
 end

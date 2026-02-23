@@ -62,8 +62,8 @@ module GalaxyLedger
         handle_config_command(rest)
       when "search"
         handle_search_command(rest)
-      when "list"
-        handle_list_command(rest)
+      when "list-entries"
+        handle_list_entries_command(rest)
       when "add"
         handle_add_command(rest)
       when "on-startup"
@@ -129,7 +129,7 @@ module GalaxyLedger
 
       Commands:
         search              Search entries using full-text search
-        list                List recent entries
+        list-entries        List recent entries
         list-files          List session file access records
         add                 Add an entry (learning, decision, direction, etc.)
         spend               Show token and cost usage over time
@@ -414,6 +414,42 @@ module GalaxyLedger
       ledger_session_id
     end
 
+    private def self.resolve_ledger_session_id_str(id_str : String) : Int64
+      id = id_str.to_i64?
+      unless id
+        STDERR.puts "Error: invalid --ledger-session-id value '#{id_str}' (must be an integer)"
+        exit(1)
+      end
+
+      id
+    end
+
+    private def self.output_entries_json(entries : Array(Database::StoredEntry))
+      JSON.build(STDOUT, indent: "  ") do |json|
+        json.object do
+          json.field "entries" do
+            json.array do
+              entries.each do |entry|
+                json.object do
+                  json.field "id", entry.id
+                  json.field "entry_type", entry.entry_type
+                  json.field "source", entry.source
+                  json.field "content", entry.content
+                  json.field "importance", entry.importance
+                  json.field "category", entry.category
+                  json.field "keywords", entry.keywords
+                  json.field "source_file", entry.source_file
+                  json.field "ledger_session_id", entry.ledger_session_id
+                  json.field "created_at", entry.created_at
+                end
+              end
+            end
+          end
+        end
+      end
+      puts ""
+    end
+
     private def self.truncate(text : String, max_length : Int32) : String
       if text.size <= max_length
         text.gsub("\n", "\\n")
@@ -435,7 +471,9 @@ module GalaxyLedger
       category : String? = nil
       session_id : String? = nil
       pid_str : String? = nil
+      ledger_session_id_str : String? = nil
       prefix_match = true
+      json_output = false
       query : String? = nil
 
       i = 0
@@ -469,6 +507,12 @@ module GalaxyLedger
         elsif arg == "--pid" && i + 1 < args.size
           pid_str = args[i + 1]
           i += 2
+        elsif arg == "--ledger-session-id" && i + 1 < args.size
+          ledger_session_id_str = args[i + 1]
+          i += 2
+        elsif arg == "--json"
+          json_output = true
+          i += 1
         elsif arg == "--exact"
           prefix_match = false
           i += 1
@@ -486,9 +530,11 @@ module GalaxyLedger
         exit(1)
       end
 
-      # Resolve --pid or --session to ledger_session_id
+      # Resolve --ledger-session-id, --pid, or --session to ledger_session_id
       ledger_session_id : Int64? = nil
-      if ps = pid_str
+      if lsid_str = ledger_session_id_str
+        ledger_session_id = resolve_ledger_session_id_str(lsid_str)
+      elsif ps = pid_str
         ledger_session_id = resolve_pid_to_ledger_session_id(ps)
       elsif sid = session_id
         ledger_session_id = resolve_session_to_ledger_session_id(sid)
@@ -499,6 +545,11 @@ module GalaxyLedger
                 else
                   Database.search(query, entry_type: entry_type, importance: importance, category: category, prefix_match: prefix_match)
                 end
+
+      if json_output
+        output_entries_json(entries)
+        return
+      end
 
       if entries.empty?
         puts "No results found for: #{query}"
@@ -548,10 +599,12 @@ module GalaxyLedger
       OPTIONS:
         --pid PID             Scope search to session by Claude Code PID
         --session ID          Scope search to a specific session (backward compat)
+        --ledger-session-id N Scope search by internal ledger session ID
         --type TYPE           Filter by entry type
         --importance LEVEL    Filter by importance (high, medium, low)
         --category CATEGORY   Filter by category (e.g., ruby-style, rspec, git-workflow)
         --exact               Disable prefix matching (exact word match only)
+        --json                Output as JSON
         -h, --help            Show this help
 
       ENTRY TYPES:
@@ -566,13 +619,14 @@ module GalaxyLedger
         galaxy-ledger search --query "trail" --exact  # No match (exact only)
         galaxy-ledger search --query "--help"         # Search for literal "--help"
         galaxy-ledger search --query "auth" --session abc123  # Session-scoped search
+        galaxy-ledger search --query "auth" --ledger-session-id 42
       HELP
     end
 
-    private def self.handle_list_command(args : Array(String))
+    private def self.handle_list_entries_command(args : Array(String))
       # Check for help flag first (only if it's a standalone argument, not a value)
       if args.first? == "-h" || args.first? == "--help"
-        show_list_help
+        show_list_entries_help
         return
       end
 
@@ -582,6 +636,8 @@ module GalaxyLedger
       importance : String? = nil
       session_id : String? = nil
       pid_str : String? = nil
+      ledger_session_id_str : String? = nil
+      json_output = false
 
       i = 0
       while i < args.size
@@ -608,6 +664,12 @@ module GalaxyLedger
         elsif arg == "--pid" && i + 1 < args.size
           pid_str = args[i + 1]
           i += 2
+        elsif arg == "--ledger-session-id" && i + 1 < args.size
+          ledger_session_id_str = args[i + 1]
+          i += 2
+        elsif arg == "--json"
+          json_output = true
+          i += 1
         elsif arg == "--limit" && i + 1 < args.size
           limit = args[i + 1].to_i? || 20
           i += 2
@@ -619,15 +681,22 @@ module GalaxyLedger
         end
       end
 
-      # Resolve --pid or --session to ledger_session_id
+      # Resolve --ledger-session-id, --pid, or --session to ledger_session_id
       ledger_session_id : Int64? = nil
-      if ps = pid_str
+      if lsid_str = ledger_session_id_str
+        ledger_session_id = resolve_ledger_session_id_str(lsid_str)
+      elsif ps = pid_str
         ledger_session_id = resolve_pid_to_ledger_session_id(ps)
       elsif sid = session_id
         ledger_session_id = resolve_session_to_ledger_session_id(sid)
       end
 
       entries = Database.query_recent_filtered(limit, entry_type, importance, ledger_session_id: ledger_session_id)
+
+      if json_output
+        output_entries_json(entries)
+        return
+      end
 
       if entries.empty?
         puts "No entries in ledger."
@@ -667,32 +736,35 @@ module GalaxyLedger
       end
     end
 
-    private def self.show_list_help
+    private def self.show_list_entries_help
       puts <<-HELP
-      galaxy-ledger list - List recent ledger entries
+      galaxy-ledger list-entries - List recent ledger entries
 
       USAGE:
-        galaxy-ledger list [options]
+        galaxy-ledger list-entries [options]
 
       OPTIONS:
         --pid PID               Scope listing to session by Claude Code PID
         --session ID            Scope listing to a specific session (backward compat)
+        --ledger-session-id N   Scope listing by internal ledger session ID
         --limit N               Number of entries to show (default: 20)
         --type TYPE             Filter by entry type
         --importance LEVEL      Filter by importance (high, medium, low)
+        --json                  Output as JSON
         -h, --help              Show this help
 
       ENTRY TYPES:
         #{ENTRY_TYPES.join(", ")}
 
       EXAMPLES:
-        galaxy-ledger list
-        galaxy-ledger list --limit 50
-        galaxy-ledger list --type guideline
-        galaxy-ledger list --importance high
-        galaxy-ledger list --limit 10 --type learning --importance medium
-        galaxy-ledger list --session abc123                    # Session-scoped listing
-        galaxy-ledger list --session abc123 --type learning    # Session + type filter
+        galaxy-ledger list-entries
+        galaxy-ledger list-entries --limit 50
+        galaxy-ledger list-entries --type guideline
+        galaxy-ledger list-entries --importance high
+        galaxy-ledger list-entries --limit 10 --type learning --importance medium
+        galaxy-ledger list-entries --session abc123                    # Session-scoped listing
+        galaxy-ledger list-entries --session abc123 --type learning    # Session + type filter
+        galaxy-ledger list-entries --json --ledger-session-id 42
       HELP
     end
 
@@ -706,7 +778,9 @@ module GalaxyLedger
       # Parse options
       session_id : String? = nil
       pid_str : String? = nil
+      ledger_session_id_str : String? = nil
       limit = 50
+      json_output = false
 
       i = 0
       while i < args.size
@@ -717,6 +791,12 @@ module GalaxyLedger
         elsif arg == "--pid" && i + 1 < args.size
           pid_str = args[i + 1]
           i += 2
+        elsif arg == "--ledger-session-id" && i + 1 < args.size
+          ledger_session_id_str = args[i + 1]
+          i += 2
+        elsif arg == "--json"
+          json_output = true
+          i += 1
         elsif arg == "--limit" && i + 1 < args.size
           limit = args[i + 1].to_i? || 50
           i += 2
@@ -727,21 +807,53 @@ module GalaxyLedger
         end
       end
 
-      # Resolve --pid or --session to ledger_session_id
+      # When --json is used without explicit --limit, fetch all files
+      limit = Int32::MAX if json_output && !args.includes?("--limit")
+
+      # Resolve --ledger-session-id, --pid, or --session to ledger_session_id
       ledger_session_id : Int64? = nil
-      if ps = pid_str
+      if lsid_str = ledger_session_id_str
+        ledger_session_id = resolve_ledger_session_id_str(lsid_str)
+      elsif ps = pid_str
         ledger_session_id = resolve_pid_to_ledger_session_id(ps)
       elsif sid = session_id
         ledger_session_id = resolve_session_to_ledger_session_id(sid)
       end
 
       unless ledger_session_id
-        STDERR.puts "Error: --session or --pid is required"
+        STDERR.puts "Error: --session, --pid, or --ledger-session-id is required"
         STDERR.puts "Run 'galaxy-ledger list-files --help' for usage"
         exit(1)
       end
 
       files = Database.session_files(ledger_session_id)
+
+      if json_output
+        JSON.build(STDOUT, indent: "  ") do |json|
+          json.object do
+            json.field "files" do
+              json.array do
+                files.each do |f|
+                  json.object do
+                    json.field "id", f.id
+                    json.field "file_path", f.file_path
+                    json.field "search_pattern", f.search_pattern
+                    json.field "is_read", f.is_read
+                    json.field "is_edited", f.is_edited
+                    json.field "is_written", f.is_written
+                    json.field "is_searched", f.is_searched
+                    json.field "first_seen_at", f.first_seen_at
+                    json.field "last_seen_at", f.last_seen_at
+                    json.field "access_count", f.access_count
+                  end
+                end
+              end
+            end
+          end
+        end
+        puts ""
+        return
+      end
 
       if files.empty?
         puts "No session files found for session ##{ledger_session_id}"
@@ -784,13 +896,16 @@ module GalaxyLedger
       USAGE:
         galaxy-ledger list-files --pid PID [options]
         galaxy-ledger list-files --session SESSION_ID [options]
+        galaxy-ledger list-files --ledger-session-id N [options]
 
       REQUIRED (one of):
         --pid PID               Session by Claude Code process PID
         --session SESSION_ID    Session by identifier (backward compat)
+        --ledger-session-id N   Session by internal ledger session ID
 
       OPTIONS:
-        --limit N               Maximum files to show (default: 50)
+        --limit N               Maximum files to show (default: 50, all with --json)
+        --json                  Output as JSON
         -h, --help              Show this help
 
       OUTPUT:
@@ -800,6 +915,7 @@ module GalaxyLedger
       EXAMPLES:
         galaxy-ledger list-files --session abc123
         galaxy-ledger list-files --session abc123 --limit 10
+        galaxy-ledger list-files --json --ledger-session-id 42
       HELP
     end
 
@@ -2638,14 +2754,19 @@ module GalaxyLedger
         return
       end
 
-      # Parse args — --session is repeatable, --json is required
+      # Parse args — --session is repeatable, --json is required,
+      # --ledger-session-id is an alternative to --session
       session_ids = [] of String
+      ledger_session_id_str : String? = nil
       json_flag = false
       i = 0
       while i < args.size
         arg = args[i]
         if arg == "--session" && i + 1 < args.size
           session_ids << args[i + 1]
+          i += 2
+        elsif arg == "--ledger-session-id" && i + 1 < args.size
+          ledger_session_id_str = args[i + 1]
           i += 2
         elsif arg == "--json"
           json_flag = true
@@ -2661,14 +2782,22 @@ module GalaxyLedger
         exit(1)
       end
 
-      if session_ids.empty?
-        STDERR.puts "Error: at least one --session is required"
+      if session_ids.empty? && ledger_session_id_str.nil?
+        STDERR.puts "Error: at least one --session or --ledger-session-id is required"
         STDERR.puts "Run 'galaxy-ledger sessions --help' for usage"
         exit(1)
       end
 
       # Resolve each session identifier to a ledger_session_id, deduplicate
       resolved = {} of Int64 => Database::SessionRecord
+
+      # Direct ledger session ID lookup (bypasses identifier resolution)
+      if lsid_str = ledger_session_id_str
+        lsid = resolve_ledger_session_id_str(lsid_str)
+        record = Database.get_session_by_id(lsid)
+        resolved[lsid] = record if record
+      end
+
       session_ids.each do |sid|
         ledger_session_id = Database.resolve_session_identifier(sid)
         next unless ledger_session_id
@@ -2737,15 +2866,23 @@ module GalaxyLedger
 
       USAGE:
         galaxy-ledger sessions --json --session ID1 [--session ID2 ...]
+        galaxy-ledger sessions --json --ledger-session-id N
 
       REQUIRED:
         --json                  Output format (currently the only format)
+
+      REQUIRED (one of):
         --session SESSION_ID    Session identifier to query (repeatable)
+        --ledger-session-id N   Query by internal ledger session ID
 
       DESCRIPTION:
         Returns session state data in JSON format for Galaxy.app enrichment.
         Each --session flag specifies a Claude session identifier that gets
         resolved through the ledger_session_identifiers table.
+
+        --ledger-session-id bypasses identifier resolution and queries by
+        internal database ID directly. Used by Galaxy.app when the ledger
+        session ID is already known.
 
         Multiple identifiers that resolve to the same ledger session are
         deduplicated in the output. Unknown session identifiers are silently
@@ -2754,6 +2891,7 @@ module GalaxyLedger
         Used by Galaxy.app for:
         - Startup sync (passing all known session UUIDs)
         - Event enrichment (passing identifiers from received events)
+        - JIT data fetching in LedgerView subtabs
 
       OUTPUT:
         {
@@ -2773,6 +2911,7 @@ module GalaxyLedger
       EXAMPLES:
         galaxy-ledger sessions --json --session abc-123
         galaxy-ledger sessions --json --session abc-123 --session def-456
+        galaxy-ledger sessions --json --ledger-session-id 42
       HELP
     end
 
