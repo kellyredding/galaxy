@@ -134,6 +134,22 @@ final class EventCoordinator {
 
         // Check if we handle this event type
         guard Self.knownEvents.contains(envelope.event) else { return }
+
+        // Snapshot-specific handling: switch tab and queue auto-open
+        if envelope.event == "snapshot.created",
+           let ref = envelope.ref,
+           let number = Int32(ref) {
+            DispatchQueue.main.async { [weak self] in
+                guard let sm = self?.sessionManager else { return }
+                // Only auto-switch if this event is for the active session
+                if let appSessionId = self?.ledgerSessionIdCache[envelope.ledgerSessionId],
+                   appSessionId == sm.activeSessionId {
+                    sm.activeTab = .snapshots
+                    sm.pendingSnapshotNumber = number
+                }
+            }
+        }
+
         // All known events go through debouncer → enrichment
         debouncer.submit(envelope)
     }

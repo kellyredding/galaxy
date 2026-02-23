@@ -6,11 +6,13 @@ import Foundation
 enum SessionTab: String, CaseIterable {
     case terminal
     case ledger
+    case snapshots
 
     var title: String {
         switch self {
         case .terminal: return "Terminal"
         case .ledger: return "Ledger"
+        case .snapshots: return "Snapshots"
         }
     }
 
@@ -18,6 +20,7 @@ enum SessionTab: String, CaseIterable {
         switch self {
         case .terminal: return "terminal"
         case .ledger: return "book.closed"
+        case .snapshots: return "camera.viewfinder"
         }
     }
 
@@ -26,6 +29,7 @@ enum SessionTab: String, CaseIterable {
         switch self {
         case .terminal: return false
         case .ledger: return true
+        case .snapshots: return false
         }
     }
 }

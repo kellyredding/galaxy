@@ -32,6 +32,7 @@
 		95B87341788CFD115DCAC557 /* GalaxyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFBB4BD044AC373BB324C7F7 /* GalaxyApp.swift */; };
 		9A7E8C74C205BD7E4329689D /* MainMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = D96AFD79CE59690C239E10B5 /* MainMenu.swift */; };
 		9AA9CE7723F2ABB70173493D /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 7CE7EDB3AA040F6F2534E97D /* SwiftTerm */; };
+		CC1111110000000000000001 /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = CC2222220000000000000001 /* Markdown */; };
 		A20D4EC7B5F8E3D1DDBB8D4E /* SettingsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C7501DB8ABDB113A9CF35C8 /* SettingsManager.swift */; };
 		A6BAB2D0EEA7255F463D8F1E /* ExpandedSessionSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73B3B51B18B326C9BFD98925 /* ExpandedSessionSidebar.swift */; };
 		AA1111110000000000000001 /* SessionTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2222220000000000000001 /* SessionTab.swift */; };
@@ -46,6 +47,12 @@
 		BB1111110000000000000004 /* LedgerFilesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2222220000000000000004 /* LedgerFilesView.swift */; };
 		BB1111110000000000000005 /* LedgerEntriesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2222220000000000000005 /* LedgerEntriesView.swift */; };
 		BB1111110000000000000006 /* LedgerIdentifiersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2222220000000000000006 /* LedgerIdentifiersView.swift */; };
+		CC1111110000000000000002 /* SnapshotQueryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC2222220000000000000002 /* SnapshotQueryService.swift */; };
+		CC1111110000000000000003 /* MarkdownReaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC2222220000000000000003 /* MarkdownReaderView.swift */; };
+		CC1111110000000000000004 /* SnapshotsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC2222220000000000000004 /* SnapshotsView.swift */; };
+		CC1111110000000000000005 /* highlight.min.js in Resources */ = {isa = PBXBuildFile; fileRef = CC2222220000000000000005 /* highlight.min.js */; };
+		CC1111110000000000000006 /* github.min.css in Resources */ = {isa = PBXBuildFile; fileRef = CC2222220000000000000006 /* github.min.css */; };
+		CC1111110000000000000007 /* github-dark.min.css in Resources */ = {isa = PBXBuildFile; fileRef = CC2222220000000000000007 /* github-dark.min.css */; };
 		B1E71F47DE9403A1808277EC /* WatermarkBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6658F001C5C56071EC60514E /* WatermarkBackground.swift */; };
 		C27788ECAC3C2D2A1DA2024E /* GalaxyLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5D457946288879168E5D913 /* GalaxyLog.swift */; };
 		C3434D97E3E1783843E50797 /* SessionRowDragHandle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E474100EA691402E8DF51F3A /* SessionRowDragHandle.swift */; };
@@ -104,6 +111,12 @@
 		BB2222220000000000000004 /* LedgerFilesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerFilesView.swift; sourceTree = "<group>"; };
 		BB2222220000000000000005 /* LedgerEntriesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerEntriesView.swift; sourceTree = "<group>"; };
 		BB2222220000000000000006 /* LedgerIdentifiersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerIdentifiersView.swift; sourceTree = "<group>"; };
+		CC2222220000000000000002 /* SnapshotQueryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotQueryService.swift; sourceTree = "<group>"; };
+		CC2222220000000000000003 /* MarkdownReaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownReaderView.swift; sourceTree = "<group>"; };
+		CC2222220000000000000004 /* SnapshotsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotsView.swift; sourceTree = "<group>"; };
+		CC2222220000000000000005 /* highlight.min.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = "highlight.min.js"; sourceTree = "<group>"; };
+		CC2222220000000000000006 /* github.min.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = "github.min.css"; sourceTree = "<group>"; };
+		CC2222220000000000000007 /* github-dark.min.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = "github-dark.min.css"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -111,6 +124,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CC1111110000000000000001 /* Markdown in Frameworks */,
 				9AA9CE7723F2ABB70173493D /* SwiftTerm in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -129,6 +143,7 @@
 				A5D457946288879168E5D913 /* GalaxyLog.swift */,
 				BB2222220000000000000002 /* LedgerQueryService.swift */,
 				BB2222220000000000000001 /* LedgerSubTab.swift */,
+				CC2222220000000000000002 /* SnapshotQueryService.swift */,
 				F36B97B02F23D9DBF2C2F2E2 /* Session.swift */,
 				EA542FF52DF4733279284AB3 /* SessionIDGenerator.swift */,
 				9EB1B25ADB386E0B834FA6B0 /* SessionManager.swift */,
@@ -165,11 +180,13 @@
 				BB2222220000000000000006 /* LedgerIdentifiersView.swift */,
 				BB2222220000000000000003 /* LedgerLastActivityView.swift */,
 				AA2222220000000000000006 /* LedgerView.swift */,
+				CC2222220000000000000003 /* MarkdownReaderView.swift */,
 				EA80B868DED26B32D6DEB65D /* SessionDragCoordinator.swift */,
 				930CA7E2539E197A2DF03CE4 /* SessionRow.swift */,
 				E474100EA691402E8DF51F3A /* SessionRowDragHandle.swift */,
 				AA2222220000000000000002 /* SessionStatusDot.swift */,
 				F0269FFB63DF2EC261DC5B6A /* SettingsView.swift */,
+				CC2222220000000000000004 /* SnapshotsView.swift */,
 				2C599534AAFC2570BC5F292A /* StoppedSessionView.swift */,
 				DCE6073F39BD2A2E08FD007F /* TerminalView.swift */,
 				AA2222220000000000000003 /* UnreadBellIndicator.swift */,
@@ -207,9 +224,20 @@
 				CEB9F0C617C86CE1FDD05FF3 /* MainWindowController.swift */,
 				2E9CD7B5767024AE0C85E433 /* PreferencesWindowController.swift */,
 				10D8D5FBF1EB5E3155ABADCB /* Models */,
+				CC3333330000000000000001 /* Resources */,
 				A4E9EEB1DC67FF88728B219F /* Views */,
 			);
 			path = GalaxyApp;
+			sourceTree = "<group>";
+		};
+		CC3333330000000000000001 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				CC2222220000000000000007 /* github-dark.min.css */,
+				CC2222220000000000000006 /* github.min.css */,
+				CC2222220000000000000005 /* highlight.min.js */,
+			);
+			path = Resources;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -230,6 +258,7 @@
 			name = GalaxyApp;
 			packageProductDependencies = (
 				7CE7EDB3AA040F6F2534E97D /* SwiftTerm */,
+				CC2222220000000000000001 /* Markdown */,
 			);
 			productName = GalaxyApp;
 			productReference = 1F39F262BB7D593079DE0602 /* GalaxyApp.app */;
@@ -256,6 +285,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				5858678D19DE930848F64619 /* XCLocalSwiftPackageReference "Vendor/SwiftTerm" */,
+				CC4444440000000000000001 /* XCRemoteSwiftPackageReference "swift-markdown" */,
 			);
 			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
@@ -272,6 +302,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				487179062AB63CC1EBAD20CB /* Assets.xcassets in Resources */,
+				CC1111110000000000000005 /* highlight.min.js in Resources */,
+				CC1111110000000000000006 /* github.min.css in Resources */,
+				CC1111110000000000000007 /* github-dark.min.css in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -302,6 +335,7 @@
 				BB1111110000000000000002 /* LedgerQueryService.swift in Sources */,
 				BB1111110000000000000001 /* LedgerSubTab.swift in Sources */,
 				AA1111110000000000000006 /* LedgerView.swift in Sources */,
+				CC1111110000000000000003 /* MarkdownReaderView.swift in Sources */,
 				9A7E8C74C205BD7E4329689D /* MainMenu.swift in Sources */,
 				69C769B61E2BA6F9BD8DA6FB /* MainWindowController.swift in Sources */,
 				57F83F8FAFBFC9B625678AE5 /* PreferencesWindowController.swift in Sources */,
@@ -310,12 +344,14 @@
 				287B04EB0B71772D4E0594CD /* SessionIDGenerator.swift in Sources */,
 				D1DBDDFE86F84375BCFD9078 /* SessionManager.swift in Sources */,
 				6DBFAC1175B99C54309DF19A /* SessionPersistence.swift in Sources */,
+				CC1111110000000000000002 /* SnapshotQueryService.swift in Sources */,
 				5726799F4CAC18544C8FB957 /* SessionRow.swift in Sources */,
 				AA1111110000000000000002 /* SessionStatusDot.swift in Sources */,
 				AA1111110000000000000001 /* SessionTab.swift in Sources */,
 				C3434D97E3E1783843E50797 /* SessionRowDragHandle.swift in Sources */,
 				A6BAB2D0EEA7255F463D8F1E /* ExpandedSessionSidebar.swift in Sources */,
 				A20D4EC7B5F8E3D1DDBB8D4E /* SettingsManager.swift in Sources */,
+				CC1111110000000000000004 /* SnapshotsView.swift in Sources */,
 				55C2F61C9B63ACCE613CBC37 /* SettingsView.swift in Sources */,
 				CC27D1B9C8318928AE6187FE /* SocketListener.swift in Sources */,
 				3F6C193D5824A2FC5BDB2792 /* StatusLineService.swift in Sources */,
@@ -519,10 +555,26 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		CC4444440000000000000001 /* XCRemoteSwiftPackageReference "swift-markdown" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/swiftlang/swift-markdown.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.5.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		7CE7EDB3AA040F6F2534E97D /* SwiftTerm */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = SwiftTerm;
+		};
+		CC2222220000000000000001 /* Markdown */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CC4444440000000000000001 /* XCRemoteSwiftPackageReference "swift-markdown" */;
+			productName = Markdown;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

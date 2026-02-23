@@ -148,6 +148,8 @@ struct ContentView: View {
                 TerminalContainerView()
             case .ledger:
                 LedgerContainerView()
+            case .snapshots:
+                SnapshotsContainerView()
             }
         }
     }

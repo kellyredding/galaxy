@@ -29,6 +29,10 @@ class SessionManager: ObservableObject {
     // Not persisted — always starts on Last Activity at launch
     @Published var activeLedgerSubTab: LedgerSubTab = .lastActivity
 
+    /// Snapshot number to auto-open when switching to snapshots tab.
+    /// Set by EventCoordinator on snapshot.created, cleared by SnapshotsView after opening.
+    @Published var pendingSnapshotNumber: Int32? = nil
+
     /// Called when a session is removed from the session list.
     /// Used by EventCoordinator to clean up cached ledger_session_id mappings.
     var onSessionClosed: ((UUID) -> Void)?
