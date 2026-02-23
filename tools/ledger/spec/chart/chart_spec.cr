@@ -71,6 +71,82 @@ describe GalaxyLedger::Chart do
     end
   end
 
+  describe "bar chart column alignment" do
+    # Regression tests for right-aligned cost and token columns.
+    # The caller (CLI spend command) pre-computes column widths and
+    # uses rjust to align decimal points across rows. These tests
+    # verify the contract: given aligned extras, bar_chart preserves
+    # the alignment in output lines.
+
+    it "aligns cost decimal points across rows with varying magnitudes" do
+      # Simulate the CLI's two-pass alignment pattern
+      costs = [49.37, 115.43, 184.47, 38.70]
+      cost_strs = costs.map { |c| GalaxyLedger::Chart.format_cost(c) }
+      max_w = cost_strs.max_of(&.size)
+      aligned = cost_strs.map(&.rjust(max_w))
+
+      # All aligned strings should be the same width
+      aligned.map(&.size).uniq.size.should eq(1)
+
+      # Decimal points should be at the same position in each string
+      dot_positions = aligned.map { |s| s.index('.').not_nil! }
+      dot_positions.uniq.size.should eq(1)
+    end
+
+    it "aligns token decimal points across rows with varying magnitudes" do
+      tokens = [1_100_000_i64, 12_700_000_i64, 48_200_000_i64, 5_800_000_i64]
+      tok_strs = tokens.map { |t| GalaxyLedger::Chart.format_tokens(t) }
+      max_w = tok_strs.max_of(&.size)
+      aligned = tok_strs.map(&.rjust(max_w))
+
+      # All aligned strings should be the same width
+      aligned.map(&.size).uniq.size.should eq(1)
+
+      # Decimal points should be at the same position
+      dot_positions = aligned.map { |s| s.index('.').not_nil! }
+      dot_positions.uniq.size.should eq(1)
+    end
+
+    it "produces aligned columns in bar chart output" do
+      # Simulate full CLI alignment flow: format, measure, rjust, build rows
+      data = [
+        {label: "Feb 18", cost: 49.37, tokens: 1_100_000_i64},
+        {label: "Feb 19", cost: 115.43, tokens: 12_700_000_i64},
+        {label: "Feb 21", cost: 184.47, tokens: 48_200_000_i64},
+      ]
+      cost_strs = data.map { |d| GalaxyLedger::Chart.format_cost(d[:cost]) }
+      tok_strs = data.map { |d| GalaxyLedger::Chart.format_tokens(d[:tokens]) }
+      max_cost_w = cost_strs.max_of(&.size)
+      max_tok_w = tok_strs.max_of(&.size)
+
+      rows = data.map_with_index do |d, i|
+        extra = "#{cost_strs[i].rjust(max_cost_w)}    #{tok_strs[i].rjust(max_tok_w)}"
+        GalaxyLedger::Chart::BarRow.new(label: d[:label], value: d[:cost], extra: extra)
+      end
+
+      result = GalaxyLedger::Chart.bar_chart(rows)
+      lines = result.split("\n")
+
+      # Extract the cost column ($xx.xx) from each line and verify decimal alignment
+      cost_dot_positions = lines.map { |l| l.index("$.").try { |i| nil } || l.index('$').try { |i| l.index('.', i) } }
+      non_nil = cost_dot_positions.compact
+      non_nil.size.should eq(3)
+      non_nil.uniq.size.should eq(1)
+    end
+
+    it "handles mixed k and M token magnitudes" do
+      tokens = [500_000_i64, 12_700_000_i64]
+      tok_strs = tokens.map { |t| GalaxyLedger::Chart.format_tokens(t) }
+      max_w = tok_strs.max_of(&.size)
+      aligned = tok_strs.map(&.rjust(max_w))
+
+      # Both should be padded to same width
+      aligned.map(&.size).uniq.size.should eq(1)
+      # "500.0k tok" (10 chars) vs " 12.7M tok" (padded to 10) — shorter one gets padded
+      aligned[1].should start_with(" ")
+    end
+  end
+
   describe ".format_cost" do
     it "formats zero" do
       GalaxyLedger::Chart.format_cost(0.0).should eq("$0.00")

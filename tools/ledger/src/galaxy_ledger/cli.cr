@@ -2189,8 +2189,13 @@ module GalaxyLedger
         case grouping
         when :monthly
           monthly = group_by_month(daily)
+          # Pre-compute column widths for decimal-aligned cost and token columns
+          cost_strs = monthly.map { |m| Chart.format_cost(m[:cost]) }
+          token_strs = monthly.map { |m| Chart.format_tokens(m[:tokens]) }
+          max_cost_w = cost_strs.max_of?(&.size) || 0
+          max_tok_w = token_strs.max_of?(&.size) || 0
           rows = monthly.map_with_index do |m, idx|
-            extra = "#{Chart.format_cost(m[:cost])}    #{Chart.format_tokens(m[:tokens])}"
+            extra = "#{cost_strs[idx].rjust(max_cost_w)}    #{token_strs[idx].rjust(max_tok_w)}"
             extra += "  *" if footnote && idx == monthly.size - 1
             Chart::BarRow.new(
               label: m[:label],
@@ -2201,9 +2206,14 @@ module GalaxyLedger
           puts Chart.bar_chart(rows)
         when :weekly
           weekly = group_by_week(daily)
+          # Pre-compute column widths for decimal-aligned cost and token columns
+          cost_strs = weekly.map { |w| w[:cost] > 0.0 ? Chart.format_cost(w[:cost]) : nil }
+          token_strs = weekly.map { |w| w[:cost] > 0.0 ? Chart.format_tokens(w[:tokens]) : nil }
+          max_cost_w = cost_strs.compact.max_of?(&.size) || 0
+          max_tok_w = token_strs.compact.max_of?(&.size) || 0
           rows = weekly.map_with_index do |w, idx|
             if w[:cost] > 0.0
-              extra = "#{Chart.format_cost(w[:cost])}    #{Chart.format_tokens(w[:tokens])}"
+              extra = "#{cost_strs[idx].not_nil!.rjust(max_cost_w)}    #{token_strs[idx].not_nil!.rjust(max_tok_w)}"
               extra += "  *" if footnote && idx == weekly.size - 1
               Chart::BarRow.new(
                 label: format_bar_date(w[:label]),
@@ -2216,10 +2226,15 @@ module GalaxyLedger
           end
           puts Chart.bar_chart(rows)
         else
+          # Pre-compute column widths for decimal-aligned cost and token columns
+          cost_strs = daily.map { |d| d.cost > 0.0 ? Chart.format_cost(d.cost) : nil }
+          token_strs = daily.map { |d| d.cost > 0.0 ? Chart.format_tokens(d.tokens) : nil }
+          max_cost_w = cost_strs.compact.max_of?(&.size) || 0
+          max_tok_w = token_strs.compact.max_of?(&.size) || 0
           rows = daily.map_with_index do |d, idx|
             label = format_bar_date(d.date)
             if d.cost > 0.0
-              extra = "#{Chart.format_cost(d.cost)}    #{Chart.format_tokens(d.tokens)}"
+              extra = "#{cost_strs[idx].not_nil!.rjust(max_cost_w)}    #{token_strs[idx].not_nil!.rjust(max_tok_w)}"
               extra += "  *" if footnote && idx == daily.size - 1
               Chart::BarRow.new(
                 label: label,
