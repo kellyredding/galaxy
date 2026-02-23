@@ -57,6 +57,14 @@ module GalaxyLedger
       command = positional_args.first
       rest = positional_args[1..]? || [] of String
 
+      # Skip hooks early when GALAXY_SKIP_HOOKS is set (prevents recursion
+      # from extraction subprocesses).  Drain stdin first so the parent
+      # process's copy fiber can complete without a Broken pipe error.
+      if command.starts_with?("on-") && ENV["GALAXY_SKIP_HOOKS"]? == "1"
+        STDIN.gets_to_end rescue nil
+        return
+      end
+
       case command
       when "config"
         handle_config_command(rest)
