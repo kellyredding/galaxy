@@ -6,9 +6,14 @@ import SwiftUI
 struct LedgerFilesView: View {
     let files: [LedgerFile]?
     let isLoading: Bool
+    let scrollProxy: ScrollViewProxy
 
+    @EnvironmentObject var sessionManager: SessionManager
     @Environment(\.chromeFontSize) private var chromeFontSize
     private var fontSize: ChromeFontSize { ChromeFontSize(chromeFontSize) }
+
+    // Focus state for keyboard navigation
+    @State private var focusedIndex: Int? = nil
 
     @State private var sortColumn: SortColumn = .lastSeen
     @State private var sortAscending: Bool = false
@@ -38,28 +43,49 @@ struct LedgerFilesView: View {
     }
 
     var body: some View {
-        if isLoading && files == nil {
-            HStack {
-                Spacer()
-                ProgressView()
-                    .scaleEffect(0.8)
-                    .padding()
-                Spacer()
-            }
-        } else if let files = files, files.isEmpty {
-            Text("No files recorded for this session.")
-                .chromeFont(size: fontSize.caption)
-                .foregroundColor(.secondary)
-                .padding(.vertical, 8)
-        } else if files != nil {
-            VStack(alignment: .leading, spacing: 0) {
-                // Header row
-                headerRow
-
-                // Data rows
-                ForEach(Array(sortedFiles.enumerated()), id: \.element.id) { index, file in
-                    fileRow(file, isAlternate: index % 2 == 1)
+        Group {
+            if isLoading && files == nil {
+                HStack {
+                    Spacer()
+                    ProgressView()
+                        .scaleEffect(0.8)
+                        .padding()
+                    Spacer()
                 }
+            } else if let files = files, files.isEmpty {
+                Text("No files recorded for this session.")
+                    .chromeFont(size: fontSize.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.vertical, 8)
+            } else if files != nil {
+                VStack(alignment: .leading, spacing: 0) {
+                    // Header row
+                    headerRow
+
+                    // Data rows
+                    ForEach(Array(sortedFiles.enumerated()), id: \.element.id) { index, file in
+                        fileRow(file, index: index)
+                            .id(file.id)
+                    }
+                }
+            }
+        }
+        .onChange(of: sessionManager.listNavAction) {
+            guard sessionManager.activeLedgerSubTab == .files else { return }
+            guard let action = sessionManager.listNavAction else { return }
+            sessionManager.listNavAction = nil
+            handleListNavAction(action)
+        }
+        .onChange(of: files?.count) {
+            if let files = files, !files.isEmpty {
+                focusedIndex = 0
+            } else {
+                focusedIndex = nil
+            }
+        }
+        .onChange(of: focusedIndex) {
+            if let idx = focusedIndex, idx < sortedFiles.count {
+                scrollProxy.scrollTo(sortedFiles[idx].id)
             }
         }
     }
@@ -106,8 +132,10 @@ struct LedgerFilesView: View {
 
     // MARK: - Data Row
 
-    private func fileRow(_ file: LedgerFile, isAlternate: Bool) -> some View {
-        HStack(spacing: 0) {
+    private func fileRow(_ file: LedgerFile, index: Int) -> some View {
+        let isFocused = focusedIndex == index
+
+        return HStack(spacing: 0) {
             Text(opsString(file))
                 .chromeFontMono(size: fontSize.caption2)
                 .foregroundColor(.secondary)
@@ -136,7 +164,37 @@ struct LedgerFilesView: View {
         }
         .padding(.vertical, 3)
         .padding(.horizontal, 8)
-        .background(isAlternate ? Color.primary.opacity(0.03) : Color.clear)
+        .background(
+            isFocused
+                ? Color.accentColor.opacity(0.15)
+                : (index % 2 == 1 ? Color.primary.opacity(0.03) : Color.clear)
+        )
+    }
+
+    // MARK: - List Focus Navigation
+
+    private func handleListNavAction(_ action: ListNavAction) {
+        let items = sortedFiles
+        guard !items.isEmpty else { return }
+
+        switch action {
+        case .up:
+            if let current = focusedIndex {
+                guard current > 0 else { return }
+                focusedIndex = current - 1
+            } else {
+                focusedIndex = items.count - 1
+            }
+        case .down:
+            if let current = focusedIndex {
+                guard current < items.count - 1 else { return }
+                focusedIndex = current + 1
+            } else {
+                focusedIndex = 0
+            }
+        case .activate:
+            break  // No-op for files
+        }
     }
 
     // MARK: - Helpers

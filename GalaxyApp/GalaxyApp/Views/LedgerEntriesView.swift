@@ -10,9 +10,14 @@ struct LedgerEntriesView: View {
     let ledgerSessionId: Int64?
     let onSearch: (String) -> Void
     let onClearSearch: () -> Void
+    let scrollProxy: ScrollViewProxy
 
+    @EnvironmentObject var sessionManager: SessionManager
     @Environment(\.chromeFontSize) private var chromeFontSize
     private var fontSize: ChromeFontSize { ChromeFontSize(chromeFontSize) }
+
+    // Focus state for keyboard navigation
+    @State private var focusedIndex: Int? = nil
 
     @State private var searchText: String = ""
     @State private var expandedEntryIds: Set<Int64> = []
@@ -86,6 +91,24 @@ struct LedgerEntriesView: View {
             setupSearchDebounce()
             isSearchFocused = true
         }
+        .onChange(of: sessionManager.listNavAction) {
+            guard sessionManager.activeLedgerSubTab == .entries else { return }
+            guard let action = sessionManager.listNavAction else { return }
+            sessionManager.listNavAction = nil
+            handleListNavAction(action)
+        }
+        .onChange(of: entries?.count) {
+            if let entries = entries, !entries.isEmpty {
+                focusedIndex = 0
+            } else {
+                focusedIndex = nil
+            }
+        }
+        .onChange(of: focusedIndex) {
+            if let idx = focusedIndex, idx < sortedEntries.count {
+                scrollProxy.scrollTo(sortedEntries[idx].id)
+            }
+        }
     }
 
     // MARK: - Search Bar
@@ -136,7 +159,8 @@ struct LedgerEntriesView: View {
 
             // Data rows
             ForEach(Array(sortedEntries.enumerated()), id: \.element.id) { index, entry in
-                entryRow(entry, isAlternate: index % 2 == 1)
+                entryRow(entry, index: index)
+                    .id(entry.id)
             }
         }
     }
@@ -184,8 +208,9 @@ struct LedgerEntriesView: View {
 
     // MARK: - Data Row
 
-    private func entryRow(_ entry: LedgerEntry, isAlternate: Bool) -> some View {
+    private func entryRow(_ entry: LedgerEntry, index: Int) -> some View {
         let isExpanded = expandedEntryIds.contains(entry.id)
+        let isFocused = focusedIndex == index
 
         return HStack(alignment: .top, spacing: 0) {
             Text(entry.entryType)
@@ -232,7 +257,11 @@ struct LedgerEntriesView: View {
         }
         .padding(.vertical, 3)
         .padding(.horizontal, 8)
-        .background(isAlternate ? Color.primary.opacity(0.03) : Color.clear)
+        .background(
+            isFocused
+                ? Color.accentColor.opacity(0.15)
+                : (index % 2 == 1 ? Color.primary.opacity(0.03) : Color.clear)
+        )
     }
 
     // MARK: - Search Debounce
@@ -248,6 +277,32 @@ struct LedgerEntriesView: View {
                     onSearch(query)
                 }
             }
+    }
+
+    // MARK: - List Focus Navigation
+
+    private func handleListNavAction(_ action: ListNavAction) {
+        let items = sortedEntries
+        guard !items.isEmpty else { return }
+
+        switch action {
+        case .up:
+            if let current = focusedIndex {
+                guard current > 0 else { return }
+                focusedIndex = current - 1
+            } else {
+                focusedIndex = items.count - 1
+            }
+        case .down:
+            if let current = focusedIndex {
+                guard current < items.count - 1 else { return }
+                focusedIndex = current + 1
+            } else {
+                focusedIndex = 0
+            }
+        case .activate:
+            break  // No-op for entries
+        }
     }
 
     // MARK: - Helpers

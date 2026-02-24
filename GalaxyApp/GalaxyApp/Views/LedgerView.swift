@@ -59,21 +59,23 @@ struct LedgerView: View {
         let _ = _triggerRedraw  // Force dependency on ledgerVersion
 
         GeometryReader { geo in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    // Row 1: Three-column metadata header
-                    metadataHeader(availableWidth: geo.size.width - 40)
+            ScrollViewReader { scrollProxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        // Row 1: Three-column metadata header
+                        metadataHeader(availableWidth: geo.size.width - 40)
 
-                    // Subtab picker
-                    subtabPicker
+                        // Subtab picker
+                        subtabPicker
 
-                    // Subtab content
-                    subtabContent
+                        // Subtab content
+                        subtabContent(scrollProxy: scrollProxy)
+                    }
+                    .frame(width: geo.size.width - 40, alignment: .leading)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 12)
+                    .padding(.bottom, 20)
                 }
-                .frame(width: geo.size.width - 40, alignment: .leading)
-                .padding(.horizontal, 20)
-                .padding(.top, 12)
-                .padding(.bottom, 20)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -233,19 +235,20 @@ struct LedgerView: View {
     // MARK: - Subtab Content (exclusive switch)
 
     @ViewBuilder
-    private var subtabContent: some View {
+    private func subtabContent(scrollProxy: ScrollViewProxy) -> some View {
         switch sessionManager.activeLedgerSubTab {
         case .lastActivity:
             LedgerLastActivityView(session: session)
         case .files:
-            LedgerFilesView(files: files, isLoading: isLoading)
+            LedgerFilesView(files: files, isLoading: isLoading, scrollProxy: scrollProxy)
         case .entries:
             LedgerEntriesView(
                 entries: entries,
                 isLoading: isLoading,
                 ledgerSessionId: session.ledgerSessionId,
                 onSearch: { query in searchEntries(query: query) },
-                onClearSearch: { fetchEntriesData() }
+                onClearSearch: { fetchEntriesData() },
+                scrollProxy: scrollProxy
             )
         case .identifiers:
             LedgerIdentifiersView(

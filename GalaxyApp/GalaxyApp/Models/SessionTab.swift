@@ -24,7 +24,7 @@ enum SessionTab: String, CaseIterable {
         }
     }
 
-    /// Whether this view has inner tabs that can be cycled with ⌘⌥←/→.
+    /// Whether this view has inner tabs that can be cycled with ⌘⇧H/L.
     var hasInnerTabs: Bool {
         switch self {
         case .terminal: return false

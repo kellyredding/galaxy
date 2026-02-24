@@ -42,6 +42,9 @@ struct SnapshotsView: View {
     @State private var isBackHovered: Bool = false
     @State private var escapeMonitor: Any? = nil
 
+    // Focus state for keyboard navigation
+    @State private var focusedIndex: Int? = nil
+
     // Sort state
     @State private var sortColumn: SortColumn = .created
     @State private var sortAscending: Bool = false
@@ -93,6 +96,12 @@ struct SnapshotsView: View {
         .onChange(of: session.id) { handleSessionSwitch() }
         .onChange(of: sessionManager.pendingSnapshotNumber) {
             handlePendingSnapshot()
+        }
+        .onChange(of: sessionManager.listNavAction) {
+            guard openSnapshot == nil else { return }
+            guard let action = sessionManager.listNavAction else { return }
+            sessionManager.listNavAction = nil
+            handleListNavAction(action)
         }
         .onDisappear {
             fetchTask?.cancel()
@@ -149,17 +158,25 @@ struct SnapshotsView: View {
             .frame(maxWidth: .infinity)
         } else {
             GeometryReader { geo in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        headerRow
-                        ForEach(Array(sortedSnapshots.enumerated()), id: \.element.id) { index, snap in
-                            snapshotRow(snap, isAlternate: index % 2 == 1)
+                ScrollViewReader { scrollProxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 0) {
+                            headerRow
+                            ForEach(Array(sortedSnapshots.enumerated()), id: \.element.id) { index, snap in
+                                snapshotRow(snap, index: index)
+                                    .id(snap.id)
+                            }
+                        }
+                        .frame(width: geo.size.width - 40, alignment: .leading)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 12)
+                        .padding(.bottom, 20)
+                    }
+                    .onChange(of: focusedIndex) {
+                        if let idx = focusedIndex, idx < sortedSnapshots.count {
+                            scrollProxy.scrollTo(sortedSnapshots[idx].id)
                         }
                     }
-                    .frame(width: geo.size.width - 40, alignment: .leading)
-                    .padding(.horizontal, 20)
-                    .padding(.top, 12)
-                    .padding(.bottom, 20)
                 }
             }
         }
@@ -207,8 +224,10 @@ struct SnapshotsView: View {
 
     // MARK: - Index Row
 
-    private func snapshotRow(_ snap: SnapshotSummary, isAlternate: Bool) -> some View {
-        Button(action: { openSnapshotReader(number: snap.number) }) {
+    private func snapshotRow(_ snap: SnapshotSummary, index: Int) -> some View {
+        let isFocused = focusedIndex == index
+
+        return Button(action: { openSnapshotReader(number: snap.number) }) {
             HStack(spacing: 0) {
                 Text(verbatim: "\(snap.number)")
                     .chromeFontMono(size: fontSize.caption2)
@@ -236,7 +255,11 @@ struct SnapshotsView: View {
             }
             .padding(.vertical, 3)
             .padding(.horizontal, 8)
-            .background(isAlternate ? Color.primary.opacity(0.03) : Color.clear)
+            .background(
+                isFocused
+                    ? Color.accentColor.opacity(0.15)
+                    : (index % 2 == 1 ? Color.primary.opacity(0.03) : Color.clear)
+            )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -316,6 +339,7 @@ struct SnapshotsView: View {
                 await MainActor.run {
                     snapshots = result
                     isLoading = false
+                    focusedIndex = result.isEmpty ? nil : 0
                 }
             } catch {
                 guard !Task.isCancelled else { return }
@@ -353,8 +377,14 @@ struct SnapshotsView: View {
     }
 
     private func closeReader() {
+        let closingNumber = openSnapshot?.number
         removeEscapeMonitor()
         openSnapshot = nil  // Purge content from memory
+
+        // Refocus the row that was open
+        if let number = closingNumber {
+            focusedIndex = sortedSnapshots.firstIndex(where: { $0.number == number })
+        }
     }
 
     // MARK: - Escape Key (AppKit monitor)
@@ -388,6 +418,7 @@ struct SnapshotsView: View {
         snapshots = nil
         isLoading = false
         isLoadingContent = false
+        focusedIndex = nil
         fetchSnapshotList()
     }
 
@@ -430,6 +461,33 @@ struct SnapshotsView: View {
                     isLoading = false
                 }
             }
+        }
+    }
+
+    // MARK: - List Focus Navigation
+
+    private func handleListNavAction(_ action: ListNavAction) {
+        let items = sortedSnapshots
+        guard !items.isEmpty else { return }
+
+        switch action {
+        case .up:
+            if let current = focusedIndex {
+                guard current > 0 else { return }
+                focusedIndex = current - 1
+            } else {
+                focusedIndex = items.count - 1
+            }
+        case .down:
+            if let current = focusedIndex {
+                guard current < items.count - 1 else { return }
+                focusedIndex = current + 1
+            } else {
+                focusedIndex = 0
+            }
+        case .activate:
+            guard let idx = focusedIndex, idx < items.count else { return }
+            openSnapshotReader(number: items[idx].number)
         }
     }
 

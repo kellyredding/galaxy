@@ -103,7 +103,7 @@ class MainMenu: NSObject, NSMenuDelegate {
         NSApp.servicesMenu = servicesMenu
 
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Hide \(appName)", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        menu.addItem(withTitle: "Hide \(appName)", action: #selector(NSApplication.hide(_:)), keyEquivalent: "")
 
         let hideOthersItem = NSMenuItem(title: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
         hideOthersItem.keyEquivalentModifierMask = [.command, .option]
@@ -261,14 +261,13 @@ class MainMenu: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        // View switching: ⌘⇧[ / ⌘⇧] and ⌘⇧← / ⌘⇧→
+        // View switching: ⌘H / ⌘L and ⌘← / ⌘→
         let prevViewItem = NSMenuItem(
             title: "Previous view",
             action: #selector(MenuActions.previousView(_:)),
-            keyEquivalent: "["
+            keyEquivalent: "h"
         )
         prevViewItem.target = MenuActions.shared
-        prevViewItem.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(prevViewItem)
 
         let prevViewArrowItem = NSMenuItem(
@@ -277,17 +276,16 @@ class MainMenu: NSObject, NSMenuDelegate {
             keyEquivalent: String(UnicodeScalar(NSLeftArrowFunctionKey)!)
         )
         prevViewArrowItem.target = MenuActions.shared
-        prevViewArrowItem.keyEquivalentModifierMask = [.command, .shift]
+        prevViewArrowItem.keyEquivalentModifierMask = .command
         prevViewArrowItem.isAlternate = true
         menu.addItem(prevViewArrowItem)
 
         let nextViewItem = NSMenuItem(
             title: "Next view",
             action: #selector(MenuActions.nextView(_:)),
-            keyEquivalent: "]"
+            keyEquivalent: "l"
         )
         nextViewItem.target = MenuActions.shared
-        nextViewItem.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(nextViewItem)
 
         let nextViewArrowItem = NSMenuItem(
@@ -296,33 +294,117 @@ class MainMenu: NSObject, NSMenuDelegate {
             keyEquivalent: String(UnicodeScalar(NSRightArrowFunctionKey)!)
         )
         nextViewArrowItem.target = MenuActions.shared
-        nextViewArrowItem.keyEquivalentModifierMask = [.command, .shift]
+        nextViewArrowItem.keyEquivalentModifierMask = .command
         nextViewArrowItem.isAlternate = true
         menu.addItem(nextViewArrowItem)
 
-        // Tab switching within views: ⌘⌥← / ⌘⌥→
+        // Tab switching within views: ⌘⇧H / ⌘⇧L and ⌘⇧← / ⌘⇧→
         // Only enabled when the active view has inner tabs
         let hasInnerTabs = sessionManager.activeTab.hasInnerTabs
 
         let prevTabItem = NSMenuItem(
             title: "Previous tab",
             action: #selector(MenuActions.previousTab(_:)),
-            keyEquivalent: String(UnicodeScalar(NSLeftArrowFunctionKey)!)
+            keyEquivalent: "h"
         )
         prevTabItem.target = MenuActions.shared
-        prevTabItem.keyEquivalentModifierMask = [.command, .option]
+        prevTabItem.keyEquivalentModifierMask = [.command, .shift]
         prevTabItem.isEnabled = hasInnerTabs
         menu.addItem(prevTabItem)
+
+        let prevTabArrowItem = NSMenuItem(
+            title: "Previous tab",
+            action: #selector(MenuActions.previousTab(_:)),
+            keyEquivalent: String(UnicodeScalar(NSLeftArrowFunctionKey)!)
+        )
+        prevTabArrowItem.target = MenuActions.shared
+        prevTabArrowItem.keyEquivalentModifierMask = [.command, .shift]
+        prevTabArrowItem.isEnabled = hasInnerTabs
+        prevTabArrowItem.isAlternate = true
+        menu.addItem(prevTabArrowItem)
 
         let nextTabItem = NSMenuItem(
             title: "Next tab",
             action: #selector(MenuActions.nextTab(_:)),
-            keyEquivalent: String(UnicodeScalar(NSRightArrowFunctionKey)!)
+            keyEquivalent: "l"
         )
         nextTabItem.target = MenuActions.shared
-        nextTabItem.keyEquivalentModifierMask = [.command, .option]
+        nextTabItem.keyEquivalentModifierMask = [.command, .shift]
         nextTabItem.isEnabled = hasInnerTabs
         menu.addItem(nextTabItem)
+
+        let nextTabArrowItem = NSMenuItem(
+            title: "Next tab",
+            action: #selector(MenuActions.nextTab(_:)),
+            keyEquivalent: String(UnicodeScalar(NSRightArrowFunctionKey)!)
+        )
+        nextTabArrowItem.target = MenuActions.shared
+        nextTabArrowItem.keyEquivalentModifierMask = [.command, .shift]
+        nextTabArrowItem.isEnabled = hasInnerTabs
+        nextTabArrowItem.isAlternate = true
+        menu.addItem(nextTabArrowItem)
+
+        // List item navigation: ⌘⇧K / ⌘⇧J and ⌘⇧↑ / ⌘⇧↓
+        let hasListFocus: Bool = {
+            switch sessionManager.activeTab {
+            case .snapshots: return true
+            case .ledger: return [.files, .entries].contains(sessionManager.activeLedgerSubTab)
+            case .terminal: return false
+            }
+        }()
+
+        let focusPrevItem = NSMenuItem(
+            title: "Previous item",
+            action: #selector(MenuActions.focusPreviousListItem(_:)),
+            keyEquivalent: "k"
+        )
+        focusPrevItem.target = MenuActions.shared
+        focusPrevItem.keyEquivalentModifierMask = [.command, .shift]
+        focusPrevItem.isEnabled = hasListFocus
+        menu.addItem(focusPrevItem)
+
+        let focusPrevArrowItem = NSMenuItem(
+            title: "Previous item",
+            action: #selector(MenuActions.focusPreviousListItem(_:)),
+            keyEquivalent: String(UnicodeScalar(NSUpArrowFunctionKey)!)
+        )
+        focusPrevArrowItem.target = MenuActions.shared
+        focusPrevArrowItem.keyEquivalentModifierMask = [.command, .shift]
+        focusPrevArrowItem.isEnabled = hasListFocus
+        focusPrevArrowItem.isAlternate = true
+        menu.addItem(focusPrevArrowItem)
+
+        let focusNextItem = NSMenuItem(
+            title: "Next item",
+            action: #selector(MenuActions.focusNextListItem(_:)),
+            keyEquivalent: "j"
+        )
+        focusNextItem.target = MenuActions.shared
+        focusNextItem.keyEquivalentModifierMask = [.command, .shift]
+        focusNextItem.isEnabled = hasListFocus
+        menu.addItem(focusNextItem)
+
+        let focusNextArrowItem = NSMenuItem(
+            title: "Next item",
+            action: #selector(MenuActions.focusNextListItem(_:)),
+            keyEquivalent: String(UnicodeScalar(NSDownArrowFunctionKey)!)
+        )
+        focusNextArrowItem.target = MenuActions.shared
+        focusNextArrowItem.keyEquivalentModifierMask = [.command, .shift]
+        focusNextArrowItem.isEnabled = hasListFocus
+        focusNextArrowItem.isAlternate = true
+        menu.addItem(focusNextArrowItem)
+
+        // Activate focused item: Enter (snapshots only)
+        let activateItem = NSMenuItem(
+            title: "Open snapshot",
+            action: #selector(MenuActions.activateFocusedListItem(_:)),
+            keyEquivalent: "\r"
+        )
+        activateItem.target = MenuActions.shared
+        activateItem.keyEquivalentModifierMask = []
+        activateItem.isEnabled = sessionManager.activeTab == .snapshots
+        menu.addItem(activateItem)
 
         menu.addItem(.separator())
 
@@ -487,6 +569,20 @@ class MenuActions: NSObject {
 
     @objc func nextTab(_ sender: Any?) {
         SessionManager.shared.switchToNextInnerTab()
+    }
+
+    // MARK: - List Navigation Actions
+
+    @objc func focusPreviousListItem(_ sender: Any?) {
+        SessionManager.shared.listNavAction = .up
+    }
+
+    @objc func focusNextListItem(_ sender: Any?) {
+        SessionManager.shared.listNavAction = .down
+    }
+
+    @objc func activateFocusedListItem(_ sender: Any?) {
+        SessionManager.shared.listNavAction = .activate
     }
 
     @objc func defaultTerminalFontSize(_ sender: Any?) {

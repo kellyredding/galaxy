@@ -3,6 +3,10 @@ import AppKit
 import SwiftUI
 import SwiftTerm
 
+enum ListNavAction {
+    case up, down, activate
+}
+
 class SessionManager: ObservableObject {
     // Singleton instance for access from AppDelegate
     static let shared = SessionManager()
@@ -32,6 +36,10 @@ class SessionManager: ObservableObject {
     /// Snapshot number to auto-open when switching to snapshots tab.
     /// Set by EventCoordinator on snapshot.created, cleared by SnapshotsView after opening.
     @Published var pendingSnapshotNumber: Int32? = nil
+
+    /// List navigation action bridged from menu shortcuts.
+    /// Set by MenuActions, consumed by the active list view's onChange handler.
+    @Published var listNavAction: ListNavAction? = nil
 
     /// Called when a session is removed from the session list.
     /// Used by EventCoordinator to clean up cached ledger_session_id mappings.
@@ -549,51 +557,45 @@ class SessionManager: ObservableObject {
         switchTo(sessionId: sessions[currentIndex + 1].id)
     }
 
-    /// Switch to the previous tab (wraps around)
+    /// Switch to the previous tab (stops at first boundary)
     func switchToPreviousTab() {
         let allTabs = SessionTab.allCases
-        guard let currentIndex = allTabs.firstIndex(of: activeTab) else { return }
-        let prevIndex = currentIndex == allTabs.startIndex
-            ? allTabs.index(before: allTabs.endIndex)
-            : allTabs.index(before: currentIndex)
-        activeTab = allTabs[prevIndex]
+        guard let currentIndex = allTabs.firstIndex(of: activeTab),
+              currentIndex > allTabs.startIndex else { return }
+        activeTab = allTabs[allTabs.index(before: currentIndex)]
     }
 
-    /// Switch to the next tab (wraps around)
+    /// Switch to the next tab (stops at last boundary)
     func switchToNextTab() {
         let allTabs = SessionTab.allCases
         guard let currentIndex = allTabs.firstIndex(of: activeTab) else { return }
         let nextIndex = allTabs.index(after: currentIndex)
-        activeTab = nextIndex < allTabs.endIndex
-            ? allTabs[nextIndex]
-            : allTabs[allTabs.startIndex]
+        guard nextIndex < allTabs.endIndex else { return }
+        activeTab = allTabs[nextIndex]
     }
 
-    /// Switch to the previous inner tab within the active view (wraps around)
+    /// Switch to the previous inner tab within the active view (stops at first boundary)
     func switchToPreviousInnerTab() {
         switch activeTab {
         case .ledger:
             let allTabs = LedgerSubTab.allCases
-            guard let currentIndex = allTabs.firstIndex(of: activeLedgerSubTab) else { return }
-            let prevIndex = currentIndex == allTabs.startIndex
-                ? allTabs.index(before: allTabs.endIndex)
-                : allTabs.index(before: currentIndex)
-            activeLedgerSubTab = allTabs[prevIndex]
+            guard let currentIndex = allTabs.firstIndex(of: activeLedgerSubTab),
+                  currentIndex > allTabs.startIndex else { return }
+            activeLedgerSubTab = allTabs[allTabs.index(before: currentIndex)]
         default:
             break
         }
     }
 
-    /// Switch to the next inner tab within the active view (wraps around)
+    /// Switch to the next inner tab within the active view (stops at last boundary)
     func switchToNextInnerTab() {
         switch activeTab {
         case .ledger:
             let allTabs = LedgerSubTab.allCases
             guard let currentIndex = allTabs.firstIndex(of: activeLedgerSubTab) else { return }
             let nextIndex = allTabs.index(after: currentIndex)
-            activeLedgerSubTab = nextIndex < allTabs.endIndex
-                ? allTabs[nextIndex]
-                : allTabs[allTabs.startIndex]
+            guard nextIndex < allTabs.endIndex else { return }
+            activeLedgerSubTab = allTabs[nextIndex]
         default:
             break
         }
