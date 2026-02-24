@@ -46,8 +46,8 @@ struct SnapshotsView: View {
     @State private var focusedIndex: Int? = nil
 
     // Sort state
-    @State private var sortColumn: SortColumn = .created
-    @State private var sortAscending: Bool = false
+    @State private var sortColumn: SortColumn = .number
+    @State private var sortAscending: Bool = true
 
     enum SortColumn {
         case number, title, exchanges, size, created
