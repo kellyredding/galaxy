@@ -3117,6 +3117,8 @@ module GalaxyLedger
         else
           snapshot_open(rest)
         end
+      when "annotation"
+        handle_snapshot_annotation_command(rest)
       else
         STDERR.puts "Error: Unknown snapshot command '#{subcommand}'"
         STDERR.puts "Run 'galaxy-ledger snapshot --help' for usage"
@@ -3629,11 +3631,12 @@ module GalaxyLedger
         galaxy-ledger snapshot <command> [options]
 
       COMMANDS:
-        create   Create a snapshot from stdin
-        list     List snapshots for a session
-        view     View a snapshot's content
-        open     Open a snapshot in an editor
-        delete   Delete a snapshot
+        create      Create a snapshot from stdin
+        list        List snapshots for a session
+        view        View a snapshot's content
+        open        Open a snapshot in an editor
+        delete      Delete a snapshot
+        annotation  Manage snapshot annotations
 
       Run 'galaxy-ledger snapshot <command> --help' for detailed usage.
       HELP
@@ -3753,6 +3756,654 @@ module GalaxyLedger
       EXAMPLES:
         galaxy-ledger snapshot open --pid 12345 1
         galaxy-ledger config set snapshots.editor subl
+      HELP
+    end
+
+    # ========================================
+    # Snapshot Annotation Commands
+    # ========================================
+
+    private def self.handle_snapshot_annotation_command(args : Array(String))
+      if args.empty? || args.first? == "-h" || args.first? == "--help"
+        show_snapshot_annotation_help
+        return
+      end
+
+      subcommand = args[0]
+      rest = args[1..]? || [] of String
+
+      case subcommand
+      when "create"
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_snapshot_annotation_create_help
+        else
+          snapshot_annotation_create(rest)
+        end
+      when "list"
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_snapshot_annotation_list_help
+        else
+          snapshot_annotation_list(rest)
+        end
+      when "view"
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_snapshot_annotation_view_help
+        else
+          snapshot_annotation_view(rest)
+        end
+      when "update"
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_snapshot_annotation_update_help
+        else
+          snapshot_annotation_update(rest)
+        end
+      when "delete"
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_snapshot_annotation_delete_help
+        else
+          snapshot_annotation_delete(rest)
+        end
+      else
+        STDERR.puts "Error: Unknown snapshot annotation command '#{subcommand}'"
+        STDERR.puts "Run 'galaxy-ledger snapshot annotation --help' for usage"
+        exit(1)
+      end
+    end
+
+    # Resolve --ledger-snapshot-id or (--ledger-session-id + --snapshot) to a
+    # ledger_snapshot_id (the DB primary key of the snapshot).
+    private def self.resolve_snapshot_id(
+      ledger_snapshot_id_str : String?,
+      ledger_session_id_str : String?,
+      snapshot_number : Int32?,
+    ) : Int64
+      if lsid_str = ledger_snapshot_id_str
+        id = lsid_str.to_i64?
+        unless id
+          STDERR.puts "Error: --ledger-snapshot-id must be a number"
+          exit(1)
+        end
+        return id
+      end
+
+      if sess_str = ledger_session_id_str
+        session_id = resolve_ledger_session_id_str(sess_str)
+        unless snapshot_number
+          STDERR.puts "Error: --snapshot is required when using --ledger-session-id"
+          exit(1)
+        end
+        snapshot = Database.get_snapshot_by_number(session_id, snapshot_number)
+        unless snapshot
+          STDERR.puts "Error: snapshot ##{snapshot_number} not found"
+          exit(1)
+        end
+        return snapshot.id
+      end
+
+      STDERR.puts "Error: --ledger-snapshot-id (or --ledger-session-id + --snapshot) is required"
+      exit(1)
+    end
+
+    private def self.snapshot_annotation_create(args : Array(String))
+      ledger_snapshot_id_str : String? = nil
+      ledger_session_id_str : String? = nil
+      snapshot_number : Int32? = nil
+      start_line : Int32? = nil
+      end_line : Int32? = nil
+
+      i = 0
+      while i < args.size
+        arg = args[i]
+        case arg
+        when "--ledger-snapshot-id"
+          if i + 1 < args.size
+            ledger_snapshot_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --ledger-snapshot-id requires a value"
+            exit(1)
+          end
+        when "--ledger-session-id"
+          if i + 1 < args.size
+            ledger_session_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --ledger-session-id requires a value"
+            exit(1)
+          end
+        when "--snapshot"
+          if i + 1 < args.size
+            snapshot_number = args[i + 1].to_i?
+            unless snapshot_number
+              STDERR.puts "Error: --snapshot must be a number"
+              exit(1)
+            end
+            i += 2
+          else
+            STDERR.puts "Error: --snapshot requires a value"
+            exit(1)
+          end
+        when "--start-line"
+          if i + 1 < args.size
+            start_line = args[i + 1].to_i?
+            unless start_line
+              STDERR.puts "Error: --start-line must be a number"
+              exit(1)
+            end
+            i += 2
+          else
+            STDERR.puts "Error: --start-line requires a value"
+            exit(1)
+          end
+        when "--end-line"
+          if i + 1 < args.size
+            end_line = args[i + 1].to_i?
+            unless end_line
+              STDERR.puts "Error: --end-line must be a number"
+              exit(1)
+            end
+            i += 2
+          else
+            STDERR.puts "Error: --end-line requires a value"
+            exit(1)
+          end
+        else
+          STDERR.puts "Error: Unknown option '#{arg}'"
+          STDERR.puts "Run 'galaxy-ledger snapshot annotation create --help' for usage"
+          exit(1)
+        end
+      end
+
+      ledger_snapshot_id = resolve_snapshot_id(ledger_snapshot_id_str, ledger_session_id_str, snapshot_number)
+
+      unless start_line
+        STDERR.puts "Error: --start-line is required"
+        STDERR.puts "Run 'galaxy-ledger snapshot annotation create --help' for usage"
+        exit(1)
+      end
+
+      unless end_line
+        STDERR.puts "Error: --end-line is required"
+        STDERR.puts "Run 'galaxy-ledger snapshot annotation create --help' for usage"
+        exit(1)
+      end
+
+      # Read content from stdin
+      content = STDIN.gets_to_end
+      if content.strip.empty?
+        STDERR.puts "Error: no content provided on stdin"
+        exit(1)
+      end
+
+      ann = Database.save_snapshot_annotation(
+        ledger_snapshot_id,
+        start_line,
+        end_line,
+        content.strip,
+      )
+
+      if ann
+        JSON.build(STDOUT, indent: "  ") do |json|
+          json.object do
+            json.field "annotation" do
+              annotation_to_json(json, ann)
+            end
+          end
+        end
+        puts ""
+      else
+        STDERR.puts "Error: failed to create annotation"
+        exit(1)
+      end
+    end
+
+    private def self.snapshot_annotation_list(args : Array(String))
+      ledger_snapshot_id_str : String? = nil
+      ledger_session_id_str : String? = nil
+      snapshot_number : Int32? = nil
+      json_output = false
+
+      i = 0
+      while i < args.size
+        arg = args[i]
+        case arg
+        when "--ledger-snapshot-id"
+          if i + 1 < args.size
+            ledger_snapshot_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --ledger-snapshot-id requires a value"
+            exit(1)
+          end
+        when "--ledger-session-id"
+          if i + 1 < args.size
+            ledger_session_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --ledger-session-id requires a value"
+            exit(1)
+          end
+        when "--snapshot"
+          if i + 1 < args.size
+            snapshot_number = args[i + 1].to_i?
+            unless snapshot_number
+              STDERR.puts "Error: --snapshot must be a number"
+              exit(1)
+            end
+            i += 2
+          else
+            STDERR.puts "Error: --snapshot requires a value"
+            exit(1)
+          end
+        when "--json"
+          json_output = true
+          i += 1
+        else
+          STDERR.puts "Error: Unknown option '#{arg}'"
+          STDERR.puts "Run 'galaxy-ledger snapshot annotation list --help' for usage"
+          exit(1)
+        end
+      end
+
+      ledger_snapshot_id = resolve_snapshot_id(ledger_snapshot_id_str, ledger_session_id_str, snapshot_number)
+      annotations = Database.list_snapshot_annotations(ledger_snapshot_id)
+
+      if json_output
+        JSON.build(STDOUT, indent: "  ") do |json|
+          json.object do
+            json.field "annotations" do
+              json.array do
+                annotations.each do |ann|
+                  annotation_to_json(json, ann)
+                end
+              end
+            end
+          end
+        end
+        puts ""
+        return
+      end
+
+      if annotations.empty?
+        puts "No annotations for this snapshot."
+        return
+      end
+
+      puts "Annotations (#{annotations.size} total):"
+      puts ""
+
+      annotations.each do |ann|
+        line_range = ann.start_line == ann.end_line ? "line #{ann.start_line}" : "lines #{ann.start_line}-#{ann.end_line}"
+        preview = ann.content.gsub('\n', ' ')
+        preview = preview.size > 50 ? "#{preview[0, 50]}..." : preview
+        timestamp = format_snapshot_timestamp(ann.created_at)
+        puts "  ##{ann.number}  #{line_range}  \"#{preview}\"  #{timestamp}"
+      end
+    end
+
+    private def self.snapshot_annotation_view(args : Array(String))
+      ledger_snapshot_id_str : String? = nil
+      ledger_session_id_str : String? = nil
+      snapshot_number : Int32? = nil
+      number : Int32? = nil
+
+      i = 0
+      while i < args.size
+        arg = args[i]
+        case arg
+        when "--ledger-snapshot-id"
+          if i + 1 < args.size
+            ledger_snapshot_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --ledger-snapshot-id requires a value"
+            exit(1)
+          end
+        when "--ledger-session-id"
+          if i + 1 < args.size
+            ledger_session_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --ledger-session-id requires a value"
+            exit(1)
+          end
+        when "--snapshot"
+          if i + 1 < args.size
+            snapshot_number = args[i + 1].to_i?
+            unless snapshot_number
+              STDERR.puts "Error: --snapshot must be a number"
+              exit(1)
+            end
+            i += 2
+          else
+            STDERR.puts "Error: --snapshot requires a value"
+            exit(1)
+          end
+        else
+          # Try as positional annotation number
+          if n = arg.to_i?
+            number = n
+          else
+            STDERR.puts "Error: Unknown option '#{arg}'"
+            STDERR.puts "Run 'galaxy-ledger snapshot annotation view --help' for usage"
+            exit(1)
+          end
+          i += 1
+        end
+      end
+
+      ledger_snapshot_id = resolve_snapshot_id(ledger_snapshot_id_str, ledger_session_id_str, snapshot_number)
+
+      unless number
+        STDERR.puts "Error: annotation number is required"
+        STDERR.puts "Run 'galaxy-ledger snapshot annotation view --help' for usage"
+        exit(1)
+      end
+
+      ann = Database.get_snapshot_annotation(ledger_snapshot_id, number)
+
+      unless ann
+        STDERR.puts "Error: annotation ##{number} not found"
+        exit(1)
+      end
+
+      JSON.build(STDOUT, indent: "  ") do |json|
+        json.object do
+          json.field "annotation" do
+            annotation_to_json(json, ann)
+          end
+        end
+      end
+      puts ""
+    end
+
+    private def self.snapshot_annotation_update(args : Array(String))
+      ledger_snapshot_id_str : String? = nil
+      ledger_session_id_str : String? = nil
+      snapshot_number : Int32? = nil
+      number : Int32? = nil
+
+      i = 0
+      while i < args.size
+        arg = args[i]
+        case arg
+        when "--ledger-snapshot-id"
+          if i + 1 < args.size
+            ledger_snapshot_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --ledger-snapshot-id requires a value"
+            exit(1)
+          end
+        when "--ledger-session-id"
+          if i + 1 < args.size
+            ledger_session_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --ledger-session-id requires a value"
+            exit(1)
+          end
+        when "--snapshot"
+          if i + 1 < args.size
+            snapshot_number = args[i + 1].to_i?
+            unless snapshot_number
+              STDERR.puts "Error: --snapshot must be a number"
+              exit(1)
+            end
+            i += 2
+          else
+            STDERR.puts "Error: --snapshot requires a value"
+            exit(1)
+          end
+        else
+          # Try as positional annotation number
+          if n = arg.to_i?
+            number = n
+          else
+            STDERR.puts "Error: Unknown option '#{arg}'"
+            STDERR.puts "Run 'galaxy-ledger snapshot annotation update --help' for usage"
+            exit(1)
+          end
+          i += 1
+        end
+      end
+
+      ledger_snapshot_id = resolve_snapshot_id(ledger_snapshot_id_str, ledger_session_id_str, snapshot_number)
+
+      unless number
+        STDERR.puts "Error: annotation number is required"
+        STDERR.puts "Run 'galaxy-ledger snapshot annotation update --help' for usage"
+        exit(1)
+      end
+
+      # Read content from stdin
+      content = STDIN.gets_to_end
+      if content.strip.empty?
+        STDERR.puts "Error: no content provided on stdin"
+        exit(1)
+      end
+
+      ann = Database.update_snapshot_annotation(
+        ledger_snapshot_id,
+        number,
+        content.strip,
+      )
+
+      if ann
+        JSON.build(STDOUT, indent: "  ") do |json|
+          json.object do
+            json.field "annotation" do
+              annotation_to_json(json, ann)
+            end
+          end
+        end
+        puts ""
+      else
+        STDERR.puts "Error: annotation ##{number} not found"
+        exit(1)
+      end
+    end
+
+    private def self.snapshot_annotation_delete(args : Array(String))
+      ledger_snapshot_id_str : String? = nil
+      ledger_session_id_str : String? = nil
+      snapshot_number : Int32? = nil
+      number : Int32? = nil
+
+      i = 0
+      while i < args.size
+        arg = args[i]
+        case arg
+        when "--ledger-snapshot-id"
+          if i + 1 < args.size
+            ledger_snapshot_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --ledger-snapshot-id requires a value"
+            exit(1)
+          end
+        when "--ledger-session-id"
+          if i + 1 < args.size
+            ledger_session_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --ledger-session-id requires a value"
+            exit(1)
+          end
+        when "--snapshot"
+          if i + 1 < args.size
+            snapshot_number = args[i + 1].to_i?
+            unless snapshot_number
+              STDERR.puts "Error: --snapshot must be a number"
+              exit(1)
+            end
+            i += 2
+          else
+            STDERR.puts "Error: --snapshot requires a value"
+            exit(1)
+          end
+        else
+          # Try as positional annotation number
+          if n = arg.to_i?
+            number = n
+          else
+            STDERR.puts "Error: Unknown option '#{arg}'"
+            STDERR.puts "Run 'galaxy-ledger snapshot annotation delete --help' for usage"
+            exit(1)
+          end
+          i += 1
+        end
+      end
+
+      ledger_snapshot_id = resolve_snapshot_id(ledger_snapshot_id_str, ledger_session_id_str, snapshot_number)
+
+      unless number
+        STDERR.puts "Error: annotation number is required"
+        STDERR.puts "Run 'galaxy-ledger snapshot annotation delete --help' for usage"
+        exit(1)
+      end
+
+      result = Database.delete_snapshot_annotation(ledger_snapshot_id, number)
+
+      if result
+        puts "Annotation ##{number} deleted"
+      else
+        STDERR.puts "Error: annotation ##{number} not found"
+        exit(1)
+      end
+    end
+
+    # Serialize a SnapshotAnnotation to JSON fields
+    private def self.annotation_to_json(json : JSON::Builder, ann : Database::SnapshotAnnotation)
+      json.object do
+        json.field "id", ann.id
+        json.field "number", ann.number
+        json.field "ledger_snapshot_id", ann.ledger_snapshot_id
+        json.field "start_line", ann.start_line
+        json.field "end_line", ann.end_line
+        json.field "content", ann.content
+        json.field "created_at", ann.created_at
+        json.field "updated_at", ann.updated_at
+      end
+    end
+
+    private def self.show_snapshot_annotation_help
+      puts <<-HELP
+      galaxy-ledger snapshot annotation - Manage snapshot annotations
+
+      USAGE:
+        galaxy-ledger snapshot annotation <command> [options]
+
+      COMMANDS:
+        create   Create an annotation on a snapshot
+        list     List annotations for a snapshot
+        view     View an annotation
+        update   Update an annotation's content
+        delete   Delete an annotation
+
+      Run 'galaxy-ledger snapshot annotation <command> --help' for detailed usage.
+      HELP
+    end
+
+    private def self.show_snapshot_annotation_create_help
+      puts <<-HELP
+      galaxy-ledger snapshot annotation create - Create an annotation
+
+      USAGE:
+        galaxy-ledger snapshot annotation create --ledger-snapshot-id ID --start-line N --end-line N < content
+        galaxy-ledger snapshot annotation create --ledger-session-id ID --snapshot N --start-line N --end-line N < content
+
+      REQUIRED:
+        --ledger-snapshot-id ID   Snapshot database ID
+        --start-line N            Start line number in the snapshot content
+        --end-line N              End line number in the snapshot content
+
+      ALTERNATIVE IDENTIFIER:
+        --ledger-session-id ID    Ledger session ID (use with --snapshot)
+        --snapshot N              Snapshot number within the session
+
+      DESCRIPTION:
+        Reads annotation content from stdin and creates an annotation anchored
+        to the specified line range. Number is auto-assigned sequentially.
+        Returns JSON with the created annotation.
+
+      EXAMPLES:
+        echo "Important design decision" | galaxy-ledger snapshot annotation create --ledger-snapshot-id 42 --start-line 5 --end-line 10
+      HELP
+    end
+
+    private def self.show_snapshot_annotation_list_help
+      puts <<-HELP
+      galaxy-ledger snapshot annotation list - List snapshot annotations
+
+      USAGE:
+        galaxy-ledger snapshot annotation list --ledger-snapshot-id ID [--json]
+        galaxy-ledger snapshot annotation list --ledger-session-id ID --snapshot N [--json]
+
+      REQUIRED (one of):
+        --ledger-snapshot-id ID   Snapshot database ID
+        --ledger-session-id ID    Ledger session ID (use with --snapshot)
+        --snapshot N              Snapshot number within the session
+
+      OPTIONS:
+        --json                    Output as JSON (envelope: {"annotations":[...]})
+
+      DESCRIPTION:
+        Lists all annotations for the specified snapshot, ordered by line
+        position (start_line ASC, end_line ASC, number ASC).
+      HELP
+    end
+
+    private def self.show_snapshot_annotation_view_help
+      puts <<-HELP
+      galaxy-ledger snapshot annotation view - View an annotation
+
+      USAGE:
+        galaxy-ledger snapshot annotation view --ledger-snapshot-id ID NUMBER
+        galaxy-ledger snapshot annotation view --ledger-session-id ID --snapshot N NUMBER
+
+      REQUIRED:
+        --ledger-snapshot-id ID   Snapshot database ID (or use --ledger-session-id + --snapshot)
+        NUMBER                    Annotation number (snapshot-scoped)
+
+      DESCRIPTION:
+        Returns JSON with the full annotation detail.
+      HELP
+    end
+
+    private def self.show_snapshot_annotation_update_help
+      puts <<-HELP
+      galaxy-ledger snapshot annotation update - Update an annotation
+
+      USAGE:
+        galaxy-ledger snapshot annotation update --ledger-snapshot-id ID NUMBER < content
+        galaxy-ledger snapshot annotation update --ledger-session-id ID --snapshot N NUMBER < content
+
+      REQUIRED:
+        --ledger-snapshot-id ID   Snapshot database ID (or use --ledger-session-id + --snapshot)
+        NUMBER                    Annotation number (snapshot-scoped)
+
+      DESCRIPTION:
+        Reads updated content from stdin and updates the annotation.
+        Line ranges are immutable — only content can be changed.
+        Returns JSON with the updated annotation.
+      HELP
+    end
+
+    private def self.show_snapshot_annotation_delete_help
+      puts <<-HELP
+      galaxy-ledger snapshot annotation delete - Delete an annotation
+
+      USAGE:
+        galaxy-ledger snapshot annotation delete --ledger-snapshot-id ID NUMBER
+        galaxy-ledger snapshot annotation delete --ledger-session-id ID --snapshot N NUMBER
+
+      REQUIRED:
+        --ledger-snapshot-id ID   Snapshot database ID (or use --ledger-session-id + --snapshot)
+        NUMBER                    Annotation number (snapshot-scoped)
+
+      DESCRIPTION:
+        Permanently deletes an annotation from the snapshot.
       HELP
     end
 

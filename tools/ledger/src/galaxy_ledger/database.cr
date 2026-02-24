@@ -266,8 +266,28 @@ module GalaxyLedger
         db.exec("CREATE INDEX IF NOT EXISTS idx_daily_usages_date ON ledger_session_daily_usages(date)")
         db.exec("CREATE INDEX IF NOT EXISTS idx_daily_usages_session ON ledger_session_daily_usages(ledger_session_id)")
 
+        # Snapshot annotation table for inline annotations on snapshot content
+        db.exec(<<-SQL)
+          CREATE TABLE IF NOT EXISTS ledger_snapshot_annotations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            ledger_snapshot_id INTEGER NOT NULL,
+            number INTEGER NOT NULL,
+            start_line INTEGER NOT NULL,
+            end_line INTEGER NOT NULL,
+            content TEXT NOT NULL,
+            UNIQUE(ledger_snapshot_id, number),
+            FOREIGN KEY (ledger_snapshot_id)
+              REFERENCES ledger_snapshots(id) ON DELETE CASCADE
+          )
+        SQL
+
         # Indexes for ledger_snapshots
         db.exec("CREATE INDEX IF NOT EXISTS idx_snapshots_session ON ledger_snapshots(ledger_session_id)")
+
+        # Indexes for ledger_snapshot_annotations
+        db.exec("CREATE INDEX IF NOT EXISTS idx_snapshot_annotations_snapshot ON ledger_snapshot_annotations(ledger_snapshot_id)")
 
         # Indexes for ledger_artifacts
         db.exec("CREATE INDEX IF NOT EXISTS idx_artifacts_session ON ledger_artifacts(ledger_session_id)")
@@ -2155,6 +2175,168 @@ module GalaxyLedger
     end
 
     # ============================================================
+    # Snapshot Annotation Operations
+    # ============================================================
+
+    # Save a snapshot annotation. Number is auto-assigned as snapshot-scoped
+    # sequential (1, 2, 3, ...). Returns the created annotation or nil on failure.
+    def self.save_snapshot_annotation(
+      ledger_snapshot_id : Int64,
+      start_line : Int32,
+      end_line : Int32,
+      content : String,
+    ) : SnapshotAnnotation?
+      return nil if ledger_snapshot_id <= 0
+
+      begin
+        open do |db|
+          db.exec(
+            <<-SQL,
+              INSERT INTO ledger_snapshot_annotations (
+                ledger_snapshot_id, number, start_line, end_line, content
+              )
+              VALUES (
+                ?,
+                (SELECT COALESCE(MAX(number), 0) + 1 FROM ledger_snapshot_annotations WHERE ledger_snapshot_id = ?),
+                ?, ?, ?
+              )
+            SQL
+            ledger_snapshot_id,
+            ledger_snapshot_id,
+            start_line,
+            end_line,
+            content,
+          )
+          # Retrieve the full annotation that was just created
+          db.query_one?(
+            <<-SQL
+              SELECT id, created_at, updated_at, ledger_snapshot_id, number,
+                     start_line, end_line, content
+              FROM ledger_snapshot_annotations
+              WHERE id = last_insert_rowid()
+            SQL
+          ) do |rs|
+            SnapshotAnnotation.from_row(rs)
+          end
+        end
+      rescue
+        nil
+      end
+    end
+
+    # List all annotations for a snapshot, ordered by reading position.
+    def self.list_snapshot_annotations(ledger_snapshot_id : Int64) : Array(SnapshotAnnotation)
+      annotations = [] of SnapshotAnnotation
+      return annotations if ledger_snapshot_id <= 0
+
+      begin
+        open do |db|
+          db.query(
+            <<-SQL,
+              SELECT id, created_at, updated_at, ledger_snapshot_id, number,
+                     start_line, end_line, content
+              FROM ledger_snapshot_annotations
+              WHERE ledger_snapshot_id = ?
+              ORDER BY start_line ASC, end_line ASC, number ASC
+            SQL
+            ledger_snapshot_id,
+          ) do |rs|
+            rs.each do
+              annotations << SnapshotAnnotation.from_row(rs)
+            end
+          end
+        end
+      rescue
+        # Return empty on error
+      end
+      annotations
+    end
+
+    # Get a snapshot annotation by snapshot ID + number.
+    def self.get_snapshot_annotation(ledger_snapshot_id : Int64, number : Int32) : SnapshotAnnotation?
+      return nil if ledger_snapshot_id <= 0
+
+      begin
+        open do |db|
+          db.query_one?(
+            <<-SQL,
+              SELECT id, created_at, updated_at, ledger_snapshot_id, number,
+                     start_line, end_line, content
+              FROM ledger_snapshot_annotations
+              WHERE ledger_snapshot_id = ? AND number = ?
+            SQL
+            ledger_snapshot_id,
+            number,
+          ) do |rs|
+            SnapshotAnnotation.from_row(rs)
+          end
+        end
+      rescue
+        nil
+      end
+    end
+
+    # Update annotation content. Line ranges are immutable.
+    # Returns the updated annotation or nil if not found.
+    def self.update_snapshot_annotation(
+      ledger_snapshot_id : Int64,
+      number : Int32,
+      content : String,
+    ) : SnapshotAnnotation?
+      return nil if ledger_snapshot_id <= 0
+
+      begin
+        open do |db|
+          result = db.exec(
+            <<-SQL,
+              UPDATE ledger_snapshot_annotations
+              SET content = ?, updated_at = datetime('now')
+              WHERE ledger_snapshot_id = ? AND number = ?
+            SQL
+            content,
+            ledger_snapshot_id,
+            number,
+          )
+          return nil if result.rows_affected == 0
+
+          # Return the updated annotation
+          db.query_one?(
+            <<-SQL,
+              SELECT id, created_at, updated_at, ledger_snapshot_id, number,
+                     start_line, end_line, content
+              FROM ledger_snapshot_annotations
+              WHERE ledger_snapshot_id = ? AND number = ?
+            SQL
+            ledger_snapshot_id,
+            number,
+          ) do |rs|
+            SnapshotAnnotation.from_row(rs)
+          end
+        end
+      rescue
+        nil
+      end
+    end
+
+    # Delete a snapshot annotation by snapshot ID + number. Returns true if deleted.
+    def self.delete_snapshot_annotation(ledger_snapshot_id : Int64, number : Int32) : Bool
+      return false if ledger_snapshot_id <= 0
+
+      begin
+        open do |db|
+          result = db.exec(
+            "DELETE FROM ledger_snapshot_annotations WHERE ledger_snapshot_id = ? AND number = ?",
+            ledger_snapshot_id,
+            number,
+          )
+          result.rows_affected > 0
+        end
+      rescue
+        false
+      end
+    end
+
+    # ============================================================
     # Artifact Operations
     # ============================================================
 
@@ -2880,6 +3062,37 @@ module GalaxyLedger
           exchange_count: rs.read(Int64).to_i,
           char_count: rs.read(Int64).to_i,
           metadata: rs.read(String?),
+        )
+      end
+    end
+
+    # A snapshot annotation record from the database
+    struct SnapshotAnnotation
+      getter id : Int64
+      getter created_at : String
+      getter updated_at : String
+      getter ledger_snapshot_id : Int64
+      getter number : Int32
+      getter start_line : Int32
+      getter end_line : Int32
+      getter content : String
+
+      def initialize(
+        @id, @created_at, @updated_at, @ledger_snapshot_id,
+        @number, @start_line, @end_line, @content,
+      )
+      end
+
+      def self.from_row(rs) : SnapshotAnnotation
+        SnapshotAnnotation.new(
+          id: rs.read(Int64),
+          created_at: rs.read(String),
+          updated_at: rs.read(String),
+          ledger_snapshot_id: rs.read(Int64),
+          number: rs.read(Int64).to_i,
+          start_line: rs.read(Int64).to_i,
+          end_line: rs.read(Int64).to_i,
+          content: rs.read(String),
         )
       end
     end

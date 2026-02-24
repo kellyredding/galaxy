@@ -145,6 +145,24 @@ module GalaxyLedger
         db.exec("ALTER TABLE ledger_sessions RENAME COLUMN title TO suggested_name")
         db.exec("ALTER TABLE ledger_sessions ADD COLUMN suggested_name_data TEXT NOT NULL DEFAULT '{}'")
       },
+      "0.3.6" => ->(db : DB::Database) {
+        db.exec(<<-SQL)
+          CREATE TABLE IF NOT EXISTS ledger_snapshot_annotations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            ledger_snapshot_id INTEGER NOT NULL,
+            number INTEGER NOT NULL,
+            start_line INTEGER NOT NULL,
+            end_line INTEGER NOT NULL,
+            content TEXT NOT NULL,
+            UNIQUE(ledger_snapshot_id, number),
+            FOREIGN KEY (ledger_snapshot_id)
+              REFERENCES ledger_snapshots(id) ON DELETE CASCADE
+          )
+        SQL
+        db.exec("CREATE INDEX IF NOT EXISTS idx_snapshot_annotations_snapshot ON ledger_snapshot_annotations(ledger_snapshot_id)")
+      },
     }
 
     # ==========================================================================
