@@ -2,38 +2,148 @@ import SwiftUI
 import WebKit
 import Markdown
 
+// MARK: - Annotation Message Types
+
+/// Messages sent from the JS AnnotationManager to Swift via postMessage.
+enum AnnotationMessage {
+    case create(startLine: Int32, endLine: Int32, content: String)
+    case update(number: Int32, content: String)
+    case delete(number: Int32)
+}
+
+// MARK: - Silent WKWebView
+
+/// WKWebView subclass that silently consumes function key events
+/// (F1–F20) to prevent NSBeep from firing when the responder chain
+/// can't handle them. This allows dictation triggers like Fn+F11
+/// to work without system beep noise — dictation itself operates
+/// through NSTextInputClient, not keyDown events.
+class SilentFunctionKeyWebView: WKWebView {
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.modifierFlags.contains(.function),
+           event.charactersIgnoringModifiers?.unicodeScalars
+               .first.map({ $0.value >= 0xF704 && $0.value <= 0xF717 }) == true {
+            // F1 (0xF704) through F20 (0xF717) — consume silently
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+}
+
+// MARK: - MarkdownReaderView
+
 /// Renders markdown content in a themed WKWebView with source-line
-/// anchored blocks for future annotation support.
+/// anchored blocks and inline annotation support.
 ///
-/// Each block-level element gets `data-line-start` and `data-line-end`
-/// attributes from the swift-markdown AST's SourceRange, giving
-/// annotation line anchors for free without a future retrofit.
+/// The Coordinator acts as both WKScriptMessageHandler (receiving JS
+/// messages) and WKNavigationDelegate (injecting annotations after
+/// page load). The webViewRef binding exposes the WKWebView so the
+/// parent view can call evaluateJavaScript for annotation actions.
 struct MarkdownReaderView: NSViewRepresentable {
     let markdown: String
     let isDark: Bool
+    let snapshotNumber: Int32
+    let annotations: [SnapshotAnnotation]
+    let annotationHTMLMap: [Int32: String]
+    @Binding var webViewRef: WKWebView?
+    var onAnnotationMessage: ((AnnotationMessage) -> Void)?
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
-        let webView = WKWebView(frame: .zero, configuration: config)
+        config.userContentController.add(context.coordinator, name: "annotation")
+        let webView = SilentFunctionKeyWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
         webView.isInspectable = true
         webView.navigationDelegate = context.coordinator
+
+        // Defer binding update to avoid mutating state during view update
+        DispatchQueue.main.async { self.webViewRef = webView }
+
         return webView
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
+        // Keep callback current (closure may capture new state)
+        context.coordinator.onAnnotationMessage = onAnnotationMessage
+
         let html = renderMarkdownToHTML(markdown, isDark: isDark)
         let htmlHash = html.hashValue
-        if context.coordinator.lastHTMLHash != htmlHash {
-            context.coordinator.lastHTMLHash = htmlHash
+        guard context.coordinator.lastHTMLHash != htmlHash else { return }
+
+        context.coordinator.lastHTMLHash = htmlHash
+        context.coordinator.pendingAnnotations = self.annotations
+        context.coordinator.pendingAnnotationHTMLMap = self.annotationHTMLMap
+        context.coordinator.pendingSnapshotNumber = self.snapshotNumber
+
+        // Save form state before reload (no-op on first load when
+        // AnnotationManager doesn't exist yet). Load inside the
+        // callback so form state is captured before the page reloads.
+        webView.evaluateJavaScript(
+            """
+            typeof AnnotationManager !== 'undefined' && AnnotationManager.blocks.length > 0
+                ? JSON.stringify(AnnotationManager.getFormState())
+                : null
+            """
+        ) { result, _ in
+            if let json = result as? String {
+                context.coordinator.savedFormState = json
+            }
             webView.loadHTMLString(html, baseURL: nil)
         }
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
-    class Coordinator: NSObject, WKNavigationDelegate {
+    // MARK: - Coordinator
+
+    class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         var lastHTMLHash: Int = 0
+        var onAnnotationMessage: ((AnnotationMessage) -> Void)?
+
+        /// Annotation data queued for injection after page load.
+        var pendingAnnotations: [SnapshotAnnotation]?
+        var pendingAnnotationHTMLMap: [Int32: String]?
+        var pendingSnapshotNumber: Int32?
+
+        /// Form state saved before a theme-change reload.
+        var savedFormState: String?
+
+        // MARK: WKScriptMessageHandler
+
+        func userContentController(
+            _ controller: WKUserContentController,
+            didReceive message: WKScriptMessage
+        ) {
+            guard message.name == "annotation",
+                  let body = message.body as? [String: Any],
+                  let action = body["action"] as? String else { return }
+
+            switch action {
+            case "create":
+                guard let startLine = body["startLine"] as? Int,
+                      let endLine = body["endLine"] as? Int,
+                      let content = body["content"] as? String else { return }
+                onAnnotationMessage?(.create(
+                    startLine: Int32(startLine),
+                    endLine: Int32(endLine),
+                    content: content
+                ))
+            case "update":
+                guard let number = body["number"] as? Int,
+                      let content = body["content"] as? String else { return }
+                onAnnotationMessage?(.update(
+                    number: Int32(number),
+                    content: content
+                ))
+            case "delete":
+                guard let number = body["number"] as? Int else { return }
+                onAnnotationMessage?(.delete(number: Int32(number)))
+            default:
+                break
+            }
+        }
+
+        // MARK: WKNavigationDelegate
 
         func webView(
             _ webView: WKWebView,
@@ -47,6 +157,49 @@ struct MarkdownReaderView: NSViewRepresentable {
                 decisionHandler(.cancel)
             } else {
                 decisionHandler(.allow)
+            }
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            // Inject annotation data after page load
+            if let annotations = pendingAnnotations,
+               let htmlMap = pendingAnnotationHTMLMap,
+               let snapNum = pendingSnapshotNumber {
+
+                let annotationDicts: [[String: Any]] = annotations.map { a in
+                    [
+                        "id": a.id,
+                        "number": a.number,
+                        "start_line": a.startLine,
+                        "end_line": a.endLine,
+                        "content": a.content,
+                        "created_at": a.createdAt,
+                        "updated_at": a.updatedAt
+                    ]
+                }
+                let htmlMapDict: [String: String] = Dictionary(
+                    uniqueKeysWithValues: htmlMap.map { (String($0.key), $0.value) }
+                )
+                let payload: [String: Any] = [
+                    "snapshotNumber": snapNum,
+                    "annotations": annotationDicts,
+                    "htmlMap": htmlMapDict
+                ]
+
+                if let jsonData = try? JSONSerialization.data(withJSONObject: payload),
+                   let jsonString = String(data: jsonData, encoding: .utf8) {
+                    webView.evaluateJavaScript("AnnotationManager.initialize(\(jsonString))")
+                }
+
+                pendingAnnotations = nil
+                pendingAnnotationHTMLMap = nil
+                pendingSnapshotNumber = nil
+            }
+
+            // Restore form state after theme-change reload
+            if let formState = savedFormState {
+                webView.evaluateJavaScript("AnnotationManager.restoreFormState(\(formState))")
+                savedFormState = nil
             }
         }
     }
@@ -78,7 +231,8 @@ func renderMarkdownToHTML(_ source: String, isDark: Bool) -> String {
     )
 }
 
-/// Build a complete HTML document with embedded styles and highlight.js.
+/// Build a complete HTML document with embedded styles, highlight.js,
+/// and the AnnotationManager JavaScript module.
 private func buildFullHTML(
     bodyHTML: String,
     highlightJS: String,
@@ -108,6 +262,11 @@ private func buildFullHTML(
         --table-header-bg: #333;
         --link-color: #58a6ff;
         --hr-color: #444;
+        --annotation-active-bg: rgba(255, 255, 120, 0.12);
+        --annotation-active-border: rgba(255, 220, 50, 0.5);
+        --annotation-active-block-bg: rgba(255, 255, 120, 0.08);
+        --annotation-active-block-border: rgba(255, 220, 50, 0.35);
+        --delete-color: #ff5252;
     }
     body.light {
         --bg: #ffffff;
@@ -120,6 +279,11 @@ private func buildFullHTML(
         --table-header-bg: #f0f0f0;
         --link-color: #0969da;
         --hr-color: #d0d7de;
+        --annotation-active-bg: rgba(255, 248, 220, 0.8);
+        --annotation-active-border: #d4a017;
+        --annotation-active-block-bg: rgba(255, 248, 220, 0.5);
+        --annotation-active-block-border: rgba(212, 160, 23, 0.6);
+        --delete-color: #ff3b30;
     }
     body {
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
@@ -203,6 +367,218 @@ private func buildFullHTML(
     }
     img { max-width: 100%; }
     .md-block { /* Line-anchored block wrapper — no visual styling */ }
+
+    /* --- Annotation styles --- */
+
+    .annotation-highlight {
+        background-color: rgba(88, 166, 255, 0.12);
+        border-left: 3px solid rgba(88, 166, 255, 0.6);
+        padding-left: 8px;
+        margin-left: -11px;
+        transition: background-color 0.15s ease;
+    }
+    .annotation-form {
+        position: absolute;
+        left: 24px;
+        right: 24px;
+        z-index: 10;
+        padding: 8px 12px;
+        border: 1px solid rgba(88, 166, 255, 0.4);
+        border-radius: 6px;
+        background: var(--code-bg);
+        box-sizing: border-box;
+    }
+    .annotation-form-header {
+        font-size: 11px;
+        color: var(--blockquote-fg);
+        margin-bottom: 4px;
+        font-family: "SF Mono", monospace;
+    }
+    .annotation-textarea {
+        width: 100%;
+        min-height: 1.6em;
+        padding: 6px 8px;
+        border: 1px solid var(--code-border);
+        border-radius: 4px;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: -apple-system, sans-serif;
+        font-size: 13px;
+        line-height: 1.5;
+        resize: none;
+        overflow: hidden;
+        box-sizing: border-box;
+    }
+    .annotation-textarea:focus {
+        outline: none;
+        border-color: rgba(88, 166, 255, 0.6);
+    }
+    .annotation-textarea::placeholder {
+        color: var(--blockquote-fg);
+        opacity: 0.6;
+    }
+    .annotation-card {
+        position: absolute;
+        left: 24px;
+        right: 24px;
+        z-index: 10;
+        padding: 6px 10px;
+        border: 1px solid var(--code-border);
+        border-radius: 6px;
+        background: var(--code-bg);
+        font-size: 13px;
+        box-sizing: border-box;
+    }
+    .annotation-card-header {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        color: var(--blockquote-fg);
+        margin-bottom: 2px;
+    }
+    .annotation-card-ref {
+        font-family: "SF Mono", monospace;
+    }
+    .annotation-card-meta {
+        font-family: "SF Mono", monospace;
+        opacity: 0.5;
+    }
+    .annotation-card-actions {
+        margin-left: auto;
+        display: flex;
+        gap: 6px;
+        opacity: 0;
+        transition: opacity 0.15s;
+    }
+    .annotation-card:hover .annotation-card-actions {
+        opacity: 1;
+    }
+    .annotation-card-actions button {
+        background: none;
+        border: none;
+        color: var(--blockquote-fg);
+        cursor: pointer;
+        font-size: 15px;
+        padding: 3px 6px;
+        border-radius: 4px;
+        line-height: 1;
+    }
+    .annotation-card-actions button:hover {
+        background: var(--table-header-bg);
+        color: var(--fg);
+    }
+    .annotation-card-actions .annotation-btn-delete {
+        color: var(--delete-color);
+    }
+    .annotation-card-actions .annotation-btn-delete:hover {
+        background: rgba(255, 59, 48, 0.1);
+        color: var(--delete-color);
+    }
+    .annotation-card-actions:has(.confirming) {
+        opacity: 1;
+    }
+    .annotation-card-actions:has(.confirming) .annotation-btn-edit {
+        display: none;
+    }
+    .annotation-card:has(.annotation-edit-textarea) .annotation-card-actions {
+        display: none;
+    }
+    .annotation-btn-delete.confirming {
+        background: rgba(220, 40, 30, 0.75) !important;
+        color: #fff !important;
+        font-size: 12px;
+        font-weight: 600;
+        font-family: -apple-system, sans-serif;
+        padding: 4px 12px !important;
+        position: relative;
+        overflow: hidden;
+    }
+    .annotation-btn-delete.confirming:hover {
+        background: rgba(220, 40, 30, 0.85) !important;
+        color: #fff !important;
+    }
+    .annotation-btn-delete.confirming::after {
+        content: '';
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        height: 1.5px;
+        background: rgba(255, 255, 255, 0.8);
+        animation: confirmDrain 5s linear forwards;
+    }
+    @keyframes confirmDrain {
+        from { width: 100%; }
+        to { width: 0%; }
+    }
+    .annotation-card-content {
+        line-height: 1.5;
+        color: var(--fg);
+    }
+    .annotation-card-content.collapsed {
+        max-height: 1.6em;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .annotation-card-content.collapsed p {
+        display: inline;
+        margin: 0;
+    }
+    .annotation-edit-textarea {
+        width: 100%;
+        min-height: 1.6em;
+        padding: 4px 6px;
+        border: 1px solid rgba(88, 166, 255, 0.4);
+        border-radius: 4px;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: -apple-system, sans-serif;
+        font-size: 13px;
+        line-height: 1.5;
+        resize: none;
+        overflow: hidden;
+        box-sizing: border-box;
+    }
+    .annotation-card.expanded {
+        border-color: var(--annotation-active-border);
+        background: var(--annotation-active-bg);
+    }
+    .annotation-expanded-highlight {
+        background-color: var(--annotation-active-block-bg);
+        border-left: 3px solid var(--annotation-active-block-border);
+        padding-left: 8px;
+        margin-left: -11px;
+        transition: background-color 0.15s ease;
+    }
+    .annotation-expand-hint {
+        display: block;
+        font-size: 11px;
+        color: var(--blockquote-fg);
+        opacity: 0.5;
+        margin-top: 2px;
+        cursor: pointer;
+    }
+    .annotation-card.expanded .annotation-expand-hint {
+        display: none;
+    }
+    .annotation-spacer {
+        pointer-events: none;
+        line-height: 0;
+        font-size: 0;
+    }
+    .annotation-spacer.form-spacer {
+        margin: 8px 0;
+    }
+    .annotation-spacer.card-spacer {
+        margin: 6px 0;
+    }
+    .annotation-spacer-row td {
+        padding: 0 !important;
+        border: none !important;
+        background: transparent !important;
+        line-height: 0;
+    }
     </style>
     <style>\(highlightCSS)</style>
     </head>
@@ -210,6 +586,722 @@ private func buildFullHTML(
     \(bodyHTML)
     <script>\(highlightJS)</script>
     <script>if(typeof hljs !== 'undefined') hljs.highlightAll();</script>
+    <script>
+    function autoGrow(el) {
+        el.style.height = 'auto';
+        el.style.height = el.scrollHeight + 'px';
+        if (typeof AnnotationManager !== 'undefined' && AnnotationManager.syncAllPositions) {
+            AnnotationManager.syncAllPositions();
+        }
+    }
+
+    const AnnotationManager = {
+        // --- State ---
+        blocks: [],
+        currentBlockIndex: 0,
+        highlightStart: 0,
+        highlightEnd: 0,
+        highlightAnchor: 0,    // Block where shift-highlight started
+        annotations: [],
+        annotationHTMLMap: {},
+        formElement: null,
+        formSpacer: null,
+        formSpacerRow: null,
+        cardSpacers: {},
+        resizeObserver: null,
+        editingNumber: null,
+        expandedNumber: null,
+        confirmingDeleteNumber: null,
+        confirmDeleteTimer: null,
+        snapshotNumber: 0,
+        editIconSVG: '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>',
+        deleteIconSVG: '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M5 6v14a1 1 0 001 1h12a1 1 0 001-1V6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>',
+
+        // --- Initialization ---
+
+        initialize(data) {
+            this.snapshotNumber = data.snapshotNumber || 0;
+            this.annotations = data.annotations || [];
+            this.annotationHTMLMap = data.htmlMap || {};
+
+            // Enumerate leaf-level blocks (no md-block children)
+            const allBlocks = document.querySelectorAll('.md-block');
+            this.blocks = Array.from(allBlocks).filter(
+                el => !el.querySelector('.md-block')
+            );
+
+            if (this.blocks.length === 0) return;
+
+            this.currentBlockIndex = 0;
+            this.highlightStart = 0;
+            this.highlightEnd = 0;
+            this.highlightAnchor = 0;
+
+            this.createForm();
+            this.updateHighlights();
+            this.positionForm();
+            this.renderAllAnnotations();
+
+            // Auto-focus the textarea so typing works immediately
+            var ta = this.formElement.querySelector('textarea');
+            if (ta) ta.focus();
+        },
+
+        restoreFormState(state) {
+            if (!state || this.blocks.length === 0) return;
+            var maxIdx = this.blocks.length - 1;
+            this.currentBlockIndex = Math.min(state.currentBlockIndex || 0, maxIdx);
+            this.highlightStart = Math.min(state.highlightStart || 0, maxIdx);
+            this.highlightEnd = Math.min(state.highlightEnd || 0, maxIdx);
+            this.highlightAnchor = Math.min(state.highlightAnchor || 0, maxIdx);
+            this.updateHighlights();
+            this.positionForm();
+            if (state.textareaValue) {
+                var ta = this.formElement.querySelector('textarea');
+                if (ta) { ta.value = state.textareaValue; autoGrow(ta); }
+            }
+            // Restore expanded annotation after theme change
+            if (state.expandedNumber != null) {
+                this.expandAnnotation(state.expandedNumber);
+            }
+        },
+
+        // --- Block Navigation ---
+
+        moveUp() {
+            this.collapseExpanded();
+            if (this.currentBlockIndex <= 0) return;
+            this.currentBlockIndex--;
+            // Non-shift move resets highlight to single block and resets anchor
+            this.highlightStart = this.currentBlockIndex;
+            this.highlightEnd = this.currentBlockIndex;
+            this.highlightAnchor = this.currentBlockIndex;
+            this.updateHighlights();
+            this.positionForm();
+            this.focusTextarea();
+        },
+
+        moveDown() {
+            this.collapseExpanded();
+            if (this.currentBlockIndex >= this.blocks.length - 1) return;
+            this.currentBlockIndex++;
+            // Non-shift move resets highlight to single block and resets anchor
+            this.highlightStart = this.currentBlockIndex;
+            this.highlightEnd = this.currentBlockIndex;
+            this.highlightAnchor = this.currentBlockIndex;
+            this.updateHighlights();
+            this.positionForm();
+            this.focusTextarea();
+        },
+
+        extendHighlightUp() {
+            this.collapseExpanded();
+            // Shift+Up: if highlight end is above anchor, extend start upward.
+            // Otherwise, shrink end upward toward anchor.
+            if (this.highlightEnd > this.highlightAnchor) {
+                // Shrink: move end up toward anchor
+                this.highlightEnd--;
+                this.currentBlockIndex = this.highlightEnd;
+                this.updateHighlights();
+                this.positionForm();
+            } else {
+                // Extend: move start upward past anchor
+                if (this.highlightStart <= 0) return;
+                this.highlightStart--;
+                this.updateHighlights();
+                this.updateFormReference();
+            }
+            this.focusTextarea();
+        },
+
+        extendHighlightDown() {
+            this.collapseExpanded();
+            // Shift+Down: if highlight start is below anchor, extend end downward.
+            // Otherwise, if start is above anchor, shrink start downward toward anchor.
+            if (this.highlightStart < this.highlightAnchor) {
+                // Shrink: move start down toward anchor
+                this.highlightStart++;
+                this.updateHighlights();
+                this.updateFormReference();
+            } else {
+                // Extend: move end downward past anchor
+                if (this.highlightEnd >= this.blocks.length - 1) return;
+                this.highlightEnd++;
+                this.currentBlockIndex = this.highlightEnd;
+                this.updateHighlights();
+                this.positionForm();
+            }
+            this.focusTextarea();
+        },
+
+        focusTextarea() {
+            var ta = this.formElement ? this.formElement.querySelector('textarea') : null;
+            if (ta) ta.focus();
+        },
+
+        // --- Highlighting ---
+
+        updateHighlights() {
+            this.blocks.forEach(function(block, i) {
+                var inFormRange = i >= this.highlightStart && i <= this.highlightEnd;
+                var hasExpanded = block.classList.contains('annotation-expanded-highlight');
+                // Yellow expanded highlight takes precedence over blue form highlight
+                block.classList.toggle('annotation-highlight',
+                    inFormRange && !hasExpanded);
+            }.bind(this));
+        },
+
+        // --- Form Management ---
+
+        createForm() {
+            var form = document.createElement('div');
+            form.className = 'annotation-form';
+            form.id = 'annotation-form';
+            form.innerHTML =
+                '<div class="annotation-form-header">' +
+                '<span class="annotation-form-ref"></span>' +
+                '</div>' +
+                '<textarea class="annotation-textarea" ' +
+                'placeholder="Add annotation\\u2026 (\\u2318Enter to save)" ' +
+                'rows="1"></textarea>';
+
+            var ta = form.querySelector('textarea');
+            ta.addEventListener('focus', function() {
+                AnnotationManager.collapseExpanded();
+            });
+            ta.addEventListener('input', function() { autoGrow(ta); });
+            ta.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' && e.metaKey) {
+                    e.preventDefault();
+                    AnnotationManager.submitCreate();
+                }
+            });
+
+            this.formElement = form;
+            document.body.appendChild(form);
+
+            // ResizeObserver keeps spacer height in sync with form
+            this.resizeObserver = new ResizeObserver(function() {
+                AnnotationManager.syncAllPositions();
+            });
+            this.resizeObserver.observe(form);
+        },
+
+        positionForm() {
+            var targetBlock = this.blocks[this.highlightEnd];
+            if (!targetBlock || !this.formElement) return;
+
+            // Remove old form spacer
+            this.removeSpacer(this.formSpacer, this.formSpacerRow);
+
+            // Find insertion point: after target block + any card spacers
+            var insertBefore = targetBlock.nextElementSibling;
+            while (insertBefore && (
+                insertBefore.classList.contains('annotation-spacer') ||
+                insertBefore.classList.contains('annotation-spacer-row')
+            )) {
+                insertBefore = insertBefore.nextElementSibling;
+            }
+
+            // Create form spacer at insertion point
+            var result = this.createSpacer(
+                targetBlock.parentNode, insertBefore, 'form-spacer'
+            );
+            this.formSpacer = result.spacer;
+            this.formSpacerRow = result.spacerRow;
+
+            this.updateFormReference();
+            this.syncAllPositions();
+            this.formElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        },
+
+        updateFormReference() {
+            var range = this.getLineRange(this.highlightStart, this.highlightEnd);
+            var lineRef = range.startLine === range.endLine
+                ? 'line ' + range.startLine
+                : 'lines ' + range.startLine + '\\u2013' + range.endLine;
+            var ref = this.formElement.querySelector('.annotation-form-ref');
+            if (ref) {
+                ref.textContent = 'Snapshot #' + this.snapshotNumber + ': ' + lineRef;
+            }
+        },
+
+        getLineRange(startIdx, endIdx) {
+            var startBlock = this.blocks[startIdx];
+            var endBlock = this.blocks[endIdx];
+            return {
+                startLine: parseInt(startBlock.getAttribute('data-line-start')) || 0,
+                endLine: parseInt(endBlock.getAttribute('data-line-end')) || 0
+            };
+        },
+
+        // --- Annotation Cards ---
+
+        renderAllAnnotations() {
+            this.clearDeleteConfirmation();
+            // Remove all existing card spacers and cards
+            for (var num in this.cardSpacers) {
+                var entry = this.cardSpacers[num];
+                this.removeSpacer(entry.spacer, entry.spacerRow);
+                if (this.resizeObserver && entry.card) {
+                    this.resizeObserver.unobserve(entry.card);
+                }
+                if (entry.card && entry.card.parentNode) entry.card.remove();
+            }
+            this.cardSpacers = {};
+            // Insert in reading order
+            for (var i = 0; i < this.annotations.length; i++) {
+                var ann = this.annotations[i];
+                var html = this.annotationHTMLMap[ann.number] || '';
+                this.insertCard(ann, html);
+            }
+            // Re-position form after cards (cards may have shifted it)
+            if (this.formElement) this.positionForm();
+            // Re-apply expanded line highlights (cards were rebuilt)
+            if (this.expandedNumber !== null) {
+                this.applyExpandedHighlight(this.expandedNumber);
+            }
+        },
+
+        findBlockIndexForEndLine(endLine) {
+            for (var i = this.blocks.length - 1; i >= 0; i--) {
+                var blockEnd = parseInt(
+                    this.blocks[i].getAttribute('data-line-end')
+                );
+                if (blockEnd <= endLine) return i;
+            }
+            return 0;
+        },
+
+        insertCard(annotation, renderedHTML) {
+            var blockIdx = this.findBlockIndexForEndLine(annotation.end_line);
+            var block = this.blocks[blockIdx];
+            if (!block) return;
+
+            var lineRef = annotation.start_line === annotation.end_line
+                ? 'line ' + annotation.start_line
+                : 'lines ' + annotation.start_line + '\\u2013' + annotation.end_line;
+
+            var isExpanded = this.expandedNumber === annotation.number;
+            var card = document.createElement('div');
+            card.className = 'annotation-card' + (isExpanded ? ' expanded' : '');
+            card.setAttribute('data-number', annotation.number);
+            card.innerHTML =
+                '<div class="annotation-card-header">' +
+                    '<span class="annotation-card-ref">' + lineRef + '</span>' +
+                    '<span class="annotation-card-meta">#' + annotation.number + '</span>' +
+                    '<span class="annotation-card-actions">' +
+                        '<button class="annotation-btn-edit" title="Edit">' +
+                            this.editIconSVG + '</button>' +
+                        '<button class="annotation-btn-delete" title="Delete">' +
+                            this.deleteIconSVG + '</button>' +
+                    '</span>' +
+                '</div>' +
+                '<div class="annotation-card-content' +
+                    (isExpanded ? '' : ' collapsed') + '">' +
+                    renderedHTML +
+                '</div>' +
+                '<span class="annotation-expand-hint"' +
+                    (isExpanded ? ' style="display:none"' : '') +
+                    '>Click to expand</span>';
+
+            // Wire card-level click for expand/collapse
+            var self = this;
+            card.addEventListener('click', function(e) {
+                if (e.target.closest('.annotation-card-actions') ||
+                    e.target.closest('.annotation-edit-textarea')) return;
+                self.expandAnnotation(annotation.number);
+            });
+            card.querySelector('.annotation-btn-edit').addEventListener(
+                'click', function(e) {
+                    e.stopPropagation();
+                    self.startEdit(annotation.number);
+                }
+            );
+            card.querySelector('.annotation-btn-delete').addEventListener(
+                'click', function(e) {
+                    e.stopPropagation();
+                    self.handleDeleteClick(annotation.number);
+                }
+            );
+
+            // Create card spacer at inline position
+            var insertBefore = block.nextElementSibling;
+            while (insertBefore && (
+                insertBefore.classList.contains('annotation-spacer') ||
+                insertBefore.classList.contains('annotation-spacer-row')
+            )) {
+                insertBefore = insertBefore.nextElementSibling;
+            }
+            var result = this.createSpacer(
+                block.parentNode, insertBefore, 'card-spacer'
+            );
+
+            // Append card to body and track
+            document.body.appendChild(card);
+            this.cardSpacers[annotation.number] = {
+                spacer: result.spacer,
+                spacerRow: result.spacerRow,
+                card: card
+            };
+            if (this.resizeObserver) this.resizeObserver.observe(card);
+        },
+
+        expandAnnotation(number) {
+            if (this.expandedNumber === number) {
+                // Toggle off — collapse this annotation
+                this.collapseExpanded();
+                this.focusTextarea();
+                return;
+            }
+
+            // Collapse any currently expanded annotation
+            this.collapseExpanded();
+
+            // Cancel any in-progress edit on a different annotation
+            if (this.editingNumber !== null && this.editingNumber !== number) {
+                this.cancelEdit();
+            }
+
+            // Expand the target card
+            this.expandedNumber = number;
+            var card = document.querySelector(
+                '.annotation-card[data-number="' + number + '"]'
+            );
+            if (card) {
+                card.classList.add('expanded');
+                var content = card.querySelector('.annotation-card-content');
+                if (content) content.classList.remove('collapsed');
+                var hint = card.querySelector('.annotation-expand-hint');
+                if (hint) hint.style.display = 'none';
+                this.syncAllPositions();
+                card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+
+            // Highlight the annotation's line range in yellow
+            this.applyExpandedHighlight(number);
+        },
+
+        collapseExpanded() {
+            if (this.expandedNumber === null) return;
+
+            var card = document.querySelector(
+                '.annotation-card[data-number="' + this.expandedNumber + '"]'
+            );
+            if (card) {
+                card.classList.remove('expanded');
+                var content = card.querySelector('.annotation-card-content');
+                if (content) content.classList.add('collapsed');
+                var hint = card.querySelector('.annotation-expand-hint');
+                if (hint) hint.style.display = '';
+            }
+
+            this.clearExpandedHighlight();
+            this.expandedNumber = null;
+            // Re-apply blue form highlights (may have been suppressed)
+            this.updateHighlights();
+            this.syncAllPositions();
+        },
+
+        applyExpandedHighlight(number) {
+            var ann = this.annotations.find(
+                function(a) { return a.number === number; }
+            );
+            if (!ann) return;
+
+            var startIdx = this.findBlockIndexForStartLine(ann.start_line);
+            var endIdx = this.findBlockIndexForEndLine(ann.end_line);
+
+            for (var i = startIdx; i <= endIdx; i++) {
+                this.blocks[i].classList.add('annotation-expanded-highlight');
+                // Remove blue form highlight where yellow takes precedence
+                this.blocks[i].classList.remove('annotation-highlight');
+            }
+        },
+
+        clearExpandedHighlight() {
+            this.blocks.forEach(function(block) {
+                block.classList.remove('annotation-expanded-highlight');
+            });
+        },
+
+        findBlockIndexForStartLine(startLine) {
+            for (var i = 0; i < this.blocks.length; i++) {
+                var blockStart = parseInt(
+                    this.blocks[i].getAttribute('data-line-start')
+                );
+                if (blockStart >= startLine) return i;
+            }
+            return this.blocks.length - 1;
+        },
+
+        // --- Spacer Management ---
+
+        createSpacer(parent, insertBefore, className) {
+            var spacer = document.createElement('div');
+            spacer.className = 'annotation-spacer ' + className;
+            spacer.style.height = '0px';
+
+            var spacerRow = null;
+            var parentTag = parent.tagName;
+            if (parentTag === 'TBODY' || parentTag === 'THEAD') {
+                spacerRow = document.createElement('tr');
+                spacerRow.className = 'annotation-spacer-row';
+                var td = document.createElement('td');
+                td.setAttribute('colspan', '999');
+                td.appendChild(spacer);
+                spacerRow.appendChild(td);
+                parent.insertBefore(spacerRow, insertBefore);
+            } else {
+                parent.insertBefore(spacer, insertBefore);
+            }
+
+            return { spacer: spacer, spacerRow: spacerRow };
+        },
+
+        removeSpacer(spacer, spacerRow) {
+            if (spacerRow) spacerRow.remove();
+            else if (spacer) spacer.remove();
+        },
+
+        syncAllPositions() {
+            var scrollY = window.pageYOffset || document.documentElement.scrollTop;
+
+            if (this.formSpacer && this.formElement) {
+                this.formSpacer.style.height = this.formElement.offsetHeight + 'px';
+                var rect = this.formSpacer.getBoundingClientRect();
+                this.formElement.style.top = (rect.top + scrollY) + 'px';
+            }
+            for (var num in this.cardSpacers) {
+                var entry = this.cardSpacers[num];
+                if (entry.spacer && entry.card) {
+                    entry.spacer.style.height = entry.card.offsetHeight + 'px';
+                    var rect = entry.spacer.getBoundingClientRect();
+                    entry.card.style.top = (rect.top + scrollY) + 'px';
+                }
+            }
+        },
+
+        // --- Editing ---
+
+        startEdit(number) {
+            if (this.editingNumber !== null) this.cancelEdit();
+            // Ensure the card is expanded (without toggling off if already expanded)
+            if (this.expandedNumber !== number) {
+                this.expandAnnotation(number);
+            }
+            this.editingNumber = number;
+
+            var card = document.querySelector(
+                '.annotation-card[data-number="' + number + '"]'
+            );
+            if (!card) return;
+            var contentDiv = card.querySelector('.annotation-card-content');
+            var ann = this.annotations.find(function(a) { return a.number === number; });
+            if (!ann || !contentDiv) return;
+
+            // Store original HTML for cancel
+            card.setAttribute('data-original-html', contentDiv.outerHTML);
+
+            var ta = document.createElement('textarea');
+            ta.className = 'annotation-edit-textarea';
+            ta.value = ann.content;
+            contentDiv.replaceWith(ta);
+
+            autoGrow(ta);
+            ta.addEventListener('input', function() { autoGrow(ta); });
+            ta.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' && e.metaKey) {
+                    e.preventDefault();
+                    AnnotationManager.submitUpdate(number);
+                }
+            });
+
+            this.syncAllPositions();
+            ta.focus();
+        },
+
+        cancelEdit() {
+            if (this.editingNumber === null) return;
+            var card = document.querySelector(
+                '.annotation-card[data-number="' + this.editingNumber + '"]'
+            );
+            if (card) {
+                var ta = card.querySelector('.annotation-edit-textarea');
+                var originalHTML = card.getAttribute('data-original-html');
+                if (ta && originalHTML) {
+                    var temp = document.createElement('div');
+                    temp.innerHTML = originalHTML;
+                    if (temp.firstChild) ta.replaceWith(temp.firstChild);
+                }
+                card.removeAttribute('data-original-html');
+            }
+            this.editingNumber = null;
+            this.syncAllPositions();
+        },
+
+        // --- Communication with Swift ---
+
+        submitCreate() {
+            var ta = this.formElement.querySelector('textarea');
+            var content = ta ? ta.value.trim() : '';
+            if (!content) return;
+
+            var range = this.getLineRange(this.highlightStart, this.highlightEnd);
+            window.webkit.messageHandlers.annotation.postMessage({
+                action: 'create',
+                startLine: range.startLine,
+                endLine: range.endLine,
+                content: content
+            });
+        },
+
+        submitUpdate(number) {
+            var card = document.querySelector(
+                '.annotation-card[data-number="' + number + '"]'
+            );
+            if (!card) return;
+            var ta = card.querySelector('.annotation-edit-textarea');
+            if (!ta) return;
+            var content = ta.value.trim();
+            if (!content) return;
+
+            window.webkit.messageHandlers.annotation.postMessage({
+                action: 'update',
+                number: number,
+                content: content
+            });
+        },
+
+        handleDeleteClick(number) {
+            if (this.confirmingDeleteNumber === number) {
+                // Second click — confirmed
+                this.clearDeleteConfirmation();
+                this.requestDelete(number);
+            } else {
+                this.showDeleteConfirmation(number);
+            }
+        },
+
+        showDeleteConfirmation(number) {
+            this.clearDeleteConfirmation();
+            this.confirmingDeleteNumber = number;
+
+            var btn = document.querySelector(
+                '.annotation-card[data-number="' + number + '"] .annotation-btn-delete'
+            );
+            if (!btn) return;
+            btn.classList.add('confirming');
+            btn.textContent = 'Are you sure?';
+
+            // Auto-revert after 5 seconds
+            this.confirmDeleteTimer = setTimeout(function() {
+                AnnotationManager.clearDeleteConfirmation();
+            }, 5000);
+        },
+
+        clearDeleteConfirmation() {
+            if (this.confirmDeleteTimer) {
+                clearTimeout(this.confirmDeleteTimer);
+                this.confirmDeleteTimer = null;
+            }
+            var number = this.confirmingDeleteNumber;
+            if (number === null) return;
+            this.confirmingDeleteNumber = null;
+
+            var btn = document.querySelector(
+                '.annotation-card[data-number="' + number + '"] .annotation-btn-delete'
+            );
+            if (!btn) return;
+            btn.classList.remove('confirming');
+            btn.innerHTML = this.deleteIconSVG;
+        },
+
+        requestDelete(number) {
+            window.webkit.messageHandlers.annotation.postMessage({
+                action: 'delete',
+                number: number
+            });
+        },
+
+        // --- Callbacks from Swift ---
+
+        annotationCreated(data) {
+            this.annotations.push(data.annotation);
+            this.annotationHTMLMap[data.annotation.number] = data.renderedHTML;
+
+            // Re-sort in reading order
+            this.annotations.sort(function(a, b) {
+                return (a.start_line - b.start_line) ||
+                       (a.end_line - b.end_line) ||
+                       (a.number - b.number);
+            });
+
+            this.renderAllAnnotations();
+
+            // Clear form and reset highlight
+            var ta = this.formElement.querySelector('textarea');
+            if (ta) { ta.value = ''; autoGrow(ta); ta.focus(); }
+            this.highlightStart = this.highlightEnd = this.currentBlockIndex;
+            this.highlightAnchor = this.currentBlockIndex;
+            this.updateHighlights();
+            this.updateFormReference();
+        },
+
+        annotationUpdated(data) {
+            var idx = this.annotations.findIndex(
+                function(a) { return a.number === data.annotation.number; }
+            );
+            if (idx >= 0) this.annotations[idx] = data.annotation;
+            this.annotationHTMLMap[data.annotation.number] = data.renderedHTML;
+            this.editingNumber = null;
+            this.renderAllAnnotations();
+        },
+
+        annotationDeleted(number) {
+            if (this.expandedNumber === number) {
+                this.collapseExpanded();
+            }
+            this.annotations = this.annotations.filter(
+                function(a) { return a.number !== number; }
+            );
+            delete this.annotationHTMLMap[number];
+            this.renderAllAnnotations();
+        },
+
+        // --- Escape Context ---
+
+        getEscapeContext() {
+            if (this.editingNumber !== null) return 'editing';
+            if (this.expandedNumber !== null) return 'expanded';
+            var ta = this.formElement
+                ? this.formElement.querySelector('textarea') : null;
+            if (ta && ta.value.trim()) return 'formHasText';
+            return 'close';
+        },
+
+        clearForm() {
+            var ta = this.formElement
+                ? this.formElement.querySelector('textarea') : null;
+            if (ta) { ta.value = ''; autoGrow(ta); }
+        },
+
+        // --- Form State (for theme-change recovery) ---
+
+        getFormState() {
+            var ta = this.formElement
+                ? this.formElement.querySelector('textarea') : null;
+            return {
+                currentBlockIndex: this.currentBlockIndex,
+                highlightStart: this.highlightStart,
+                highlightEnd: this.highlightEnd,
+                highlightAnchor: this.highlightAnchor,
+                textareaValue: ta ? ta.value : '',
+                expandedNumber: this.expandedNumber
+            };
+        }
+    };
+    </script>
     </body>
     </html>
     """
@@ -221,8 +1313,8 @@ private func buildFullHTML(
 /// and `data-line-end` attributes on each block element.
 ///
 /// This gives every rendered block a direct link back to its source
-/// line range, which is the foundation for future line-by-line
-/// annotation (similar to GitHub PR review comments).
+/// line range, which is the foundation for line-by-line annotation
+/// (similar to GitHub PR review comments).
 struct LineAnchoredHTMLVisitor: MarkupVisitor {
     typealias Result = String
 

@@ -41,6 +41,7 @@
 		AA1111110000000000000004 /* BellIndicatorBehavior.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2222220000000000000004 /* BellIndicatorBehavior.swift */; };
 		AA1111110000000000000005 /* CollapsedSessionSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2222220000000000000005 /* CollapsedSessionSidebar.swift */; };
 		AA1111110000000000000006 /* LedgerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2222220000000000000006 /* LedgerView.swift */; };
+		AA1111110000000000000007 /* AnnotationHTMLVisitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2222220000000000000007 /* AnnotationHTMLVisitor.swift */; };
 		BB1111110000000000000001 /* LedgerSubTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2222220000000000000001 /* LedgerSubTab.swift */; };
 		BB1111110000000000000002 /* LedgerQueryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2222220000000000000002 /* LedgerQueryService.swift */; };
 		BB1111110000000000000003 /* LedgerLastActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2222220000000000000003 /* LedgerLastActivityView.swift */; };
@@ -106,6 +107,7 @@
 		AA2222220000000000000004 /* BellIndicatorBehavior.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BellIndicatorBehavior.swift; sourceTree = "<group>"; };
 		AA2222220000000000000005 /* CollapsedSessionSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollapsedSessionSidebar.swift; sourceTree = "<group>"; };
 		AA2222220000000000000006 /* LedgerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerView.swift; sourceTree = "<group>"; };
+		AA2222220000000000000007 /* AnnotationHTMLVisitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnnotationHTMLVisitor.swift; sourceTree = "<group>"; };
 		BB2222220000000000000001 /* LedgerSubTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerSubTab.swift; sourceTree = "<group>"; };
 		BB2222220000000000000002 /* LedgerQueryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerQueryService.swift; sourceTree = "<group>"; };
 		BB2222220000000000000003 /* LedgerLastActivityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerLastActivityView.swift; sourceTree = "<group>"; };
@@ -171,6 +173,7 @@
 		A4E9EEB1DC67FF88728B219F /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				AA2222220000000000000007 /* AnnotationHTMLVisitor.swift */,
 				AA2222220000000000000004 /* BellIndicatorBehavior.swift */,
 				A43C7742A36C8BAB7C4C6419 /* ChromeFontScaling.swift */,
 				AA2222220000000000000005 /* CollapsedSessionSidebar.swift */,
@@ -318,6 +321,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AA1111110000000000000007 /* AnnotationHTMLVisitor.swift in Sources */,
 				AA1111110000000000000004 /* BellIndicatorBehavior.swift in Sources */,
 				9570B4EFEC53463C1B6A01E5 /* ChromeFontScaling.swift in Sources */,
 				AA1111110000000000000005 /* CollapsedSessionSidebar.swift in Sources */,

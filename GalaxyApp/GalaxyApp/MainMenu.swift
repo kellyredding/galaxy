@@ -231,28 +231,33 @@ class MainMenu: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        // Session switching - vim style (⌘k/j) - no wrap, disable at boundaries
-        let canGoPrev = sessionManager.canSwitchToPreviousSession
-        let canGoNext = sessionManager.canSwitchToNextSession
+        // Session switching / annotation navigation - vim style (⌘k/j)
+        // When snapshot reader is open, these become annotation form movement.
+        // Keep always enabled when reader open (JS no-ops at boundaries).
+        let isReaderOpen = sessionManager.isSnapshotReaderOpen
+        let canGoPrev = isReaderOpen || sessionManager.canSwitchToPreviousSession
+        let canGoNext = isReaderOpen || sessionManager.canSwitchToNextSession
+        let prevTitle = isReaderOpen ? "Previous block" : "Previous session"
+        let nextTitle = isReaderOpen ? "Next block" : "Next session"
 
-        let prevItem = NSMenuItem(title: "Previous session", action: #selector(MenuActions.previousSession(_:)), keyEquivalent: "k")
+        let prevItem = NSMenuItem(title: prevTitle, action: #selector(MenuActions.previousSession(_:)), keyEquivalent: "k")
         prevItem.target = MenuActions.shared
         prevItem.isEnabled = canGoPrev
         menu.addItem(prevItem)
 
-        let prevArrowItem = NSMenuItem(title: "Previous session", action: #selector(MenuActions.previousSession(_:)), keyEquivalent: String(UnicodeScalar(NSUpArrowFunctionKey)!))
+        let prevArrowItem = NSMenuItem(title: prevTitle, action: #selector(MenuActions.previousSession(_:)), keyEquivalent: String(UnicodeScalar(NSUpArrowFunctionKey)!))
         prevArrowItem.target = MenuActions.shared
         prevArrowItem.keyEquivalentModifierMask = .command
         prevArrowItem.isEnabled = canGoPrev
         prevArrowItem.isAlternate = true
         menu.addItem(prevArrowItem)
 
-        let nextItem = NSMenuItem(title: "Next session", action: #selector(MenuActions.nextSession(_:)), keyEquivalent: "j")
+        let nextItem = NSMenuItem(title: nextTitle, action: #selector(MenuActions.nextSession(_:)), keyEquivalent: "j")
         nextItem.target = MenuActions.shared
         nextItem.isEnabled = canGoNext
         menu.addItem(nextItem)
 
-        let nextArrowItem = NSMenuItem(title: "Next session", action: #selector(MenuActions.nextSession(_:)), keyEquivalent: String(UnicodeScalar(NSDownArrowFunctionKey)!))
+        let nextArrowItem = NSMenuItem(title: nextTitle, action: #selector(MenuActions.nextSession(_:)), keyEquivalent: String(UnicodeScalar(NSDownArrowFunctionKey)!))
         nextArrowItem.target = MenuActions.shared
         nextArrowItem.keyEquivalentModifierMask = .command
         nextArrowItem.isEnabled = canGoNext
@@ -344,17 +349,21 @@ class MainMenu: NSObject, NSMenuDelegate {
         nextTabArrowItem.isAlternate = true
         menu.addItem(nextTabArrowItem)
 
-        // List item navigation: ⌘⇧K / ⌘⇧J and ⌘⇧↑ / ⌘⇧↓
+        // List item navigation / highlight extension: ⌘⇧K / ⌘⇧J and ⌘⇧↑ / ⌘⇧↓
+        // When snapshot reader is open, these become highlight extend actions.
         let hasListFocus: Bool = {
+            if isReaderOpen { return true }  // Always enabled for highlight extend
             switch sessionManager.activeTab {
             case .snapshots: return true
             case .ledger: return [.files, .entries].contains(sessionManager.activeLedgerSubTab)
             case .terminal: return false
             }
         }()
+        let focusPrevTitle = isReaderOpen ? "Resize selection up" : "Previous item"
+        let focusNextTitle = isReaderOpen ? "Resize selection down" : "Next item"
 
         let focusPrevItem = NSMenuItem(
-            title: "Previous item",
+            title: focusPrevTitle,
             action: #selector(MenuActions.focusPreviousListItem(_:)),
             keyEquivalent: "k"
         )
@@ -364,7 +373,7 @@ class MainMenu: NSObject, NSMenuDelegate {
         menu.addItem(focusPrevItem)
 
         let focusPrevArrowItem = NSMenuItem(
-            title: "Previous item",
+            title: focusPrevTitle,
             action: #selector(MenuActions.focusPreviousListItem(_:)),
             keyEquivalent: String(UnicodeScalar(NSUpArrowFunctionKey)!)
         )
@@ -375,7 +384,7 @@ class MainMenu: NSObject, NSMenuDelegate {
         menu.addItem(focusPrevArrowItem)
 
         let focusNextItem = NSMenuItem(
-            title: "Next item",
+            title: focusNextTitle,
             action: #selector(MenuActions.focusNextListItem(_:)),
             keyEquivalent: "j"
         )
@@ -385,7 +394,7 @@ class MainMenu: NSObject, NSMenuDelegate {
         menu.addItem(focusNextItem)
 
         let focusNextArrowItem = NSMenuItem(
-            title: "Next item",
+            title: focusNextTitle,
             action: #selector(MenuActions.focusNextListItem(_:)),
             keyEquivalent: String(UnicodeScalar(NSDownArrowFunctionKey)!)
         )
@@ -395,7 +404,7 @@ class MainMenu: NSObject, NSMenuDelegate {
         focusNextArrowItem.isAlternate = true
         menu.addItem(focusNextArrowItem)
 
-        // Activate focused item: Enter (snapshots only)
+        // Activate focused item: Enter (snapshots index only, disabled when reader open)
         let activateItem = NSMenuItem(
             title: "Open snapshot",
             action: #selector(MenuActions.activateFocusedListItem(_:)),
@@ -403,7 +412,7 @@ class MainMenu: NSObject, NSMenuDelegate {
         )
         activateItem.target = MenuActions.shared
         activateItem.keyEquivalentModifierMask = []
-        activateItem.isEnabled = sessionManager.activeTab == .snapshots
+        activateItem.isEnabled = sessionManager.activeTab == .snapshots && !isReaderOpen
         menu.addItem(activateItem)
 
         menu.addItem(.separator())
@@ -548,11 +557,19 @@ class MenuActions: NSObject {
     }
 
     @objc func previousSession(_ sender: Any?) {
-        SessionManager.shared.switchToPreviousSession()
+        if SessionManager.shared.isSnapshotReaderOpen {
+            SessionManager.shared.annotationAction = .moveUp
+        } else {
+            SessionManager.shared.switchToPreviousSession()
+        }
     }
 
     @objc func nextSession(_ sender: Any?) {
-        SessionManager.shared.switchToNextSession()
+        if SessionManager.shared.isSnapshotReaderOpen {
+            SessionManager.shared.annotationAction = .moveDown
+        } else {
+            SessionManager.shared.switchToNextSession()
+        }
     }
 
     @objc func previousView(_ sender: Any?) {
@@ -574,11 +591,19 @@ class MenuActions: NSObject {
     // MARK: - List Navigation Actions
 
     @objc func focusPreviousListItem(_ sender: Any?) {
-        SessionManager.shared.listNavAction = .up
+        if SessionManager.shared.isSnapshotReaderOpen {
+            SessionManager.shared.annotationAction = .extendUp
+        } else {
+            SessionManager.shared.listNavAction = .up
+        }
     }
 
     @objc func focusNextListItem(_ sender: Any?) {
-        SessionManager.shared.listNavAction = .down
+        if SessionManager.shared.isSnapshotReaderOpen {
+            SessionManager.shared.annotationAction = .extendDown
+        } else {
+            SessionManager.shared.listNavAction = .down
+        }
     }
 
     @objc func activateFocusedListItem(_ sender: Any?) {

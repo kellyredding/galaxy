@@ -1,4 +1,5 @@
 import SwiftUI
+import WebKit
 
 /// Container that resolves the active session and renders SnapshotsView.
 /// Mirrors LedgerContainerView's pattern for consistency.
@@ -41,6 +42,11 @@ struct SnapshotsView: View {
     @State private var isLoadingContent: Bool = false
     @State private var isBackHovered: Bool = false
     @State private var escapeMonitor: Any? = nil
+
+    // Annotation state
+    @State private var openAnnotations: [SnapshotAnnotation] = []
+    @State private var annotationHTMLMap: [Int32: String] = [:]
+    @State private var webViewRef: WKWebView? = nil
 
     // Focus state for keyboard navigation
     @State private var focusedIndex: Int? = nil
@@ -87,8 +93,10 @@ struct SnapshotsView: View {
         .background(Color(.textBackgroundColor))
         .onChange(of: openSnapshot != nil) {
             if openSnapshot != nil {
+                sessionManager.isSnapshotReaderOpen = true
                 installEscapeMonitor()
             } else {
+                sessionManager.isSnapshotReaderOpen = false
                 removeEscapeMonitor()
             }
         }
@@ -109,12 +117,21 @@ struct SnapshotsView: View {
             sessionManager.listNavAction = nil
             handleListNavAction(action)
         }
+        .onChange(of: sessionManager.annotationAction) {
+            guard let action = sessionManager.annotationAction else { return }
+            sessionManager.annotationAction = nil
+            handleAnnotationAction(action)
+        }
         .onDisappear {
             fetchTask?.cancel()
             fetchTask = nil
             SnapshotQueryService.shared.cancelAll()
             removeEscapeMonitor()
+            sessionManager.isSnapshotReaderOpen = false
+            webViewRef = nil
             openSnapshot = nil
+            openAnnotations = []
+            annotationHTMLMap = [:]
             snapshots = nil
         }
     }
@@ -324,10 +341,17 @@ struct SnapshotsView: View {
                     .frame(height: 1)
             }
 
-            // Markdown content
+            // Markdown content with annotation support
             MarkdownReaderView(
                 markdown: snapshot.content,
-                isDark: colorScheme == .dark
+                isDark: colorScheme == .dark,
+                snapshotNumber: snapshot.number,
+                annotations: openAnnotations,
+                annotationHTMLMap: annotationHTMLMap,
+                webViewRef: $webViewRef,
+                onAnnotationMessage: { message in
+                    handleAnnotationMessage(message, snapshotId: snapshot.id)
+                }
             )
         }
     }
@@ -368,8 +392,22 @@ struct SnapshotsView: View {
                 let detail = try await SnapshotQueryService.shared
                     .fetchSnapshotContent(ledgerSessionId: lsid, number: number)
                 guard !Task.isCancelled else { return }
+
+                // Fetch annotations using the snapshot's database ID
+                let annotations = try await SnapshotQueryService.shared
+                    .fetchAnnotations(ledgerSnapshotId: detail.id)
+                guard !Task.isCancelled else { return }
+
+                // Pre-render annotation markdown to HTML
+                var htmlMap: [Int32: String] = [:]
+                for ann in annotations {
+                    htmlMap[ann.number] = renderAnnotationHTML(ann.content)
+                }
+
                 await MainActor.run {
                     openSnapshot = detail
+                    openAnnotations = annotations
+                    annotationHTMLMap = htmlMap
                     isLoadingContent = false
                 }
             } catch {
@@ -385,7 +423,11 @@ struct SnapshotsView: View {
     private func closeReader() {
         let closingNumber = openSnapshot?.number
         removeEscapeMonitor()
+        sessionManager.isSnapshotReaderOpen = false
+        webViewRef = nil
         openSnapshot = nil  // Purge content from memory
+        openAnnotations = []
+        annotationHTMLMap = [:]
 
         // Refocus the row that was open
         if let number = closingNumber {
@@ -397,11 +439,36 @@ struct SnapshotsView: View {
 
     /// Install a local event monitor that catches Escape regardless of
     /// which AppKit responder (e.g. WKWebView) holds first responder.
+    /// Three-stage behavior: cancel edit -> clear form text -> close reader.
     private func installEscapeMonitor() {
         guard escapeMonitor == nil else { return }
         escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [self] event in
             if event.keyCode == 53 {  // 53 = Escape
-                DispatchQueue.main.async { closeReader() }
+                // Query JS for current annotation context
+                webViewRef?.evaluateJavaScript(
+                    "typeof AnnotationManager !== 'undefined' ? AnnotationManager.getEscapeContext() : 'close'"
+                ) { result, _ in
+                    guard let context = result as? String else {
+                        DispatchQueue.main.async { closeReader() }
+                        return
+                    }
+                    switch context {
+                    case "editing":
+                        self.webViewRef?.evaluateJavaScript(
+                            "AnnotationManager.cancelEdit()"
+                        )
+                    case "expanded":
+                        self.webViewRef?.evaluateJavaScript(
+                            "AnnotationManager.collapseExpanded(); AnnotationManager.focusTextarea()"
+                        )
+                    case "formHasText":
+                        self.webViewRef?.evaluateJavaScript(
+                            "AnnotationManager.clearForm()"
+                        )
+                    default:
+                        DispatchQueue.main.async { closeReader() }
+                    }
+                }
                 return nil  // Consume the event
             }
             return event
@@ -420,7 +487,11 @@ struct SnapshotsView: View {
         fetchTask?.cancel()
         fetchTask = nil
         SnapshotQueryService.shared.cancelAll()
+        sessionManager.isSnapshotReaderOpen = false
+        webViewRef = nil
         openSnapshot = nil
+        openAnnotations = []
+        annotationHTMLMap = [:]
         snapshots = nil
         isLoading = false
         isLoadingContent = false
@@ -456,10 +527,22 @@ struct SnapshotsView: View {
                     .fetchSnapshotContent(ledgerSessionId: lsid, number: number)
                 guard !Task.isCancelled else { return }
 
+                // Fetch annotations for the snapshot
+                let annotations = try await SnapshotQueryService.shared
+                    .fetchAnnotations(ledgerSnapshotId: detail.id)
+                guard !Task.isCancelled else { return }
+
+                var htmlMap: [Int32: String] = [:]
+                for ann in annotations {
+                    htmlMap[ann.number] = renderAnnotationHTML(ann.content)
+                }
+
                 await MainActor.run {
                     snapshots = list
                     isLoading = false
                     openSnapshot = detail
+                    openAnnotations = annotations
+                    annotationHTMLMap = htmlMap
                 }
             } catch {
                 guard !Task.isCancelled else { return }
@@ -495,6 +578,131 @@ struct SnapshotsView: View {
             guard let idx = focusedIndex, idx < items.count else { return }
             openSnapshotReader(number: items[idx].number)
         }
+    }
+
+    // MARK: - Annotation Actions
+
+    private func handleAnnotationAction(_ action: AnnotationAction) {
+        guard openSnapshot != nil else { return }
+        let jsFunction: String
+        switch action {
+        case .moveUp: jsFunction = "AnnotationManager.moveUp()"
+        case .moveDown: jsFunction = "AnnotationManager.moveDown()"
+        case .extendUp: jsFunction = "AnnotationManager.extendHighlightUp()"
+        case .extendDown: jsFunction = "AnnotationManager.extendHighlightDown()"
+        }
+        webViewRef?.evaluateJavaScript(jsFunction)
+    }
+
+    private func handleAnnotationMessage(_ message: AnnotationMessage, snapshotId: Int64) {
+        switch message {
+        case .create(let startLine, let endLine, let content):
+            Task {
+                do {
+                    let annotation = try await SnapshotQueryService.shared
+                        .createAnnotation(
+                            ledgerSnapshotId: snapshotId,
+                            startLine: startLine,
+                            endLine: endLine,
+                            content: content
+                        )
+                    let html = renderAnnotationHTML(annotation.content)
+                    await MainActor.run {
+                        openAnnotations.append(annotation)
+                        openAnnotations.sort {
+                            ($0.startLine, $0.endLine, $0.number) <
+                            ($1.startLine, $1.endLine, $1.number)
+                        }
+                        annotationHTMLMap[annotation.number] = html
+                    }
+                    let payload = buildAnnotationPayload(
+                        annotation: annotation, renderedHTML: html
+                    )
+                    await MainActor.run {
+                        webViewRef?.evaluateJavaScript(
+                            "AnnotationManager.annotationCreated(\(payload))"
+                        )
+                    }
+                } catch {
+                    NSLog("SnapshotsView: create annotation error: %@",
+                          error.localizedDescription)
+                }
+            }
+
+        case .update(let number, let content):
+            Task {
+                do {
+                    let annotation = try await SnapshotQueryService.shared
+                        .updateAnnotation(
+                            ledgerSnapshotId: snapshotId,
+                            number: number,
+                            content: content
+                        )
+                    let html = renderAnnotationHTML(annotation.content)
+                    await MainActor.run {
+                        if let idx = openAnnotations.firstIndex(where: {
+                            $0.number == number
+                        }) {
+                            openAnnotations[idx] = annotation
+                        }
+                        annotationHTMLMap[annotation.number] = html
+                    }
+                    let payload = buildAnnotationPayload(
+                        annotation: annotation, renderedHTML: html
+                    )
+                    await MainActor.run {
+                        webViewRef?.evaluateJavaScript(
+                            "AnnotationManager.annotationUpdated(\(payload))"
+                        )
+                    }
+                } catch {
+                    NSLog("SnapshotsView: update annotation error: %@",
+                          error.localizedDescription)
+                }
+            }
+
+        case .delete(let number):
+            Task {
+                do {
+                    try await SnapshotQueryService.shared
+                        .deleteAnnotation(
+                            ledgerSnapshotId: snapshotId,
+                            number: number
+                        )
+                    await MainActor.run {
+                        openAnnotations.removeAll { $0.number == number }
+                        annotationHTMLMap.removeValue(forKey: number)
+                        webViewRef?.evaluateJavaScript(
+                            "AnnotationManager.annotationDeleted(\(number))"
+                        )
+                    }
+                } catch {
+                    NSLog("SnapshotsView: delete annotation error: %@",
+                          error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    /// Serialize an annotation + rendered HTML to a JSON string for JS injection.
+    private func buildAnnotationPayload(
+        annotation: SnapshotAnnotation, renderedHTML: String
+    ) -> String {
+        let dict: [String: Any] = [
+            "annotation": [
+                "id": annotation.id,
+                "number": annotation.number,
+                "start_line": annotation.startLine,
+                "end_line": annotation.endLine,
+                "content": annotation.content,
+                "created_at": annotation.createdAt,
+                "updated_at": annotation.updatedAt
+            ],
+            "renderedHTML": renderedHTML
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: dict),
+              let json = String(data: data, encoding: .utf8) else { return "{}" }
+        return json
     }
 
     // MARK: - Formatting

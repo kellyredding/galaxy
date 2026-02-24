@@ -59,11 +59,74 @@ class SnapshotQueryService {
         return response.snapshot
     }
 
+    /// Fetch all annotations for a snapshot.
+    func fetchAnnotations(ledgerSnapshotId: Int64) async throws -> [SnapshotAnnotation] {
+        let data = try await runCLI(
+            args: ["snapshot", "annotation", "list", "--json",
+                   "--ledger-snapshot-id", String(ledgerSnapshotId)]
+        )
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let response = try decoder.decode(AnnotationsResponse.self, from: data)
+        return response.annotations
+    }
+
+    /// Create an annotation on a snapshot. Content piped via stdin.
+    func createAnnotation(
+        ledgerSnapshotId: Int64,
+        startLine: Int32,
+        endLine: Int32,
+        content: String
+    ) async throws -> SnapshotAnnotation {
+        let data = try await runCLI(
+            args: ["snapshot", "annotation", "create",
+                   "--ledger-snapshot-id", String(ledgerSnapshotId),
+                   "--start-line", String(startLine),
+                   "--end-line", String(endLine)],
+            stdinContent: content
+        )
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let response = try decoder.decode(AnnotationCreateResponse.self, from: data)
+        return response.annotation
+    }
+
+    /// Update an annotation's content. Content piped via stdin.
+    func updateAnnotation(
+        ledgerSnapshotId: Int64,
+        number: Int32,
+        content: String
+    ) async throws -> SnapshotAnnotation {
+        let data = try await runCLI(
+            args: ["snapshot", "annotation", "update",
+                   "--ledger-snapshot-id", String(ledgerSnapshotId),
+                   String(number)],
+            stdinContent: content
+        )
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let response = try decoder.decode(AnnotationCreateResponse.self, from: data)
+        return response.annotation
+    }
+
+    /// Delete an annotation by number.
+    func deleteAnnotation(
+        ledgerSnapshotId: Int64,
+        number: Int32
+    ) async throws {
+        _ = try await runCLI(
+            args: ["snapshot", "annotation", "delete",
+                   "--ledger-snapshot-id", String(ledgerSnapshotId),
+                   String(number)]
+        )
+    }
+
     // MARK: - CLI Subprocess
 
     /// Spawn the galaxy-ledger binary and collect stdout.
     /// Cancels any previous in-flight process first.
-    private func runCLI(args: [String]) async throws -> Data {
+    /// When stdinContent is provided, it's written to the process's stdin pipe.
+    private func runCLI(args: [String], stdinContent: String? = nil) async throws -> Data {
         // Cancel previous (synchronous, safe to call from async)
         cancelAll()
 
@@ -79,6 +142,14 @@ class SnapshotQueryService {
         process.standardOutput = stdout
         process.standardError = stderr
 
+        // Set up stdin pipe when content needs to be written
+        var inputPipe: Pipe? = nil
+        if stdinContent != nil {
+            let pipe = Pipe()
+            process.standardInput = pipe
+            inputPipe = pipe
+        }
+
         setCurrentProcess(process)
 
         return try await withCheckedThrowingContinuation { continuation in
@@ -88,6 +159,14 @@ class SnapshotQueryService {
                 self.clearCurrentProcess(process)
                 continuation.resume(throwing: error)
                 return
+            }
+
+            // Write stdin content and close the pipe after launch
+            if let content = stdinContent, let pipe = inputPipe {
+                if let data = content.data(using: .utf8) {
+                    pipe.fileHandleForWriting.write(data)
+                }
+                pipe.fileHandleForWriting.closeFile()
             }
 
             // Wait on background thread to avoid blocking
@@ -152,6 +231,14 @@ private struct SnapshotViewResponse: Codable {
     let snapshot: SnapshotDetail
 }
 
+private struct AnnotationsResponse: Codable {
+    let annotations: [SnapshotAnnotation]
+}
+
+private struct AnnotationCreateResponse: Codable {
+    let annotation: SnapshotAnnotation
+}
+
 // MARK: - Codable Models
 
 /// Snapshot metadata for the index view (no content).
@@ -175,4 +262,16 @@ struct SnapshotDetail: Codable {
     let createdAt: String
     let updatedAt: String
     let metadata: String?
+}
+
+/// Annotation attached to a snapshot's line range.
+struct SnapshotAnnotation: Codable, Identifiable {
+    let id: Int64
+    let createdAt: String
+    let updatedAt: String
+    let ledgerSnapshotId: Int64
+    let number: Int32
+    let startLine: Int32
+    let endLine: Int32
+    let content: String
 }
