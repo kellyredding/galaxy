@@ -7,8 +7,17 @@ class Session: Identifiable, ObservableObject {
     /// Delay between sending command text and CR when invoking slash commands.
     /// Without this delay, the text and CR can get batched together, causing
     /// Ink (Claude Code's TUI framework) to not recognize the CR as a submit action.
-    /// Tuned experimentally - shorter values may fail on loaded systems.
     private static let commandSubmitDelay: TimeInterval = 0.1  // 100ms
+
+    /// How long to wait after sending CR before checking if it was accepted.
+    /// If isBusy hasn't transitioned to true within this window, the CR was
+    /// likely swallowed and needs to be resent.
+    private static let commandVerifyDelay: TimeInterval = 0.25  // 250ms
+
+    /// Maximum number of CR resend attempts before giving up. Each retry
+    /// adds one commandVerifyDelay to the total wait. With 2 retries the
+    /// worst-case total is: commandSubmitDelay + 3 × commandVerifyDelay = 850ms.
+    private static let commandMaxRetries: Int = 2
 
     /// UUID used for SwiftUI Identifiable AND as Claude's session ID
     let id: UUID
@@ -304,8 +313,14 @@ class Session: Identifiable, ObservableObject {
     /// resumeCommand when the identifier changes.
     @Published var claudeSessionId: String
 
-    /// Send a slash command to the terminal (e.g., "/clear", "/compact")
-    /// Only works when session is running
+    /// Send a slash command to the terminal (e.g., "/clear", "/compact").
+    /// Only works when session is running.
+    ///
+    /// Uses a verify-and-retry loop: after sending the CR, checks whether
+    /// the session transitioned to busy (meaning Claude accepted the
+    /// command). If not, resends the CR up to `commandMaxRetries` times.
+    /// This eliminates the timing-only approach where a single blind delay
+    /// could still lose the CR on loaded systems.
     func sendCommand(_ command: String) {
         guard isRunning && !hasExited else {
             NSLog("Session: Cannot send command - session not running")
@@ -314,15 +329,46 @@ class Session: Identifiable, ObservableObject {
 
         NSLog("Session: Sending command: %@", command)
 
+        // If already busy we can't use isBusy as a verification signal.
+        // Fall back to the original fire-and-forget behavior.
+        let wasBusy = isBusy
+
         // Send command text first
         terminalView.send(txt: command)
 
         // Small delay to ensure text is processed before CR
-        // Without delay, the CR arrives before text is fully processed
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.commandSubmitDelay) { [weak self] in
-            guard let self = self else { return }
+            guard let self = self, self.isRunning, !self.hasExited else { return }
+
             // Send CR (0x0D) - same byte as keyboard Return
             self.terminalView.send([0x0D])
+
+            // Skip verification if session was already busy
+            guard !wasBusy else { return }
+
+            self.verifyCommandSubmit(retriesLeft: Self.commandMaxRetries)
+        }
+    }
+
+    /// Check whether the session went busy after sending CR. If not,
+    /// resend CR and schedule another check. Bails after exhausting retries.
+    private func verifyCommandSubmit(retriesLeft: Int) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.commandVerifyDelay) { [weak self] in
+            guard let self = self, self.isRunning, !self.hasExited else { return }
+
+            if self.isBusy {
+                NSLog("Session: Command accepted (retries remaining: %d)", retriesLeft)
+                return
+            }
+
+            if retriesLeft <= 0 {
+                NSLog("Session: Command CR retries exhausted — giving up")
+                return
+            }
+
+            NSLog("Session: Command CR not accepted, resending (%d retries left)", retriesLeft)
+            self.terminalView.send([0x0D])
+            self.verifyCommandSubmit(retriesLeft: retriesLeft - 1)
         }
     }
 
