@@ -37,69 +37,31 @@ module GalaxyStatusline
     end
 
     def render : String
-      # Priority order for fitting (shrink first → last):
-      # 1. Context bar (shrink to min)
-      # 2. Cost (drop)
-      # 3. Model (drop)
-      # 4. Directory (shrink: full → abbreviated → basename → drop)
-      # 5. Git (drop - last resort)
+      # Two-line layout, each line independently caps at @max_status_width:
+      #   Line 1 (location): directory + git
+      #   Line 2 (session):  model | context_bar | cost
+      location = render_location_line
+      session = render_session_line
+      "#{location}\n#{session}"
+    end
 
-      # Get base content
+    # Line 1: directory + git (concatenated, no separator)
+    # Shrink order: full dir → abbreviated → basename → drop dir → drop git
+    private def render_location_line : String
       dir_full = render_directory_full
       git_part = render_git
-      model_part = render_model
-      cost_part = render_cost
 
-      # Calculate fixed widths
-      dir_full_width = strip_ansi(dir_full).size
+      dir_display = dir_full
+      dir_width = strip_ansi(dir_full).size
       git_width = strip_ansi(git_part).size
-      model_width = strip_ansi(model_part).size
-      cost_width = strip_ansi(cost_part).size
-
-      # Start with max context bar and all components
-      bar_width = @config.layout.context_bar_max_width
-      min_bar_width = @config.layout.context_bar_min_width
-      include_cost = @config.layout.show_cost && !cost_part.empty?
-      include_model = @config.layout.show_model && !model_part.empty?
       include_git = @git.in_git_repo? && !git_part.empty?
 
-      # Calculate what directory display to use
-      dir_display = dir_full
-      dir_width = dir_full_width
-
-      # Iteratively shrink to fit
       loop do
-        total = calculate_total_width(
-          dir_width: dir_width,
-          git_width: include_git ? git_width : 0,
-          model_width: include_model ? model_width : 0,
-          bar_width: bar_width,
-          cost_width: include_cost ? cost_width : 0,
-        )
-
+        total = dir_width + (include_git ? git_width : 0)
         break if total <= @max_status_width
 
-        # Step 1: Shrink context bar
-        if bar_width > min_bar_width
-          bar_width -= 1
-          next
-        end
-
-        # Step 2: Drop cost
-        if include_cost
-          include_cost = false
-          next
-        end
-
-        # Step 3: Drop model
-        if include_model
-          include_model = false
-          next
-        end
-
-        # Step 4: Shrink directory
+        # Shrink directory
         if dir_width > 0
-          # Try abbreviated
           abbrev = render_directory_abbreviated
           abbrev_width = strip_ansi(abbrev).size
           if dir_width > abbrev_width && abbrev_width > 0
@@ -108,7 +70,6 @@ module GalaxyStatusline
             next
           end
 
-          # Try basename
           base = render_directory_basename
           base_width = strip_ansi(base).size
           if dir_width > base_width && base_width > 0
@@ -117,58 +78,86 @@ module GalaxyStatusline
             next
           end
 
-          # Drop directory entirely
           dir_display = ""
           dir_width = 0
           next
         end
 
-        # Step 5: Drop git (last resort)
+        # Drop git (last resort)
         if include_git
           include_git = false
           next
         end
 
-        # Nothing left to shrink
         break
       end
 
-      # Build final output
+      result = ""
+      result += dir_display unless dir_display.empty?
+      result += git_part if include_git
+      result
+    end
+
+    # Line 2: model | context_bar | cost (joined with separator)
+    # Shrink order: shrink context bar → drop cost → drop model
+    private def render_session_line : String
+      model_part = render_model
+      cost_part = render_cost
+
+      model_width = strip_ansi(model_part).size
+      cost_width = strip_ansi(cost_part).size
+
+      bar_width = @config.layout.context_bar_max_width
+      min_bar_width = @config.layout.context_bar_min_width
+      include_cost = @config.layout.show_cost && !cost_part.empty?
+      include_model = @config.layout.show_model && !model_part.empty?
+
+      loop do
+        total = calculate_session_line_width(
+          model_width: include_model ? model_width : 0,
+          bar_width: bar_width,
+          cost_width: include_cost ? cost_width : 0,
+        )
+
+        break if total <= @max_status_width
+
+        # Shrink context bar
+        if bar_width > min_bar_width
+          bar_width -= 1
+          next
+        end
+
+        # Drop cost
+        if include_cost
+          include_cost = false
+          next
+        end
+
+        # Drop model
+        if include_model
+          include_model = false
+          next
+        end
+
+        break
+      end
+
       parts = [] of String
-
-      # Left side: directory + git (no separator between them)
-      left_side = ""
-      left_side += dir_display unless dir_display.empty?
-      left_side += git_part if include_git
-      parts << left_side unless left_side.empty?
-
-      # Right side: model, context bar, cost
       parts << model_part if include_model
       parts << render_context_bar(bar_width)
       parts << cost_part if include_cost
-
       parts.join(SEPARATOR)
     end
 
-    private def calculate_total_width(
-      dir_width : Int32,
-      git_width : Int32,
+    private def calculate_session_line_width(
       model_width : Int32,
       bar_width : Int32,
       cost_width : Int32,
     ) : Int32
-      # Context bar width = bar chars + space + percentage (e.g., "100%")
       context_width = bar_width + 1 + 4 # " 100%" = 5 chars max
 
       parts_count = 0
       total = 0
-
-      # Directory + git are combined (no separator between them)
-      left_width = dir_width + git_width
-      if left_width > 0
-        total += left_width
-        parts_count += 1
-      end
 
       if model_width > 0
         total += model_width
@@ -183,9 +172,7 @@ module GalaxyStatusline
         parts_count += 1
       end
 
-      # Add separators
       total += (parts_count - 1) * SEPARATOR.size if parts_count > 1
-
       total
     end
 

@@ -122,9 +122,9 @@ describe GalaxyStatusline::Renderer do
   end
 
   describe "separator handling" do
-    it "uses | separator between components" do
-      # Even in narrow mode, if we have dir + context, there's a separator
-      json = %({"cwd": "/test", "context_window": {"used_percentage": 50}})
+    it "uses | separator between session line components" do
+      # Session line uses separator when cost is present alongside context bar
+      json = %({"cwd": "/test", "context_window": {"used_percentage": 50}, "cost": {"total_cost_usd": 1.23}})
       result = run_binary(["render"], stdin: json)
       output = strip_ansi(result[:output])
 
