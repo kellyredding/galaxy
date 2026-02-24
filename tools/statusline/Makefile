@@ -28,7 +28,7 @@ build:
 	shards install
 	crystal build --release --no-debug -o $(BUILDDIR)/galaxy-statusline src/galaxy_statusline.cr
 
-install: build
+install: check build
 	install -d $(BINDIR)
 	install -m 755 $(BUILDDIR)/galaxy-statusline $(BINDIR)/galaxy-statusline
 	@# Symlink to local bin for PATH access
