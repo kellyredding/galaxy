@@ -92,7 +92,13 @@ struct SnapshotsView: View {
                 removeEscapeMonitor()
             }
         }
-        .onAppear { fetchSnapshotList() }
+        .onAppear {
+            if sessionManager.pendingSnapshotNumber != nil {
+                handlePendingSnapshot()
+            } else {
+                fetchSnapshotList()
+            }
+        }
         .onChange(of: session.id) { handleSessionSwitch() }
         .onChange(of: sessionManager.pendingSnapshotNumber) {
             handlePendingSnapshot()
