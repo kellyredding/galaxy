@@ -88,8 +88,17 @@ struct MarkdownReaderView: NSViewRepresentable {
             if let json = result as? String {
                 context.coordinator.savedFormState = json
             }
-            webView.loadHTMLString(html, baseURL: nil)
+            webView.loadHTMLString(
+                html,
+                baseURL: URL(string: "galaxy://snapshot-reader")
+            )
         }
+    }
+
+    static func dismantleNSView(_ nsView: WKWebView, coordinator: Coordinator) {
+        nsView.stopLoading()
+        nsView.configuration.userContentController
+            .removeScriptMessageHandler(forName: "annotation")
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -247,6 +256,7 @@ private func buildFullHTML(
     <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Galaxy Snapshot Reader</title>
     <style>
     :root {
         color-scheme: light dark;
