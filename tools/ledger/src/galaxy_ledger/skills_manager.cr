@@ -115,24 +115,44 @@ module GalaxyLedger
     request. Any follow-up exchanges for scope negotiation (e.g.,
     the user adjusting your suggestion) are also excluded.
 
-    - If explicit ("snapshot the last 3 exchanges"), use that number
-    - If vague ("snapshot this"), make your best guess and ALWAYS
-      confirm with the user by listing the user prompts that would
-      be included:
+    **Explicit count — use directly, no confirmation:**
+    "snapshot the last 3 exchanges", "save exchanges 2 through 5"
 
-      ```
-      I'd suggest snapshotting the last 2 exchanges:
+    **Obvious single exchange — capture 1, no confirmation:**
+    Singular demonstratives, bare requests, and "last" without a
+    quantity all refer to the most recent exchange. Proceed
+    directly to Step 2 without confirming.
 
-      1. Your message: "Let's design the caching layer..."
-      2. Your message: "What about Redis vs Memcached..."
+    Examples:
+    - "snapshot this" / "save that exchange" / "capture this"
+    - "take a snapshot" / "remember this"
+    - "save these findings" / "snapshot this result"
+    - "snapshot what we just discussed"
+    - "save this for later" / "save our last exchange"
 
-      (Each includes my full response.) Does that look right, or
-      should I go further back / trim it down?
-      ```
+    **Ambiguous scope — confirm with the user:**
+    Plural language, vague quantities, and topic references that
+    could span multiple exchanges require confirmation. List the
+    candidate exchanges (truncate user messages to ~80 chars) and
+    ask the user to confirm or adjust.
 
-    Always confirm scope with the user before proceeding, even when
-    the number seems obvious. Truncate listed user messages to ~80
-    chars if long.
+    Examples:
+    - "save the last few findings" / "snapshot our recent work"
+    - "capture everything about the refactor"
+    - "snapshot our auth system discussion"
+    - "save what we've been working on"
+
+    Confirmation format:
+    ```
+    I'd suggest snapshotting the last 3 exchanges:
+
+    1. Your message: "Let's design the caching layer..."
+    2. Your message: "What about Redis vs Memcached..."
+    3. Your message: "Can we benchmark both approaches..."
+
+    (Each includes my full response.) Does that look right, or
+    should I go further back / trim it down?
+    ```
 
     ### Step 2 — Generate Title
 
