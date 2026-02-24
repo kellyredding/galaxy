@@ -16,6 +16,7 @@ struct MarkdownReaderView: NSViewRepresentable {
         let config = WKWebViewConfiguration()
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
+        webView.isInspectable = true
         return webView
     }
 
@@ -209,6 +210,10 @@ private func buildFullHTML(
 struct LineAnchoredHTMLVisitor: MarkupVisitor {
     typealias Result = String
 
+    /// Tracks table nesting so list items inside table cells emit bare
+    /// `<li>` (no md-block class) — the table row is the navigable unit.
+    private var insideTable: Bool = false
+
     // MARK: - Default / Document
 
     mutating func defaultVisit(_ markup: any Markup) -> String {
@@ -265,7 +270,10 @@ struct LineAnchoredHTMLVisitor: MarkupVisitor {
 
     func visitListItem(_ listItem: ListItem) -> String {
         let inner = visitChildren(listItem)
-        return "<li>\(inner)</li>\n"
+        if insideTable {
+            return "<li>\(inner)</li>\n"
+        }
+        return wrapBlock("li", markup: listItem, inner: inner)
     }
 
     func visitThematicBreak(_ thematicBreak: ThematicBreak) -> String {
@@ -276,20 +284,24 @@ struct LineAnchoredHTMLVisitor: MarkupVisitor {
         return wrapBlock("div", markup: html, inner: html.rawHTML)
     }
 
-    func visitTable(_ table: Markdown.Table) -> String {
+    mutating func visitTable(_ table: Markdown.Table) -> String {
+        insideTable = true
+
         var html = "<table>\n"
 
-        // Header
-        html += "<thead><tr>"
+        // Header row with line attributes
+        let headAttrs = lineAttrsString(table.head)
+        html += "<thead><tr\(headAttrs)>"
         for cell in table.head.cells {
             html += "<th>\(visitChildren(cell))</th>"
         }
         html += "</tr></thead>\n"
 
-        // Body rows
+        // Body rows with line attributes
         html += "<tbody>\n"
         for row in table.body.rows {
-            html += "<tr>"
+            let rowAttrs = lineAttrsString(row)
+            html += "<tr\(rowAttrs)>"
             for cell in row.cells {
                 html += "<td>\(visitChildren(cell))</td>"
             }
@@ -297,6 +309,8 @@ struct LineAnchoredHTMLVisitor: MarkupVisitor {
         }
         html += "</tbody>\n"
         html += "</table>\n"
+
+        insideTable = false
 
         return wrapBlock("div", markup: table, inner: html)
     }
