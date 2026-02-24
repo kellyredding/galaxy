@@ -268,6 +268,9 @@ class SessionManager: ObservableObject {
 
         // Terminate the process using our tracked PID (sends SIGTERM)
         session.terminateProcess()
+
+        // Switch to terminal so the user sees the stopped state
+        activeTab = .terminal
     }
 
     func resumeSession(sessionId: UUID) {
@@ -310,6 +313,9 @@ class SessionManager: ObservableObject {
         } else {
             NSLog("SessionManager: Session %@ not found in Claude storage, starting fresh", session.sessionRef)
         }
+
+        // Switch to terminal so the user sees the resumed session
+        activeTab = .terminal
 
         // Reset session state
         session.hasExited = false
