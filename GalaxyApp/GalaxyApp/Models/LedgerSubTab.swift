@@ -7,6 +7,7 @@ enum LedgerSubTab: String, CaseIterable {
     case files = "Files"
     case entries = "Entries"
     case identifiers = "Identifiers"
+    case suggestedName = "Suggested Name"
 
     var icon: String {
         switch self {
@@ -14,6 +15,7 @@ enum LedgerSubTab: String, CaseIterable {
         case .files: return "doc.text"
         case .entries: return "list.bullet"
         case .identifiers: return "number"
+        case .suggestedName: return "sparkles"
         }
     }
 }

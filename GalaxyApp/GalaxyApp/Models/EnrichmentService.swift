@@ -54,6 +54,7 @@ final class EnrichmentService {
         let updatedAt: String?
         let lastInteraction: String?
         let suggestedName: String?
+        let suggestedNameData: String?
 
         enum CodingKeys: String, CodingKey {
             case ledgerSessionId = "ledger_session_id"
@@ -77,6 +78,7 @@ final class EnrichmentService {
             case updatedAt = "updated_at"
             case lastInteraction = "last_interaction"
             case suggestedName = "suggested_name"
+            case suggestedNameData = "suggested_name_data"
         }
     }
 

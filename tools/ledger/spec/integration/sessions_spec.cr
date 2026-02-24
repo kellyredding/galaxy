@@ -96,6 +96,40 @@ describe "CLI Integration: sessions" do
       session["suggested_name"].as_s.should eq("Event System Design")
     end
 
+    it "includes suggested_name_data field (empty JSON by default)" do
+      session_id = "sessions-name-data-#{Random.rand(100000)}"
+      GalaxyLedger::Database.create_session(session_id)
+
+      result = run_binary(["sessions", "--json", "--session", session_id])
+      result[:status].should eq(0)
+
+      session = JSON.parse(result[:output])["sessions"].as_a[0]
+      session["suggested_name_data"].as_s.should eq("{}")
+    end
+
+    it "includes suggested_name_data when populated" do
+      session_id = "sessions-name-data-set-#{Random.rand(100000)}"
+      ledger_session_id = GalaxyLedger::Database.create_session(session_id)
+
+      state = GalaxyLedger::SuggestedName::StateData.new
+      state.set_name_generated(4, 5)
+      GalaxyLedger::Database.update_suggested_name_data(ledger_session_id, state.to_json)
+
+      result = run_binary(["sessions", "--json", "--session", session_id])
+      result[:status].should eq(0)
+
+      session = JSON.parse(result[:output])["sessions"].as_a[0]
+      data_json = session["suggested_name_data"].as_s
+      data_json.should_not eq("{}")
+      parsed = JSON.parse(data_json)
+      parsed["attempts"].as_i.should eq(1)
+      parsed["quality"].as_i.should eq(4)
+      parsed["finalized"].as_bool.should be_true
+      parsed["status"].as_s.should eq("finalized_quality_met")
+      parsed["exchange_count"].as_i.should eq(5)
+      parsed["last_attempt_at"].as_s?.should_not be_nil
+    end
+
     it "includes session_identifiers array with all registered identifiers" do
       session_id = "sessions-ids-#{Random.rand(100000)}"
       ledger_session_id = GalaxyLedger::Database.create_session(session_id)

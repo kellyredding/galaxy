@@ -120,6 +120,11 @@ class Session: Identifiable, ObservableObject {
     /// ISO timestamp of last user interaction
     var ledgerLastInteraction: String?
 
+    /// Raw JSON string of suggested name state data (attempts, quality,
+    /// finalized, status, exchange_count, last_attempt_at). Parsed inline
+    /// by LedgerSuggestedNameView. Not persisted — re-fetched on relaunch.
+    var ledgerSuggestedNameData: String?
+
     /// Monotonically increasing counter bumped after each enrichment
     /// batch. LedgerView observes this single @Published property
     /// instead of promoting all ledger fields to @Published.

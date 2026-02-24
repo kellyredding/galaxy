@@ -247,6 +247,7 @@ final class EventCoordinator {
                     appSession.ledgerStartedAt = sessionData.startedAt
                     appSession.ledgerUpdatedAt = sessionData.updatedAt
                     appSession.ledgerLastInteraction = sessionData.lastInteraction
+                    appSession.ledgerSuggestedNameData = sessionData.suggestedNameData
 
                     // Keep claudeSessionId current with the ledger's
                     // latest session identifier (tracks /clear and resumes)

@@ -141,8 +141,9 @@ struct LedgerView: View {
             ledgerSection("Session") {
                 statusRow
                 ledgerRow("Name", value: session.displayName)
-                ledgerRow("Persona", value: session.personaName ?? "--")
+                ledgerRow("Suggested name", value: session.ledgerSuggestedName ?? "--")
                 ledgerRow("Ref", value: session.sessionRef)
+                ledgerRow("Persona", value: session.personaName ?? "--")
                 if let started = session.ledgerStartedAt {
                     ledgerRow("Started", value: formatTimestamp(started))
                 }
@@ -256,6 +257,8 @@ struct LedgerView: View {
                 sessionDetail: sessionDetail,
                 isLoading: isLoading
             )
+        case .suggestedName:
+            LedgerSuggestedNameView(session: session)
         }
     }
 
@@ -296,6 +299,8 @@ struct LedgerView: View {
     private func triggerFetchForCurrentSubtab() {
         switch sessionManager.activeLedgerSubTab {
         case .lastActivity:
+            break  // Uses data already on Session, no fetch needed
+        case .suggestedName:
             break  // Uses data already on Session, no fetch needed
         case .files:
             fetchFilesData()

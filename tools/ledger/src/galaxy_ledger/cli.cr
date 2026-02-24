@@ -2831,6 +2831,7 @@ module GalaxyLedger
                 builder.object do
                   builder.field("ledger_session_id", record.id)
                   builder.field("suggested_name", record.suggested_name)
+                  builder.field("suggested_name_data", record.suggested_name_data)
                   builder.field("session_identifiers") do
                     builder.array do
                       identifiers.each { |sid| builder.scalar(sid) }

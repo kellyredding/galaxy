@@ -47,6 +47,7 @@
 		BB1111110000000000000004 /* LedgerFilesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2222220000000000000004 /* LedgerFilesView.swift */; };
 		BB1111110000000000000005 /* LedgerEntriesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2222220000000000000005 /* LedgerEntriesView.swift */; };
 		BB1111110000000000000006 /* LedgerIdentifiersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2222220000000000000006 /* LedgerIdentifiersView.swift */; };
+		BB1111110000000000000007 /* LedgerSuggestedNameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2222220000000000000007 /* LedgerSuggestedNameView.swift */; };
 		CC1111110000000000000002 /* SnapshotQueryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC2222220000000000000002 /* SnapshotQueryService.swift */; };
 		CC1111110000000000000003 /* MarkdownReaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC2222220000000000000003 /* MarkdownReaderView.swift */; };
 		CC1111110000000000000004 /* SnapshotsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC2222220000000000000004 /* SnapshotsView.swift */; };
@@ -111,6 +112,7 @@
 		BB2222220000000000000004 /* LedgerFilesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerFilesView.swift; sourceTree = "<group>"; };
 		BB2222220000000000000005 /* LedgerEntriesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerEntriesView.swift; sourceTree = "<group>"; };
 		BB2222220000000000000006 /* LedgerIdentifiersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerIdentifiersView.swift; sourceTree = "<group>"; };
+		BB2222220000000000000007 /* LedgerSuggestedNameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerSuggestedNameView.swift; sourceTree = "<group>"; };
 		CC2222220000000000000002 /* SnapshotQueryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotQueryService.swift; sourceTree = "<group>"; };
 		CC2222220000000000000003 /* MarkdownReaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownReaderView.swift; sourceTree = "<group>"; };
 		CC2222220000000000000004 /* SnapshotsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotsView.swift; sourceTree = "<group>"; };
@@ -178,6 +180,7 @@
 				BB2222220000000000000005 /* LedgerEntriesView.swift */,
 				BB2222220000000000000004 /* LedgerFilesView.swift */,
 				BB2222220000000000000006 /* LedgerIdentifiersView.swift */,
+				BB2222220000000000000007 /* LedgerSuggestedNameView.swift */,
 				BB2222220000000000000003 /* LedgerLastActivityView.swift */,
 				AA2222220000000000000006 /* LedgerView.swift */,
 				CC2222220000000000000003 /* MarkdownReaderView.swift */,
@@ -331,6 +334,7 @@
 				BB1111110000000000000005 /* LedgerEntriesView.swift in Sources */,
 				BB1111110000000000000004 /* LedgerFilesView.swift in Sources */,
 				BB1111110000000000000006 /* LedgerIdentifiersView.swift in Sources */,
+				BB1111110000000000000007 /* LedgerSuggestedNameView.swift in Sources */,
 				BB1111110000000000000003 /* LedgerLastActivityView.swift in Sources */,
 				BB1111110000000000000002 /* LedgerQueryService.swift in Sources */,
 				BB1111110000000000000001 /* LedgerSubTab.swift in Sources */,
