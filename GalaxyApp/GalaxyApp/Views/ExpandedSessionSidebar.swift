@@ -34,6 +34,7 @@ struct ExpandedSessionSidebar: View {
                                     session: session,
                                     isSelected: session.id == sessionManager.activeSessionId,
                                     isWindowFocused: sessionManager.isWindowFocused,
+                                    isOnTerminalTab: sessionManager.activeTab == .terminal,
                                     onStop: {
                                         sessionManager.stopSession(sessionId: session.id)
                                     },
@@ -72,6 +73,7 @@ struct ExpandedSessionSidebar: View {
                                 session: session,
                                 isSelected: session.id == sessionManager.activeSessionId,
                                 isWindowFocused: sessionManager.isWindowFocused,
+                                isOnTerminalTab: sessionManager.activeTab == .terminal,
                                 onStop: {},
                                 onClose: {},
                                 isPlaceholder: false,

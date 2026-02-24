@@ -5,6 +5,7 @@ struct SessionRow: View {
     @ObservedObject var session: Session
     let isSelected: Bool
     let isWindowFocused: Bool  // Need this to know when to fade indicator
+    let isOnTerminalTab: Bool  // Only clear unread when viewing terminal
     var onStop: () -> Void   // Stop a running session
     var onClose: () -> Void  // Remove a stopped session from list
 
@@ -196,7 +197,8 @@ struct SessionRow: View {
         .bellIndicatorBehavior(
             session: session,
             isSelected: isSelected,
-            isWindowFocused: isWindowFocused
+            isWindowFocused: isWindowFocused,
+            isOnTerminalTab: isOnTerminalTab
         )
     }
 

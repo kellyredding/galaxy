@@ -181,6 +181,14 @@ struct ContentView: View {
                 .foregroundColor(
                     sessionManager.activeTab == tab ? .primary : .secondary
                 )
+                .overlay(alignment: .topLeading) {
+                    if tab == .terminal, let session = activeSession {
+                        TabUnreadIndicator(
+                            session: session,
+                            showBellBadge: settingsManager.settings.showBellBadge
+                        )
+                    }
+                }
             }
         }
     }
@@ -281,6 +289,21 @@ struct TerminalContainerView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// Observes a session's hasUnreadBell so the tab picker re-renders
+/// reactively. Without @ObservedObject, the computed-property chain
+/// in ContentView doesn't establish SwiftUI observation.
+struct TabUnreadIndicator: View {
+    @ObservedObject var session: Session
+    let showBellBadge: Bool
+
+    var body: some View {
+        if session.hasUnreadBell && showBellBadge {
+            UnreadBellIndicator()
+                .offset(x: -2, y: -2)
+        }
     }
 }
 

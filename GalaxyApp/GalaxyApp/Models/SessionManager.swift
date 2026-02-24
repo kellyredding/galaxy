@@ -485,8 +485,9 @@ class SessionManager: ObservableObject {
         // Clear unread bell immediately on switch (with fade animation).
         // Done here rather than solely in SessionRow's onChange(of: isSelected)
         // to avoid gesture disambiguation delays when double-click gestures
-        // exist on child views.
-        if session.hasUnreadBell && isWindowFocused {
+        // exist on child views. Only clears when on the terminal tab — viewing
+        // Ledger or Snapshots keeps the indicator visible.
+        if session.hasUnreadBell && isWindowFocused && activeTab == .terminal {
             withAnimation(.easeOut(duration: 3.0)) {
                 session.hasUnreadBell = false
             }

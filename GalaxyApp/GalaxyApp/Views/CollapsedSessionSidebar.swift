@@ -13,7 +13,8 @@ struct CollapsedSessionSidebar: View {
                     CollapsedSessionRow(
                         session: session,
                         isSelected: session.id == sessionManager.activeSessionId,
-                        isWindowFocused: sessionManager.isWindowFocused
+                        isWindowFocused: sessionManager.isWindowFocused,
+                        isOnTerminalTab: sessionManager.activeTab == .terminal
                     )
                     .onTapGesture {
                         sessionManager.switchTo(sessionId: session.id)
@@ -34,6 +35,7 @@ struct CollapsedSessionRow: View {
     @ObservedObject var session: Session
     let isSelected: Bool
     let isWindowFocused: Bool
+    let isOnTerminalTab: Bool
 
     @Environment(\.chromeFontSize) private var chromeFontSize
 
@@ -82,7 +84,8 @@ struct CollapsedSessionRow: View {
         .bellIndicatorBehavior(
             session: session,
             isSelected: isSelected,
-            isWindowFocused: isWindowFocused
+            isWindowFocused: isWindowFocused,
+            isOnTerminalTab: isOnTerminalTab
         )
     }
 }
