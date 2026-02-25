@@ -32,11 +32,14 @@ class MainWindowController: NSWindowController {
             .environmentObject(sessionManager)
             .environmentObject(settingsManager)
             .environment(\.chromeFontSize, settingsManager.settings.chromeFontSize)
-            .preferredColorScheme(preferredScheme)
 
         // Wrap in NSHostingView
         let hostingView = NSHostingView(rootView: contentView)
         window.contentView = hostingView
+
+        // Apply initial theme appearance — window.appearance drives
+        // SwiftUI's colorScheme environment without .preferredColorScheme()
+        applyTheme(settingsManager.settings.themePreference)
 
         // Set up window delegate for close behavior
         window.delegate = self
@@ -49,14 +52,17 @@ class MainWindowController: NSWindowController {
         fatalError("init(coder:) has not been implemented")
     }
 
-    private var preferredScheme: ColorScheme? {
-        switch settingsManager.settings.themePreference {
+    /// Apply theme by setting window.appearance — propagates to SwiftUI's
+    /// colorScheme environment without recreating the view hierarchy.
+    /// nil inherits the system appearance.
+    func applyTheme(_ theme: ThemePreference) {
+        switch theme {
         case .system:
-            return nil
+            window?.appearance = nil
         case .light:
-            return .light
+            window?.appearance = NSAppearance(named: .aqua)
         case .dark:
-            return .dark
+            window?.appearance = NSAppearance(named: .darkAqua)
         }
     }
 
@@ -168,19 +174,6 @@ class MainWindowController: NSWindowController {
         window.setFrame(newFrame, display: true)
     }
 
-    /// Updates the content view's color scheme when settings change
-    func updateColorScheme() {
-        guard let window = window else { return }
-
-        let contentView = ContentView()
-            .environmentObject(sessionManager)
-            .environmentObject(settingsManager)
-            .environment(\.chromeFontSize, settingsManager.settings.chromeFontSize)
-            .preferredColorScheme(preferredScheme)
-
-        let hostingView = NSHostingView(rootView: contentView)
-        window.contentView = hostingView
-    }
 }
 
 // MARK: - NSWindowDelegate

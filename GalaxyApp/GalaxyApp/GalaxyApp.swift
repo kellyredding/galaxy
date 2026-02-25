@@ -58,11 +58,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil
         )
 
-        // Observe settings changes that affect color scheme
+        // Observe theme preference changes — apply via window.appearance
+        // so SwiftUI's colorScheme updates without recreating the view tree
         SettingsManager.shared.$settings
+            .map(\.themePreference)
+            .removeDuplicates()
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.mainWindowController?.updateColorScheme()
+            .sink { [weak self] theme in
+                self?.mainWindowController?.applyTheme(theme)
             }
             .store(in: &cancellables)
 
