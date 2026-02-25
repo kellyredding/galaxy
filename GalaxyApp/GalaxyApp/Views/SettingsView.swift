@@ -142,14 +142,14 @@ struct SessionsSettingsTab: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            SettingsCard(title: "New Session") {
+            SettingsCard(title: "New session") {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Default start directory")
                     DirectoryField(text: $settingsManager.settings.newSessionDefaultDir)
                 }
             }
 
-            SettingsCard(title: "Git Status") {
+            SettingsCard(title: "Git status") {
                 VStack(alignment: .leading, spacing: 12) {
                     SettingsRow(label: "Style") {
                         Picker("", selection: $settingsManager.settings.gitStatusStyle) {
@@ -167,7 +167,7 @@ struct SessionsSettingsTab: View {
                 }
             }
 
-            SettingsCard(title: "Auto-Clear") {
+            SettingsCard(title: "Auto-clear") {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Toggle("Auto-clear at high context usage", isOn: $settingsManager.settings.autoClearEnabled)
