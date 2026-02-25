@@ -246,6 +246,7 @@ class SessionManager: ObservableObject {
 
         sessions.append(session)
         activeSessionId = session.id
+        activeTab = .terminal
         SessionPersistence.shared.markDirty()
 
         return session

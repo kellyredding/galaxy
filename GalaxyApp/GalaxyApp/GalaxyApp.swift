@@ -35,6 +35,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.showPreferences()
         }
 
+        // Observe new session notification
+        NotificationCenter.default.addObserver(
+            forName: .showNewSession,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.showNewSession()
+        }
+
         // Observe window focus changes
         NotificationCenter.default.addObserver(
             self,
@@ -198,5 +207,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showPreferences() {
         PreferencesWindowController.showPreferences()
+    }
+
+    // MARK: - New Session
+
+    private func showNewSession() {
+        guard let window = mainWindowController?.window else { return }
+        NewSessionSheetController.present(on: window)
     }
 }

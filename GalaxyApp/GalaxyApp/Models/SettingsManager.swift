@@ -130,6 +130,10 @@ struct AppSettings: Codable {
     // Auto-clear threshold constraints
     static let autoClearThresholdRange: ClosedRange<Int> = 50...99
 
+    // New session defaults (scoped to in-app session creation)
+    var newSessionDefaultDir: String = "~/"       // Default start directory for new sessions
+    var newSessionLastPersona: String? = nil      // Last-used persona name
+
     static let `default` = AppSettings()
 
     // Custom decoder to handle missing keys gracefully when adding new settings
@@ -148,6 +152,8 @@ struct AppSettings: Codable {
         gitStatusStyle = try container.decodeIfPresent(GitStatusStyle.self, forKey: .gitStatusStyle) ?? .symbolic
         autoClearEnabled = try container.decodeIfPresent(Bool.self, forKey: .autoClearEnabled) ?? true
         autoClearThreshold = try container.decodeIfPresent(Int.self, forKey: .autoClearThreshold) ?? 97
+        newSessionDefaultDir = try container.decodeIfPresent(String.self, forKey: .newSessionDefaultDir) ?? "~/"
+        newSessionLastPersona = try container.decodeIfPresent(String.self, forKey: .newSessionLastPersona)
     }
 
     init() {

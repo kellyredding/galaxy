@@ -119,6 +119,16 @@ class MainMenu: NSObject, NSMenuDelegate {
     private func buildFileMenu(_ menu: NSMenu) {
         menu.removeAllItems()
 
+        // New Session (⌘N) - always available at top
+        let newItem = NSMenuItem(
+            title: "New Session...",
+            action: #selector(MenuActions.newSession(_:)),
+            keyEquivalent: "n"
+        )
+        newItem.target = MenuActions.shared
+        menu.addItem(newItem)
+        menu.addItem(.separator())
+
         let activeSession = sessionManager.activeSession
         let hasSessions = !sessionManager.sessions.isEmpty
 
@@ -510,6 +520,10 @@ class MenuActions: NSObject {
 
     // MARK: - File Menu Actions
 
+    @objc func newSession(_ sender: Any?) {
+        NotificationCenter.default.post(name: .showNewSession, object: nil)
+    }
+
     @objc func stopSession(_ sender: Any?) {
         guard let activeId = SessionManager.shared.activeSessionId else { return }
         SessionManager.shared.stopSession(sessionId: activeId)
@@ -653,4 +667,5 @@ class MenuActions: NSObject {
 
 extension Notification.Name {
     static let showPreferences = Notification.Name("showPreferences")
+    static let showNewSession = Notification.Name("showNewSession")
 }

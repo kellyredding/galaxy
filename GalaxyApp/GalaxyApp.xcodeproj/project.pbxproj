@@ -62,6 +62,10 @@
 		CC27D1B9C8318928AE6187FE /* SocketListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA7C61AE6C010B6F8091B0B3 /* SocketListener.swift */; };
 		D1752B86BB1A44AFB5E75F00 /* EventDebouncer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1222FD00CE1FBF7DC99BD683 /* EventDebouncer.swift */; };
 		D1DBDDFE86F84375BCFD9078 /* SessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EB1B25ADB386E0B834FA6B0 /* SessionManager.swift */; };
+		DD2222220000000000000001 /* NewSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD1111110000000000000001 /* NewSessionView.swift */; };
+		DD2222220000000000000002 /* NewSessionSheetController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD1111110000000000000002 /* NewSessionSheetController.swift */; };
+		DD2222220000000000000003 /* DirectoryField.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD1111110000000000000003 /* DirectoryField.swift */; };
+		DD2222220000000000000004 /* PersonaPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD1111110000000000000004 /* PersonaPicker.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -121,6 +125,10 @@
 		CC2222220000000000000005 /* highlight.min.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = "highlight.min.js"; sourceTree = "<group>"; };
 		CC2222220000000000000006 /* github.min.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = "github.min.css"; sourceTree = "<group>"; };
 		CC2222220000000000000007 /* github-dark.min.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = "github-dark.min.css"; sourceTree = "<group>"; };
+		DD1111110000000000000001 /* NewSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewSessionView.swift; sourceTree = "<group>"; };
+		DD1111110000000000000002 /* NewSessionSheetController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewSessionSheetController.swift; sourceTree = "<group>"; };
+		DD1111110000000000000003 /* DirectoryField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectoryField.swift; sourceTree = "<group>"; };
+		DD1111110000000000000004 /* PersonaPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonaPicker.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -177,6 +185,7 @@
 				AA2222220000000000000004 /* BellIndicatorBehavior.swift */,
 				A43C7742A36C8BAB7C4C6419 /* ChromeFontScaling.swift */,
 				AA2222220000000000000005 /* CollapsedSessionSidebar.swift */,
+				DD1111110000000000000003 /* DirectoryField.swift */,
 				43C2EE51F5ED8F5A44D27580 /* DragHandleNSView.swift */,
 				73B3B51B18B326C9BFD98925 /* ExpandedSessionSidebar.swift */,
 				C7704E47DFEE80B330501660 /* GalaxyTerminalView.swift */,
@@ -187,6 +196,8 @@
 				BB2222220000000000000003 /* LedgerLastActivityView.swift */,
 				AA2222220000000000000006 /* LedgerView.swift */,
 				CC2222220000000000000003 /* MarkdownReaderView.swift */,
+				DD1111110000000000000001 /* NewSessionView.swift */,
+				DD1111110000000000000004 /* PersonaPicker.swift */,
 				EA80B868DED26B32D6DEB65D /* SessionDragCoordinator.swift */,
 				930CA7E2539E197A2DF03CE4 /* SessionRow.swift */,
 				E474100EA691402E8DF51F3A /* SessionRowDragHandle.swift */,
@@ -228,6 +239,7 @@
 				B9DD26C1047DBD42B5051047 /* main.swift */,
 				D96AFD79CE59690C239E10B5 /* MainMenu.swift */,
 				CEB9F0C617C86CE1FDD05FF3 /* MainWindowController.swift */,
+				DD1111110000000000000002 /* NewSessionSheetController.swift */,
 				2E9CD7B5767024AE0C85E433 /* PreferencesWindowController.swift */,
 				10D8D5FBF1EB5E3155ABADCB /* Models */,
 				CC3333330000000000000001 /* Resources */,
@@ -346,6 +358,10 @@
 				CC1111110000000000000003 /* MarkdownReaderView.swift in Sources */,
 				9A7E8C74C205BD7E4329689D /* MainMenu.swift in Sources */,
 				69C769B61E2BA6F9BD8DA6FB /* MainWindowController.swift in Sources */,
+				DD2222220000000000000002 /* NewSessionSheetController.swift in Sources */,
+				DD2222220000000000000001 /* NewSessionView.swift in Sources */,
+				DD2222220000000000000003 /* DirectoryField.swift in Sources */,
+				DD2222220000000000000004 /* PersonaPicker.swift in Sources */,
 				57F83F8FAFBFC9B625678AE5 /* PreferencesWindowController.swift in Sources */,
 				C72E6931FE46DAAFE486C09E /* Session.swift in Sources */,
 				88B1D264363994AD24AC8CC6 /* SessionDragCoordinator.swift in Sources */,

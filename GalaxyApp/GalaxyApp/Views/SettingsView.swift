@@ -4,12 +4,14 @@ import SwiftUI
 
 enum SettingsTab: String, CaseIterable {
     case general
+    case sessions
     case terminal
     case alerts
 
     var title: String {
         switch self {
         case .general: return "General"
+        case .sessions: return "Sessions"
         case .terminal: return "Terminal"
         case .alerts: return "Alerts"
         }
@@ -18,6 +20,7 @@ enum SettingsTab: String, CaseIterable {
     var icon: String {
         switch self {
         case .general: return "gear"
+        case .sessions: return "text.bubble"
         case .terminal: return "apple.terminal"
         case .alerts: return "bell"
         }
@@ -50,6 +53,8 @@ struct SettingsView: View {
                 switch selectedTab {
                 case .general:
                     GeneralSettingsTab(settingsManager: settingsManager)
+                case .sessions:
+                    SessionsSettingsTab(settingsManager: settingsManager)
                 case .terminal:
                     TerminalSettingsTab(
                         settingsManager: settingsManager,
@@ -124,9 +129,29 @@ struct GeneralSettingsTab: View {
                 }
             }
 
-            SettingsCard(title: "Sessions") {
+            Spacer()
+        }
+        .padding(20)
+    }
+}
+
+// MARK: - Sessions Tab
+
+struct SessionsSettingsTab: View {
+    @ObservedObject var settingsManager: SettingsManager
+
+    var body: some View {
+        VStack(spacing: 16) {
+            SettingsCard(title: "New Session") {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Default start directory")
+                    DirectoryField(text: $settingsManager.settings.newSessionDefaultDir)
+                }
+            }
+
+            SettingsCard(title: "Git Status") {
                 VStack(alignment: .leading, spacing: 12) {
-                    SettingsRow(label: "Git status") {
+                    SettingsRow(label: "Style") {
                         Picker("", selection: $settingsManager.settings.gitStatusStyle) {
                             ForEach(GitStatusStyle.allCases, id: \.self) { style in
                                 Text(style.displayName).tag(style)
