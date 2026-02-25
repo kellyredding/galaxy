@@ -204,18 +204,18 @@ struct GitStatusPreviewView: View {
     @Environment(\.colorScheme) private var colorScheme
     private var isDark: Bool { colorScheme == .dark }
 
-    // Match SessionRow color definitions
+    // Match SessionRow color definitions (deep saturated for light, bright for dark)
     private var cwdColor: Color {
-        isDark ? .yellow : Color(red: 0.55, green: 0.35, blue: 0.0)
+        isDark ? .yellow : Color(red: 0.75, green: 0.5, blue: 0.0)
     }
     private var branchColor: Color {
-        isDark ? .green : Color(red: 0.0, green: 0.45, blue: 0.0)
+        isDark ? .green : Color(red: 0.0, green: 0.55, blue: 0.15)
     }
     private var stashColor: Color {
-        isDark ? .red : Color(red: 0.7, green: 0.0, blue: 0.0)
+        isDark ? .red : Color(red: 0.8, green: 0.1, blue: 0.1)
     }
     private var upstreamColor: Color {
-        isDark ? .cyan : Color(red: 0.0, green: 0.35, blue: 0.5)
+        isDark ? .cyan : Color(red: 0.0, green: 0.5, blue: 0.7)
     }
     private var bracketColor: Color { .secondary }
 

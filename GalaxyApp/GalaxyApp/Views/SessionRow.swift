@@ -32,25 +32,27 @@ struct SessionRow: View {
     private var isDark: Bool { colorScheme == .dark }
 
     // MARK: - Adaptive Colors
+    // Dark/selected: bright SwiftUI colors. Light unselected: deep saturated variants.
+    // Selected rows force dark colorScheme via .environment, so use bright colors to match.
 
-    /// CWD path + dirty indicator color
+    private var useBrightColors: Bool { isDark || isSelected }
+
     private var cwdColor: Color {
-        isDark ? .yellow : Color(red: 0.55, green: 0.35, blue: 0.0)
+        useBrightColors ? .yellow : Color(red: 0.75, green: 0.5, blue: 0.0)
     }
-
-    /// Branch name + staged indicator color
     private var branchColor: Color {
-        isDark ? .green : Color(red: 0.0, green: 0.45, blue: 0.0)
+        useBrightColors ? .green : Color(red: 0.0, green: 0.55, blue: 0.15)
     }
-
-    /// Stash indicator color
     private var stashColor: Color {
-        isDark ? .red : Color(red: 0.7, green: 0.0, blue: 0.0)
+        useBrightColors ? .red : Color(red: 0.8, green: 0.1, blue: 0.1)
+    }
+    private var upstreamColor: Color {
+        useBrightColors ? .cyan : Color(red: 0.0, green: 0.5, blue: 0.7)
     }
 
-    /// Ahead/behind indicator color
-    private var upstreamColor: Color {
-        isDark ? .cyan : Color(red: 0.0, green: 0.35, blue: 0.5)
+    /// Persona line color — .secondary washes out in light mode
+    private var personaColor: Color {
+        useBrightColors ? .secondary : .primary.opacity(0.7)
     }
 
     var body: some View {
@@ -79,7 +81,7 @@ struct SessionRow: View {
                             .focused($isNameFieldFocused)
                             .lineLimit(1)
                             .truncationMode(.tail)
-                            .foregroundColor(isSelected && isDark ? .white : .primary)
+                            .foregroundColor(isSelected ? .white : .primary)
                             .frame(height: fontSize.caption2LineHeight)
                             .onSubmit {
                                 commitNameEdit()
@@ -92,7 +94,7 @@ struct SessionRow: View {
                             .chromeFontMono(size: fontSize.caption2, weight: .medium)
                             .lineLimit(1)
                             .truncationMode(.tail)
-                            .foregroundColor(isSelected && isDark ? .white : .primary)
+                            .foregroundColor(isSelected ? .white : .primary)
                             .frame(height: fontSize.caption2LineHeight)
                             .onTapGesture(count: 2) {
                                 beginNameEdit()
@@ -104,7 +106,7 @@ struct SessionRow: View {
                         .chromeFontMono(size: fontSize.tiny, weight: .regular)
                         .lineLimit(1)
                         .truncationMode(.tail)
-                        .foregroundColor(isSelected && isDark ? .white.opacity(0.8) : .secondary)
+                        .foregroundColor(isSelected ? .white.opacity(0.8) : personaColor)
                         .frame(height: fontSize.tinyLineHeight)
 
                     // Line 3: CWD + git status (always occupies height)
@@ -130,11 +132,14 @@ struct SessionRow: View {
         .opacity(isPlaceholder ? 0 : 1)  // Hide content when placeholder (during drag)
         .background(
             ZStack {
-                // Base background: panel background during drag (placeholder), selection color otherwise
-                Rectangle()
-                    .fill(isPlaceholder
-                        ? Color(NSColor.windowBackgroundColor)
-                        : (isSelected ? Color.accentColor.opacity(0.25) : Color.clear))
+                if isPlaceholder {
+                    Rectangle().fill(Color(NSColor.windowBackgroundColor))
+                } else if isSelected {
+                    // Dark base + accent overlay — produces the same deep blue
+                    // in both themes that dark mode gets naturally.
+                    Rectangle().fill(Color(white: 0.12))
+                    Rectangle().fill(Color.accentColor.opacity(0.25))
+                }
 
                 // Visual bell pulse overlay (only for selected session, not during drag)
                 if !isPlaceholder && isSelected && session.visualBellActive {
@@ -143,6 +148,9 @@ struct SessionRow: View {
                 }
             }
         )
+        // Force dark colorScheme on selected row so accent background + bright
+        // colors render consistently regardless of app theme.
+        .environment(\.colorScheme, isSelected ? .dark : colorScheme)
         .overlay(alignment: .bottom) {
             // Subtle separator between session rows (theme-aware, drawn over background)
             Rectangle()
@@ -215,7 +223,7 @@ struct SessionRow: View {
     ) -> Text {
         let mono = Font.system(size: fontSize.tiny, weight: .regular, design: .monospaced)
         let monoBold = Font.system(size: fontSize.tiny, weight: .bold, design: .monospaced)
-        let bracketColor: Color = isSelected && isDark ? .white.opacity(0.5) : .secondary
+        let bracketColor: Color = isSelected ? .white.opacity(0.5) : .secondary
 
         guard let cwd = session.ledgerCwd else {
             return Text("").font(mono)
