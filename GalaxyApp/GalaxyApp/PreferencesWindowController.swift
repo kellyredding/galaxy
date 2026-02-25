@@ -2,22 +2,48 @@ import AppKit
 import SwiftUI
 import Combine
 
-/// NSWindowController that hosts the SettingsView, replacing SwiftUI's Settings scene.
-/// This allows the preferences window to be opened via menu action with ⌘,
+/// NSWindowController that hosts the SettingsView as an app-modal window.
+/// Uses NSApp.runModal(for:) to capture all key events, preventing accidental
+/// keyboard shortcuts (like ⌘W) from leaking through to the main window.
 class PreferencesWindowController: NSWindowController {
     private static var shared: PreferencesWindowController?
     private var themeObserver: AnyCancellable?
+    private var escapeMonitor: Any?
 
-    /// Shows the preferences window, creating it if necessary
+    /// Shows the preferences window as an app-modal dialog.
+    /// Creates the controller on first call; reuses it on subsequent calls.
     static func showPreferences() {
         if shared == nil {
             shared = PreferencesWindowController()
         }
 
-        shared?.applyAppearance(SettingsManager.shared.settings.themePreference)
-        shared?.showWindow(nil)
-        shared?.window?.makeKeyAndOrderFront(nil)
+        guard let controller = shared else { return }
+
+        controller.applyAppearance(SettingsManager.shared.settings.themePreference)
+        controller.window?.center()
+        controller.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+
+        // Install a local event monitor for Escape — NSHostingView swallows
+        // the key event before it reaches the responder chain, so we intercept
+        // at the event level instead.
+        controller.escapeMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: .keyDown
+        ) { event in
+            if event.keyCode == 53 {  // Escape
+                controller.dismiss()
+                return nil  // consume the event
+            }
+            return event
+        }
+
+        NSApp.runModal(for: controller.window!)
+
+        // Runs after the modal event loop ends (dismiss was called)
+        if let monitor = controller.escapeMonitor {
+            NSEvent.removeMonitor(monitor)
+            controller.escapeMonitor = nil
+        }
     }
 
     private func nsAppearance(for theme: ThemePreference) -> NSAppearance? {
@@ -38,7 +64,6 @@ class PreferencesWindowController: NSWindowController {
         )
 
         window.title = "Settings"
-        window.setFrameAutosaveName("PreferencesWindow")
 
         super.init(window: window)
 
@@ -75,6 +100,14 @@ class PreferencesWindowController: NSWindowController {
         window?.appearance = nsAppearance(for: theme)
     }
 
+    private func dismiss() {
+        NSApp.stopModal()
+        // Use orderOut instead of close — close triggers a window animation
+        // on a background display link thread that crashes if the controller
+        // is deallocated before the animation completes.
+        window?.orderOut(nil)
+    }
+
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
@@ -83,8 +116,10 @@ class PreferencesWindowController: NSWindowController {
 // MARK: - NSWindowDelegate
 
 extension PreferencesWindowController: NSWindowDelegate {
-    func windowWillClose(_ notification: Notification) {
-        // Don't deallocate - keep the shared instance for quick reopening
-        // Settings are auto-saved by SettingsManager
+    /// Intercept the red X close button — redirect through dismiss() so
+    /// we use orderOut (no animation) instead of the default close.
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        dismiss()
+        return false
     }
 }
