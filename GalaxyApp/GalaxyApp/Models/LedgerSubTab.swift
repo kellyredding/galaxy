@@ -3,11 +3,11 @@ import Foundation
 /// Subtabs within the Ledger view for drilling into session data.
 /// State is global on SessionManager (not per-session), not persisted.
 enum LedgerSubTab: String, CaseIterable {
-    case lastActivity = "Last Activity"
+    case lastActivity = "Last activity"
     case files = "Files"
     case entries = "Entries"
     case identifiers = "Identifiers"
-    case suggestedName = "Suggested Name"
+    case suggestedName = "Suggested name"
 
     var icon: String {
         switch self {

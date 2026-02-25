@@ -170,7 +170,7 @@ struct LedgerEntriesView: View {
     private var headerRow: some View {
         HStack(spacing: 0) {
             sortableHeader("Type", column: .entryType, width: 120)
-            sortableHeader("Importance", column: .importance, width: 80)
+            sortableHeader("Importance", column: .importance, width: 100)
             sortableHeader("Source", column: .source, width: 70)
             sortableHeader("Content", column: .content, width: nil)
             sortableHeader("Category", column: .category, width: 100)
@@ -194,6 +194,7 @@ struct LedgerEntriesView: View {
                 Text(title)
                     .chromeFont(size: fontSize.caption2, weight: .semibold)
                     .foregroundColor(.secondary)
+                    .textCase(.uppercase)
                 if sortColumn == column {
                     Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
                         .font(.system(size: 8))
@@ -220,7 +221,7 @@ struct LedgerEntriesView: View {
             Text(entry.importance)
                 .chromeFontMono(size: fontSize.caption2)
                 .foregroundColor(importanceColor(entry.importance))
-                .frame(width: 80, alignment: .leading)
+                .frame(width: 100, alignment: .leading)
 
             Text(entry.source ?? "--")
                 .chromeFontMono(size: fontSize.caption2)

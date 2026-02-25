@@ -144,16 +144,13 @@ struct LedgerView: View {
                 ledgerRow("Suggested name", value: session.ledgerSuggestedName ?? "--")
                 ledgerRow("Ref", value: session.sessionRef)
                 ledgerRow("Persona", value: session.personaName ?? "--")
-                if let started = session.ledgerStartedAt {
-                    ledgerRow("Started", value: formatTimestamp(started))
-                }
             }
             .frame(width: columnWidth, alignment: .leading)
 
             // Environment column
             ledgerSection("Environment") {
                 if let project = session.ledgerProjectDir {
-                    ledgerRow("Project", value: abbreviatePath(project))
+                    ledgerRow("Project dir", value: abbreviatePath(project))
                 }
                 if let cwd = session.ledgerCwd {
                     ledgerRow("Working dir", value: abbreviatePath(cwd))
@@ -172,6 +169,9 @@ struct LedgerView: View {
 
             // Usage column
             ledgerSection("Usage") {
+                if let started = session.ledgerStartedAt {
+                    ledgerRow("Started", value: formatTimestamp(started))
+                }
                 if let pct = session.ledgerContextPercentage {
                     contextRow(percentage: pct)
                 }

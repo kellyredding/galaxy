@@ -118,6 +118,7 @@ struct LedgerFilesView: View {
                 Text(title)
                     .chromeFont(size: fontSize.caption2, weight: .semibold)
                     .foregroundColor(.secondary)
+                    .textCase(.uppercase)
                 if sortColumn == column {
                     Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
                         .font(.system(size: 8))
