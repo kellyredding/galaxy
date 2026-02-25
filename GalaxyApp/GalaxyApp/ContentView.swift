@@ -189,6 +189,7 @@ struct ContentView: View {
                             isWindowFocused: sessionManager.isWindowFocused,
                             isOnTerminalTab: sessionManager.activeTab == .terminal
                         )
+                        .withClearBehavior()
                     }
                 }
             }
@@ -309,6 +310,19 @@ struct TabUnreadIndicator: View {
             UnreadIndicator()
                 .offset(x: 4, y: 2)
         }
+    }
+}
+
+extension TabUnreadIndicator {
+    /// Attach auto-clear behavior so the tab dot clears independently
+    /// of the sidebar row (which has its own behavior modifier).
+    func withClearBehavior() -> some View {
+        self.unreadIndicatorBehavior(
+            session: session,
+            isSelected: true,  // tab indicator is always for the active session
+            isWindowFocused: isWindowFocused,
+            isOnTerminalTab: isOnTerminalTab
+        )
     }
 }
 
