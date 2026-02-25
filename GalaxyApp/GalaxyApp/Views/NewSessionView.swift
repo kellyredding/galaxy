@@ -6,13 +6,14 @@ struct NewSessionView: View {
 
     // Focus management
     enum FocusField: Hashable {
-        case directory, persona, vibe, create
+        case directory, persona, name, vibe, create
     }
     @FocusState private var focusedField: FocusField?
 
     // Form state
     @State private var startDir: String
     @State private var selectedPersona: String? = nil
+    @State private var givenName: String = ""
     @State private var isVibe: Bool = false
     @State private var errorMessage: String? = nil
     @State private var personaBridge = PersonaPickerBridge()
@@ -114,6 +115,17 @@ struct NewSessionView: View {
                 }
             }
 
+            // Session name
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Name (optional)")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.secondary)
+
+                TextField("Eventually auto-generated if none given", text: $givenName)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($focusedField, equals: .name)
+            }
+
             // Vibe mode checkbox
             Toggle("Vibe (dangerously skip permissions)", isOn: $isVibe)
                 .toggleStyle(.checkbox)
@@ -186,9 +198,14 @@ struct NewSessionView: View {
 
         // Create session with expanded path — Session.workingDirectory must
         // be a fully expanded absolute path (same contract as URL handler).
+        // Normalize given name: empty string → nil (let auto-generation handle it)
+        let trimmedName = givenName.trimmingCharacters(in: .whitespaces)
+        let finalName: String? = trimmedName.isEmpty ? nil : trimmedName
+
         SessionManager.shared.createSession(
             workingDirectory: expanded,
             personaName: selectedPersona,
+            givenName: finalName,
             isVibe: isVibe
         )
 

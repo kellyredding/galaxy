@@ -170,6 +170,7 @@ class SessionManager: ObservableObject {
     func createSession(
         workingDirectory: String? = nil,
         personaName: String? = nil,
+        givenName: String? = nil,
         isVibe: Bool = false,
         resumeSessionId: String? = nil
     ) -> Session {
@@ -186,6 +187,9 @@ class SessionManager: ObservableObject {
             isVibe: isVibe,
             resumeSessionId: resumeUUID
         )
+
+        // Set optional user-assigned name (Galaxy-only, not passed to Claude)
+        session.givenName = givenName
 
         // Determine the executable path: claude-persona for persona sessions, claude for vanilla
         let executablePath: String
