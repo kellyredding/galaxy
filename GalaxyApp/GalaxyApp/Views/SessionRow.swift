@@ -114,11 +114,11 @@ struct SessionRow: View {
                         .frame(height: fontSize.tinyLineHeight)
                 }
 
-                // Unread bell indicator - bright red dot, tight to top-left corner
+                // Unread indicator - bright red dot, tight to top-left corner
                 // Shows instantly, fades out over 3 seconds (animation applied via withAnimation when clearing)
-                UnreadBellIndicator()
+                UnreadIndicator()
                     .offset(x: -6, y: -2)
-                    .opacity(session.hasUnreadBell ? 1 : 0)
+                    .opacity(session.hasUnreadResponse ? 1 : 0)
             }
         }
         .padding(.top, 6)
@@ -194,7 +194,7 @@ struct SessionRow: View {
                 isHovered = true
             }
         }
-        .bellIndicatorBehavior(
+        .unreadIndicatorBehavior(
             session: session,
             isSelected: isSelected,
             isWindowFocused: isWindowFocused,

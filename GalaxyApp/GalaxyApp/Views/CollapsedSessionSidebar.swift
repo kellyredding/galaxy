@@ -30,7 +30,7 @@ struct CollapsedSessionSidebar: View {
 /// A single row in the collapsed session sidebar.
 /// Shows the status dot centered in a row that matches the expanded
 /// sidebar row height, plus unread bell indicator (top-right) and
-/// visual bell flash overlay on the full row area.
+/// visual bell flash overlay on the full row area, and unread indicator.
 struct CollapsedSessionRow: View {
     @ObservedObject var session: Session
     let isSelected: Bool
@@ -66,9 +66,9 @@ struct CollapsedSessionRow: View {
         }
         .frame(width: 32, height: rowHeight)
         .overlay(alignment: .topTrailing) {
-            // Unread bell indicator — top-right of the row
-            if session.hasUnreadBell {
-                UnreadBellIndicator()
+            // Unread indicator — top-right of the row
+            if session.hasUnreadResponse {
+                UnreadIndicator()
                     .offset(x: 0, y: 6)
             }
         }
@@ -81,7 +81,7 @@ struct CollapsedSessionRow: View {
         .contentShape(Rectangle())
         .help(session.displayName)
         .animation(.easeInOut(duration: 0.08), value: session.visualBellActive)
-        .bellIndicatorBehavior(
+        .unreadIndicatorBehavior(
             session: session,
             isSelected: isSelected,
             isWindowFocused: isWindowFocused,

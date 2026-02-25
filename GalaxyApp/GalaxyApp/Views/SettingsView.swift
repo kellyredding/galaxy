@@ -409,7 +409,7 @@ struct AlertsSettingsTab: View {
                     }
 
                     HStack {
-                        Toggle("Show unread indicator", isOn: $settingsManager.settings.showBellBadge)
+                        Toggle("Show unread indicator", isOn: $settingsManager.settings.showUnreadIndicator)
                             .toggleStyle(.checkbox)
                         Spacer()
                     }

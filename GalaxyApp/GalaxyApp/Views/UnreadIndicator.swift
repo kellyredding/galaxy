@@ -1,10 +1,10 @@
 import SwiftUI
 
-/// Bright red indicator dot shown when a session has an unread bell.
+/// Bright red indicator dot shown when a session has an unread response.
 /// Parent views position this via offset or ZStack alignment.
-/// Visibility is controlled by the parent based on session.hasUnreadBell
-/// and the showBellBadge setting.
-struct UnreadBellIndicator: View {
+/// Visibility is controlled by the parent based on session.hasUnreadResponse
+/// and the showUnreadIndicator setting.
+struct UnreadIndicator: View {
     var body: some View {
         Circle()
             .fill(Color(red: 1.0, green: 0.2, blue: 0.2))

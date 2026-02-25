@@ -1,23 +1,23 @@
 import SwiftUI
 
-/// ViewModifier that auto-clears a session's unread bell indicator
+/// ViewModifier that auto-clears a session's unread response indicator
 /// when the session is selected, the window is focused, and the
 /// terminal tab is active. All three conditions must be met — viewing
 /// the Ledger or Snapshots tab keeps the indicator visible.
-struct BellIndicatorBehavior: ViewModifier {
+struct UnreadIndicatorBehavior: ViewModifier {
     @ObservedObject var session: Session
     let isSelected: Bool
     let isWindowFocused: Bool
     let isOnTerminalTab: Bool
 
     private var shouldClear: Bool {
-        isSelected && isWindowFocused && isOnTerminalTab && session.hasUnreadBell
+        isSelected && isWindowFocused && isOnTerminalTab && session.hasUnreadResponse
     }
 
     private func clearIfNeeded() {
         if shouldClear {
             withAnimation(.easeOut(duration: 3.0)) {
-                session.hasUnreadBell = false
+                session.hasUnreadResponse = false
             }
         }
     }
@@ -27,7 +27,7 @@ struct BellIndicatorBehavior: ViewModifier {
             .onChange(of: isSelected) { _, _ in clearIfNeeded() }
             .onChange(of: isWindowFocused) { _, _ in clearIfNeeded() }
             .onChange(of: isOnTerminalTab) { _, _ in clearIfNeeded() }
-            .onChange(of: session.hasUnreadBell) { _, newValue in
+            .onChange(of: session.hasUnreadResponse) { _, newValue in
                 if newValue && isSelected && isWindowFocused && isOnTerminalTab {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                         clearIfNeeded()
@@ -38,14 +38,14 @@ struct BellIndicatorBehavior: ViewModifier {
 }
 
 extension View {
-    /// Apply bell indicator auto-clear behavior.
-    func bellIndicatorBehavior(
+    /// Apply unread indicator auto-clear behavior.
+    func unreadIndicatorBehavior(
         session: Session,
         isSelected: Bool,
         isWindowFocused: Bool,
         isOnTerminalTab: Bool
     ) -> some View {
-        modifier(BellIndicatorBehavior(
+        modifier(UnreadIndicatorBehavior(
             session: session,
             isSelected: isSelected,
             isWindowFocused: isWindowFocused,

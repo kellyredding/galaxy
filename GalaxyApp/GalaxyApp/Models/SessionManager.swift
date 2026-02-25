@@ -201,7 +201,8 @@ class SessionManager: ObservableObject {
         session.processHandler = handler
         session.terminalView.processDelegate = handler
 
-        // Set up bell callback
+        // Set up bell callback — handles sound/visual bell only.
+        // Unread indicator is triggered by busy→idle, not bell events.
         session.terminalView.onBell = { [weak session] in
             guard let session = session else { return }
             DispatchQueue.main.async {
@@ -209,21 +210,11 @@ class SessionManager: ObservableObject {
 
                 switch preference {
                 case .visualBell:
-                    // Trigger visual bell (3 flashes, each shorter)
                     self.triggerVisualBell(for: session)
                 case .none:
-                    // Do nothing
                     break
                 default:
-                    // Sound-based (system or custom)
                     SettingsManager.shared.handleBell()
-                }
-
-                // Always show unread indicator on bell (if setting is enabled)
-                // SessionRow handles clearing it when session is selected + focused
-                let showBadge = SettingsManager.shared.settings.showBellBadge
-                if showBadge {
-                    session.hasUnreadBell = true
                 }
             }
         }
@@ -233,7 +224,7 @@ class SessionManager: ObservableObject {
             session?.markBusy()
         }
 
-        // Register persistent idle callback for auto-clear context check
+        // Register persistent idle callback for auto-clear + unread indicator
         session.onIdleTransition = { [weak self] session in
             self?.handleIdleTransition(for: session)
         }
@@ -353,7 +344,8 @@ class SessionManager: ObservableObject {
         session.processHandler = handler
         session.terminalView.processDelegate = handler
 
-        // Set up bell callback
+        // Set up bell callback — handles sound/visual bell only.
+        // Unread indicator is triggered by busy→idle, not bell events.
         session.terminalView.onBell = { [weak session] in
             guard let session = session else { return }
             DispatchQueue.main.async {
@@ -361,21 +353,11 @@ class SessionManager: ObservableObject {
 
                 switch preference {
                 case .visualBell:
-                    // Trigger visual bell (3 flashes, each shorter)
                     self.triggerVisualBell(for: session)
                 case .none:
-                    // Do nothing
                     break
                 default:
-                    // Sound-based (system or custom)
                     SettingsManager.shared.handleBell()
-                }
-
-                // Always show unread indicator on bell (if setting is enabled)
-                // SessionRow handles clearing it when session is selected + focused
-                let showBadge = SettingsManager.shared.settings.showBellBadge
-                if showBadge {
-                    session.hasUnreadBell = true
                 }
             }
         }
@@ -385,7 +367,7 @@ class SessionManager: ObservableObject {
             session?.markBusy()
         }
 
-        // Register persistent idle callback for auto-clear context check
+        // Register persistent idle callback for auto-clear + unread indicator
         session.onIdleTransition = { [weak self] session in
             self?.handleIdleTransition(for: session)
         }
@@ -451,6 +433,14 @@ class SessionManager: ObservableObject {
     /// Called on every busy→idle transition for a session.
     /// Checks context usage and auto-clears if above threshold.
     private func handleIdleTransition(for session: Session) {
+        // Show unread indicator when a non-focused session goes idle
+        // (assistant finished responding while you're elsewhere)
+        let showIndicator = SettingsManager.shared.settings.showUnreadIndicator
+        let isViewingThisSession = session.id == activeSessionId && activeTab == .terminal
+        if showIndicator && !isViewingThisSession {
+            session.hasUnreadResponse = true
+        }
+
         let settings = SettingsManager.shared.settings
         guard settings.autoClearEnabled else { return }
 
@@ -496,14 +486,14 @@ class SessionManager: ObservableObject {
         activeSessionId = sessionId
         SessionPersistence.shared.markDirty()
 
-        // Clear unread bell immediately on switch (with fade animation).
+        // Clear unread indicator immediately on switch (with fade animation).
         // Done here rather than solely in SessionRow's onChange(of: isSelected)
         // to avoid gesture disambiguation delays when double-click gestures
         // exist on child views. Only clears when on the terminal tab — viewing
         // Ledger or Snapshots keeps the indicator visible.
-        if session.hasUnreadBell && isWindowFocused && activeTab == .terminal {
+        if session.hasUnreadResponse && isWindowFocused && activeTab == .terminal {
             withAnimation(.easeOut(duration: 3.0)) {
-                session.hasUnreadBell = false
+                session.hasUnreadResponse = false
             }
         }
 

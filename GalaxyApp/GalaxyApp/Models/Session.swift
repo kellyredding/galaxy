@@ -49,7 +49,7 @@ class Session: Identifiable, ObservableObject {
     @Published var isRunning: Bool = false
     @Published var hasExited: Bool = false
     @Published var exitCode: Int32?
-    @Published var hasUnreadBell: Bool = false
+    @Published var hasUnreadResponse: Bool = false
     @Published var visualBellActive: Bool = false
     @Published var isBusy: Bool = false
 

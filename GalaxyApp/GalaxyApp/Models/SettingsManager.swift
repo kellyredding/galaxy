@@ -101,7 +101,7 @@ struct AppSettings: Codable {
     var isSidebarVisible: Bool = true  // Sidebar expanded/collapsed state
     var themePreference: ThemePreference = .system
     var bellPreference: BellPreference = .system
-    var showBellBadge: Bool = true
+    var showUnreadIndicator: Bool = true
 
     // Font settings
     var terminalFontFamily: String = "SF Mono"  // Terminal font family (must be monospaced)
@@ -144,7 +144,7 @@ struct AppSettings: Codable {
         isSidebarVisible = try container.decodeIfPresent(Bool.self, forKey: .isSidebarVisible) ?? true
         themePreference = try container.decodeIfPresent(ThemePreference.self, forKey: .themePreference) ?? .system
         bellPreference = try container.decodeIfPresent(BellPreference.self, forKey: .bellPreference) ?? .system
-        showBellBadge = try container.decodeIfPresent(Bool.self, forKey: .showBellBadge) ?? true
+        showUnreadIndicator = try container.decodeIfPresent(Bool.self, forKey: .showUnreadIndicator) ?? true
         terminalFontFamily = try container.decodeIfPresent(String.self, forKey: .terminalFontFamily) ?? "SF Mono"
         chromeFontSize = try container.decodeIfPresent(CGFloat.self, forKey: .chromeFontSize) ?? 13.0
         defaultTerminalFontSize = try container.decodeIfPresent(CGFloat.self, forKey: .defaultTerminalFontSize) ?? 13.0

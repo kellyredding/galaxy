@@ -185,7 +185,9 @@ struct ContentView: View {
                     if tab == .terminal, let session = activeSession {
                         TabUnreadIndicator(
                             session: session,
-                            showBellBadge: settingsManager.settings.showBellBadge
+                            showUnreadIndicator: settingsManager.settings.showUnreadIndicator,
+                            isWindowFocused: sessionManager.isWindowFocused,
+                            isOnTerminalTab: sessionManager.activeTab == .terminal
                         )
                     }
                 }
@@ -292,20 +294,24 @@ struct TerminalContainerView: View {
     }
 }
 
-/// Observes a session's hasUnreadBell so the tab picker re-renders
+/// Observes a session's hasUnreadResponse so the tab picker re-renders
 /// reactively. Without @ObservedObject, the computed-property chain
 /// in ContentView doesn't establish SwiftUI observation.
+/// Also attaches UnreadIndicatorBehavior to auto-clear when viewing terminal.
 struct TabUnreadIndicator: View {
     @ObservedObject var session: Session
-    let showBellBadge: Bool
+    let showUnreadIndicator: Bool
+    let isWindowFocused: Bool
+    let isOnTerminalTab: Bool
 
     var body: some View {
-        if session.hasUnreadBell && showBellBadge {
-            UnreadBellIndicator()
-                .offset(x: -2, y: -2)
+        if session.hasUnreadResponse && showUnreadIndicator {
+            UnreadIndicator()
+                .offset(x: 4, y: 2)
         }
     }
 }
+
 
 /// Wrapper view that observes individual session state changes
 struct SessionContentView: View {
