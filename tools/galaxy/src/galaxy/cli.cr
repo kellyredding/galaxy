@@ -57,13 +57,13 @@ module Galaxy
       # 2. No args: open Galaxy.app with vanilla Claude session
       #    (--resume without a command opens Mac app for vanilla resume)
       if positional_args.empty? && !resume_id
-        open_session
+        open_session(vibe: vibe)
         return
       end
 
       # 3. No args + --resume: open Galaxy.app for vanilla resume
       if positional_args.empty? && resume_id
-        open_session(resume: resume_id)
+        open_session(vibe: vibe, resume: resume_id)
         return
       end
 

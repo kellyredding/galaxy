@@ -461,12 +461,15 @@ class Session: Identifiable, ObservableObject {
         var cmd = "cd \(workingDirectory)"
         if let persona = personaName {
             cmd += " && claude-persona \(persona)"
+            cmd += " --resume \(claudeSessionId)"
+            if isVibe {
+                cmd += " --vibe"
+            }
         } else {
-            cmd += " && CLAUDE_CLI_SESSION_ID=\(claudeSessionId) claude"
-        }
-        cmd += " --resume \(claudeSessionId)"
-        if isVibe {
-            cmd += " --vibe"
+            cmd += " && claude --resume \(claudeSessionId)"
+            if isVibe {
+                cmd += " --dangerously-skip-permissions"
+            }
         }
         return cmd
     }
@@ -619,6 +622,10 @@ class Session: Identifiable, ObservableObject {
                 args.append("--session-id")
                 args.append(claudeSessionId)
                 NSLog("Session: Starting new Claude session with ID %@", claudeSessionId)
+            }
+
+            if isVibe {
+                args.append("--dangerously-skip-permissions")
             }
 
             // Inject CLAUDE_CLI_SESSION_ID into process environment so ledger

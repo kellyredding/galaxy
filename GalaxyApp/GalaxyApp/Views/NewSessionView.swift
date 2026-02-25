@@ -115,7 +115,7 @@ struct NewSessionView: View {
             }
 
             // Vibe mode checkbox
-            Toggle("Vibe mode", isOn: $isVibe)
+            Toggle("Vibe (dangerously skip permissions)", isOn: $isVibe)
                 .toggleStyle(.checkbox)
                 .focusable()
                 .focused($focusedField, equals: .vibe)
