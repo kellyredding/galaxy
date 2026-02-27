@@ -212,6 +212,7 @@ class Session: Identifiable, ObservableObject {
         self.terminalView = GalaxyTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
 
         configureTerminal()
+        applyScrollbackSize()
     }
 
     private func configureTerminal() {
@@ -247,6 +248,17 @@ class Session: Identifiable, ObservableObject {
                 self?.applyColorTheme()
             }
             .store(in: &cancellables)
+
+        // Observe scrollback size changes
+        SettingsManager.shared.$settings
+            .map(\.terminalScrollbackLines)
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.applyScrollbackSize()
+            }
+            .store(in: &cancellables)
     }
 
     /// Apply the selected color theme to the terminal view.
@@ -276,6 +288,15 @@ class Session: Identifiable, ObservableObject {
         }
         NSLog("Session[%@]: applyFont family=%@ -> fontName=%@ size=%.0f", sessionRef, family, font.fontName, terminalFontSize)
         terminalView.font = font
+    }
+
+    /// Apply the scrollback buffer size from settings to the terminal view.
+    /// Uses SwiftTerm's changeHistorySize() which supports runtime changes —
+    /// increasing preserves existing history, decreasing trims oldest lines.
+    private func applyScrollbackSize() {
+        let lines = SettingsManager.shared.settings.terminalScrollbackLines
+        terminalView.terminal.changeHistorySize(lines)
+        NSLog("Session[%@]: Applied scrollback size %d lines", sessionRef, lines)
     }
 
     /// Increase terminal font size by one step
@@ -527,6 +548,8 @@ class Session: Identifiable, ObservableObject {
         // Stopped state — no running process
         self.isRunning = false
         self.hasExited = true
+
+        applyScrollbackSize()
 
         // Restore ledger enrichment data (immediate sidebar content)
         self.ledgerSessionId = state.ledgerSessionId

@@ -338,10 +338,11 @@ class SessionManager: ObservableObject {
         // The new Claude process will re-enable mode 1004 when it initializes.
         session.terminalView.feed(text: "\u{1b}[?1004l")
 
-        // Clear the terminal buffer before resuming
-        // This prevents duplicate content when Claude redraws after resume
-        // ESC[2J = clear screen, ESC[3J = clear scrollback, ESC[H = cursor home
-        session.terminalView.feed(text: "\u{1b}[2J\u{1b}[3J\u{1b}[H")
+        // Clear the visible screen before resuming so Claude redraws cleanly.
+        // ESC[2J = clear screen, ESC[H = cursor home.
+        // Note: ESC[3J (clear scrollback) is intentionally omitted to preserve
+        // scroll history across resumes.
+        session.terminalView.feed(text: "\u{1b}[2J\u{1b}[H")
 
         // Re-attach process handler
         let handler = TerminalProcessHandler(session: session, sessionManager: self)

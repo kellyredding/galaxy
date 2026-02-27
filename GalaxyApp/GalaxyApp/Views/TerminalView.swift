@@ -134,9 +134,6 @@ class TerminalHostView: NSView {
         terminalView.autoresizingMask = [.width, .height]
         addSubview(terminalView)
 
-        // Hide SwiftTerm's built-in scrollbar (it's private, so find via subviews)
-        hideTerminalScrollbar()
-
         // Add drag highlight overlay ON TOP of terminal view
         let highlight = DragHighlightView(frame: bounds)
         highlight.autoresizingMask = [.width, .height]
@@ -146,15 +143,6 @@ class TerminalHostView: NSView {
         // Request focus after a short delay
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
             self?.requestFocus()
-        }
-    }
-
-    /// Hide the built-in scrollbar from SwiftTerm
-    private func hideTerminalScrollbar() {
-        for subview in terminalView.subviews {
-            if let scroller = subview as? NSScroller {
-                scroller.isHidden = true
-            }
         }
     }
 

@@ -30,6 +30,7 @@ enum SettingsTab: String, CaseIterable {
 struct SettingsView: View {
     @ObservedObject var settingsManager = SettingsManager.shared
     @State private var fontSizeText: String = ""
+    @State private var scrollbackText: String = ""
     @State private var selectedTab: SettingsTab = .general
 
     var body: some View {
@@ -58,7 +59,8 @@ struct SettingsView: View {
                 case .terminal:
                     TerminalSettingsTab(
                         settingsManager: settingsManager,
-                        fontSizeText: $fontSizeText
+                        fontSizeText: $fontSizeText,
+                        scrollbackText: $scrollbackText
                     )
                 case .alerts:
                     AlertsSettingsTab(settingsManager: settingsManager)
@@ -264,6 +266,22 @@ struct GitStatusPreviewView: View {
 struct TerminalSettingsTab: View {
     @ObservedObject var settingsManager: SettingsManager
     @Binding var fontSizeText: String
+    @Binding var scrollbackText: String
+
+    /// Format an integer with comma grouping (e.g. 10000 → "10,000")
+    private static func formatWithCommas(_ value: Int) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.groupingSeparator = ","
+        formatter.usesGroupingSeparator = true
+        return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
+    }
+
+    /// Parse a comma-formatted string to an integer (e.g. "10,000" → 10000)
+    private static func parseCommaNumber(_ text: String) -> Int? {
+        let stripped = text.replacingOccurrences(of: ",", with: "")
+        return Int(stripped)
+    }
 
     var body: some View {
         VStack(spacing: 16) {
@@ -314,6 +332,45 @@ struct TerminalSettingsTab: View {
                                 .foregroundColor(.secondary)
                         }
                     }
+                }
+            }
+
+            // Scrollback settings
+            SettingsCard(title: "Scrollback") {
+                VStack(alignment: .leading, spacing: 12) {
+                    SettingsRow(label: "History size") {
+                        HStack(spacing: 4) {
+                            TextField("", text: $scrollbackText)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 80)
+                                .multilineTextAlignment(.trailing)
+                                .onAppear {
+                                    scrollbackText = Self.formatWithCommas(
+                                        settingsManager.settings.terminalScrollbackLines
+                                    )
+                                }
+                                .onChange(of: scrollbackText) { _, newValue in
+                                    if let value = Self.parseCommaNumber(newValue) {
+                                        let clamped = min(
+                                            max(value, AppSettings.terminalScrollbackRange.lowerBound),
+                                            AppSettings.terminalScrollbackRange.upperBound
+                                        )
+                                        settingsManager.settings.terminalScrollbackLines = clamped
+                                    }
+                                }
+                                .onChange(of: settingsManager.settings.terminalScrollbackLines) { _, newValue in
+                                    let newText = Self.formatWithCommas(newValue)
+                                    if scrollbackText != newText {
+                                        scrollbackText = newText
+                                    }
+                                }
+
+                            Text("lines")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    ScrollbackMemoryReferenceView()
                 }
             }
 
@@ -418,6 +475,57 @@ struct AlertsSettingsTab: View {
             Spacer()
         }
         .padding(20)
+    }
+}
+
+// MARK: - Scrollback Memory Reference
+
+struct ScrollbackMemoryReferenceView: View {
+    private static let numberFormatter: NumberFormatter = {
+        let fmt = NumberFormatter()
+        fmt.numberStyle = .decimal
+        fmt.groupingSeparator = ","
+        fmt.usesGroupingSeparator = true
+        return fmt
+    }()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            // Header row
+            HStack {
+                Text("Lines")
+                    .frame(width: 80, alignment: .trailing)
+                Spacer()
+                Text("Est. memory")
+                    .frame(width: 100, alignment: .trailing)
+            }
+            .font(.system(size: 10, weight: .medium, design: .monospaced))
+            .foregroundColor(.secondary)
+
+            Divider()
+
+            // Data rows
+            ForEach(AppSettings.scrollbackMemoryTiers, id: \.lines) { tier in
+                HStack {
+                    Text(Self.numberFormatter.string(from: NSNumber(value: tier.lines)) ?? "\(tier.lines)")
+                        .frame(width: 80, alignment: .trailing)
+                    Spacer()
+                    Text(tier.memory)
+                        .frame(width: 100, alignment: .trailing)
+                }
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundColor(.secondary)
+            }
+
+            // Footnote
+            Text("Based on 200-column terminal width")
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+                .padding(.top, 2)
+        }
+        .padding(8)
+        .background(Color(NSColor.textBackgroundColor).opacity(0.5))
+        .cornerRadius(6)
     }
 }
 

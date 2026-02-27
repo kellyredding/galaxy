@@ -111,6 +111,9 @@ struct AppSettings: Codable {
     // Terminal color settings
     var terminalColorThemeName: String = "terminal-classic"  // Active color theme
 
+    // Terminal scrollback settings
+    var terminalScrollbackLines: Int = 10_000  // Scrollback buffer size in lines
+
     // Session sidebar settings
     var gitStatusStyle: GitStatusStyle = .symbolic  // Git status display style
 
@@ -129,6 +132,19 @@ struct AppSettings: Codable {
 
     // Auto-clear threshold constraints
     static let autoClearThresholdRange: ClosedRange<Int> = 50...99
+
+    // Scrollback constraints
+    static let terminalScrollbackRange: ClosedRange<Int> = 500...100_000
+
+    // Reference tiers for memory estimation table (assumes 200-column terminal)
+    static let scrollbackMemoryTiers: [(lines: Int, memory: String)] = [
+        (1_000, "~3 MB"),
+        (5_000, "~16 MB"),
+        (10_000, "~32 MB"),
+        (25_000, "~80 MB"),
+        (50_000, "~160 MB"),
+        (100_000, "~320 MB"),
+    ]
 
     // New session defaults (scoped to in-app session creation)
     var newSessionDefaultDir: String = "~/"       // Default start directory for new sessions
@@ -149,6 +165,7 @@ struct AppSettings: Codable {
         chromeFontSize = try container.decodeIfPresent(CGFloat.self, forKey: .chromeFontSize) ?? 13.0
         defaultTerminalFontSize = try container.decodeIfPresent(CGFloat.self, forKey: .defaultTerminalFontSize) ?? 13.0
         terminalColorThemeName = try container.decodeIfPresent(String.self, forKey: .terminalColorThemeName) ?? "terminal-classic"
+        terminalScrollbackLines = try container.decodeIfPresent(Int.self, forKey: .terminalScrollbackLines) ?? 10_000
         gitStatusStyle = try container.decodeIfPresent(GitStatusStyle.self, forKey: .gitStatusStyle) ?? .symbolic
         autoClearEnabled = try container.decodeIfPresent(Bool.self, forKey: .autoClearEnabled) ?? true
         autoClearThreshold = try container.decodeIfPresent(Int.self, forKey: .autoClearThreshold) ?? 97

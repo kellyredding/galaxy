@@ -45,7 +45,7 @@ index deca240..4f8f287 100644
          dependencies: [
              "SwiftTerm",
 diff --git a/Sources/SwiftTerm/Apple/AppleTerminalView.swift b/Sources/SwiftTerm/Apple/AppleTerminalView.swift
-index 553a94c..5e36d5f 100644
+index 553a94c..2a23db6 100644
 --- a/Sources/SwiftTerm/Apple/AppleTerminalView.swift
 +++ b/Sources/SwiftTerm/Apple/AppleTerminalView.swift
 @@ -14,6 +14,13 @@ import ImageIO
@@ -156,6 +156,90 @@ index 553a94c..5e36d5f 100644
                      CTFontDrawGlyphs(runFont, runGlyphs, &positions, positions.count, context)
  
                      // Draw other attributes
+@@ -1471,13 +1514,12 @@ extension TerminalView {
+     
+     public func scroll (toPosition: Double)
+     {
+-        userScrolling = true
+         let displayBuffer = terminal.displayBuffer
+         let oldPosition = displayBuffer.yDisp
+-        
++
+         let maxScrollback = displayBuffer.lines.count - displayBuffer.rows
+         var newScrollPosition = Int (Double (maxScrollback) * toPosition)
+-        
++
+         if newScrollPosition < 0 {
+             newScrollPosition = 0
+         }
+@@ -1488,18 +1530,17 @@ extension TerminalView {
+         if newScrollPosition != oldPosition {
+             scrollTo(row: newScrollPosition)
+         }
+-        userScrolling = false
+     }
+-    
++
+     func scrollTo (row: Int, notifyAccessibility: Bool = true)
+     {
+         let displayBuffer = terminal.displayBuffer
+         if row != displayBuffer.yDisp {
+             terminal.setViewYDisp (row)
+-            
++
+             // tell the terminal we want to refresh all the rows
+             terminal.refresh (startRow: 0, endRow: terminal.rows)
+-            
++
+             // do the display update
+             updateDisplay (notifyAccessibility: notifyAccessibility)
+             //selectionView.notifyScrolled(source: terminal)
+@@ -1507,6 +1548,14 @@ extension TerminalView {
+             updateScroller()
+             setNeedsDisplay(frame)
+         }
++
++        // Update the terminal's userScrolling flag based on whether the
++        // viewport is at the bottom. When the user scrolls up, this
++        // prevents Terminal.scroll() from snapping yDisp back to yBase
++        // on each new line of output. Cleared when the user scrolls
++        // back to the bottom, resuming auto-follow behavior.
++        let atBottom = displayBuffer.yDisp >= displayBuffer.yBase
++        terminal.userScrolling = !atBottom
+     }
+     
+     /// Scrolls the content of the terminal one page up
+diff --git a/Sources/SwiftTerm/Buffer.swift b/Sources/SwiftTerm/Buffer.swift
+index a49310f..bb1de73 100644
+--- a/Sources/SwiftTerm/Buffer.swift
++++ b/Sources/SwiftTerm/Buffer.swift
+@@ -421,7 +421,7 @@ public final class Buffer {
+             // Deal with columns increasing (reducing needs to happen after reflow)
+             
+             if cols < newCols {
+-                for i in 0..<lines.maxLength {
++                for i in 0..<lines.count {
+                     lines [i].resize (cols: newCols, fillData: CharData.Null)
+                 }
+ 
+@@ -503,7 +503,7 @@ public final class Buffer {
+             reflow (newCols, newRows)
+             // Trim the end of the line off if cols shrunk
+             if cols > newCols {
+-                for i in 0..<lines.maxLength {
++                for i in 0..<lines.count {
+                     lines [i].resize (cols: newCols, fillData: CharData.Null)
+                 }
+             }
+@@ -511,7 +511,7 @@ public final class Buffer {
+         
+         // DEBUG: Post-condition
+         if lines.count > 0 {
+-            for i in 0..<lines.maxLength {
++            for i in 0..<lines.count {
+                 let line = lines [i]
+                 if line.count < newCols {
+                     print ("stop here newCols=\(newCols) but the element has: \(line.count)")
 diff --git a/Sources/SwiftTerm/Mac/MacExtensions.swift b/Sources/SwiftTerm/Mac/MacExtensions.swift
 index 90402c0..d53edd9 100644
 --- a/Sources/SwiftTerm/Mac/MacExtensions.swift
@@ -184,7 +268,7 @@ index 90402c0..d53edd9 100644
                          blue: CGFloat (color.blue) / 65535.0,
                          alpha: 1.0)
 diff --git a/Sources/SwiftTerm/Mac/MacTerminalView.swift b/Sources/SwiftTerm/Mac/MacTerminalView.swift
-index 412b95a..139ea67 100644
+index 412b95a..1f46354 100644
 --- a/Sources/SwiftTerm/Mac/MacTerminalView.swift
 +++ b/Sources/SwiftTerm/Mac/MacTerminalView.swift
 @@ -305,6 +305,9 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
@@ -210,3 +294,297 @@ index 412b95a..139ea67 100644
      /// When true, block element (U+2580-U+259F) and box drawing (U+2500-U+257F) characters use custom rendering.
      public var customBlockGlyphs: Bool = true {
          didSet {
+@@ -360,6 +369,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+     @objc
+     func scrollerActivated ()
+     {
++        holdScroller()  // GALAXY: Keep visible while interacting
+         switch scroller.hitPart {
+         case .decrementPage:
+             pageUp()
+@@ -380,9 +390,22 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+         default:
+             print ("Scroller: New value introduced")
+         }
++        releaseScroller()  // GALAXY: Schedule hide after interaction ends
+     }
+ 
+     let scrollerStyle: NSScroller.Style = .legacy
++
++    // GALAXY: Auto-hide scroller — starts hidden, shows on scroll/hover, fades after delay.
++    private var scrollerHideTimer: Timer?
++    private static let scrollerHideDelay: TimeInterval = 0.5
++    private var scrollerTrackingArea: NSTrackingArea?
++
++    // GALAXY: Throttle terminal resize during live window drag to avoid
++    // expensive reflow on every pixel. Coalesces to ~30fps during drag,
++    // processes the final size immediately when drag ends.
++    private var pendingResizeSize: NSSize?
++    private var resizeThrottleWork: DispatchWorkItem?
++
+     func getScrollerFrame() -> CGRect {
+         let scrollerWidth = NSScroller.scrollerWidth(for: .regular, scrollerStyle: scrollerStyle)
+         return NSRect(x: bounds.maxX - scrollerWidth, y: 0, width: scrollerWidth, height: bounds.height)
+@@ -400,16 +423,74 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+         scroller.scrollerStyle = scrollerStyle
+         scroller.knobProportion = 0.1
+         scroller.isEnabled = false
++        scroller.alphaValue = 0  // GALAXY: Start hidden
+         addSubview (scroller)
+         if let progressBarView {
+             addSubview(progressBarView, positioned: .above, relativeTo: scroller)
+         }
+         scroller.action = #selector(scrollerActivated)
+         scroller.target = self
++        setupScrollerTrackingArea()
+     }
+ 
+     func updateScrollerFrame() {
+         scroller?.frame = getScrollerFrame()
++        setupScrollerTrackingArea()
++    }
++
++    // GALAXY: Tracking area over the scroller region for hover detection
++    private func setupScrollerTrackingArea() {
++        if let existing = scrollerTrackingArea {
++            removeTrackingArea(existing)
++        }
++        // Widen the hover zone slightly beyond the scroller for easier targeting
++        let scrollerWidth = NSScroller.scrollerWidth(for: .regular, scrollerStyle: scrollerStyle)
++        let hoverWidth = scrollerWidth + 20
++        let hoverRect = NSRect(x: bounds.maxX - hoverWidth, y: 0, width: hoverWidth, height: bounds.height)
++        let area = NSTrackingArea(
++            rect: hoverRect,
++            options: [.mouseEnteredAndExited, .activeInKeyWindow],
++            owner: self,
++            userInfo: ["galaxyScroller": true]
++        )
++        scrollerTrackingArea = area
++        addTrackingArea(area)
++    }
++
++    /// Show the scroller with a fade-in and schedule auto-hide
++    func flashScroller() {
++        guard canScroll else { return }
++        scrollerHideTimer?.invalidate()
++        scrollerHideTimer = nil
++        NSAnimationContext.runAnimationGroup { ctx in
++            ctx.duration = 0.15
++            scroller.animator().alphaValue = 1
++        }
++        scheduleScrollerHide()
++    }
++
++    /// Schedule the scroller to fade out after the delay
++    private func scheduleScrollerHide() {
++        scrollerHideTimer?.invalidate()
++        scrollerHideTimer = Timer.scheduledTimer(withTimeInterval: Self.scrollerHideDelay, repeats: false) { [weak self] _ in
++            guard let self = self else { return }
++            NSAnimationContext.runAnimationGroup { ctx in
++                ctx.duration = 0.4
++                self.scroller.animator().alphaValue = 0
++            }
++        }
++    }
++
++    /// Keep the scroller visible (cancel hide timer) while interacting
++    private func holdScroller() {
++        scrollerHideTimer?.invalidate()
++        scrollerHideTimer = nil
++        scroller.alphaValue = 1
++    }
++
++    /// Release the hold and schedule hide
++    private func releaseScroller() {
++        scheduleScrollerHide()
+     }
+ 
+     /// This method sents the `nativeForegroundColor` and `nativeBackgroundColor`
+@@ -435,7 +516,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+     {
+         return NSRect (x: 0, y: 0, width: cellDimension.width * CGFloat(terminal.cols) + scroller.frame.width, height: cellDimension.height * CGFloat(terminal.rows))
+     }
+-    
++
+     func getEffectiveWidth (size: CGSize) -> CGFloat
+     {
+         return (size.width-scroller.frame.width)
+@@ -518,7 +599,35 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+         updateScrollerFrame()
+         updateCursorPosition()
+         updateProgressBarFrame()
+-        processSizeChange(newSize: frame.size)
++
++        // GALAXY: Throttle terminal resize during live window drag.
++        // The expensive reflow iterates all scrollback lines on every column
++        // change — coalescing to ~30fps keeps the drag smooth.
++        if inLiveResize {
++            pendingResizeSize = frame.size
++            if resizeThrottleWork == nil {
++                let work = DispatchWorkItem { [weak self] in
++                    guard let self, let size = self.pendingResizeSize else { return }
++                    self.pendingResizeSize = nil
++                    self.resizeThrottleWork = nil
++                    self.processSizeChange(newSize: size)
++                }
++                resizeThrottleWork = work
++                DispatchQueue.main.asyncAfter(deadline: .now() + 0.032, execute: work)
++            }
++        } else {
++            processSizeChange(newSize: frame.size)
++        }
++    }
++
++    open override func viewDidEndLiveResize() {
++        super.viewDidEndLiveResize()
++        resizeThrottleWork?.cancel()
++        resizeThrottleWork = nil
++        if let size = pendingResizeSize {
++            pendingResizeSize = nil
++            processSizeChange(newSize: size)
++        }
+     }
+ 
+     public override func resizeSubviews(withOldSize oldSize: NSSize) {
+@@ -627,10 +736,25 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+         super.flagsChanged(with: event)
+     }
+     
++    // GALAXY: Show scroller when mouse enters the right-edge tracking area
++    public override func mouseEntered(with event: NSEvent) {
++        if let userData = event.trackingArea?.userInfo as? [String: Any],
++           userData["galaxyScroller"] != nil {
++            holdScroller()
++        }
++        super.mouseEntered(with: event)
++    }
++
+     public override func mouseExited(with event: NSEvent) {
+         turnOffUrlPreview()
++        // GALAXY: Schedule scroller hide when mouse leaves the right-edge zone
++        if let userData = event.trackingArea?.userInfo as? [String: Any],
++           userData["galaxyScroller"] != nil {
++            releaseScroller()
++        }
+         super.mouseExited(with: event)
+     }
++
+     
+     /// If set to true, the terminal treats the "Option" key as the Meta key in old terminals,
+     /// which has the effect of sending the ESC character before the character that was
+@@ -1008,7 +1132,9 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+     }
+     
+     private var autoScrollDelta = 0
+-    // Callback from when the mouseDown autoscrolling timer goes off
++    private var autoScrollTimer: Timer?  // GALAXY: drives drag-to-scroll
++
++    // Callback from when the mouseDrag autoscrolling timer goes off
+     private func scrollingTimerElapsed (source: Timer)
+     {
+         if autoScrollDelta == 0 {
+@@ -1017,7 +1143,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+         if autoScrollDelta < 0 {
+             scrollUp(lines: autoScrollDelta * -1)
+         } else {
+-            scrollUp(lines: autoScrollDelta)
++            scrollDown(lines: autoScrollDelta)  // GALAXY: fixed — was scrollUp
+         }
+     }
+     
+@@ -1078,6 +1204,11 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+         //print ("Up at col=\(hit.col) row=\(hit.row) count=\(event.clickCount) selection.active=\(selection.active) didSelectionDrag=\(didSelectionDrag) ")
+         #endif
+         
++        // GALAXY: Stop drag-to-scroll timer on mouse release
++        autoScrollTimer?.invalidate()
++        autoScrollTimer = nil
++        autoScrollDelta = 0
++
+         didSelectionDrag = false
+     }
+     
+@@ -1109,11 +1240,23 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+         let screenRow = hit.row - displayBuffer.yDisp
+         if selection.active {
+             if screenRow <= 0 {
+-                autoScrollDelta = calcScrollingVelocity(delta: screenRow * -1) * -1
++                autoScrollDelta = calcAutoScrollVelocity(delta: screenRow * -1) * -1
+             } else if screenRow >= displayBuffer.rows {
+-                autoScrollDelta = calcScrollingVelocity(delta: screenRow - displayBuffer.rows)
++                autoScrollDelta = calcAutoScrollVelocity(delta: screenRow - displayBuffer.rows)
+             }
+         }
++
++        // GALAXY: Start/stop the auto-scroll timer based on whether the
++        // drag has moved past the terminal edge.
++        if autoScrollDelta != 0 && autoScrollTimer == nil {
++            autoScrollTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] timer in
++                self?.scrollingTimerElapsed(source: timer)
++            }
++        } else if autoScrollDelta == 0 {
++            autoScrollTimer?.invalidate()
++            autoScrollTimer = nil
++        }
++
+         setNeedsDisplay(bounds)
+     }
+     
+@@ -1195,19 +1338,43 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+         }
+     }
+     
++    /// Accumulated fractional scroll delta for smooth sub-line trackpad scrolling.
++    /// Trackpad momentum sends many small fractional deltas (e.g. 0.3, 0.7);
++    /// accumulating them prevents swallowing small gestures while keeping
++    /// discrete mouse-wheel clicks (which send integer deltas) responsive.
++    private var scrollDeltaAccumulator: CGFloat = 0
++
+     public override func scrollWheel(with event: NSEvent) {
+         if event.deltaY == 0 {
+             return
+         }
+-        let velocity = calcScrollingVelocity(delta: Int (abs (event.deltaY)))
+-        if event.deltaY > 0 {
+-            scrollUp (lines: velocity)
++
++        // GALAXY: Show scroller on any scroll gesture
++        flashScroller()
++
++        // Reset accumulator when a new gesture begins (trackpad touch-down)
++        if event.phase == .began || event.momentumPhase == .began {
++            scrollDeltaAccumulator = 0
++        }
++
++        // Accumulate the delta and consume whole lines
++        scrollDeltaAccumulator += event.deltaY
++        let lines = Int(scrollDeltaAccumulator)
++        if lines == 0 {
++            return  // Not enough accumulated for a full line yet
++        }
++        scrollDeltaAccumulator -= CGFloat(lines)
++
++        if lines > 0 {
++            scrollUp(lines: lines)
+         } else {
+-            scrollDown(lines: velocity)
++            scrollDown(lines: -lines)
+         }
+     }
+     
+-    private func calcScrollingVelocity (delta: Int) -> Int
++    /// Velocity for auto-scrolling during selection drag past the terminal edge.
++    /// Uses gentle acceleration: 1 line near the edge, scaling up further away.
++    private func calcAutoScrollVelocity (delta: Int) -> Int
+     {
+         if delta > 9 {
+             return max (terminal.rows, 20)
+@@ -1220,7 +1387,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+         }
+         return 1
+     }
+-    
++
+     public override func resetCursorRects() {
+         addCursorRect(bounds, cursor: .iBeam)
+     }
