@@ -24,6 +24,7 @@ struct UnreadIndicatorBehavior: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            .onAppear { clearIfNeeded() }
             .onChange(of: isSelected) { _, _ in clearIfNeeded() }
             .onChange(of: isWindowFocused) { _, _ in clearIfNeeded() }
             .onChange(of: isOnTerminalTab) { _, _ in clearIfNeeded() }
