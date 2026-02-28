@@ -138,15 +138,13 @@ struct AppSettings: Codable {
     // Scrollback constraints
     static let terminalScrollbackRange: ClosedRange<Int> = 500...100_000
 
-    // Reference tiers for memory estimation table (assumes 200-column terminal)
-    static let scrollbackMemoryTiers: [(lines: Int, memory: String)] = [
-        (1_000, "~3 MB"),
-        (5_000, "~16 MB"),
-        (10_000, "~32 MB"),
-        (25_000, "~80 MB"),
-        (50_000, "~160 MB"),
-        (100_000, "~320 MB"),
-    ]
+    /// Estimated memory usage for a given scrollback line count.
+    /// Assumes 200-column terminal width at 16 bytes per cell (3,200 bytes/line).
+    /// Always rounds up to the nearest whole MB.
+    static func estimatedScrollbackMemory(lines: Int) -> String {
+        let megabytes = ceil(Double(lines) * 3_200.0 / 1_000_000.0)
+        return "~\(Int(megabytes)) MB"
+    }
 
     // New session defaults (scoped to in-app session creation)
     var newSessionDefaultDir: String = "~/"       // Default start directory for new sessions

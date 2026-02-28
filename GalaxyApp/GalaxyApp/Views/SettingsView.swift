@@ -336,9 +336,9 @@ struct TerminalSettingsTab: View {
                 }
             }
 
-            // Scrollback settings
-            SettingsCard(title: "Scrollback") {
-                VStack(alignment: .leading, spacing: 12) {
+            // Max scrollback settings
+            SettingsCard(title: "Max scrollback") {
+                VStack(alignment: .leading, spacing: 6) {
                     SettingsRow(label: "History size") {
                         HStack(spacing: 4) {
                             TextField("", text: $scrollbackText)
@@ -368,10 +368,25 @@ struct TerminalSettingsTab: View {
 
                             Text("lines")
                                 .foregroundColor(.secondary)
+
+                            Text("·")
+                                .foregroundColor(.secondary)
+
+                            Text(AppSettings.estimatedScrollbackMemory(
+                                lines: settingsManager.settings.terminalScrollbackLines
+                            ))
+                            .foregroundColor(.secondary)
+
+                            Text("\u{2020}")
+                                .font(.system(size: 9))
+                                .foregroundColor(.secondary)
                         }
                     }
 
-                    ScrollbackMemoryReferenceView()
+                    Text("\u{2020} Based on 200-column terminal width")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                        .padding(.leading, 2)
                 }
             }
 
@@ -534,57 +549,6 @@ struct AlertsSettingsTab: View {
     private func refreshBadgeAuthStatus() async {
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         badgeAuthStatus = settings.authorizationStatus
-    }
-}
-
-// MARK: - Scrollback Memory Reference
-
-struct ScrollbackMemoryReferenceView: View {
-    private static let numberFormatter: NumberFormatter = {
-        let fmt = NumberFormatter()
-        fmt.numberStyle = .decimal
-        fmt.groupingSeparator = ","
-        fmt.usesGroupingSeparator = true
-        return fmt
-    }()
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            // Header row
-            HStack {
-                Text("Lines")
-                    .frame(width: 80, alignment: .trailing)
-                Spacer()
-                Text("Est. memory")
-                    .frame(width: 100, alignment: .trailing)
-            }
-            .font(.system(size: 10, weight: .medium, design: .monospaced))
-            .foregroundColor(.secondary)
-
-            Divider()
-
-            // Data rows
-            ForEach(AppSettings.scrollbackMemoryTiers, id: \.lines) { tier in
-                HStack {
-                    Text(Self.numberFormatter.string(from: NSNumber(value: tier.lines)) ?? "\(tier.lines)")
-                        .frame(width: 80, alignment: .trailing)
-                    Spacer()
-                    Text(tier.memory)
-                        .frame(width: 100, alignment: .trailing)
-                }
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundColor(.secondary)
-            }
-
-            // Footnote
-            Text("Based on 200-column terminal width")
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
-                .padding(.top, 2)
-        }
-        .padding(8)
-        .background(Color(NSColor.textBackgroundColor).opacity(0.5))
-        .cornerRadius(6)
     }
 }
 
