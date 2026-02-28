@@ -143,5 +143,73 @@ describe GalaxyLedger::Exchange do
       summary.files_modified.should eq(["bug.rb"])
       summary.key_actions.should eq(["Patched method"])
     end
+
+    it "deserializes with decisions and learnings" do
+      json = %|{
+        "user_request": "Fix auth bug",
+        "assistant_response": "Fixed JWT expiry check in middleware",
+        "files_modified": ["app/middleware/auth.rb"],
+        "key_actions": ["Patched expiry validation"],
+        "decisions": [
+          {
+            "choice": "Fixed in middleware",
+            "rationale": "Wrapper is shared across services",
+            "alternatives": "Patching the JWT library"
+          }
+        ],
+        "learnings": [
+          "AuthMiddleware parses tokens twice"
+        ]
+      }|
+
+      summary = GalaxyLedger::Exchange::ExchangeSummary.from_json(json)
+      summary.decisions.should_not be_nil
+      summary.decisions.not_nil!.size.should eq(1)
+      summary.decisions.not_nil![0].choice.should eq("Fixed in middleware")
+      summary.decisions.not_nil![0].rationale.should eq("Wrapper is shared across services")
+      summary.decisions.not_nil![0].alternatives.should eq("Patching the JWT library")
+      summary.learnings.should_not be_nil
+      summary.learnings.not_nil!.should eq(["AuthMiddleware parses tokens twice"])
+    end
+
+    it "handles missing decisions and learnings (backward compat)" do
+      json = %|{
+        "user_request": "Test",
+        "assistant_response": "Done",
+        "files_modified": [],
+        "key_actions": []
+      }|
+
+      summary = GalaxyLedger::Exchange::ExchangeSummary.from_json(json)
+      summary.decisions.should be_nil
+      summary.learnings.should be_nil
+    end
+  end
+
+  describe "ExchangeDecision" do
+    it "serializes to JSON" do
+      decision = GalaxyLedger::Exchange::ExchangeDecision.new(
+        choice: "Use Redis",
+        rationale: "Need cross-process caching",
+        alternatives: "In-memory cache"
+      )
+
+      json = decision.to_json
+      json.should contain("Use Redis")
+      json.should contain("rationale")
+      json.should contain("alternatives")
+    end
+
+    it "handles nil alternatives" do
+      decision = GalaxyLedger::Exchange::ExchangeDecision.new(
+        choice: "Use Redis",
+        rationale: "Need cross-process caching"
+      )
+
+      json = decision.to_json
+      parsed = GalaxyLedger::Exchange::ExchangeDecision.from_json(json)
+      parsed.choice.should eq("Use Redis")
+      parsed.alternatives.should be_nil
+    end
   end
 end

@@ -179,37 +179,47 @@ module GalaxyLedger
         lines << "session by process ID."
         lines << ""
 
-        # Recovery directives
-        lines << "When the user references something you don't recognize or something"
-        lines << "doesn't make sense:"
+        # Required Reading — guideline source files
+        guidelines = restoration.tier1.guidelines
+        guideline_paths = guidelines
+          .compact_map(&.source_file)
+          .reject(&.empty?)
+          .uniq
+          .sort
+        has_guidelines = guideline_paths.any?
+
+        if has_guidelines
+          lines << "### Required Reading"
+          lines << ""
+          lines << "Before continuing, re-read these guideline files to restore"
+          lines << "full context. The original files contain critical nuance, examples,"
+          lines << "and conditional rules that summaries cannot capture."
+          lines << ""
+          guideline_paths.each do |path|
+            lines << "- `#{Helpers.shorten_home_path(path)}`"
+          end
+          lines << ""
+        end
+
+        # Proactive directives
+        lines << "### Before Your Next Response"
+        lines << ""
+        if has_guidelines
+          lines << "1. **Re-read all guideline files** listed in Required Reading above"
+        else
+          lines << "1. **Check for guideline files** in the session file manifest below"
+        end
+        lines << "2. **Check recent code changes**: `git diff` and `git log --oneline -20`"
+        lines << "3. **Review the session file manifest** below \u2014 these are the"
+        lines << "   files actively worked on this session"
+        lines << ""
+
+        # Fallback recovery directives
+        lines << "If you hit something unfamiliar during the session:"
         lines << ""
         lines << "1. **Query the ledger**: `galaxy-ledger search --query \"QUERY\" --pid #{claude_pid}`"
-        lines << "2. **Check recent code changes**: `git diff` and `git log --oneline -20`"
-        lines << "3. **Review the session file manifest** listed below \u2014 these are the"
-        lines << "   files actively worked on this session; start searches here before"
-        lines << "   going broader"
-        lines << "4. **Check session files**: if a file isn't in the manifest below, run"
-        lines << "   `galaxy-ledger list-files --pid #{claude_pid}` to see every"
-        lines << "   file read, edited, written, or searched this session"
-        lines << "5. **Fall back to normal exploration** \u2014 Grep, Glob, Read as usual"
-
-        # Guidelines section
-        guidelines = restoration.tier1.guidelines
-        if guidelines.any?
-          lines << ""
-          lines << "---"
-          lines << ""
-          lines << "### Guidelines Active This Session"
-          lines << ""
-          grouped = Helpers.group_entries_by_source_file(guidelines)
-          grouped.each do |source_file, entries|
-            lines << "**#{Helpers.shorten_home_path(source_file)}**"
-            entries.each do |entry|
-              lines << "- #{entry.content}"
-            end
-            lines << ""
-          end
-        end
+        lines << "2. **Check session files**: `galaxy-ledger list-files --pid #{claude_pid}`"
+        lines << "3. **Fall back to normal exploration** \u2014 Grep, Glob, Read as usual"
 
         # Implementation plans section
         impl_plans = restoration.tier1.implementation_plans
@@ -248,6 +258,22 @@ module GalaxyLedger
             unless summary.key_actions.empty?
               lines << ""
               lines << "**Key actions**: #{summary.key_actions.join(", ")}"
+            end
+
+            if decisions = summary.decisions
+              decisions.each do |d|
+                line = "- Decision: #{d.choice} \u2014 rationale: #{d.rationale}"
+                if alt = d.alternatives
+                  line += ". Alternative considered: #{alt}" unless alt.empty?
+                end
+                lines << line
+              end
+            end
+
+            if learnings = summary.learnings
+              learnings.each do |l|
+                lines << "- Learning: #{l}"
+              end
             end
           else
             lines << "**You asked**: #{last_exchange.user_message}"

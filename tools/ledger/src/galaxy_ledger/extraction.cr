@@ -265,12 +265,37 @@ module GalaxyLedger
               key_actions = actions_array.compact_map(&.as_s?)
             end
 
+            decisions : Array(Exchange::ExchangeDecision)? = nil
+            if decisions_array = summary_json["decisions"]?.try(&.as_a?)
+              parsed_decisions = decisions_array.compact_map do |d|
+                next nil unless d.as_h?
+                choice = d["choice"]?.try(&.as_s?) || ""
+                rationale = d["rationale"]?.try(&.as_s?) || ""
+                next nil if choice.empty? && rationale.empty?
+                alternatives = d["alternatives"]?.try(&.as_s?)
+                Exchange::ExchangeDecision.new(
+                  choice: choice,
+                  rationale: rationale,
+                  alternatives: alternatives,
+                )
+              end
+              decisions = parsed_decisions unless parsed_decisions.empty?
+            end
+
+            learnings : Array(String)? = nil
+            if learnings_array = summary_json["learnings"]?.try(&.as_a?)
+              parsed_learnings = learnings_array.compact_map(&.as_s?).reject(&.empty?)
+              learnings = parsed_learnings unless parsed_learnings.empty?
+            end
+
             unless user_request.empty? && assistant_response.empty?
               summary = Exchange::ExchangeSummary.new(
                 user_request: user_request,
                 assistant_response: assistant_response,
                 files_modified: files_modified,
                 key_actions: key_actions,
+                decisions: decisions,
+                learnings: learnings,
               )
             end
           end

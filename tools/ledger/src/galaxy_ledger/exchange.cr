@@ -75,7 +75,7 @@ module GalaxyLedger
       @[JSON::Field(key: "user_request")]
       property user_request : String
 
-      # What was accomplished
+      # What was accomplished (2-4 sentences with approach/reasoning)
       @[JSON::Field(key: "assistant_response")]
       property assistant_response : String
 
@@ -87,11 +87,40 @@ module GalaxyLedger
       @[JSON::Field(key: "key_actions")]
       property key_actions : Array(String)
 
+      # Decisions made during the exchange with rationale
+      property decisions : Array(ExchangeDecision)?
+
+      # Insights about codebase, gotchas, or technical facts discovered
+      property learnings : Array(String)?
+
       def initialize(
         @user_request : String,
         @assistant_response : String,
         @files_modified : Array(String) = [] of String,
         @key_actions : Array(String) = [] of String,
+        @decisions : Array(ExchangeDecision)? = nil,
+        @learnings : Array(String)? = nil,
+      )
+      end
+    end
+
+    # A decision made during an exchange
+    class ExchangeDecision
+      include JSON::Serializable
+
+      # What was chosen
+      property choice : String
+
+      # Why this approach was chosen
+      property rationale : String
+
+      # What alternatives were considered (optional)
+      property alternatives : String?
+
+      def initialize(
+        @choice : String,
+        @rationale : String,
+        @alternatives : String? = nil,
       )
       end
     end

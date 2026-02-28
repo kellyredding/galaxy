@@ -261,7 +261,7 @@ describe "OnClear additionalContext" do
     ctx.should contain("full awareness")
   end
 
-  it "includes recovery directives with PID-scoped commands" do
+  it "includes proactive and fallback directives with PID-scoped commands" do
     exchange = GalaxyLedger::Exchange::LastExchange.new(
       user_message: "Test",
       full_content: "Response",
@@ -277,14 +277,17 @@ describe "OnClear additionalContext" do
     result = run_binary(["on-clear"], stdin: hook_input)
     output = JSON.parse(result[:output])
     ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+    ctx.should contain("### Before Your Next Response")
+    ctx.should contain("git diff")
+    ctx.should contain("Review the session file manifest")
+    ctx.should contain("If you hit something unfamiliar")
     ctx.should contain("Query the ledger")
     ctx.should contain("galaxy-ledger search")
     ctx.should contain("galaxy-ledger list-files")
-    ctx.should contain("git diff")
     ctx.should contain("Fall back to normal exploration")
   end
 
-  it "includes guidelines grouped by source file" do
+  it "includes guideline re-read directives with source file paths" do
     2.times do |i|
       entry = GalaxyLedger::Entry.new(
         entry_type: "guideline",
@@ -311,11 +314,15 @@ describe "OnClear additionalContext" do
     result = run_binary(["on-clear"], stdin: hook_input)
     output = JSON.parse(result[:output])
     ctx = output["hookSpecificOutput"]["additionalContext"].as_s
-    ctx.should contain("### Guidelines Active This Session")
+    ctx.should contain("### Required Reading")
+    ctx.should contain("re-read these guideline files")
     ctx.should contain("ruby-style.md")
     ctx.should contain("rspec-style.md")
-    ctx.should contain("Ruby rule 1")
-    ctx.should contain("RSpec rule 1")
+    # Should NOT contain the extracted bullet summaries
+    ctx.should_not contain("Ruby rule 1")
+    ctx.should_not contain("RSpec rule 1")
+    # Proactive directive should reference Required Reading
+    ctx.should contain("Re-read all guideline files")
   end
 
   it "includes key decisions with importance labels" do

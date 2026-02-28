@@ -72,7 +72,7 @@ describe "CLAUDE_CLI_SESSION_ID env var resolution" do
       # Should have resolved to original session (handoff data present)
       output = JSON.parse(result[:output])
       ctx = output["hookSpecificOutput"]["additionalContext"].as_s
-      ctx.should contain("trailing commas")
+      ctx.should contain("style.md")
 
       # New hook_id should map to original session
       GalaxyLedger::Database.resolve_session_identifier(new_hook_id).should eq(original_ledger_id)
