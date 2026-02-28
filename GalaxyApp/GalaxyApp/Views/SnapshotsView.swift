@@ -453,6 +453,16 @@ struct SnapshotsView: View {
                         return
                     }
                     switch context {
+                    case "emojiPopup":
+                        self.webViewRef?.evaluateJavaScript("""
+                            (function() {
+                                var ta = document.querySelector('.annotation-textarea:focus') ||
+                                         document.querySelector('.annotation-edit-textarea:focus');
+                                if (ta && typeof EmojiAutocomplete !== 'undefined') {
+                                    EmojiAutocomplete.dismiss(ta);
+                                }
+                            })()
+                        """)
                     case "editing":
                         self.webViewRef?.evaluateJavaScript(
                             "AnnotationManager.cancelEdit()"

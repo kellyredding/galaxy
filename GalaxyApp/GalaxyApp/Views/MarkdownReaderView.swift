@@ -240,6 +240,20 @@ func renderMarkdownToHTML(_ source: String, isDark: Bool) -> String {
     )
 }
 
+private let emojiDataJS: String = {
+    guard let url = Bundle.main.url(forResource: "emoji-data", withExtension: "js"),
+          let content = try? String(contentsOf: url, encoding: .utf8)
+    else { return "" }
+    return content
+}()
+
+private let emojiAutocompleteJS: String = {
+    guard let url = Bundle.main.url(forResource: "emoji-autocomplete", withExtension: "js"),
+          let content = try? String(contentsOf: url, encoding: .utf8)
+    else { return "" }
+    return content
+}()
+
 /// Build a complete HTML document with embedded styles, highlight.js,
 /// and the AnnotationManager JavaScript module.
 private func buildFullHTML(
@@ -589,6 +603,52 @@ private func buildFullHTML(
         background: transparent !important;
         line-height: 0;
     }
+    /* --- Emoji autocomplete --- */
+    .emoji-popup {
+        position: absolute;
+        z-index: 100;
+        min-width: 200px;
+        max-width: 300px;
+        max-height: 280px;
+        overflow-y: auto;
+        border: 1px solid var(--code-border);
+        border-radius: 6px;
+        background: var(--code-bg);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        font-family: -apple-system, sans-serif;
+        font-size: 13px;
+        padding: 4px 0;
+        display: none;
+    }
+    .emoji-popup-row {
+        display: flex;
+        align-items: center;
+        padding: 4px 10px;
+        cursor: pointer;
+        gap: 8px;
+    }
+    .emoji-popup-row.selected,
+    .emoji-popup-row.selected:hover {
+        background: rgba(88, 166, 255, 0.2);
+    }
+    .emoji-popup-row:hover {
+        background: rgba(88, 166, 255, 0.12);
+    }
+    .emoji-popup-emoji {
+        font-size: 18px;
+        width: 24px;
+        text-align: center;
+        flex-shrink: 0;
+    }
+    .emoji-popup-name {
+        color: var(--fg);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .emoji-popup-name .emoji-match {
+        font-weight: 600;
+    }
     </style>
     <style>\(highlightCSS)</style>
     </head>
@@ -781,11 +841,19 @@ private func buildFullHTML(
             });
             ta.addEventListener('input', function() { autoGrow(ta); });
             ta.addEventListener('keydown', function(e) {
+                if (typeof EmojiAutocomplete !== 'undefined' &&
+                    EmojiAutocomplete.handleKeyDown(ta, e)) {
+                    return;
+                }
                 if (e.key === 'Enter' && e.metaKey) {
                     e.preventDefault();
                     AnnotationManager.submitCreate();
                 }
             });
+
+            if (typeof EmojiAutocomplete !== 'undefined') {
+                EmojiAutocomplete.attach(ta);
+            }
 
             this.formElement = form;
             document.body.appendChild(form);
@@ -850,6 +918,11 @@ private func buildFullHTML(
         // --- Annotation Cards ---
 
         renderAllAnnotations() {
+            // Clean up any emoji popup for edit textareas being destroyed
+            if (typeof EmojiAutocomplete !== 'undefined') {
+                var editTas = document.querySelectorAll('.annotation-edit-textarea');
+                editTas.forEach(function(ta) { EmojiAutocomplete.detach(ta); });
+            }
             this.clearDeleteConfirmation();
             // Remove all existing card spacers and cards
             for (var num in this.cardSpacers) {
@@ -1124,11 +1197,19 @@ private func buildFullHTML(
             autoGrow(ta);
             ta.addEventListener('input', function() { autoGrow(ta); });
             ta.addEventListener('keydown', function(e) {
+                if (typeof EmojiAutocomplete !== 'undefined' &&
+                    EmojiAutocomplete.handleKeyDown(ta, e)) {
+                    return;
+                }
                 if (e.key === 'Enter' && e.metaKey) {
                     e.preventDefault();
                     AnnotationManager.submitUpdate(number);
                 }
             });
+
+            if (typeof EmojiAutocomplete !== 'undefined') {
+                EmojiAutocomplete.attach(ta);
+            }
 
             this.syncAllPositions();
             ta.focus();
@@ -1141,6 +1222,9 @@ private func buildFullHTML(
             );
             if (card) {
                 var ta = card.querySelector('.annotation-edit-textarea');
+                if (typeof EmojiAutocomplete !== 'undefined' && ta) {
+                    EmojiAutocomplete.detach(ta);
+                }
                 var originalHTML = card.getAttribute('data-original-html');
                 if (ta && originalHTML) {
                     var temp = document.createElement('div');
@@ -1301,6 +1385,19 @@ private func buildFullHTML(
         // --- Escape Context ---
 
         getEscapeContext() {
+            // Emoji popup takes highest priority — dismiss it first
+            if (typeof EmojiAutocomplete !== 'undefined') {
+                var formTa = this.formElement
+                    ? this.formElement.querySelector('textarea') : null;
+                if (formTa && EmojiAutocomplete.isActive(formTa)) return 'emojiPopup';
+                if (this.editingNumber !== null) {
+                    var editTa = document.querySelector(
+                        '.annotation-card[data-number="' + this.editingNumber
+                        + '"] .annotation-edit-textarea'
+                    );
+                    if (editTa && EmojiAutocomplete.isActive(editTa)) return 'emojiPopup';
+                }
+            }
             if (this.editingNumber !== null) return 'editing';
             if (this.expandedNumber !== null) return 'expanded';
             var ta = this.formElement
@@ -1331,6 +1428,8 @@ private func buildFullHTML(
         }
     };
     </script>
+    <script>\(emojiDataJS)</script>
+    <script>\(emojiAutocompleteJS)</script>
     </body>
     </html>
     """

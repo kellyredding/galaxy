@@ -55,6 +55,8 @@
 		CC1111110000000000000005 /* highlight.min.js in Resources */ = {isa = PBXBuildFile; fileRef = CC2222220000000000000005 /* highlight.min.js */; };
 		CC1111110000000000000006 /* github.min.css in Resources */ = {isa = PBXBuildFile; fileRef = CC2222220000000000000006 /* github.min.css */; };
 		CC1111110000000000000007 /* github-dark.min.css in Resources */ = {isa = PBXBuildFile; fileRef = CC2222220000000000000007 /* github-dark.min.css */; };
+		CC1111110000000000000008 /* emoji-data.js in Resources */ = {isa = PBXBuildFile; fileRef = CC2222220000000000000008 /* emoji-data.js */; };
+		CC1111110000000000000009 /* emoji-autocomplete.js in Resources */ = {isa = PBXBuildFile; fileRef = CC2222220000000000000009 /* emoji-autocomplete.js */; };
 		B1E71F47DE9403A1808277EC /* WatermarkBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6658F001C5C56071EC60514E /* WatermarkBackground.swift */; };
 		C27788ECAC3C2D2A1DA2024E /* GalaxyLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5D457946288879168E5D913 /* GalaxyLog.swift */; };
 		C3434D97E3E1783843E50797 /* SessionRowDragHandle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E474100EA691402E8DF51F3A /* SessionRowDragHandle.swift */; };
@@ -125,6 +127,8 @@
 		CC2222220000000000000005 /* highlight.min.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = "highlight.min.js"; sourceTree = "<group>"; };
 		CC2222220000000000000006 /* github.min.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = "github.min.css"; sourceTree = "<group>"; };
 		CC2222220000000000000007 /* github-dark.min.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = "github-dark.min.css"; sourceTree = "<group>"; };
+		CC2222220000000000000008 /* emoji-data.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = "emoji-data.js"; sourceTree = "<group>"; };
+		CC2222220000000000000009 /* emoji-autocomplete.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = "emoji-autocomplete.js"; sourceTree = "<group>"; };
 		DD1111110000000000000001 /* NewSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewSessionView.swift; sourceTree = "<group>"; };
 		DD1111110000000000000002 /* NewSessionSheetController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewSessionSheetController.swift; sourceTree = "<group>"; };
 		DD1111110000000000000003 /* DirectoryField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectoryField.swift; sourceTree = "<group>"; };
@@ -254,6 +258,8 @@
 				CC2222220000000000000007 /* github-dark.min.css */,
 				CC2222220000000000000006 /* github.min.css */,
 				CC2222220000000000000005 /* highlight.min.js */,
+				CC2222220000000000000008 /* emoji-data.js */,
+				CC2222220000000000000009 /* emoji-autocomplete.js */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -323,6 +329,8 @@
 				CC1111110000000000000005 /* highlight.min.js in Resources */,
 				CC1111110000000000000006 /* github.min.css in Resources */,
 				CC1111110000000000000007 /* github-dark.min.css in Resources */,
+				CC1111110000000000000008 /* emoji-data.js in Resources */,
+				CC1111110000000000000009 /* emoji-autocomplete.js in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
