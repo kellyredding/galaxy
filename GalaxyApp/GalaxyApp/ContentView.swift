@@ -55,6 +55,7 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 800, minHeight: 500)
+        .environment(\.chromeFontSize, settingsManager.settings.chromeFontSize)
     }
 
     // MARK: - Sidebar Column

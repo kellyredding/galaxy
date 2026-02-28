@@ -31,7 +31,6 @@ class MainWindowController: NSWindowController {
         let contentView = ContentView()
             .environmentObject(sessionManager)
             .environmentObject(settingsManager)
-            .environment(\.chromeFontSize, settingsManager.settings.chromeFontSize)
 
         // Wrap in NSHostingView
         let hostingView = NSHostingView(rootView: contentView)
