@@ -797,7 +797,7 @@ private func buildFullHTML(
             this.resizeObserver.observe(form);
         },
 
-        positionForm() {
+        positionForm(skipScroll) {
             var targetBlock = this.blocks[this.highlightEnd];
             if (!targetBlock || !this.formElement) return;
 
@@ -822,7 +822,9 @@ private func buildFullHTML(
 
             this.updateFormReference();
             this.syncAllPositions();
-            this.formElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            if (!skipScroll) {
+                this.formElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
         },
 
         updateFormReference() {
@@ -865,8 +867,9 @@ private func buildFullHTML(
                 var html = this.annotationHTMLMap[ann.number] || '';
                 this.insertCard(ann, html);
             }
-            // Re-position form after cards (cards may have shifted it)
-            if (this.formElement) this.positionForm();
+            // Re-position form after cards (cards may have shifted it);
+            // skip scrollIntoView — callers manage scroll explicitly
+            if (this.formElement) this.positionForm(true);
             // Re-apply expanded line highlights (cards were rebuilt)
             if (this.expandedNumber !== null) {
                 this.applyExpandedHighlight(this.expandedNumber);
@@ -1237,6 +1240,8 @@ private func buildFullHTML(
         // --- Callbacks from Swift ---
 
         annotationCreated(data) {
+            var scrollY = window.pageYOffset || document.documentElement.scrollTop;
+
             this.annotations.push(data.annotation);
             this.annotationHTMLMap[data.annotation.number] = data.renderedHTML;
 
@@ -1256,9 +1261,17 @@ private func buildFullHTML(
             this.highlightAnchor = this.currentBlockIndex;
             this.updateHighlights();
             this.updateFormReference();
+
+            // Restore scroll to undo any browser clamping from DOM
+            // teardown, then nudge viewport if the new card pushed
+            // the form below the fold.
+            window.scrollTo(0, scrollY);
+            this.formElement.scrollIntoView({ block: 'nearest' });
         },
 
         annotationUpdated(data) {
+            var scrollY = window.pageYOffset || document.documentElement.scrollTop;
+
             var idx = this.annotations.findIndex(
                 function(a) { return a.number === data.annotation.number; }
             );
@@ -1266,9 +1279,13 @@ private func buildFullHTML(
             this.annotationHTMLMap[data.annotation.number] = data.renderedHTML;
             this.editingNumber = null;
             this.renderAllAnnotations();
+
+            window.scrollTo(0, scrollY);
         },
 
         annotationDeleted(number) {
+            var scrollY = window.pageYOffset || document.documentElement.scrollTop;
+
             if (this.expandedNumber === number) {
                 this.collapseExpanded();
             }
@@ -1277,6 +1294,8 @@ private func buildFullHTML(
             );
             delete this.annotationHTMLMap[number];
             this.renderAllAnnotations();
+
+            window.scrollTo(0, scrollY);
         },
 
         // --- Escape Context ---
