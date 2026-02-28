@@ -10,12 +10,22 @@ module GalaxyLedger
       # Read-only cap on session files in the manifest
       READ_ONLY_FILES_CAP = 15
 
+      # Maximum time (seconds) to wait for extraction summary data.
+      # Leaves ~5s for handoff generation within the 30s hook timeout.
+      # Override via GALAXY_EXTRACTION_WAIT_TIMEOUT env var for testing.
+      EXTRACTION_WAIT_TIMEOUT = 25
+
+      # Polling interval (seconds) between DB checks.
+      # Override via GALAXY_EXTRACTION_POLL_INTERVAL env var for testing.
+      EXTRACTION_POLL_INTERVAL = 2
+
       # Runs the full context handoff flow. Called by OnClear and
       # OnCompact with the parsed hook input.
       def self.run(
         stdin_session_identifier : String?,
         source : String?,
         event_name : String? = nil,
+        transcript_path : String? = nil,
       )
         # Resolve session via 3-tier chain (env var → PID → hook session_id),
         # creating a new session as last resort.
@@ -49,6 +59,12 @@ module GalaxyLedger
             event: evt,
           )
         end
+
+        # Wait for extraction subprocess to write enriched summary data.
+        # Polls last_interaction in the DB for up to EXTRACTION_WAIT_TIMEOUT
+        # seconds, checking for the most recent exchange's summary. Returns
+        # immediately if summary is already present or no transcript available.
+        await_extraction_summary(ledger_session_id, transcript_path)
 
         # Fetch session record for cwd/git_branch and last_interaction
         session_record = Database.get_session_by_id(ledger_session_id)
@@ -125,6 +141,96 @@ module GalaxyLedger
       private def self.extract_exchanges(session_record : Database::SessionRecord?) : Array(Exchange::LastExchange)
         return [] of Exchange::LastExchange unless session_record
         Exchange::LastExchange.from_json_flexible(session_record.last_interaction)
+      end
+
+      # Polls the DB for up to EXTRACTION_WAIT_TIMEOUT seconds, waiting
+      # for the extraction subprocess to write a summary for the most
+      # recent exchange. Returns immediately when:
+      #   - no transcript_path provided
+      #   - transcript can't be read or has no exchanges
+      #   - last assistant response is older than the timeout (extraction
+      #     has already had its full window)
+      #   - summary data is already present in the DB
+      #   - timeout is reached (graceful degradation)
+      #
+      # Uses a dynamic timeout based on the last assistant message
+      # timestamp: if the response was N seconds ago, only polls for
+      # (EXTRACTION_WAIT_TIMEOUT - N) more seconds. This avoids a
+      # full 25s wait when /clear fires well after the response.
+      #
+      # NOTE: Matching is by exact user_message string equality. If the
+      # user sends the exact same message on consecutive turns and /clear
+      # fires before the extraction subprocess updates the DB, this could
+      # match the previous turn's enriched exchange and return early.
+      # Extremely unlikely in practice.
+      private def self.await_extraction_summary(
+        ledger_session_id : Int64,
+        transcript_path : String?,
+      )
+        return unless transcript_path
+        return unless File.exists?(transcript_path)
+
+        # Read transcript to determine the expected user_message and
+        # the last assistant response timestamp for dynamic timeout.
+        # The user message is flushed before the Stop hook fires,
+        # so it's reliably available when the clear hook runs.
+        entries = Transcript.parse(transcript_path)
+        recent = Transcript.extract_recent_exchanges(entries, limit: 1)
+        return if recent.empty?
+
+        last_exchange = recent.last
+        expected_user_message = last_exchange.user_message
+        return if expected_user_message.strip.empty?
+
+        # Allow env var overrides for testing (avoids 25s wall-clock specs).
+        # .to_i? returns nil on non-numeric input instead of raising.
+        timeout = ENV["GALAXY_EXTRACTION_WAIT_TIMEOUT"]?.try(&.to_i?) || EXTRACTION_WAIT_TIMEOUT
+        interval = ENV["GALAXY_EXTRACTION_POLL_INTERVAL"]?.try(&.to_i?) || EXTRACTION_POLL_INTERVAL
+        interval = {interval, 1}.max # Guard against zero/negative → infinite loop
+
+        # Dynamic timeout: use the last assistant message timestamp as the
+        # reference point instead of hook start time. If the response was
+        # >timeout seconds ago, the extraction subprocess has already had
+        # its full window — skip polling entirely. If more recent, poll
+        # only for the remaining time.
+        remaining = timeout
+        if last_entry = last_exchange.assistant_entries.last?
+          if ts_str = last_entry.timestamp
+            begin
+              # Strip fractional seconds; parse as UTC.
+              # Transcript timestamps: "2026-02-28T16:50:10.319Z"
+              normalized = ts_str.gsub(/\.\d+/, "")
+              response_time = Time.parse_utc(normalized, "%Y-%m-%dT%H:%M:%SZ")
+              elapsed_since_response = (Time.utc - response_time).total_seconds.to_i
+              remaining = {timeout - elapsed_since_response, 0}.max
+            rescue ex
+              STDERR.puts "[galaxy-ledger] await: failed to parse timestamp #{ts_str.inspect}: #{ex.message}"
+              # Fall back to full timeout
+            end
+          end
+        end
+
+        return if remaining <= 0
+
+        elapsed = 0
+        loop do
+          session_record = Database.get_session_by_id(ledger_session_id)
+          if session_record
+            exchanges = extract_exchanges(session_record)
+            if last = exchanges.last?
+              if last.user_message == expected_user_message && last.summary
+                return # Full enriched data available
+              end
+            end
+          end
+
+          elapsed += interval
+          break if elapsed > remaining
+
+          sleep interval.seconds
+        end
+
+        # Timeout reached — proceed with whatever data is in DB
       end
 
       private def self.build_additional_context(

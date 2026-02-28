@@ -869,3 +869,246 @@ describe "OnClear last_stop_cwd handoff preference" do
     end
   end
 end
+
+describe "OnClear extraction await" do
+  # Tests that the clear hook waits for extraction summary data
+  # before generating the handoff. Uses env var overrides to keep
+  # polling tests fast (~1-2s instead of ~25s).
+  #
+  # Four tests covering distinct paths:
+  #   1. No transcript_path → early return, no polling
+  #   2. Polls then times out → recent timestamp, nil summary
+  #   3. Summary already present → immediate return on first check
+  #   4. Timestamp expired → dynamic timeout skip, no polling
+
+  it "proceeds without summary when no transcript_path provided" do
+    session_id = "clear-await-no-path-#{Random.rand(100000)}"
+    ledger_session_id = GalaxyLedger::Database.create_session(
+      session_id, claude_pid: Process.pid.to_i64)
+
+    begin
+      # Write exchange WITHOUT summary
+      exchange = GalaxyLedger::Exchange::LastExchange.new(
+        user_message: "Test without transcript",
+        full_content: "Response content here",
+        assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage,
+      )
+      json = [exchange].to_pretty_json
+      GalaxyLedger::Database.update_session_last_interaction(
+        ledger_session_id, json,
+      )
+
+      # No transcript_path in hook input
+      hook_input = {
+        "session_id" => session_id,
+        "source"     => "clear",
+      }.to_json
+
+      result = run_binary(["on-clear"], stdin: hook_input)
+      result[:status].should eq(0)
+
+      output = JSON.parse(result[:output])
+      ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+      # Should still include the raw exchange (no polling, immediate)
+      ctx.should contain("Test without transcript")
+    ensure
+      GalaxyLedger::Database.delete_session(session_id)
+    end
+  end
+
+  it "polls then times out with raw exchange when summary never appears" do
+    # Exercises the actual poll loop: exchange exists with matching
+    # user_message but nil summary. The method polls, finds no summary,
+    # times out, and the handoff proceeds with raw exchange content.
+    # Uses a RECENT timestamp so the dynamic timeout leaves polling
+    # budget. Env var overrides keep wall-clock time ~2s.
+    session_id = "clear-await-timeout-#{Random.rand(100000)}"
+    ledger_session_id = GalaxyLedger::Database.create_session(
+      session_id, claude_pid: Process.pid.to_i64)
+
+    begin
+      exchange = GalaxyLedger::Exchange::LastExchange.new(
+        user_message: "Refactor the auth module",
+        full_content: "I refactored the auth module into separate concerns.",
+        assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage,
+        # summary: nil — deliberately absent
+      )
+      json = [exchange].to_pretty_json
+      GalaxyLedger::Database.update_session_last_interaction(
+        ledger_session_id, json,
+      )
+
+      # Use a recent timestamp so dynamic timeout still has budget.
+      # With timeout=2 and ~0s elapsed, remaining ≈ 2. The poll loop
+      # checks, sleeps 1s, checks, sleeps 1s, checks, then breaks
+      # at elapsed=3 > 2. Total wall-clock ~2s.
+      recent_ts = Time.utc.to_s("%Y-%m-%dT%H:%M:%SZ")
+      transcript_file = File.tempfile("await-timeout", ".jsonl")
+      transcript_file.print(
+        %|{"type":"user","timestamp":"#{recent_ts}",| \
+        %|"message":{"role":"user",| \
+        %|"content":"Refactor the auth module"}}\n|,
+      )
+      transcript_file.print(
+        %|{"type":"assistant","timestamp":"#{recent_ts}",| \
+        %|"message":{"role":"assistant",| \
+        %|"content":"I refactored the auth module."}}\n|,
+      )
+      transcript_file.close
+
+      hook_input = {
+        "session_id"      => session_id,
+        "source"          => "clear",
+        "transcript_path" => transcript_file.path,
+      }.to_json
+
+      # timeout=2 gives dynamic remaining ≈ 2s; interval=1 means
+      # the poll loop checks, sleeps 1s, checks, sleeps 1s, checks,
+      # then breaks at elapsed=3 > 2. Total wall-clock ~2s.
+      extra_env = {
+        "GALAXY_EXTRACTION_WAIT_TIMEOUT"  => "2",
+        "GALAXY_EXTRACTION_POLL_INTERVAL" => "1",
+      }
+
+      result = run_binary(["on-clear"], stdin: hook_input, extra_env: extra_env)
+      result[:status].should eq(0)
+
+      output = JSON.parse(result[:output])
+      ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+      # Should include the raw exchange content (graceful degradation)
+      ctx.should contain("Refactor the auth module")
+      ctx.should contain("I refactored the auth module")
+    ensure
+      GalaxyLedger::Database.delete_session(session_id)
+      File.delete(transcript_file.path) if transcript_file && File.exists?(transcript_file.path)
+    end
+  end
+
+  it "returns immediately when summary is already present (no polling delay)" do
+    # Verifies the fast path: summary already in DB when the clear hook
+    # runs. The method should check once and return without sleeping.
+    session_id = "clear-await-immediate-#{Random.rand(100000)}"
+    ledger_session_id = GalaxyLedger::Database.create_session(
+      session_id, claude_pid: Process.pid.to_i64)
+
+    begin
+      summary = GalaxyLedger::Exchange::ExchangeSummary.new(
+        user_request: "Add caching layer",
+        assistant_response: "Added Redis caching with 5-minute TTL.",
+        files_modified: ["src/cache.cr"] of String,
+        key_actions: ["Added Redis cache", "Configured TTL"],
+      )
+      exchange = GalaxyLedger::Exchange::LastExchange.new(
+        user_message: "Add a caching layer to the API",
+        full_content: "I added a Redis caching layer with 5-minute TTL.",
+        assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage,
+        summary: summary,
+      )
+      json = [exchange].to_pretty_json
+      GalaxyLedger::Database.update_session_last_interaction(
+        ledger_session_id, json,
+      )
+
+      # Use a recent timestamp so the dynamic timeout doesn't
+      # short-circuit before the DB check.
+      recent_ts = Time.utc.to_s("%Y-%m-%dT%H:%M:%SZ")
+      transcript_file = File.tempfile("await-immediate", ".jsonl")
+      transcript_file.print(
+        %|{"type":"user","timestamp":"#{recent_ts}",| \
+        %|"message":{"role":"user",| \
+        %|"content":"Add a caching layer to the API"}}\n|,
+      )
+      transcript_file.print(
+        %|{"type":"assistant","timestamp":"#{recent_ts}",| \
+        %|"message":{"role":"assistant",| \
+        %|"content":"I added a Redis caching layer."}}\n|,
+      )
+      transcript_file.close
+
+      hook_input = {
+        "session_id"      => session_id,
+        "source"          => "clear",
+        "transcript_path" => transcript_file.path,
+      }.to_json
+
+      extra_env = {
+        "GALAXY_EXTRACTION_WAIT_TIMEOUT"  => "10",
+        "GALAXY_EXTRACTION_POLL_INTERVAL" => "1",
+      }
+
+      result = run_binary(["on-clear"], stdin: hook_input, extra_env: extra_env)
+      result[:status].should eq(0)
+
+      output = JSON.parse(result[:output])
+      ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+      # Should include the enriched summary content
+      ctx.should contain("Add caching layer")
+      ctx.should contain("Added Redis caching")
+    ensure
+      GalaxyLedger::Database.delete_session(session_id)
+      File.delete(transcript_file.path) if transcript_file && File.exists?(transcript_file.path)
+    end
+  end
+
+  it "skips polling when response timestamp exceeds timeout" do
+    # Verifies the dynamic timeout skip: the last assistant message
+    # is well past the extraction window, so the method returns
+    # immediately without entering the poll loop. The handoff
+    # proceeds with whatever data is in the DB (raw exchange here).
+    session_id = "clear-await-expired-#{Random.rand(100000)}"
+    ledger_session_id = GalaxyLedger::Database.create_session(
+      session_id, claude_pid: Process.pid.to_i64)
+
+    begin
+      exchange = GalaxyLedger::Exchange::LastExchange.new(
+        user_message: "Deploy the hotfix",
+        full_content: "Deployed the hotfix to production.",
+        assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage,
+        # summary: nil — extraction would have already finished or failed
+      )
+      json = [exchange].to_pretty_json
+      GalaxyLedger::Database.update_session_last_interaction(
+        ledger_session_id, json,
+      )
+
+      # Use a timestamp from 2 minutes ago. With timeout=25,
+      # remaining = 25 - 120 = -95 → clamped to 0 → skip.
+      old_ts = (Time.utc - 120.seconds).to_s("%Y-%m-%dT%H:%M:%SZ")
+      transcript_file = File.tempfile("await-expired", ".jsonl")
+      transcript_file.print(
+        %|{"type":"user","timestamp":"#{old_ts}",| \
+        %|"message":{"role":"user",| \
+        %|"content":"Deploy the hotfix"}}\n|,
+      )
+      transcript_file.print(
+        %|{"type":"assistant","timestamp":"#{old_ts}",| \
+        %|"message":{"role":"assistant",| \
+        %|"content":"Deployed the hotfix to production."}}\n|,
+      )
+      transcript_file.close
+
+      hook_input = {
+        "session_id"      => session_id,
+        "source"          => "clear",
+        "transcript_path" => transcript_file.path,
+      }.to_json
+
+      extra_env = {
+        "GALAXY_EXTRACTION_WAIT_TIMEOUT"  => "25",
+        "GALAXY_EXTRACTION_POLL_INTERVAL" => "1",
+      }
+
+      result = run_binary(["on-clear"], stdin: hook_input, extra_env: extra_env)
+      result[:status].should eq(0)
+
+      output = JSON.parse(result[:output])
+      ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+      # Should include the raw exchange (no polling, immediate proceed)
+      ctx.should contain("Deploy the hotfix")
+      ctx.should contain("Deployed the hotfix")
+    ensure
+      GalaxyLedger::Database.delete_session(session_id)
+      File.delete(transcript_file.path) if transcript_file && File.exists?(transcript_file.path)
+    end
+  end
+end
