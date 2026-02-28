@@ -1,20 +1,22 @@
 require "../spec_helper"
 
-# Smoke tests that call the actual Claude CLI to verify extraction prompts
-# produce parseable, reasonable output. One test per extraction type, plus
-# two end-to-end CLI tests for extract-assistant.
+# Smoke tests that call the actual Claude CLI to verify extraction and
+# suggest-name prompts produce parseable, reasonable output.
 #
 # Tagged "eval" — excluded from default `crystal spec` runs.
 # Run explicitly:  crystal spec --tag eval
 #                  make test-eval
 #
-# Parsing correctness is covered by extraction_pipeline_spec.cr (fast, stubbed).
+# Parsing correctness is covered by fast, stubbed specs:
+#   - extraction_pipeline_spec.cr (extraction)
+#   - suggested_name_spec.cr (suggest-name)
 # These only validate that Claude + our prompts return sensible results.
 #
-# All 6 evals run CONCURRENTLY using fibers. Each eval is ~30s (Claude
-# one-shot latency), so concurrent execution reduces wall-clock from ~180s
-# to ~30-35s. Crystal's Process.new is fiber-friendly (yields via SIGCHLD),
-# so subprocess-based evals work correctly inside spawned fibers.
+# All 9 evals run CONCURRENTLY in a single `it` block using fibers.
+# Each eval is ~15-30s (Claude one-shot latency), so concurrent execution
+# reduces wall-clock from ~270s to ~20-30s. Crystal's Process.new is
+# fiber-friendly (yields via SIGCHLD), so subprocess-based evals work
+# correctly inside spawned fibers.
 
 record EvalResult,
   name : String,
@@ -332,26 +334,276 @@ def eval_extract_assistant_transcript_path : EvalResult
   end
 end
 
-# --- Concurrent runner ---
+# --- Suggest-name evals (subprocess run_binary calls) ---
 
-describe "Extraction Evals", tags: "eval" do
+def eval_needs_more_context : EvalResult
+  start = Time.monotonic
+  begin
+    # Create a session with minimal context (just a greeting)
+    session_id = "eval-suggest-needs-ctx-#{Random.rand(100000)}"
+    GalaxyLedger::Database.create_session(session_id)
+
+    transcript_file = File.tempfile("eval-suggest-ctx", ".jsonl")
+    transcript_file.print(%|{"type": "user", "timestamp": "2026-02-01T10:00:00Z", "message": {"role": "user", "content": "where were we?"}}\n|)
+    transcript_file.print(%|{"type": "assistant", "timestamp": "2026-02-01T10:01:00Z", "message": {"role": "assistant", "content": "Let me check our previous context and see where we left off."}}\n|)
+    transcript_file.close
+
+    result = run_binary([
+      "suggest-name",
+      "--session", session_id,
+      "--transcript-path", transcript_file.path,
+    ])
+
+    File.delete(transcript_file.path) if File.exists?(transcript_file.path)
+
+    if result[:status] != 0
+      return EvalResult.new(
+        name: "needs_more_context",
+        passed: false,
+        message: "Binary exited #{result[:status]}: #{result[:error]}",
+        duration: Time.monotonic - start,
+      )
+    end
+
+    session = GalaxyLedger::Database.get_session(session_id)
+    unless session
+      return EvalResult.new(
+        name: "needs_more_context",
+        passed: false,
+        message: "Session not found in DB",
+        duration: Time.monotonic - start,
+      )
+    end
+
+    # Name should be nil (needs_more_context), OR a very low quality name
+    state = GalaxyLedger::SuggestedName::StateData.from_json_safe(session.suggested_name_data)
+
+    if state.status == "needs_more_context" || (state.quality > 0 && state.quality <= 3)
+      STDERR.puts "\n  [suggest-name:needs_more_context] status: #{state.status}, quality: #{state.quality}"
+      EvalResult.new(
+        name: "needs_more_context",
+        passed: true,
+        message: "status=#{state.status}, quality=#{state.quality}",
+        duration: Time.monotonic - start,
+      )
+    else
+      EvalResult.new(
+        name: "needs_more_context",
+        passed: false,
+        message: "Expected needs_more_context or quality <= 3, got status=#{state.status} quality=#{state.quality}",
+        duration: Time.monotonic - start,
+      )
+    end
+  rescue ex
+    EvalResult.new(
+      name: "needs_more_context",
+      passed: false,
+      message: "Exception: #{ex.message}",
+      duration: Time.monotonic - start,
+    )
+  end
+end
+
+def eval_substantive_session : EvalResult
+  start = Time.monotonic
+  begin
+    session_id = "eval-suggest-substantive-#{Random.rand(100000)}"
+    GalaxyLedger::Database.create_session(session_id)
+
+    transcript_file = File.tempfile("eval-suggest-sub", ".jsonl")
+    transcript_file.print(%|{"type": "user", "timestamp": "2026-02-01T10:00:00Z", "message": {"role": "user", "content": "I need to add dark mode support to the settings page in our React app"}}\n|)
+    transcript_file.print(%|{"type": "assistant", "timestamp": "2026-02-01T10:01:00Z", "message": {"role": "assistant", "content": "I'll help you add dark mode support. I'll use CSS custom properties for theming and add a toggle component to the settings page. Let me create the theme provider and update the settings layout."}}\n|)
+    transcript_file.print(%|{"type": "user", "timestamp": "2026-02-01T10:02:00Z", "message": {"role": "user", "content": "Great, also make sure the preference persists in localStorage so it survives page reloads"}}\n|)
+    transcript_file.print(%|{"type": "assistant", "timestamp": "2026-02-01T10:03:00Z", "message": {"role": "assistant", "content": "Done! I've added localStorage persistence. The theme provider now reads from localStorage on mount and writes on change. The toggle reflects the saved preference automatically."}}\n|)
+    transcript_file.print(%|{"type": "user", "timestamp": "2026-02-01T10:04:00Z", "message": {"role": "user", "content": "Can you also add a system preference detection so it defaults to the OS setting?"}}\n|)
+    transcript_file.print(%|{"type": "assistant", "timestamp": "2026-02-01T10:05:00Z", "message": {"role": "assistant", "content": "Added prefers-color-scheme media query detection. On first visit with no saved preference, it'll match the OS setting. After that, the user's explicit choice takes priority over system preference."}}\n|)
+    transcript_file.close
+
+    result = run_binary([
+      "suggest-name",
+      "--session", session_id,
+      "--transcript-path", transcript_file.path,
+    ])
+
+    File.delete(transcript_file.path) if File.exists?(transcript_file.path)
+
+    if result[:status] != 0
+      return EvalResult.new(
+        name: "substantive_session",
+        passed: false,
+        message: "Binary exited #{result[:status]}: #{result[:error]}",
+        duration: Time.monotonic - start,
+      )
+    end
+
+    session = GalaxyLedger::Database.get_session(session_id)
+    unless session
+      return EvalResult.new(
+        name: "substantive_session",
+        passed: false,
+        message: "Session not found in DB",
+        duration: Time.monotonic - start,
+      )
+    end
+
+    name = session.suggested_name
+    unless name
+      return EvalResult.new(
+        name: "substantive_session",
+        passed: false,
+        message: "suggested_name was nil",
+        duration: Time.monotonic - start,
+      )
+    end
+
+    # Verify it's a reasonable name
+    word_count = name.split.size
+    if word_count < 2 || word_count > 8
+      return EvalResult.new(
+        name: "substantive_session",
+        passed: false,
+        message: "Name '#{name}' has #{word_count} words (expected 2-8)",
+        duration: Time.monotonic - start,
+      )
+    end
+
+    # Verify no code in the name
+    if GalaxyLedger::SuggestedName.name_appears_to_be_code?(name)
+      return EvalResult.new(
+        name: "substantive_session",
+        passed: false,
+        message: "Name '#{name}' appears to be code",
+        duration: Time.monotonic - start,
+      )
+    end
+
+    state = GalaxyLedger::SuggestedName::StateData.from_json_safe(session.suggested_name_data)
+    STDERR.puts "\n  [suggest-name:substantive] name: #{name} (quality: #{state.quality})"
+
+    EvalResult.new(
+      name: "substantive_session",
+      passed: true,
+      message: "name: #{name} (quality: #{state.quality})",
+      duration: Time.monotonic - start,
+    )
+  rescue ex
+    EvalResult.new(
+      name: "substantive_session",
+      passed: false,
+      message: "Exception: #{ex.message}",
+      duration: Time.monotonic - start,
+    )
+  end
+end
+
+def eval_code_heavy_session : EvalResult
+  start = Time.monotonic
+  begin
+    session_id = "eval-suggest-code-#{Random.rand(100000)}"
+    GalaxyLedger::Database.create_session(session_id)
+
+    transcript_file = File.tempfile("eval-suggest-code", ".jsonl")
+    transcript_file.print(%|{"type": "user", "timestamp": "2026-02-01T10:00:00Z", "message": {"role": "user", "content": "Fix the authentication middleware — the JWT validation is failing"}}\n|)
+    transcript_file.print(%|{"type": "assistant", "timestamp": "2026-02-01T10:01:00Z", "message": {"role": "assistant", "content": "I found the issue in the JWT validation. The `verify_token` method was using the wrong algorithm. Here's the fix:\\n```ruby\\ndef verify_token(token)\\n  JWT.decode(token, secret_key, true, algorithm: 'HS256')\\nend\\n```"}}\n|)
+    transcript_file.print(%|{"type": "user", "timestamp": "2026-02-01T10:02:00Z", "message": {"role": "user", "content": "Also update the error handling to return proper 401 responses"}}\n|)
+    transcript_file.print(%|{"type": "assistant", "timestamp": "2026-02-01T10:03:00Z", "message": {"role": "assistant", "content": "Updated the error handling:\\n```ruby\\nrescue JWT::DecodeError => e\\n  render json: { error: 'Invalid token' }, status: :unauthorized\\nend\\n```"}}\n|)
+    transcript_file.close
+
+    result = run_binary([
+      "suggest-name",
+      "--session", session_id,
+      "--transcript-path", transcript_file.path,
+    ])
+
+    File.delete(transcript_file.path) if File.exists?(transcript_file.path)
+
+    if result[:status] != 0
+      return EvalResult.new(
+        name: "code_heavy_session",
+        passed: false,
+        message: "Binary exited #{result[:status]}: #{result[:error]}",
+        duration: Time.monotonic - start,
+      )
+    end
+
+    session = GalaxyLedger::Database.get_session(session_id)
+    unless session
+      return EvalResult.new(
+        name: "code_heavy_session",
+        passed: false,
+        message: "Session not found in DB",
+        duration: Time.monotonic - start,
+      )
+    end
+
+    name = session.suggested_name
+    unless name
+      return EvalResult.new(
+        name: "code_heavy_session",
+        passed: false,
+        message: "suggested_name was nil (should generate from code context)",
+        duration: Time.monotonic - start,
+      )
+    end
+
+    # Verify no code patterns in the name
+    if GalaxyLedger::SuggestedName.name_appears_to_be_code?(name)
+      return EvalResult.new(
+        name: "code_heavy_session",
+        passed: false,
+        message: "Name '#{name}' contains code patterns",
+        duration: Time.monotonic - start,
+      )
+    end
+
+    state = GalaxyLedger::SuggestedName::StateData.from_json_safe(session.suggested_name_data)
+    STDERR.puts "\n  [suggest-name:code_heavy] name: #{name} (quality: #{state.quality})"
+
+    EvalResult.new(
+      name: "code_heavy_session",
+      passed: true,
+      message: "name: #{name} (quality: #{state.quality})",
+      duration: Time.monotonic - start,
+    )
+  rescue ex
+    EvalResult.new(
+      name: "code_heavy_session",
+      passed: false,
+      message: "Exception: #{ex.message}",
+      duration: Time.monotonic - start,
+    )
+  end
+end
+
+# --- Single concurrent runner for all 9 evals ---
+
+describe "Evals", tags: "eval" do
   fixtures_path = SPEC_FIXTURES / "extraction_evals"
 
-  it "runs all extraction evals concurrently" do
+  it "runs all evals concurrently" do
     channel = Channel(EvalResult).new
-    eval_count = 6
+    eval_count = 9
 
-    # Spawn all 6 evals concurrently as fibers.
+    # Spawn all 9 evals concurrently as fibers.
     # The 4 extraction evals call ClaudeCLI.run() which spawns `claude -p`.
-    # The 2 CLI evals call run_binary() which spawns `galaxy-ledger`.
+    # The 5 CLI evals call run_binary() which spawns `galaxy-ledger`.
     # All subprocesses run as parallel OS processes; fibers yield while
     # waiting on Process#wait (SIGCHLD-based, event-loop integrated).
+
+    # Extraction evals (in-process Claude calls)
     spawn { channel.send(eval_user_directions(fixtures_path)) }
     spawn { channel.send(eval_assistant_learnings(fixtures_path)) }
     spawn { channel.send(eval_guidelines(fixtures_path)) }
     spawn { channel.send(eval_implementation_plan(fixtures_path)) }
+
+    # CLI extraction evals (subprocess)
     spawn { channel.send(eval_extract_assistant_input_file) }
     spawn { channel.send(eval_extract_assistant_transcript_path) }
+
+    # Suggest-name evals (subprocess)
+    spawn { channel.send(eval_needs_more_context) }
+    spawn { channel.send(eval_substantive_session) }
+    spawn { channel.send(eval_code_heavy_session) }
 
     # Collect all results
     results = [] of EvalResult
@@ -359,7 +611,7 @@ describe "Extraction Evals", tags: "eval" do
 
     # Report results table
     STDERR.puts "\n\n  #{"=" * 56}"
-    STDERR.puts "  Eval Results:"
+    STDERR.puts "  Eval Results (#{eval_count} evals):"
     STDERR.puts "  #{"=" * 56}"
     results.sort_by(&.name).each do |r|
       status = r.passed ? "PASS" : "FAIL"
@@ -367,9 +619,10 @@ describe "Extraction Evals", tags: "eval" do
       STDERR.puts "         #{r.message}" unless r.passed
     end
     wall_clock = results.max_of(&.duration)
+    sequential = results.sum(&.duration)
     STDERR.puts "  #{"=" * 56}"
     STDERR.puts "  Wall clock: #{wall_clock.total_seconds.round(1)}s " \
-                "(was ~#{eval_count * 30}s sequential)"
+                "(#{sequential.total_seconds.round(1)}s sequential)"
     STDERR.puts ""
 
     # Assert — fail the spec if any eval failed

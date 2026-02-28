@@ -341,7 +341,7 @@ describe GalaxyLedger::Transcript do
       result[0].assistant_entries[1].content.should eq("Part 2")
     end
 
-    it "stops collecting assistant entries at next user message" do
+    it "stops collecting assistant entries at next real user message" do
       entries = [
         create_entry("user", "First question"),
         create_entry("assistant", "First answer"),
@@ -355,6 +355,67 @@ describe GalaxyLedger::Transcript do
       result[0].assistant_entries[0].content.should eq("First answer")
       result[1].assistant_entries.size.should eq(1)
       result[1].assistant_entries[0].content.should eq("Second answer")
+    end
+
+    it "collects assistant text through interleaved tool_use/tool_result entries" do
+      entries = [
+        create_entry("user", "Help me add dark mode"),
+        create_entry_with_blocks("assistant", [{"type" => "tool_use"}]),
+        create_entry_with_blocks("user", [{"type" => "tool_result", "content" => "output"}]),
+        create_entry_with_blocks("assistant", [{"type" => "tool_use"}]),
+        create_entry_with_blocks("user", [{"type" => "tool_result", "content" => "file content"}]),
+        create_entry_with_blocks("assistant", [{"type" => "text", "text" => "I added dark mode support."}]),
+      ]
+
+      result = GalaxyLedger::Transcript.extract_recent_exchanges(entries, limit: 5)
+      result.size.should eq(1)
+      result[0].user_message.should eq("Help me add dark mode")
+      result[0].assistant_entries.size.should eq(1)
+      result[0].assistant_entries[0].content.should eq("I added dark mode support.")
+    end
+
+    it "handles multiple exchanges each with tool_use/tool_result interleaving" do
+      entries = [
+        # Exchange 1: user question → tool use → tool result → text response
+        create_entry("user", "Fix the auth bug"),
+        create_entry_with_blocks("assistant", [{"type" => "tool_use"}]),
+        create_entry_with_blocks("user", [{"type" => "tool_result", "content" => "code"}]),
+        create_entry_with_blocks("assistant", [{"type" => "text", "text" => "Fixed the auth bug."}]),
+        # Exchange 2: user question → tool use → tool result → text response
+        create_entry("user", "Now add specs"),
+        create_entry_with_blocks("assistant", [{"type" => "tool_use"}]),
+        create_entry_with_blocks("user", [{"type" => "tool_result", "content" => "ok"}]),
+        create_entry_with_blocks("assistant", [{"type" => "text", "text" => "Added specs for the fix."}]),
+      ]
+
+      result = GalaxyLedger::Transcript.extract_recent_exchanges(entries, limit: 5)
+      result.size.should eq(2)
+      result[0].user_message.should eq("Fix the auth bug")
+      result[0].assistant_entries.size.should eq(1)
+      result[0].assistant_entries[0].content.should eq("Fixed the auth bug.")
+      result[1].user_message.should eq("Now add specs")
+      result[1].assistant_entries.size.should eq(1)
+      result[1].assistant_entries[0].content.should eq("Added specs for the fix.")
+    end
+
+    it "skips command entries between tool interactions" do
+      entries = [
+        create_entry("user", "Do something"),
+        create_entry_with_blocks("assistant", [{"type" => "tool_use"}]),
+        create_entry_with_blocks("user", [{"type" => "tool_result", "content" => "ok"}]),
+        create_entry_with_blocks("assistant", [{"type" => "text", "text" => "Done."}]),
+        # Command entries should not be picked as exchanges
+        create_entry("user", "<command-name>/clear</command-name>"),
+        create_entry("user", "After clear"),
+        create_entry_with_blocks("assistant", [{"type" => "text", "text" => "Resumed."}]),
+      ]
+
+      result = GalaxyLedger::Transcript.extract_recent_exchanges(entries, limit: 5)
+      result.size.should eq(2)
+      result[0].user_message.should eq("Do something")
+      result[0].assistant_entries[0].content.should eq("Done.")
+      result[1].user_message.should eq("After clear")
+      result[1].assistant_entries[0].content.should eq("Resumed.")
     end
 
     it "respects limit parameter" do
@@ -393,5 +454,29 @@ end
 
 private def create_entry_no_message(type : String) : GalaxyLedger::Transcript::TranscriptEntry
   json = %|{"type": "#{type}"}|
+  GalaxyLedger::Transcript::TranscriptEntry.from_json(json)
+end
+
+# Create a transcript entry with array-type content blocks (tool_use, tool_result, text).
+# Mirrors the real transcript format where content is an array of typed blocks.
+private def create_entry_with_blocks(
+  type : String,
+  blocks : Array(Hash(String, String)),
+  timestamp : String? = nil,
+) : GalaxyLedger::Transcript::TranscriptEntry
+  role = type == "user" ? "user" : "assistant"
+  blocks_json = blocks.map do |block|
+    parts = block.map { |k, v| %("#{k}": "#{v}") }
+    "{#{parts.join(", ")}}"
+  end.join(", ")
+
+  json = %|{
+    "type": "#{type}",
+    "timestamp": #{timestamp ? "\"#{timestamp}\"" : "null"},
+    "message": {
+      "role": "#{role}",
+      "content": [#{blocks_json}]
+    }
+  }|
   GalaxyLedger::Transcript::TranscriptEntry.from_json(json)
 end

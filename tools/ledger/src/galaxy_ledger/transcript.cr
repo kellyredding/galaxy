@@ -105,11 +105,23 @@ module GalaxyLedger
              !content.includes?("<command-name>") &&
              !content.includes?("<local-command") &&
              !entry.message.try(&.is_tool_result?)
-            # Found a real user message — collect assistant responses after it
+            # Found a real user message — collect assistant responses after it.
+            # Skip tool_result and command entries (type "user" but mid-exchange),
+            # only break on real user prompts that start a new exchange.
             assistant_entries = [] of AssistantEntry
             ((i + 1)...entries.size).each do |j|
               aentry = entries[j]
-              break if aentry.type == "user" # Stop at next user message
+
+              if aentry.type == "user" && aentry.message
+                acontent_check = aentry.message.try(&.content)
+                is_tool_result = aentry.message.try(&.is_tool_result?) || false
+                is_command = acontent_check && (
+                  acontent_check.includes?("<command-name>") ||
+                  acontent_check.includes?("<local-command")
+                )
+                # Only break on a real user prompt — not tool results or commands
+                break if !is_tool_result && !is_command && acontent_check
+              end
 
               if aentry.type == "assistant" && aentry.message
                 acontent = aentry.message.try(&.content)

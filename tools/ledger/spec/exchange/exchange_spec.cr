@@ -74,6 +74,91 @@ describe GalaxyLedger::Exchange do
       exchange = GalaxyLedger::Exchange::LastExchange.from_json(json)
       exchange.summary.should be_nil
     end
+
+    describe ".from_json_flexible" do
+      it "parses legacy single-object JSON into one-element array" do
+        json = %|{
+          "user_message": "Fix the bug",
+          "full_content": "I found the issue...",
+          "assistant_messages": []
+        }|
+
+        exchanges = GalaxyLedger::Exchange::LastExchange.from_json_flexible(json)
+        exchanges.size.should eq(1)
+        exchanges[0].user_message.should eq("Fix the bug")
+      end
+
+      it "parses new array JSON into multi-element array" do
+        json = %|[
+          {
+            "user_message": "First question",
+            "full_content": "First answer",
+            "assistant_messages": []
+          },
+          {
+            "user_message": "Second question",
+            "full_content": "Second answer",
+            "assistant_messages": []
+          },
+          {
+            "user_message": "Third question",
+            "full_content": "Third answer",
+            "assistant_messages": []
+          }
+        ]|
+
+        exchanges = GalaxyLedger::Exchange::LastExchange.from_json_flexible(json)
+        exchanges.size.should eq(3)
+        exchanges[0].user_message.should eq("First question")
+        exchanges[1].user_message.should eq("Second question")
+        exchanges[2].user_message.should eq("Third question")
+      end
+
+      it "returns empty array on malformed JSON" do
+        exchanges = GalaxyLedger::Exchange::LastExchange.from_json_flexible("not valid json")
+        exchanges.should be_empty
+      end
+
+      it "returns empty array on nil input" do
+        exchanges = GalaxyLedger::Exchange::LastExchange.from_json_flexible(nil)
+        exchanges.should be_empty
+      end
+
+      it "returns empty array on empty string input" do
+        exchanges = GalaxyLedger::Exchange::LastExchange.from_json_flexible("")
+        exchanges.should be_empty
+      end
+
+      it "returns empty array on whitespace-only input" do
+        exchanges = GalaxyLedger::Exchange::LastExchange.from_json_flexible("   ")
+        exchanges.should be_empty
+      end
+
+      it "preserves summaries on parsed exchanges" do
+        json = %|[
+          {
+            "user_message": "Add feature",
+            "full_content": "Done",
+            "assistant_messages": [],
+            "summary": {
+              "user_request": "Add feature",
+              "assistant_response": "Added it",
+              "files_modified": ["app.rb"],
+              "key_actions": ["Created class"],
+              "decisions": [{"choice": "Use Redis", "rationale": "Shared state"}],
+              "learnings": ["Redis cluster mode required"]
+            }
+          }
+        ]|
+
+        exchanges = GalaxyLedger::Exchange::LastExchange.from_json_flexible(json)
+        exchanges.size.should eq(1)
+        summary = exchanges[0].summary.not_nil!
+        summary.user_request.should eq("Add feature")
+        summary.decisions.not_nil!.size.should eq(1)
+        summary.learnings.not_nil!.should eq(["Redis cluster mode required"])
+      end
+    end
   end
 
   describe "AssistantMessage" do

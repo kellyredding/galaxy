@@ -1826,17 +1826,31 @@ module GalaxyLedger
 
       # Run extraction and write results
       run_extraction_and_write(ledger_session_id, user_message, assistant_content)
+
+      # Notify Galaxy.app to re-fetch session data (fire-and-forget).
+      # This fires after both exchange capture and summary extraction
+      # are complete, so the app gets the fully enriched data.
+      EventPublisher.publish(
+        ledger_session_id: ledger_session_id,
+        event: "session.metrics",
+      )
     end
 
     # Read transcript file with exponential backoff, waiting for a complete
-    # exchange (user message + assistant response). Writes last_interaction
-    # to the DB once captured.
+    # exchange (user message + assistant response). Captures the last 3
+    # exchanges and writes them as a JSON array to last_interaction.
+    # Preserves summaries from previously-extracted exchanges by matching
+    # on user_message content.
     private def self.read_transcript_with_backoff(
       transcript_path : String,
       ledger_session_id : Int64,
     ) : {String, String}
       user_message = ""
       assistant_content = ""
+
+      # No point retrying if the file doesn't exist at all — it won't
+      # appear between retries. The backoff is for partially-flushed files.
+      return {user_message, assistant_content} unless File.exists?(transcript_path)
 
       TRANSCRIPT_BACKOFF_DELAYS.each_with_index do |delay, attempt|
         if delay > 0
@@ -1845,16 +1859,21 @@ module GalaxyLedger
 
         entries = Transcript.parse(transcript_path)
 
-        extracted = Transcript.extract_last_exchange(entries)
-        next unless extracted
+        recent = Transcript.extract_recent_exchanges(entries, limit: 3)
+        next if recent.empty?
 
-        user_message = extracted.user_message
-        last_exchange = Transcript.to_last_exchange(extracted)
+        last = recent.last
+        user_message = last.user_message
+        last_exchange = Transcript.to_last_exchange(last)
         assistant_content = last_exchange.full_content
 
         if !assistant_content.strip.empty?
-          # Write last_interaction to DB
-          Database.update_session_last_interaction(ledger_session_id, last_exchange.to_pretty_json)
+          exchanges = build_exchanges_with_preserved_summaries(
+            recent: recent,
+            ledger_session_id: ledger_session_id,
+          )
+          json = exchanges.to_pretty_json
+          Database.update_session_last_interaction(ledger_session_id, json)
           return {user_message, assistant_content}
         end
       end
@@ -1862,13 +1881,64 @@ module GalaxyLedger
       # Even with incomplete data, write what we have to last_interaction
       unless user_message.strip.empty?
         entries = Transcript.parse(transcript_path)
-        if extracted = Transcript.extract_last_exchange(entries)
-          last_exchange = Transcript.to_last_exchange(extracted)
-          Database.update_session_last_interaction(ledger_session_id, last_exchange.to_pretty_json)
+        recent = Transcript.extract_recent_exchanges(entries, limit: 3)
+        unless recent.empty?
+          exchanges = build_exchanges_with_preserved_summaries(
+            recent: recent,
+            ledger_session_id: ledger_session_id,
+          )
+          json = exchanges.to_pretty_json
+          Database.update_session_last_interaction(ledger_session_id, json)
+
+          # Update return variables from the fresh parse so the caller
+          # sees the actual data we just wrote, not stale loop values.
+          last = recent.last
+          user_message = last.user_message
+          assistant_content = Transcript.to_last_exchange(last).full_content
         end
       end
 
       {user_message, assistant_content}
+    end
+
+    # Convert extracted exchanges to LastExchange objects, carrying forward
+    # any existing summaries from the DB by matching on user_message.
+    private def self.build_exchanges_with_preserved_summaries(
+      recent : Array(Transcript::ExtractedExchange),
+      ledger_session_id : Int64,
+    ) : Array(Exchange::LastExchange)
+      # Load existing exchanges from DB for summary preservation
+      existing = begin
+        session_record = Database.get_session_by_id(ledger_session_id)
+        li_json = session_record.try(&.last_interaction)
+        Exchange::LastExchange.from_json_flexible(li_json)
+      rescue
+        [] of Exchange::LastExchange
+      end
+
+      # Build a lookup of existing summaries by user_message
+      summary_by_message = {} of String => Exchange::ExchangeSummary
+      existing.each do |ex|
+        if s = ex.summary
+          summary_by_message[ex.user_message] = s
+        end
+      end
+
+      # Convert extracted exchanges, carrying forward matched summaries
+      recent.map do |extracted|
+        exchange = Transcript.to_last_exchange(extracted)
+        if preserved = summary_by_message[exchange.user_message]?
+          Exchange::LastExchange.new(
+            user_message: exchange.user_message,
+            full_content: exchange.full_content,
+            assistant_messages: exchange.assistant_messages,
+            user_timestamp: exchange.user_timestamp,
+            summary: preserved,
+          )
+        else
+          exchange
+        end
+      end
     end
 
     # Read user_message and assistant_content from an input file (legacy/testing path)
@@ -1904,22 +1974,26 @@ module GalaxyLedger
           end
         end
 
-        # Update last interaction with summary if we got one
+        # Update last interaction with summary if we got one.
+        # Patches the summary onto the last element of the exchanges array.
         if summary = result.summary
           session_record = Database.get_session_by_id(ledger_session_id)
           if session_record && (li_json = session_record.last_interaction)
             begin
-              last_exchange = Exchange::LastExchange.from_json(li_json)
-              # Create updated exchange with summary
-              updated = Exchange::LastExchange.new(
-                user_message: last_exchange.user_message,
-                full_content: last_exchange.full_content,
-                assistant_messages: last_exchange.assistant_messages,
-                user_timestamp: last_exchange.user_timestamp,
-                summary: summary,
-              )
-              Database.update_session_last_interaction(ledger_session_id, updated.to_pretty_json)
-              STDERR.puts "[galaxy-ledger] Updated last interaction with summary"
+              exchanges = Exchange::LastExchange.from_json_flexible(li_json)
+              unless exchanges.empty?
+                last = exchanges.last
+                updated = Exchange::LastExchange.new(
+                  user_message: last.user_message,
+                  full_content: last.full_content,
+                  assistant_messages: last.assistant_messages,
+                  user_timestamp: last.user_timestamp,
+                  summary: summary,
+                )
+                exchanges[exchanges.size - 1] = updated
+                Database.update_session_last_interaction(ledger_session_id, exchanges.to_pretty_json)
+                STDERR.puts "[galaxy-ledger] Updated last interaction with summary"
+              end
             rescue
               # Ignore parse errors on last_interaction
             end
@@ -3063,6 +3137,10 @@ module GalaxyLedger
 
     # Read transcript entries with backoff (reusable for extraction and suggest-name)
     private def self.read_transcript_entries_with_backoff(transcript_path : String) : Array(Transcript::TranscriptEntry)
+      # No point retrying if the file doesn't exist at all — it won't
+      # appear between retries. The backoff is for partially-flushed files.
+      return [] of Transcript::TranscriptEntry unless File.exists?(transcript_path)
+
       TRANSCRIPT_BACKOFF_DELAYS.each_with_index do |delay, attempt|
         sleep (delay * 1000).to_i.milliseconds if delay > 0
 

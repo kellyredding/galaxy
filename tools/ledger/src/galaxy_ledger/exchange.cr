@@ -42,6 +42,27 @@ module GalaxyLedger
           to_json(json)
         end
       end
+
+      # Parse a last_interaction JSON string into an array of exchanges.
+      # Detects whether the JSON is a single object (legacy) or array (new).
+      # Returns empty array on parse error or empty/nil input.
+      def self.from_json_flexible(json_str : String?) : Array(LastExchange)
+        return [] of LastExchange unless json_str
+        stripped = json_str.strip
+        return [] of LastExchange if stripped.empty?
+
+        begin
+          if stripped.starts_with?('[')
+            Array(LastExchange).from_json(stripped)
+          elsif stripped.starts_with?('{')
+            [LastExchange.from_json(stripped)]
+          else
+            [] of LastExchange
+          end
+        rescue
+          [] of LastExchange
+        end
+      end
     end
 
     # A single assistant message within an exchange

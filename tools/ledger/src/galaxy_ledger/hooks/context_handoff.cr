@@ -56,7 +56,7 @@ module GalaxyLedger
         # Query restoration data using the resolved ledger_session_id
         restoration = Database.query_for_restoration(ledger_session_id)
         files = Database.session_files(ledger_session_id)
-        last_exchange = extract_last_exchange(session_record)
+        exchanges = extract_exchanges(session_record)
 
         # Query snapshot stats for budget-aware rendering
         snapshot_stats = Database.session_snapshot_stats(ledger_session_id)
@@ -70,7 +70,7 @@ module GalaxyLedger
           empty_message: "No previous context to hand off.",
           restoration: restoration,
           files: files,
-          last_exchange: last_exchange,
+          last_exchange: exchanges.last?,
           snapshot_count: snapshot_stats[:count],
           artifact_count: artifact_count,
         )
@@ -80,7 +80,7 @@ module GalaxyLedger
           ledger_session_id: ledger_session_id,
           restoration: restoration,
           files: files,
-          last_exchange: last_exchange,
+          exchanges: exchanges,
           cwd: handoff_cwd(session_record),
           git_branch: session_record.try(&.git_branch),
           snapshot_stats: snapshot_stats,
@@ -122,17 +122,9 @@ module GalaxyLedger
         session_record.cwd
       end
 
-      private def self.extract_last_exchange(session_record : Database::SessionRecord?) : Exchange::LastExchange?
-        return nil unless session_record
-
-        json_str = session_record.last_interaction
-        return nil unless json_str
-
-        begin
-          Exchange::LastExchange.from_json(json_str)
-        rescue
-          nil
-        end
+      private def self.extract_exchanges(session_record : Database::SessionRecord?) : Array(Exchange::LastExchange)
+        return [] of Exchange::LastExchange unless session_record
+        Exchange::LastExchange.from_json_flexible(session_record.last_interaction)
       end
 
       private def self.build_additional_context(
@@ -140,7 +132,7 @@ module GalaxyLedger
         ledger_session_id : Int64,
         restoration : Database::RestorationResult,
         files : Array(Database::SessionFile),
-        last_exchange : Exchange::LastExchange?,
+        exchanges : Array(Exchange::LastExchange),
         cwd : String? = nil,
         git_branch : String? = nil,
         snapshot_stats : NamedTuple(count: Int32, total_chars: Int64) = {count: 0, total_chars: 0_i64},
@@ -158,7 +150,7 @@ module GalaxyLedger
         end
         lines << ""
 
-        has_any_data = restoration.total_count > 0 || files.size > 0 || last_exchange || snapshot_stats[:count] > 0 || artifact_count > 0
+        has_any_data = restoration.total_count > 0 || files.size > 0 || exchanges.any? || snapshot_stats[:count] > 0 || artifact_count > 0
 
         unless has_any_data
           lines << "No previous context available."
@@ -238,50 +230,31 @@ module GalaxyLedger
           end
         end
 
-        # Last interaction section
-        if last_exchange
+        # Last interaction / Recent activity section
+        if exchanges.any?
           lines << "---"
           lines << ""
-          lines << "### Last Interaction"
-          lines << ""
 
-          if summary = last_exchange.summary
-            lines << "**You asked**: #{summary.user_request}"
-            lines << ""
-            lines << "**What was accomplished**: #{summary.assistant_response}"
-
-            unless summary.files_modified.empty?
-              lines << ""
-              lines << "**Files modified**: #{summary.files_modified.join(", ")}"
-            end
-
-            unless summary.key_actions.empty?
-              lines << ""
-              lines << "**Key actions**: #{summary.key_actions.join(", ")}"
-            end
-
-            if decisions = summary.decisions
-              decisions.each do |d|
-                line = "- Decision: #{d.choice} \u2014 rationale: #{d.rationale}"
-                if alt = d.alternatives
-                  line += ". Alternative considered: #{alt}" unless alt.empty?
-                end
-                lines << line
-              end
-            end
-
-            if learnings = summary.learnings
-              learnings.each do |l|
-                lines << "- Learning: #{l}"
-              end
-            end
+          if exchanges.size == 1
+            lines << "### Last Interaction"
           else
-            lines << "**You asked**: #{last_exchange.user_message}"
-            lines << ""
-            preview = Helpers.truncate(last_exchange.full_content, 500)
-            lines << "**What was accomplished**: #{preview}"
+            lines << "### Recent Activity (last #{exchanges.size} exchanges)"
           end
           lines << ""
+
+          # Render in reverse-chronological order, numbered from most recent
+          exchanges.reverse_each.with_index do |exchange, rev_idx|
+            num = exchanges.size - rev_idx
+
+            if exchanges.size > 1
+              lines << "**#{num}.** " + render_exchange_header(exchange)
+            else
+              lines << render_exchange_header(exchange)
+            end
+
+            render_exchange_body(exchange, lines)
+            lines << ""
+          end
         end
 
         # Session snapshots section (budget-aware)
@@ -424,6 +397,46 @@ module GalaxyLedger
         end
 
         lines.join("\n")
+      end
+
+      # Render the header line for a single exchange (the "You asked" part).
+      private def self.render_exchange_header(exchange : Exchange::LastExchange) : String
+        if summary = exchange.summary
+          "**You asked**: #{summary.user_request}"
+        else
+          "**You asked**: #{exchange.user_message}"
+        end
+      end
+
+      # Render the body of a single exchange (accomplished, decisions, learnings).
+      private def self.render_exchange_body(exchange : Exchange::LastExchange, lines : Array(String))
+        if summary = exchange.summary
+          lines << "**What was accomplished**: #{summary.assistant_response}"
+
+          unless summary.key_actions.empty?
+            lines << ""
+            lines << "**Key actions**: #{summary.key_actions.join(", ")}"
+          end
+
+          if decisions = summary.decisions
+            decisions.each do |d|
+              line = "- Decision: #{d.choice} \u2014 rationale: #{d.rationale}"
+              if alt = d.alternatives
+                line += ". Alternative considered: #{alt}" unless alt.empty?
+              end
+              lines << line
+            end
+          end
+
+          if learnings = summary.learnings
+            learnings.each do |l|
+              lines << "- Learning: #{l}"
+            end
+          end
+        else
+          preview = Helpers.truncate(exchange.full_content, 500)
+          lines << "**What was accomplished**: #{preview}"
+        end
       end
 
       # Format file size for display (e.g., 1024 -> "1.0k", 1048576 -> "1.0M")
