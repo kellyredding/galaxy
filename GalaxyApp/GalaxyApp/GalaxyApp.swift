@@ -78,11 +78,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.eventCoordinator?.sessionClosed(sessionId)
         }
 
+        // Dock badge: request authorization if enabled, set initial state
+        if SettingsManager.shared.settings.showDockBadge {
+            Task {
+                await SettingsManager.shared.requestBadgeAuthorization()
+            }
+        }
+        // Badge starts at nil (no sessions have unread state on fresh launch)
+        NSApp.dockTile.badgeLabel = nil
+
         NSLog("AppDelegate: Application launched")
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         NSLog("AppDelegate: Application will terminate")
+        NSApp.dockTile.badgeLabel = nil
         SessionPersistence.shared.flushSync()
         WindowStatePersistence.shared.flushSync()
         eventCoordinator?.stop()

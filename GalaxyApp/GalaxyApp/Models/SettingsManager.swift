@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import Combine
 import AVFoundation
+import UserNotifications
 
 /// Sidebar position preference
 enum SidebarPosition: String, Codable, CaseIterable {
@@ -102,6 +103,7 @@ struct AppSettings: Codable {
     var themePreference: ThemePreference = .system
     var bellPreference: BellPreference = .system
     var showUnreadIndicator: Bool = true
+    var showDockBadge: Bool = false
 
     // Font settings
     var terminalFontFamily: String = "SF Mono"  // Terminal font family (must be monospaced)
@@ -161,6 +163,7 @@ struct AppSettings: Codable {
         themePreference = try container.decodeIfPresent(ThemePreference.self, forKey: .themePreference) ?? .system
         bellPreference = try container.decodeIfPresent(BellPreference.self, forKey: .bellPreference) ?? .system
         showUnreadIndicator = try container.decodeIfPresent(Bool.self, forKey: .showUnreadIndicator) ?? true
+        showDockBadge = try container.decodeIfPresent(Bool.self, forKey: .showDockBadge) ?? false
         terminalFontFamily = try container.decodeIfPresent(String.self, forKey: .terminalFontFamily) ?? "SF Mono"
         chromeFontSize = try container.decodeIfPresent(CGFloat.self, forKey: .chromeFontSize) ?? 13.0
         defaultTerminalFontSize = try container.decodeIfPresent(CGFloat.self, forKey: .defaultTerminalFontSize) ?? 13.0
@@ -254,6 +257,50 @@ class SettingsManager: ObservableObject {
             NSLog("SettingsManager: Settings saved")
         } catch {
             NSLog("SettingsManager: Failed to save settings: %@", error.localizedDescription)
+        }
+    }
+
+    // MARK: - Dock Badge Authorization
+
+    /// Check current badge authorization status without prompting.
+    /// Returns the authorization status via async.
+    func checkBadgeAuthorization() async -> UNAuthorizationStatus {
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        return settings.authorizationStatus
+    }
+
+    /// Request badge authorization from the system. Shows the permission
+    /// dialog only if status is .notDetermined (first time). If already
+    /// granted or denied, this is a no-op that returns the current state.
+    func requestBadgeAuthorization() async -> Bool {
+        let status = await checkBadgeAuthorization()
+
+        switch status {
+        case .authorized:
+            return true
+        case .denied:
+            return false
+        case .notDetermined:
+            do {
+                let granted = try await UNUserNotificationCenter.current()
+                    .requestAuthorization(options: [.badge])
+                return granted
+            } catch {
+                NSLog("SettingsManager: Badge authorization request failed: %@",
+                      error.localizedDescription)
+                return false
+            }
+        default:
+            return false
+        }
+    }
+
+    /// Open System Settings to Galaxy's notification preferences.
+    func openNotificationSettings() {
+        let base = "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
+        let bundleId = Bundle.main.bundleIdentifier ?? ""
+        if let url = URL(string: "\(base)?id=\(bundleId)") {
+            NSWorkspace.shared.open(url)
         }
     }
 

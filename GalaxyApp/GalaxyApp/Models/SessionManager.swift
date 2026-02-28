@@ -438,15 +438,19 @@ class SessionManager: ObservableObject {
     /// Called on every busy→idle transition for a session.
     /// Checks context usage and auto-clears if above threshold.
     private func handleIdleTransition(for session: Session) {
+        let settings = SettingsManager.shared.settings
+
         // Show unread indicator when a non-focused session goes idle
-        // (assistant finished responding while you're elsewhere)
-        let showIndicator = SettingsManager.shared.settings.showUnreadIndicator
+        // (assistant finished responding while you're elsewhere).
+        // State is set when either sidebar indicators or dock badge is enabled.
+        // Each display surface gates its own visibility independently.
         let isViewingThisSession = session.id == activeSessionId && activeTab == .terminal
-        if showIndicator && !isViewingThisSession {
+        let trackUnread = settings.showUnreadIndicator || settings.showDockBadge
+        if trackUnread && !isViewingThisSession {
             session.hasUnreadResponse = true
+            updateDockBadge()
         }
 
-        let settings = SettingsManager.shared.settings
         guard settings.autoClearEnabled else { return }
 
         // ledgerContextPercentage is 0–100 (integer scale), matching the setting
@@ -500,6 +504,7 @@ class SessionManager: ObservableObject {
             withAnimation(.easeOut(duration: 3.0)) {
                 session.hasUnreadResponse = false
             }
+            updateDockBadge()
         }
 
         // Update menu state for the newly active session
@@ -530,6 +535,7 @@ class SessionManager: ObservableObject {
         // Remove the session (this will deallocate the terminal view which kills the process)
         sessions.remove(at: index)
         SessionPersistence.shared.markDirty()
+        updateDockBadge()
 
         // Update active session
         if activeSessionId == sessionId {
@@ -633,6 +639,19 @@ class SessionManager: ObservableObject {
     /// Resume busy state observation on all sessions (after drag/resize)
     func resumeAllBusyObservers() {
         sessions.forEach { $0.resumeBusyObserver() }
+    }
+
+    /// Update the dock badge to reflect the current unread session count.
+    /// Only updates when the showDockBadge setting is enabled.
+    /// Must be called on the main thread (NSDockTile is AppKit).
+    func updateDockBadge() {
+        guard SettingsManager.shared.settings.showDockBadge else {
+            NSApp.dockTile.badgeLabel = nil
+            return
+        }
+
+        let unreadCount = sessions.filter { $0.hasUnreadResponse }.count
+        NSApp.dockTile.badgeLabel = unreadCount > 0 ? "\(unreadCount)" : nil
     }
 
     /// Trigger visual bell with 3 flashes, each shorter than the last

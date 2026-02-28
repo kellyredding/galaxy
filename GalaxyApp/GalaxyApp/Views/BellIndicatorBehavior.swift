@@ -19,6 +19,7 @@ struct UnreadIndicatorBehavior: ViewModifier {
             withAnimation(.easeOut(duration: 3.0)) {
                 session.hasUnreadResponse = false
             }
+            SessionManager.shared.updateDockBadge()
         }
     }
 

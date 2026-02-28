@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 
 // MARK: - Settings Tab Definition
 
@@ -434,6 +435,7 @@ struct TerminalSettingsTab: View {
 
 struct AlertsSettingsTab: View {
     @ObservedObject var settingsManager: SettingsManager
+    @State private var badgeAuthStatus: UNAuthorizationStatus = .notDetermined
 
     var body: some View {
         VStack(spacing: 16) {
@@ -470,11 +472,68 @@ struct AlertsSettingsTab: View {
                             .toggleStyle(.checkbox)
                         Spacer()
                     }
+
+                    // Dock badge toggle with authorization status
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Toggle("Show dock badge", isOn: $settingsManager.settings.showDockBadge)
+                                .toggleStyle(.checkbox)
+                                .onChange(of: settingsManager.settings.showDockBadge) { _, enabled in
+                                    if enabled {
+                                        Task {
+                                            let granted = await settingsManager.requestBadgeAuthorization()
+                                            badgeAuthStatus = granted ? .authorized : .denied
+                                            // Update badge immediately with current unread count
+                                            SessionManager.shared.updateDockBadge()
+                                        }
+                                    } else {
+                                        // Clear badge immediately when disabled
+                                        NSApp.dockTile.badgeLabel = nil
+                                    }
+                                }
+                            Spacer()
+                        }
+
+                        // Show authorization warning when enabled but denied.
+                        // Note: this only detects denial of the initial permission
+                        // prompt. The per-app "Badge app icon" toggle in System
+                        // Settings is not queryable via any API — a platform
+                        // limitation shared by all Mac apps.
+                        if settingsManager.settings.showDockBadge && badgeAuthStatus == .denied {
+                            HStack(spacing: 4) {
+                                Text("Badge disabled in system settings.")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                                Button("Open Notification Settings") {
+                                    settingsManager.openNotificationSettings()
+                                }
+                                .font(.system(size: 11))
+                                .buttonStyle(.link)
+                            }
+                            .padding(.leading, 20)
+                        }
+                    }
                 }
             }
             Spacer()
         }
         .padding(20)
+        .task {
+            // Check authorization status on appear (no prompt)
+            await refreshBadgeAuthStatus()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            // Refresh auth status when window regains focus (user may have
+            // changed notification settings in System Settings and returned)
+            Task {
+                await refreshBadgeAuthStatus()
+            }
+        }
+    }
+
+    private func refreshBadgeAuthStatus() async {
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        badgeAuthStatus = settings.authorizationStatus
     }
 }
 

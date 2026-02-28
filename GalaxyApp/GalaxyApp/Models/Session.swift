@@ -49,6 +49,16 @@ class Session: Identifiable, ObservableObject {
     @Published var isRunning: Bool = false
     @Published var hasExited: Bool = false
     @Published var exitCode: Int32?
+    /// Whether this session has an unread response the user hasn't seen yet.
+    /// Set by SessionManager.handleIdleTransition when a non-focused session
+    /// goes idle. Cleared when the user views the session on the terminal tab.
+    ///
+    /// Two display surfaces read this state independently:
+    /// - Sidebar/tab red dots (gated by showUnreadIndicator setting)
+    /// - Dock badge count (gated by showDockBadge setting)
+    ///
+    /// IMPORTANT: After mutating this property, call
+    /// SessionManager.shared.updateDockBadge() to keep the dock badge in sync.
     @Published var hasUnreadResponse: Bool = false
     @Published var visualBellActive: Bool = false
     @Published var isBusy: Bool = false
