@@ -13,8 +13,8 @@ struct ExpandedSessionSidebar: View {
     // Row height derived from fixed line heights (deterministic, font-independent)
     private var rowHeight: CGFloat {
         let fontSize = ChromeFontSize(chromeFontSize)
-        // top(6) + caption2Line + spacing(2) + tinyLine + spacing(2) + tinyLine + bottom(7)
-        return 6 + fontSize.caption2LineHeight + 2 + fontSize.tinyLineHeight + 2 + fontSize.tinyLineHeight + 7
+        // top(6) + caption1Line + spacing(2) + tinyLine + spacing(2) + tinyLine + bottom(7)
+        return 6 + fontSize.caption1LineHeight + 2 + fontSize.tinyLineHeight + 2 + fontSize.tinyLineHeight + 7
     }
 
     // Only show drag handles when there's more than one session

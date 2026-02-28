@@ -76,13 +76,13 @@ struct SessionRow: View {
                     // Line 1: Session name (double-click to edit)
                     if isEditingName {
                         TextField("", text: $editingNameText)
-                            .chromeFontMono(size: fontSize.caption2, weight: .medium)
+                            .chromeFontMono(size: fontSize.caption1, weight: .medium)
                             .textFieldStyle(.plain)
                             .focused($isNameFieldFocused)
                             .lineLimit(1)
                             .truncationMode(.tail)
                             .foregroundColor(isSelected ? .white : .primary)
-                            .frame(height: fontSize.caption2LineHeight)
+                            .frame(height: fontSize.caption1LineHeight)
                             .onSubmit {
                                 commitNameEdit()
                             }
@@ -91,11 +91,11 @@ struct SessionRow: View {
                             }
                     } else {
                         Text(session.displayName)
-                            .chromeFontMono(size: fontSize.caption2, weight: .medium)
+                            .chromeFontMono(size: fontSize.caption1, weight: .medium)
                             .lineLimit(1)
                             .truncationMode(.tail)
                             .foregroundColor(isSelected ? .white : .primary)
-                            .frame(height: fontSize.caption2LineHeight)
+                            .frame(height: fontSize.caption1LineHeight)
                             .onTapGesture(count: 2) {
                                 beginNameEdit()
                             }

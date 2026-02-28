@@ -38,6 +38,9 @@ struct ChromeFontSize {
     /// Caption 2 (slightly larger caption)
     var caption2: CGFloat { 11 * scaleFactor }
 
+    /// Caption 1 (session titles, prominent captions)
+    var caption1: CGFloat { 12 * scaleFactor }
+
     /// Body text (base size)
     var body: CGFloat { base }
 
@@ -63,6 +66,9 @@ struct ChromeFontSize {
 
     /// Line height for caption2 text (font size + 4pt padding)
     var caption2LineHeight: CGFloat { ceil(caption2) + 4 }
+
+    /// Line height for caption1 text (font size + 4pt padding)
+    var caption1LineHeight: CGFloat { ceil(caption1) + 4 }
 
     /// Icon sizes
     var iconSmall: CGFloat { 12 * scaleFactor }
