@@ -76,7 +76,7 @@ struct SessionRow: View {
                     // Line 1: Session name (double-click to edit)
                     if isEditingName {
                         TextField("", text: $editingNameText)
-                            .chromeFontMono(size: fontSize.caption1, weight: .medium)
+                            .chromeFont(size: fontSize.caption1, weight: .bold)
                             .textFieldStyle(.plain)
                             .focused($isNameFieldFocused)
                             .lineLimit(1)
@@ -91,7 +91,7 @@ struct SessionRow: View {
                             }
                     } else {
                         Text(session.displayName)
-                            .chromeFontMono(size: fontSize.caption1, weight: .medium)
+                            .chromeFont(size: fontSize.caption1, weight: .bold)
                             .lineLimit(1)
                             .truncationMode(.tail)
                             .foregroundColor(isSelected ? .white : .primary)
