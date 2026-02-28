@@ -270,4 +270,36 @@ describe GalaxyLedger::Database do
       s.metadata.should eq(%({"key": "val"}))
     end
   end
+
+  describe ".get_snapshot_by_id" do
+    it "returns snapshot by primary key ID" do
+      session_id = GalaxyLedger::Database.create_session("snap-byid-1")
+      GalaxyLedger::Database.save_snapshot(session_id, "By ID test", "content here")
+      by_number = GalaxyLedger::Database.get_snapshot_by_number(session_id, 1)
+      snapshot_id = by_number.not_nil!.id
+
+      result = GalaxyLedger::Database.get_snapshot_by_id(snapshot_id)
+      result.should_not be_nil
+      s = result.not_nil!
+      s.id.should eq(snapshot_id)
+      s.title.should eq("By ID test")
+      s.content.should eq("content here")
+      s.ledger_session_id.should eq(session_id)
+    end
+
+    it "returns nil for nonexistent ID" do
+      result = GalaxyLedger::Database.get_snapshot_by_id(99999_i64)
+      result.should be_nil
+    end
+
+    it "returns nil for invalid ID (0)" do
+      result = GalaxyLedger::Database.get_snapshot_by_id(0_i64)
+      result.should be_nil
+    end
+
+    it "returns nil for negative ID" do
+      result = GalaxyLedger::Database.get_snapshot_by_id(-1_i64)
+      result.should be_nil
+    end
+  end
 end

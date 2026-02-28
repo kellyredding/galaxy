@@ -283,11 +283,40 @@ module GalaxyLedger
           )
         SQL
 
+        # Snapshot review table for batching annotations into review submissions
+        db.exec(<<-SQL)
+          CREATE TABLE IF NOT EXISTS ledger_snapshot_reviews (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            ledger_snapshot_id INTEGER NOT NULL,
+            number INTEGER NOT NULL,
+            reviewed_at TEXT,
+            UNIQUE(ledger_snapshot_id, number),
+            FOREIGN KEY (ledger_snapshot_id)
+              REFERENCES ledger_snapshots(id) ON DELETE CASCADE
+          )
+        SQL
+
+        # Add review FK to annotations (safe to run multiple times)
+        begin
+          db.exec(<<-SQL)
+            ALTER TABLE ledger_snapshot_annotations
+              ADD COLUMN ledger_snapshot_review_id INTEGER
+              REFERENCES ledger_snapshot_reviews(id) ON DELETE SET NULL
+          SQL
+        rescue
+          # Column already exists — ignore
+        end
+
         # Indexes for ledger_snapshots
         db.exec("CREATE INDEX IF NOT EXISTS idx_snapshots_session ON ledger_snapshots(ledger_session_id)")
 
         # Indexes for ledger_snapshot_annotations
         db.exec("CREATE INDEX IF NOT EXISTS idx_snapshot_annotations_snapshot ON ledger_snapshot_annotations(ledger_snapshot_id)")
+
+        # Indexes for ledger_snapshot_reviews
+        db.exec("CREATE INDEX IF NOT EXISTS idx_snapshot_reviews_snapshot ON ledger_snapshot_reviews(ledger_snapshot_id)")
 
         # Indexes for ledger_artifacts
         db.exec("CREATE INDEX IF NOT EXISTS idx_artifacts_session ON ledger_artifacts(ledger_session_id)")
@@ -2211,7 +2240,7 @@ module GalaxyLedger
           db.query_one?(
             <<-SQL
               SELECT id, created_at, updated_at, ledger_snapshot_id, number,
-                     start_line, end_line, content
+                     start_line, end_line, content, ledger_snapshot_review_id
               FROM ledger_snapshot_annotations
               WHERE id = last_insert_rowid()
             SQL
@@ -2234,7 +2263,7 @@ module GalaxyLedger
           db.query(
             <<-SQL,
               SELECT id, created_at, updated_at, ledger_snapshot_id, number,
-                     start_line, end_line, content
+                     start_line, end_line, content, ledger_snapshot_review_id
               FROM ledger_snapshot_annotations
               WHERE ledger_snapshot_id = ?
               ORDER BY start_line ASC, end_line ASC, number ASC
@@ -2261,7 +2290,7 @@ module GalaxyLedger
           db.query_one?(
             <<-SQL,
               SELECT id, created_at, updated_at, ledger_snapshot_id, number,
-                     start_line, end_line, content
+                     start_line, end_line, content, ledger_snapshot_review_id
               FROM ledger_snapshot_annotations
               WHERE ledger_snapshot_id = ? AND number = ?
             SQL
@@ -2303,7 +2332,7 @@ module GalaxyLedger
           db.query_one?(
             <<-SQL,
               SELECT id, created_at, updated_at, ledger_snapshot_id, number,
-                     start_line, end_line, content
+                     start_line, end_line, content, ledger_snapshot_review_id
               FROM ledger_snapshot_annotations
               WHERE ledger_snapshot_id = ? AND number = ?
             SQL
@@ -2334,6 +2363,282 @@ module GalaxyLedger
       rescue
         false
       end
+    end
+
+    # ============================================================
+    # Snapshot Review Operations
+    # ============================================================
+
+    # Create a snapshot review and assign all unreviewed annotations.
+    # Returns {review, annotation_count} or nil if no unreviewed
+    # annotations exist.
+    #
+    # Uses an explicit transaction to ensure atomicity: the count
+    # check, review INSERT, and annotation UPDATE all see a consistent
+    # snapshot. Without this, concurrent calls could both COUNT the
+    # same unreviewed annotations and race to assign them.
+    def self.save_snapshot_review(
+      ledger_snapshot_id : Int64,
+    ) : {SnapshotReview, Int32}?
+      return nil if ledger_snapshot_id <= 0
+
+      begin
+        open do |db|
+          db.exec("BEGIN IMMEDIATE")
+
+          count = db.scalar(
+            <<-SQL,
+              SELECT COUNT(*)
+              FROM ledger_snapshot_annotations
+              WHERE ledger_snapshot_id = ?
+                AND ledger_snapshot_review_id IS NULL
+            SQL
+            ledger_snapshot_id,
+          ).as(Int64).to_i
+
+          if count == 0
+            db.exec("ROLLBACK")
+            return nil
+          end
+
+          # Create the review with auto-assigned number
+          db.exec(
+            <<-SQL,
+              INSERT INTO ledger_snapshot_reviews (
+                ledger_snapshot_id, number
+              )
+              VALUES (
+                ?,
+                (SELECT COALESCE(MAX(number), 0) + 1
+                 FROM ledger_snapshot_reviews
+                 WHERE ledger_snapshot_id = ?)
+              )
+            SQL
+            ledger_snapshot_id,
+            ledger_snapshot_id,
+          )
+
+          review = db.query_one?(
+            <<-SQL
+              SELECT id, created_at, updated_at, ledger_snapshot_id,
+                     number, reviewed_at
+              FROM ledger_snapshot_reviews
+              WHERE id = last_insert_rowid()
+            SQL
+          ) do |rs|
+            SnapshotReview.from_row(rs)
+          end
+
+          unless review
+            db.exec("ROLLBACK")
+            return nil
+          end
+
+          # Assign all unreviewed annotations to this review
+          db.exec(
+            <<-SQL,
+              UPDATE ledger_snapshot_annotations
+              SET ledger_snapshot_review_id = ?,
+                  updated_at = datetime('now')
+              WHERE ledger_snapshot_id = ?
+                AND ledger_snapshot_review_id IS NULL
+            SQL
+            review.id,
+            ledger_snapshot_id,
+          )
+
+          db.exec("COMMIT")
+          {review, count.to_i}
+        end
+      rescue
+        nil
+      end
+    end
+
+    # List reviews for a snapshot. If pending_only is true, only
+    # returns reviews where reviewed_at IS NULL.
+    def self.list_snapshot_reviews(
+      ledger_snapshot_id : Int64,
+      pending_only : Bool = false,
+    ) : Array(SnapshotReview)
+      reviews = [] of SnapshotReview
+      return reviews if ledger_snapshot_id <= 0
+
+      begin
+        open do |db|
+          where_clause = "WHERE ledger_snapshot_id = ?"
+          if pending_only
+            where_clause += " AND reviewed_at IS NULL"
+          end
+
+          db.query(
+            <<-SQL,
+              SELECT id, created_at, updated_at, ledger_snapshot_id,
+                     number, reviewed_at
+              FROM ledger_snapshot_reviews
+              #{where_clause}
+              ORDER BY number ASC
+            SQL
+            ledger_snapshot_id,
+          ) do |rs|
+            rs.each do
+              reviews << SnapshotReview.from_row(rs)
+            end
+          end
+        end
+      rescue
+        # Return empty on error
+      end
+      reviews
+    end
+
+    # Get a snapshot review by snapshot ID + number.
+    def self.get_snapshot_review(
+      ledger_snapshot_id : Int64,
+      number : Int32,
+    ) : SnapshotReview?
+      return nil if ledger_snapshot_id <= 0
+
+      begin
+        open do |db|
+          db.query_one?(
+            <<-SQL,
+              SELECT id, created_at, updated_at, ledger_snapshot_id,
+                     number, reviewed_at
+              FROM ledger_snapshot_reviews
+              WHERE ledger_snapshot_id = ? AND number = ?
+            SQL
+            ledger_snapshot_id,
+            number,
+          ) do |rs|
+            SnapshotReview.from_row(rs)
+          end
+        end
+      rescue
+        nil
+      end
+    end
+
+    # Mark a review as reviewed. Sets reviewed_at to current time.
+    # Idempotent — calling again updates the timestamp.
+    # Returns the updated review or nil if not found.
+    def self.mark_snapshot_review_reviewed(
+      ledger_snapshot_id : Int64,
+      number : Int32,
+    ) : SnapshotReview?
+      return nil if ledger_snapshot_id <= 0
+
+      begin
+        open do |db|
+          result = db.exec(
+            <<-SQL,
+              UPDATE ledger_snapshot_reviews
+              SET reviewed_at = datetime('now'),
+                  updated_at = datetime('now')
+              WHERE ledger_snapshot_id = ? AND number = ?
+            SQL
+            ledger_snapshot_id,
+            number,
+          )
+          return nil if result.rows_affected == 0
+
+          db.query_one?(
+            <<-SQL,
+              SELECT id, created_at, updated_at, ledger_snapshot_id,
+                     number, reviewed_at
+              FROM ledger_snapshot_reviews
+              WHERE ledger_snapshot_id = ? AND number = ?
+            SQL
+            ledger_snapshot_id,
+            number,
+          ) do |rs|
+            SnapshotReview.from_row(rs)
+          end
+        end
+      rescue
+        nil
+      end
+    end
+
+    # Get a snapshot by its database primary key.
+    def self.get_snapshot_by_id(
+      id : Int64,
+    ) : Snapshot?
+      return nil if id <= 0
+
+      begin
+        open do |db|
+          db.query_one?(
+            <<-SQL,
+              SELECT id, ledger_session_id, number, created_at,
+                     updated_at, title, content, exchange_count,
+                     char_count, metadata
+              FROM ledger_snapshots
+              WHERE id = ?
+            SQL
+            id,
+          ) do |rs|
+            Snapshot.from_row(rs)
+          end
+        end
+      rescue
+        nil
+      end
+    end
+
+    # Count annotations not assigned to any review.
+    def self.count_unreviewed_annotations(
+      ledger_snapshot_id : Int64,
+    ) : Int32
+      return 0 if ledger_snapshot_id <= 0
+
+      begin
+        open do |db|
+          db.scalar(
+            <<-SQL,
+              SELECT COUNT(*)
+              FROM ledger_snapshot_annotations
+              WHERE ledger_snapshot_id = ?
+                AND ledger_snapshot_review_id IS NULL
+            SQL
+            ledger_snapshot_id,
+          ).as(Int64).to_i
+        end
+      rescue
+        0
+      end
+    end
+
+    # List annotations assigned to a specific review, ordered by
+    # reading position.
+    def self.list_annotations_for_review(
+      review_id : Int64,
+    ) : Array(SnapshotAnnotation)
+      annotations = [] of SnapshotAnnotation
+      return annotations if review_id <= 0
+
+      begin
+        open do |db|
+          db.query(
+            <<-SQL,
+              SELECT id, created_at, updated_at, ledger_snapshot_id,
+                     number, start_line, end_line, content,
+                     ledger_snapshot_review_id
+              FROM ledger_snapshot_annotations
+              WHERE ledger_snapshot_review_id = ?
+              ORDER BY start_line ASC, end_line ASC, number ASC
+            SQL
+            review_id,
+          ) do |rs|
+            rs.each do
+              annotations << SnapshotAnnotation.from_row(rs)
+            end
+          end
+        end
+      rescue
+        # Return empty on error
+      end
+      annotations
     end
 
     # ============================================================
@@ -3076,10 +3381,12 @@ module GalaxyLedger
       getter start_line : Int32
       getter end_line : Int32
       getter content : String
+      getter ledger_snapshot_review_id : Int64?
 
       def initialize(
         @id, @created_at, @updated_at, @ledger_snapshot_id,
         @number, @start_line, @end_line, @content,
+        @ledger_snapshot_review_id,
       )
       end
 
@@ -3093,6 +3400,34 @@ module GalaxyLedger
           start_line: rs.read(Int64).to_i,
           end_line: rs.read(Int64).to_i,
           content: rs.read(String),
+          ledger_snapshot_review_id: rs.read(Int64?),
+        )
+      end
+    end
+
+    # A snapshot review record from the database
+    struct SnapshotReview
+      getter id : Int64
+      getter created_at : String
+      getter updated_at : String
+      getter ledger_snapshot_id : Int64
+      getter number : Int32
+      getter reviewed_at : String?
+
+      def initialize(
+        @id, @created_at, @updated_at, @ledger_snapshot_id,
+        @number, @reviewed_at,
+      )
+      end
+
+      def self.from_row(rs) : SnapshotReview
+        SnapshotReview.new(
+          id: rs.read(Int64),
+          created_at: rs.read(String),
+          updated_at: rs.read(String),
+          ledger_snapshot_id: rs.read(Int64),
+          number: rs.read(Int64).to_i,
+          reviewed_at: rs.read(String?),
         )
       end
     end

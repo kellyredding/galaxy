@@ -163,6 +163,31 @@ module GalaxyLedger
         SQL
         db.exec("CREATE INDEX IF NOT EXISTS idx_snapshot_annotations_snapshot ON ledger_snapshot_annotations(ledger_snapshot_id)")
       },
+      "0.3.7" => ->(db : DB::Database) {
+        db.exec(<<-SQL)
+          CREATE TABLE IF NOT EXISTS ledger_snapshot_reviews (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            ledger_snapshot_id INTEGER NOT NULL,
+            number INTEGER NOT NULL,
+            reviewed_at TEXT,
+            UNIQUE(ledger_snapshot_id, number),
+            FOREIGN KEY (ledger_snapshot_id)
+              REFERENCES ledger_snapshots(id) ON DELETE CASCADE
+          )
+        SQL
+        db.exec("CREATE INDEX IF NOT EXISTS idx_snapshot_reviews_snapshot ON ledger_snapshot_reviews(ledger_snapshot_id)")
+        begin
+          db.exec(<<-SQL)
+            ALTER TABLE ledger_snapshot_annotations
+              ADD COLUMN ledger_snapshot_review_id INTEGER
+              REFERENCES ledger_snapshot_reviews(id) ON DELETE SET NULL
+          SQL
+        rescue
+          # Column already exists — ignore
+        end
+      },
     }
 
     # ==========================================================================

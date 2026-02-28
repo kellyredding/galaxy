@@ -3197,6 +3197,8 @@ module GalaxyLedger
         end
       when "annotation"
         handle_snapshot_annotation_command(rest)
+      when "review"
+        handle_snapshot_review_command(rest)
       else
         STDERR.puts "Error: Unknown snapshot command '#{subcommand}'"
         STDERR.puts "Run 'galaxy-ledger snapshot --help' for usage"
@@ -3715,6 +3717,7 @@ module GalaxyLedger
         open        Open a snapshot in an editor
         delete      Delete a snapshot
         annotation  Manage snapshot annotations
+        review      Manage snapshot reviews
 
       Run 'galaxy-ledger snapshot <command> --help' for detailed usage.
       HELP
@@ -4029,6 +4032,12 @@ module GalaxyLedger
           end
         end
         puts ""
+
+        EventPublisher.publish(
+          ledger_session_id: resolve_ledger_session_id_for_snapshot(ledger_snapshot_id),
+          event: "annotation.created",
+          ref: ledger_snapshot_id.to_s,
+        )
       else
         STDERR.puts "Error: failed to create annotation"
         exit(1)
@@ -4276,6 +4285,12 @@ module GalaxyLedger
           end
         end
         puts ""
+
+        EventPublisher.publish(
+          ledger_session_id: resolve_ledger_session_id_for_snapshot(ledger_snapshot_id),
+          event: "annotation.updated",
+          ref: ledger_snapshot_id.to_s,
+        )
       else
         STDERR.puts "Error: annotation ##{number} not found"
         exit(1)
@@ -4345,6 +4360,12 @@ module GalaxyLedger
 
       if result
         puts "Annotation ##{number} deleted"
+
+        EventPublisher.publish(
+          ledger_session_id: resolve_ledger_session_id_for_snapshot(ledger_snapshot_id),
+          event: "annotation.deleted",
+          ref: ledger_snapshot_id.to_s,
+        )
       else
         STDERR.puts "Error: annotation ##{number} not found"
         exit(1)
@@ -4357,6 +4378,7 @@ module GalaxyLedger
         json.field "id", ann.id
         json.field "number", ann.number
         json.field "ledger_snapshot_id", ann.ledger_snapshot_id
+        json.field "ledger_snapshot_review_id", ann.ledger_snapshot_review_id
         json.field "start_line", ann.start_line
         json.field "end_line", ann.end_line
         json.field "content", ann.content
@@ -4482,6 +4504,620 @@ module GalaxyLedger
 
       DESCRIPTION:
         Permanently deletes an annotation from the snapshot.
+      HELP
+    end
+
+    # ========================================
+    # Snapshot Review Commands
+    # ========================================
+
+    private def self.handle_snapshot_review_command(args : Array(String))
+      if args.empty? || args.first? == "-h" || args.first? == "--help"
+        show_snapshot_review_help
+        return
+      end
+
+      subcommand = args[0]
+      rest = args[1..]? || [] of String
+
+      case subcommand
+      when "create"
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_snapshot_review_create_help
+        else
+          snapshot_review_create(rest)
+        end
+      when "list"
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_snapshot_review_list_help
+        else
+          snapshot_review_list(rest)
+        end
+      when "view"
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_snapshot_review_view_help
+        else
+          snapshot_review_view(rest)
+        end
+      when "mark-reviewed"
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_snapshot_review_mark_reviewed_help
+        else
+          snapshot_review_mark_reviewed(rest)
+        end
+      when "has-pending"
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_snapshot_review_has_pending_help
+        else
+          snapshot_review_has_pending(rest)
+        end
+      else
+        STDERR.puts "Error: Unknown snapshot review command '#{subcommand}'"
+        STDERR.puts "Run 'galaxy-ledger snapshot review --help' for usage"
+        exit(1)
+      end
+    end
+
+    private def self.snapshot_review_create(args : Array(String))
+      ledger_snapshot_id_str : String? = nil
+      ledger_session_id_str : String? = nil
+      snapshot_number : Int32? = nil
+
+      i = 0
+      while i < args.size
+        arg = args[i]
+        case arg
+        when "--ledger-snapshot-id"
+          if i + 1 < args.size
+            ledger_snapshot_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --ledger-snapshot-id requires a value"
+            exit(1)
+          end
+        when "--ledger-session-id"
+          if i + 1 < args.size
+            ledger_session_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --ledger-session-id requires a value"
+            exit(1)
+          end
+        when "--snapshot"
+          if i + 1 < args.size
+            snapshot_number = args[i + 1].to_i?
+            i += 2
+          else
+            STDERR.puts "Error: --snapshot requires a value"
+            exit(1)
+          end
+        else
+          i += 1
+        end
+      end
+
+      ledger_snapshot_id = resolve_snapshot_id(
+        ledger_snapshot_id_str,
+        ledger_session_id_str,
+        snapshot_number,
+      )
+
+      result = Database.save_snapshot_review(ledger_snapshot_id)
+
+      unless result
+        STDERR.puts "Error: no unreviewed annotations to submit"
+        exit(1)
+      end
+
+      review, annotation_count = result
+
+      # Emit event so Galaxy app can update button visibility.
+      # Use ledger_snapshot_id as ref (NOT review number) — must be
+      # consistent with annotation events so the EventCoordinator
+      # routing can treat ref as snapshot ID for all event types.
+      EventPublisher.publish(
+        ledger_session_id: resolve_ledger_session_id_for_snapshot(ledger_snapshot_id),
+        event: "review.created",
+        ref: ledger_snapshot_id.to_s,
+      )
+
+      JSON.build(STDOUT) do |json|
+        json.object do
+          json.field "review" do
+            review_to_json(json, review)
+          end
+          json.field "annotation_count", annotation_count
+        end
+      end
+      puts ""
+    end
+
+    private def self.snapshot_review_list(args : Array(String))
+      ledger_snapshot_id_str : String? = nil
+      ledger_session_id_str : String? = nil
+      snapshot_number : Int32? = nil
+      json_output = false
+      pending_only = false
+
+      i = 0
+      while i < args.size
+        arg = args[i]
+        case arg
+        when "--ledger-snapshot-id"
+          if i + 1 < args.size
+            ledger_snapshot_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --ledger-snapshot-id requires a value"
+            exit(1)
+          end
+        when "--ledger-session-id"
+          if i + 1 < args.size
+            ledger_session_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --ledger-session-id requires a value"
+            exit(1)
+          end
+        when "--snapshot"
+          if i + 1 < args.size
+            snapshot_number = args[i + 1].to_i?
+            i += 2
+          else
+            STDERR.puts "Error: --snapshot requires a value"
+            exit(1)
+          end
+        when "--json"
+          json_output = true
+          i += 1
+        when "--pending"
+          pending_only = true
+          i += 1
+        else
+          i += 1
+        end
+      end
+
+      ledger_snapshot_id = resolve_snapshot_id(
+        ledger_snapshot_id_str,
+        ledger_session_id_str,
+        snapshot_number,
+      )
+
+      reviews = Database.list_snapshot_reviews(
+        ledger_snapshot_id,
+        pending_only: pending_only,
+      )
+
+      if json_output
+        JSON.build(STDOUT) do |json|
+          json.object do
+            json.field "reviews" do
+              json.array do
+                reviews.each do |review|
+                  json.object do
+                    json.field "number", review.number
+                    json.field "ledger_snapshot_id", review.ledger_snapshot_id
+                    json.field "created_at", review.created_at
+                    json.field "reviewed_at", review.reviewed_at
+                    json.field "annotation_count" do
+                      anns = Database.list_annotations_for_review(review.id)
+                      json.number anns.size
+                    end
+                  end
+                end
+              end
+            end
+          end
+        end
+        puts ""
+      else
+        if reviews.empty?
+          label = pending_only ? "pending reviews" : "reviews"
+          puts "No #{label}."
+        else
+          label = pending_only ? "Pending reviews" : "Reviews"
+          puts "#{label} (#{reviews.size} total):"
+          reviews.each do |review|
+            ann_count = Database.list_annotations_for_review(review.id).size
+            status = review.reviewed_at ? "reviewed" : "pending"
+            timestamp = format_snapshot_timestamp(review.created_at)
+            puts "  ##{review.number}  #{ann_count} annotation#{ann_count == 1 ? "" : "s"}  #{status}  #{timestamp}"
+          end
+        end
+      end
+    end
+
+    private def self.snapshot_review_view(args : Array(String))
+      ledger_snapshot_id_str : String? = nil
+      ledger_session_id_str : String? = nil
+      snapshot_number : Int32? = nil
+      review_number : Int32? = nil
+      json_output = false
+
+      i = 0
+      while i < args.size
+        arg = args[i]
+        case arg
+        when "--ledger-snapshot-id"
+          if i + 1 < args.size
+            ledger_snapshot_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --ledger-snapshot-id requires a value"
+            exit(1)
+          end
+        when "--ledger-session-id"
+          if i + 1 < args.size
+            ledger_session_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --ledger-session-id requires a value"
+            exit(1)
+          end
+        when "--snapshot"
+          if i + 1 < args.size
+            snapshot_number = args[i + 1].to_i?
+            i += 2
+          else
+            STDERR.puts "Error: --snapshot requires a value"
+            exit(1)
+          end
+        when "--json"
+          json_output = true
+          i += 1
+        else
+          if n = arg.to_i?
+            review_number = n
+          end
+          i += 1
+        end
+      end
+
+      ledger_snapshot_id = resolve_snapshot_id(
+        ledger_snapshot_id_str,
+        ledger_session_id_str,
+        snapshot_number,
+      )
+
+      unless review_number
+        STDERR.puts "Error: review number is required"
+        STDERR.puts "Run 'galaxy-ledger snapshot review view --help' for usage"
+        exit(1)
+      end
+
+      review = Database.get_snapshot_review(ledger_snapshot_id, review_number)
+      unless review
+        STDERR.puts "Error: review ##{review_number} not found"
+        exit(1)
+      end
+
+      # Get the snapshot for context
+      snapshot = Database.get_snapshot_by_id(ledger_snapshot_id)
+      unless snapshot
+        STDERR.puts "Error: snapshot not found"
+        exit(1)
+      end
+
+      # Get annotations assigned to this review
+      annotations = Database.list_annotations_for_review(review.id)
+
+      if json_output
+        JSON.build(STDOUT) do |json|
+          json.object do
+            json.field "review" do
+              review_to_json(json, review)
+            end
+            json.field "snapshot" do
+              json.object do
+                json.field "id", snapshot.id
+                json.field "number", snapshot.number
+                json.field "title", snapshot.title
+                json.field "content", snapshot.content
+                json.field "exchange_count", snapshot.exchange_count
+                json.field "ledger_session_id", snapshot.ledger_session_id
+                json.field "created_at", snapshot.created_at
+              end
+            end
+            json.field "annotations" do
+              json.array do
+                annotations.each do |ann|
+                  annotation_to_json(json, ann)
+                end
+              end
+            end
+          end
+        end
+        puts ""
+      else
+        status = review.reviewed_at ? "reviewed #{format_snapshot_timestamp(review.reviewed_at.not_nil!)}" : "pending"
+        timestamp = format_snapshot_timestamp(review.created_at)
+        puts "Review ##{review.number} (#{status})"
+        puts "  Snapshot: ##{snapshot.number} — #{snapshot.title}"
+        puts "  Created: #{timestamp}"
+        puts "  Annotations (#{annotations.size}):"
+        annotations.each do |ann|
+          range = ann.start_line == ann.end_line ? "line #{ann.start_line}" : "lines #{ann.start_line}-#{ann.end_line}"
+          preview = ann.content.gsub('\n', ' ')
+          preview = preview[0, 60] + "..." if preview.size > 63
+          puts "    ##{ann.number}  #{range}  \"#{preview}\""
+        end
+      end
+    end
+
+    private def self.snapshot_review_mark_reviewed(args : Array(String))
+      ledger_snapshot_id_str : String? = nil
+      ledger_session_id_str : String? = nil
+      snapshot_number : Int32? = nil
+      review_number : Int32? = nil
+
+      i = 0
+      while i < args.size
+        arg = args[i]
+        case arg
+        when "--ledger-snapshot-id"
+          if i + 1 < args.size
+            ledger_snapshot_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --ledger-snapshot-id requires a value"
+            exit(1)
+          end
+        when "--ledger-session-id"
+          if i + 1 < args.size
+            ledger_session_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --ledger-session-id requires a value"
+            exit(1)
+          end
+        when "--snapshot"
+          if i + 1 < args.size
+            snapshot_number = args[i + 1].to_i?
+            i += 2
+          else
+            STDERR.puts "Error: --snapshot requires a value"
+            exit(1)
+          end
+        else
+          if n = arg.to_i?
+            review_number = n
+          end
+          i += 1
+        end
+      end
+
+      ledger_snapshot_id = resolve_snapshot_id(
+        ledger_snapshot_id_str,
+        ledger_session_id_str,
+        snapshot_number,
+      )
+
+      unless review_number
+        STDERR.puts "Error: review number is required"
+        STDERR.puts "Run 'galaxy-ledger snapshot review mark-reviewed --help' for usage"
+        exit(1)
+      end
+
+      review = Database.mark_snapshot_review_reviewed(
+        ledger_snapshot_id,
+        review_number,
+      )
+
+      unless review
+        STDERR.puts "Error: review ##{review_number} not found"
+        exit(1)
+      end
+
+      JSON.build(STDOUT) do |json|
+        json.object do
+          json.field "review" do
+            review_to_json(json, review)
+          end
+        end
+      end
+      puts ""
+    end
+
+    private def self.snapshot_review_has_pending(args : Array(String))
+      ledger_snapshot_id_str : String? = nil
+      ledger_session_id_str : String? = nil
+      snapshot_number : Int32? = nil
+
+      i = 0
+      while i < args.size
+        arg = args[i]
+        case arg
+        when "--ledger-snapshot-id"
+          if i + 1 < args.size
+            ledger_snapshot_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --ledger-snapshot-id requires a value"
+            exit(1)
+          end
+        when "--ledger-session-id"
+          if i + 1 < args.size
+            ledger_session_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --ledger-session-id requires a value"
+            exit(1)
+          end
+        when "--snapshot"
+          if i + 1 < args.size
+            snapshot_number = args[i + 1].to_i?
+            i += 2
+          else
+            STDERR.puts "Error: --snapshot requires a value"
+            exit(1)
+          end
+        else
+          i += 1
+        end
+      end
+
+      ledger_snapshot_id = resolve_snapshot_id(
+        ledger_snapshot_id_str,
+        ledger_session_id_str,
+        snapshot_number,
+      )
+
+      count = Database.count_unreviewed_annotations(ledger_snapshot_id)
+
+      JSON.build(STDOUT) do |json|
+        json.object do
+          json.field "ledger_snapshot_id", ledger_snapshot_id
+          json.field "has_pending", count > 0
+          json.field "count", count
+        end
+      end
+      puts ""
+    end
+
+    # Serialize a SnapshotReview to JSON fields
+    private def self.review_to_json(
+      json : JSON::Builder,
+      review : Database::SnapshotReview,
+    )
+      json.object do
+        json.field "id", review.id
+        json.field "number", review.number
+        json.field "ledger_snapshot_id", review.ledger_snapshot_id
+        json.field "created_at", review.created_at
+        json.field "updated_at", review.updated_at
+        json.field "reviewed_at", review.reviewed_at
+      end
+    end
+
+    # Helper to resolve ledger_session_id from a snapshot's DB primary key.
+    # Used by event emission — EventPublisher.publish needs the session ID
+    # to populate the envelope's session_identifiers.
+    private def self.resolve_ledger_session_id_for_snapshot(
+      ledger_snapshot_id : Int64,
+    ) : Int64
+      snapshot = Database.get_snapshot_by_id(ledger_snapshot_id)
+      snapshot.not_nil!.ledger_session_id
+    end
+
+    private def self.show_snapshot_review_help
+      puts <<-HELP
+      galaxy-ledger snapshot review - Manage snapshot reviews
+
+      USAGE:
+        galaxy-ledger snapshot review <command> [options]
+
+      COMMANDS:
+        create         Create a review from unreviewed annotations
+        list           List reviews for a snapshot
+        view           View a review with full context
+        mark-reviewed  Mark a review as processed
+        has-pending    Check if unreviewed annotations exist
+
+      Run 'galaxy-ledger snapshot review <command> --help' for detailed usage.
+      HELP
+    end
+
+    private def self.show_snapshot_review_create_help
+      puts <<-HELP
+      galaxy-ledger snapshot review create - Create a review
+
+      USAGE:
+        galaxy-ledger snapshot review create --ledger-snapshot-id ID
+        galaxy-ledger snapshot review create --ledger-session-id ID --snapshot N
+
+      REQUIRED (one of):
+        --ledger-snapshot-id ID   Snapshot database ID
+        --ledger-session-id ID    Ledger session ID (use with --snapshot)
+        --snapshot N              Snapshot number within the session
+
+      DESCRIPTION:
+        Creates a review and assigns all unreviewed annotations to it.
+        Fails if there are no unreviewed annotations. Returns JSON with
+        the created review and annotation count.
+      HELP
+    end
+
+    private def self.show_snapshot_review_list_help
+      puts <<-HELP
+      galaxy-ledger snapshot review list - List reviews
+
+      USAGE:
+        galaxy-ledger snapshot review list --ledger-snapshot-id ID [--pending] [--json]
+        galaxy-ledger snapshot review list --ledger-session-id ID --snapshot N [--pending] [--json]
+
+      REQUIRED (one of):
+        --ledger-snapshot-id ID   Snapshot database ID
+        --ledger-session-id ID    Ledger session ID (use with --snapshot)
+        --snapshot N              Snapshot number within the session
+
+      OPTIONS:
+        --pending                 Only show reviews not yet processed
+        --json                    Output as JSON (envelope: {"reviews":[...]})
+
+      DESCRIPTION:
+        Lists reviews for the specified snapshot, ordered by number.
+      HELP
+    end
+
+    private def self.show_snapshot_review_view_help
+      puts <<-HELP
+      galaxy-ledger snapshot review view - View a review
+
+      USAGE:
+        galaxy-ledger snapshot review view --ledger-snapshot-id ID NUMBER [--json]
+        galaxy-ledger snapshot review view --ledger-session-id ID --snapshot N NUMBER [--json]
+
+      REQUIRED:
+        --ledger-snapshot-id ID   Snapshot database ID (or use --ledger-session-id + --snapshot)
+        NUMBER                    Review number (snapshot-scoped)
+
+      OPTIONS:
+        --json                    Output as JSON with full context (review + snapshot + annotations)
+
+      DESCRIPTION:
+        Shows a review with its annotations. Human-readable format shows
+        a summary with annotation previews. JSON format includes the full
+        snapshot content for agent consumption — provides everything
+        needed to respond to annotations in one round trip.
+      HELP
+    end
+
+    private def self.show_snapshot_review_has_pending_help
+      puts <<-HELP
+      galaxy-ledger snapshot review has-pending - Check for unreviewed annotations
+
+      USAGE:
+        galaxy-ledger snapshot review has-pending --ledger-snapshot-id ID
+        galaxy-ledger snapshot review has-pending --ledger-session-id ID --snapshot N
+
+      REQUIRED (one of):
+        --ledger-snapshot-id ID   Snapshot database ID
+        --ledger-session-id ID    Ledger session ID (use with --snapshot)
+        --snapshot N              Snapshot number within the session
+
+      DESCRIPTION:
+        Returns JSON with whether unreviewed annotations exist and the
+        count. Used by Galaxy app to drive review button visibility.
+      HELP
+    end
+
+    private def self.show_snapshot_review_mark_reviewed_help
+      puts <<-HELP
+      galaxy-ledger snapshot review mark-reviewed - Mark as processed
+
+      USAGE:
+        galaxy-ledger snapshot review mark-reviewed --ledger-snapshot-id ID NUMBER
+        galaxy-ledger snapshot review mark-reviewed --ledger-session-id ID --snapshot N NUMBER
+
+      REQUIRED:
+        --ledger-snapshot-id ID   Snapshot database ID (or use --ledger-session-id + --snapshot)
+        NUMBER                    Review number (snapshot-scoped)
+
+      DESCRIPTION:
+        Sets the reviewed_at timestamp on a review, indicating it has
+        been processed. Idempotent — calling again updates the timestamp.
+        Returns JSON with the updated review.
       HELP
     end
 
