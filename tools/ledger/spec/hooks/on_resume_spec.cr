@@ -116,6 +116,8 @@ describe "OnResume additionalContext" do
     ctx.should contain("Guidelines")
     ctx.should contain("Decisions")
     ctx.should contain("Learnings")
+    ctx.should contain("captured automatically by hooks")
+    ctx.should contain("action needed for any of these")
   end
 
   it "includes lookup directives with --pid" do

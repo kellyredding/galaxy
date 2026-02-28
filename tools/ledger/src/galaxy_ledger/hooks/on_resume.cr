@@ -198,6 +198,9 @@ module GalaxyLedger
         lines << "- **Learnings**: Insights and discoveries (extracted at session end)"
         lines << "- **Session files**: Every file read, edited, written, or searched"
         lines << ""
+        lines << "All of the above are captured automatically by hooks \u2014 no agent"
+        lines << "action needed for any of these."
+        lines << ""
 
         # Brief restoration summary (not the full handoff — Claude Code
         # already restores the conversation history on resume)

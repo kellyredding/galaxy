@@ -113,6 +113,8 @@ describe "OnStartup additionalContext" do
     ctx.should contain("Decisions")
     ctx.should contain("Learnings")
     ctx.should contain("Session files")
+    ctx.should contain("captured automatically by hooks")
+    ctx.should contain("action needed for any of these")
   end
 
   it "includes tiered lookup directives" do
