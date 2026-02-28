@@ -48,6 +48,9 @@ struct SnapshotsView: View {
     @State private var annotationHTMLMap: [Int32: String] = [:]
     @State private var webViewRef: WKWebView? = nil
 
+    // Review state
+    @State private var hasUnreviewedAnnotations: Bool = false
+
     // Focus state for keyboard navigation
     @State private var focusedIndex: Int? = nil
 
@@ -122,6 +125,13 @@ struct SnapshotsView: View {
             sessionManager.annotationAction = nil
             handleAnnotationAction(action)
         }
+        .onChange(of: sessionManager.pendingReviewCheck) {
+            guard let snapshotId = sessionManager.pendingReviewCheck,
+                  let open = openSnapshot,
+                  snapshotId == open.id else { return }
+            sessionManager.pendingReviewCheck = nil
+            checkReviewButtonVisibility(snapshotId: snapshotId)
+        }
         .onDisappear {
             fetchTask?.cancel()
             fetchTask = nil
@@ -132,6 +142,7 @@ struct SnapshotsView: View {
             openSnapshot = nil
             openAnnotations = []
             annotationHTMLMap = [:]
+            hasUnreviewedAnnotations = false
             snapshots = nil
         }
     }
@@ -319,6 +330,8 @@ struct SnapshotsView: View {
                     .foregroundColor(.secondary)
                 Text(snapshot.title)
                     .chromeFont(size: fontSize.caption2, weight: .semibold)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                 Text("\u{00B7}")
                     .foregroundColor(.secondary)
                 Text("\(snapshot.exchangeCount) exchange\(snapshot.exchangeCount == 1 ? "" : "s")")
@@ -331,6 +344,23 @@ struct SnapshotsView: View {
                     .foregroundColor(.secondary)
 
                 Spacer()
+
+                // Review with Claude button — always rendered for stable
+                // layout, visibility controlled by opacity
+                Button(action: { submitReview(snapshotId: snapshot.id) }) {
+                    Text("Review with Claude")
+                        .chromeFont(size: fontSize.caption2, weight: .medium)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(Color.green)
+                        )
+                        .foregroundColor(.white)
+                }
+                .buttonStyle(.plain)
+                .opacity(hasUnreviewedAnnotations ? 1 : 0)
+                .allowsHitTesting(hasUnreviewedAnnotations)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
@@ -409,6 +439,9 @@ struct SnapshotsView: View {
                     openAnnotations = annotations
                     annotationHTMLMap = htmlMap
                     isLoadingContent = false
+                    hasUnreviewedAnnotations = annotations.contains {
+                        $0.ledgerSnapshotReviewId == nil
+                    }
                 }
             } catch {
                 guard !Task.isCancelled else { return }
@@ -428,6 +461,7 @@ struct SnapshotsView: View {
         openSnapshot = nil  // Purge content from memory
         openAnnotations = []
         annotationHTMLMap = [:]
+        hasUnreviewedAnnotations = false
 
         // Refocus the row that was open
         if let number = closingNumber {
@@ -502,6 +536,7 @@ struct SnapshotsView: View {
         openSnapshot = nil
         openAnnotations = []
         annotationHTMLMap = [:]
+        hasUnreviewedAnnotations = false
         snapshots = nil
         isLoading = false
         isLoadingContent = false
@@ -553,6 +588,9 @@ struct SnapshotsView: View {
                     openSnapshot = detail
                     openAnnotations = annotations
                     annotationHTMLMap = htmlMap
+                    hasUnreviewedAnnotations = annotations.contains {
+                        $0.ledgerSnapshotReviewId == nil
+                    }
                 }
             } catch {
                 guard !Task.isCancelled else { return }
@@ -713,6 +751,72 @@ struct SnapshotsView: View {
         guard let data = try? JSONSerialization.data(withJSONObject: dict),
               let json = String(data: data, encoding: .utf8) else { return "{}" }
         return json
+    }
+
+    // MARK: - Review Actions
+
+    private func checkReviewButtonVisibility(snapshotId: Int64) {
+        Task {
+            do {
+                let hasPending = try await SnapshotQueryService.shared
+                    .checkHasPending(ledgerSnapshotId: snapshotId)
+                await MainActor.run {
+                    hasUnreviewedAnnotations = hasPending
+                }
+            } catch {
+                NSLog("SnapshotsView: checkReviewButton error: %@",
+                      error.localizedDescription)
+            }
+        }
+    }
+
+    private func submitReview(snapshotId: Int64) {
+        guard let lsid = session.ledgerSessionId else { return }
+        guard let snapshotNumber = openSnapshot?.number else { return }
+
+        Task {
+            do {
+                // Create the review (assigns unreviewed annotations)
+                let _ = try await SnapshotQueryService.shared
+                    .createReview(ledgerSnapshotId: snapshotId)
+
+                await MainActor.run {
+                    // Switch to terminal tab
+                    sessionManager.activeTab = .terminal
+
+                    // Build and send the terminal message (must be
+                    // single-line — sendCommand writes text then CR,
+                    // newlines would submit prematurely)
+                    let message = buildReviewMessage(
+                        ledgerSessionId: lsid,
+                        snapshotNumber: snapshotNumber
+                    )
+                    session.sendCommand(message)
+                }
+            } catch {
+                NSLog("SnapshotsView: submitReview error: %@",
+                      error.localizedDescription)
+            }
+        }
+    }
+
+    private func buildReviewMessage(
+        ledgerSessionId: Int64,
+        snapshotNumber: Int32
+    ) -> String {
+        let sid = ledgerSessionId
+        let sn = snapshotNumber
+        return "I've submitted snapshot annotations for your review."
+            + " List pending reviews with"
+            + " `galaxy-ledger snapshot review list --json --pending"
+            + " --ledger-session-id \(sid) --snapshot \(sn)`,"
+            + " view each with"
+            + " `galaxy-ledger snapshot review view --json"
+            + " --ledger-session-id \(sid) --snapshot \(sn) REVIEW_NUMBER`,"
+            + " mark each reviewed with"
+            + " `galaxy-ledger snapshot review mark-reviewed"
+            + " --ledger-session-id \(sid) --snapshot \(sn) REVIEW_NUMBER`,"
+            + " then respond to each annotation in the conversation."
     }
 
     // MARK: - Formatting

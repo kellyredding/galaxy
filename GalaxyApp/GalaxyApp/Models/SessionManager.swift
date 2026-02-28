@@ -42,6 +42,10 @@ class SessionManager: ObservableObject {
     /// Set by EventCoordinator on snapshot.created, cleared by SnapshotsView after opening.
     @Published var pendingSnapshotNumber: Int32? = nil
 
+    /// Set by EventCoordinator when annotation/review events arrive.
+    /// SnapshotsView observes this to refresh review button visibility.
+    @Published var pendingReviewCheck: Int64? = nil
+
     /// List navigation action bridged from menu shortcuts.
     /// Set by MenuActions, consumed by the active list view's onChange handler.
     @Published var listNavAction: ListNavAction? = nil

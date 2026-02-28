@@ -121,6 +121,31 @@ class SnapshotQueryService {
         )
     }
 
+    /// Create a review from all unreviewed annotations.
+    func createReview(ledgerSnapshotId: Int64) async throws -> SnapshotReviewCreateResult {
+        let data = try await runCLI(
+            args: ["snapshot", "review", "create",
+                   "--ledger-snapshot-id", String(ledgerSnapshotId)]
+        )
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try decoder.decode(SnapshotReviewCreateResult.self, from: data)
+    }
+
+    /// Check if a snapshot has unreviewed annotations.
+    /// Uses an independent process — safe to call while other
+    /// SnapshotQueryService operations are in-flight.
+    func checkHasPending(ledgerSnapshotId: Int64) async throws -> Bool {
+        let data = try await runIndependent(
+            args: ["snapshot", "review", "has-pending",
+                   "--ledger-snapshot-id", String(ledgerSnapshotId)]
+        )
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let result = try decoder.decode(HasPendingResult.self, from: data)
+        return result.hasPending
+    }
+
     // MARK: - CLI Subprocess
 
     /// Spawn the galaxy-ledger binary and collect stdout.
@@ -206,6 +231,50 @@ class SnapshotQueryService {
         if currentProcess === process { currentProcess = nil }
         lock.unlock()
     }
+
+    /// Spawn the galaxy-ledger binary independently of the shared
+    /// currentProcess. Safe to call while other operations are
+    /// in-flight — won't cancel them and won't be canceled by them.
+    private func runIndependent(args: [String]) async throws -> Data {
+        try Task.checkCancellation()
+
+        let process = Process()
+        let stdout = Pipe()
+        let stderr = Pipe()
+
+        process.executableURL = URL(fileURLWithPath: binaryPath)
+        process.arguments = args
+        process.standardOutput = stdout
+        process.standardError = stderr
+
+        return try await withCheckedThrowingContinuation { continuation in
+            do {
+                try process.run()
+            } catch {
+                continuation.resume(throwing: error)
+                return
+            }
+
+            DispatchQueue.global(qos: .userInitiated).async {
+                process.waitUntilExit()
+
+                guard process.terminationStatus == 0 else {
+                    let errData = stderr.fileHandleForReading.readDataToEndOfFile()
+                    let errMsg = String(data: errData, encoding: .utf8) ?? "Unknown error"
+                    continuation.resume(
+                        throwing: SnapshotQueryError.cliError(
+                            status: process.terminationStatus,
+                            message: errMsg.trimmingCharacters(in: .whitespacesAndNewlines)
+                        )
+                    )
+                    return
+                }
+
+                let data = stdout.fileHandleForReading.readDataToEndOfFile()
+                continuation.resume(returning: data)
+            }
+        }
+    }
 }
 
 // MARK: - Error Type
@@ -274,4 +343,28 @@ struct SnapshotAnnotation: Codable, Identifiable {
     let startLine: Int32
     let endLine: Int32
     let content: String
+    let ledgerSnapshotReviewId: Int64?
+}
+
+/// Result from creating a snapshot review.
+struct SnapshotReviewCreateResult: Codable {
+    let review: SnapshotReviewSummary
+    let annotationCount: Int32
+}
+
+/// Summary of a snapshot review record.
+struct SnapshotReviewSummary: Codable {
+    let id: Int64
+    let number: Int32
+    let ledgerSnapshotId: Int64
+    let createdAt: String
+    let updatedAt: String
+    let reviewedAt: String?
+}
+
+/// Result from checking if unreviewed annotations exist.
+struct HasPendingResult: Codable {
+    let ledgerSnapshotId: Int64
+    let hasPending: Bool
+    let count: Int32
 }

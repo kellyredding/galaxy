@@ -31,6 +31,10 @@ final class EventCoordinator {
         "session.compact",
         "snapshot.created",
         "ledger.entry",
+        "annotation.created",
+        "annotation.updated",
+        "annotation.deleted",
+        "review.created",
     ]
 
     private(set) var phase: Phase = .idle
@@ -146,6 +150,20 @@ final class EventCoordinator {
                    appSessionId == sm.activeSessionId {
                     sm.activeTab = .snapshots
                     sm.pendingSnapshotNumber = number
+                }
+            }
+        }
+
+        // Annotation/review events: notify SessionManager for button refresh
+        if ["annotation.created", "annotation.updated",
+            "annotation.deleted", "review.created"].contains(envelope.event),
+           let ref = envelope.ref,
+           let snapshotId = Int64(ref) {
+            DispatchQueue.main.async { [weak self] in
+                guard let sm = self?.sessionManager else { return }
+                if let appSessionId = self?.ledgerSessionIdCache[envelope.ledgerSessionId],
+                   appSessionId == sm.activeSessionId {
+                    sm.pendingReviewCheck = snapshotId
                 }
             }
         }
