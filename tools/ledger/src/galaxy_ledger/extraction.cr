@@ -303,7 +303,7 @@ module GalaxyLedger
 
         Result.new(extractions: extractions, summary: summary)
       rescue ex
-        # Parse error - return empty result
+        STDERR.puts "[galaxy-ledger] Extraction parse error: #{ex.message}"
         Result.new
       end
     end
