@@ -185,6 +185,7 @@ struct ContentView: View {
                     if tab == .terminal, let session = activeSession {
                         TabUnreadIndicator(
                             session: session,
+                            sessionId: session.id,
                             showUnreadIndicator: settingsManager.settings.showUnreadIndicator,
                             isWindowFocused: sessionManager.isWindowFocused,
                             isOnTerminalTab: sessionManager.activeTab == .terminal
@@ -302,6 +303,7 @@ struct TerminalContainerView: View {
 /// Also attaches UnreadIndicatorBehavior to auto-clear when viewing terminal.
 struct TabUnreadIndicator: View {
     @ObservedObject var session: Session
+    let sessionId: UUID
     let showUnreadIndicator: Bool
     let isWindowFocused: Bool
     let isOnTerminalTab: Bool
