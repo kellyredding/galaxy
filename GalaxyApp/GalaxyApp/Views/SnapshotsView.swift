@@ -786,32 +786,185 @@ struct SnapshotsView: View {
     }
 
     private func submitReview(snapshotId: Int64) {
+        hasUnreviewedAnnotations = false  // Immediate, prevents double-click
         guard let lsid = session.ledgerSessionId else { return }
         guard let snapshotNumber = openSnapshot?.number else { return }
 
         Task {
-            do {
-                // Create the review (assigns unreviewed annotations)
-                let _ = try await SnapshotQueryService.shared
-                    .createReview(ledgerSnapshotId: snapshotId)
+            let needsResume = await MainActor.run { session.hasExited }
 
+            if needsResume {
+                // Pre-validate: can we actually resume?
+                let dirExists = await MainActor.run {
+                    FileManager.default.fileExists(
+                        atPath: session.workingDirectory
+                    )
+                }
+                guard dirExists else {
+                    NSLog("SnapshotsView: submitReview aborted — "
+                          + "working directory gone, skipping review "
+                          + "creation to preserve unreviewed annotations")
+                    await MainActor.run {
+                        hasUnreviewedAnnotations = true
+                    }
+                    return
+                }
+
+                // Build message before entering the closure — it only
+                // needs lsid and snapshotNumber, not the review result.
+                let message = buildReviewMessage(
+                    ledgerSessionId: lsid,
+                    snapshotNumber: snapshotNumber
+                )
+
+                // Register review action and resume in a SINGLE
+                // MainActor.run block so both afterNextIdle calls
+                // happen before the process starts. See plan for
+                // the arming invariant.
+                //
+                // Timing: afterNextIdle actions fire together in a
+                // single drain loop. /handoff uses asyncAfter(+1.0),
+                // the review uses asyncAfter(+3.0). Both schedule
+                // from the same instant, giving ~2s gap.
                 await MainActor.run {
-                    // Switch to terminal tab
-                    sessionManager.activeTab = .terminal
+                    session.afterNextIdle { [weak session] in
+                        DispatchQueue.main.asyncAfter(
+                            deadline: .now() + 3.0
+                        ) {
+                            Task { [weak session] in
+                                guard let session = session else {
+                                    return
+                                }
+                                do {
+                                    // Create review at +3s, right
+                                    // before sending — no orphan if
+                                    // session dies during boot.
+                                    let _ = try await
+                                        SnapshotQueryService.shared
+                                        .createReview(
+                                            ledgerSnapshotId: snapshotId
+                                        )
+                                    await MainActor.run {
+                                        session.sendCommand(message)
+                                    }
+                                    // Refresh so cards reflect
+                                    // review assignment
+                                    await refreshAnnotationsAfterReview(
+                                        snapshotId: snapshotId
+                                    )
+                                } catch {
+                                    await MainActor.run {
+                                        hasUnreviewedAnnotations = true
+                                    }
+                                    NSLog(
+                                        "SnapshotsView: submitReview"
+                                        + " error: %@",
+                                        error.localizedDescription
+                                    )
+                                }
+                            }
+                        }
+                    }
 
-                    // Build and send the terminal message (must be
-                    // single-line — sendCommand writes text then CR,
-                    // newlines would submit prematurely)
+                    // Resume the session. Internally registers
+                    // /handoff via afterNextIdle (at +1s) and calls
+                    // startProcess.
+                    sessionManager.resumeSession(
+                        sessionId: session.id
+                    )
+                }
+            } else {
+                // Session is running — create review and send
+                do {
+                    let _ = try await SnapshotQueryService.shared
+                        .createReview(ledgerSnapshotId: snapshotId)
+
                     let message = buildReviewMessage(
                         ledgerSessionId: lsid,
                         snapshotNumber: snapshotNumber
                     )
-                    session.sendCommand(message)
+
+                    await MainActor.run {
+                        sessionManager.activeTab = .terminal
+                        session.sendCommand(message)
+                    }
+
+                    // Refresh so cards reflect review assignment
+                    await refreshAnnotationsAfterReview(
+                        snapshotId: snapshotId
+                    )
+                } catch {
+                    await MainActor.run {
+                        hasUnreviewedAnnotations = true
+                    }
+                    NSLog("SnapshotsView: submitReview error: %@",
+                          error.localizedDescription)
                 }
-            } catch {
-                NSLog("SnapshotsView: submitReview error: %@",
-                      error.localizedDescription)
             }
+        }
+    }
+
+    /// Refresh annotation state after a review is created.
+    /// Re-fetches from CLI so cards reflect review assignment
+    /// (review metadata visible, edit/delete buttons hidden).
+    /// No-ops if the reader has closed or switched snapshots.
+    private func refreshAnnotationsAfterReview(
+        snapshotId: Int64
+    ) async {
+        do {
+            let annotations = try await SnapshotQueryService.shared
+                .fetchAnnotations(ledgerSnapshotId: snapshotId)
+
+            var htmlMap: [Int32: String] = [:]
+            for ann in annotations {
+                htmlMap[ann.number] = renderAnnotationHTML(ann.content)
+            }
+
+            await MainActor.run {
+                // Guard against stale snapshot
+                guard openSnapshot?.id == snapshotId else { return }
+
+                openAnnotations = annotations
+                annotationHTMLMap = htmlMap
+                hasUnreviewedAnnotations = annotations.contains {
+                    $0.ledgerSnapshotReviewId == nil
+                }
+
+                // Push updated annotations to JS for card re-render
+                let annotationDicts: [[String: Any]] =
+                    annotations.map { a in
+                        var dict: [String: Any] = [
+                            "id": a.id,
+                            "number": a.number,
+                            "start_line": a.startLine,
+                            "end_line": a.endLine,
+                            "content": a.content,
+                            "created_at": a.createdAt,
+                            "updated_at": a.updatedAt
+                        ]
+                        if let rn = a.reviewNumber {
+                            dict["review_number"] = rn
+                        }
+                        if let rra = a.reviewReviewedAt {
+                            dict["review_reviewed_at"] = rra
+                        }
+                        return dict
+                    }
+                if let data = try? JSONSerialization.data(
+                    withJSONObject: annotationDicts
+                ),
+                   let json = String(
+                       data: data, encoding: .utf8
+                   ) {
+                    webViewRef?.evaluateJavaScript(
+                        "AnnotationManager"
+                        + ".refreshAnnotationData(\(json))"
+                    )
+                }
+            }
+        } catch {
+            NSLog("SnapshotsView: refreshAnnotations error: %@",
+                  error.localizedDescription)
         }
     }
 
