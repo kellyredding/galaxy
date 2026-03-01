@@ -251,15 +251,29 @@ describe "CLI Integration - spend" do
   describe "spend grouping tiers" do
     it "shows daily sparkline and daily bars for mtd" do
       lid = GalaxyLedger::Database.create_session("sess-tier-daily")
-      today = Time.utc
-      yesterday = today - 1.day
-      seed_daily_usage(lid, yesterday.to_s("%Y-%m-%d"), 4.00, 80000_i64)
-      seed_daily_usage(lid, today.to_s("%Y-%m-%d"), 6.00, 120000_i64)
+      # Pin "today" to mid-month so mtd always has multiple days
+      fake_today = Time.utc(Time.utc.year, Time.utc.month, 15)
+      fake_yesterday = fake_today - 1.day
+      seed_daily_usage(lid, fake_yesterday.to_s("%Y-%m-%d"), 4.00, 80000_i64)
+      seed_daily_usage(lid, fake_today.to_s("%Y-%m-%d"), 6.00, 120000_i64)
 
-      result = run_binary(["spend", "mtd"])
+      result = run_binary(["spend", "mtd"], extra_env: {"GALAXY_LEDGER_TODAY" => fake_today.to_s("%Y-%m-%d")})
       result[:status].should eq(0)
       result[:output].should contain("Daily:")
       result[:output].should contain("excludes days with no usage")
+    end
+
+    it "shows single-day mtd on first of month without sparkline" do
+      lid = GalaxyLedger::Database.create_session("sess-tier-first")
+      # Pin "today" to the 1st — only one possible day in mtd range
+      fake_today = Time.utc(Time.utc.year, Time.utc.month, 1)
+      seed_daily_usage(lid, fake_today.to_s("%Y-%m-%d"), 6.00, 120000_i64)
+
+      result = run_binary(["spend", "mtd"], extra_env: {"GALAXY_LEDGER_TODAY" => fake_today.to_s("%Y-%m-%d")})
+      result[:status].should eq(0)
+      # Single day: no sparkline/Daily: header, but bars still render
+      result[:output].should_not contain("Daily:")
+      result[:output].should contain(fake_today.to_s("%b %d"))
     end
 
     it "shows weekly sparkline and weekly bars for qtd" do
@@ -309,12 +323,13 @@ describe "CLI Integration - spend" do
   describe "spend footnote" do
     it "shows days footnote for daily periods" do
       lid = GalaxyLedger::Database.create_session("sess-footnote-daily")
-      today = Time.utc
-      first = Time.utc(today.year, today.month, 1)
+      # Pin "today" to mid-month so mtd always has multiple days
+      fake_today = Time.utc(Time.utc.year, Time.utc.month, 15)
+      first = Time.utc(fake_today.year, fake_today.month, 1)
       seed_daily_usage(lid, first.to_s("%Y-%m-%d"), 3.00, 50000_i64)
-      seed_daily_usage(lid, today.to_s("%Y-%m-%d"), 5.00, 100000_i64)
+      seed_daily_usage(lid, fake_today.to_s("%Y-%m-%d"), 5.00, 100000_i64)
 
-      result = run_binary(["spend", "mtd"])
+      result = run_binary(["spend", "mtd"], extra_env: {"GALAXY_LEDGER_TODAY" => fake_today.to_s("%Y-%m-%d")})
       result[:status].should eq(0)
       result[:output].should contain("\u2020")
       result[:output].should contain("excludes days with no usage")

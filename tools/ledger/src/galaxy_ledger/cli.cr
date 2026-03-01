@@ -2191,7 +2191,11 @@ module GalaxyLedger
     end
 
     private def self.resolve_spend_period(period : String) : {String, String, String}
-      today = Time.utc
+      today = if override = ENV["GALAXY_LEDGER_TODAY"]?
+                Time.parse(override, "%Y-%m-%d", Time::Location::UTC)
+              else
+                Time.utc
+              end
       today_str = today.to_s("%Y-%m-%d")
 
       case period
