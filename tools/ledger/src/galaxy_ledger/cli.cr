@@ -3353,7 +3353,7 @@ module GalaxyLedger
         exit(1)
       end
 
-      snapshots = Database.list_snapshots(ledger_session_id)
+      snapshots = Database.list_snapshots_with_counts(ledger_session_id)
 
       if json_output
         JSON.build(STDOUT, indent: "  ") do |json|
@@ -3367,6 +3367,7 @@ module GalaxyLedger
                     json.field "title", snap.title
                     json.field "exchange_count", snap.exchange_count
                     json.field "char_count", snap.char_count
+                    json.field "review_count", snap.review_count
                     json.field "created_at", snap.created_at
                   end
                 end
@@ -3390,7 +3391,9 @@ module GalaxyLedger
         exchange_label = snap.exchange_count == 1 ? "exchange" : "exchanges"
         chars_formatted = format_number(snap.char_count)
         timestamp = format_snapshot_timestamp(snap.created_at)
-        puts "  ##{snap.number}  \"#{snap.title}\"  #{snap.exchange_count} #{exchange_label}  #{chars_formatted} chars  #{timestamp}"
+        review_label = snap.review_count == 1 ? "review" : "reviews"
+        review_info = snap.review_count > 0 ? "  #{snap.review_count} #{review_label}" : ""
+        puts "  ##{snap.number}  \"#{snap.title}\"  #{snap.exchange_count} #{exchange_label}  #{chars_formatted} chars#{review_info}  #{timestamp}"
       end
     end
 
@@ -4383,6 +4386,8 @@ module GalaxyLedger
         json.field "number", ann.number
         json.field "ledger_snapshot_id", ann.ledger_snapshot_id
         json.field "ledger_snapshot_review_id", ann.ledger_snapshot_review_id
+        json.field "review_number", ann.review_number
+        json.field "review_reviewed_at", ann.review_reviewed_at
         json.field "start_line", ann.start_line
         json.field "end_line", ann.end_line
         json.field "content", ann.content

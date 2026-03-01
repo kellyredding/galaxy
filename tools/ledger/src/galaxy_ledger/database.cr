@@ -2133,6 +2133,44 @@ module GalaxyLedger
       snapshots
     end
 
+    # List snapshots with review counts for the index view.
+    def self.list_snapshots_with_counts(
+      ledger_session_id : Int64,
+      limit : Int32 = 50,
+    ) : Array(SnapshotListItem)
+      items = [] of SnapshotListItem
+      return items if ledger_session_id <= 0
+
+      begin
+        open do |db|
+          db.query(
+            <<-SQL,
+              SELECT ls.id, ls.ledger_session_id, ls.number,
+                     ls.created_at, ls.title,
+                     ls.exchange_count, ls.char_count,
+                     COUNT(sr.id) AS review_count
+              FROM ledger_snapshots ls
+              LEFT JOIN ledger_snapshot_reviews sr
+                ON ls.id = sr.ledger_snapshot_id
+              WHERE ls.ledger_session_id = ?
+              GROUP BY ls.id
+              ORDER BY ls.number ASC
+              LIMIT ?
+            SQL
+            ledger_session_id,
+            limit,
+          ) do |rs|
+            rs.each do
+              items << SnapshotListItem.from_row(rs)
+            end
+          end
+        end
+      rescue
+        # Return empty on error
+      end
+      items
+    end
+
     # Get a snapshot by session + number (user-facing identifier).
     def self.get_snapshot_by_number(ledger_session_id : Int64, number : Int32) : Snapshot?
       return nil if ledger_session_id <= 0
@@ -2239,10 +2277,15 @@ module GalaxyLedger
           # Retrieve the full annotation that was just created
           db.query_one?(
             <<-SQL
-              SELECT id, created_at, updated_at, ledger_snapshot_id, number,
-                     start_line, end_line, content, ledger_snapshot_review_id
-              FROM ledger_snapshot_annotations
-              WHERE id = last_insert_rowid()
+              SELECT a.id, a.created_at, a.updated_at, a.ledger_snapshot_id,
+                     a.number, a.start_line, a.end_line, a.content,
+                     a.ledger_snapshot_review_id,
+                     r.number AS review_number,
+                     r.reviewed_at AS review_reviewed_at
+              FROM ledger_snapshot_annotations a
+              LEFT JOIN ledger_snapshot_reviews r
+                ON a.ledger_snapshot_review_id = r.id
+              WHERE a.id = last_insert_rowid()
             SQL
           ) do |rs|
             SnapshotAnnotation.from_row(rs)
@@ -2262,11 +2305,16 @@ module GalaxyLedger
         open do |db|
           db.query(
             <<-SQL,
-              SELECT id, created_at, updated_at, ledger_snapshot_id, number,
-                     start_line, end_line, content, ledger_snapshot_review_id
-              FROM ledger_snapshot_annotations
-              WHERE ledger_snapshot_id = ?
-              ORDER BY start_line ASC, end_line ASC, number ASC
+              SELECT a.id, a.created_at, a.updated_at, a.ledger_snapshot_id,
+                     a.number, a.start_line, a.end_line, a.content,
+                     a.ledger_snapshot_review_id,
+                     r.number AS review_number,
+                     r.reviewed_at AS review_reviewed_at
+              FROM ledger_snapshot_annotations a
+              LEFT JOIN ledger_snapshot_reviews r
+                ON a.ledger_snapshot_review_id = r.id
+              WHERE a.ledger_snapshot_id = ?
+              ORDER BY a.start_line ASC, a.end_line ASC, a.number ASC
             SQL
             ledger_snapshot_id,
           ) do |rs|
@@ -2289,10 +2337,15 @@ module GalaxyLedger
         open do |db|
           db.query_one?(
             <<-SQL,
-              SELECT id, created_at, updated_at, ledger_snapshot_id, number,
-                     start_line, end_line, content, ledger_snapshot_review_id
-              FROM ledger_snapshot_annotations
-              WHERE ledger_snapshot_id = ? AND number = ?
+              SELECT a.id, a.created_at, a.updated_at, a.ledger_snapshot_id,
+                     a.number, a.start_line, a.end_line, a.content,
+                     a.ledger_snapshot_review_id,
+                     r.number AS review_number,
+                     r.reviewed_at AS review_reviewed_at
+              FROM ledger_snapshot_annotations a
+              LEFT JOIN ledger_snapshot_reviews r
+                ON a.ledger_snapshot_review_id = r.id
+              WHERE a.ledger_snapshot_id = ? AND a.number = ?
             SQL
             ledger_snapshot_id,
             number,
@@ -2331,10 +2384,15 @@ module GalaxyLedger
           # Return the updated annotation
           db.query_one?(
             <<-SQL,
-              SELECT id, created_at, updated_at, ledger_snapshot_id, number,
-                     start_line, end_line, content, ledger_snapshot_review_id
-              FROM ledger_snapshot_annotations
-              WHERE ledger_snapshot_id = ? AND number = ?
+              SELECT a.id, a.created_at, a.updated_at, a.ledger_snapshot_id,
+                     a.number, a.start_line, a.end_line, a.content,
+                     a.ledger_snapshot_review_id,
+                     r.number AS review_number,
+                     r.reviewed_at AS review_reviewed_at
+              FROM ledger_snapshot_annotations a
+              LEFT JOIN ledger_snapshot_reviews r
+                ON a.ledger_snapshot_review_id = r.id
+              WHERE a.ledger_snapshot_id = ? AND a.number = ?
             SQL
             ledger_snapshot_id,
             number,
@@ -2621,12 +2679,16 @@ module GalaxyLedger
         open do |db|
           db.query(
             <<-SQL,
-              SELECT id, created_at, updated_at, ledger_snapshot_id,
-                     number, start_line, end_line, content,
-                     ledger_snapshot_review_id
-              FROM ledger_snapshot_annotations
-              WHERE ledger_snapshot_review_id = ?
-              ORDER BY start_line ASC, end_line ASC, number ASC
+              SELECT a.id, a.created_at, a.updated_at, a.ledger_snapshot_id,
+                     a.number, a.start_line, a.end_line, a.content,
+                     a.ledger_snapshot_review_id,
+                     r.number AS review_number,
+                     r.reviewed_at AS review_reviewed_at
+              FROM ledger_snapshot_annotations a
+              LEFT JOIN ledger_snapshot_reviews r
+                ON a.ledger_snapshot_review_id = r.id
+              WHERE a.ledger_snapshot_review_id = ?
+              ORDER BY a.start_line ASC, a.end_line ASC, a.number ASC
             SQL
             review_id,
           ) do |rs|
@@ -3371,6 +3433,41 @@ module GalaxyLedger
       end
     end
 
+    # A snapshot list item with aggregated review count.
+    # Separate from Snapshot because the review count comes from a
+    # LEFT JOIN that only applies to list queries. Intentionally omits
+    # content, metadata, and updated_at — none are used by the list
+    # output (JSON or human-readable).
+    struct SnapshotListItem
+      getter id : Int64
+      getter ledger_session_id : Int64
+      getter number : Int32
+      getter created_at : String
+      getter title : String
+      getter exchange_count : Int32
+      getter char_count : Int32
+      getter review_count : Int32
+
+      def initialize(
+        @id, @ledger_session_id, @number, @created_at,
+        @title, @exchange_count, @char_count, @review_count,
+      )
+      end
+
+      def self.from_row(rs) : SnapshotListItem
+        SnapshotListItem.new(
+          id: rs.read(Int64),
+          ledger_session_id: rs.read(Int64),
+          number: rs.read(Int64).to_i,
+          created_at: rs.read(String),
+          title: rs.read(String),
+          exchange_count: rs.read(Int64).to_i,
+          char_count: rs.read(Int64).to_i,
+          review_count: rs.read(Int64).to_i,
+        )
+      end
+    end
+
     # A snapshot annotation record from the database
     struct SnapshotAnnotation
       getter id : Int64
@@ -3382,11 +3479,13 @@ module GalaxyLedger
       getter end_line : Int32
       getter content : String
       getter ledger_snapshot_review_id : Int64?
+      getter review_number : Int32?
+      getter review_reviewed_at : String?
 
       def initialize(
         @id, @created_at, @updated_at, @ledger_snapshot_id,
         @number, @start_line, @end_line, @content,
-        @ledger_snapshot_review_id,
+        @ledger_snapshot_review_id, @review_number, @review_reviewed_at,
       )
       end
 
@@ -3401,6 +3500,8 @@ module GalaxyLedger
           end_line: rs.read(Int64).to_i,
           content: rs.read(String),
           ledger_snapshot_review_id: rs.read(Int64?),
+          review_number: rs.read(Int64?).try(&.to_i),
+          review_reviewed_at: rs.read(String?),
         )
       end
     end

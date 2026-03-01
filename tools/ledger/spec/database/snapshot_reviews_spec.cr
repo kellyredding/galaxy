@@ -319,6 +319,32 @@ describe GalaxyLedger::Database do
     end
   end
 
+  describe "annotation review fields via list_annotations_for_review" do
+    it "populates review_number on annotations assigned to a review" do
+      _, snapshot_id = create_session_with_snapshot_for_reviews("rev-annfield-1")
+      create_annotations_for_review(snapshot_id, 2)
+      result = GalaxyLedger::Database.save_snapshot_review(snapshot_id)
+      review = result.not_nil![0]
+
+      anns = GalaxyLedger::Database.list_annotations_for_review(review.id)
+      anns.size.should eq(2)
+      anns.all? { |a| a.review_number == 1 }.should be_true
+      anns.all? { |a| a.review_reviewed_at.nil? }.should be_true
+    end
+
+    it "populates reviewed_at after mark-reviewed" do
+      _, snapshot_id = create_session_with_snapshot_for_reviews("rev-annfield-2")
+      create_annotations_for_review(snapshot_id, 1)
+      result = GalaxyLedger::Database.save_snapshot_review(snapshot_id)
+      review = result.not_nil![0]
+      GalaxyLedger::Database.mark_snapshot_review_reviewed(snapshot_id, review.number)
+
+      anns = GalaxyLedger::Database.list_annotations_for_review(review.id)
+      anns[0].review_number.should eq(1)
+      anns[0].review_reviewed_at.should_not be_nil
+    end
+  end
+
   describe "annotation ledger_snapshot_review_id field" do
     it "returns nil for annotations not assigned to a review" do
       _, snapshot_id = create_session_with_snapshot_for_reviews("rev-field-1")

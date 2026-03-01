@@ -400,6 +400,126 @@ describe "CLI snapshot review commands", tags: "integration" do
     end
   end
 
+  describe "snapshot list review_count" do
+    it "includes review_count of 0 in snapshot list JSON" do
+      pid = 92080_i64
+      session_id, _ = create_session_and_snapshot_for_reviews_cli(pid)
+
+      result = run_binary([
+        "snapshot", "list", "--json",
+        "--ledger-session-id", session_id.to_s,
+      ])
+      result[:status].should eq(0)
+
+      parsed = JSON.parse(result[:output])
+      snap_json = parsed["snapshots"][0]
+      snap_json["review_count"].as_i.should eq(0)
+    end
+
+    it "includes review_count > 0 after creating a review" do
+      pid = 92081_i64
+      session_id, snapshot_id = create_session_and_snapshot_for_reviews_cli(pid)
+
+      # Create annotation + review so count increments
+      run_binary([
+        "snapshot", "annotation", "create",
+        "--ledger-snapshot-id", snapshot_id.to_s,
+        "--start-line", "1", "--end-line", "1",
+      ], stdin: "review count test")
+
+      run_binary([
+        "snapshot", "review", "create",
+        "--ledger-snapshot-id", snapshot_id.to_s,
+      ])
+
+      result = run_binary([
+        "snapshot", "list", "--json",
+        "--ledger-session-id", session_id.to_s,
+      ])
+      result[:status].should eq(0)
+
+      parsed = JSON.parse(result[:output])
+      snap_json = parsed["snapshots"][0]
+      snap_json["review_count"].as_i.should eq(1)
+    end
+
+    it "shows review count in human-readable output" do
+      pid = 92082_i64
+      session_id, snapshot_id = create_session_and_snapshot_for_reviews_cli(pid)
+
+      create_annotations_for_review_cli(snapshot_id, 1)
+      GalaxyLedger::Database.save_snapshot_review(snapshot_id)
+
+      result = run_binary([
+        "snapshot", "list",
+        "--ledger-session-id", session_id.to_s,
+      ])
+      result[:status].should eq(0)
+      result[:output].should contain("1 review")
+    end
+  end
+
+  describe "annotation JSON review fields" do
+    it "includes review_number and review_reviewed_at in annotation JSON" do
+      pid = 92090_i64
+      _, snapshot_id = create_session_and_snapshot_for_reviews_cli(pid)
+
+      # Create annotation — should have null review fields
+      r1 = run_binary([
+        "snapshot", "annotation", "create",
+        "--ledger-snapshot-id", snapshot_id.to_s,
+        "--start-line", "1", "--end-line", "2",
+      ], stdin: "Test annotation")
+      r1[:status].should eq(0)
+      parsed = JSON.parse(r1[:output])
+      parsed["annotation"]["review_number"].raw.should be_nil
+      parsed["annotation"]["review_reviewed_at"].raw.should be_nil
+
+      # Create review — assigns annotation
+      GalaxyLedger::Database.save_snapshot_review(snapshot_id)
+
+      # View annotation — should now have review fields
+      r2 = run_binary([
+        "snapshot", "annotation", "view",
+        "--ledger-snapshot-id", snapshot_id.to_s, "1",
+      ])
+      r2[:status].should eq(0)
+      parsed2 = JSON.parse(r2[:output])
+      parsed2["annotation"]["review_number"].as_i.should eq(1)
+      parsed2["annotation"]["review_reviewed_at"].raw.should be_nil
+
+      # Mark reviewed and check again
+      GalaxyLedger::Database.mark_snapshot_review_reviewed(snapshot_id, 1)
+
+      r3 = run_binary([
+        "snapshot", "annotation", "view",
+        "--ledger-snapshot-id", snapshot_id.to_s, "1",
+      ])
+      r3[:status].should eq(0)
+      parsed3 = JSON.parse(r3[:output])
+      parsed3["annotation"]["review_number"].as_i.should eq(1)
+      parsed3["annotation"]["review_reviewed_at"].as_s?.should_not be_nil
+    end
+
+    it "includes review fields in annotation list JSON" do
+      pid = 92091_i64
+      _, snapshot_id = create_session_and_snapshot_for_reviews_cli(pid)
+
+      create_annotations_for_review_cli(snapshot_id, 2)
+      GalaxyLedger::Database.save_snapshot_review(snapshot_id)
+
+      result = run_binary([
+        "snapshot", "annotation", "list", "--json",
+        "--ledger-snapshot-id", snapshot_id.to_s,
+      ])
+      result[:status].should eq(0)
+      parsed = JSON.parse(result[:output])
+      annotations = parsed["annotations"].as_a
+      annotations.size.should eq(2)
+      annotations.all? { |a| a["review_number"].as_i == 1 }.should be_true
+    end
+  end
+
   describe "snapshot review help" do
     it "shows review help" do
       result = run_binary(["snapshot", "review", "--help"])

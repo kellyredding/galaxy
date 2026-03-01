@@ -257,6 +257,70 @@ describe GalaxyLedger::Database do
     end
   end
 
+  describe "review fields on annotations" do
+    it "returns nil review fields for unreviewed annotations" do
+      _, snapshot_id = create_session_with_snapshot("ann-revfields-1")
+      result = GalaxyLedger::Database.save_snapshot_annotation(
+        snapshot_id, 1, 3, "test note"
+      )
+      result.should_not be_nil
+      a = result.not_nil!
+      a.review_number.should be_nil
+      a.review_reviewed_at.should be_nil
+      a.ledger_snapshot_review_id.should be_nil
+    end
+
+    it "returns review fields via list after review assignment" do
+      _, snapshot_id = create_session_with_snapshot("ann-revfields-2")
+      GalaxyLedger::Database.save_snapshot_annotation(snapshot_id, 1, 2, "note")
+      GalaxyLedger::Database.save_snapshot_review(snapshot_id)
+
+      anns = GalaxyLedger::Database.list_snapshot_annotations(snapshot_id)
+      anns.size.should eq(1)
+      anns[0].review_number.should eq(1)
+      anns[0].review_reviewed_at.should be_nil
+      anns[0].ledger_snapshot_review_id.should_not be_nil
+    end
+
+    it "returns review fields via get after review assignment" do
+      _, snapshot_id = create_session_with_snapshot("ann-revfields-3")
+      GalaxyLedger::Database.save_snapshot_annotation(snapshot_id, 1, 2, "note")
+      GalaxyLedger::Database.save_snapshot_review(snapshot_id)
+
+      ann = GalaxyLedger::Database.get_snapshot_annotation(snapshot_id, 1)
+      ann.should_not be_nil
+      ann.not_nil!.review_number.should eq(1)
+      ann.not_nil!.review_reviewed_at.should be_nil
+    end
+
+    it "returns review fields via update after review assignment" do
+      _, snapshot_id = create_session_with_snapshot("ann-revfields-4")
+      GalaxyLedger::Database.save_snapshot_annotation(snapshot_id, 1, 2, "original")
+      GalaxyLedger::Database.save_snapshot_review(snapshot_id)
+
+      updated = GalaxyLedger::Database.update_snapshot_annotation(
+        snapshot_id, 1, "changed"
+      )
+      updated.should_not be_nil
+      updated.not_nil!.review_number.should eq(1)
+      updated.not_nil!.review_reviewed_at.should be_nil
+    end
+
+    it "populates reviewed_at after mark-reviewed" do
+      _, snapshot_id = create_session_with_snapshot("ann-revfields-5")
+      GalaxyLedger::Database.save_snapshot_annotation(snapshot_id, 1, 1, "note")
+      result = GalaxyLedger::Database.save_snapshot_review(snapshot_id)
+      review = result.not_nil![0]
+      GalaxyLedger::Database.mark_snapshot_review_reviewed(
+        snapshot_id, review.number
+      )
+
+      anns = GalaxyLedger::Database.list_snapshot_annotations(snapshot_id)
+      anns[0].review_number.should eq(1)
+      anns[0].review_reviewed_at.should_not be_nil
+    end
+  end
+
   describe "number gap behavior" do
     it "assigns MAX+1 after deletion (does not reuse numbers)" do
       _, snapshot_id = create_session_with_snapshot("ann-gap-1")

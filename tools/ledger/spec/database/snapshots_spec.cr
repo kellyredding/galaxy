@@ -302,4 +302,89 @@ describe GalaxyLedger::Database do
       result.should be_nil
     end
   end
+
+  describe ".list_snapshots_with_counts" do
+    it "returns snapshots with review counts" do
+      session_id = GalaxyLedger::Database.create_session("list-counts-1")
+      GalaxyLedger::Database.save_snapshot(session_id, "S1", "content1")
+      GalaxyLedger::Database.save_snapshot(session_id, "S2", "content2")
+
+      snap1 = GalaxyLedger::Database.get_snapshot_by_number(session_id, 1).not_nil!
+
+      # Create annotations and a review for snap1
+      GalaxyLedger::Database.save_snapshot_annotation(snap1.id, 1, 1, "note")
+      GalaxyLedger::Database.save_snapshot_review(snap1.id)
+
+      items = GalaxyLedger::Database.list_snapshots_with_counts(session_id)
+      items.size.should eq(2)
+      items[0].number.should eq(1)
+      items[0].review_count.should eq(1)
+      items[1].number.should eq(2)
+      items[1].review_count.should eq(0)
+    end
+
+    it "returns empty for nonexistent session" do
+      items = GalaxyLedger::Database.list_snapshots_with_counts(99999_i64)
+      items.should be_empty
+    end
+
+    it "counts multiple reviews per snapshot" do
+      session_id = GalaxyLedger::Database.create_session("list-counts-2")
+      GalaxyLedger::Database.save_snapshot(session_id, "Multi", "content")
+      snap = GalaxyLedger::Database.get_snapshot_by_number(session_id, 1).not_nil!
+
+      # Two rounds of annotations → two reviews
+      GalaxyLedger::Database.save_snapshot_annotation(snap.id, 1, 1, "a")
+      GalaxyLedger::Database.save_snapshot_review(snap.id)
+      GalaxyLedger::Database.save_snapshot_annotation(snap.id, 2, 2, "b")
+      GalaxyLedger::Database.save_snapshot_review(snap.id)
+
+      items = GalaxyLedger::Database.list_snapshots_with_counts(session_id)
+      items[0].review_count.should eq(2)
+    end
+
+    it "returns empty array for invalid session id" do
+      items = GalaxyLedger::Database.list_snapshots_with_counts(0_i64)
+      items.should be_empty
+    end
+
+    it "respects limit parameter" do
+      session_id = GalaxyLedger::Database.create_session("list-counts-limit")
+      GalaxyLedger::Database.save_snapshot(session_id, "A", "a")
+      GalaxyLedger::Database.save_snapshot(session_id, "B", "b")
+      GalaxyLedger::Database.save_snapshot(session_id, "C", "c")
+
+      items = GalaxyLedger::Database.list_snapshots_with_counts(session_id, limit: 2)
+      items.size.should eq(2)
+    end
+
+    it "returns correct fields on SnapshotListItem" do
+      session_id = GalaxyLedger::Database.create_session("list-counts-fields")
+      GalaxyLedger::Database.save_snapshot(session_id, "Field test", "the content", exchange_count: 5)
+
+      items = GalaxyLedger::Database.list_snapshots_with_counts(session_id)
+      items.size.should eq(1)
+      item = items[0]
+      item.id.should be > 0
+      item.ledger_session_id.should eq(session_id)
+      item.number.should eq(1)
+      item.title.should eq("Field test")
+      item.exchange_count.should eq(5)
+      item.char_count.should eq("the content".size)
+      item.review_count.should eq(0)
+      item.created_at.should_not be_empty
+    end
+
+    it "only returns snapshots for the specified session" do
+      session_a = GalaxyLedger::Database.create_session("list-counts-a")
+      session_b = GalaxyLedger::Database.create_session("list-counts-b")
+
+      GalaxyLedger::Database.save_snapshot(session_a, "A snap", "content a")
+      GalaxyLedger::Database.save_snapshot(session_b, "B snap", "content b")
+
+      a_items = GalaxyLedger::Database.list_snapshots_with_counts(session_a)
+      a_items.size.should eq(1)
+      a_items[0].title.should eq("A snap")
+    end
+  end
 end
