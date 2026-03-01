@@ -34,6 +34,11 @@ SPEC_DEFAULT_CONFIG = {
     "on_stop"           => false,
     "on_guideline_read" => false,
   },
+  "backups" => {
+    "enabled"        => false,
+    "retention_days" => 3,
+    "path"           => "",
+  },
 }.to_json
 File.write(SPEC_CONFIG_DIR / "config.json", SPEC_DEFAULT_CONFIG)
 
@@ -140,6 +145,10 @@ Spec.before_each do
     db.exec("DELETE FROM ledger_session_daily_usages")
     db.exec("DELETE FROM ledger_entries")
     db.exec("DELETE FROM ledger_sessions")
+    # Flush WAL back to main DB to prevent unbounded WAL growth from
+    # run_binary subprocess writes. Without this, the WAL grows across
+    # integration tests until a subprocess checkpoint corrupts it.
+    db.exec("PRAGMA wal_checkpoint(TRUNCATE)")
     db.close
   rescue
     # DB may not exist yet or table may not exist for early specs
