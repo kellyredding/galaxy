@@ -160,6 +160,16 @@ Spec.before_each do
   File.write(SPEC_CONFIG_DIR / "config.json", SPEC_DEFAULT_CONFIG)
 end
 
+# Flush WAL to main DB so subprocess connections see recently committed data.
+# Use after Database writes that precede run_binary() subprocess calls.
+# Uses Database.open to inherit busy_timeout, preventing lock contention
+# when called from concurrent fibers (e.g., eval tests).
+def flush_wal
+  GalaxyLedger::Database.open do |db|
+    db.exec("PRAGMA wal_checkpoint(PASSIVE)")
+  end
+end
+
 # Clean up entire test directory after all specs (includes sessions, config, data, etc.)
 Spec.after_suite do
   FileUtils.rm_rf(SPEC_CLAUDE_CONFIG_DIR.to_s) if Dir.exists?(SPEC_CLAUDE_CONFIG_DIR)

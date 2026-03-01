@@ -342,6 +342,7 @@ def eval_needs_more_context : EvalResult
     # Create a session with minimal context (just a greeting)
     session_id = "eval-suggest-needs-ctx-#{Random.rand(100000)}"
     GalaxyLedger::Database.create_session(session_id)
+    flush_wal
 
     transcript_file = File.tempfile("eval-suggest-ctx", ".jsonl")
     transcript_file.print(%|{"type": "user", "timestamp": "2026-02-01T10:00:00Z", "message": {"role": "user", "content": "where were we?"}}\n|)
@@ -409,6 +410,7 @@ def eval_substantive_session : EvalResult
   begin
     session_id = "eval-suggest-substantive-#{Random.rand(100000)}"
     GalaxyLedger::Database.create_session(session_id)
+    flush_wal
 
     transcript_file = File.tempfile("eval-suggest-sub", ".jsonl")
     transcript_file.print(%|{"type": "user", "timestamp": "2026-02-01T10:00:00Z", "message": {"role": "user", "content": "I need to add dark mode support to the settings page in our React app"}}\n|)
@@ -501,6 +503,7 @@ def eval_code_heavy_session : EvalResult
   begin
     session_id = "eval-suggest-code-#{Random.rand(100000)}"
     GalaxyLedger::Database.create_session(session_id)
+    flush_wal
 
     transcript_file = File.tempfile("eval-suggest-code", ".jsonl")
     transcript_file.print(%|{"type": "user", "timestamp": "2026-02-01T10:00:00Z", "message": {"role": "user", "content": "Fix the authentication middleware — the JWT validation is failing"}}\n|)

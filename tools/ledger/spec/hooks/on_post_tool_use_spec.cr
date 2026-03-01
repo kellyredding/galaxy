@@ -411,6 +411,10 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         result = run_binary(["on-post-tool-use"], stdin: read_input)
         result[:status].should eq(0)
 
+        # Verify marker exists and is not stale
+        GalaxyLedger::Database.has_extracted_source_file?(ledger_session_id, "/home/user/implementation-plans/feature.md").should be_true
+        GalaxyLedger::Database.stale_entries(ledger_session_id).should be_empty
+
         # Second: write to the plan file
         write_input = {
           "session_id" => session_id,
