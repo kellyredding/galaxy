@@ -317,6 +317,7 @@ struct SnapshotSummary: Codable, Identifiable {
     let title: String
     let exchangeCount: Int32
     let charCount: Int32
+    let reviewCount: Int32
     let createdAt: String
 }
 
@@ -344,6 +345,8 @@ struct SnapshotAnnotation: Codable, Identifiable {
     let endLine: Int32
     let content: String
     let ledgerSnapshotReviewId: Int64?
+    let reviewNumber: Int32?
+    let reviewReviewedAt: String?
 }
 
 /// Result from creating a snapshot review.

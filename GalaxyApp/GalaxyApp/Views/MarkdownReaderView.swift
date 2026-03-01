@@ -176,7 +176,7 @@ struct MarkdownReaderView: NSViewRepresentable {
                let snapNum = pendingSnapshotNumber {
 
                 let annotationDicts: [[String: Any]] = annotations.map { a in
-                    [
+                    var dict: [String: Any] = [
                         "id": a.id,
                         "number": a.number,
                         "start_line": a.startLine,
@@ -185,6 +185,13 @@ struct MarkdownReaderView: NSViewRepresentable {
                         "created_at": a.createdAt,
                         "updated_at": a.updatedAt
                     ]
+                    if let rn = a.reviewNumber {
+                        dict["review_number"] = rn
+                    }
+                    if let rra = a.reviewReviewedAt {
+                        dict["review_reviewed_at"] = rra
+                    }
+                    return dict
                 }
                 let htmlMapDict: [String: String] = Dictionary(
                     uniqueKeysWithValues: htmlMap.map { (String($0.key), $0.value) }
@@ -949,6 +956,11 @@ private func buildFullHTML(
             }
         },
 
+        refreshAnnotationData(annotations) {
+            this.annotations = annotations;
+            this.renderAllAnnotations();
+        },
+
         findBlockIndexForEndLine(endLine) {
             for (var i = this.blocks.length - 1; i >= 0; i--) {
                 var blockEnd = parseInt(
@@ -969,19 +981,35 @@ private func buildFullHTML(
                 : 'lines ' + annotation.start_line + '\\u2013' + annotation.end_line;
 
             var isExpanded = this.expandedNumber === annotation.number;
+            var hasReview = !!annotation.review_number;
+
+            // Build meta text: "#3" for unreviewed,
+            // "#3 · Review #1" (pending) or "#3 · Review #1 · Mar 1, 2026" (processed)
+            var metaText = '#' + annotation.number;
+            if (hasReview) {
+                metaText += ' \\u00B7 Review #' + annotation.review_number;
+                if (annotation.review_reviewed_at) {
+                    metaText += ' \\u00B7 ' + this.formatReviewDate(annotation.review_reviewed_at);
+                }
+            }
+
+            // Only show edit/delete buttons for annotations not assigned to a review
+            var actionsHTML = hasReview ? '' :
+                '<span class="annotation-card-actions">' +
+                    '<button class="annotation-btn-edit" title="Edit">' +
+                        this.editIconSVG + '</button>' +
+                    '<button class="annotation-btn-delete" title="Delete">' +
+                        this.deleteIconSVG + '</button>' +
+                '</span>';
+
             var card = document.createElement('div');
             card.className = 'annotation-card' + (isExpanded ? ' expanded' : '');
             card.setAttribute('data-number', annotation.number);
             card.innerHTML =
                 '<div class="annotation-card-header">' +
                     '<span class="annotation-card-ref">' + lineRef + '</span>' +
-                    '<span class="annotation-card-meta">#' + annotation.number + '</span>' +
-                    '<span class="annotation-card-actions">' +
-                        '<button class="annotation-btn-edit" title="Edit">' +
-                            this.editIconSVG + '</button>' +
-                        '<button class="annotation-btn-delete" title="Delete">' +
-                            this.deleteIconSVG + '</button>' +
-                    '</span>' +
+                    '<span class="annotation-card-meta">' + metaText + '</span>' +
+                    actionsHTML +
                 '</div>' +
                 '<div class="annotation-card-content' +
                     (isExpanded ? '' : ' collapsed') + '">' +
@@ -998,18 +1026,22 @@ private func buildFullHTML(
                     e.target.closest('.annotation-edit-textarea')) return;
                 self.expandAnnotation(annotation.number);
             });
-            card.querySelector('.annotation-btn-edit').addEventListener(
-                'click', function(e) {
-                    e.stopPropagation();
-                    self.startEdit(annotation.number);
-                }
-            );
-            card.querySelector('.annotation-btn-delete').addEventListener(
-                'click', function(e) {
-                    e.stopPropagation();
-                    self.handleDeleteClick(annotation.number);
-                }
-            );
+
+            // Only wire edit/delete listeners when buttons exist
+            if (!hasReview) {
+                card.querySelector('.annotation-btn-edit').addEventListener(
+                    'click', function(e) {
+                        e.stopPropagation();
+                        self.startEdit(annotation.number);
+                    }
+                );
+                card.querySelector('.annotation-btn-delete').addEventListener(
+                    'click', function(e) {
+                        e.stopPropagation();
+                        self.handleDeleteClick(annotation.number);
+                    }
+                );
+            }
 
             // Create card spacer at inline position
             var insertBefore = block.nextElementSibling;
@@ -1410,6 +1442,16 @@ private func buildFullHTML(
             var ta = this.formElement
                 ? this.formElement.querySelector('textarea') : null;
             if (ta) { ta.value = ''; autoGrow(ta); }
+        },
+
+        // --- Date Formatting ---
+
+        formatReviewDate(dateStr) {
+            // Parse SQLite "YYYY-MM-DD HH:MM:SS" or ISO 8601 timestamps
+            var d = new Date(dateStr.replace(' ', 'T') + (dateStr.indexOf('Z') < 0 && dateStr.indexOf('+') < 0 ? 'Z' : ''));
+            if (isNaN(d.getTime())) return 'reviewed';
+            var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            return months[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
         },
 
         // --- Form State (for theme-change recovery) ---

@@ -59,7 +59,7 @@ struct SnapshotsView: View {
     @State private var sortAscending: Bool = true
 
     enum SortColumn {
-        case number, title, exchanges, size, created
+        case number, title, exchanges, size, reviews, created
     }
 
     private var sortedSnapshots: [SnapshotSummary] {
@@ -75,6 +75,8 @@ struct SnapshotsView: View {
                 result = a.exchangeCount < b.exchangeCount
             case .size:
                 result = a.charCount < b.charCount
+            case .reviews:
+                result = a.reviewCount < b.reviewCount
             case .created:
                 result = a.createdAt < b.createdAt
             }
@@ -224,6 +226,7 @@ struct SnapshotsView: View {
             sortableHeader("Title", column: .title, width: nil)
             sortableHeader("Exchanges", column: .exchanges, width: 90)
             sortableHeader("Size", column: .size, width: 80)
+            sortableHeader("Reviews", column: .reviews, width: 70)
             sortableHeader("Created", column: .created, width: 160)
         }
         .padding(.vertical, 4)
@@ -282,6 +285,11 @@ struct SnapshotsView: View {
                     .chromeFontMono(size: fontSize.caption2)
                     .foregroundColor(.secondary)
                     .frame(width: 80, alignment: .leading)
+
+                Text(snap.reviewCount > 0 ? "\(snap.reviewCount)" : "\u{2014}")
+                    .chromeFontMono(size: fontSize.caption2)
+                    .foregroundColor(.secondary)
+                    .frame(width: 70, alignment: .leading)
 
                 Text(formatTimestamp(snap.createdAt))
                     .chromeFontMono(size: fontSize.caption2)
@@ -736,16 +744,23 @@ struct SnapshotsView: View {
     private func buildAnnotationPayload(
         annotation: SnapshotAnnotation, renderedHTML: String
     ) -> String {
+        var annDict: [String: Any] = [
+            "id": annotation.id,
+            "number": annotation.number,
+            "start_line": annotation.startLine,
+            "end_line": annotation.endLine,
+            "content": annotation.content,
+            "created_at": annotation.createdAt,
+            "updated_at": annotation.updatedAt
+        ]
+        if let rn = annotation.reviewNumber {
+            annDict["review_number"] = rn
+        }
+        if let rra = annotation.reviewReviewedAt {
+            annDict["review_reviewed_at"] = rra
+        }
         let dict: [String: Any] = [
-            "annotation": [
-                "id": annotation.id,
-                "number": annotation.number,
-                "start_line": annotation.startLine,
-                "end_line": annotation.endLine,
-                "content": annotation.content,
-                "created_at": annotation.createdAt,
-                "updated_at": annotation.updatedAt
-            ],
+            "annotation": annDict,
             "renderedHTML": renderedHTML
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: dict),
