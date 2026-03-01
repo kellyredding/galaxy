@@ -2120,7 +2120,7 @@ module GalaxyLedger
     # Spend Command
     # ========================================
 
-    SPEND_PERIODS = ["today", "wtd", "mtd", "qtd", "ytd", "1y", "all"]
+    SPEND_PERIODS = ["today", "wtd", "30d", "mtd", "qtd", "ytd", "1y", "all"]
 
     private def self.handle_spend_command(args : Array(String))
       if args.first? == "-h" || args.first? == "--help"
@@ -2153,7 +2153,7 @@ module GalaxyLedger
         end
       end
 
-      period = period_arg || "mtd"
+      period = period_arg || "30d"
 
       # Resolve date range
       from_date, to_date, period_label = resolve_spend_period(period)
@@ -2204,6 +2204,9 @@ module GalaxyLedger
         days_since_monday = (today.day_of_week.value - 1) % 7
         monday = today - days_since_monday.days
         {monday.to_s("%Y-%m-%d"), today_str, "Week to Date"}
+      when "30d"
+        from = today - 29.days
+        {from.to_s("%Y-%m-%d"), today_str, "Last 30 Days"}
       when "mtd"
         first = Time.utc(today.year, today.month, 1)
         {first.to_s("%Y-%m-%d"), today_str, "Month to Date"}
@@ -2604,7 +2607,8 @@ module GalaxyLedger
 
       PERIODS:
         wtd                          Week to date (Monday → today)
-        mtd                          Month to date (default)
+        30d                          Last 30 days (default)
+        mtd                          Month to date
         qtd                          Quarter to date
         ytd                          Year to date
         1y                           Last 365 days

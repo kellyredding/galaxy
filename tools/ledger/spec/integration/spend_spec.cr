@@ -35,6 +35,7 @@ describe "CLI Integration - spend" do
       result = run_binary(["spend", "--help"])
       result[:output].should contain("galaxy-ledger spend")
       result[:output].should contain("PERIODS")
+      result[:output].should contain("30d")
       result[:output].should contain("mtd")
       result[:status].should eq(0)
     end
@@ -63,14 +64,26 @@ describe "CLI Integration - spend" do
       result[:status].should eq(0)
     end
 
-    it "shows MTD summary by default" do
-      lid = GalaxyLedger::Database.create_session("sess-spend-mtd")
-      today = Time.utc
-      seed_daily_usage(lid, today.to_s("%Y-%m-%d"), 3.25, 50000_i64)
+    it "shows 30d summary by default" do
+      lid = GalaxyLedger::Database.create_session("sess-spend-30d")
+      today = Time.utc.to_s("%Y-%m-%d")
+      seed_daily_usage(lid, today, 3.25, 50000_i64)
 
       result = run_binary(["spend"])
-      result[:output].should contain("Month to Date")
+      result[:output].should contain("Last 30 Days")
       result[:output].should contain("$3.25")
+      result[:status].should eq(0)
+    end
+
+    it "shows 30d summary" do
+      lid = GalaxyLedger::Database.create_session("sess-spend-30d-explicit")
+      today = Time.utc.to_s("%Y-%m-%d")
+      seed_daily_usage(lid, today, 7.00, 200000_i64)
+
+      result = run_binary(["spend", "30d"])
+      result[:output].should contain("Last 30 Days")
+      result[:output].should contain("$7.00")
+      result[:output].should contain("Active Sessions:  1")
       result[:status].should eq(0)
     end
   end
@@ -249,6 +262,18 @@ describe "CLI Integration - spend" do
   end
 
   describe "spend grouping tiers" do
+    it "shows daily sparkline and daily bars for 30d" do
+      lid = GalaxyLedger::Database.create_session("sess-tier-30d")
+      fake_today = Time.utc(Time.utc.year, Time.utc.month, 15)
+      seed_daily_usage(lid, (fake_today - 5.days).to_s("%Y-%m-%d"), 4.00, 80000_i64)
+      seed_daily_usage(lid, fake_today.to_s("%Y-%m-%d"), 6.00, 120000_i64)
+
+      result = run_binary(["spend", "30d"], extra_env: {"GALAXY_LEDGER_TODAY" => fake_today.to_s("%Y-%m-%d")})
+      result[:status].should eq(0)
+      result[:output].should contain("Daily:")
+      result[:output].should contain("excludes days with no usage")
+    end
+
     it "shows daily sparkline and daily bars for mtd" do
       lid = GalaxyLedger::Database.create_session("sess-tier-daily")
       # Pin "today" to mid-month so mtd always has multiple days

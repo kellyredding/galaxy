@@ -65,10 +65,10 @@ module GalaxyLedger
     ## Arguments
 
     The argument after `/spend` is the time period. If no argument
-    is given, default to `mtd` (month to date).
+    is given, default to `30d` (last 30 days).
 
     If the argument is `help`, show the available periods:
-    `wtd`, `mtd` (default), `qtd`, `ytd`, `1y`, `all`,
+    `wtd`, `30d` (default), `mtd`, `qtd`, `ytd`, `1y`, `all`,
     `YYYY-MM-DD..YYYY-MM-DD`
 
     ## Execution
