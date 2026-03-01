@@ -313,7 +313,7 @@ index 90402c0..d53edd9 100644
                          blue: CGFloat (color.blue) / 65535.0,
                          alpha: 1.0)
 diff --git a/Sources/SwiftTerm/Mac/MacTerminalView.swift b/Sources/SwiftTerm/Mac/MacTerminalView.swift
-index 412b95a..e4e11bf 100644
+index 412b95a..e8aeccc 100644
 --- a/Sources/SwiftTerm/Mac/MacTerminalView.swift
 +++ b/Sources/SwiftTerm/Mac/MacTerminalView.swift
 @@ -100,6 +100,8 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
@@ -618,15 +618,33 @@ index 412b95a..e4e11bf 100644
          didSelectionDrag = false
      }
      
-@@ -1109,11 +1279,23 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
-         let screenRow = hit.row - displayBuffer.yDisp
+@@ -1106,14 +1276,38 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+         }
+         didSelectionDrag = true
+         autoScrollDelta = 0
+-        let screenRow = hit.row - displayBuffer.yDisp
++        // GALAXY: Use unclamped screen row for velocity calculation.
++        // calculateMouseHit clamps hit.row to valid buffer bounds,
++        // which destroys the distance signal when dragging below the
++        // bottom edge (clamped to last buffer row, delta is always ~0).
++        // The raw pixel-to-row conversion preserves how far past the
++        // edge the mouse actually is, giving symmetric velocity scaling
++        // for both upward and downward drags. The bottom edge gets a
++        // 4-row boost because the tab bar below the terminal limits
++        // how far the mouse can physically travel past the bottom
++        // compared to the top (title bar + menu bar give more room).
++        let point = convert(event.locationInWindow, from: nil)
++        let rawScreenRow = Int((frame.height - point.y) / cellDimension.height)
          if selection.active {
-             if screenRow <= 0 {
+-            if screenRow <= 0 {
 -                autoScrollDelta = calcScrollingVelocity(delta: screenRow * -1) * -1
-+                autoScrollDelta = calcAutoScrollVelocity(delta: screenRow * -1) * -1
-             } else if screenRow >= displayBuffer.rows {
+-            } else if screenRow >= displayBuffer.rows {
 -                autoScrollDelta = calcScrollingVelocity(delta: screenRow - displayBuffer.rows)
-+                autoScrollDelta = calcAutoScrollVelocity(delta: screenRow - displayBuffer.rows)
++            if rawScreenRow < 0 {
++                autoScrollDelta = calcAutoScrollVelocity(delta: rawScreenRow * -1) * -1
++            } else if rawScreenRow >= displayBuffer.rows {
++                let bottomBoost = 4
++                autoScrollDelta = calcAutoScrollVelocity(delta: rawScreenRow - displayBuffer.rows + bottomBoost)
 +            }
 +        }
 +
@@ -644,7 +662,7 @@ index 412b95a..e4e11bf 100644
          setNeedsDisplay(bounds)
      }
      
-@@ -1195,19 +1377,43 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -1195,19 +1389,45 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
          }
      }
      
@@ -688,14 +706,24 @@ index 412b95a..e4e11bf 100644
      
 -    private func calcScrollingVelocity (delta: Int) -> Int
 +    /// Velocity for auto-scrolling during selection drag past the terminal edge.
-+    /// Uses gentle acceleration: 1 line near the edge, scaling up further away.
++    /// The curve is tuned so that even barely past the edge (delta 1) gives
++    /// noticeable speed — important because there's less physical mouse travel
++    /// below the terminal (window edge, dock) than above it (title bar, menu bar).
 +    private func calcAutoScrollVelocity (delta: Int) -> Int
      {
          if delta > 9 {
              return max (terminal.rows, 20)
-@@ -1220,7 +1426,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -1215,12 +1435,12 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+         if delta > 5 {
+             return 10
          }
-         return 1
+-        if delta > 1 {
+-            return 3
++        if delta > 2 {
++            return 5
+         }
+-        return 1
++        return 3
      }
 -    
 +
