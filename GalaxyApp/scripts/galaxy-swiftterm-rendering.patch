@@ -45,7 +45,7 @@ index deca240..4f8f287 100644
          dependencies: [
              "SwiftTerm",
 diff --git a/Sources/SwiftTerm/Apple/AppleTerminalView.swift b/Sources/SwiftTerm/Apple/AppleTerminalView.swift
-index 553a94c..2a23db6 100644
+index 553a94c..c8cd0b7 100644
 --- a/Sources/SwiftTerm/Apple/AppleTerminalView.swift
 +++ b/Sources/SwiftTerm/Apple/AppleTerminalView.swift
 @@ -14,6 +14,13 @@ import ImageIO
@@ -194,7 +194,7 @@ index 553a94c..2a23db6 100644
              // do the display update
              updateDisplay (notifyAccessibility: notifyAccessibility)
              //selectionView.notifyScrolled(source: terminal)
-@@ -1507,6 +1548,14 @@ extension TerminalView {
+@@ -1507,6 +1548,23 @@ extension TerminalView {
              updateScroller()
              setNeedsDisplay(frame)
          }
@@ -204,11 +204,56 @@ index 553a94c..2a23db6 100644
 +        // prevents Terminal.scroll() from snapping yDisp back to yBase
 +        // on each new line of output. Cleared when the user scrolls
 +        // back to the bottom, resuming auto-follow behavior.
++        //
++        // GALAXY: Don't update userScrolling while a selection is active.
++        // selectionChanged owns userScrolling during selection — it
++        // freezes the viewport on selection start and evaluates scroll
++        // position on selection clear. Without this guard, scrollTo
++        // (called by auto-scroll during drag, or trackpad scrolling
++        // during selection) would override the freeze.
 +        let atBottom = displayBuffer.yDisp >= displayBuffer.yBase
-+        terminal.userScrolling = !atBottom
++        if !selection.active {
++            terminal.userScrolling = !atBottom
++        }
      }
      
      /// Scrolls the content of the terminal one page up
+@@ -1547,13 +1605,33 @@ extension TerminalView {
+     func feedPrepare()
+     {
+         search.invalidate()
+-        selection.active = false
++        // GALAXY: Only clear selection when following live output.
++        // When the user has scrolled up or has an active selection,
++        // incoming data goes to yBase+y (beyond the frozen viewport)
++        // and doesn't affect the visible content under the selection.
++        if !terminal.userScrolling {
++            selection.active = false
++        }
++        preFeedLinesTop = terminal.buffer.linesTop
+         startDisplayUpdates()
+     }
+-    
++
+     func feedFinish ()
+     {
+         suspendDisplayUpdates ()
++
++        // GALAXY: Adjust selection rows for any lines trimmed during
++        // feed. When the circular buffer is full, each scroll() call
++        // recycles the oldest line, shifting all indices by -1.
++        // linesTop increments on each trim, so the delta tells us
++        // how many lines were removed.
++        if selection.active {
++            let trimmed = terminal.buffer.linesTop - preFeedLinesTop
++            if trimmed > 0 {
++                selection.adjustForTrimmedLines(trimmed)
++            }
++        }
++
+         queuePendingDisplay()
+     }
+     
 diff --git a/Sources/SwiftTerm/Buffer.swift b/Sources/SwiftTerm/Buffer.swift
 index a49310f..bb1de73 100644
 --- a/Sources/SwiftTerm/Buffer.swift
@@ -268,10 +313,19 @@ index 90402c0..d53edd9 100644
                          blue: CGFloat (color.blue) / 65535.0,
                          alpha: 1.0)
 diff --git a/Sources/SwiftTerm/Mac/MacTerminalView.swift b/Sources/SwiftTerm/Mac/MacTerminalView.swift
-index 412b95a..1f46354 100644
+index 412b95a..e4e11bf 100644
 --- a/Sources/SwiftTerm/Mac/MacTerminalView.swift
 +++ b/Sources/SwiftTerm/Mac/MacTerminalView.swift
-@@ -305,6 +305,9 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -100,6 +100,8 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+ 
+     var selection: SelectionService!
+     private var scroller: NSScroller!
++    // GALAXY: Tracks linesTop before each feed to detect buffer trims
++    var preFeedLinesTop: Int = 0
+     
+     // Attribute dictionary, maps a console attribute (color, flags) to the corresponding dictionary
+     // of attributes for an NSAttributedString
+@@ -305,6 +307,9 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
              settingBg = true
              _nativeBg = newValue
              terminal.backgroundColor = nativeBackgroundColor.getTerminalColor ()
@@ -281,7 +335,7 @@ index 412b95a..1f46354 100644
              settingBg = false
          }
      }
-@@ -312,6 +315,12 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -312,6 +317,12 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
      /// Controls weather to use high ansi colors, if false terminal will use bold text instead of high ansi colors
      public var useBrightColors: Bool = true
  
@@ -294,7 +348,7 @@ index 412b95a..1f46354 100644
      /// When true, block element (U+2580-U+259F) and box drawing (U+2500-U+257F) characters use custom rendering.
      public var customBlockGlyphs: Bool = true {
          didSet {
-@@ -360,6 +369,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -360,6 +371,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
      @objc
      func scrollerActivated ()
      {
@@ -302,7 +356,7 @@ index 412b95a..1f46354 100644
          switch scroller.hitPart {
          case .decrementPage:
              pageUp()
-@@ -380,9 +390,22 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -380,9 +392,22 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
          default:
              print ("Scroller: New value introduced")
          }
@@ -325,7 +379,7 @@ index 412b95a..1f46354 100644
      func getScrollerFrame() -> CGRect {
          let scrollerWidth = NSScroller.scrollerWidth(for: .regular, scrollerStyle: scrollerStyle)
          return NSRect(x: bounds.maxX - scrollerWidth, y: 0, width: scrollerWidth, height: bounds.height)
-@@ -400,16 +423,74 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -400,16 +425,74 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
          scroller.scrollerStyle = scrollerStyle
          scroller.knobProportion = 0.1
          scroller.isEnabled = false
@@ -400,7 +454,7 @@ index 412b95a..1f46354 100644
      }
  
      /// This method sents the `nativeForegroundColor` and `nativeBackgroundColor`
-@@ -435,7 +516,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -435,7 +518,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
      {
          return NSRect (x: 0, y: 0, width: cellDimension.width * CGFloat(terminal.cols) + scroller.frame.width, height: cellDimension.height * CGFloat(terminal.rows))
      }
@@ -409,7 +463,25 @@ index 412b95a..1f46354 100644
      func getEffectiveWidth (size: CGSize) -> CGFloat
      {
          return (size.width-scroller.frame.width)
-@@ -518,7 +599,35 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -448,7 +531,16 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+     }
+     
+     open func linefeed(source: Terminal) {
+-        selection.selectNone()
++        // GALAXY: Only clear selection when following live output.
++        // This delegate fires for every \n inside terminal.feed(buffer:),
++        // between feedPrepare and feedFinish. Without this guard, the
++        // first newline in any data chunk would kill the selection even
++        // if feedPrepare preserved it. For interactive typing, keyDown
++        // already clears selection before the Enter-echo linefeed
++        // arrives, so this guard doesn't change interactive behavior.
++        if !terminal.userScrolling {
++            selection.selectNone()
++        }
+     }
+     
+     /// This vaiable controls whether mouse events are sent to the application running under the
+@@ -518,7 +610,35 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
          updateScrollerFrame()
          updateCursorPosition()
          updateProgressBarFrame()
@@ -446,7 +518,7 @@ index 412b95a..1f46354 100644
      }
  
      public override func resizeSubviews(withOldSize oldSize: NSSize) {
-@@ -627,10 +736,25 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -627,10 +747,25 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
          super.flagsChanged(with: event)
      }
      
@@ -472,7 +544,49 @@ index 412b95a..1f46354 100644
      
      /// If set to true, the terminal treats the "Option" key as the Meta key in old terminals,
      /// which has the effect of sending the ESC character before the character that was
-@@ -1008,7 +1132,9 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -931,6 +1066,26 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+     
+     open func selectionChanged(source: Terminal) {
+         needsDisplay = true
++
++        // GALAXY: Freeze viewport while any selection is active.
++        // This covers drag, double-click, triple-click, selectAll,
++        // and shift-extend — all selection creation paths go through
++        // setActiveAndNotify() which triggers this callback.
++        //
++        // On selection clear, evaluate current scroll position:
++        // - At the bottom (yDisp >= yBase): resume auto-follow
++        // - In scrollback (yDisp < yBase): stay frozen
++        //
++        // This means the user ends up wherever they actually are,
++        // whether they scrolled during selection or output accumulated
++        // while frozen.
++        if selection.active {
++            terminal.userScrolling = true
++        } else {
++            let displayBuffer = terminal.displayBuffer
++            let atBottom = displayBuffer.yDisp >= displayBuffer.yBase
++            terminal.userScrolling = !atBottom
++        }
+     }
+     
+     func cut (sender: Any?) {}
+@@ -952,6 +1107,14 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+         let clipboard = NSPasteboard.general
+         clipboard.clearContents()
+         clipboard.setString(str, forType: .string)
++
++        // GALAXY: Clear selection after copy. selectNone() sets
++        // active = false (triggering selectionChanged, which evaluates
++        // the current scroll position to decide whether to resume
++        // auto-follow or stay in scrollback) and resets selectionMode
++        // to .character for a clean slate. The freeze was a temporary
++        // hold to capture text — Cmd+C is the "I'm done" signal.
++        selection.selectNone()
+     }
+     
+     public override func selectAll(_ sender: Any?)
+@@ -1008,7 +1171,9 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
      }
      
      private var autoScrollDelta = 0
@@ -483,7 +597,7 @@ index 412b95a..1f46354 100644
      private func scrollingTimerElapsed (source: Timer)
      {
          if autoScrollDelta == 0 {
-@@ -1017,7 +1143,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -1017,7 +1182,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
          if autoScrollDelta < 0 {
              scrollUp(lines: autoScrollDelta * -1)
          } else {
@@ -492,7 +606,7 @@ index 412b95a..1f46354 100644
          }
      }
      
-@@ -1078,6 +1204,11 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -1078,6 +1243,11 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
          //print ("Up at col=\(hit.col) row=\(hit.row) count=\(event.clickCount) selection.active=\(selection.active) didSelectionDrag=\(didSelectionDrag) ")
          #endif
          
@@ -504,7 +618,7 @@ index 412b95a..1f46354 100644
          didSelectionDrag = false
      }
      
-@@ -1109,11 +1240,23 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -1109,11 +1279,23 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
          let screenRow = hit.row - displayBuffer.yDisp
          if selection.active {
              if screenRow <= 0 {
@@ -513,24 +627,24 @@ index 412b95a..1f46354 100644
              } else if screenRow >= displayBuffer.rows {
 -                autoScrollDelta = calcScrollingVelocity(delta: screenRow - displayBuffer.rows)
 +                autoScrollDelta = calcAutoScrollVelocity(delta: screenRow - displayBuffer.rows)
-             }
-         }
++            }
++        }
 +
 +        // GALAXY: Start/stop the auto-scroll timer based on whether the
 +        // drag has moved past the terminal edge.
 +        if autoScrollDelta != 0 && autoScrollTimer == nil {
 +            autoScrollTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] timer in
 +                self?.scrollingTimerElapsed(source: timer)
-+            }
+             }
 +        } else if autoScrollDelta == 0 {
 +            autoScrollTimer?.invalidate()
 +            autoScrollTimer = nil
-+        }
+         }
 +
          setNeedsDisplay(bounds)
      }
      
-@@ -1195,19 +1338,43 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -1195,19 +1377,43 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
          }
      }
      
@@ -579,7 +693,7 @@ index 412b95a..1f46354 100644
      {
          if delta > 9 {
              return max (terminal.rows, 20)
-@@ -1220,7 +1387,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -1220,7 +1426,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
          }
          return 1
      }
@@ -588,3 +702,39 @@ index 412b95a..1f46354 100644
      public override func resetCursorRects() {
          addCursorRect(bounds, cursor: .iBeam)
      }
+diff --git a/Sources/SwiftTerm/SelectionService.swift b/Sources/SwiftTerm/SelectionService.swift
+index 0417ede..9c86911 100644
+--- a/Sources/SwiftTerm/SelectionService.swift
++++ b/Sources/SwiftTerm/SelectionService.swift
+@@ -531,7 +531,30 @@ class SelectionService: CustomDebugStringConvertible {
+             selectionMode = .character
+         }
+     }
+-    
++
++    // GALAXY: Adjusts selection positions when the circular buffer trims
++    // its oldest lines. Each trim shifts all buffer indices by -1, so
++    // selection rows must be decremented to continue pointing at the
++    // same content. If either endpoint has been trimmed away (row < 0),
++    // the selected content no longer exists and the selection is
++    // invalidated. Both start and end are checked because they are not
++    // guaranteed to be ordered — dragging upward makes end.row < start.row.
++    func adjustForTrimmedLines (_ count: Int) {
++        guard count > 0 else { return }
++        let newStartRow = start.row - count
++        let newEndRow = end.row - count
++        if newStartRow < 0 || newEndRow < 0 {
++            active = false
++            return
++        }
++        start = Position(col: start.col, row: newStartRow)
++        end = Position(col: end.col, row: newEndRow)
++        if let p = pivot {
++            let newPivotRow = p.row - count
++            pivot = newPivotRow >= 0 ? Position(col: p.col, row: newPivotRow) : nil
++        }
++    }
++
+     public func getSelectedText () -> String {
+         let (min, max) = if Position.compare(start, end) == .before {
+             (start, end)
