@@ -243,6 +243,13 @@ class SessionManager: ObservableObject {
         // Start the process
         session.startProcess(executablePath: executablePath, resume: isResume)
 
+        // Sync Galaxy session name to Claude after boot
+        session.afterNextIdle { [weak session] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak session] in
+                session?.syncSessionName()
+            }
+        }
+
         sessions.append(session)
         activeSessionId = session.id
         activeTab = .terminal
@@ -392,11 +399,14 @@ class SessionManager: ObservableObject {
         // Start process: --resume if session exists in Claude storage, --session-id if not
         session.startProcess(executablePath: executablePath, resume: canResume)
 
-        // Auto-handoff: send /handoff after Claude finishes booting.
-        // Extra 1s delay after idle gives the TUI time to fully
-        // initialize its input field after resume redraw.
+        // Sync session name and handoff after Claude finishes booting.
+        // Staggered: /rename at +1.0s, /handoff at +2.5s to avoid
+        // interleaving sendCommand's internal async delays.
         session.afterNextIdle { [weak session] in
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak session] in
+                session?.syncSessionName()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak session] in
                 session?.sendCommand("/handoff")
             }
         }

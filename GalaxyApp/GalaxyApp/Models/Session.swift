@@ -46,6 +46,18 @@ class Session: Identifiable, ObservableObject {
         return sessionRef
     }
 
+    /// The resolved name to sync to Claude Code via /rename.
+    /// Same cascade as displayName but without the "(sessionRef)" suffix.
+    var claudeSessionName: String {
+        if let name = givenName, !name.isEmpty {
+            return name
+        }
+        if givenName == nil, let suggested = ledgerSuggestedName, !suggested.isEmpty {
+            return suggested
+        }
+        return sessionRef
+    }
+
     @Published var isRunning: Bool = false
     @Published var hasExited: Bool = false
     @Published var exitCode: Int32?
@@ -62,6 +74,15 @@ class Session: Identifiable, ObservableObject {
     @Published var hasUnreadResponse: Bool = false
     @Published var visualBellActive: Bool = false
     @Published var isBusy: Bool = false
+
+    /// Tracks the last name sent via /rename to avoid duplicate commands.
+    /// Transient — not persisted. Cleared in processDidExit so resume
+    /// re-sends the name.
+    private(set) var lastRenamedTo: String?
+
+    /// Set when syncSessionName() is called while the session is busy.
+    /// Checked on the next busy→idle transition to retry the rename.
+    private var needsNameSync: Bool = false
 
     // MARK: - Ledger Enrichment Data
     // Populated by EventCoordinator.applyEnrichmentData() on each
@@ -403,6 +424,31 @@ class Session: Identifiable, ObservableObject {
         }
     }
 
+    /// Send /rename to Claude Code if the resolved name differs from
+    /// what was last sent. Defers to the next busy→idle transition if
+    /// the session is currently busy. No-op if session is not running.
+    func syncSessionName() {
+        let resolved = claudeSessionName
+
+        guard resolved != lastRenamedTo else {
+            needsNameSync = false
+            return
+        }
+        guard isRunning && !hasExited else { return }
+
+        // Defer if session is busy — retry on next idle transition
+        guard !isBusy else {
+            needsNameSync = true
+            NSLog("Session[%@]: Deferring name sync (busy) → \"%@\"", sessionRef, resolved)
+            return
+        }
+
+        NSLog("Session[%@]: Syncing name → \"%@\"", sessionRef, resolved)
+        needsNameSync = false
+        lastRenamedTo = resolved
+        sendCommand("/rename \(resolved)")
+    }
+
     // MARK: - Busy State
 
     /// Called from onDataReceived callback (fires on SwiftTerm's dispatch queue).
@@ -443,6 +489,11 @@ class Session: Identifiable, ObservableObject {
                     }
                 } else if !self.afterNextIdleActions.isEmpty {
                     // Actions pending but not armed — skip (no busy→idle cycle yet)
+                }
+
+                // Retry deferred name sync
+                if self.needsNameSync {
+                    self.syncSessionName()
                 }
 
                 // Fire persistent idle callback
@@ -693,6 +744,8 @@ class Session: Identifiable, ObservableObject {
             self.hasExited = true
             self.exitCode = exitCode
             self.childPid = 0
+            self.lastRenamedTo = nil
+            self.needsNameSync = false
 
             // A dead process is never busy — clear state and timer
             self.busyDebounceTimer?.invalidate()
