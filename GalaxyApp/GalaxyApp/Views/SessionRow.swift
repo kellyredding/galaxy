@@ -164,7 +164,7 @@ struct SessionRow: View {
                     // Stopped session: show Close button to remove from list
                     Button(action: onClose) {
                         Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.white.opacity(0.85))
+                            .foregroundColor(isSelected ? .white.opacity(0.8) : personaColor)
                             .font(.system(size: 18))
                     }
                     .buttonStyle(.plain)
@@ -175,7 +175,7 @@ struct SessionRow: View {
                     // Running session: show Stop button
                     Button(action: onStop) {
                         Image(systemName: "stop.circle.fill")
-                            .foregroundColor(.white.opacity(0.85))
+                            .foregroundColor(isSelected ? .white.opacity(0.8) : personaColor)
                             .font(.system(size: 18))
                     }
                     .buttonStyle(.plain)
