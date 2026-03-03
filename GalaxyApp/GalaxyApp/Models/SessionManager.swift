@@ -454,11 +454,13 @@ class SessionManager: ObservableObject {
     private func handleIdleTransition(for session: Session) {
         let settings = SettingsManager.shared.settings
 
-        // Show unread indicator when a non-focused session goes idle
-        // (assistant finished responding while you're elsewhere).
-        // State is set when either sidebar indicators or dock badge is enabled.
-        // Each display surface gates its own visibility independently.
-        let isViewingThisSession = session.id == activeSessionId && activeTab == .terminal
+        // Show unread indicator when a session goes idle and the user
+        // isn't actively viewing it — either a different session is
+        // selected, a non-terminal tab is active, or the app window
+        // isn't focused. State is set when either sidebar indicators
+        // or dock badge is enabled; each display surface gates its
+        // own visibility independently.
+        let isViewingThisSession = session.id == activeSessionId && activeTab == .terminal && isWindowFocused
         let trackUnread = settings.showUnreadIndicator || settings.showDockBadge
         if trackUnread && !isViewingThisSession {
             session.hasUnreadResponse = true
