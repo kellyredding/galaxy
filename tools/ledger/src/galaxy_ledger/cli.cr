@@ -118,6 +118,8 @@ module GalaxyLedger
         handle_backup_command(rest)
       when "suggest-name"
         handle_suggest_name_command(rest)
+      when "session-name"
+        handle_session_name_command(rest)
       when "version"
         puts "galaxy-ledger #{VERSION}"
       when "help"
@@ -147,6 +149,7 @@ module GalaxyLedger
         backup              Manage database backups
         config              Manage configuration
         suggest-name        Generate/improve session name via LLM one-shot
+        session-name        Look up session name from transcript JSONL
         install             Install hooks and skills into Claude Code
         uninstall           Remove hooks and skills from Claude Code
         version             Show version
@@ -3141,6 +3144,93 @@ module GalaxyLedger
         --transcript-path  Path to the session transcript JSONL file (required)
         -h, --help         Show this help
       HELP
+    end
+
+    # ── session-name subcommand ──────────────────────────────────────────
+
+    private def self.handle_session_name_command(args : Array(String))
+      if args.first? == "-h" || args.first? == "--help"
+        show_session_name_help
+        return
+      end
+
+      # Parse --pid
+      pid_str : String? = nil
+      i = 0
+      while i < args.size
+        arg = args[i]
+        if arg == "--pid" && i + 1 < args.size
+          pid_str = args[i + 1]
+          i += 2
+        else
+          i += 1
+        end
+      end
+
+      unless pid_str
+        STDERR.puts "Error: --pid is required"
+        show_session_name_help
+        exit(1)
+      end
+
+      # resolve_pid_to_ledger_session_id exits with
+      # "Error: no session found for PID ..." if PID is unknown
+      ledger_session_id = resolve_pid_to_ledger_session_id(pid_str)
+
+      session = Database.get_session_by_id(ledger_session_id)
+      project_dir = session.try(&.project_dir)
+
+      unless project_dir
+        puts "(unnamed)"
+        return
+      end
+
+      # Build JSONL paths for every session identifier (the rename
+      # custom-title entry may live under an earlier UUID).
+      identifiers = Database.session_identifiers(ledger_session_id)
+      encoded_dir = project_dir.gsub(/[\/.]/, "-")
+      claude_projects_dir = CLAUDE_CONFIG_DIR / "projects" / encoded_dir
+
+      jsonl_paths = identifiers.map { |id| claude_projects_dir / "#{id}.jsonl" }
+      puts find_custom_title(jsonl_paths) || "(unnamed)"
+    end
+
+    private def self.show_session_name_help
+      puts <<-HELP
+      Usage: galaxy-ledger session-name --pid PID
+
+      Look up the current Claude Code session name (custom title) from
+      the session transcript JSONL file.
+
+      Options:
+        --pid PID    Session by Claude Code process PID (required)
+        -h, --help   Show this help
+      HELP
+    end
+
+    # Scan JSONL files for the last custom-title entry.
+    # Exposed as a class method for unit testing.
+    def self.find_custom_title(jsonl_paths : Array(Path)) : String?
+      custom_title : String? = nil
+
+      jsonl_paths.each do |jsonl_path|
+        next unless File.exists?(jsonl_path)
+
+        File.each_line(jsonl_path) do |line|
+          if line.includes?("\"custom-title\"")
+            begin
+              parsed = JSON.parse(line)
+              if title = parsed["customTitle"]?.try(&.as_s?)
+                custom_title = title
+              end
+            rescue
+              # Skip malformed JSON lines
+            end
+          end
+        end
+      end
+
+      custom_title
     end
 
     # Read transcript entries with backoff (reusable for extraction and suggest-name)

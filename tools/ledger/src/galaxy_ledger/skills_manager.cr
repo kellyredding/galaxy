@@ -424,6 +424,40 @@ module GalaxyLedger
     - The CLI handles VACUUM automatically after pruning
     SKILL
 
+    NAME_SKILL = <<-'SKILL'
+    ---
+    name: ledger:name
+    description: >-
+      This skill should be used when the user asks "what is this
+      session named?", "show me the session name", "check the
+      session name", "did the rename work?", or wants to verify
+      the Claude Code session name.
+    ---
+
+    Look up the current Claude Code session name.
+
+    ## Execution
+
+    You MUST use the Bash tool to run this CLI command. Replace
+    `$LEDGER_PID` with the Ledger PID from your session context
+    (e.g., from the `**Ledger PID**: \`12345\`` line):
+
+    ```bash
+    galaxy-ledger session-name --pid $LEDGER_PID
+    ```
+
+    Do NOT skip the CLI call. Do NOT guess the session name from
+    context. Always run the command and report its output.
+
+    ## Output
+
+    The command outputs the session name or "(unnamed)".
+
+    Keep it brief — just report the result:
+    - Named: `Session name: **my-session-name**`
+    - Unnamed: `This session has no name set.`
+    SKILL
+
     # All ledger-managed skills: name => SKILL.md content
     LEDGER_SKILLS = {
       "handoff"         => HANDOFF_SKILL,
@@ -431,6 +465,7 @@ module GalaxyLedger
       "ledger:snapshot" => SNAPSHOT_SKILL,
       "ledger:artifact" => ARTIFACT_SKILL,
       "ledger:prune"    => PRUNE_SKILL,
+      "ledger:name"     => NAME_SKILL,
     }
 
     struct SkillInfo
