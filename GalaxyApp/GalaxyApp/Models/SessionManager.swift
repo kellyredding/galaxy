@@ -243,11 +243,13 @@ class SessionManager: ObservableObject {
         // Start the process
         session.startProcess(executablePath: executablePath, resume: isResume)
 
-        // Sync Galaxy session name to Claude after boot
+        // Sync Galaxy session name to Claude after boot.
+        // afterNextIdle waits for the first busy→idle cycle (Claude has
+        // booted and produced output). syncSessionName() then schedules a
+        // sustained-idle timer, ensuring /rename only fires after a full
+        // quiet period — not during brief gaps between tool calls.
         session.afterNextIdle { [weak session] in
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak session] in
-                session?.syncSessionName()
-            }
+            session?.syncSessionName()
         }
 
         sessions.append(session)
@@ -400,12 +402,11 @@ class SessionManager: ObservableObject {
         session.startProcess(executablePath: executablePath, resume: canResume)
 
         // Sync session name and handoff after Claude finishes booting.
-        // Staggered: /rename at +1.0s, /handoff at +2.5s to avoid
-        // interleaving sendCommand's internal async delays.
+        // /rename uses sustained-idle timer (fires only when truly idle).
+        // /handoff at +2.5s from afterNextIdle — may fire before rename
+        // lands; both commands are independent so ordering doesn't matter.
         session.afterNextIdle { [weak session] in
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak session] in
-                session?.syncSessionName()
-            }
+            session?.syncSessionName()
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak session] in
                 session?.sendCommand("/handoff")
             }

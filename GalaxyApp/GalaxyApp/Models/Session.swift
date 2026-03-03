@@ -84,6 +84,12 @@ class Session: Identifiable, ObservableObject {
     /// Checked on the next busy→idle transition to retry the rename.
     private var needsNameSync: Bool = false
 
+    /// Sustained-idle timer for name sync. Scheduled when the session
+    /// goes idle with a pending rename; cancelled if the session goes
+    /// busy before the interval elapses. Only fires (sending /rename)
+    /// when the session remains continuously idle for the full interval.
+    private var nameSyncTimer: Timer?
+
     // MARK: - Ledger Enrichment Data
     // Populated by EventCoordinator.applyEnrichmentData() on each
     // session.metrics event. Plain var (not @Published) until a
@@ -189,6 +195,12 @@ class Session: Identifiable, ObservableObject {
 
     /// How long after the last PTY output before transitioning busy→idle
     private static let busyDebounceInterval: TimeInterval = 0.5
+
+    /// How long the session must remain continuously idle before sending
+    /// a /rename command. Prevents firing during brief gaps between tool
+    /// calls in multi-step agentic turns. The total quiet period is
+    /// busyDebounceInterval (0.5s) + this interval before /rename fires.
+    private static let nameSyncSustainedIdleInterval: TimeInterval = 0.5
 
     /// When true, busy state changes are frozen (during drag/resize operations)
     private var isBusyPaused: Bool = false
@@ -424,10 +436,48 @@ class Session: Identifiable, ObservableObject {
         }
     }
 
-    /// Send /rename to Claude Code if the resolved name differs from
-    /// what was last sent. Defers to the next busy→idle transition if
-    /// the session is currently busy. No-op if session is not running.
+    /// Request a /rename sync to Claude Code. If the session is idle,
+    /// schedules a sustained-idle timer; if busy, defers to the next
+    /// idle transition. The timer cancels if the session goes busy
+    /// before it fires, ensuring /rename only sends during a genuine
+    /// idle period — not during brief gaps between tool calls.
     func syncSessionName() {
+        let resolved = claudeSessionName
+
+        guard resolved != lastRenamedTo else {
+            needsNameSync = false
+            nameSyncTimer?.invalidate()
+            nameSyncTimer = nil
+            return
+        }
+        guard isRunning && !hasExited else { return }
+
+        needsNameSync = true
+
+        // Defer if session is busy — retry on next idle transition
+        guard !isBusy else {
+            NSLog("Session[%@]: Deferring name sync (busy) → \"%@\"",
+                  sessionRef, resolved)
+            return
+        }
+
+        // Schedule sustained-idle timer (replaces any pending one)
+        nameSyncTimer?.invalidate()
+        NSLog("Session[%@]: Scheduling name sync (%.1fs sustained idle) → \"%@\"",
+              sessionRef, Self.nameSyncSustainedIdleInterval, resolved)
+        nameSyncTimer = Timer.scheduledTimer(
+            withTimeInterval: Self.nameSyncSustainedIdleInterval,
+            repeats: false
+        ) { [weak self] _ in
+            self?.executeNameSync()
+        }
+    }
+
+    /// Send the /rename command after the sustained-idle timer fires.
+    /// Final guards re-check state in case conditions changed during
+    /// the timer interval.
+    private func executeNameSync() {
+        nameSyncTimer = nil
         let resolved = claudeSessionName
 
         guard resolved != lastRenamedTo else {
@@ -435,11 +485,10 @@ class Session: Identifiable, ObservableObject {
             return
         }
         guard isRunning && !hasExited else { return }
-
-        // Defer if session is busy — retry on next idle transition
         guard !isBusy else {
-            needsNameSync = true
-            NSLog("Session[%@]: Deferring name sync (busy) → \"%@\"", sessionRef, resolved)
+            // Went busy just as timer fired — defer to next idle
+            NSLog("Session[%@]: Name sync timer fired but session is busy — deferring",
+                  sessionRef)
             return
         }
 
@@ -463,6 +512,10 @@ class Session: Identifiable, ObservableObject {
             // This prevents unnecessary SessionRow re-renders during sustained output
             if !self.isBusy {
                 self.isBusy = true
+
+                // Cancel pending sustained-idle name sync — session went busy
+                self.nameSyncTimer?.invalidate()
+                self.nameSyncTimer = nil
 
                 // Arm pending one-shot actions on idle→busy transition
                 if !self.afterNextIdleActions.isEmpty {
@@ -746,6 +799,8 @@ class Session: Identifiable, ObservableObject {
             self.childPid = 0
             self.lastRenamedTo = nil
             self.needsNameSync = false
+            self.nameSyncTimer?.invalidate()
+            self.nameSyncTimer = nil
 
             // A dead process is never busy — clear state and timer
             self.busyDebounceTimer?.invalidate()
