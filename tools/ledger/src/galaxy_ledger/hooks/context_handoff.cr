@@ -289,9 +289,10 @@ module GalaxyLedger
         if has_guidelines
           lines << "### Required Reading"
           lines << ""
-          lines << "Before continuing, re-read these guideline files to restore"
-          lines << "full context. The original files contain critical nuance, examples,"
-          lines << "and conditional rules that summaries cannot capture."
+          lines << "You MUST re-read every file below using the Read tool before"
+          lines << "responding. Summaries and memory are not substitutes for reading"
+          lines << "the source files \u2014 they contain rules, conventions, and constraints"
+          lines << "you are expected to follow exactly."
           lines << ""
           guideline_paths.each do |path|
             lines << "- `#{Helpers.shorten_home_path(path)}`"
@@ -303,7 +304,7 @@ module GalaxyLedger
         lines << "### Before Your Next Response"
         lines << ""
         if has_guidelines
-          lines << "1. **Re-read all guideline files** listed in Required Reading above"
+          lines << "1. **Re-read all guideline files** listed in Required Reading above \u2014 this is not optional"
         else
           lines << "1. **Check for guideline files** in the session file manifest below"
         end

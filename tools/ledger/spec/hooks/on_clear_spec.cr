@@ -315,7 +315,7 @@ describe "OnClear additionalContext" do
     output = JSON.parse(result[:output])
     ctx = output["hookSpecificOutput"]["additionalContext"].as_s
     ctx.should contain("### Required Reading")
-    ctx.should contain("re-read these guideline files")
+    ctx.should contain("MUST re-read every file below using the Read tool")
     ctx.should contain("ruby-style.md")
     ctx.should contain("rspec-style.md")
     # Should NOT contain the extracted bullet summaries

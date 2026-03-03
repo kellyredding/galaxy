@@ -16,26 +16,40 @@ module GalaxyLedger
     ---
 
     Review the Session Context Handoff that was injected into your
-    context and present a clear summary to the user.
+    context, restore full working state, and present a summary.
 
-    ## Restore Working Directory (DO THIS FIRST)
+    Follow these steps in order. Do not skip or reorder steps.
 
-    CRITICAL: Before doing anything else, you MUST restore the working
-    directory. Run `pwd` to check your current directory, then compare
-    it to the Working Directory from the handoff context. If they
-    differ, `cd` to the handoff Working Directory immediately. Do NOT
-    skip this step — the user needs to pick up exactly where they
-    left off. Always report the directory change (or confirmation of
-    match) in your summary.
+    ## Step 1 — Restore Working Directory
 
-    ## Present the Summary
+    Run `pwd` to check your current directory, then compare it to
+    the Working Directory from the handoff context. If they differ,
+    `cd` to the handoff Working Directory immediately. Report the
+    result (changed or already correct) in your summary.
+
+    ## Step 2 — Re-Read All Guideline Files
+
+    If the handoff context includes a "Required Reading" section,
+    you MUST use the Read tool to re-read every file listed there
+    before responding to the user. These are the guideline files
+    that were active during the session — they contain rules,
+    conventions, and constraints you are expected to follow.
+
+    Do not summarize from memory. Do not skip files because they
+    seem familiar. The original files are the source of truth —
+    you have not read them yet in this context.
+
+    Read them now, silently. Do not narrate each file read to the
+    user.
+
+    ## Step 3 — Present the Summary
 
     Focus on the Last Interaction above all else — this is what the
     user most needs to verify for continuity. Quote what they asked
     and what was accomplished.
 
     Then briefly note:
-    - Which guideline files are active (just file paths, not full rules)
+    - Guideline files restored (count + file paths, not full rules)
     - Any key decisions captured (with importance level)
     - Session file counts (how many edited/written vs read)
 
@@ -50,8 +64,9 @@ module GalaxyLedger
 
     ## Formatting
 
-    Keep the output concise — this is a quick confirmation the user
-    can scan in 5 seconds, not a data dump.
+    Keep the summary output concise — this is a quick confirmation
+    the user can scan in 5 seconds, not a data dump. The file reads
+    in Step 2 are silent background work, not part of the output.
     SKILL
 
     SPEND_SKILL = <<-'SKILL'
