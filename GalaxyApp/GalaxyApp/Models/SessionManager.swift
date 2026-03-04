@@ -490,22 +490,25 @@ class SessionManager: ObservableObject {
             updateDockBadge()
         }
 
-        // Session Ready notification
-        // Note: when auto-clear is about to fire, both Session Ready and
+        // Session Idle notification
+        // Note: when auto-clear is about to fire, both Session Idle and
         // Auto-Clear notifications will appear near-simultaneously. This is
         // intentional — they're independently togglable (both off by default),
-        // so a user with Session Ready ON but Auto-Clear notification OFF
+        // so a user with Session Idle ON but Auto-Clear notification OFF
         // would miss the idle signal if we suppressed here. The minimum busy
         // duration filter prevents the post-auto-clear idle from re-firing.
-        if settings.notifySessionReady && !isViewingThisSession {
-            let minBusy = TimeInterval(settings.notifySessionReadyMinBusy)
+        if settings.notifySessionIdle && !isViewingThisSession {
+            let minBusy = TimeInterval(settings.notifySessionIdleMinBusy)
             let busyDuration = NotificationService.shared
                 .sessionBusyDuration(session.id) ?? 0
 
             if busyDuration >= minBusy {
-                NotificationService.shared.notifySessionReady(
+                NotificationService.shared.notifySessionIdle(
                     sessionId: session.id,
                     displayName: session.displayName,
+                    responsePreview: lastResponsePreview(
+                        for: session
+                    ),
                     contextPct: session.ledgerContextPercentage,
                     linesAdded: session.ledgerLinesAdded,
                     linesRemoved: session.ledgerLinesRemoved
@@ -542,6 +545,60 @@ class SessionManager: ObservableObject {
 
         lastAutoClearTime[session.id] = Date()
         clearAndHandoff(session)
+    }
+
+    /// Extract a preview of the last assistant response from ledger
+    /// enrichment data. Fallback chain: summary.assistantResponse →
+    /// fullContent → nil. Truncates to a single notification-friendly
+    /// line with ellipsis.
+    private func lastResponsePreview(for session: Session) -> String? {
+        guard let json = session.ledgerLastInteraction,
+              let data = json.data(using: .utf8) else { return nil }
+
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+
+        // Parse exchange array (or single object wrapped in array)
+        let exchanges: [LastExchange]
+        if let array = try? decoder.decode(
+            [LastExchange].self, from: data
+        ) {
+            exchanges = array
+        } else if let single = try? decoder.decode(
+            LastExchange.self, from: data
+        ) {
+            exchanges = [single]
+        } else {
+            return nil
+        }
+
+        guard let last = exchanges.last else { return nil }
+
+        // Prefer the extracted summary, fall back to raw full content
+        let raw = last.summary?.assistantResponse
+            ?? last.fullContent
+
+        guard let text = raw, !text.isEmpty else { return nil }
+
+        // Collapse whitespace and truncate for notification banner
+        let cleaned = text
+            .components(separatedBy: .newlines)
+            .joined(separator: " ")
+            .replacingOccurrences(
+                of: "\\s+",
+                with: " ",
+                options: .regularExpression
+            )
+            .trimmingCharacters(in: .whitespaces)
+
+        let limit = 100
+        if cleaned.count <= limit { return cleaned }
+        let truncated = String(cleaned.prefix(limit))
+        // Break at last word boundary for readability
+        if let lastSpace = truncated.lastIndex(of: " ") {
+            return String(truncated[..<lastSpace]) + "…"
+        }
+        return truncated + "…"
     }
 
     /// Check if Claude has a session saved on disk for the given session ID and working directory

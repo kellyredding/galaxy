@@ -45,10 +45,13 @@ final class NotificationService: NSObject,
 
     // MARK: - Notification Senders
 
-    /// Send a "Session Ready" notification.
-    func notifySessionReady(
+    /// Send a "Session Idle" notification.
+    /// Shows a preview of the last assistant response when available,
+    /// falling back to context/lines stats.
+    func notifySessionIdle(
         sessionId: UUID,
         displayName: String,
+        responsePreview: String?,
         contextPct: Double?,
         linesAdded: Int?,
         linesRemoved: Int?
@@ -56,15 +59,20 @@ final class NotificationService: NSObject,
         let content = UNMutableNotificationContent()
         content.title = displayName
 
-        var parts: [String] = ["Ready for input"]
+        // Subtitle: "Idle · 22% context"
+        var subtitleParts: [String] = ["Idle"]
         if let pct = contextPct {
-            parts.append("\(Int(pct))% context")
+            subtitleParts.append("\(Int(pct))% context")
         }
-        if let added = linesAdded, let removed = linesRemoved,
-           (added > 0 || removed > 0) {
-            parts.append("+\(added)/-\(removed) lines")
+        content.subtitle = subtitleParts
+            .joined(separator: " \u{00B7} ")
+
+        // Body: last assistant response preview (or fallback)
+        if let preview = responsePreview, !preview.isEmpty {
+            content.body = preview
+        } else {
+            content.body = ""
         }
-        content.body = parts.joined(separator: " \u{00B7} ")
         content.sound = .default
         content.userInfo = [
             "sessionId": sessionId.uuidString,
@@ -72,7 +80,7 @@ final class NotificationService: NSObject,
         ]
 
         let request = UNNotificationRequest(
-            identifier: "session-ready-\(sessionId.uuidString)",
+            identifier: "session-idle-\(sessionId.uuidString)",
             content: content,
             trigger: nil
         )

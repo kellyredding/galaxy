@@ -557,33 +557,33 @@ struct NotificationsSettingsTab: View {
             // Section 2: Session (new notification controls)
             SettingsCard(title: "Session") {
                 VStack(alignment: .leading, spacing: 12) {
-                    // Session Ready
+                    // Session Idle
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
                             Toggle(
-                                "Session ready",
+                                "Session idle",
                                 isOn: $settingsManager.settings
-                                    .notifySessionReady
+                                    .notifySessionIdle
                             )
                             .toggleStyle(.checkbox)
                             .onChange(
                                 of: settingsManager.settings
-                                    .notifySessionReady
+                                    .notifySessionIdle
                             ) { _, enabled in
                                 if enabled { requestAuth() }
                             }
                             Spacer()
                         }
 
-                        if settingsManager.settings.notifySessionReady {
+                        if settingsManager.settings.notifySessionIdle {
                             SettingsRow(label: "Minimum busy time") {
                                 HStack(spacing: 4) {
                                     Stepper(
-                                        "\(settingsManager.settings.notifySessionReadyMinBusy)s",
+                                        "\(settingsManager.settings.notifySessionIdleMinBusy)s",
                                         value: $settingsManager.settings
-                                            .notifySessionReadyMinBusy,
+                                            .notifySessionIdleMinBusy,
                                         in: AppSettings
-                                            .notifySessionReadyMinBusyRange
+                                            .notifySessionIdleMinBusyRange
                                     )
                                     .frame(width: 100)
                                 }
@@ -719,7 +719,7 @@ struct NotificationsSettingsTab: View {
 
     private var hasAnySessionNotificationEnabled: Bool {
         let s = settingsManager.settings
-        return s.notifySessionReady
+        return s.notifySessionIdle
             || s.notifySessionExitedUnexpectedly
             || s.notifyHighContext
             || s.notifyAutoClearOccurred

@@ -95,7 +95,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // is enabled (dock badge or session notifications)
         let appSettings = SettingsManager.shared.settings
         if appSettings.showDockBadge
-            || appSettings.notifySessionReady
+            || appSettings.notifySessionIdle
             || appSettings.notifySessionExitedUnexpectedly
             || appSettings.notifyHighContext
             || appSettings.notifyAutoClearOccurred

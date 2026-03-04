@@ -124,8 +124,8 @@ struct AppSettings: Codable {
     var autoClearThreshold: Int = 97   // Context percentage (0-100) that triggers auto-clear
 
     // Session notification settings
-    var notifySessionReady: Bool = false
-    var notifySessionReadyMinBusy: Int = 5  // seconds
+    var notifySessionIdle: Bool = false
+    var notifySessionIdleMinBusy: Int = 3  // seconds
     var notifySessionExitedUnexpectedly: Bool = false
     var notifyHighContext: Bool = false
     var notifyHighContextThreshold: Int = 90
@@ -145,7 +145,7 @@ struct AppSettings: Codable {
     static let autoClearThresholdRange: ClosedRange<Int> = 50...99
 
     // Notification constraints
-    static let notifySessionReadyMinBusyRange: ClosedRange<Int> = 1...60
+    static let notifySessionIdleMinBusyRange: ClosedRange<Int> = 1...60
     static let notifyHighContextThresholdRange: ClosedRange<Int> = 50...99
 
     // Scrollback constraints
@@ -183,10 +183,10 @@ struct AppSettings: Codable {
         gitStatusStyle = try container.decodeIfPresent(GitStatusStyle.self, forKey: .gitStatusStyle) ?? .symbolic
         autoClearEnabled = try container.decodeIfPresent(Bool.self, forKey: .autoClearEnabled) ?? true
         autoClearThreshold = try container.decodeIfPresent(Int.self, forKey: .autoClearThreshold) ?? 97
-        notifySessionReady = try container.decodeIfPresent(
-            Bool.self, forKey: .notifySessionReady) ?? false
-        notifySessionReadyMinBusy = try container.decodeIfPresent(
-            Int.self, forKey: .notifySessionReadyMinBusy) ?? 5
+        notifySessionIdle = try container.decodeIfPresent(
+            Bool.self, forKey: .notifySessionIdle) ?? false
+        notifySessionIdleMinBusy = try container.decodeIfPresent(
+            Int.self, forKey: .notifySessionIdleMinBusy) ?? 3
         notifySessionExitedUnexpectedly = try container.decodeIfPresent(
             Bool.self, forKey: .notifySessionExitedUnexpectedly) ?? false
         notifyHighContext = try container.decodeIfPresent(
