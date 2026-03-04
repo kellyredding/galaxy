@@ -78,12 +78,35 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.eventCoordinator?.sessionClosed(sessionId)
         }
 
-        // Dock badge: request authorization if enabled, set initial state
-        if SettingsManager.shared.settings.showDockBadge {
+        // Initialize notification service
+        // (sets UNUserNotificationCenter delegate)
+        _ = NotificationService.shared
+
+        // Observe show-main-window notification (from notification clicks)
+        NotificationCenter.default.addObserver(
+            forName: .showMainWindow,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.mainWindowController?.showWindow(nil)
+        }
+
+        // Request notification authorization if any notification feature
+        // is enabled (dock badge or session notifications)
+        let appSettings = SettingsManager.shared.settings
+        if appSettings.showDockBadge
+            || appSettings.notifySessionReady
+            || appSettings.notifySessionExitedUnexpectedly
+            || appSettings.notifyHighContext
+            || appSettings.notifyAutoClearOccurred
+            || appSettings.notifySnapshotCreated
+        {
             Task {
-                await SettingsManager.shared.requestBadgeAuthorization()
+                await SettingsManager.shared
+                    .requestNotificationAuthorization()
             }
         }
+
         // Badge starts at nil (no sessions have unread state on fresh launch)
         NSApp.dockTile.badgeLabel = nil
 

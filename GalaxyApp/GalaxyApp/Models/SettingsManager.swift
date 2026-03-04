@@ -123,6 +123,15 @@ struct AppSettings: Codable {
     var autoClearEnabled: Bool = true  // Auto-clear when context exceeds threshold
     var autoClearThreshold: Int = 97   // Context percentage (0-100) that triggers auto-clear
 
+    // Session notification settings
+    var notifySessionReady: Bool = false
+    var notifySessionReadyMinBusy: Int = 5  // seconds
+    var notifySessionExitedUnexpectedly: Bool = false
+    var notifyHighContext: Bool = false
+    var notifyHighContextThreshold: Int = 90
+    var notifyAutoClearOccurred: Bool = false
+    var notifySnapshotCreated: Bool = false
+
     // Sidebar width constraints
     static let sidebarWidthRange: ClosedRange<CGFloat> = 150...500
 
@@ -134,6 +143,10 @@ struct AppSettings: Codable {
 
     // Auto-clear threshold constraints
     static let autoClearThresholdRange: ClosedRange<Int> = 50...99
+
+    // Notification constraints
+    static let notifySessionReadyMinBusyRange: ClosedRange<Int> = 1...60
+    static let notifyHighContextThresholdRange: ClosedRange<Int> = 50...99
 
     // Scrollback constraints
     static let terminalScrollbackRange: ClosedRange<Int> = 500...100_000
@@ -170,6 +183,20 @@ struct AppSettings: Codable {
         gitStatusStyle = try container.decodeIfPresent(GitStatusStyle.self, forKey: .gitStatusStyle) ?? .symbolic
         autoClearEnabled = try container.decodeIfPresent(Bool.self, forKey: .autoClearEnabled) ?? true
         autoClearThreshold = try container.decodeIfPresent(Int.self, forKey: .autoClearThreshold) ?? 97
+        notifySessionReady = try container.decodeIfPresent(
+            Bool.self, forKey: .notifySessionReady) ?? false
+        notifySessionReadyMinBusy = try container.decodeIfPresent(
+            Int.self, forKey: .notifySessionReadyMinBusy) ?? 5
+        notifySessionExitedUnexpectedly = try container.decodeIfPresent(
+            Bool.self, forKey: .notifySessionExitedUnexpectedly) ?? false
+        notifyHighContext = try container.decodeIfPresent(
+            Bool.self, forKey: .notifyHighContext) ?? false
+        notifyHighContextThreshold = try container.decodeIfPresent(
+            Int.self, forKey: .notifyHighContextThreshold) ?? 90
+        notifyAutoClearOccurred = try container.decodeIfPresent(
+            Bool.self, forKey: .notifyAutoClearOccurred) ?? false
+        notifySnapshotCreated = try container.decodeIfPresent(
+            Bool.self, forKey: .notifySnapshotCreated) ?? false
         newSessionDefaultDir = try container.decodeIfPresent(String.self, forKey: .newSessionDefaultDir) ?? "~/"
         newSessionLastPersona = try container.decodeIfPresent(String.self, forKey: .newSessionLastPersona)
     }
@@ -258,20 +285,21 @@ class SettingsManager: ObservableObject {
         }
     }
 
-    // MARK: - Dock Badge Authorization
+    // MARK: - Notification Authorization
 
-    /// Check current badge authorization status without prompting.
-    /// Returns the authorization status via async.
-    func checkBadgeAuthorization() async -> UNAuthorizationStatus {
-        let settings = await UNUserNotificationCenter.current().notificationSettings()
+    /// Check current notification authorization status without prompting.
+    func checkNotificationAuthorization() async -> UNAuthorizationStatus {
+        let settings = await UNUserNotificationCenter.current()
+            .notificationSettings()
         return settings.authorizationStatus
     }
 
-    /// Request badge authorization from the system. Shows the permission
-    /// dialog only if status is .notDetermined (first time). If already
-    /// granted or denied, this is a no-op that returns the current state.
-    func requestBadgeAuthorization() async -> Bool {
-        let status = await checkBadgeAuthorization()
+    /// Request notification authorization from the system. Shows the
+    /// permission dialog only if status is .notDetermined (first time).
+    /// Requests alert, sound, and badge — a single grant covers all
+    /// notification features (dock badge, session notifications, etc.).
+    func requestNotificationAuthorization() async -> Bool {
+        let status = await checkNotificationAuthorization()
 
         switch status {
         case .authorized:
@@ -281,11 +309,15 @@ class SettingsManager: ObservableObject {
         case .notDetermined:
             do {
                 let granted = try await UNUserNotificationCenter.current()
-                    .requestAuthorization(options: [.badge])
+                    .requestAuthorization(
+                        options: [.alert, .sound, .badge]
+                    )
                 return granted
             } catch {
-                NSLog("SettingsManager: Badge authorization request failed: %@",
-                      error.localizedDescription)
+                NSLog(
+                    "SettingsManager: Authorization request failed: %@",
+                    error.localizedDescription
+                )
                 return false
             }
         default:

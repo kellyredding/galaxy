@@ -263,13 +263,30 @@ class SessionManager: ObservableObject {
     func handleSessionExited(sessionId: UUID) {
         NSLog("SessionManager: handleSessionExited called for %@", sessionId.uuidString)
 
-        // Sessions are kept in sidebar when they exit (no removal)
-        // The session's hasExited flag is already set by the process handler
-
         // Update menu state and persist
         DispatchQueue.main.async {
             self.updateActiveSessionCanResume()
             SessionPersistence.shared.markDirty()
+
+            // Session Exited Unexpectedly notification
+            if SettingsManager.shared.settings
+                .notifySessionExitedUnexpectedly
+            {
+                if let session = self.sessions.first(
+                    where: { $0.id == sessionId }
+                ),
+                   !session.userInitiatedStop,
+                   let exitCode = session.exitCode,
+                   exitCode != 0
+                {
+                    NotificationService.shared
+                        .notifySessionExitedUnexpectedly(
+                            sessionId: sessionId,
+                            displayName: session.displayName,
+                            exitCode: exitCode
+                        )
+                }
+            }
         }
 
         NSLog("SessionManager: Session marked as exited, keeping in sidebar")
@@ -287,6 +304,10 @@ class SessionManager: ObservableObject {
         }
 
         NSLog("SessionManager: Stopping session %@", session.sessionRef)
+
+        // Mark as user-initiated so handleSessionExited doesn't fire
+        // the "exited unexpectedly" notification for intentional stops.
+        session.userInitiatedStop = true
 
         // Terminate the process using our tracked PID (sends SIGTERM)
         session.terminateProcess()
@@ -343,6 +364,7 @@ class SessionManager: ObservableObject {
         session.hasExited = false
         session.exitCode = nil
         session.isRunning = false
+        session.userInitiatedStop = false
 
         // Disable focus reporting (mode 1004) before the view transition.
         // Claude Code enables mode 1004 so SwiftTerm sends ESC[I on focus-in.
@@ -468,6 +490,29 @@ class SessionManager: ObservableObject {
             updateDockBadge()
         }
 
+        // Session Ready notification
+        // Note: when auto-clear is about to fire, both Session Ready and
+        // Auto-Clear notifications will appear near-simultaneously. This is
+        // intentional — they're independently togglable (both off by default),
+        // so a user with Session Ready ON but Auto-Clear notification OFF
+        // would miss the idle signal if we suppressed here. The minimum busy
+        // duration filter prevents the post-auto-clear idle from re-firing.
+        if settings.notifySessionReady && !isViewingThisSession {
+            let minBusy = TimeInterval(settings.notifySessionReadyMinBusy)
+            let busyDuration = NotificationService.shared
+                .sessionBusyDuration(session.id) ?? 0
+
+            if busyDuration >= minBusy {
+                NotificationService.shared.notifySessionReady(
+                    sessionId: session.id,
+                    displayName: session.displayName,
+                    contextPct: session.ledgerContextPercentage,
+                    linesAdded: session.ledgerLinesAdded,
+                    linesRemoved: session.ledgerLinesRemoved
+                )
+            }
+        }
+
         guard settings.autoClearEnabled else { return }
 
         // ledgerContextPercentage is 0–100 (integer scale), matching the setting
@@ -482,7 +527,18 @@ class SessionManager: ObservableObject {
         }
 
         NSLog("SessionManager: Auto-clearing %@ — context at %.0f%%",
-              session.sessionRef, contextPct * 100)
+              session.sessionRef, contextPct)
+
+        // Auto-Clear Occurred notification
+        // Reuse isViewingThisSession (computed earlier in this method).
+        // contextPct is already unwrapped and verified > threshold above.
+        if settings.notifyAutoClearOccurred && !isViewingThisSession {
+            NotificationService.shared.notifyAutoClearOccurred(
+                sessionId: session.id,
+                displayName: session.displayName,
+                contextPct: Int(contextPct)
+            )
+        }
 
         lastAutoClearTime[session.id] = Date()
         clearAndHandoff(session)
@@ -548,6 +604,7 @@ class SessionManager: ObservableObject {
 
         // Clean up auto-clear cooldown tracking
         lastAutoClearTime.removeValue(forKey: sessionId)
+        NotificationService.shared.sessionClosed(sessionId)
 
         // Remove the session (this will deallocate the terminal view which kills the process)
         sessions.remove(at: index)

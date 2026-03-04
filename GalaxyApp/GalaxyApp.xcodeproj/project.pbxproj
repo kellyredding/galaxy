@@ -19,6 +19,7 @@
 		59C4461354F92AEF376C88AA /* DragHandleNSView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43C2EE51F5ED8F5A44D27580 /* DragHandleNSView.swift */; };
 		5BE31FF52EF968E62B31F97C /* CircuitBreaker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3463B095E6622E31AF317063 /* CircuitBreaker.swift */; };
 		64AB450ECD5FB1FF3D5E16EB /* EnrichmentService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260E4993B113CBAABADA519B /* EnrichmentService.swift */; };
+		EE2222220000000000000001 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE1111110000000000000001 /* NotificationService.swift */; };
 		69C769B61E2BA6F9BD8DA6FB /* MainWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEB9F0C617C86CE1FDD05FF3 /* MainWindowController.swift */; };
 		6DBFAC1175B99C54309DF19A /* SessionPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAEF4E4E06E2AD409BFED23F /* SessionPersistence.swift */; };
 		7A28B8F016D429863BF35F22 /* TerminalColorTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAD14A629CEF3AA730CD6237 /* TerminalColorTheme.swift */; };
@@ -76,6 +77,7 @@
 		1C7501DB8ABDB113A9CF35C8 /* SettingsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsManager.swift; sourceTree = "<group>"; };
 		1F39F262BB7D593079DE0602 /* GalaxyApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GalaxyApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		260E4993B113CBAABADA519B /* EnrichmentService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnrichmentService.swift; sourceTree = "<group>"; };
+		EE1111110000000000000001 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
 		2C599534AAFC2570BC5F292A /* StoppedSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoppedSessionView.swift; sourceTree = "<group>"; };
 		2E9CD7B5767024AE0C85E433 /* PreferencesWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesWindowController.swift; sourceTree = "<group>"; };
 		3463B095E6622E31AF317063 /* CircuitBreaker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CircuitBreaker.swift; sourceTree = "<group>"; };
@@ -159,6 +161,7 @@
 				A5D457946288879168E5D913 /* GalaxyLog.swift */,
 				BB2222220000000000000002 /* LedgerQueryService.swift */,
 				BB2222220000000000000001 /* LedgerSubTab.swift */,
+				EE1111110000000000000001 /* NotificationService.swift */,
 				CC2222220000000000000002 /* SnapshotQueryService.swift */,
 				F36B97B02F23D9DBF2C2F2E2 /* Session.swift */,
 				EA542FF52DF4733279284AB3 /* SessionIDGenerator.swift */,
@@ -365,6 +368,7 @@
 				AA1111110000000000000006 /* LedgerView.swift in Sources */,
 				CC1111110000000000000003 /* MarkdownReaderView.swift in Sources */,
 				9A7E8C74C205BD7E4329689D /* MainMenu.swift in Sources */,
+				EE2222220000000000000001 /* NotificationService.swift in Sources */,
 				69C769B61E2BA6F9BD8DA6FB /* MainWindowController.swift in Sources */,
 				DD2222220000000000000002 /* NewSessionSheetController.swift in Sources */,
 				DD2222220000000000000001 /* NewSessionView.swift in Sources */,

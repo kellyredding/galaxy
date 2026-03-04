@@ -668,4 +668,5 @@ class MenuActions: NSObject {
 extension Notification.Name {
     static let showPreferences = Notification.Name("showPreferences")
     static let showNewSession = Notification.Name("showNewSession")
+    static let showMainWindow = Notification.Name("showMainWindow")
 }

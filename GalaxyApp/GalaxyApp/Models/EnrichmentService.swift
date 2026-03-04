@@ -171,12 +171,17 @@ final class EnrichmentService {
             let startTime = CFAbsoluteTimeGetCurrent()
             do {
                 try task.run()
+
+                // Read stdout BEFORE waitUntilExit to avoid pipe deadlock.
+                // If the subprocess writes more than ~64KB, the pipe buffer
+                // fills and the process blocks on write. waitUntilExit would
+                // then block forever waiting for a process that can't exit.
+                let data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
                 task.waitUntilExit()
                 timeoutWorkItem.cancel()
                 let duration = CFAbsoluteTimeGetCurrent() - startTime
 
                 if task.terminationStatus == 0 {
-                    let data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
 
                     do {
                         let response = try JSONDecoder().decode(EnrichmentResponse.self, from: data)
@@ -237,13 +242,18 @@ final class EnrichmentService {
 
         do {
             try task.run()
+
+            // Read stdout BEFORE waitUntilExit to avoid pipe deadlock.
+            // If the subprocess writes more than ~64KB, the pipe buffer
+            // fills and the process blocks on write. waitUntilExit would
+            // then block forever waiting for a process that can't exit.
+            let data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
             task.waitUntilExit()
 
             guard task.terminationStatus == 0 else {
                 return nil
             }
 
-            let data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
             return try JSONDecoder().decode(EnrichmentResponse.self, from: data)
         } catch {
             return nil

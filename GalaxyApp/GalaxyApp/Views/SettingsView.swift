@@ -7,14 +7,14 @@ enum SettingsTab: String, CaseIterable {
     case general
     case sessions
     case terminal
-    case alerts
+    case notifications
 
     var title: String {
         switch self {
         case .general: return "General"
         case .sessions: return "Sessions"
         case .terminal: return "Terminal"
-        case .alerts: return "Alerts"
+        case .notifications: return "Notifications"
         }
     }
 
@@ -23,7 +23,7 @@ enum SettingsTab: String, CaseIterable {
         case .general: return "gear"
         case .sessions: return "text.bubble"
         case .terminal: return "apple.terminal"
-        case .alerts: return "bell"
+        case .notifications: return "bell"
         }
     }
 }
@@ -63,8 +63,8 @@ struct SettingsView: View {
                         fontSizeText: $fontSizeText,
                         scrollbackText: $scrollbackText
                     )
-                case .alerts:
-                    AlertsSettingsTab(settingsManager: settingsManager)
+                case .notifications:
+                    NotificationsSettingsTab(settingsManager: settingsManager)
                 }
             }
         }
@@ -446,33 +446,47 @@ struct TerminalSettingsTab: View {
     }()
 }
 
-// MARK: - Alerts Tab
+// MARK: - Notifications Tab
 
-struct AlertsSettingsTab: View {
+struct NotificationsSettingsTab: View {
     @ObservedObject var settingsManager: SettingsManager
-    @State private var badgeAuthStatus: UNAuthorizationStatus = .notDetermined
+    @State private var authStatus: UNAuthorizationStatus = .notDetermined
 
     var body: some View {
         VStack(spacing: 16) {
-            SettingsCard(title: "Notifications") {
+            // Section 1: Alerts (existing controls, unchanged)
+            SettingsCard(title: "Alerts") {
                 VStack(alignment: .leading, spacing: 12) {
                     SettingsRow(label: "Terminal bell") {
                         HStack(spacing: 8) {
-                            Picker("", selection: $settingsManager.settings.bellPreference) {
-                                Text(BellPreference.system.displayName).tag(BellPreference.system)
-                                Text(BellPreference.visualBell.displayName).tag(BellPreference.visualBell)
-                                Text(BellPreference.none.displayName).tag(BellPreference.none)
+                            Picker(
+                                "",
+                                selection: $settingsManager.settings
+                                    .bellPreference
+                            ) {
+                                Text(BellPreference.system.displayName)
+                                    .tag(BellPreference.system)
+                                Text(BellPreference.visualBell.displayName)
+                                    .tag(BellPreference.visualBell)
+                                Text(BellPreference.none.displayName)
+                                    .tag(BellPreference.none)
 
                                 Divider()
 
-                                ForEach(BellPreference.allCases.filter { $0.isSound }, id: \.self) { pref in
+                                ForEach(
+                                    BellPreference.allCases
+                                        .filter { $0.isSound },
+                                    id: \.self
+                                ) { pref in
                                     Text(pref.displayName).tag(pref)
                                 }
                             }
                             .labelsHidden()
                             .frame(width: 130)
 
-                            Button(action: { settingsManager.handleBell() }) {
+                            Button(action: {
+                                settingsManager.handleBell()
+                            }) {
                                 Image(systemName: "play.fill")
                                     .font(.system(size: 10))
                             }
@@ -483,44 +497,53 @@ struct AlertsSettingsTab: View {
                     }
 
                     HStack {
-                        Toggle("Show unread indicator", isOn: $settingsManager.settings.showUnreadIndicator)
-                            .toggleStyle(.checkbox)
+                        Toggle(
+                            "Show unread indicator",
+                            isOn: $settingsManager.settings
+                                .showUnreadIndicator
+                        )
+                        .toggleStyle(.checkbox)
                         Spacer()
                     }
 
                     // Dock badge toggle with authorization status
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
-                            Toggle("Show dock badge", isOn: $settingsManager.settings.showDockBadge)
-                                .toggleStyle(.checkbox)
-                                .onChange(of: settingsManager.settings.showDockBadge) { _, enabled in
-                                    if enabled {
-                                        Task {
-                                            let granted = await settingsManager.requestBadgeAuthorization()
-                                            badgeAuthStatus = granted ? .authorized : .denied
-                                            // Update badge immediately with current unread count
-                                            SessionManager.shared.updateDockBadge()
-                                        }
-                                    } else {
-                                        // Clear badge immediately when disabled
-                                        NSApp.dockTile.badgeLabel = nil
+                            Toggle(
+                                "Show dock badge",
+                                isOn: $settingsManager.settings
+                                    .showDockBadge
+                            )
+                            .toggleStyle(.checkbox)
+                            .onChange(
+                                of: settingsManager.settings.showDockBadge
+                            ) { _, enabled in
+                                if enabled {
+                                    Task {
+                                        let granted = await settingsManager
+                                            .requestNotificationAuthorization()
+                                        authStatus = granted
+                                            ? .authorized : .denied
+                                        SessionManager.shared
+                                            .updateDockBadge()
                                     }
+                                } else {
+                                    NSApp.dockTile.badgeLabel = nil
                                 }
+                            }
                             Spacer()
                         }
 
-                        // Show authorization warning when enabled but denied.
-                        // Note: this only detects denial of the initial permission
-                        // prompt. The per-app "Badge app icon" toggle in System
-                        // Settings is not queryable via any API — a platform
-                        // limitation shared by all Mac apps.
-                        if settingsManager.settings.showDockBadge && badgeAuthStatus == .denied {
+                        if settingsManager.settings.showDockBadge
+                            && authStatus == .denied
+                        {
                             HStack(spacing: 4) {
                                 Text("Badge disabled in system settings.")
                                     .font(.system(size: 11))
                                     .foregroundColor(.secondary)
                                 Button("Open Notification Settings") {
-                                    settingsManager.openNotificationSettings()
+                                    settingsManager
+                                        .openNotificationSettings()
                                 }
                                 .font(.system(size: 11))
                                 .buttonStyle(.link)
@@ -530,25 +553,191 @@ struct AlertsSettingsTab: View {
                     }
                 }
             }
+
+            // Section 2: Session (new notification controls)
+            SettingsCard(title: "Session") {
+                VStack(alignment: .leading, spacing: 12) {
+                    // Session Ready
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Toggle(
+                                "Session ready",
+                                isOn: $settingsManager.settings
+                                    .notifySessionReady
+                            )
+                            .toggleStyle(.checkbox)
+                            .onChange(
+                                of: settingsManager.settings
+                                    .notifySessionReady
+                            ) { _, enabled in
+                                if enabled { requestAuth() }
+                            }
+                            Spacer()
+                        }
+
+                        if settingsManager.settings.notifySessionReady {
+                            SettingsRow(label: "Minimum busy time") {
+                                HStack(spacing: 4) {
+                                    Stepper(
+                                        "\(settingsManager.settings.notifySessionReadyMinBusy)s",
+                                        value: $settingsManager.settings
+                                            .notifySessionReadyMinBusy,
+                                        in: AppSettings
+                                            .notifySessionReadyMinBusyRange
+                                    )
+                                    .frame(width: 100)
+                                }
+                            }
+                            .padding(.leading, 20)
+                        }
+                    }
+
+                    // Session Exited Unexpectedly
+                    HStack {
+                        Toggle(
+                            "Session exited unexpectedly",
+                            isOn: $settingsManager.settings
+                                .notifySessionExitedUnexpectedly
+                        )
+                        .toggleStyle(.checkbox)
+                        .onChange(
+                            of: settingsManager.settings
+                                .notifySessionExitedUnexpectedly
+                        ) { _, enabled in
+                            if enabled { requestAuth() }
+                        }
+                        Spacer()
+                    }
+
+                    // High Context Warning
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Toggle(
+                                "High context warning",
+                                isOn: $settingsManager.settings
+                                    .notifyHighContext
+                            )
+                            .toggleStyle(.checkbox)
+                            .onChange(
+                                of: settingsManager.settings
+                                    .notifyHighContext
+                            ) { _, enabled in
+                                if enabled { requestAuth() }
+                            }
+                            Spacer()
+                        }
+
+                        if settingsManager.settings.notifyHighContext {
+                            SettingsRow(label: "Threshold") {
+                                HStack(spacing: 4) {
+                                    Stepper(
+                                        "\(settingsManager.settings.notifyHighContextThreshold)%",
+                                        value: $settingsManager.settings
+                                            .notifyHighContextThreshold,
+                                        in: AppSettings
+                                            .notifyHighContextThresholdRange
+                                    )
+                                    .frame(width: 100)
+                                }
+                            }
+                            .padding(.leading, 20)
+                        }
+                    }
+
+                    // Auto-Clear Occurred
+                    HStack {
+                        Toggle(
+                            "Auto-clear occurred",
+                            isOn: $settingsManager.settings
+                                .notifyAutoClearOccurred
+                        )
+                        .toggleStyle(.checkbox)
+                        .onChange(
+                            of: settingsManager.settings
+                                .notifyAutoClearOccurred
+                        ) { _, enabled in
+                            if enabled { requestAuth() }
+                        }
+                        Spacer()
+                    }
+
+                    // Snapshot Created
+                    HStack {
+                        Toggle(
+                            "Snapshot created",
+                            isOn: $settingsManager.settings
+                                .notifySnapshotCreated
+                        )
+                        .toggleStyle(.checkbox)
+                        .onChange(
+                            of: settingsManager.settings
+                                .notifySnapshotCreated
+                        ) { _, enabled in
+                            if enabled { requestAuth() }
+                        }
+                        Spacer()
+                    }
+
+                    // Authorization warning when any session
+                    // notification is enabled but system permission
+                    // is denied
+                    if hasAnySessionNotificationEnabled
+                        && authStatus == .denied
+                    {
+                        HStack(spacing: 4) {
+                            Text(
+                                "Notifications disabled in system"
+                                + " settings."
+                            )
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                            Button("Open Notification Settings") {
+                                settingsManager
+                                    .openNotificationSettings()
+                            }
+                            .font(.system(size: 11))
+                            .buttonStyle(.link)
+                        }
+                    }
+                }
+            }
+
             Spacer()
         }
         .padding(20)
         .task {
-            // Check authorization status on appear (no prompt)
-            await refreshBadgeAuthStatus()
+            await refreshAuthStatus()
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
-            // Refresh auth status when window regains focus (user may have
-            // changed notification settings in System Settings and returned)
-            Task {
-                await refreshBadgeAuthStatus()
-            }
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: NSWindow.didBecomeKeyNotification
+            )
+        ) { _ in
+            Task { await refreshAuthStatus() }
         }
     }
 
-    private func refreshBadgeAuthStatus() async {
-        let settings = await UNUserNotificationCenter.current().notificationSettings()
-        badgeAuthStatus = settings.authorizationStatus
+    private var hasAnySessionNotificationEnabled: Bool {
+        let s = settingsManager.settings
+        return s.notifySessionReady
+            || s.notifySessionExitedUnexpectedly
+            || s.notifyHighContext
+            || s.notifyAutoClearOccurred
+            || s.notifySnapshotCreated
+    }
+
+    private func requestAuth() {
+        Task {
+            let granted = await settingsManager
+                .requestNotificationAuthorization()
+            authStatus = granted ? .authorized : .denied
+        }
+    }
+
+    private func refreshAuthStatus() async {
+        let settings = await UNUserNotificationCenter.current()
+            .notificationSettings()
+        authStatus = settings.authorizationStatus
     }
 }
 

@@ -142,14 +142,39 @@ final class EventCoordinator {
         // Snapshot-specific handling: switch tab and queue auto-open
         if envelope.event == "snapshot.created",
            let ref = envelope.ref,
-           let number = Int32(ref) {
+           let number = Int32(ref)
+        {
             DispatchQueue.main.async { [weak self] in
                 guard let sm = self?.sessionManager else { return }
-                // Only auto-switch if this event is for the active session
-                if let appSessionId = self?.ledgerSessionIdCache[envelope.ledgerSessionId],
-                   appSessionId == sm.activeSessionId {
+                let appSessionId = self?.ledgerSessionIdCache[
+                    envelope.ledgerSessionId
+                ]
+
+                // Existing auto-switch for active session
+                if let appSessionId,
+                   appSessionId == sm.activeSessionId
+                {
                     sm.activeTab = .snapshots
                     sm.pendingSnapshotNumber = number
+                }
+
+                // Snapshot Created notification
+                if SettingsManager.shared.settings.notifySnapshotCreated,
+                   let appSessionId,
+                   let session = sm.sessions.first(
+                       where: { $0.id == appSessionId }
+                   )
+                {
+                    let isViewingSession = appSessionId
+                            == sm.activeSessionId
+                        && sm.isWindowFocused
+                    if !isViewingSession {
+                        NotificationService.shared.notifySnapshotCreated(
+                            sessionId: appSessionId,
+                            displayName: session.displayName,
+                            snapshotNumber: number
+                        )
+                    }
                 }
             }
         }
@@ -262,6 +287,36 @@ final class EventCoordinator {
                     appSession.ledgerModelDisplayName = sessionData.modelDisplayName
                     appSession.ledgerClaudeVersion = sessionData.claudeVersion
                     appSession.ledgerContextPercentage = sessionData.contextPercentage
+
+                    // High Context Warning notification + enrichment-based reset
+                    let notifSettings = SettingsManager.shared.settings
+                    if let pct = sessionData.contextPercentage {
+                        let intPct = Int(pct)
+                        let threshold = notifSettings.notifyHighContextThreshold
+
+                        if intPct < threshold {
+                            // Context dropped below threshold — reset so warning
+                            // can fire again on the next crossing. Handles clear,
+                            // compact, auto-clear, and natural reduction.
+                            NotificationService.shared.resetHighContextWarning(
+                                for: appSession.id
+                            )
+                        } else if notifSettings.notifyHighContext {
+                            // Above threshold — send notification if not suppressed
+                            let isViewingSession = appSession.id
+                                    == sessionManager.activeSessionId
+                                && sessionManager.activeTab == .terminal
+                                && sessionManager.isWindowFocused
+                            if !isViewingSession {
+                                NotificationService.shared.notifyHighContext(
+                                    sessionId: appSession.id,
+                                    displayName: appSession.displayName,
+                                    contextPct: intPct
+                                )
+                            }
+                        }
+                    }
+
                     appSession.ledgerTokensUsed = sessionData.tokensUsed
                     appSession.ledgerTokensMax = sessionData.tokensMax
                     appSession.ledgerCostUsd = sessionData.costUsd

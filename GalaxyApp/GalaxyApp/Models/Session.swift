@@ -61,6 +61,9 @@ class Session: Identifiable, ObservableObject {
     @Published var isRunning: Bool = false
     @Published var hasExited: Bool = false
     @Published var exitCode: Int32?
+    /// True when the session was stopped by the user (stop button, ⌘W).
+    /// Prevents "exited unexpectedly" notifications for intentional stops.
+    var userInitiatedStop: Bool = false
     /// Whether this session has an unread response the user hasn't seen yet.
     /// Set by SessionManager.handleIdleTransition when a non-focused session
     /// goes idle. Cleared when the user views the session on the terminal tab.
@@ -512,6 +515,7 @@ class Session: Identifiable, ObservableObject {
             // This prevents unnecessary SessionRow re-renders during sustained output
             if !self.isBusy {
                 self.isBusy = true
+                NotificationService.shared.sessionDidBecomeBusy(self.id)
 
                 // Cancel pending sustained-idle name sync — session went busy
                 self.nameSyncTimer?.invalidate()
