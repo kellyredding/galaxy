@@ -547,40 +547,87 @@ class SessionManager: ObservableObject {
         clearAndHandoff(session)
     }
 
-    /// Extract a preview of the last assistant response from ledger
-    /// enrichment data. Fallback chain: summary.assistantResponse →
-    /// fullContent → nil. Truncates to a single notification-friendly
-    /// line with ellipsis.
+    /// Extract a preview of the last assistant response by reading
+    /// the session's transcript JSONL file on disk. Scans backwards
+    /// from the end to find the most recent assistant message, then
+    /// extracts text blocks from its content array.
+    ///
+    /// This is more reliable than ledger enrichment data at idle time
+    /// because Claude Code writes the transcript entry synchronously
+    /// before redrawing the prompt, whereas enrichment runs async.
     private func lastResponsePreview(for session: Session) -> String? {
-        guard let json = session.ledgerLastInteraction,
-              let data = json.data(using: .utf8) else { return nil }
+        let transcriptPath = self.transcriptPath(for: session)
+        guard FileManager.default.fileExists(atPath: transcriptPath)
+        else { return nil }
 
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        // Read the last chunk of the file — assistant messages are
+        // typically in the final few KB even for large transcripts.
+        guard let fileHandle = FileHandle(forReadingAtPath: transcriptPath)
+        else { return nil }
+        defer { fileHandle.closeFile() }
 
-        // Parse exchange array (or single object wrapped in array)
-        let exchanges: [LastExchange]
-        if let array = try? decoder.decode(
-            [LastExchange].self, from: data
-        ) {
-            exchanges = array
-        } else if let single = try? decoder.decode(
-            LastExchange.self, from: data
-        ) {
-            exchanges = [single]
-        } else {
-            return nil
+        let fileSize = fileHandle.seekToEndOfFile()
+        let readSize: UInt64 = min(fileSize, 32_768)
+        fileHandle.seek(toFileOffset: fileSize - readSize)
+        let tailData = fileHandle.readDataToEndOfFile()
+
+        guard let tail = String(data: tailData, encoding: .utf8)
+        else { return nil }
+
+        // Scan lines in reverse to find the last assistant entry
+        let lines = tail.components(separatedBy: .newlines)
+        for line in lines.reversed() {
+            let trimmed = line.trimmingCharacters(
+                in: .whitespaces
+            )
+            guard !trimmed.isEmpty,
+                  trimmed.hasPrefix("{") else { continue }
+
+            guard let data = trimmed.data(using: .utf8),
+                  let entry = try? JSONSerialization.jsonObject(
+                      with: data
+                  ) as? [String: Any],
+                  entry["type"] as? String == "assistant",
+                  let message = entry["message"] as? [String: Any]
+            else { continue }
+
+            // Extract text from content blocks
+            let text: String
+            if let blocks = message["content"] as? [[String: Any]] {
+                text = blocks.compactMap { block -> String? in
+                    guard block["type"] as? String == "text"
+                    else { return nil }
+                    return block["text"] as? String
+                }.joined(separator: " ")
+            } else if let str = message["content"] as? String {
+                text = str
+            } else {
+                continue
+            }
+
+            guard !text.isEmpty else { continue }
+            return truncateForNotification(text)
         }
 
-        guard let last = exchanges.last else { return nil }
+        return nil
+    }
 
-        // Prefer the extracted summary, fall back to raw full content
-        let raw = last.summary?.assistantResponse
-            ?? last.fullContent
+    /// Build the path to a session's Claude Code transcript file.
+    private func transcriptPath(for session: Session) -> String {
+        let escapedPath = session.workingDirectory
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ".", with: "-")
+        let home = NSHomeDirectory()
+        return "\(home)/.claude/projects/\(escapedPath)"
+            + "/\(session.claudeSessionId).jsonl"
+    }
 
-        guard let text = raw, !text.isEmpty else { return nil }
-
-        // Collapse whitespace and truncate for notification banner
+    /// Collapse whitespace and truncate text for a notification
+    /// banner. Breaks at the last word boundary for readability.
+    private func truncateForNotification(
+        _ text: String,
+        limit: Int = 100
+    ) -> String {
         let cleaned = text
             .components(separatedBy: .newlines)
             .joined(separator: " ")
@@ -591,10 +638,8 @@ class SessionManager: ObservableObject {
             )
             .trimmingCharacters(in: .whitespaces)
 
-        let limit = 100
         if cleaned.count <= limit { return cleaned }
         let truncated = String(cleaned.prefix(limit))
-        // Break at last word boundary for readability
         if let lastSpace = truncated.lastIndex(of: " ") {
             return String(truncated[..<lastSpace]) + "…"
         }

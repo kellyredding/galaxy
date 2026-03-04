@@ -44,7 +44,7 @@ struct LedgerLastActivityView: View {
                 // Render in reverse-chronological order (most recent first)
                 let reversed = Array(exchanges.reversed())
                 ForEach(Array(reversed.enumerated()), id: \.offset) { revIdx, exchange in
-                    let exchangeNum = exchanges.count - revIdx
+                    let exchangeNum = revIdx + 1
                     let prefix = "exchange_\(revIdx)"
 
                     if exchanges.count > 1 {
