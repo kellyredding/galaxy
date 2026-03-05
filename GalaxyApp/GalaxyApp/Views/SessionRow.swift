@@ -401,10 +401,29 @@ struct SessionRow: View {
         return suffix
     }
 
-    /// Measure string width using NSString size calculation.
+    /// Cached monospaced character widths keyed by font point size.
+    /// Avoids repeated CoreText calls that can crash after long uptime
+    /// due to stale system font caches (see: Galaxy-2026-03-04-213819.ips).
+    private static var monoCharWidthCache: [CGFloat: CGFloat] = [:]
+
+    /// Get the character width for a monospaced font at the given size.
+    /// Measures once per font size and caches the result.
+    private static func monoCharWidth(forSize size: CGFloat) -> CGFloat {
+        if let cached = monoCharWidthCache[size] {
+            return cached
+        }
+        let font = NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        let width = ("M" as NSString).size(
+            withAttributes: [.font: font]
+        ).width
+        monoCharWidthCache[size] = width
+        return width
+    }
+
+    /// Measure string width using cached monospaced character width.
+    /// Since the font is monospaced, width = character count × char width.
     private func measureWidth(_ string: String, font: NSFont) -> CGFloat {
-        let attributes: [NSAttributedString.Key: Any] = [.font: font]
-        return (string as NSString).size(withAttributes: attributes).width
+        return CGFloat(string.count) * Self.monoCharWidth(forSize: font.pointSize)
     }
 
     // MARK: - Name Editing
