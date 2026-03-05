@@ -5,6 +5,7 @@ import Combine
 /// Uses VStack rows instead of Table so the outer ScrollView
 /// in LedgerView controls all scrolling.
 struct LedgerEntriesView: View {
+    let sessionId: UUID
     let entries: [LedgerEntry]?
     let isLoading: Bool
     let ledgerSessionId: Int64?
@@ -92,6 +93,7 @@ struct LedgerEntriesView: View {
             isSearchFocused = true
         }
         .onChange(of: sessionManager.listNavAction) {
+            guard sessionId == sessionManager.activeSessionId else { return }
             guard sessionManager.activeLedgerSubTab == .entries else { return }
             guard let action = sessionManager.listNavAction else { return }
             sessionManager.listNavAction = nil
@@ -108,6 +110,18 @@ struct LedgerEntriesView: View {
             if let idx = focusedIndex, idx < sortedEntries.count {
                 scrollProxy.scrollTo(sortedEntries[idx].id)
             }
+        }
+        .onChange(of: sessionManager.activeTab) {
+            guard sessionManager.activeTab == .ledger,
+                  sessionManager.activeLedgerSubTab == .entries,
+                  sessionId == sessionManager.activeSessionId else { return }
+            isSearchFocused = true
+        }
+        .onChange(of: sessionManager.activeSessionId) {
+            guard sessionManager.activeTab == .ledger,
+                  sessionManager.activeLedgerSubTab == .entries,
+                  sessionId == sessionManager.activeSessionId else { return }
+            isSearchFocused = true
         }
     }
 

@@ -1,22 +1,16 @@
 import SwiftUI
 
-/// Container that resolves the active session and renders LedgerView.
-/// Mirrors TerminalContainerView's pattern for consistency.
+/// Container that keeps a LedgerView alive per session using a ZStack.
+/// Opacity + allowsHitTesting toggle visibility without destroying state.
 struct LedgerContainerView: View {
     @EnvironmentObject var sessionManager: SessionManager
 
-    private var activeSession: Session? {
-        guard let activeId = sessionManager.activeSessionId else {
-            return nil
-        }
-        return sessionManager.sessions.first { $0.id == activeId }
-    }
-
     var body: some View {
         ZStack {
-            if let session = activeSession {
+            ForEach(sessionManager.sessions) { session in
                 LedgerView(session: session)
-                    .id(session.id)
+                    .opacity(session.id == sessionManager.activeSessionId ? 1 : 0)
+                    .allowsHitTesting(session.id == sessionManager.activeSessionId)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -84,14 +78,17 @@ struct LedgerView: View {
         .onChange(of: sessionManager.activeLedgerSubTab) {
             handleSubtabSwitch()
         }
-        .onChange(of: session.id) {
-            handleSessionSwitch()
+        .onChange(of: sessionManager.activeTab) {
+            // Refresh data when switching back to ledger tab for this session
+            guard sessionManager.activeTab == .ledger,
+                  session.id == sessionManager.activeSessionId else { return }
+            triggerFetchForCurrentSubtab()
         }
         .onAppear {
             triggerFetchForCurrentSubtab()
         }
         .onDisappear {
-            // Cancel and deallocate when switching away from Ledger tab
+            // Fires when session is removed from sessions array
             fetchTask?.cancel()
             fetchTask = nil
             LedgerQueryService.shared.cancelAll()
@@ -244,6 +241,7 @@ struct LedgerView: View {
             LedgerFilesView(files: files, isLoading: isLoading, scrollProxy: scrollProxy)
         case .entries:
             LedgerEntriesView(
+                sessionId: session.id,
                 entries: entries,
                 isLoading: isLoading,
                 ledgerSessionId: session.ledgerSessionId,
@@ -277,22 +275,6 @@ struct LedgerView: View {
         isLoading = false
 
         // Trigger fetch for new subtab
-        triggerFetchForCurrentSubtab()
-    }
-
-    private func handleSessionSwitch() {
-        // Cancel in-flight fetch
-        fetchTask?.cancel()
-        fetchTask = nil
-        LedgerQueryService.shared.cancelAll()
-
-        // Nil out cached data
-        files = nil
-        entries = nil
-        sessionDetail = nil
-        isLoading = false
-
-        // Trigger fetch for current subtab
         triggerFetchForCurrentSubtab()
     }
 

@@ -1,21 +1,17 @@
 import SwiftUI
 import WebKit
 
-/// Container that resolves the active session and renders SnapshotsView.
-/// Mirrors LedgerContainerView's pattern for consistency.
+/// Container that keeps a SnapshotsView alive per session using a ZStack.
+/// Opacity + allowsHitTesting toggle visibility without destroying state.
 struct SnapshotsContainerView: View {
     @EnvironmentObject var sessionManager: SessionManager
 
-    private var activeSession: Session? {
-        guard let activeId = sessionManager.activeSessionId else { return nil }
-        return sessionManager.sessions.first { $0.id == activeId }
-    }
-
     var body: some View {
         ZStack {
-            if let session = activeSession {
+            ForEach(sessionManager.sessions) { session in
                 SnapshotsView(session: session)
-                    .id(session.id)
+                    .opacity(session.id == sessionManager.activeSessionId ? 1 : 0)
+                    .allowsHitTesting(session.id == sessionManager.activeSessionId)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -97,37 +93,54 @@ struct SnapshotsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.textBackgroundColor))
         .onChange(of: openSnapshot != nil) {
-            if openSnapshot != nil {
-                sessionManager.isSnapshotReaderOpen = true
-                installEscapeMonitor()
-            } else {
-                sessionManager.isSnapshotReaderOpen = false
-                removeEscapeMonitor()
+            syncReaderOpenState()
+            updateEscapeMonitor()
+        }
+        .onChange(of: sessionManager.activeSessionId) {
+            syncReaderOpenState()
+            updateEscapeMonitor()
+            restoreWebViewFocus()
+        }
+        .onChange(of: sessionManager.activeTab) {
+            syncReaderOpenState()
+            updateEscapeMonitor()
+            restoreWebViewFocus()
+            // Refresh snapshot list when returning to snapshots tab
+            if sessionManager.activeTab == .snapshots,
+               session.id == sessionManager.activeSessionId,
+               openSnapshot == nil {
+                fetchSnapshotList()
             }
         }
         .onAppear {
-            if sessionManager.pendingSnapshotNumber != nil {
+            if sessionManager.pendingSnapshotNumber != nil,
+               session.id == sessionManager.activeSessionId {
                 handlePendingSnapshot()
             } else {
                 fetchSnapshotList()
             }
         }
-        .onChange(of: session.id) { handleSessionSwitch() }
         .onChange(of: sessionManager.pendingSnapshotNumber) {
+            guard session.id == sessionManager.activeSessionId else { return }
             handlePendingSnapshot()
         }
         .onChange(of: sessionManager.listNavAction) {
+            guard session.id == sessionManager.activeSessionId else { return }
+            guard sessionManager.activeTab == .snapshots else { return }
             guard openSnapshot == nil else { return }
             guard let action = sessionManager.listNavAction else { return }
             sessionManager.listNavAction = nil
             handleListNavAction(action)
         }
         .onChange(of: sessionManager.annotationAction) {
+            guard session.id == sessionManager.activeSessionId else { return }
+            guard sessionManager.activeTab == .snapshots else { return }
             guard let action = sessionManager.annotationAction else { return }
             sessionManager.annotationAction = nil
             handleAnnotationAction(action)
         }
         .onChange(of: sessionManager.pendingReviewCheck) {
+            guard session.id == sessionManager.activeSessionId else { return }
             guard let snapshotId = sessionManager.pendingReviewCheck,
                   let open = openSnapshot,
                   snapshotId == open.id else { return }
@@ -135,11 +148,14 @@ struct SnapshotsView: View {
             checkReviewButtonVisibility(snapshotId: snapshotId)
         }
         .onDisappear {
+            // Fires when session is removed from sessions array
             fetchTask?.cancel()
             fetchTask = nil
             SnapshotQueryService.shared.cancelAll()
             removeEscapeMonitor()
-            sessionManager.isSnapshotReaderOpen = false
+            if session.id == sessionManager.activeSessionId {
+                sessionManager.isSnapshotReaderOpen = false
+            }
             webViewRef = nil
             openSnapshot = nil
             openAnnotations = []
@@ -477,6 +493,51 @@ struct SnapshotsView: View {
         }
     }
 
+    // MARK: - Active View State Sync
+
+    /// Update isSnapshotReaderOpen to reflect whether the active view has
+    /// a reader open. Only the active session participates in flag
+    /// management — inactive sessions don't touch it.
+    private func syncReaderOpenState() {
+        guard session.id == sessionManager.activeSessionId else { return }
+        if sessionManager.activeTab == .snapshots {
+            sessionManager.isSnapshotReaderOpen = openSnapshot != nil
+        } else {
+            // Not on snapshots tab — reader isn't visible
+            sessionManager.isSnapshotReaderOpen = false
+        }
+    }
+
+    /// Install or remove the escape monitor based on whether this view
+    /// is the active snapshots view with a reader open.
+    private func updateEscapeMonitor() {
+        let shouldBeInstalled = openSnapshot != nil
+            && session.id == sessionManager.activeSessionId
+            && sessionManager.activeTab == .snapshots
+        if shouldBeInstalled {
+            installEscapeMonitor()
+        } else {
+            removeEscapeMonitor()
+        }
+    }
+
+    /// Restore AppKit first responder to the WKWebView when this view
+    /// becomes the active visible view with a reader open. The JS-side
+    /// focus state persists across opacity toggles, but AppKit drops
+    /// first responder when the view is hidden — causing the beep on
+    /// keystroke even though the textarea looks focused.
+    private func restoreWebViewFocus() {
+        guard session.id == sessionManager.activeSessionId,
+              sessionManager.activeTab == .snapshots,
+              openSnapshot != nil,
+              let webView = webViewRef else { return }
+        // Brief delay lets SwiftUI finish the opacity transition
+        // before we hand first responder back to the web view.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            webView.window?.makeFirstResponder(webView)
+        }
+    }
+
     // MARK: - Escape Key (AppKit monitor)
 
     /// Install a local event monitor that catches Escape regardless of
@@ -486,6 +547,12 @@ struct SnapshotsView: View {
         guard escapeMonitor == nil else { return }
         escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [self] event in
             if event.keyCode == 53 {  // 53 = Escape
+                // Defense in depth: only consume if we're the active view
+                guard session.id == sessionManager.activeSessionId,
+                      sessionManager.activeTab == .snapshots else {
+                    return event
+                }
+
                 // Query JS for current annotation context
                 webViewRef?.evaluateJavaScript(
                     "typeof AnnotationManager !== 'undefined' ? AnnotationManager.getEscapeContext() : 'close'"
@@ -532,24 +599,6 @@ struct SnapshotsView: View {
             NSEvent.removeMonitor(monitor)
             escapeMonitor = nil
         }
-    }
-
-    private func handleSessionSwitch() {
-        // Close reader, cancel fetches, nil data, re-fetch index
-        fetchTask?.cancel()
-        fetchTask = nil
-        SnapshotQueryService.shared.cancelAll()
-        sessionManager.isSnapshotReaderOpen = false
-        webViewRef = nil
-        openSnapshot = nil
-        openAnnotations = []
-        annotationHTMLMap = [:]
-        hasUnreviewedAnnotations = false
-        snapshots = nil
-        isLoading = false
-        isLoadingContent = false
-        focusedIndex = nil
-        fetchSnapshotList()
     }
 
     private func handlePendingSnapshot() {

@@ -144,13 +144,18 @@ struct ContentView: View {
         if sessionManager.sessions.isEmpty {
             EmptyStateView()
         } else {
-            switch sessionManager.activeTab {
-            case .terminal:
+            ZStack {
                 TerminalContainerView()
-            case .ledger:
+                    .opacity(sessionManager.activeTab == .terminal ? 1 : 0)
+                    .allowsHitTesting(sessionManager.activeTab == .terminal)
+
                 LedgerContainerView()
-            case .snapshots:
+                    .opacity(sessionManager.activeTab == .ledger ? 1 : 0)
+                    .allowsHitTesting(sessionManager.activeTab == .ledger)
+
                 SnapshotsContainerView()
+                    .opacity(sessionManager.activeTab == .snapshots ? 1 : 0)
+                    .allowsHitTesting(sessionManager.activeTab == .snapshots)
             }
         }
     }
@@ -277,24 +282,42 @@ struct EmptyStateView: View {
 struct TerminalContainerView: View {
     @EnvironmentObject var sessionManager: SessionManager
 
-    // Only render active terminal to avoid N simultaneous SwiftTerm resize operations
-    private var activeSession: Session? {
-        guard let activeId = sessionManager.activeSessionId else { return nil }
-        return sessionManager.sessions.first { $0.id == activeId }
-    }
-
     var body: some View {
         ZStack {
-            if let session = activeSession {
+            ForEach(sessionManager.sessions) { session in
                 SessionContentView(
                     session: session,
-                    isActive: true,
+                    isActive: session.id == sessionManager.activeSessionId,
                     onResume: { sessionManager.resumeSession(sessionId: session.id) }
                 )
-                .id(session.id)  // Force view recreation when session changes
+                .opacity(session.id == sessionManager.activeSessionId ? 1 : 0)
+                .allowsHitTesting(session.id == sessionManager.activeSessionId)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onChange(of: sessionManager.activeTab) {
+            if sessionManager.activeTab == .terminal {
+                restoreTerminalFocus()
+            }
+        }
+        .onChange(of: sessionManager.activeSessionId) {
+            if sessionManager.activeTab == .terminal {
+                restoreTerminalFocus()
+            }
+        }
+    }
+
+    /// Restore AppKit first responder to the active session's terminal.
+    /// Tab/session switching via ZStack opacity toggling doesn't trigger
+    /// FocusableTerminalView.updateNSView (inputs unchanged), so the
+    /// terminal loses first responder when hidden and doesn't regain it.
+    private func restoreTerminalFocus() {
+        guard let activeId = sessionManager.activeSessionId,
+              let session = sessionManager.sessions.first(where: { $0.id == activeId }),
+              !session.hasExited else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            session.terminalView.window?.makeFirstResponder(session.terminalView)
+        }
     }
 }
 
@@ -350,8 +373,6 @@ struct SessionContentView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .opacity(isActive ? 1 : 0)
-        .allowsHitTesting(isActive)
     }
 }
 
