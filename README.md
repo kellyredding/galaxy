@@ -1,37 +1,81 @@
 # Galaxy
 
-**Galaxy brain for Claude Code** — Multi-agent orchestration tools for Claude Code.
+**Galaxy brain for Claude Code** — Multi-agent orchestration tools and a native macOS terminal app for Claude Code.
 
-## Tools
+## Components
 
-| Tool | Description | Status |
-|------|-------------|--------|
-| [statusline](tools/statusline/) | Customizable status line with context usage, git status, and more | Active |
+| Component | Description | Language |
+|-----------|-------------|----------|
+| [GalaxyApp](GalaxyApp/) | Native macOS terminal app for Claude Code sessions | Swift |
+| [galaxy](tools/galaxy/) | Core CLI tool | Crystal |
+| [ledger](tools/ledger/) | Persistent context ledger — captures decisions, learnings, and session files across context resets | Crystal |
+| [statusline](tools/statusline/) | Customizable status line with context usage, git status, and more | Crystal |
+
+## Prerequisites
+
+- [Crystal](https://crystal-lang.org/) >= 1.0.0
+- [Xcode](https://developer.apple.com/xcode/) 16.2+ with Swift 6.0+ (for GalaxyApp)
+- [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`) (for GalaxyApp)
+- Git
 
 ## Quick Install
 
 ```bash
-# Clone and build
+# Clone
 git clone https://github.com/kellyredding/galaxy.git
 cd galaxy
 
-# Build and install all tools
+# Install all CLI tools (builds, runs tests, installs binaries + hooks/skills)
 make statusline-install
 make ledger-install
+
+# Build and install GalaxyApp
+cd GalaxyApp
+./scripts/setup-vendor.sh   # Clone and patch vendored SwiftTerm
+xcodegen generate            # Generate Xcode project
+cd ..
+make app-build               # Build the app (Debug)
+
+# Copy to ~/Applications (or /Applications)
+cp -R GalaxyApp/build/Build/Products/Debug/Galaxy.app ~/Applications/
 ```
 
-Or build individual tools:
+### What `make install` does for each tool
+
+Each tool's `make install` target:
+
+1. Builds a release binary to `tools/<tool>/build/`
+2. Installs the binary to `~/.claude/galaxy/bin/`
+3. Symlinks the binary into `~/.local/bin/` (add this to your `PATH`)
+
+The **ledger** install additionally runs `galaxy-ledger install`, which registers hooks and skills into your Claude Code settings (`~/.claude/settings.json`).
+
+### Installing individual tools
 
 ```bash
-cd tools/statusline
+# Install just one tool
+cd tools/statusline && make install
+cd tools/ledger && make install
+cd tools/galaxy && make install
+```
+
+### Ledger note
+
+The ledger tool requires Crystal shards (SQLite bindings). If you see `can't find file 'db'` errors, run `shards install` inside `tools/ledger/` before building:
+
+```bash
+cd tools/ledger
+shards install
 make install
 ```
 
-**Installation locations:**
-- Binaries: `~/.claude/galaxy/bin/`
-- Symlinks: `~/.bin/local/` (add to your PATH for easy access)
-
 ## Tool Overview
+
+### GalaxyApp
+
+A native macOS (SwiftUI) terminal app purpose-built for Claude Code sessions. Uses a vendored and patched [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) for terminal rendering with Galaxy-specific improvements (FillStroke font thickening, sRGB color rendering, bold foreground colors from themes).
+
+See [GalaxyApp/SETUP.md](GalaxyApp/SETUP.md) for detailed setup and troubleshooting.
 
 ### statusline
 
@@ -49,35 +93,61 @@ A customizable status line for Claude Code sessions that displays:
 
 See [tools/statusline/README.md](tools/statusline/README.md) for detailed documentation.
 
+### ledger
+
+A persistent context ledger that survives context resets within a Claude Code session. Automatically captures:
+
+- Guidelines extracted from config files
+- Implementation plan context
+- Key decisions and their rationale
+- Session file access history
+
+Installs Claude Code hooks (SessionStart, Stop, PostToolUse, UserPromptSubmit) and skills (spend, snapshot, artifact, prune).
+
+### galaxy
+
+Core CLI tool for Galaxy operations.
+
 ## Development
 
-Each tool is self-contained in its own directory under `tools/`. Tools may be written in different languages, but currently all are written in [Crystal](https://crystal-lang.org/).
+Each tool is self-contained in its own directory under `tools/`. All CLI tools are written in [Crystal](https://crystal-lang.org/). GalaxyApp is a Swift/SwiftUI macOS application.
 
-### Prerequisites
-
-- Crystal >= 1.0.0
-- Git
-
-### Building All Tools
+### Make Targets
 
 ```bash
-make all                  # Build all tools
-make statusline-build     # Build statusline
-make statusline-test      # Test statusline
-make statusline-check     # Lint + build + test statusline
+# CLI tools
+make all                  # Build all CLI tools (release)
+make clean                # Clean all build artifacts
+
+# Per-tool targets (statusline, ledger, galaxy)
+make <tool>-build         # Release build
+make <tool>-dev           # Dev build (faster, no optimizations)
+make <tool>-test          # Run specs
+make <tool>-check         # Lint + dev build + test
+make <tool>-install       # Check + release build + install
+make <tool>-clean         # Remove build artifacts
+
+# GalaxyApp
+make app-build            # Debug build
+make app-release          # Release build
+make app-clean            # Clean Xcode derived data
 ```
 
 ### Project Structure
 
 ```
 galaxy/
-├── README.md                 # This file
-├── LICENSE                   # MIT License
-├── CONTRIBUTING.md           # Development guidelines
-├── Makefile                  # Root orchestration
-├── bin/                      # Root scripts (future)
-├── shared/                   # Shared code (if needed)
+├── Makefile                  # Root orchestration for all components
+├── GalaxyApp/                # Native macOS terminal app
+│   ├── GalaxyApp/            # Swift source files
+│   ├── Resources/            # App resources (icons, etc.)
+│   ├── Vendor/               # Vendored dependencies (gitignored)
+│   ├── scripts/              # Setup and patch scripts
+│   ├── project.yml           # XcodeGen project spec
+│   └── SETUP.md              # Detailed setup guide
 └── tools/
+    ├── galaxy/               # Core CLI tool
+    ├── ledger/               # Context ledger tool
     └── statusline/           # Status line tool
 ```
 
