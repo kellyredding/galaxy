@@ -19,6 +19,13 @@ enum AnnotationMessage {
 /// to work without system beep noise — dictation itself operates
 /// through NSTextInputClient, not keyDown events.
 class SilentFunctionKeyWebView: WKWebView {
+    /// Short-circuit key view traversal — same fix as GalaxyTerminalView
+    /// and InlineEditField. When makeFirstResponder targets this WKWebView
+    /// (e.g. restoreWebViewFocus on session/tab switch), AppKit walks the
+    /// key view chain across the full ZStack view tree.
+    override var previousValidKeyView: NSView? { nil }
+    override var nextValidKeyView: NSView? { nil }
+
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if event.modifierFlags.contains(.function),
            event.charactersIgnoringModifiers?.unicodeScalars
