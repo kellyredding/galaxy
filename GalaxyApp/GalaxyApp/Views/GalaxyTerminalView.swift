@@ -5,6 +5,15 @@ import SwiftTerm
 /// This allows us to intercept terminal events (like bell) without
 /// replacing the terminalDelegate, which breaks SwiftTerm's internal behavior.
 class GalaxyTerminalView: LocalProcessTerminalView {
+    /// Short-circuit key view traversal — same fix as InlineEditField.
+    /// When any NSView becomes first responder, AppKit may walk
+    /// previousValidKeyView / nextValidKeyView to validate the target.
+    /// With the ZStack architecture keeping all session views alive,
+    /// each traversal walks thousands of SwiftUI-managed views.
+    /// Returning nil stops the walk immediately.
+    override var previousValidKeyView: NSView? { nil }
+    override var nextValidKeyView: NSView? { nil }
+
     /// Callback invoked when terminal receives a bell (BEL character)
     var onBell: (() -> Void)?
 
