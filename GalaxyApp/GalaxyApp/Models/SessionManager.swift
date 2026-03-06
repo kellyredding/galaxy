@@ -312,8 +312,11 @@ class SessionManager: ObservableObject {
         // Terminate the process using our tracked PID (sends SIGTERM)
         session.terminateProcess()
 
-        // Switch to terminal so the user sees the stopped state
-        activeTab = .terminal
+        // Switch to terminal so the user sees the stopped state,
+        // but only if this is the currently selected session.
+        if sessionId == activeSessionId {
+            activeTab = .terminal
+        }
     }
 
     func resumeSession(sessionId: UUID) {
