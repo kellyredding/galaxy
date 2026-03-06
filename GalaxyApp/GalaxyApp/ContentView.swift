@@ -148,14 +148,17 @@ struct ContentView: View {
                 TerminalContainerView()
                     .opacity(sessionManager.activeTab == .terminal ? 1 : 0)
                     .allowsHitTesting(sessionManager.activeTab == .terminal)
+                    .zIndex(sessionManager.activeTab == .terminal ? 1 : 0)
 
                 LedgerContainerView()
                     .opacity(sessionManager.activeTab == .ledger ? 1 : 0)
                     .allowsHitTesting(sessionManager.activeTab == .ledger)
+                    .zIndex(sessionManager.activeTab == .ledger ? 1 : 0)
 
                 SnapshotsContainerView()
                     .opacity(sessionManager.activeTab == .snapshots ? 1 : 0)
                     .allowsHitTesting(sessionManager.activeTab == .snapshots)
+                    .zIndex(sessionManager.activeTab == .snapshots ? 1 : 0)
             }
         }
     }
@@ -292,6 +295,7 @@ struct TerminalContainerView: View {
                 )
                 .opacity(session.id == sessionManager.activeSessionId ? 1 : 0)
                 .allowsHitTesting(session.id == sessionManager.activeSessionId)
+                .zIndex(session.id == sessionManager.activeSessionId ? 1 : 0)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

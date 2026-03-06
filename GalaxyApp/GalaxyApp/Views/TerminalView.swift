@@ -20,6 +20,11 @@ struct FocusableTerminalView: NSViewRepresentable {
         // Also update drag registration when session state changes (e.g., session stopped)
         nsView.refreshDragRegistration()
 
+        // Hide inactive terminals at the AppKit level so they don't intercept
+        // NSDragging hitTest. SwiftUI's .allowsHitTesting(false) + .opacity(0)
+        // don't set NSView.isHidden, so AppKit's hitTest still finds them.
+        nsView.isHidden = !isActive
+
         if isActive {
             nsView.requestFocus()
         }
