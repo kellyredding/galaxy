@@ -694,13 +694,13 @@ class SessionManager: ObservableObject {
 
         NSLog("SessionManager: closeSession called for session %@", sessionId.uuidString)
 
-        // Determine next session to select
+        // Determine next session to select (prefer next, fall back to previous)
         var nextActiveId: UUID? = nil
         if sessions.count > 1 {
-            if index > 0 {
-                nextActiveId = sessions[index - 1].id
-            } else {
+            if index < sessions.count - 1 {
                 nextActiveId = sessions[index + 1].id
+            } else {
+                nextActiveId = sessions[index - 1].id
             }
         }
 
