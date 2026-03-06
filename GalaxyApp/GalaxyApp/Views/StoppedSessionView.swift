@@ -1,13 +1,10 @@
 import SwiftUI
-import AppKit
 
 struct StoppedSessionView: View {
     @ObservedObject var session: Session
     var onResume: () -> Void
 
     @Environment(\.chromeFontSize) private var chromeFontSize
-    @State private var showCopied = false
-
     private var fontSize: ChromeFontSize { ChromeFontSize(chromeFontSize) }
 
     var body: some View {
@@ -72,13 +69,10 @@ struct StoppedSessionView: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
 
-                        Button(action: copyCommand) {
-                            Image(systemName: showCopied ? "checkmark" : "doc.on.doc")
-                                .chromeFont(size: fontSize.iconSmall)
-                                .foregroundColor(showCopied ? .green : .secondary)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Copy command to clipboard")
+                        CopyButton(
+                            text: session.resumeCommand,
+                            iconSize: fontSize.iconSmall
+                        )
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
@@ -91,21 +85,4 @@ struct StoppedSessionView: View {
         .clipped()  // Clip watermark to content area bounds
     }
 
-    private func copyCommand() {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(session.resumeCommand, forType: .string)
-
-        // Show copied feedback
-        withAnimation {
-            showCopied = true
-        }
-
-        // Reset after delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            withAnimation {
-                showCopied = false
-            }
-        }
-    }
 }

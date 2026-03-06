@@ -385,6 +385,11 @@ struct SnapshotsView: View {
                 .buttonStyle(.plain)
                 .opacity(hasUnreviewedAnnotations ? 1 : 0)
                 .allowsHitTesting(hasUnreviewedAnnotations)
+
+                CopyButton(
+                    text: snapshot.content,
+                    iconSize: fontSize.iconSmall
+                )
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)

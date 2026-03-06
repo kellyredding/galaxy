@@ -58,6 +58,7 @@
 		CC1111110000000000000007 /* github-dark.min.css in Resources */ = {isa = PBXBuildFile; fileRef = CC2222220000000000000007 /* github-dark.min.css */; };
 		CC1111110000000000000008 /* emoji-data.js in Resources */ = {isa = PBXBuildFile; fileRef = CC2222220000000000000008 /* emoji-data.js */; };
 		CC1111110000000000000009 /* emoji-autocomplete.js in Resources */ = {isa = PBXBuildFile; fileRef = CC2222220000000000000009 /* emoji-autocomplete.js */; };
+		CC111111000000000000000A /* CopyButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC222222000000000000000A /* CopyButton.swift */; };
 		B1E71F47DE9403A1808277EC /* WatermarkBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6658F001C5C56071EC60514E /* WatermarkBackground.swift */; };
 		C27788ECAC3C2D2A1DA2024E /* GalaxyLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5D457946288879168E5D913 /* GalaxyLog.swift */; };
 		C3434D97E3E1783843E50797 /* SessionRowDragHandle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E474100EA691402E8DF51F3A /* SessionRowDragHandle.swift */; };
@@ -131,6 +132,7 @@
 		CC2222220000000000000007 /* github-dark.min.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = "github-dark.min.css"; sourceTree = "<group>"; };
 		CC2222220000000000000008 /* emoji-data.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = "emoji-data.js"; sourceTree = "<group>"; };
 		CC2222220000000000000009 /* emoji-autocomplete.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = "emoji-autocomplete.js"; sourceTree = "<group>"; };
+		CC222222000000000000000A /* CopyButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopyButton.swift; sourceTree = "<group>"; };
 		DD1111110000000000000001 /* NewSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewSessionView.swift; sourceTree = "<group>"; };
 		DD1111110000000000000002 /* NewSessionSheetController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewSessionSheetController.swift; sourceTree = "<group>"; };
 		DD1111110000000000000003 /* DirectoryField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectoryField.swift; sourceTree = "<group>"; };
@@ -191,6 +193,7 @@
 				AA2222220000000000000007 /* AnnotationHTMLVisitor.swift */,
 				AA2222220000000000000004 /* BellIndicatorBehavior.swift */,
 				A43C7742A36C8BAB7C4C6419 /* ChromeFontScaling.swift */,
+				CC222222000000000000000A /* CopyButton.swift */,
 				AA2222220000000000000005 /* CollapsedSessionSidebar.swift */,
 				DD1111110000000000000003 /* DirectoryField.swift */,
 				43C2EE51F5ED8F5A44D27580 /* DragHandleNSView.swift */,
@@ -350,6 +353,7 @@
 				AA1111110000000000000005 /* CollapsedSessionSidebar.swift in Sources */,
 				5BE31FF52EF968E62B31F97C /* CircuitBreaker.swift in Sources */,
 				0382B41CACCDA9E37EBABA4C /* ContentView.swift in Sources */,
+				CC111111000000000000000A /* CopyButton.swift in Sources */,
 				59C4461354F92AEF376C88AA /* DragHandleNSView.swift in Sources */,
 				64AB450ECD5FB1FF3D5E16EB /* EnrichmentService.swift in Sources */,
 				2BC2B13218D48BB00EEF761B /* EventCoordinator.swift in Sources */,
