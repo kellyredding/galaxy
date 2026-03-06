@@ -49,6 +49,11 @@ struct LedgerView: View {
     /// Active fetch task — cancelled on tab/session switch
     @State private var fetchTask: Task<Void, Never>? = nil
 
+    /// True when this session is the visible one in the outer ZStack.
+    private var isActiveSession: Bool {
+        session.id == sessionManager.activeSessionId
+    }
+
     var body: some View {
         let _ = _triggerRedraw  // Force dependency on ledgerVersion
 
@@ -62,8 +67,13 @@ struct LedgerView: View {
                         // Subtab picker
                         subtabPicker
 
-                        // Subtab content
-                        subtabContent(scrollProxy: scrollProxy)
+                        // Subtab content — only build the heavy ZStack for
+                        // the active session; inactive sessions render nothing.
+                        // @State data survives because the LedgerView itself
+                        // stays alive in the outer per-session ZStack.
+                        if isActiveSession {
+                            subtabContent(scrollProxy: scrollProxy)
+                        }
                     }
                     .frame(width: geo.size.width - 40, alignment: .leading)
                     .padding(.horizontal, 20)
@@ -76,15 +86,22 @@ struct LedgerView: View {
         .clipped()
         .background(Color(.textBackgroundColor))
         .onChange(of: sessionManager.activeLedgerSubTab) {
+            guard isActiveSession else { return }
             handleSubtabSwitch()
         }
         .onChange(of: sessionManager.activeTab) {
             // Lazy-load on return to ledger tab — preserves search state
             guard sessionManager.activeTab == .ledger,
-                  session.id == sessionManager.activeSessionId else { return }
+                  isActiveSession else { return }
+            fetchSubtabIfNeeded()
+        }
+        .onChange(of: sessionManager.activeSessionId) {
+            // Seed data when this session becomes active
+            guard isActiveSession else { return }
             fetchSubtabIfNeeded()
         }
         .onAppear {
+            guard isActiveSession else { return }
             triggerFetchForCurrentSubtab()
         }
         .onDisappear {
