@@ -754,7 +754,7 @@ private func buildFullHTML(
             this.highlightEnd = this.currentBlockIndex;
             this.highlightAnchor = this.currentBlockIndex;
             this.updateHighlights();
-            this.positionForm();
+            this.positionForm(false, 'up');
             this.focusTextarea();
         },
 
@@ -767,7 +767,7 @@ private func buildFullHTML(
             this.highlightEnd = this.currentBlockIndex;
             this.highlightAnchor = this.currentBlockIndex;
             this.updateHighlights();
-            this.positionForm();
+            this.positionForm(false, 'down');
             this.focusTextarea();
         },
 
@@ -780,7 +780,7 @@ private func buildFullHTML(
                 this.highlightEnd--;
                 this.currentBlockIndex = this.highlightEnd;
                 this.updateHighlights();
-                this.positionForm();
+                this.positionForm(false, 'up');
             } else {
                 // Extend: move start upward past anchor
                 if (this.highlightStart <= 0) return;
@@ -806,7 +806,7 @@ private func buildFullHTML(
                 this.highlightEnd++;
                 this.currentBlockIndex = this.highlightEnd;
                 this.updateHighlights();
-                this.positionForm();
+                this.positionForm(false, 'down');
             }
             this.focusTextarea();
         },
@@ -872,7 +872,7 @@ private func buildFullHTML(
             this.resizeObserver.observe(form);
         },
 
-        positionForm(skipScroll) {
+        positionForm(skipScroll, direction) {
             var targetBlock = this.blocks[this.highlightEnd];
             if (!targetBlock || !this.formElement) return;
 
@@ -898,7 +898,51 @@ private func buildFullHTML(
             this.updateFormReference();
             this.syncAllPositions();
             if (!skipScroll) {
-                this.formElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                if (direction) {
+                    this.scrollFormIntoView(direction);
+                } else {
+                    this.formElement.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'nearest'
+                    });
+                }
+            }
+        },
+
+        scrollFormIntoView(direction) {
+            if (!this.formElement) return;
+            var rect = this.formElement.getBoundingClientRect();
+            var vh = window.innerHeight;
+
+            // If form is completely off-screen, center it and bail out.
+            // This prevents competing with the directional scrollBy below.
+            if (rect.bottom < 0 || rect.top > vh) {
+                this.formElement.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'center'
+                });
+                return;
+            }
+
+            // Directional margin: ensure lookahead space in travel direction
+            var margin = vh * 0.35;
+
+            if (direction === 'down') {
+                var bottomSpace = vh - rect.bottom;
+                if (bottomSpace < margin) {
+                    window.scrollBy({
+                        top: margin - bottomSpace,
+                        behavior: 'smooth'
+                    });
+                }
+            } else if (direction === 'up') {
+                var topSpace = rect.top;
+                if (topSpace < margin) {
+                    window.scrollBy({
+                        top: -(margin - topSpace),
+                        behavior: 'smooth'
+                    });
+                }
             }
         },
 
