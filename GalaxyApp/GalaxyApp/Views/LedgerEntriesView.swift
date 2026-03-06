@@ -24,7 +24,9 @@ struct LedgerEntriesView: View {
     @State private var expandedEntryIds: Set<Int64> = []
     @State private var sortColumn: SortColumn = .importance
     @State private var sortAscending: Bool = true
-    @FocusState private var isSearchFocused: Bool
+    /// Incrementing counter — each bump triggers one focus request
+    /// on the SafeSearchField via AppKit's makeFirstResponder.
+    @State private var searchFocusTrigger: Int = 0
 
     /// Debounce publisher for search input
     @State private var searchSubject = PassthroughSubject<String, Never>()
@@ -90,7 +92,7 @@ struct LedgerEntriesView: View {
         }
         .onAppear {
             setupSearchDebounce()
-            isSearchFocused = true
+            searchFocusTrigger += 1
         }
         .onChange(of: sessionManager.listNavAction) {
             guard sessionId == sessionManager.activeSessionId else { return }
@@ -115,13 +117,13 @@ struct LedgerEntriesView: View {
             guard sessionManager.activeTab == .ledger,
                   sessionManager.activeLedgerSubTab == .entries,
                   sessionId == sessionManager.activeSessionId else { return }
-            isSearchFocused = true
+            searchFocusTrigger += 1
         }
         .onChange(of: sessionManager.activeSessionId) {
             guard sessionManager.activeTab == .ledger,
                   sessionManager.activeLedgerSubTab == .entries,
                   sessionId == sessionManager.activeSessionId else { return }
-            isSearchFocused = true
+            searchFocusTrigger += 1
         }
     }
 
@@ -132,17 +134,21 @@ struct LedgerEntriesView: View {
             Image(systemName: "magnifyingglass")
                 .foregroundColor(.secondary)
                 .font(.system(size: 12))
-            TextField("Search entries...", text: $searchText)
-                .textFieldStyle(.plain)
-                .chromeFont(size: fontSize.caption2)
-                .focused($isSearchFocused)
-                .onChange(of: searchText) {
+            SafeSearchField(
+                text: $searchText,
+                placeholder: "Search entries...",
+                fontSize: fontSize.caption2,
+                focusTrigger: searchFocusTrigger,
+                isActive: sessionId == sessionManager.activeSessionId,
+                onTextChange: { searchSubject.send($0) },
+                onSubmit: {
                     if searchText.isEmpty {
-                        searchSubject.send("")
+                        onClearSearch()
                     } else {
-                        searchSubject.send(searchText)
+                        onSearch(searchText)
                     }
                 }
+            )
             if !searchText.isEmpty {
                 Button(action: {
                     searchText = ""
@@ -368,5 +374,95 @@ struct LedgerEntriesView: View {
             return Self.displayDateFormatter.string(from: date)
         }
         return ts
+    }
+}
+
+// MARK: - Safe Search Field (AppKit-backed)
+
+/// NSViewRepresentable wrapping InlineEditField for the entries search bar.
+/// Uses the same key-view-safe NSTextField subclass as the session rename
+/// field, avoiding the autofill heuristic traversal that blocks the main
+/// thread when SwiftUI's TextField becomes first responder in the ZStack.
+struct SafeSearchField: NSViewRepresentable {
+    @Binding var text: String
+    let placeholder: String
+    let fontSize: CGFloat
+    /// Incrementing counter — each change from the last-seen value
+    /// triggers one makeFirstResponder call via AppKit.
+    let focusTrigger: Int
+    /// Only the active session's search field should grab focus.
+    /// Without this guard, all ZStack instances dispatch focus and
+    /// the last hidden one wins.
+    let isActive: Bool
+    /// Called on every keystroke with the current field value.
+    /// Used to feed the debounce pipeline directly from AppKit,
+    /// bypassing the SwiftUI state round-trip.
+    var onTextChange: ((String) -> Void)? = nil
+    /// Called when the user presses Enter/Return in the field.
+    var onSubmit: (() -> Void)? = nil
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeNSView(context: Context) -> InlineEditField {
+        let field = InlineEditField()
+        field.font = NSFont.systemFont(ofSize: fontSize)
+        field.placeholderString = placeholder
+        field.textColor = .labelColor
+        field.backgroundColor = .clear
+        field.isBordered = false
+        field.focusRingType = .none
+        field.drawsBackground = false
+        field.lineBreakMode = .byTruncatingTail
+        field.usesSingleLineMode = true
+        field.cell?.isScrollable = true
+        field.delegate = context.coordinator
+        return field
+    }
+
+    func updateNSView(_ nsView: InlineEditField, context: Context) {
+        if nsView.stringValue != text {
+            nsView.stringValue = text
+        }
+        nsView.font = NSFont.systemFont(ofSize: fontSize)
+
+        // Focus when the trigger counter advances — active instance only
+        if isActive && focusTrigger != context.coordinator.lastSeenTrigger {
+            context.coordinator.lastSeenTrigger = focusTrigger
+            DispatchQueue.main.async {
+                nsView.window?.makeFirstResponder(nsView)
+            }
+        }
+    }
+
+    class Coordinator: NSObject, NSTextFieldDelegate {
+        var parent: SafeSearchField
+        /// Last focusTrigger value we acted on
+        var lastSeenTrigger: Int = 0
+
+        init(_ parent: SafeSearchField) {
+            self.parent = parent
+        }
+
+        func controlTextDidChange(_ obj: Notification) {
+            guard let field = obj.object as? NSTextField else { return }
+            let value = field.stringValue
+            parent.text = value
+            parent.onTextChange?(value)
+        }
+
+        /// Intercept Enter/Return to trigger an immediate search.
+        func control(
+            _ control: NSControl,
+            textView: NSTextView,
+            doCommandBy commandSelector: Selector
+        ) -> Bool {
+            if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+                parent.onSubmit?()
+                return true  // handled — don't insert newline
+            }
+            return false
+        }
     }
 }
