@@ -59,18 +59,59 @@ struct LedgerEntriesView: View {
     }
 
     var body: some View {
+        mainContent
+            .onAppear {
+                setupSearchDebounce()
+                searchFocusTrigger += 1
+            }
+            .onChange(of: sessionManager.listNavAction) {
+                guard sessionId == sessionManager.activeSessionId else { return }
+                guard sessionManager.activeLedgerSubTab == .entries else { return }
+                guard let action = sessionManager.listNavAction else { return }
+                sessionManager.listNavAction = nil
+                handleListNavAction(action)
+            }
+            .onChange(of: entries?.count) { handleEntriesCountChange() }
+            .onChange(of: focusedIndex) { handleFocusedIndexChange() }
+            .onChange(of: sessionManager.activeTab) { focusSearchIfActive() }
+            .onChange(of: sessionManager.activeSessionId) { focusSearchIfActive() }
+            .onChange(of: sessionManager.activeLedgerSubTab) { focusSearchIfActive() }
+    }
+
+    private func handleEntriesCountChange() {
+        if let entries = entries, !entries.isEmpty {
+            focusedIndex = 0
+        } else {
+            focusedIndex = nil
+        }
+    }
+
+    private func handleFocusedIndexChange() {
+        if let idx = focusedIndex, idx < sortedEntries.count {
+            scrollProxy.scrollTo(sortedEntries[idx].id)
+        }
+    }
+
+    /// Focus the search field when navigating to the Entries subtab.
+    private func focusSearchIfActive() {
+        guard sessionManager.activeTab == .ledger,
+              sessionManager.activeLedgerSubTab == .entries,
+              sessionId == sessionManager.activeSessionId else { return }
+        searchFocusTrigger += 1
+    }
+
+    // MARK: - Main Content
+
+    private var mainContent: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Search bar
             searchBar
 
-            // Results indicator
             if !searchText.isEmpty, let entries = entries {
                 Text("Showing \(entries.count) result\(entries.count == 1 ? "" : "s") for \"\(searchText)\"")
                     .chromeFont(size: fontSize.caption2)
                     .foregroundColor(.secondary)
             }
 
-            // Content
             if isLoading && entries == nil {
                 HStack {
                     Spacer()
@@ -90,44 +131,15 @@ struct LedgerEntriesView: View {
                 entriesContent
             }
         }
-        .onAppear {
-            setupSearchDebounce()
-            searchFocusTrigger += 1
-        }
-        .onChange(of: sessionManager.listNavAction) {
-            guard sessionId == sessionManager.activeSessionId else { return }
-            guard sessionManager.activeLedgerSubTab == .entries else { return }
-            guard let action = sessionManager.listNavAction else { return }
-            sessionManager.listNavAction = nil
-            handleListNavAction(action)
-        }
-        .onChange(of: entries?.count) {
-            if let entries = entries, !entries.isEmpty {
-                focusedIndex = 0
-            } else {
-                focusedIndex = nil
-            }
-        }
-        .onChange(of: focusedIndex) {
-            if let idx = focusedIndex, idx < sortedEntries.count {
-                scrollProxy.scrollTo(sortedEntries[idx].id)
-            }
-        }
-        .onChange(of: sessionManager.activeTab) {
-            guard sessionManager.activeTab == .ledger,
-                  sessionManager.activeLedgerSubTab == .entries,
-                  sessionId == sessionManager.activeSessionId else { return }
-            searchFocusTrigger += 1
-        }
-        .onChange(of: sessionManager.activeSessionId) {
-            guard sessionManager.activeTab == .ledger,
-                  sessionManager.activeLedgerSubTab == .entries,
-                  sessionId == sessionManager.activeSessionId else { return }
-            searchFocusTrigger += 1
-        }
     }
 
     // MARK: - Search Bar
+
+    /// Active when this is the visible session AND the Entries subtab is selected.
+    private var isSearchActive: Bool {
+        sessionId == sessionManager.activeSessionId
+            && sessionManager.activeLedgerSubTab == .entries
+    }
 
     private var searchBar: some View {
         HStack(spacing: 6) {
@@ -139,7 +151,7 @@ struct LedgerEntriesView: View {
                 placeholder: "Search entries...",
                 fontSize: fontSize.caption2,
                 focusTrigger: searchFocusTrigger,
-                isActive: sessionId == sessionManager.activeSessionId,
+                isActive: isSearchActive,
                 onTextChange: { searchSubject.send($0) },
                 onSubmit: {
                     if searchText.isEmpty {

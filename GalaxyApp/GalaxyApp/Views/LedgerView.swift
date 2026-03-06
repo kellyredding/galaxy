@@ -79,10 +79,10 @@ struct LedgerView: View {
             handleSubtabSwitch()
         }
         .onChange(of: sessionManager.activeTab) {
-            // Refresh data when switching back to ledger tab for this session
+            // Lazy-load on return to ledger tab — preserves search state
             guard sessionManager.activeTab == .ledger,
                   session.id == sessionManager.activeSessionId else { return }
-            triggerFetchForCurrentSubtab()
+            fetchSubtabIfNeeded()
         }
         .onAppear {
             triggerFetchForCurrentSubtab()
@@ -230,16 +230,21 @@ struct LedgerView: View {
         }
     }
 
-    // MARK: - Subtab Content (exclusive switch)
+    // MARK: - Subtab Content (ZStack — all views stay alive)
 
     @ViewBuilder
     private func subtabContent(scrollProxy: ScrollViewProxy) -> some View {
-        switch sessionManager.activeLedgerSubTab {
-        case .lastActivity:
+        let active = sessionManager.activeLedgerSubTab
+
+        ZStack(alignment: .topLeading) {
             LedgerLastActivityView(session: session)
-        case .files:
+                .opacity(active == .lastActivity ? 1 : 0)
+                .allowsHitTesting(active == .lastActivity)
+
             LedgerFilesView(files: files, isLoading: isLoading, scrollProxy: scrollProxy)
-        case .entries:
+                .opacity(active == .files ? 1 : 0)
+                .allowsHitTesting(active == .files)
+
             LedgerEntriesView(
                 sessionId: session.id,
                 entries: entries,
@@ -249,40 +254,42 @@ struct LedgerView: View {
                 onClearSearch: { fetchEntriesData() },
                 scrollProxy: scrollProxy
             )
-        case .identifiers:
+            .opacity(active == .entries ? 1 : 0)
+            .allowsHitTesting(active == .entries)
+
             LedgerIdentifiersView(
                 session: session,
                 sessionDetail: sessionDetail,
                 isLoading: isLoading
             )
-        case .suggestedName:
+            .opacity(active == .identifiers ? 1 : 0)
+            .allowsHitTesting(active == .identifiers)
+
             LedgerSuggestedNameView(session: session)
+                .opacity(active == .suggestedName ? 1 : 0)
+                .allowsHitTesting(active == .suggestedName)
         }
     }
 
     // MARK: - Data Lifecycle
 
     private func handleSubtabSwitch() {
-        // Cancel in-flight fetch
+        // Cancel in-flight fetch for the previous subtab
         fetchTask?.cancel()
         fetchTask = nil
         LedgerQueryService.shared.cancelAll()
-
-        // Nil out stale data
-        files = nil
-        entries = nil
-        sessionDetail = nil
         isLoading = false
 
-        // Trigger fetch for new subtab
-        triggerFetchForCurrentSubtab()
+        // Only fetch if the newly active subtab hasn't loaded yet.
+        // The ZStack keeps all views alive, so already-loaded data
+        // (including search-filtered entries) is preserved as-is.
+        fetchSubtabIfNeeded()
     }
 
+    /// Unconditional fetch — used on first appear to seed the initial subtab.
     private func triggerFetchForCurrentSubtab() {
         switch sessionManager.activeLedgerSubTab {
-        case .lastActivity:
-            break  // Uses data already on Session, no fetch needed
-        case .suggestedName:
+        case .lastActivity, .suggestedName:
             break  // Uses data already on Session, no fetch needed
         case .files:
             fetchFilesData()
@@ -290,6 +297,21 @@ struct LedgerView: View {
             fetchEntriesData()
         case .identifiers:
             fetchIdentifiersData()
+        }
+    }
+
+    /// Lazy fetch — only fires when a subtab's data is still nil (first visit).
+    /// Preserves already-loaded or search-filtered data on return visits.
+    private func fetchSubtabIfNeeded() {
+        switch sessionManager.activeLedgerSubTab {
+        case .lastActivity, .suggestedName:
+            break
+        case .files:
+            if files == nil { fetchFilesData() }
+        case .entries:
+            if entries == nil { fetchEntriesData() }
+        case .identifiers:
+            if sessionDetail == nil { fetchIdentifiersData() }
         }
     }
 
