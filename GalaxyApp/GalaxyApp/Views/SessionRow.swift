@@ -1,6 +1,88 @@
 import SwiftUI
 import AppKit
 
+// MARK: - Inline Name Editor (AppKit-backed)
+
+/// NSTextField subclass that short-circuits key view traversal.
+/// When any NSTextField becomes first responder, macOS's NSAutoFillHeuristicController
+/// walks previousValidKeyView and nextValidKeyView to check if the field might be a
+/// password field. With the ZStack architecture keeping all session views alive, each
+/// traversal walks thousands of SwiftUI-managed views (~4.5 seconds each, ~9 seconds
+/// total). Returning nil stops the autofill heuristic immediately.
+class InlineEditField: NSTextField {
+    override var previousValidKeyView: NSView? { nil }
+    override var nextValidKeyView: NSView? { nil }
+}
+
+/// NSViewRepresentable wrapping InlineEditField for inline session renaming.
+/// Uses AppKit's makeFirstResponder directly (~60ms) instead of SwiftUI's
+/// @FocusState, which triggers expensive view-tree reconciliation.
+struct InlineNameEditor: NSViewRepresentable {
+    @Binding var text: String
+    let fontSize: CGFloat
+    let fontWeight: NSFont.Weight
+    let textColor: NSColor
+    let onCommit: () -> Void
+    let onCancel: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeNSView(context: Context) -> InlineEditField {
+        let field = InlineEditField()
+        field.font = NSFont.systemFont(ofSize: fontSize, weight: fontWeight)
+        field.textColor = textColor
+        field.backgroundColor = .clear
+        field.isBordered = false
+        field.focusRingType = .none
+        field.drawsBackground = false
+        field.lineBreakMode = .byTruncatingTail
+        field.usesSingleLineMode = true
+        field.cell?.isScrollable = true
+        field.delegate = context.coordinator
+        // Focus via AppKit once SwiftUI has placed the view in the window.
+        DispatchQueue.main.async {
+            field.window?.makeFirstResponder(field)
+        }
+        return field
+    }
+
+    func updateNSView(_ nsView: InlineEditField, context: Context) {
+        // Only update text if it differs (avoid clobbering cursor position)
+        if nsView.stringValue != text {
+            nsView.stringValue = text
+        }
+        nsView.font = NSFont.systemFont(ofSize: fontSize, weight: fontWeight)
+        nsView.textColor = textColor
+    }
+
+    class Coordinator: NSObject, NSTextFieldDelegate {
+        var parent: InlineNameEditor
+
+        init(_ parent: InlineNameEditor) {
+            self.parent = parent
+        }
+
+        func controlTextDidChange(_ obj: Notification) {
+            guard let field = obj.object as? NSTextField else { return }
+            parent.text = field.stringValue
+        }
+
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+                parent.onCommit()
+                return true
+            }
+            if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+                parent.onCancel()
+                return true
+            }
+            return false
+        }
+    }
+}
+
 struct SessionRow: View {
     @ObservedObject var session: Session
     let isSelected: Bool
@@ -26,7 +108,6 @@ struct SessionRow: View {
     @State private var isHovered = false
     @State private var isEditingName = false
     @State private var editingNameText = ""
-    @FocusState private var isNameFieldFocused: Bool
 
     private var fontSize: ChromeFontSize { ChromeFontSize(chromeFontSize) }
     private var isDark: Bool { colorScheme == .dark }
@@ -75,20 +156,15 @@ struct SessionRow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     // Line 1: Session name (double-click to edit)
                     if isEditingName {
-                        TextField("", text: $editingNameText)
-                            .chromeFont(size: fontSize.caption1, weight: .bold)
-                            .textFieldStyle(.plain)
-                            .focused($isNameFieldFocused)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .foregroundColor(isSelected ? .white : .primary)
-                            .frame(height: fontSize.caption1LineHeight)
-                            .onSubmit {
-                                commitNameEdit()
-                            }
-                            .onExitCommand {
-                                cancelNameEdit()
-                            }
+                        InlineNameEditor(
+                            text: $editingNameText,
+                            fontSize: fontSize.caption1,
+                            fontWeight: .bold,
+                            textColor: isSelected ? .white : .labelColor,
+                            onCommit: { commitNameEdit() },
+                            onCancel: { cancelNameEdit() }
+                        )
+                        .frame(height: fontSize.caption1LineHeight)
                     } else {
                         Text(session.displayName)
                             .chromeFont(size: fontSize.caption1, weight: .bold)
@@ -430,17 +506,13 @@ struct SessionRow: View {
 
     private func beginNameEdit() {
         if let given = session.givenName {
-            // Explicit name set (including "" opt-out) — edit that value
             editingNameText = given
         } else {
-            // Never set — default to suggested name for easy confirmation
             editingNameText = session.ledgerSuggestedName ?? ""
         }
         isEditingName = true
-        // Focus after next layout pass so the TextField exists
-        DispatchQueue.main.async {
-            isNameFieldFocused = true
-        }
+        // Focus is handled by InlineNameEditor.makeNSView via AppKit's
+        // makeFirstResponder — no SwiftUI @FocusState involvement.
     }
 
     private func commitNameEdit() {
@@ -451,13 +523,11 @@ struct SessionRow: View {
         SessionPersistence.shared.markDirty()
         session.syncSessionName()
         isEditingName = false
-        isNameFieldFocused = false
         restoreTerminalFocus()
     }
 
     private func cancelNameEdit() {
         isEditingName = false
-        isNameFieldFocused = false
         restoreTerminalFocus()
     }
 

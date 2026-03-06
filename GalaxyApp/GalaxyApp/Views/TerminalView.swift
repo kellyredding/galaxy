@@ -13,6 +13,8 @@ struct FocusableTerminalView: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: TerminalHostView, context: Context) {
+        let wasActive = nsView.isActive
+
         // Update session reference and active state for drag-drop filtering
         nsView.session = session
         nsView.isActive = isActive  // This triggers updateDragRegistration via didSet
@@ -25,7 +27,12 @@ struct FocusableTerminalView: NSViewRepresentable {
         // don't set NSView.isHidden, so AppKit's hitTest still finds them.
         nsView.isHidden = !isActive
 
-        if isActive {
+        // Only grab focus on activation transition, not every re-render.
+        // Unconditional requestFocus() steals focus from rename TextFields
+        // and other non-terminal first responders. Legitimate focus restoration
+        // for tab/session switching is handled by TerminalContainerView's
+        // onChange handlers via restoreTerminalFocus().
+        if isActive && !wasActive {
             nsView.requestFocus()
         }
     }

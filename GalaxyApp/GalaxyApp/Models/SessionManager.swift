@@ -669,6 +669,7 @@ class SessionManager: ObservableObject {
     }
 
     func switchTo(sessionId: UUID) {
+        guard activeSessionId != sessionId else { return }
         guard let session = sessions.first(where: { $0.id == sessionId }) else { return }
         activeSessionId = sessionId
         SessionPersistence.shared.markDirty()

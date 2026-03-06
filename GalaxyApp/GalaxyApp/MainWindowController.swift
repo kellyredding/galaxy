@@ -1,6 +1,18 @@
 import AppKit
 import SwiftUI
 
+/// NSWindow subclass that disables key view loop recalculation.
+/// The ZStack architecture keeps all tab/session views alive (3 containers × N sessions),
+/// making recalculateKeyViewLoop traverse thousands of views — causing multi-second hangs
+/// whenever a TextField gains or resigns first responder. Galaxy uses terminal-centric
+/// focus management (makeFirstResponder), not Tab-key navigation, so the key view loop
+/// is unnecessary.
+class GalaxyWindow: NSWindow {
+    override func recalculateKeyViewLoop() {
+        // No-op: prevents AppKit from traversing the full SwiftUI view tree.
+    }
+}
+
 /// NSWindowController that hosts the main ContentView via NSHostingView.
 /// This provides full control over window lifecycle, avoiding SwiftUI's Window scene limitations.
 class MainWindowController: NSWindowController {
@@ -12,7 +24,7 @@ class MainWindowController: NSWindowController {
         self.settingsManager = settingsManager
 
         // Create the window
-        let window = NSWindow(
+        let window = GalaxyWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1680, height: 840),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
