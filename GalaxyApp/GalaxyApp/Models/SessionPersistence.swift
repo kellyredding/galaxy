@@ -34,12 +34,37 @@ struct PersistedSession: Codable {
     let ledgerUpdatedAt: String?
 }
 
-/// Top-level persisted state: version, active session, and ordered
-/// session list (array position = sidebar position).
+/// A dismissed session preserved for potential restoration.
+/// Wraps PersistedSession with the timestamp of dismissal.
+struct PersistedClosedSession: Codable {
+    let session: PersistedSession
+    let closedAt: Date
+}
+
+/// Top-level persisted state: version, active session, ordered
+/// session list (array position = sidebar position), and archived
+/// closed sessions for recovery.
 struct PersistedSidebarState: Codable {
     let version: Int
     let activeSessionId: UUID?
     let sessions: [PersistedSession]
+    let closedSessions: [PersistedClosedSession]
+
+    /// Coding keys with default for closedSessions (v1 migration)
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version = try container.decode(Int.self, forKey: .version)
+        activeSessionId = try container.decodeIfPresent(UUID.self, forKey: .activeSessionId)
+        sessions = try container.decode([PersistedSession].self, forKey: .sessions)
+        closedSessions = try container.decodeIfPresent([PersistedClosedSession].self, forKey: .closedSessions) ?? []
+    }
+
+    init(version: Int, activeSessionId: UUID?, sessions: [PersistedSession], closedSessions: [PersistedClosedSession]) {
+        self.version = version
+        self.activeSessionId = activeSessionId
+        self.sessions = sessions
+        self.closedSessions = closedSessions
+    }
 }
 
 // MARK: - Persistence Manager
@@ -163,9 +188,10 @@ final class SessionPersistence {
     private func captureState() -> PersistedSidebarState {
         let manager = SessionManager.shared
         return PersistedSidebarState(
-            version: 1,
+            version: 2,
             activeSessionId: manager.activeSessionId,
-            sessions: manager.sessions.map { $0.toPersistedState() }
+            sessions: manager.sessions.map { $0.toPersistedState() },
+            closedSessions: manager.closedSessions
         )
     }
 
@@ -179,7 +205,8 @@ final class SessionPersistence {
             try data.write(to: fileURL, options: .atomic)
             GalaxyLog.events(
                 "Session state persisted"
-                + " (\(state.sessions.count) session(s))"
+                + " (\(state.sessions.count) session(s)"
+                + ", \(state.closedSessions.count) closed)"
             )
         } catch {
             GalaxyLog.events(

@@ -87,12 +87,19 @@ class SessionManager: ObservableObject {
     // Track if active session can be resumed (for menu updates)
     @Published var activeSessionCanResume: Bool = false
 
+    /// Archived closed sessions available for restoration.
+    /// Most recently closed at index 0. Persisted to sessions.json.
+    @Published var closedSessions: [PersistedClosedSession] = []
+
     /// Tracks last auto-clear time per session to prevent re-triggering
     /// before enrichment updates with fresh post-clear context percentage.
     private var lastAutoClearTime: [UUID: Date] = [:]
 
     /// Minimum seconds between auto-clears for the same session.
     private static let autoClearCooldown: TimeInterval = 30
+
+    /// Maximum number of closed sessions to retain in the archive.
+    private static let closedSessionRetentionLimit = 500
 
     // Path to claude binary - detected at init
     let claudePath: String
@@ -134,9 +141,12 @@ class SessionManager: ObservableObject {
             if let activeId = persisted.activeSessionId {
                 activeSessionId = activeId
             }
+            // Restore closed session archive
+            closedSessions = persisted.closedSessions
             NSLog(
-                "SessionManager: Restored %d session(s) from disk",
-                sessions.count
+                "SessionManager: Restored %d session(s) and %d closed session(s) from disk",
+                sessions.count,
+                closedSessions.count
             )
         }
     }
@@ -748,6 +758,18 @@ class SessionManager: ObservableObject {
 
         NSLog("SessionManager: closeSession called for session %@", sessionId.uuidString)
 
+        // Archive the session before removal
+        let archived = PersistedClosedSession(
+            session: sessions[index].toPersistedState(),
+            closedAt: Date()
+        )
+        closedSessions.insert(archived, at: 0)
+
+        // Trim archive if over retention limit
+        if closedSessions.count > Self.closedSessionRetentionLimit {
+            closedSessions = Array(closedSessions.prefix(Self.closedSessionRetentionLimit))
+        }
+
         // Determine next session to select (prefer next, fall back to previous)
         var nextActiveId: UUID? = nil
         if sessions.count > 1 {
@@ -807,6 +829,33 @@ class SessionManager: ObservableObject {
         if response == .alertFirstButtonReturn {
             closeSession(sessionId: sessionId)
         }
+    }
+
+    /// Restore a previously closed session to the sidebar.
+    /// Creates a new stopped Session from the archived state,
+    /// appends to the bottom of the sidebar, and makes it active.
+    func restoreSession(closedSession: PersistedClosedSession) {
+        // Remove from closed archive
+        closedSessions.removeAll { $0.session.id == closedSession.session.id }
+
+        // Create stopped session from persisted state
+        let session = Session(restoring: closedSession.session)
+        sessions.append(session)
+
+        // Save outgoing session's view state, then activate restored session
+        saveViewState()
+        activeSessionId = session.id
+        activeTab = .terminal
+        activeLedgerSubTab = .lastActivity
+
+        SessionPersistence.shared.markDirty()
+
+        NSLog(
+            "SessionManager: Restored session %@ (%@), closed sessions remaining: %d",
+            session.sessionRef,
+            session.displayName,
+            closedSessions.count
+        )
     }
 
     /// Whether there's a previous session to switch to (not at top of list)
