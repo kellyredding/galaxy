@@ -313,7 +313,7 @@ index 90402c0..d53edd9 100644
                          blue: CGFloat (color.blue) / 65535.0,
                          alpha: 1.0)
 diff --git a/Sources/SwiftTerm/Mac/MacTerminalView.swift b/Sources/SwiftTerm/Mac/MacTerminalView.swift
-index 412b95a..440ef93 100644
+index 412b95a..dfe1180 100644
 --- a/Sources/SwiftTerm/Mac/MacTerminalView.swift
 +++ b/Sources/SwiftTerm/Mac/MacTerminalView.swift
 @@ -15,6 +15,27 @@ import AppKit
@@ -557,6 +557,24 @@ index 412b95a..440ef93 100644
      }
  
      public override func resizeSubviews(withOldSize oldSize: NSSize) {
+@@ -543,7 +684,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+     //
+     // NSTextInputClient protocol implementation
+     //
+-    public override func becomeFirstResponder() -> Bool {
++    open override func becomeFirstResponder() -> Bool {
+         let response = super.becomeFirstResponder()
+         if response {
+             hasFocus = true
+@@ -553,7 +694,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+         return response
+     }
+     
+-    public override func resignFirstResponder() -> Bool {
++    open override func resignFirstResponder() -> Bool {
+         let response = super.resignFirstResponder()
+         if response {
+             caretView.disableAnimations()
 @@ -627,10 +768,25 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
          super.flagsChanged(with: event)
      }
@@ -805,3 +823,16 @@ index 0417ede..9c86911 100644
      public func getSelectedText () -> String {
          let (min, max) = if Position.compare(start, end) == .before {
              (start, end)
+diff --git a/Sources/SwiftTerm/Terminal.swift b/Sources/SwiftTerm/Terminal.swift
+index 3ca5ffa..19637dd 100644
+--- a/Sources/SwiftTerm/Terminal.swift
++++ b/Sources/SwiftTerm/Terminal.swift
+@@ -351,7 +351,7 @@ open class Terminal {
+     
+     // You can ignore most of the defaults set here, the function
+     // reset() will do that again
+-    var sendFocus: Bool = false
++    public var sendFocus: Bool = false
+     var cursorHidden : Bool = false
+     
+     /// Controls the origin mode (DECOM), when set, the screen is limited to the top and bottom margins

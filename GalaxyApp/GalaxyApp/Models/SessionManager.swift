@@ -17,7 +17,29 @@ class SessionManager: ObservableObject {
     static let shared = SessionManager()
 
     @Published var sessions: [Session] = []
-    @Published var activeSessionId: UUID?
+    @Published var activeSessionId: UUID? {
+        didSet {
+            guard activeSessionId != oldValue else { return }
+
+            // Suppress focus reporting (mode 1004) on the two terminals
+            // involved in this switch. Without this, makeFirstResponder
+            // triggers becomeFirstResponder/resignFirstResponder which
+            // send focus in/out escape sequences to the PTY — Claude Code
+            // responds to those, producing output that triggers false
+            // busy/idle state transitions (pulsing status dot, unread
+            // indicators, notifications).
+            if let oldId = oldValue,
+               let oldSession = sessions.first(where: { $0.id == oldId })
+            {
+                oldSession.terminalView.suppressFocusEvents = true
+            }
+            if let newId = activeSessionId,
+               let newSession = sessions.first(where: { $0.id == newId })
+            {
+                newSession.terminalView.suppressFocusEvents = true
+            }
+        }
+    }
 
     // Track whether the main window is focused (for bell indicator logic)
     @Published var isWindowFocused: Bool = true
@@ -488,7 +510,15 @@ class SessionManager: ObservableObject {
         // own visibility independently.
         let isViewingThisSession = session.id == activeSessionId && activeTab == .terminal && isWindowFocused
         let trackUnread = settings.showUnreadIndicator || settings.showDockBadge
-        if trackUnread && !isViewingThisSession {
+
+        // Require a minimum busy duration before setting unread indicator.
+        // Brief PTY blips (cursor redraws, prompt refreshes) shouldn't
+        // create unread dots — only real work (Claude responding) should.
+        let unreadMinBusy: TimeInterval = 3.0
+        let busyDuration = NotificationService.shared
+            .sessionBusyDuration(session.id) ?? 0
+
+        if trackUnread && !isViewingThisSession && busyDuration >= unreadMinBusy {
             session.hasUnreadResponse = true
             updateDockBadge()
         }
