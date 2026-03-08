@@ -107,15 +107,20 @@ class LedgerQueryService {
                 return
             }
 
-            // Wait on background thread to avoid blocking
+            // Collect stdout/stderr on background threads BEFORE waiting
+            // for exit. Reading after waitUntilExit deadlocks when output
+            // exceeds the ~64KB pipe buffer — the process blocks on write
+            // while waitUntilExit blocks on the process.
             DispatchQueue.global(qos: .userInitiated).async {
+                let stdoutData = stdout.fileHandleForReading.readDataToEndOfFile()
+                let stderrData = stderr.fileHandleForReading.readDataToEndOfFile()
+
                 process.waitUntilExit()
 
                 self.clearCurrentProcess(process)
 
                 guard process.terminationStatus == 0 else {
-                    let errData = stderr.fileHandleForReading.readDataToEndOfFile()
-                    let errMsg = String(data: errData, encoding: .utf8) ?? "Unknown error"
+                    let errMsg = String(data: stderrData, encoding: .utf8) ?? "Unknown error"
                     continuation.resume(
                         throwing: LedgerQueryError.cliError(
                             status: process.terminationStatus,
@@ -125,8 +130,7 @@ class LedgerQueryService {
                     return
                 }
 
-                let data = stdout.fileHandleForReading.readDataToEndOfFile()
-                continuation.resume(returning: data)
+                continuation.resume(returning: stdoutData)
             }
         }
     }
