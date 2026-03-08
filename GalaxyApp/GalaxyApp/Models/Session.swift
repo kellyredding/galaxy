@@ -78,6 +78,16 @@ class Session: Identifiable, ObservableObject {
     @Published var visualBellActive: Bool = false
     @Published var isBusy: Bool = false
 
+    // MARK: - View State (per-session, not persisted)
+    // Tracks which tab/subtab this session was on when the user switched
+    // away. Restored by SessionManager when switching back.
+
+    /// Last active main tab for this session. Defaults to terminal.
+    var lastActiveTab: SessionTab = .terminal
+
+    /// Last active ledger subtab for this session. Defaults to last activity.
+    var lastActiveLedgerSubTab: LedgerSubTab = .lastActivity
+
     /// Tracks the last name sent via /rename to avoid duplicate commands.
     /// Transient — not persisted. Cleared in processDidExit so resume
     /// re-sends the name.

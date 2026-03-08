@@ -52,12 +52,12 @@ class SessionManager: ObservableObject {
         set { SettingsManager.shared.settings.isSidebarVisible = newValue }
     }
 
-    // Active tab in the views area (global, not per-session)
-    // Not persisted — always starts on Terminal at launch
+    // Active tab in the views area — driven by the active session.
+    // Not persisted — always starts on Terminal at launch.
     @Published var activeTab: SessionTab = .terminal
 
-    // Active subtab within Ledger view (global, not per-session)
-    // Not persisted — always starts on Last Activity at launch
+    // Active subtab within Ledger view — driven by the active session.
+    // Not persisted — always starts on Last Activity at launch.
     @Published var activeLedgerSubTab: LedgerSubTab = .lastActivity
 
     /// Snapshot number to auto-open when switching to snapshots tab.
@@ -275,8 +275,10 @@ class SessionManager: ObservableObject {
         }
 
         sessions.append(session)
+        saveViewState()
         activeSessionId = session.id
         activeTab = .terminal
+        activeLedgerSubTab = .lastActivity
         SessionPersistence.shared.markDirty()
 
         return session
@@ -382,8 +384,12 @@ class SessionManager: ObservableObject {
             NSLog("SessionManager: Session %@ not found in Claude storage, starting fresh", session.sessionRef)
         }
 
-        // Switch to terminal so the user sees the resumed session
+        // Save outgoing session's view state and switch to terminal
+        // so the user sees the resumed session. Restore the incoming
+        // session's ledger subtab so it's correct if they visit ledger.
+        saveViewState()
         activeTab = .terminal
+        activeLedgerSubTab = session.lastActiveLedgerSubTab
 
         // Reset session state
         session.hasExited = false
@@ -698,13 +704,32 @@ class SessionManager: ObservableObject {
         return exists
     }
 
+    // MARK: - View State Save/Restore
+
+    /// Save the current tab/subtab state to the outgoing session.
+    private func saveViewState() {
+        guard let session = activeSession else { return }
+        session.lastActiveTab = activeTab
+        session.lastActiveLedgerSubTab = activeLedgerSubTab
+    }
+
+    /// Restore tab/subtab state from the incoming session.
+    private func restoreViewState(for session: Session) {
+        activeTab = session.lastActiveTab
+        activeLedgerSubTab = session.lastActiveLedgerSubTab
+    }
+
     func switchTo(sessionId: UUID) {
         guard activeSessionId != sessionId else { return }
         guard let session = sessions.first(where: { $0.id == sessionId }) else { return }
+
+        saveViewState()
         activeSessionId = sessionId
+        restoreViewState(for: session)
+
         SessionPersistence.shared.markDirty()
 
-        // Clear unread indicator immediately on switch (with fade animation).
+        // Clear unread indicator immediately on switch.
         // Done here rather than solely in SessionRow's onChange(of: isSelected)
         // to avoid gesture disambiguation delays when double-click gestures
         // exist on child views. Only clears when on the terminal tab — viewing
@@ -745,9 +770,14 @@ class SessionManager: ObservableObject {
         SessionPersistence.shared.markDirty()
         updateDockBadge()
 
-        // Update active session
+        // Update active session and restore the next session's view state
         if activeSessionId == sessionId {
             activeSessionId = nextActiveId
+            if let nextId = nextActiveId,
+               let nextSession = sessions.first(where: { $0.id == nextId })
+            {
+                restoreViewState(for: nextSession)
+            }
         }
 
         NSLog("SessionManager: Session removed, remaining count: %d", sessions.count)
