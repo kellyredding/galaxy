@@ -135,36 +135,78 @@ class MainMenu: NSObject, NSMenuDelegate {
         if let session = activeSession {
             if !session.hasExited {
                 // Session is running: Stop session (⌘W)
-                let stopItem = NSMenuItem(title: "Stop session", action: #selector(MenuActions.stopSession(_:)), keyEquivalent: "w")
+                let stopItem = NSMenuItem(
+                    title: "Stop session",
+                    action: #selector(MenuActions.stopSession(_:)),
+                    keyEquivalent: "w"
+                )
                 stopItem.target = MenuActions.shared
                 menu.addItem(stopItem)
-            } else {
-                // Session is stopped: Close session (⌘W) and Resume session (⌘R)
-                let closeItem = NSMenuItem(title: "Close session", action: #selector(MenuActions.closeSession(_:)), keyEquivalent: "w")
-                closeItem.target = MenuActions.shared
-                menu.addItem(closeItem)
 
-                let resumeItem = NSMenuItem(title: "Resume session", action: #selector(MenuActions.resumeSession(_:)), keyEquivalent: "r")
+                // Dismiss not applicable when running (⌘⇧W disabled)
+                let dismissItem = NSMenuItem(
+                    title: "Dismiss session",
+                    action: nil,
+                    keyEquivalent: "W"
+                )
+                dismissItem.keyEquivalentModifierMask = [.command, .shift]
+                dismissItem.isEnabled = false
+                menu.addItem(dismissItem)
+            } else {
+                // Session is stopped: ⌘W disabled, ⌘⇧W dismisses with confirmation
+                let stopItem = NSMenuItem(
+                    title: "Stop session",
+                    action: nil,
+                    keyEquivalent: "w"
+                )
+                stopItem.isEnabled = false
+                menu.addItem(stopItem)
+
+                let resumeItem = NSMenuItem(
+                    title: "Resume session",
+                    action: #selector(MenuActions.resumeSession(_:)),
+                    keyEquivalent: "r"
+                )
                 resumeItem.target = MenuActions.shared
                 menu.addItem(resumeItem)
+
+                let dismissItem = NSMenuItem(
+                    title: "Dismiss session",
+                    action: #selector(MenuActions.dismissSession(_:)),
+                    keyEquivalent: "W"
+                )
+                dismissItem.target = MenuActions.shared
+                dismissItem.keyEquivalentModifierMask = [.command, .shift]
+                menu.addItem(dismissItem)
             }
         } else if hasSessions {
-            // Has sessions but none active (shouldn't normally happen, but handle it)
+            // Has sessions but none active
             let item = NSMenuItem(title: "Stop session", action: nil, keyEquivalent: "w")
             item.isEnabled = false
             menu.addItem(item)
         } else {
             // No sessions: Close window (⌘W)
-            let closeWindowItem = NSMenuItem(title: "Close window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+            let closeWindowItem = NSMenuItem(
+                title: "Close window",
+                action: #selector(NSWindow.performClose(_:)),
+                keyEquivalent: "w"
+            )
             menu.addItem(closeWindowItem)
         }
 
         menu.addItem(.separator())
 
-        // Close window (⌘⇧W) - always available
-        let closeWindowShiftItem = NSMenuItem(title: "Close window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "W")
-        closeWindowShiftItem.keyEquivalentModifierMask = [.command, .shift]
-        menu.addItem(closeWindowShiftItem)
+        // Close window (⌘⇧W) — only when no active session
+        // When there IS an active session, ⌘⇧W is handled above (dismiss or disabled)
+        if activeSession == nil {
+            let closeWindowShiftItem = NSMenuItem(
+                title: "Close window",
+                action: #selector(NSWindow.performClose(_:)),
+                keyEquivalent: "W"
+            )
+            closeWindowShiftItem.keyEquivalentModifierMask = [.command, .shift]
+            menu.addItem(closeWindowShiftItem)
+        }
     }
 
     // MARK: - Edit Menu
@@ -529,9 +571,9 @@ class MenuActions: NSObject {
         SessionManager.shared.stopSession(sessionId: activeId)
     }
 
-    @objc func closeSession(_ sender: Any?) {
+    @objc func dismissSession(_ sender: Any?) {
         guard let activeId = SessionManager.shared.activeSessionId else { return }
-        SessionManager.shared.closeSession(sessionId: activeId)
+        SessionManager.shared.confirmAndDismissSession(sessionId: activeId)
     }
 
     // MARK: - Sessions Menu Actions

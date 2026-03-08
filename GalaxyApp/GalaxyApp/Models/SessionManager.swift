@@ -783,6 +783,32 @@ class SessionManager: ObservableObject {
         NSLog("SessionManager: Session removed, remaining count: %d", sessions.count)
     }
 
+    /// Present a confirmation dialog and dismiss the session if confirmed.
+    /// Called by both ⌘⇧W menu action and the hover X button on stopped sessions.
+    func confirmAndDismissSession(sessionId: UUID) {
+        guard let session = sessions.first(where: { $0.id == sessionId }) else { return }
+
+        // Only allow dismissal of stopped sessions
+        guard session.hasExited else {
+            NSLog("SessionManager: Cannot dismiss — session is still running")
+            return
+        }
+
+        let alert = NSAlert()
+        alert.messageText = "Confirm dismiss session?"
+        alert.informativeText = """
+            "\(session.displayName)" will be removed from the sidebar.
+            """
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Confirm")
+        alert.addButton(withTitle: "Cancel")
+
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            closeSession(sessionId: sessionId)
+        }
+    }
+
     /// Whether there's a previous session to switch to (not at top of list)
     var canSwitchToPreviousSession: Bool {
         guard sessions.count > 1,

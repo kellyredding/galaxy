@@ -39,7 +39,7 @@ struct ExpandedSessionSidebar: View {
                                         sessionManager.stopSession(sessionId: session.id)
                                     },
                                     onClose: {
-                                        sessionManager.closeSession(sessionId: session.id)
+                                        sessionManager.confirmAndDismissSession(sessionId: session.id)
                                     },
                                     isPlaceholder: dragCoordinator.draggedSessionId == session.id,
                                     rowIndex: index,
