@@ -710,9 +710,7 @@ class SessionManager: ObservableObject {
         // exist on child views. Only clears when on the terminal tab — viewing
         // Ledger or Snapshots keeps the indicator visible.
         if session.hasUnreadResponse && isWindowFocused && activeTab == .terminal {
-            withAnimation(.easeOut(duration: 3.0)) {
-                session.hasUnreadResponse = false
-            }
+            session.hasUnreadResponse = false
             updateDockBadge()
         }
 

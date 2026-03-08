@@ -200,7 +200,6 @@ struct ContentView: View {
                             isOnTerminalTab: sessionManager.activeTab == .terminal
                         )
                         .withClearBehavior()
-                        .id(session.id)
                     }
                 }
             }
@@ -340,6 +339,10 @@ struct TabUnreadIndicator: View {
         UnreadIndicator()
             .offset(x: 4, y: 2)
             .opacity(session.hasUnreadResponse && showUnreadIndicator ? 1 : 0)
+            .animation(
+                session.hasUnreadResponse ? nil : .easeOut(duration: 3.0),
+                value: session.hasUnreadResponse
+            )
     }
 }
 

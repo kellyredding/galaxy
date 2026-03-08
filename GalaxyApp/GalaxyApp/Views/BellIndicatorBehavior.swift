@@ -16,9 +16,7 @@ struct UnreadIndicatorBehavior: ViewModifier {
 
     private func clearIfNeeded() {
         if shouldClear {
-            withAnimation(.easeOut(duration: 3.0)) {
-                session.hasUnreadResponse = false
-            }
+            session.hasUnreadResponse = false
             SessionManager.shared.updateDockBadge()
         }
     }

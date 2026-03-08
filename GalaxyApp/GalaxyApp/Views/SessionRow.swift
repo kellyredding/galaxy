@@ -193,10 +193,14 @@ struct SessionRow: View {
                 }
 
                 // Unread indicator - bright red dot, tight to top-left corner
-                // Shows instantly, fades out over 3 seconds (animation applied via withAnimation when clearing)
+                // Appears instantly, fades out over 3 seconds (declarative animation)
                 UnreadIndicator()
                     .offset(x: -6, y: -2)
                     .opacity(session.hasUnreadResponse ? 1 : 0)
+                    .animation(
+                        session.hasUnreadResponse ? nil : .easeOut(duration: 3.0),
+                        value: session.hasUnreadResponse
+                    )
             }
         }
         .padding(.top, 6)
