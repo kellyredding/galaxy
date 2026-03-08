@@ -129,6 +129,12 @@ struct LedgerEntriesView: View {
                     .padding(.vertical, 8)
             } else if entries != nil {
                 entriesContent
+            } else {
+                // No ledger session yet or fetch never started
+                Text("No entries recorded for this session.")
+                    .chromeFont(size: fontSize.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.vertical, 8)
             }
         }
     }

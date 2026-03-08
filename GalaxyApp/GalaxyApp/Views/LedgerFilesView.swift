@@ -68,6 +68,12 @@ struct LedgerFilesView: View {
                             .id(file.id)
                     }
                 }
+            } else {
+                // No ledger session yet or fetch never started
+                Text("No files recorded for this session.")
+                    .chromeFont(size: fontSize.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.vertical, 8)
             }
         }
         .onChange(of: sessionManager.listNavAction) {
