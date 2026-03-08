@@ -121,22 +121,39 @@ struct LedgerEntriesView: View {
                     Spacer()
                 }
             } else if let entries = entries, entries.isEmpty {
-                Text(searchText.isEmpty
-                     ? "No entries recorded for this session."
-                     : "No entries matching \"\(searchText)\".")
-                    .chromeFont(size: fontSize.caption)
-                    .foregroundColor(.secondary)
-                    .padding(.vertical, 8)
+                if searchText.isEmpty {
+                    emptyState
+                } else {
+                    Text("No entries matching \"\(searchText)\".")
+                        .chromeFont(size: fontSize.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.vertical, 8)
+                }
             } else if entries != nil {
                 entriesContent
             } else {
                 // No ledger session yet or fetch never started
-                Text("No entries recorded for this session.")
-                    .chromeFont(size: fontSize.caption)
-                    .foregroundColor(.secondary)
-                    .padding(.vertical, 8)
+                emptyState
             }
         }
+    }
+
+    // MARK: - Empty State
+
+    private var emptyState: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "list.bullet")
+                .chromeFont(size: fontSize.iconLarge)
+                .foregroundColor(.secondary)
+            Text("No entries")
+                .chromeFont(size: fontSize.title2)
+                .foregroundColor(.primary)
+            Text("Entries are captured automatically as the session works")
+                .chromeFont(size: fontSize.body)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 40)
     }
 
     // MARK: - Search Bar

@@ -53,10 +53,7 @@ struct LedgerFilesView: View {
                     Spacer()
                 }
             } else if let files = files, files.isEmpty {
-                Text("No files recorded for this session.")
-                    .chromeFont(size: fontSize.caption)
-                    .foregroundColor(.secondary)
-                    .padding(.vertical, 8)
+                emptyState
             } else if files != nil {
                 VStack(alignment: .leading, spacing: 0) {
                     // Header row
@@ -70,10 +67,7 @@ struct LedgerFilesView: View {
                 }
             } else {
                 // No ledger session yet or fetch never started
-                Text("No files recorded for this session.")
-                    .chromeFont(size: fontSize.caption)
-                    .foregroundColor(.secondary)
-                    .padding(.vertical, 8)
+                emptyState
             }
         }
         .onChange(of: sessionManager.listNavAction) {
@@ -94,6 +88,24 @@ struct LedgerFilesView: View {
                 scrollProxy.scrollTo(sortedFiles[idx].id)
             }
         }
+    }
+
+    // MARK: - Empty State
+
+    private var emptyState: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "doc.text")
+                .chromeFont(size: fontSize.iconLarge)
+                .foregroundColor(.secondary)
+            Text("No files")
+                .chromeFont(size: fontSize.title2)
+                .foregroundColor(.primary)
+            Text("Files appear as the session reads, edits, and writes")
+                .chromeFont(size: fontSize.body)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 40)
     }
 
     // MARK: - Header
