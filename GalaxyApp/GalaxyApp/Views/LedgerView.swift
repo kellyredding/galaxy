@@ -332,12 +332,50 @@ struct LedgerView: View {
         }
     }
 
+    /// Result wrapper for the fetch-vs-timeout race.
+    private enum FetchRace<T: Sendable>: Sendable {
+        case completed(T)
+        case timeout
+    }
+
+    /// Races an async operation against a deadline to prevent an
+    /// infinite spinner when fetch tasks are orphaned by rapid
+    /// tab/session switching.  Timeout errors land in the caller's
+    /// existing catch block which sets empty data + clears loading.
+    private func withFetchDeadline<T: Sendable>(
+        seconds: TimeInterval = 5.0,
+        operation: @Sendable @escaping () async throws -> T
+    ) async throws -> T {
+        return try await withThrowingTaskGroup(of: FetchRace<T>.self) { group in
+            group.addTask { .completed(try await operation()) }
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                return .timeout
+            }
+            guard let first = try await group.next() else {
+                throw CancellationError()
+            }
+            group.cancelAll()
+            switch first {
+            case .completed(let result): return result
+            case .timeout:
+                throw NSError(
+                    domain: "LedgerView", code: -1,
+                    userInfo: [NSLocalizedDescriptionKey:
+                        "Fetch timed out after \(seconds)s"]
+                )
+            }
+        }
+    }
+
     private func fetchFilesData() {
         guard let lsid = session.ledgerSessionId else { return }
         isLoading = true
         fetchTask = Task {
             do {
-                let result = try await LedgerQueryService.shared.fetchFiles(ledgerSessionId: lsid)
+                let result = try await withFetchDeadline {
+                    try await LedgerQueryService.shared.fetchFiles(ledgerSessionId: lsid)
+                }
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
                     files = result
@@ -359,7 +397,9 @@ struct LedgerView: View {
         isLoading = true
         fetchTask = Task {
             do {
-                let result = try await LedgerQueryService.shared.fetchEntries(ledgerSessionId: lsid)
+                let result = try await withFetchDeadline {
+                    try await LedgerQueryService.shared.fetchEntries(ledgerSessionId: lsid)
+                }
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
                     entries = result
@@ -383,9 +423,11 @@ struct LedgerView: View {
         LedgerQueryService.shared.cancelAll()
         fetchTask = Task {
             do {
-                let result = try await LedgerQueryService.shared.searchEntries(
-                    ledgerSessionId: lsid, query: query
-                )
+                let result = try await withFetchDeadline {
+                    try await LedgerQueryService.shared.searchEntries(
+                        ledgerSessionId: lsid, query: query
+                    )
+                }
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
                     entries = result
@@ -407,7 +449,9 @@ struct LedgerView: View {
         isLoading = true
         fetchTask = Task {
             do {
-                let result = try await LedgerQueryService.shared.fetchSession(ledgerSessionId: lsid)
+                let result = try await withFetchDeadline {
+                    try await LedgerQueryService.shared.fetchSession(ledgerSessionId: lsid)
+                }
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
                     sessionDetail = result
