@@ -127,6 +127,16 @@ class MainMenu: NSObject, NSMenuDelegate {
         )
         newItem.target = MenuActions.shared
         menu.addItem(newItem)
+
+        // Restore Session (⌘O) - always available
+        let restoreItem = NSMenuItem(
+            title: "Restore Session...",
+            action: #selector(MenuActions.restoreSession(_:)),
+            keyEquivalent: "o"
+        )
+        restoreItem.target = MenuActions.shared
+        menu.addItem(restoreItem)
+
         menu.addItem(.separator())
 
         let activeSession = sessionManager.activeSession
@@ -566,6 +576,10 @@ class MenuActions: NSObject {
         NotificationCenter.default.post(name: .showNewSession, object: nil)
     }
 
+    @objc func restoreSession(_ sender: Any?) {
+        NotificationCenter.default.post(name: .showRestoreSession, object: nil)
+    }
+
     @objc func stopSession(_ sender: Any?) {
         guard let activeId = SessionManager.shared.activeSessionId else { return }
         SessionManager.shared.stopSession(sessionId: activeId)
@@ -711,4 +725,5 @@ extension Notification.Name {
     static let showPreferences = Notification.Name("showPreferences")
     static let showNewSession = Notification.Name("showNewSession")
     static let showMainWindow = Notification.Name("showMainWindow")
+    static let showRestoreSession = Notification.Name("showRestoreSession")
 }

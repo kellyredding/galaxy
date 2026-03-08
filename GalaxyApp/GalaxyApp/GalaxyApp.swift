@@ -44,6 +44,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.showNewSession()
         }
 
+        // Observe restore session notification
+        NotificationCenter.default.addObserver(
+            forName: .showRestoreSession,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.showRestoreSession()
+        }
+
         // Observe window focus changes
         NotificationCenter.default.addObserver(
             self,
@@ -250,5 +259,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func showNewSession() {
         guard let window = mainWindowController?.window else { return }
         NewSessionSheetController.present(on: window)
+    }
+
+    // MARK: - Restore Session
+
+    private func showRestoreSession() {
+        guard let window = mainWindowController?.window else { return }
+        RestoreSessionSheetController.present(on: window)
     }
 }

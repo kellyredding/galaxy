@@ -70,6 +70,8 @@
 		DD2222220000000000000002 /* NewSessionSheetController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD1111110000000000000002 /* NewSessionSheetController.swift */; };
 		DD2222220000000000000003 /* DirectoryField.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD1111110000000000000003 /* DirectoryField.swift */; };
 		DD2222220000000000000004 /* PersonaPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD1111110000000000000004 /* PersonaPicker.swift */; };
+		DD2222220000000000000005 /* RestoreSessionSheetController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD1111110000000000000005 /* RestoreSessionSheetController.swift */; };
+		DD2222220000000000000006 /* RestoreSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD1111110000000000000006 /* RestoreSessionView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -137,6 +139,8 @@
 		DD1111110000000000000002 /* NewSessionSheetController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewSessionSheetController.swift; sourceTree = "<group>"; };
 		DD1111110000000000000003 /* DirectoryField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectoryField.swift; sourceTree = "<group>"; };
 		DD1111110000000000000004 /* PersonaPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonaPicker.swift; sourceTree = "<group>"; };
+		DD1111110000000000000005 /* RestoreSessionSheetController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestoreSessionSheetController.swift; sourceTree = "<group>"; };
+		DD1111110000000000000006 /* RestoreSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestoreSessionView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -208,6 +212,7 @@
 				CC2222220000000000000003 /* MarkdownReaderView.swift */,
 				DD1111110000000000000001 /* NewSessionView.swift */,
 				DD1111110000000000000004 /* PersonaPicker.swift */,
+				DD1111110000000000000006 /* RestoreSessionView.swift */,
 				EA80B868DED26B32D6DEB65D /* SessionDragCoordinator.swift */,
 				930CA7E2539E197A2DF03CE4 /* SessionRow.swift */,
 				E474100EA691402E8DF51F3A /* SessionRowDragHandle.swift */,
@@ -251,6 +256,7 @@
 				CEB9F0C617C86CE1FDD05FF3 /* MainWindowController.swift */,
 				DD1111110000000000000002 /* NewSessionSheetController.swift */,
 				2E9CD7B5767024AE0C85E433 /* PreferencesWindowController.swift */,
+				DD1111110000000000000005 /* RestoreSessionSheetController.swift */,
 				10D8D5FBF1EB5E3155ABADCB /* Models */,
 				CC3333330000000000000001 /* Resources */,
 				A4E9EEB1DC67FF88728B219F /* Views */,
@@ -379,6 +385,8 @@
 				DD2222220000000000000003 /* DirectoryField.swift in Sources */,
 				DD2222220000000000000004 /* PersonaPicker.swift in Sources */,
 				57F83F8FAFBFC9B625678AE5 /* PreferencesWindowController.swift in Sources */,
+				DD2222220000000000000005 /* RestoreSessionSheetController.swift in Sources */,
+				DD2222220000000000000006 /* RestoreSessionView.swift in Sources */,
 				C72E6931FE46DAAFE486C09E /* Session.swift in Sources */,
 				88B1D264363994AD24AC8CC6 /* SessionDragCoordinator.swift in Sources */,
 				287B04EB0B71772D4E0594CD /* SessionIDGenerator.swift in Sources */,
