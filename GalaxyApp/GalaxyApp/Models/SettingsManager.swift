@@ -161,6 +161,20 @@ struct AppSettings: Codable {
         return "~\(Int(megabytes)) MB"
     }
 
+    // Restore session modal column widths
+    var restoreColNameWidth: CGFloat = 250
+    var restoreColPersonaWidth: CGFloat = 100
+    var restoreColDirectoryWidth: CGFloat = 100
+    var restoreColClosedWidth: CGFloat = 110
+
+    // Restore session modal column width constraints (per-column minimums
+    // sized to fit the header label at 11pt medium weight)
+    static let restoreColNameMinWidth: CGFloat = 50
+    static let restoreColPersonaMinWidth: CGFloat = 65
+    static let restoreColDirectoryMinWidth: CGFloat = 75
+    static let restoreColClosedMinWidth: CGFloat = 60
+    static let restoreColMaxWidth: CGFloat = 500
+
     // New session defaults (scoped to in-app session creation)
     var newSessionDefaultDir: String = "~/"       // Default start directory for new sessions
     var newSessionLastPersona: String? = nil      // Last-used persona name
@@ -201,6 +215,14 @@ struct AppSettings: Codable {
             Bool.self, forKey: .notifyAutoClearOccurred) ?? false
         notifySnapshotCreated = try container.decodeIfPresent(
             Bool.self, forKey: .notifySnapshotCreated) ?? false
+        restoreColNameWidth = try container.decodeIfPresent(
+            CGFloat.self, forKey: .restoreColNameWidth) ?? 250
+        restoreColPersonaWidth = try container.decodeIfPresent(
+            CGFloat.self, forKey: .restoreColPersonaWidth) ?? 100
+        restoreColDirectoryWidth = try container.decodeIfPresent(
+            CGFloat.self, forKey: .restoreColDirectoryWidth) ?? 100
+        restoreColClosedWidth = try container.decodeIfPresent(
+            CGFloat.self, forKey: .restoreColClosedWidth) ?? 110
         newSessionDefaultDir = try container.decodeIfPresent(String.self, forKey: .newSessionDefaultDir) ?? "~/"
         newSessionLastPersona = try container.decodeIfPresent(String.self, forKey: .newSessionLastPersona)
     }

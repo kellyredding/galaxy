@@ -5,6 +5,7 @@ struct RestoreSessionView: View {
     let onDismiss: () -> Void
 
     @ObservedObject private var sessionManager = SessionManager.shared
+    @ObservedObject private var settingsManager = SettingsManager.shared
     @State private var selectedId: UUID? = nil
     @State private var searchText: String = ""
     @State private var searchFocusTrigger: Int = 0
@@ -12,6 +13,17 @@ struct RestoreSessionView: View {
     @State private var debouncedSearch: String = ""
     @State private var debounceCancel: AnyCancellable? = nil
     @State private var scrollProxy: ScrollViewProxy? = nil
+
+    /// Width of the column being dragged at gesture start.
+    @State private var dragStartWidth: CGFloat = 0
+
+    /// Global X position at drag start — used to compute our own
+    /// translation independent of ScrollView coordinate shifts.
+    @State private var dragStartX: CGFloat = 0
+
+    /// Table width frozen at drag start to prevent ScrollView jitter.
+    /// During a drag the effective width only grows, never shrinks.
+    @State private var frozenTableWidth: CGFloat = 0
 
     /// Closed sessions filtered by the debounced search query.
     private var filteredSessions: [PersistedClosedSession] {
@@ -128,64 +140,186 @@ struct RestoreSessionView: View {
 
     // MARK: - Table Content
 
-    private var tableContent: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                // Header
-                tableHeader
-                    .padding(.horizontal, 16)
+    /// Total width of all columns plus divider gaps and row padding.
+    private var computedTableWidth: CGFloat {
+        let s = settingsManager.settings
+        return s.restoreColNameWidth
+            + s.restoreColPersonaWidth
+            + s.restoreColDirectoryWidth
+            + s.restoreColClosedWidth
+            + 32  // four 8px divider gaps
+            + 32  // horizontal padding (16 each side)
+    }
 
-                // Rows
-                LazyVStack(spacing: 0) {
-                    ForEach(filteredSessions, id: \.session.id) { closed in
-                        tableRow(closed)
-                            .id(closed.session.id)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                selectedId = closed.session.id
+    /// Effective table width — during a drag, only allows growth
+    /// (never shrinks) to prevent ScrollView repositioning jitter.
+    private var tableRowWidth: CGFloat {
+        if frozenTableWidth > 0 {
+            return max(frozenTableWidth, computedTableWidth)
+        }
+        return computedTableWidth
+    }
+
+    private var tableContent: some View {
+        GeometryReader { geo in
+            ScrollViewReader { proxy in
+                ScrollView([.vertical, .horizontal]) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        // Header
+                        tableHeader
+                            .padding(.horizontal, 16)
+
+                        // Rows
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            ForEach(filteredSessions, id: \.session.id) { closed in
+                                tableRow(closed)
+                                    .id(closed.session.id)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        selectedId = closed.session.id
+                                    }
+                                    .simultaneousGesture(
+                                        TapGesture(count: 2).onEnded {
+                                            selectedId = closed.session.id
+                                            restoreSelected()
+                                        }
+                                    )
                             }
-                            .simultaneousGesture(
-                                TapGesture(count: 2).onEnded {
-                                    selectedId = closed.session.id
-                                    restoreSelected()
-                                }
-                            )
+                        }
                     }
+                    .frame(
+                        minWidth: max(tableRowWidth, geo.size.width),
+                        alignment: .leading
+                    )
                 }
+                .onAppear { scrollProxy = proxy }
             }
-            .onAppear { scrollProxy = proxy }
         }
     }
 
     private var tableHeader: some View {
-        HStack(spacing: 0) {
+        let s = settingsManager.settings
+        return HStack(spacing: 0) {
             Text("Name")
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 6)
+                .frame(width: s.restoreColNameWidth, alignment: .leading)
+            columnDivider(
+                binding: \.restoreColNameWidth,
+                minWidth: AppSettings.restoreColNameMinWidth,
+                autoFit: { autoFitName() }
+            )
             Text("Persona")
-                .frame(width: 80, alignment: .leading)
+                .padding(.horizontal, 6)
+                .frame(width: s.restoreColPersonaWidth, alignment: .leading)
+            columnDivider(
+                binding: \.restoreColPersonaWidth,
+                minWidth: AppSettings.restoreColPersonaMinWidth,
+                autoFit: { autoFitPersona() }
+            )
             Text("Directory")
-                .frame(width: 160, alignment: .leading)
+                .padding(.horizontal, 6)
+                .frame(width: s.restoreColDirectoryWidth, alignment: .leading)
+            columnDivider(
+                binding: \.restoreColDirectoryWidth,
+                minWidth: AppSettings.restoreColDirectoryMinWidth,
+                autoFit: { autoFitDirectory() }
+            )
             Text("Closed")
-                .frame(width: 100, alignment: .trailing)
+                .padding(.horizontal, 6)
+                .frame(width: s.restoreColClosedWidth, alignment: .trailing)
+            columnDivider(
+                binding: \.restoreColClosedWidth,
+                minWidth: AppSettings.restoreColClosedMinWidth,
+                autoFit: { autoFitClosed() }
+            )
         }
         .font(.system(size: 11, weight: .medium))
         .foregroundColor(.secondary)
         .padding(.vertical, 4)
     }
 
+    /// Draggable divider between column headers. Resizes the column
+    /// to its left — dragging right makes it wider, left makes it
+    /// narrower. Double-click to auto-fit. Simple single-column
+    /// resize like NSTableView.
+    private func columnDivider(
+        binding: WritableKeyPath<AppSettings, CGFloat>,
+        minWidth: CGFloat,
+        autoFit: @escaping () -> Void
+    ) -> some View {
+        let maxW = AppSettings.restoreColMaxWidth
+
+        return Color(.separatorColor)
+            .frame(width: 2)
+            .padding(.horizontal, 3)
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                if hovering {
+                    NSCursor.resizeLeftRight.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            .onTapGesture(count: 2) {
+                autoFit()
+            }
+            .gesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .onChanged { value in
+                        // Capture initial state on first drag event.
+                        // Use global coordinate space so ScrollView
+                        // content-offset shifts can't affect our delta.
+                        if dragStartWidth == 0 {
+                            dragStartWidth = settingsManager.settings[
+                                keyPath: binding
+                            ]
+                            dragStartX = value.startLocation.x
+                            frozenTableWidth = computedTableWidth
+                        }
+                        let delta = value.location.x - dragStartX
+                        let newWidth = min(
+                            max(dragStartWidth + delta, minWidth),
+                            maxW
+                        )
+                        var txn = Transaction()
+                        txn.disablesAnimations = true
+                        withTransaction(txn) {
+                            settingsManager.settings[keyPath: binding] = newWidth
+                        }
+                    }
+                    .onEnded { _ in
+                        dragStartWidth = 0
+                        dragStartX = 0
+                        frozenTableWidth = 0
+                    }
+            )
+    }
+
     private func tableRow(_ closed: PersistedClosedSession) -> some View {
         let s = closed.session
         let isSelected = selectedId == s.id
         let dirExists = FileManager.default.fileExists(atPath: s.workingDirectory)
+        let cols = settingsManager.settings
 
         return HStack(spacing: 0) {
             Text(displayName(for: s))
                 .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 6)
+                .frame(width: cols.restoreColNameWidth, alignment: .leading)
+            Color.clear
+                .frame(width: 2)
+                .padding(.horizontal, 3)
+                .frame(maxHeight: .infinity)
             Text(s.personaName ?? "—")
                 .lineLimit(1)
                 .foregroundColor(.secondary)
-                .frame(width: 80, alignment: .leading)
+                .padding(.horizontal, 6)
+                .frame(width: cols.restoreColPersonaWidth, alignment: .leading)
+            Color.clear
+                .frame(width: 2)
+                .padding(.horizontal, 3)
+                .frame(maxHeight: .infinity)
             HStack(spacing: 3) {
                 if !dirExists {
                     Image(systemName: "exclamationmark.triangle.fill")
@@ -197,11 +331,21 @@ struct RestoreSessionView: View {
                     .lineLimit(1)
                     .foregroundColor(.secondary)
             }
-            .frame(width: 160, alignment: .leading)
+            .padding(.horizontal, 6)
+            .frame(width: cols.restoreColDirectoryWidth, alignment: .leading)
+            Color.clear
+                .frame(width: 2)
+                .padding(.horizontal, 3)
+                .frame(maxHeight: .infinity)
             Text(relativeTime(closed.closedAt))
                 .lineLimit(1)
                 .foregroundColor(.secondary)
-                .frame(width: 100, alignment: .trailing)
+                .padding(.horizontal, 6)
+                .frame(width: cols.restoreColClosedWidth, alignment: .trailing)
+            Color.clear
+                .frame(width: 2)
+                .padding(.horizontal, 3)
+                .frame(maxHeight: .infinity)
         }
         .font(.system(size: 12))
         .padding(.vertical, 6)
@@ -274,6 +418,110 @@ struct RestoreSessionView: View {
         let newId = sessions[newIndex].session.id
         selectedId = newId
         scrollProxy?.scrollTo(newId, anchor: .center)
+    }
+
+    // MARK: - Auto-Fit Columns
+
+    /// Row content font used for width measurement.
+    private static let rowFont = NSFont.systemFont(ofSize: 12)
+    /// Header label font used for width measurement.
+    private static let headerFont = NSFont.systemFont(ofSize: 11, weight: .medium)
+    /// Horizontal padding on each side of a cell (6px × 2).
+    private static let cellPadding: CGFloat = 12
+
+    /// Measure the rendered width of a string at a given font.
+    private func textWidth(_ string: String, font: NSFont) -> CGFloat {
+        let attrs: [NSAttributedString.Key: Any] = [.font: font]
+        return ceil((string as NSString).size(withAttributes: attrs).width)
+    }
+
+    /// Optimal column width: max of header label and all visible row
+    /// values, plus cell padding, clamped to min/max bounds.
+    private func optimalWidth(
+        header: String,
+        values: [String],
+        minWidth: CGFloat
+    ) -> CGFloat {
+        let maxW = AppSettings.restoreColMaxWidth
+        let headerW = textWidth(header, font: Self.headerFont) + Self.cellPadding
+        let contentW = values.map { textWidth($0, font: Self.rowFont) + Self.cellPadding }.max() ?? 0
+        return min(max(max(headerW, contentW), minWidth), maxW)
+    }
+
+    /// Toggle a column between fit-to-content and its default width.
+    /// If the current width matches the optimal fit, snap to default;
+    /// otherwise snap to fit.
+    private func toggleFit(
+        current: CGFloat,
+        defaultWidth: CGFloat,
+        optimal: CGFloat,
+        apply: (CGFloat) -> Void
+    ) {
+        // Use 1px tolerance for floating-point comparison
+        if abs(current - optimal) < 1 {
+            apply(defaultWidth)
+        } else {
+            apply(optimal)
+        }
+    }
+
+    private func autoFitName() {
+        let values = filteredSessions.map { displayName(for: $0.session) }
+        let optimal = optimalWidth(
+            header: "Name", values: values,
+            minWidth: AppSettings.restoreColNameMinWidth
+        )
+        toggleFit(
+            current: settingsManager.settings.restoreColNameWidth,
+            defaultWidth: AppSettings.default.restoreColNameWidth,
+            optimal: optimal
+        ) { settingsManager.settings.restoreColNameWidth = $0 }
+    }
+
+    private func autoFitPersona() {
+        let values = filteredSessions.map { $0.session.personaName ?? "—" }
+        let optimal = optimalWidth(
+            header: "Persona", values: values,
+            minWidth: AppSettings.restoreColPersonaMinWidth
+        )
+        toggleFit(
+            current: settingsManager.settings.restoreColPersonaWidth,
+            defaultWidth: AppSettings.default.restoreColPersonaWidth,
+            optimal: optimal
+        ) { settingsManager.settings.restoreColPersonaWidth = $0 }
+    }
+
+    private func autoFitDirectory() {
+        // Add extra space for the warning icon on missing directories
+        let extraIcon: CGFloat = 15
+        let maxW = AppSettings.restoreColMaxWidth
+        let minW = AppSettings.restoreColDirectoryMinWidth
+        let headerW = textWidth("Directory", font: Self.headerFont) + Self.cellPadding
+        let contentW = filteredSessions.map { closed -> CGFloat in
+            let text = abbreviatedPath(closed.session.workingDirectory)
+            let w = textWidth(text, font: Self.rowFont) + Self.cellPadding
+            let dirExists = FileManager.default.fileExists(atPath: closed.session.workingDirectory)
+            return dirExists ? w : w + extraIcon
+        }.max() ?? 0
+        let optimal = min(max(max(headerW, contentW), minW), maxW)
+        toggleFit(
+            current: settingsManager.settings.restoreColDirectoryWidth,
+            defaultWidth: AppSettings.default.restoreColDirectoryWidth,
+            optimal: optimal
+        ) { settingsManager.settings.restoreColDirectoryWidth = $0 }
+    }
+
+    private func autoFitClosed() {
+        let values = filteredSessions.map { relativeTime($0.closedAt) }
+        let optimal = optimalWidth(
+            header: "Closed", values: values,
+            minWidth: AppSettings.restoreColClosedMinWidth
+        )
+        toggleFit(
+            current: settingsManager.settings.restoreColClosedWidth,
+            defaultWidth: AppSettings.default.restoreColClosedWidth,
+            optimal: optimal
+        ) { settingsManager.settings.restoreColClosedWidth = $0 }
     }
 
     // MARK: - Helpers
