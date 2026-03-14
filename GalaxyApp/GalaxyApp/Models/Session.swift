@@ -228,6 +228,10 @@ class Session: Identifiable, ObservableObject {
     /// idle transition that was already in progress when actions were set.
     private var afterNextIdleArmed: Bool = false
 
+    /// Persistent callback fired on every idle→busy transition.
+    /// Set once by SessionManager to cancel pending idle notification timers.
+    var onBusyTransition: ((Session) -> Void)?
+
     /// Persistent callback fired on every busy→idle transition.
     /// Set once by SessionManager for auto-clear context checks.
     var onIdleTransition: ((Session) -> Void)?
@@ -525,6 +529,7 @@ class Session: Identifiable, ObservableObject {
             // This prevents unnecessary SessionRow re-renders during sustained output
             if !self.isBusy {
                 self.isBusy = true
+                self.onBusyTransition?(self)
                 NotificationService.shared.sessionDidBecomeBusy(self.id)
 
                 // Cancel pending sustained-idle name sync — session went busy

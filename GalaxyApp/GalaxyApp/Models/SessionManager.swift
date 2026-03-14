@@ -95,6 +95,11 @@ class SessionManager: ObservableObject {
     /// before enrichment updates with fresh post-clear context percentage.
     private var lastAutoClearTime: [UUID: Date] = [:]
 
+    /// Pending idle notification timers per session. Scheduled when a session
+    /// goes idle and passes the minimum busy duration filter. Canceled if the
+    /// session goes busy again before the timer fires (minimum idle duration).
+    private var pendingIdleNotificationTimers: [UUID: Timer] = [:]
+
     /// Minimum seconds between auto-clears for the same session.
     private static let autoClearCooldown: TimeInterval = 30
 
@@ -262,6 +267,12 @@ class SessionManager: ObservableObject {
         // Set up data received callback for busy state detection
         session.terminalView.onDataReceived = { [weak session] in
             session?.markBusy()
+        }
+
+        // Cancel pending idle notification timer when session goes busy again
+        session.onBusyTransition = { [weak self] session in
+            self?.pendingIdleNotificationTimers[session.id]?.invalidate()
+            self?.pendingIdleNotificationTimers.removeValue(forKey: session.id)
         }
 
         // Register persistent idle callback for auto-clear + unread indicator
@@ -448,6 +459,12 @@ class SessionManager: ObservableObject {
             session?.markBusy()
         }
 
+        // Cancel pending idle notification timer when session goes busy again
+        session.onBusyTransition = { [weak self] session in
+            self?.pendingIdleNotificationTimers[session.id]?.invalidate()
+            self?.pendingIdleNotificationTimers.removeValue(forKey: session.id)
+        }
+
         // Register persistent idle callback for auto-clear + unread indicator
         session.onIdleTransition = { [weak self] session in
             self?.handleIdleTransition(for: session)
@@ -552,16 +569,39 @@ class SessionManager: ObservableObject {
                 .sessionBusyDuration(session.id) ?? 0
 
             if busyDuration >= minBusy {
-                NotificationService.shared.notifySessionIdle(
-                    sessionId: session.id,
-                    displayName: session.displayName,
-                    responsePreview: lastResponsePreview(
-                        for: session
-                    ),
-                    contextPct: session.ledgerContextPercentage,
-                    linesAdded: session.ledgerLinesAdded,
-                    linesRemoved: session.ledgerLinesRemoved
-                )
+                // Schedule notification after sustained idle delay.
+                // If the session goes busy again before the timer fires,
+                // onBusyTransition cancels it — filtering brief gaps
+                // between tool calls during multi-step agentic turns.
+                let minIdle = TimeInterval(settings.notifySessionIdleMinIdle)
+                pendingIdleNotificationTimers[session.id]?.invalidate()
+                pendingIdleNotificationTimers[session.id] = Timer.scheduledTimer(
+                    withTimeInterval: minIdle,
+                    repeats: false
+                ) { [weak self] _ in
+                    guard let self else { return }
+                    self.pendingIdleNotificationTimers.removeValue(
+                        forKey: session.id
+                    )
+
+                    // Re-check: still idle and not viewing this session?
+                    guard !session.isBusy else { return }
+                    let stillViewing = session.id == self.activeSessionId
+                        && self.activeTab == .terminal
+                        && self.isWindowFocused
+                    guard !stillViewing else { return }
+
+                    NotificationService.shared.notifySessionIdle(
+                        sessionId: session.id,
+                        displayName: session.displayName,
+                        responsePreview: self.lastResponsePreview(
+                            for: session
+                        ),
+                        contextPct: session.ledgerContextPercentage,
+                        linesAdded: session.ledgerLinesAdded,
+                        linesRemoved: session.ledgerLinesRemoved
+                    )
+                }
             }
         }
 
@@ -783,8 +823,10 @@ class SessionManager: ObservableObject {
         // Notify observers before removal (e.g., EventCoordinator cache cleanup)
         onSessionClosed?(sessionId)
 
-        // Clean up auto-clear cooldown tracking
+        // Clean up auto-clear cooldown and pending notification timers
         lastAutoClearTime.removeValue(forKey: sessionId)
+        pendingIdleNotificationTimers[sessionId]?.invalidate()
+        pendingIdleNotificationTimers.removeValue(forKey: sessionId)
         NotificationService.shared.sessionClosed(sessionId)
 
         // Remove the session (this will deallocate the terminal view which kills the process)

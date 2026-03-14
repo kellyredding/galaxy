@@ -126,6 +126,7 @@ struct AppSettings: Codable {
     // Session notification settings
     var notifySessionIdle: Bool = false
     var notifySessionIdleMinBusy: Int = 3  // seconds
+    var notifySessionIdleMinIdle: Int = 3  // seconds
     var notifySessionExitedUnexpectedly: Bool = false
     var notifyHighContext: Bool = false
     var notifyHighContextThreshold: Int = 90
@@ -146,6 +147,7 @@ struct AppSettings: Codable {
 
     // Notification constraints
     static let notifySessionIdleMinBusyRange: ClosedRange<Int> = 1...60
+    static let notifySessionIdleMinIdleRange: ClosedRange<Int> = 1...60
     static let notifyHighContextThresholdRange: ClosedRange<Int> = 50...99
 
     // Scrollback constraints
@@ -187,6 +189,8 @@ struct AppSettings: Codable {
             Bool.self, forKey: .notifySessionIdle) ?? false
         notifySessionIdleMinBusy = try container.decodeIfPresent(
             Int.self, forKey: .notifySessionIdleMinBusy) ?? 3
+        notifySessionIdleMinIdle = try container.decodeIfPresent(
+            Int.self, forKey: .notifySessionIdleMinIdle) ?? 3
         notifySessionExitedUnexpectedly = try container.decodeIfPresent(
             Bool.self, forKey: .notifySessionExitedUnexpectedly) ?? false
         notifyHighContext = try container.decodeIfPresent(

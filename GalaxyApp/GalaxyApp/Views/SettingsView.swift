@@ -589,6 +589,20 @@ struct NotificationsSettingsTab: View {
                                 }
                             }
                             .padding(.leading, 20)
+
+                            SettingsRow(label: "Minimum idle time") {
+                                HStack(spacing: 4) {
+                                    Stepper(
+                                        "\(settingsManager.settings.notifySessionIdleMinIdle)s",
+                                        value: $settingsManager.settings
+                                            .notifySessionIdleMinIdle,
+                                        in: AppSettings
+                                            .notifySessionIdleMinIdleRange
+                                    )
+                                    .frame(width: 100)
+                                }
+                            }
+                            .padding(.leading, 20)
                         }
                     }
 
