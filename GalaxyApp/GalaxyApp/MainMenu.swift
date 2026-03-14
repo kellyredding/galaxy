@@ -152,25 +152,15 @@ class MainMenu: NSObject, NSMenuDelegate {
                 )
                 stopItem.target = MenuActions.shared
                 menu.addItem(stopItem)
-
-                // Dismiss not applicable when running (⌘⇧W disabled)
+            } else {
+                // Session is stopped: Dismiss with confirmation (⌘W)
                 let dismissItem = NSMenuItem(
                     title: "Dismiss session",
-                    action: nil,
-                    keyEquivalent: "W"
-                )
-                dismissItem.keyEquivalentModifierMask = [.command, .shift]
-                dismissItem.isEnabled = false
-                menu.addItem(dismissItem)
-            } else {
-                // Session is stopped: ⌘W disabled, ⌘⇧W dismisses with confirmation
-                let stopItem = NSMenuItem(
-                    title: "Stop session",
-                    action: nil,
+                    action: #selector(MenuActions.dismissSession(_:)),
                     keyEquivalent: "w"
                 )
-                stopItem.isEnabled = false
-                menu.addItem(stopItem)
+                dismissItem.target = MenuActions.shared
+                menu.addItem(dismissItem)
 
                 let resumeItem = NSMenuItem(
                     title: "Resume session",
@@ -179,15 +169,6 @@ class MainMenu: NSObject, NSMenuDelegate {
                 )
                 resumeItem.target = MenuActions.shared
                 menu.addItem(resumeItem)
-
-                let dismissItem = NSMenuItem(
-                    title: "Dismiss session",
-                    action: #selector(MenuActions.dismissSession(_:)),
-                    keyEquivalent: "W"
-                )
-                dismissItem.target = MenuActions.shared
-                dismissItem.keyEquivalentModifierMask = [.command, .shift]
-                menu.addItem(dismissItem)
             }
         } else if hasSessions {
             // Has sessions but none active
@@ -206,17 +187,14 @@ class MainMenu: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        // Close window (⌘⇧W) — only when no active session
-        // When there IS an active session, ⌘⇧W is handled above (dismiss or disabled)
-        if activeSession == nil {
-            let closeWindowShiftItem = NSMenuItem(
-                title: "Close window",
-                action: #selector(NSWindow.performClose(_:)),
-                keyEquivalent: "W"
-            )
-            closeWindowShiftItem.keyEquivalentModifierMask = [.command, .shift]
-            menu.addItem(closeWindowShiftItem)
-        }
+        // Close window (⌘⇧W) — always available
+        let closeWindowShiftItem = NSMenuItem(
+            title: "Close window",
+            action: #selector(NSWindow.performClose(_:)),
+            keyEquivalent: "W"
+        )
+        closeWindowShiftItem.keyEquivalentModifierMask = [.command, .shift]
+        menu.addItem(closeWindowShiftItem)
     }
 
     // MARK: - Edit Menu
@@ -528,6 +506,14 @@ class MainMenu: NSObject, NSMenuDelegate {
     // MARK: - Window Menu
 
     private func buildWindowMenu(_ menu: NSMenu) {
+        let showItem = NSMenuItem(
+            title: "Show Galaxy",
+            action: #selector(MenuActions.showMainWindow(_:)),
+            keyEquivalent: "0"
+        )
+        showItem.target = MenuActions.shared
+        menu.addItem(showItem)
+        menu.addItem(.separator())
         menu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         menu.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
         menu.addItem(.separator())
@@ -588,6 +574,15 @@ class MenuActions: NSObject {
     @objc func dismissSession(_ sender: Any?) {
         guard let activeId = SessionManager.shared.activeSessionId else { return }
         SessionManager.shared.confirmAndDismissSession(sessionId: activeId)
+    }
+
+    // MARK: - Window Menu Actions
+
+    @objc func showMainWindow(_ sender: Any?) {
+        NotificationCenter.default.post(
+            name: .showMainWindow, object: nil
+        )
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     // MARK: - Sessions Menu Actions
