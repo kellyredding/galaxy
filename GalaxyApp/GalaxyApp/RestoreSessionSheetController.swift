@@ -88,16 +88,72 @@ class RestoreSessionSheetController: NSObject, NSWindowDelegate {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
-        // Install a local event monitor for Escape — NSHostingView
-        // swallows the key event before it reaches the responder chain,
-        // so we intercept at the event level instead.
+        // Install a local event monitor for modal-wide keyboard navigation.
+        // NSHostingView swallows key events before the responder chain,
+        // so we intercept at the event level. This ensures navigation works
+        // regardless of which control has focus (search field, button, etc.).
         escapeMonitor = NSEvent.addLocalMonitorForEvents(
             matching: .keyDown
         ) { [weak self] event in
-            if event.keyCode == 53 {  // Escape
+            // Escape — dismiss modal
+            if event.keyCode == 53 {
                 self?.dismiss()
-                return nil  // consume the event
+                return nil
             }
+
+            let hasCmd = event.modifierFlags.contains(.command)
+            let hasNoOtherMods = event.modifierFlags
+                .intersection([.shift, .option, .control])
+                .isEmpty
+
+            // ⌘J / ⌘K — navigate down/up
+            if hasCmd && hasNoOtherMods {
+                if event.charactersIgnoringModifiers == "j" {
+                    NotificationCenter.default.post(
+                        name: .restoreSessionNavigateDown, object: nil
+                    )
+                    return nil
+                }
+                if event.charactersIgnoringModifiers == "k" {
+                    NotificationCenter.default.post(
+                        name: .restoreSessionNavigateUp, object: nil
+                    )
+                    return nil
+                }
+            }
+
+            // Arrow keys (no modifiers) — navigate up/down
+            if !hasCmd && hasNoOtherMods {
+                if event.keyCode == 126 {  // Up arrow
+                    NotificationCenter.default.post(
+                        name: .restoreSessionNavigateUp, object: nil
+                    )
+                    return nil
+                }
+                if event.keyCode == 125 {  // Down arrow
+                    NotificationCenter.default.post(
+                        name: .restoreSessionNavigateDown, object: nil
+                    )
+                    return nil
+                }
+            }
+
+            // Return (no modifiers) — restore selected session
+            // Let the search field handle Return when it has focus via
+            // its onSubmit callback; only intercept bare Return here
+            // when the search field is NOT the first responder.
+            if event.keyCode == 36 && !hasCmd && hasNoOtherMods {
+                let firstResponder = self?.window.firstResponder
+                let isSearchFieldActive = firstResponder is NSTextView
+                    && (firstResponder as? NSTextView)?.delegate is NSTextField
+                if !isSearchFieldActive {
+                    NotificationCenter.default.post(
+                        name: .restoreSessionConfirm, object: nil
+                    )
+                    return nil
+                }
+            }
+
             return event
         }
 

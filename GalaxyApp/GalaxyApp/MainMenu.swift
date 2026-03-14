@@ -721,4 +721,7 @@ extension Notification.Name {
     static let showNewSession = Notification.Name("showNewSession")
     static let showMainWindow = Notification.Name("showMainWindow")
     static let showRestoreSession = Notification.Name("showRestoreSession")
+    static let restoreSessionNavigateUp = Notification.Name("restoreSessionNavigateUp")
+    static let restoreSessionNavigateDown = Notification.Name("restoreSessionNavigateDown")
+    static let restoreSessionConfirm = Notification.Name("restoreSessionConfirm")
 }

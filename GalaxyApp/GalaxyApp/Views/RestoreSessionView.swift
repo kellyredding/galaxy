@@ -11,6 +11,7 @@ struct RestoreSessionView: View {
     private let searchSubject = PassthroughSubject<String, Never>()
     @State private var debouncedSearch: String = ""
     @State private var debounceCancel: AnyCancellable? = nil
+    @State private var scrollProxy: ScrollViewProxy? = nil
 
     /// Closed sessions filtered by the debounced search query.
     private var filteredSessions: [PersistedClosedSession] {
@@ -60,6 +61,9 @@ struct RestoreSessionView: View {
             // Select the first (most recently closed) session
             selectedId = sessionManager.closedSessions.first?.session.id
 
+            // Focus the search field so the user can start typing immediately
+            searchFocusTrigger += 1
+
             // Set up debounce pipeline
             debounceCancel = searchSubject
                 .debounce(for: .milliseconds(200), scheduler: DispatchQueue.main)
@@ -73,6 +77,15 @@ struct RestoreSessionView: View {
                         selectedId = nil
                     }
                 }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .restoreSessionNavigateUp)) { _ in
+            moveSelection(by: -1)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .restoreSessionNavigateDown)) { _ in
+            moveSelection(by: 1)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .restoreSessionConfirm)) { _ in
+            restoreSelected()
         }
     }
 
@@ -116,7 +129,7 @@ struct RestoreSessionView: View {
     // MARK: - Table Content
 
     private var tableContent: some View {
-        ScrollViewReader { scrollProxy in
+        ScrollViewReader { proxy in
             ScrollView {
                 // Header
                 tableHeader
@@ -140,11 +153,7 @@ struct RestoreSessionView: View {
                     }
                 }
             }
-            .onKeyPress(.upArrow) { moveSelection(by: -1, scrollProxy: scrollProxy); return .handled }
-            .onKeyPress(.downArrow) { moveSelection(by: 1, scrollProxy: scrollProxy); return .handled }
-            .onKeyPress("k") { moveSelection(by: -1, scrollProxy: scrollProxy); return .handled }
-            .onKeyPress("j") { moveSelection(by: 1, scrollProxy: scrollProxy); return .handled }
-            .onKeyPress(.return) { restoreSelected(); return .handled }
+            .onAppear { scrollProxy = proxy }
         }
     }
 
@@ -256,7 +265,7 @@ struct RestoreSessionView: View {
         onDismiss()
     }
 
-    private func moveSelection(by offset: Int, scrollProxy: ScrollViewProxy) {
+    private func moveSelection(by offset: Int) {
         let sessions = filteredSessions
         guard !sessions.isEmpty else { return }
 
@@ -264,7 +273,7 @@ struct RestoreSessionView: View {
         let newIndex = min(max(currentIndex + offset, 0), sessions.count - 1)
         let newId = sessions[newIndex].session.id
         selectedId = newId
-        scrollProxy.scrollTo(newId, anchor: .center)
+        scrollProxy?.scrollTo(newId, anchor: .center)
     }
 
     // MARK: - Helpers
