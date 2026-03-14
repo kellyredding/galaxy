@@ -219,6 +219,17 @@ extension MainWindowController: NSWindowDelegate {
         WindowStatePersistence.shared.saveWindowState(for: window)
     }
 
+    // MARK: - Programmatic Resize Detection
+
+    func windowDidResize(_ notification: Notification) {
+        // windowDidResize fires for ALL resizes — both live (user drag) and
+        // programmatic (Hammerspoon, AppleScript, accessibility APIs, etc.).
+        // Skip during live resize: those are handled by windowDidEndLiveResize
+        // to avoid saving on every intermediate frame.
+        guard let window = window, !window.inLiveResize else { return }
+        WindowStatePersistence.shared.saveWindowState(for: window)
+    }
+
     // MARK: - Screen State Tracking
 
     func windowDidMove(_ notification: Notification) {
