@@ -101,13 +101,12 @@ describe "OnClear systemMessage" do
   end
 
   it "includes entry counts when data exists" do
-    # Add some guideline entries
+    # Add learnings (counted from entries in system message)
     3.times do |i|
       entry = GalaxyLedger::Entry.new(
-        entry_type: "guideline",
-        content: "Guideline rule #{i + 1}",
+        entry_type: "learning",
+        content: "Learning rule #{i + 1}",
         importance: "medium",
-        source_file: "/home/user/agent-guidelines/ruby-style.md"
       )
       GalaxyLedger::Database.insert(ledger_session_id, entry)
     end
@@ -121,7 +120,7 @@ describe "OnClear systemMessage" do
     output = JSON.parse(result[:output])
     msg = output["systemMessage"].as_s
     msg.should contain("Handoff")
-    msg.should contain("3 guidelines")
+    msg.should contain("3 learnings")
   end
 
   it "includes session file count" do
@@ -162,14 +161,11 @@ describe "OnClear systemMessage" do
   end
 
   it "combines counts and files in status line" do
-    # Add guidelines and decisions
-    entry = GalaxyLedger::Entry.new(
-      entry_type: "guideline",
-      content: "Use double quotes",
-      importance: "medium",
-      source_file: "/home/user/guidelines/ruby.md"
+    # Add a guideline file (counted from file_type) and a decision entry
+    GalaxyLedger::Database.upsert_session_file(
+      ledger_session_id, "/home/user/guidelines/ruby.md", :read,
+      file_type: "guideline",
     )
-    GalaxyLedger::Database.insert(ledger_session_id, entry)
 
     entry = GalaxyLedger::Entry.new(
       entry_type: "decision",
@@ -190,7 +186,7 @@ describe "OnClear systemMessage" do
     msg = output["systemMessage"].as_s
     msg.should contain("1 guideline")
     msg.should contain("1 decision")
-    msg.should contain("1 session file")
+    msg.should contain("2 session file")
   end
 end
 
@@ -287,24 +283,16 @@ describe "OnClear additionalContext" do
     ctx.should contain("Fall back to normal exploration")
   end
 
-  it "includes guideline re-read directives with source file paths" do
-    2.times do |i|
-      entry = GalaxyLedger::Entry.new(
-        entry_type: "guideline",
-        content: "Ruby rule #{i + 1}",
-        importance: "medium",
-        source_file: "/home/user/agent-guidelines/ruby-style.md"
-      )
-      GalaxyLedger::Database.insert(ledger_session_id, entry)
-    end
-
-    entry = GalaxyLedger::Entry.new(
-      entry_type: "guideline",
-      content: "RSpec rule 1",
-      importance: "medium",
-      source_file: "/home/user/agent-guidelines/rspec-style.md"
+  it "includes guideline re-read directives with file paths" do
+    # Guideline files are now tracked via file_type on session files
+    GalaxyLedger::Database.upsert_session_file(
+      ledger_session_id, "/home/user/agent-guidelines/ruby-style.md", :read,
+      file_type: "guideline",
     )
-    GalaxyLedger::Database.insert(ledger_session_id, entry)
+    GalaxyLedger::Database.upsert_session_file(
+      ledger_session_id, "/home/user/agent-guidelines/rspec-style.md", :read,
+      file_type: "guideline",
+    )
 
     hook_input = {
       "session_id" => test_session_id,
@@ -318,9 +306,6 @@ describe "OnClear additionalContext" do
     ctx.should contain("MUST re-read every file below using the Read tool")
     ctx.should contain("ruby-style.md")
     ctx.should contain("rspec-style.md")
-    # Should NOT contain the extracted bullet summaries
-    ctx.should_not contain("Ruby rule 1")
-    ctx.should_not contain("RSpec rule 1")
     # Proactive directive should reference Required Reading
     ctx.should contain("Re-read all guideline files")
   end

@@ -277,14 +277,13 @@ module GalaxyLedger
         lines << "session by process ID."
         lines << ""
 
-        # Required Reading — guideline source files
-        guidelines = restoration.tier1.guidelines
-        guideline_paths = guidelines
-          .compact_map(&.source_file)
-          .reject(&.empty?)
+        # Required Reading — guideline files (from file types)
+        guideline_files = files
+          .select { |f| f.file_type == "guideline" }
+          .map(&.file_path)
           .uniq
           .sort
-        has_guidelines = guideline_paths.any?
+        has_guidelines = guideline_files.any?
 
         if has_guidelines
           lines << "### Required Reading"
@@ -294,7 +293,7 @@ module GalaxyLedger
           lines << "the source files \u2014 they contain rules, conventions, and constraints"
           lines << "you are expected to follow exactly."
           lines << ""
-          guideline_paths.each do |path|
+          guideline_files.each do |path|
             lines << "- `#{Helpers.shorten_home_path(path)}`"
           end
           lines << ""
@@ -320,21 +319,27 @@ module GalaxyLedger
         lines << "2. **Check session files**: `galaxy-ledger list-files --pid #{claude_pid}`"
         lines << "3. **Fall back to normal exploration** \u2014 Grep, Glob, Read as usual"
 
-        # Implementation plans section
-        impl_plans = restoration.tier1.implementation_plans
-        if impl_plans.any?
+        # Implementation plans section — list by discovery order.
+        # Deduplicate on file_path (same file can have multiple rows
+        # if both Read and Grep'd — keep the earliest first_seen_at).
+        impl_plan_files = files
+          .select { |f| f.file_type == "implementation_plan" }
+          .sort_by { |f| f.first_seen_at || "" }
+          .uniq(&.file_path)
+        has_impl_plans = impl_plan_files.any?
+
+        if has_impl_plans
           lines << "---"
           lines << ""
           lines << "### Implementation Plans"
           lines << ""
-          grouped = Helpers.group_entries_by_source_file(impl_plans)
-          grouped.each do |source_file, entries|
-            lines << "**#{Helpers.shorten_home_path(source_file)}**"
-            entries.each do |entry|
-              lines << "- #{entry.content}"
-            end
-            lines << ""
+          lines << "The following implementation plans were referenced this"
+          lines << "session (oldest first):"
+          lines << ""
+          impl_plan_files.each_with_index do |f, idx|
+            lines << "#{idx + 1}. `#{Helpers.shorten_home_path(f.file_path)}`"
           end
+          lines << ""
         end
 
         # Last interaction / Recent activity section

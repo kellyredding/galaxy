@@ -182,8 +182,14 @@ describe "GalaxyLedger constants" do
   it "ENTRY_TYPES includes expected types" do
     GalaxyLedger::ENTRY_TYPES.should contain("learning")
     GalaxyLedger::ENTRY_TYPES.should contain("decision")
-    GalaxyLedger::ENTRY_TYPES.should contain("guideline")
-    GalaxyLedger::ENTRY_TYPES.should contain("extraction_marker")
+    GalaxyLedger::ENTRY_TYPES.should contain("direction")
+    GalaxyLedger::ENTRY_TYPES.should contain("reference")
+  end
+
+  it "ENTRY_TYPES excludes removed types" do
+    GalaxyLedger::ENTRY_TYPES.should_not contain("guideline")
+    GalaxyLedger::ENTRY_TYPES.should_not contain("implementation_plan")
+    GalaxyLedger::ENTRY_TYPES.should_not contain("extraction_marker")
   end
 
   it "IMPORTANCE_LEVELS includes expected levels" do
@@ -199,7 +205,7 @@ describe "GalaxyLedger::Entry Enhanced Schema" do
   describe "Entry with enhanced fields" do
     it "creates entry with category, keywords, applies_when, source_file" do
       entry = GalaxyLedger::Entry.new(
-        entry_type: "guideline",
+        entry_type: "constraint",
         content: "Always use double-quotes",
         importance: "medium",
         category: "ruby-style",
@@ -239,7 +245,7 @@ describe "GalaxyLedger::Entry Enhanced Schema" do
 
     it "remains valid with enhanced fields" do
       entry = GalaxyLedger::Entry.new(
-        entry_type: "guideline",
+        entry_type: "constraint",
         content: "Test rule",
         importance: "high",
         category: "test",
@@ -254,7 +260,7 @@ describe "GalaxyLedger::Entry Enhanced Schema" do
   describe "Entry serialization with enhanced fields" do
     it "serializes enhanced fields to JSON" do
       entry = GalaxyLedger::Entry.new(
-        entry_type: "guideline",
+        entry_type: "constraint",
         content: "Test",
         importance: "medium",
         category: "ruby",
@@ -272,7 +278,7 @@ describe "GalaxyLedger::Entry Enhanced Schema" do
 
     it "deserializes enhanced fields from JSON" do
       json = %|{
-        "entry_type": "guideline",
+        "entry_type": "constraint",
         "content": "Test rule",
         "importance": "medium",
         "created_at": "2026-02-01T10:00:00Z",

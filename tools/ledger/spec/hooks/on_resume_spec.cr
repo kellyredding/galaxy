@@ -60,10 +60,9 @@ describe "OnResume systemMessage" do
 
     2.times do |i|
       entry = GalaxyLedger::Entry.new(
-        entry_type: "guideline",
-        content: "Resume guideline #{i + 1}",
+        entry_type: "learning",
+        content: "Resume learning #{i + 1}",
         importance: "medium",
-        source_file: "/home/user/guidelines/style.md"
       )
       GalaxyLedger::Database.insert(ledger_id, entry)
     end
@@ -74,7 +73,7 @@ describe "OnResume systemMessage" do
     output = JSON.parse(result[:output])
     msg = output["systemMessage"].as_s
     msg.should contain("Resumed")
-    msg.should contain("2 guidelines")
+    msg.should contain("2 learnings")
   end
 end
 
@@ -140,10 +139,9 @@ describe "OnResume additionalContext" do
     ledger_id = GalaxyLedger::Database.create_session(test_session_id)
 
     entry = GalaxyLedger::Entry.new(
-      entry_type: "guideline",
-      content: "Test guideline for resume",
+      entry_type: "learning",
+      content: "Test learning for resume",
       importance: "medium",
-      source_file: "/home/user/guidelines/style.md"
     )
     GalaxyLedger::Database.insert(ledger_id, entry)
 
@@ -154,21 +152,18 @@ describe "OnResume additionalContext" do
     ctx = output["hookSpecificOutput"]["additionalContext"].as_s
     ctx.should contain("resumed session")
     ctx.should contain("conversation history is already")
-    ctx.should contain("1 guidelines")
+    ctx.should contain("1 learning")
   end
 
   it "includes condensed counts for accumulated data" do
     test_session_id = "resume-ctx-counts-#{Random.rand(10000)}"
     ledger_id = GalaxyLedger::Database.create_session(test_session_id)
 
-    # Add various data types
-    entry = GalaxyLedger::Entry.new(
-      entry_type: "guideline",
-      content: "Ruby guideline",
-      importance: "medium",
-      source_file: "/home/user/guidelines/ruby.md"
+    # Add guideline file (counted from file_type, not entry_type)
+    GalaxyLedger::Database.upsert_session_file(
+      ledger_id, "/home/user/guidelines/ruby.md", :read,
+      file_type: "guideline",
     )
-    GalaxyLedger::Database.insert(ledger_id, entry)
 
     entry = GalaxyLedger::Entry.new(
       entry_type: "decision",
@@ -191,10 +186,10 @@ describe "OnResume additionalContext" do
     result = run_binary(["on-resume"], stdin: hook_input)
     output = JSON.parse(result[:output])
     ctx = output["hookSpecificOutput"]["additionalContext"].as_s
-    ctx.should contain("1 guidelines")
-    ctx.should contain("1 decisions")
-    ctx.should contain("1 learnings")
-    ctx.should contain("1 session files tracked")
+    ctx.should contain("1 guideline")
+    ctx.should contain("1 decision")
+    ctx.should contain("1 learning")
+    ctx.should contain("2 session files tracked")
   end
 end
 

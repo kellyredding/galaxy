@@ -433,7 +433,7 @@ describe "CLI Integration" do
     end
 
     it "finds entries with prefix matching (default)" do
-      run_binary(["add", "--type", "guideline", "--content", "Use trailing commas on multiline structures"])
+      run_binary(["add", "--type", "constraint", "--content", "Use trailing commas on multiline structures"])
 
       result = run_binary(["search", "--query", "trail"])
       result[:status].should eq(0)
@@ -441,7 +441,7 @@ describe "CLI Integration" do
     end
 
     it "supports --exact flag for exact matching" do
-      run_binary(["add", "--type", "guideline", "--content", "Use trailing commas on multiline structures"])
+      run_binary(["add", "--type", "constraint", "--content", "Use trailing commas on multiline structures"])
 
       result = run_binary(["search", "--query", "trail", "--exact"])
       result[:status].should eq(0)
@@ -457,7 +457,7 @@ describe "CLI Integration" do
       # Add test data
       run_binary(["add", "--type", "learning", "--content", "JWT tokens expire", "--importance", "high"])
       run_binary(["add", "--type", "decision", "--content", "JWT storage in Redis", "--importance", "medium"])
-      run_binary(["add", "--type", "guideline", "--content", "JWT best practices", "--importance", "high"])
+      run_binary(["add", "--type", "constraint", "--content", "JWT best practices", "--importance", "high"])
     end
 
     it "filters by --type" do
@@ -475,10 +475,10 @@ describe "CLI Integration" do
     end
 
     it "combines --type and --importance filters" do
-      result = run_binary(["search", "--query", "JWT", "--type", "guideline", "--importance", "high"])
+      result = run_binary(["search", "--query", "JWT", "--type", "constraint", "--importance", "high"])
       result[:status].should eq(0)
       result[:output].should contain("Found: 1 entries")
-      result[:output].should contain("type=guideline")
+      result[:output].should contain("type=constraint")
       result[:output].should contain("importance=high")
     end
 
@@ -504,7 +504,7 @@ describe "CLI Integration" do
       run_binary(["add", "--type", "learning", "--content", "Learning 1", "--importance", "high"])
       run_binary(["add", "--type", "learning", "--content", "Learning 2", "--importance", "medium"])
       run_binary(["add", "--type", "decision", "--content", "Decision 1", "--importance", "high"])
-      run_binary(["add", "--type", "guideline", "--content", "Guideline 1", "--importance", "medium"])
+      run_binary(["add", "--type", "constraint", "--content", "Constraint 1", "--importance", "medium"])
     end
 
     it "filters by --type" do
@@ -637,168 +637,6 @@ describe "CLI Integration" do
         result[:output].should contain("INPUT")
         result[:output].should contain("OUTPUT")
         result[:output].should contain("HOOK CONFIGURATION")
-      end
-    end
-  end
-
-  describe "stale extraction end-to-end flow" do
-    # Tests the full cycle: read → extract marker → edit → mark stale → verify
-    # We can't test the async re-extraction subprocess, but we verify the
-    # database state at each step of the pipeline.
-
-    it "full cycle: read guideline, edit it, verify stale, prune, verify clean" do
-      session_id = "e2e-stale-#{Random.rand(100000)}"
-      ledger_session_id = GalaxyLedger::Database.create_session(session_id)
-
-      begin
-        # Step 1: Read a guideline file → creates extraction_marker entry
-        read_input = {
-          "session_id"      => session_id,
-          "tool_name"       => "Read",
-          "tool_input"      => {"file_path" => "/home/user/agent-guidelines/ruby-style.md"},
-          "tool_response"   => "# Ruby Style\n- Use double quotes\n- Trailing commas",
-          "hook_event_name" => "PostToolUse",
-        }.to_json
-
-        result = run_binary(["on-post-tool-use"], stdin: read_input)
-        result[:status].should eq(0)
-
-        # Verify: extraction_marker entry exists, not stale
-        GalaxyLedger::Database.has_extracted_source_file?(ledger_session_id, "/home/user/agent-guidelines/ruby-style.md").should be_true
-        GalaxyLedger::Database.stale_entries(ledger_session_id).should be_empty
-
-        # Step 2: Edit the same guideline file → marks entries stale
-        edit_input = {
-          "session_id" => session_id,
-          "tool_name"  => "Edit",
-          "tool_input" => {
-            "file_path"  => "/home/user/agent-guidelines/ruby-style.md",
-            "old_string" => "Use double quotes",
-            "new_string" => "Use single quotes",
-          },
-          "tool_response"   => "success",
-          "hook_event_name" => "PostToolUse",
-        }.to_json
-
-        result = run_binary(["on-post-tool-use"], stdin: edit_input)
-        result[:status].should eq(0)
-
-        # Verify: marker is now stale
-        stale = GalaxyLedger::Database.stale_entries(ledger_session_id)
-        stale.size.should eq(1)
-        stale[0][:source_file].should eq("/home/user/agent-guidelines/ruby-style.md")
-        stale[0][:full_path].should eq("/home/user/agent-guidelines/ruby-style.md")
-        stale[0][:entry_type].should eq("guideline")
-
-        # Step 3: Simulate what on-stop does — prune stale entries
-        GalaxyLedger::Database.delete_entries_by_source_file(ledger_session_id, "/home/user/agent-guidelines/ruby-style.md")
-
-        # Verify: entries are pruned, ready for re-extraction
-        GalaxyLedger::Database.has_extracted_source_file?(ledger_session_id, "/home/user/agent-guidelines/ruby-style.md").should be_false
-        GalaxyLedger::Database.stale_entries(ledger_session_id).should be_empty
-      ensure
-        GalaxyLedger::Database.delete_session(session_id)
-      end
-    end
-
-    it "handles multiple stale files in same session" do
-      session_id = "e2e-multi-stale-#{Random.rand(100000)}"
-      ledger_session_id = GalaxyLedger::Database.create_session(session_id)
-
-      begin
-        # Read two guideline files
-        ["ruby-style.md", "rspec-style.md"].each do |filename|
-          read_input = {
-            "session_id"      => session_id,
-            "tool_name"       => "Read",
-            "tool_input"      => {"file_path" => "/home/user/agent-guidelines/#{filename}"},
-            "tool_response"   => "contents of #{filename}",
-            "hook_event_name" => "PostToolUse",
-          }.to_json
-          run_binary(["on-post-tool-use"], stdin: read_input)
-        end
-
-        # Edit only one of them
-        edit_input = {
-          "session_id" => session_id,
-          "tool_name"  => "Edit",
-          "tool_input" => {
-            "file_path"  => "/home/user/agent-guidelines/ruby-style.md",
-            "old_string" => "old",
-            "new_string" => "new",
-          },
-          "tool_response"   => "success",
-          "hook_event_name" => "PostToolUse",
-        }.to_json
-        run_binary(["on-post-tool-use"], stdin: edit_input)
-
-        # Only ruby-style should be stale
-        stale = GalaxyLedger::Database.stale_entries(ledger_session_id)
-        stale.size.should eq(1)
-        stale[0][:source_file].should eq("/home/user/agent-guidelines/ruby-style.md")
-
-        # rspec-style should be untouched
-        GalaxyLedger::Database.has_extracted_source_file?(ledger_session_id, "/home/user/agent-guidelines/rspec-style.md").should be_true
-
-        # Prune only the stale one
-        GalaxyLedger::Database.delete_entries_by_source_file(ledger_session_id, "/home/user/agent-guidelines/ruby-style.md")
-
-        # rspec-style still present, ruby-style gone
-        GalaxyLedger::Database.has_extracted_source_file?(ledger_session_id, "/home/user/agent-guidelines/rspec-style.md").should be_true
-        GalaxyLedger::Database.has_extracted_source_file?(ledger_session_id, "/home/user/agent-guidelines/ruby-style.md").should be_false
-      ensure
-        GalaxyLedger::Database.delete_session(session_id)
-      end
-    end
-
-    it "mixed types: guideline and implementation_plan stale independently" do
-      session_id = "e2e-mixed-stale-#{Random.rand(100000)}"
-      ledger_session_id = GalaxyLedger::Database.create_session(session_id)
-
-      begin
-        # Read a guideline
-        read_gl = {
-          "session_id"      => session_id,
-          "tool_name"       => "Read",
-          "tool_input"      => {"file_path" => "/home/user/agent-guidelines/ruby-style.md"},
-          "tool_response"   => "guideline content",
-          "hook_event_name" => "PostToolUse",
-        }.to_json
-        run_binary(["on-post-tool-use"], stdin: read_gl)
-
-        # Read an implementation plan
-        read_ip = {
-          "session_id"      => session_id,
-          "tool_name"       => "Read",
-          "tool_input"      => {"file_path" => "/home/user/implementation-plans/feature.md"},
-          "tool_response"   => "plan content",
-          "hook_event_name" => "PostToolUse",
-        }.to_json
-        run_binary(["on-post-tool-use"], stdin: read_ip)
-
-        # Edit only the implementation plan
-        write_ip = {
-          "session_id" => session_id,
-          "tool_name"  => "Write",
-          "tool_input" => {
-            "file_path" => "/home/user/implementation-plans/feature.md",
-            "content"   => "updated plan",
-          },
-          "tool_response"   => "success",
-          "hook_event_name" => "PostToolUse",
-        }.to_json
-        run_binary(["on-post-tool-use"], stdin: write_ip)
-
-        # Only the plan should be stale
-        stale = GalaxyLedger::Database.stale_entries(ledger_session_id)
-        stale.size.should eq(1)
-        stale[0][:source_file].should eq("/home/user/implementation-plans/feature.md")
-        stale[0][:entry_type].should eq("implementation_plan")
-
-        # Guideline should be fresh
-        GalaxyLedger::Database.has_extracted_source_file?(ledger_session_id, "/home/user/agent-guidelines/ruby-style.md").should be_true
-      ensure
-        GalaxyLedger::Database.delete_session(session_id)
       end
     end
   end

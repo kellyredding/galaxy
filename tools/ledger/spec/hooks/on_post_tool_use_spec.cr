@@ -47,11 +47,11 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         result = run_binary(["on-post-tool-use"], stdin: input)
         result[:status].should eq(0)
 
-        # No entry records should be created for regular file reads
+        # No entry records should be created for file reads
         entries = GalaxyLedger::Database.query_by_session(ledger_session_id)
         entries.size.should eq(0)
 
-        # Should have a session_file record instead
+        # Should have a session_file record
         files = GalaxyLedger::Database.session_files(ledger_session_id)
         files.size.should eq(1)
         files.first.file_path.should eq("/path/to/some/file.rb")
@@ -64,7 +64,7 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         GalaxyLedger::Database.delete_session(session_id)
       end
 
-      it "creates an extraction_marker entry for agent-guidelines files" do
+      it "detects guideline file type for agent-guidelines files" do
         session_id = "post-tool-test-#{rand(100000)}"
         ledger_session_id = GalaxyLedger::Database.create_session(session_id)
 
@@ -79,51 +79,22 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         result = run_binary(["on-post-tool-use"], stdin: input)
         result[:status].should eq(0)
 
-        entries = GalaxyLedger::Database.query_by_type(ledger_session_id, "extraction_marker")
-        entries.size.should eq(1)
-        entries.first.entry_type.should eq("extraction_marker")
-        entries.first.importance.should eq("medium")
-        entries.first.source_file.should eq("/home/user/agent-guidelines/ruby-style.md")
+        # No extraction_marker entries should be created
+        entries = GalaxyLedger::Database.query_by_session(ledger_session_id)
+        entries.size.should eq(0)
 
-        # Metadata should contain the original extraction type
-        meta = JSON.parse(entries.first.metadata.not_nil!)
-        meta["extraction_type"]?.try(&.as_s?).should eq("guideline")
-
-        # Should also have a session_file record (regression: special files
-        # must be tracked in session_files, not just extraction markers)
+        # Should have a session_file record with guideline file_type
         files = GalaxyLedger::Database.session_files(ledger_session_id)
         files.size.should eq(1)
         files.first.file_path.should eq("/home/user/agent-guidelines/ruby-style.md")
+        files.first.file_type.should eq("guideline")
         files.first.is_read.should be_true
 
         # Clean up
         GalaxyLedger::Database.delete_session(session_id)
       end
 
-      it "creates an extraction_marker entry for any file in agent-guidelines" do
-        session_id = "post-tool-test-#{rand(100000)}"
-        ledger_session_id = GalaxyLedger::Database.create_session(session_id)
-
-        input = {
-          "session_id"      => session_id,
-          "tool_name"       => "Read",
-          "tool_input"      => {"file_path" => "/home/user/agent-guidelines/git-workflow.md"},
-          "tool_response"   => "workflow guide",
-          "hook_event_name" => "PostToolUse",
-        }.to_json
-
-        result = run_binary(["on-post-tool-use"], stdin: input)
-        result[:status].should eq(0)
-
-        entries = GalaxyLedger::Database.query_by_type(ledger_session_id, "extraction_marker")
-        entries.size.should eq(1)
-        entries.first.entry_type.should eq("extraction_marker")
-
-        # Clean up
-        GalaxyLedger::Database.delete_session(session_id)
-      end
-
-      it "creates an extraction_marker entry for implementation-plans files" do
+      it "detects implementation_plan file type for plan files" do
         session_id = "post-tool-test-#{rand(100000)}"
         ledger_session_id = GalaxyLedger::Database.create_session(session_id)
 
@@ -138,135 +109,89 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         result = run_binary(["on-post-tool-use"], stdin: input)
         result[:status].should eq(0)
 
-        entries = GalaxyLedger::Database.query_by_type(ledger_session_id, "extraction_marker")
-        entries.size.should eq(1)
-        entries.first.entry_type.should eq("extraction_marker")
-        entries.first.importance.should eq("medium")
+        # No extraction_marker entries should be created
+        entries = GalaxyLedger::Database.query_by_session(ledger_session_id)
+        entries.size.should eq(0)
 
-        # Metadata should contain implementation_plan as extraction type
-        meta = JSON.parse(entries.first.metadata.not_nil!)
-        meta["extraction_type"]?.try(&.as_s?).should eq("implementation_plan")
-
-        # Should also have a session_file record (regression: special files
-        # must be tracked in session_files, not just extraction markers)
+        # Should have a session_file record with implementation_plan file_type
         files = GalaxyLedger::Database.session_files(ledger_session_id)
         files.size.should eq(1)
         files.first.file_path.should eq("/home/user/implementation-plans/feature-x.md")
+        files.first.file_type.should eq("implementation_plan")
         files.first.is_read.should be_true
 
         # Clean up
         GalaxyLedger::Database.delete_session(session_id)
       end
-    end
 
-    describe "extraction deduplication" do
-      it "skips extraction on second read of same guideline file" do
-        session_id = "post-tool-dedup-#{rand(100000)}"
+      it "detects source file type for src/ files" do
+        session_id = "post-tool-test-#{rand(100000)}"
         ledger_session_id = GalaxyLedger::Database.create_session(session_id)
 
         input = {
           "session_id"      => session_id,
           "tool_name"       => "Read",
-          "tool_input"      => {"file_path" => "/home/user/agent-guidelines/ruby-style.md"},
-          "tool_response"   => "guideline contents",
+          "tool_input"      => {"file_path" => "/home/user/projects/myapp/src/main.cr"},
+          "tool_response"   => "source code",
           "hook_event_name" => "PostToolUse",
         }.to_json
 
-        # First read — should create extraction_marker entry with full path source_file
         result = run_binary(["on-post-tool-use"], stdin: input)
         result[:status].should eq(0)
 
-        markers = GalaxyLedger::Database.query_by_type(ledger_session_id, "extraction_marker")
-        markers.size.should eq(1)
-        markers.first.source_file.should eq("/home/user/agent-guidelines/ruby-style.md")
-
-        # Pre-flight check should now return true
-        GalaxyLedger::Database.has_extracted_source_file?(ledger_session_id, "/home/user/agent-guidelines/ruby-style.md").should be_true
-
-        # First marker should have extraction_spawned: true and extraction_type: guideline
-        meta = JSON.parse(markers.first.metadata.not_nil!)
-        meta["extraction_spawned"]?.try(&.as_bool?).should be_true
-        meta["extraction_type"]?.try(&.as_s?).should eq("guideline")
-
-        # Second read — entry count shouldn't increase (unique index + pre-flight)
-        result = run_binary(["on-post-tool-use"], stdin: input)
-        result[:status].should eq(0)
-
-        markers_after = GalaxyLedger::Database.query_by_type(ledger_session_id, "extraction_marker")
-        markers_after.size.should eq(1) # No new marker entry (same content_hash)
+        files = GalaxyLedger::Database.session_files(ledger_session_id)
+        files.size.should eq(1)
+        files.first.file_type.should eq("source")
 
         # Clean up
         GalaxyLedger::Database.delete_session(session_id)
       end
 
-      it "skips extraction on second read of same implementation plan" do
-        session_id = "post-tool-dedup-#{rand(100000)}"
+      it "detects test file type for spec/ files" do
+        session_id = "post-tool-test-#{rand(100000)}"
         ledger_session_id = GalaxyLedger::Database.create_session(session_id)
 
         input = {
           "session_id"      => session_id,
           "tool_name"       => "Read",
-          "tool_input"      => {"file_path" => "/home/user/implementation-plans/feature.md"},
-          "tool_response"   => "plan contents",
+          "tool_input"      => {"file_path" => "/home/user/projects/myapp/spec/models/user_spec.cr"},
+          "tool_response"   => "spec code",
+          "hook_event_name" => "PostToolUse",
+        }.to_json
+
+        result = run_binary(["on-post-tool-use"], stdin: input)
+        result[:status].should eq(0)
+
+        files = GalaxyLedger::Database.session_files(ledger_session_id)
+        files.size.should eq(1)
+        files.first.file_type.should eq("test")
+
+        # Clean up
+        GalaxyLedger::Database.delete_session(session_id)
+      end
+
+      it "preserves file_type on upsert (first classification wins)" do
+        session_id = "post-tool-test-#{rand(100000)}"
+        ledger_session_id = GalaxyLedger::Database.create_session(session_id)
+
+        guideline_input = {
+          "session_id"      => session_id,
+          "tool_name"       => "Read",
+          "tool_input"      => {"file_path" => "/home/user/agent-guidelines/ruby.md"},
+          "tool_response"   => "contents",
           "hook_event_name" => "PostToolUse",
         }.to_json
 
         # First read
-        result = run_binary(["on-post-tool-use"], stdin: input)
-        result[:status].should eq(0)
+        run_binary(["on-post-tool-use"], stdin: guideline_input)
 
-        GalaxyLedger::Database.has_extracted_source_file?(ledger_session_id, "/home/user/implementation-plans/feature.md").should be_true
+        # Second read — file_type should remain guideline
+        run_binary(["on-post-tool-use"], stdin: guideline_input)
 
-        # Second read — no new entries
-        result = run_binary(["on-post-tool-use"], stdin: input)
-        result[:status].should eq(0)
-
-        markers = GalaxyLedger::Database.query_by_type(ledger_session_id, "extraction_marker")
-        markers.size.should eq(1)
-
-        # Clean up
-        GalaxyLedger::Database.delete_session(session_id)
-      end
-
-      it "allows extraction for different guideline files in same session" do
-        session_id = "post-tool-dedup-#{rand(100000)}"
-        ledger_session_id = GalaxyLedger::Database.create_session(session_id)
-
-        # Read first guideline
-        input1 = {
-          "session_id"      => session_id,
-          "tool_name"       => "Read",
-          "tool_input"      => {"file_path" => "/home/user/agent-guidelines/ruby-style.md"},
-          "tool_response"   => "ruby style contents",
-          "hook_event_name" => "PostToolUse",
-        }.to_json
-
-        result = run_binary(["on-post-tool-use"], stdin: input1)
-        result[:status].should eq(0)
-
-        # Read different guideline
-        input2 = {
-          "session_id"      => session_id,
-          "tool_name"       => "Read",
-          "tool_input"      => {"file_path" => "/home/user/agent-guidelines/rspec-style.md"},
-          "tool_response"   => "rspec style contents",
-          "hook_event_name" => "PostToolUse",
-        }.to_json
-
-        result = run_binary(["on-post-tool-use"], stdin: input2)
-        result[:status].should eq(0)
-
-        markers = GalaxyLedger::Database.query_by_type(ledger_session_id, "extraction_marker")
-        markers.size.should eq(2)
-
-        # Both should have spawned extraction
-        metadata_values = markers.map do |e|
-          if meta = e.metadata
-            JSON.parse(meta)["extraction_spawned"]?.try(&.as_bool?)
-          end
-        end
-
-        metadata_values.all? { |v| v == true }.should be_true
+        files = GalaxyLedger::Database.session_files(ledger_session_id)
+        files.size.should eq(1)
+        files.first.file_type.should eq("guideline")
+        files.first.access_count.should eq(2)
 
         # Clean up
         GalaxyLedger::Database.delete_session(session_id)
@@ -274,7 +199,7 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
     end
 
     describe "with Edit tool" do
-      it "creates a session file record" do
+      it "creates a session file record with file_type" do
         session_id = "post-tool-test-#{rand(100000)}"
         ledger_session_id = GalaxyLedger::Database.create_session(session_id)
 
@@ -282,7 +207,7 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
           "session_id" => session_id,
           "tool_name"  => "Edit",
           "tool_input" => {
-            "file_path"  => "/path/to/file.rb",
+            "file_path"  => "/home/user/projects/myapp/src/app.cr",
             "old_string" => "old",
             "new_string" => "new",
           },
@@ -297,10 +222,11 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         entries = GalaxyLedger::Database.query_by_session(ledger_session_id)
         entries.size.should eq(0)
 
-        # Should have a session_file record instead
+        # Should have a session_file record with file_type
         files = GalaxyLedger::Database.session_files(ledger_session_id)
         files.size.should eq(1)
-        files.first.file_path.should eq("/path/to/file.rb")
+        files.first.file_path.should eq("/home/user/projects/myapp/src/app.cr")
+        files.first.file_type.should eq("source")
         files.first.is_edited.should be_true
         files.first.is_read.should be_false
         files.first.is_written.should be_false
@@ -312,7 +238,7 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
     end
 
     describe "with Write tool" do
-      it "creates a session file record" do
+      it "creates a session file record with file_type" do
         session_id = "post-tool-test-#{rand(100000)}"
         ledger_session_id = GalaxyLedger::Database.create_session(session_id)
 
@@ -320,8 +246,8 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
           "session_id" => session_id,
           "tool_name"  => "Write",
           "tool_input" => {
-            "file_path" => "/path/to/new_file.rb",
-            "content"   => "file content",
+            "file_path" => "/home/user/projects/myapp/spec/new_spec.cr",
+            "content"   => "spec content",
           },
           "tool_response"   => "success",
           "hook_event_name" => "PostToolUse",
@@ -334,10 +260,11 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         entries = GalaxyLedger::Database.query_by_session(ledger_session_id)
         entries.size.should eq(0)
 
-        # Should have a session_file record instead
+        # Should have a session_file record with file_type
         files = GalaxyLedger::Database.session_files(ledger_session_id)
         files.size.should eq(1)
-        files.first.file_path.should eq("/path/to/new_file.rb")
+        files.first.file_path.should eq("/home/user/projects/myapp/spec/new_spec.cr")
+        files.first.file_type.should eq("test")
         files.first.is_written.should be_true
         files.first.is_read.should be_false
         files.first.is_edited.should be_false
@@ -348,139 +275,8 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
       end
     end
 
-    describe "stale extraction marking" do
-      it "marks extraction_marker entries stale when editing a guideline file" do
-        session_id = "post-tool-stale-#{rand(100000)}"
-        ledger_session_id = GalaxyLedger::Database.create_session(session_id)
-
-        # First: read the guideline to create extraction_marker entry
-        read_input = {
-          "session_id"      => session_id,
-          "tool_name"       => "Read",
-          "tool_input"      => {"file_path" => "/home/user/agent-guidelines/ruby-style.md"},
-          "tool_response"   => "guideline contents",
-          "hook_event_name" => "PostToolUse",
-        }.to_json
-
-        result = run_binary(["on-post-tool-use"], stdin: read_input)
-        result[:status].should eq(0)
-
-        # Verify marker exists and is not stale
-        GalaxyLedger::Database.has_extracted_source_file?(ledger_session_id, "/home/user/agent-guidelines/ruby-style.md").should be_true
-        GalaxyLedger::Database.stale_entries(ledger_session_id).should be_empty
-
-        # Second: edit the guideline file
-        edit_input = {
-          "session_id" => session_id,
-          "tool_name"  => "Edit",
-          "tool_input" => {
-            "file_path"  => "/home/user/agent-guidelines/ruby-style.md",
-            "old_string" => "old",
-            "new_string" => "new",
-          },
-          "tool_response"   => "success",
-          "hook_event_name" => "PostToolUse",
-        }.to_json
-
-        result = run_binary(["on-post-tool-use"], stdin: edit_input)
-        result[:status].should eq(0)
-
-        # Marker should now be stale
-        stale = GalaxyLedger::Database.stale_entries(ledger_session_id)
-        stale.size.should eq(1)
-        stale[0][:source_file].should eq("/home/user/agent-guidelines/ruby-style.md")
-        stale[0][:entry_type].should eq("guideline")
-
-        # Clean up
-        GalaxyLedger::Database.delete_session(session_id)
-      end
-
-      it "marks extraction_marker entries stale when writing a plan file" do
-        session_id = "post-tool-stale-#{rand(100000)}"
-        ledger_session_id = GalaxyLedger::Database.create_session(session_id)
-
-        # First: read the plan to create extraction_marker entry
-        read_input = {
-          "session_id"      => session_id,
-          "tool_name"       => "Read",
-          "tool_input"      => {"file_path" => "/home/user/implementation-plans/feature.md"},
-          "tool_response"   => "plan contents",
-          "hook_event_name" => "PostToolUse",
-        }.to_json
-
-        result = run_binary(["on-post-tool-use"], stdin: read_input)
-        result[:status].should eq(0)
-
-        # Verify marker exists and is not stale
-        GalaxyLedger::Database.has_extracted_source_file?(ledger_session_id, "/home/user/implementation-plans/feature.md").should be_true
-        GalaxyLedger::Database.stale_entries(ledger_session_id).should be_empty
-
-        # Second: write to the plan file
-        write_input = {
-          "session_id" => session_id,
-          "tool_name"  => "Write",
-          "tool_input" => {
-            "file_path" => "/home/user/implementation-plans/feature.md",
-            "content"   => "updated plan",
-          },
-          "tool_response"   => "success",
-          "hook_event_name" => "PostToolUse",
-        }.to_json
-
-        result = run_binary(["on-post-tool-use"], stdin: write_input)
-        result[:status].should eq(0)
-
-        # Marker should now be stale
-        stale = GalaxyLedger::Database.stale_entries(ledger_session_id)
-        stale.size.should eq(1)
-        stale[0][:source_file].should eq("/home/user/implementation-plans/feature.md")
-        stale[0][:entry_type].should eq("implementation_plan")
-
-        # Clean up
-        GalaxyLedger::Database.delete_session(session_id)
-      end
-
-      it "does not mark entries stale when editing a regular file" do
-        session_id = "post-tool-stale-#{rand(100000)}"
-        ledger_session_id = GalaxyLedger::Database.create_session(session_id)
-
-        # Read a guideline first
-        read_input = {
-          "session_id"      => session_id,
-          "tool_name"       => "Read",
-          "tool_input"      => {"file_path" => "/home/user/agent-guidelines/ruby-style.md"},
-          "tool_response"   => "guideline contents",
-          "hook_event_name" => "PostToolUse",
-        }.to_json
-
-        run_binary(["on-post-tool-use"], stdin: read_input)
-
-        # Edit a regular file (not a guideline)
-        edit_input = {
-          "session_id" => session_id,
-          "tool_name"  => "Edit",
-          "tool_input" => {
-            "file_path"  => "/home/user/src/app.rb",
-            "old_string" => "old",
-            "new_string" => "new",
-          },
-          "tool_response"   => "success",
-          "hook_event_name" => "PostToolUse",
-        }.to_json
-
-        result = run_binary(["on-post-tool-use"], stdin: edit_input)
-        result[:status].should eq(0)
-
-        # Nothing should be stale
-        GalaxyLedger::Database.stale_entries(ledger_session_id).should be_empty
-
-        # Clean up
-        GalaxyLedger::Database.delete_session(session_id)
-      end
-    end
-
     describe "with Grep tool" do
-      it "creates a session file record with search pattern" do
+      it "creates a session file record with search pattern and file_type" do
         session_id = "post-tool-test-#{rand(100000)}"
         ledger_session_id = GalaxyLedger::Database.create_session(session_id)
 
@@ -489,7 +285,7 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
           "tool_name"  => "Grep",
           "tool_input" => {
             "pattern" => "def authenticate",
-            "path"    => "/app/models",
+            "path"    => "/home/user/projects/myapp/app/models",
           },
           "tool_response"   => "matches",
           "hook_event_name" => "PostToolUse",
@@ -502,11 +298,12 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         entries = GalaxyLedger::Database.query_by_session(ledger_session_id)
         entries.size.should eq(0)
 
-        # Should have a session_file record with search pattern
+        # Should have a session_file record with search pattern and file_type
         files = GalaxyLedger::Database.session_files(ledger_session_id)
         files.size.should eq(1)
-        files.first.file_path.should eq("/app/models")
+        files.first.file_path.should eq("/home/user/projects/myapp/app/models")
         files.first.search_pattern.should eq("def authenticate")
+        files.first.file_type.should eq("source")
         files.first.is_searched.should be_true
         files.first.is_read.should be_false
         files.first.is_edited.should be_false
@@ -518,7 +315,7 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
     end
 
     describe "with Glob tool" do
-      it "creates a session file record with search pattern" do
+      it "creates a session file record with search pattern and file_type" do
         session_id = "post-tool-test-#{rand(100000)}"
         ledger_session_id = GalaxyLedger::Database.create_session(session_id)
 
@@ -527,7 +324,7 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
           "tool_name"  => "Glob",
           "tool_input" => {
             "pattern" => "**/*.rb",
-            "path"    => "/app",
+            "path"    => "/home/user/projects/myapp/spec/models",
           },
           "tool_response"   => "files",
           "hook_event_name" => "PostToolUse",
@@ -540,11 +337,12 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
         entries = GalaxyLedger::Database.query_by_session(ledger_session_id)
         entries.size.should eq(0)
 
-        # Should have a session_file record with search pattern
+        # Should have a session_file record with search pattern and file_type
         files = GalaxyLedger::Database.session_files(ledger_session_id)
         files.size.should eq(1)
-        files.first.file_path.should eq("/app")
+        files.first.file_path.should eq("/home/user/projects/myapp/spec/models")
         files.first.search_pattern.should eq("**/*.rb")
+        files.first.file_type.should eq("test")
         files.first.is_searched.should be_true
         files.first.is_read.should be_false
         files.first.is_edited.should be_false
@@ -610,45 +408,12 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
       result[:output].should contain("PostToolUse")
       result[:output].should contain("USAGE")
       result[:output].should contain("tool_name")
-      result[:output].should contain("ENTRY TYPES CREATED")
     end
 
     it "shows help with --help flag" do
       result = run_binary(["on-post-tool-use", "--help"])
       result[:status].should eq(0)
       result[:output].should contain("on-post-tool-use")
-    end
-  end
-end
-
-describe GalaxyLedger::Hooks::OnPostToolUse, "pattern matching" do
-  describe "GUIDELINE_PATTERNS" do
-    patterns = GalaxyLedger::Hooks::OnPostToolUse::GUIDELINE_PATTERNS
-
-    it "matches /agent-guidelines/ paths" do
-      patterns.any?(&.matches?("/home/user/agent-guidelines/ruby-style.md")).should be_true
-      patterns.any?(&.matches?("/project/agent-guidelines/test.md")).should be_true
-      patterns.any?(&.matches?("/project/agent-guidelines/l.md")).should be_true
-    end
-
-    it "does not match files outside agent-guidelines" do
-      patterns.any?(&.matches?("/path/to/regular.md")).should be_false
-      patterns.any?(&.matches?("/path/to/file.rb")).should be_false
-      patterns.any?(&.matches?("/docs/ruby-style.md")).should be_false
-    end
-  end
-
-  describe "IMPLEMENTATION_PLAN_PATTERNS" do
-    patterns = GalaxyLedger::Hooks::OnPostToolUse::IMPLEMENTATION_PLAN_PATTERNS
-
-    it "matches /implementation-plans/ paths" do
-      patterns.any?(&.matches?("/home/user/implementation-plans/feature.md")).should be_true
-      patterns.any?(&.matches?("/project/implementation-plans/2026-01-01_plan.md")).should be_true
-    end
-
-    it "does not match regular files" do
-      patterns.any?(&.matches?("/path/to/regular.md")).should be_false
-      patterns.any?(&.matches?("/path/implementation/file.md")).should be_false
     end
   end
 end

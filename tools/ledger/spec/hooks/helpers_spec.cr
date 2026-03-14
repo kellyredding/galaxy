@@ -45,51 +45,6 @@ describe GalaxyLedger::Hooks::Helpers do
     end
   end
 
-  describe ".group_entries_by_source_file" do
-    it "groups entries by source_file" do
-      entries = [
-        GalaxyLedger::Database::StoredEntry.new(
-          id: 1_i64, created_at: "2026-01-01", ledger_session_id: 1_i64,
-          entry_type: "guideline", source: nil, content: "Rule 1", content_hash: "h1",
-          metadata: nil, importance: "medium", source_file: "/path/a.md"
-        ),
-        GalaxyLedger::Database::StoredEntry.new(
-          id: 2_i64, created_at: "2026-01-01", ledger_session_id: 1_i64,
-          entry_type: "guideline", source: nil, content: "Rule 2", content_hash: "h2",
-          metadata: nil, importance: "medium", source_file: "/path/a.md"
-        ),
-        GalaxyLedger::Database::StoredEntry.new(
-          id: 3_i64, created_at: "2026-01-01", ledger_session_id: 1_i64,
-          entry_type: "guideline", source: nil, content: "Rule 3", content_hash: "h3",
-          metadata: nil, importance: "medium", source_file: "/path/b.md"
-        ),
-      ]
-
-      grouped = GalaxyLedger::Hooks::Helpers.group_entries_by_source_file(entries)
-      grouped.size.should eq(2)
-      grouped["/path/a.md"].size.should eq(2)
-      grouped["/path/b.md"].size.should eq(1)
-    end
-
-    it "groups entries without source_file under (unknown)" do
-      entries = [
-        GalaxyLedger::Database::StoredEntry.new(
-          id: 1_i64, created_at: "2026-01-01", ledger_session_id: 1_i64,
-          entry_type: "guideline", source: nil, content: "Rule 1", content_hash: "h1",
-          metadata: nil, importance: "medium"
-        ),
-      ]
-
-      grouped = GalaxyLedger::Hooks::Helpers.group_entries_by_source_file(entries)
-      grouped["(unknown)"].size.should eq(1)
-    end
-
-    it "returns empty hash for empty input" do
-      grouped = GalaxyLedger::Hooks::Helpers.group_entries_by_source_file([] of GalaxyLedger::Database::StoredEntry)
-      grouped.should be_empty
-    end
-  end
-
   describe ".build_system_message" do
     it "returns empty state with prefix when no data" do
       msg = GalaxyLedger::Hooks::Helpers.build_system_message(
@@ -107,10 +62,8 @@ describe GalaxyLedger::Hooks::Helpers do
       msg.should eq("Ledger active │ New session")
     end
 
-    it "includes counts from restoration result" do
+    it "counts guidelines and plans from files, not restoration" do
       tier1 = GalaxyLedger::Database::Tier1Result.new(
-        guidelines: [make_stored_entry("guideline")] * 3,
-        implementation_plans: [make_stored_entry("implementation_plan")],
         high_importance_decisions: [make_stored_entry("decision")] * 2
       )
       tier2 = GalaxyLedger::Database::Tier2Result.new(
@@ -119,14 +72,24 @@ describe GalaxyLedger::Hooks::Helpers do
       )
       restoration = GalaxyLedger::Database::RestorationResult.new(tier1, tier2)
 
+      files = [
+        make_session_file("/path/agent-guidelines/ruby.md", file_type: "guideline"),
+        make_session_file("/path/agent-guidelines/rspec.md", file_type: "guideline"),
+        make_session_file("/path/agent-guidelines/git.md", file_type: "guideline"),
+        make_session_file("/path/implementation-plans/feature.md", file_type: "implementation_plan"),
+        make_session_file("/path/src/app.cr", file_type: "source"),
+      ]
+
       msg = GalaxyLedger::Hooks::Helpers.build_system_message(
         prefix: "Handoff",
         empty_message: "No previous context to hand off.",
-        restoration: restoration
+        restoration: restoration,
+        files: files
       )
       msg.should contain("3 guidelines")
       msg.should contain("1 plan")
       msg.should contain("2 decisions")
+      msg.should contain("5 session files")
     end
 
     it "includes file count" do
@@ -142,8 +105,6 @@ describe GalaxyLedger::Hooks::Helpers do
 
     it "uses singular forms correctly" do
       tier1 = GalaxyLedger::Database::Tier1Result.new(
-        guidelines: [make_stored_entry("guideline")],
-        implementation_plans: [] of GalaxyLedger::Database::StoredEntry,
         high_importance_decisions: [] of GalaxyLedger::Database::StoredEntry
       )
       tier2 = GalaxyLedger::Database::Tier2Result.new(
@@ -151,7 +112,9 @@ describe GalaxyLedger::Hooks::Helpers do
         medium_decisions: [] of GalaxyLedger::Database::StoredEntry
       )
       restoration = GalaxyLedger::Database::RestorationResult.new(tier1, tier2)
-      files = [make_session_file("/path/a.rb")]
+      files = [
+        make_session_file("/path/agent-guidelines/ruby.md", file_type: "guideline"),
+      ]
 
       msg = GalaxyLedger::Hooks::Helpers.build_system_message(
         prefix: "Handoff",
@@ -169,8 +132,6 @@ describe GalaxyLedger::Hooks::Helpers do
 
     it "merges high and medium decisions in count" do
       tier1 = GalaxyLedger::Database::Tier1Result.new(
-        guidelines: [] of GalaxyLedger::Database::StoredEntry,
-        implementation_plans: [] of GalaxyLedger::Database::StoredEntry,
         high_importance_decisions: [make_stored_entry("decision")] * 2
       )
       tier2 = GalaxyLedger::Database::Tier2Result.new(
@@ -185,6 +146,28 @@ describe GalaxyLedger::Hooks::Helpers do
         restoration: restoration
       )
       msg.should contain("5 decisions")
+    end
+
+    it "shows zero guidelines when no guideline files exist" do
+      tier1 = GalaxyLedger::Database::Tier1Result.new(
+        high_importance_decisions: [make_stored_entry("decision")]
+      )
+      tier2 = GalaxyLedger::Database::Tier2Result.new(
+        learnings: [] of GalaxyLedger::Database::StoredEntry,
+        medium_decisions: [] of GalaxyLedger::Database::StoredEntry
+      )
+      restoration = GalaxyLedger::Database::RestorationResult.new(tier1, tier2)
+      files = [make_session_file("/path/src/app.cr", file_type: "source")]
+
+      msg = GalaxyLedger::Hooks::Helpers.build_system_message(
+        prefix: "Handoff",
+        empty_message: "No data.",
+        restoration: restoration,
+        files: files
+      )
+      msg.should_not contain("guideline")
+      msg.should_not contain("plan")
+      msg.should contain("1 decision")
     end
   end
 
@@ -215,7 +198,10 @@ def make_stored_entry(entry_type : String, content : String = "test content") : 
 end
 
 # Helper to create a SessionFile for testing
-def make_session_file(path : String) : GalaxyLedger::Database::SessionFile
+def make_session_file(
+  path : String,
+  file_type : String = "other",
+) : GalaxyLedger::Database::SessionFile
   GalaxyLedger::Database::SessionFile.new(
     id: Random.rand(10000).to_i64,
     ledger_session_id: 1_i64,
@@ -228,6 +214,7 @@ def make_session_file(path : String) : GalaxyLedger::Database::SessionFile
     first_seen_at: "2026-01-01T00:00:00Z",
     last_seen_at: "2026-01-01T00:00:00Z",
     access_count: 1_i64,
-    metadata: nil
+    metadata: nil,
+    file_type: file_type,
   )
 end

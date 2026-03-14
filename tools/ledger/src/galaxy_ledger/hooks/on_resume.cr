@@ -213,10 +213,10 @@ module GalaxyLedger
           lines << ""
 
           counts = [] of String
-          g = restoration.tier1.guidelines.size
-          counts << "#{g} guidelines" if g > 0
-          p = restoration.tier1.implementation_plans.size
-          counts << "#{p} implementation plans" if p > 0
+          g = files.count { |f| f.file_type == "guideline" }
+          counts << "#{g} guideline#{g == 1 ? "" : "s"}" if g > 0
+          p = files.count { |f| f.file_type == "implementation_plan" }
+          counts << "#{p} plan#{p == 1 ? "" : "s"}" if p > 0
           d = restoration.tier1.high_importance_decisions.size +
               restoration.tier2.medium_decisions.size
           counts << "#{d} decisions" if d > 0

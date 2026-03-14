@@ -188,6 +188,41 @@ module GalaxyLedger
           # Column already exists — ignore
         end
       },
+      "0.3.9" => ->(db : DB::Database) {
+        begin
+          db.exec(
+            "ALTER TABLE ledger_session_files " \
+            "ADD COLUMN file_type TEXT NOT NULL DEFAULT 'other'"
+          )
+        rescue
+          # Column already exists or table doesn't exist — ignore
+        end
+
+        # Backfill: classify existing files with path-based detection
+        begin
+          rows = [] of {Int64, String}
+          db.query(
+            "SELECT id, file_path FROM ledger_session_files"
+          ) do |rs|
+            rs.each do
+              rows << {rs.read(Int64), rs.read(String)}
+            end
+          end
+
+          rows.each do |id, file_path|
+            detected_type = FileTypeDetector.detect(file_path)
+            next if detected_type == "other" # Already the default
+
+            db.exec(
+              "UPDATE ledger_session_files SET file_type = ? WHERE id = ?",
+              detected_type,
+              id,
+            )
+          end
+        rescue
+          # Table doesn't exist yet (partial DB in migration tests) — skip
+        end
+      },
     }
 
     # ==========================================================================

@@ -7,8 +7,8 @@ private def seed_prune_session(identifier : String, updated_at : String) : Int64
 
   # Add entries
   entry = GalaxyLedger::Entry.new(
-    entry_type: "guideline",
-    content: "Prune test guideline for #{identifier}",
+    entry_type: "constraint",
+    content: "Prune test constraint for #{identifier}",
     importance: "medium",
     source: "assistant",
     created_at: Time.utc.to_s("%Y-%m-%dT%H:%M:%S"),

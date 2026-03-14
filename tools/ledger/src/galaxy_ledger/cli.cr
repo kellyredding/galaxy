@@ -96,8 +96,6 @@ module GalaxyLedger
         handle_extract_user_command(rest)
       when "extract-assistant"
         handle_extract_assistant_command(rest)
-      when "extract-file"
-        handle_extract_file_command(rest)
       when "list-files"
         handle_list_files_command(rest)
       when "update-session-metrics"
@@ -161,7 +159,7 @@ module GalaxyLedger
         on-clear            Restore context after /clear
         on-compact          Restore context after auto/manual compact
         on-stop             Capture last exchange, check thresholds
-        on-post-tool-use    Track file operations, detect guidelines
+        on-post-tool-use    Track file operations with type detection
         on-user-prompt-submit  Capture user directions/preferences
 
       Session Metrics:
@@ -856,6 +854,7 @@ module GalaxyLedger
                     json.field "first_seen_at", f.first_seen_at
                     json.field "last_seen_at", f.last_seen_at
                     json.field "access_count", f.access_count
+                    json.field "file_type", f.file_type
                   end
                 end
               end
@@ -894,8 +893,9 @@ module GalaxyLedger
         # Access info
         access_str = "#{f.access_count} access#{f.access_count == 1 ? "" : "es"}"
         time_str = f.last_seen_at ? ", last: #{f.last_seen_at}" : ""
+        type_str = f.file_type == "other" ? "" : " [#{f.file_type}]"
 
-        puts "  [#{ops_str}]  #{path_str}"
+        puts "  [#{ops_str}]  #{path_str}#{type_str}"
         puts "              (#{access_str}#{time_str})"
       end
     end
@@ -1367,9 +1367,8 @@ module GalaxyLedger
         Called by Claude Code's PostToolUse hook after a tool completes.
         This hook:
         - Tracks file operations (Read, Edit, Write, Glob, Grep)
-        - Detects guideline files (**/agent-guidelines/**, **/*-style.md)
-        - Detects implementation plan files (**/implementation-plans/**)
-        - Writes entries directly to SQLite
+        - Classifies files by type (guideline, test, source, config, etc.)
+        - Detects and stores artifacts for Write operations
 
       INPUT (stdin):
         JSON object with hook data:
@@ -1388,12 +1387,9 @@ module GalaxyLedger
 
       FILE TRACKING:
         File operations (Read, Edit, Write, Glob, Grep) are tracked in the
-        session_files table for deduplication and context awareness.
-
-      ENTRY TYPES CREATED:
-        - extraction_marker: Marker entry when a guideline or implementation plan is read.
-          Stores the full file path in source_file and the original extraction type
-          (guideline or implementation_plan) in metadata. (importance: medium)
+        session_files table with automatic file type detection. File types
+        (guideline, implementation_plan, test, script, doc, config, source,
+        other) are classified by path conventions.
 
       HOOK CONFIGURATION:
         Add to ~/.claude/settings.json:
@@ -2033,90 +2029,6 @@ module GalaxyLedger
 
         This is an internal command used by the Stop hook.
       HELP
-    end
-
-    private def self.handle_extract_file_command(args : Array(String))
-      if args.first? == "-h" || args.first? == "--help"
-        show_extract_file_help
-        return
-      end
-
-      # Parse args
-      session_id : String? = nil
-      extraction_type : String? = nil
-      file_path : String? = nil
-      i = 0
-      while i < args.size
-        arg = args[i]
-        if arg == "--session" && i + 1 < args.size
-          session_id = args[i + 1]
-          i += 2
-        elsif arg == "--type" && i + 1 < args.size
-          extraction_type = args[i + 1]
-          i += 2
-        elsif arg == "--path" && i + 1 < args.size
-          file_path = args[i + 1]
-          i += 2
-        else
-          i += 1
-        end
-      end
-
-      unless session_id
-        STDERR.puts "Error: --session is required"
-        exit(1)
-      end
-
-      unless extraction_type
-        STDERR.puts "Error: --type is required"
-        exit(1)
-      end
-
-      unless file_path
-        STDERR.puts "Error: --path is required"
-        exit(1)
-      end
-
-      # Resolve session_identifier to ledger_session_id
-      ledger_session_id = Database.resolve_session_identifier(session_id)
-      unless ledger_session_id
-        STDERR.puts "Error: no session found for identifier '#{session_id}'"
-        exit(1)
-      end
-
-      # Read content from stdin
-      content = STDIN.gets_to_end
-
-      if content.strip.empty?
-        return # Nothing to extract
-      end
-
-      # Run appropriate extraction
-      result = case extraction_type
-               when "guideline"
-                 Extraction.extract_guidelines(file_path, content)
-               when "implementation_plan"
-                 Extraction.extract_implementation_plan(file_path, content)
-               else
-                 STDERR.puts "Error: Unknown extraction type '#{extraction_type}'"
-                 exit(1)
-               end
-
-      # Write extracted entries directly to database
-      if result.extractions.any?
-        entries = result.extractions.select(&.valid?).map do |e|
-          e.to_entry
-        end
-        inserted = Database.insert_many(ledger_session_id, entries)
-        if inserted > 0
-          STDERR.puts "[galaxy-ledger] Extracted #{inserted} #{extraction_type} entries from #{File.basename(file_path)}"
-        end
-      end
-
-      # Record one-shot usage
-      if result.cost_usd > 0.0 || result.total_tokens > 0
-        Database.record_oneshot_usage(ledger_session_id, result.cost_usd, result.total_tokens)
-      end
     end
 
     # ========================================
@@ -5763,25 +5675,6 @@ module GalaxyLedger
 
       DESCRIPTION:
         Permanently deletes an artifact record and its stored file.
-      HELP
-    end
-
-    private def self.show_extract_file_help
-      puts <<-HELP
-      galaxy-ledger extract-file - Extract from guideline/implementation plan
-
-      USAGE:
-        galaxy-ledger extract-file --session SESSION_ID --type TYPE --path PATH < content
-
-      DESCRIPTION:
-        Called by hooks to extract rules or context from special files
-        using Claude CLI.
-
-        This is an internal command used by the PostToolUse hook.
-
-      TYPES:
-        guideline           Extract coding guidelines and rules
-        implementation_plan Extract project context and progress
       HELP
     end
 

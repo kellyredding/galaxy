@@ -57,7 +57,7 @@ describe GalaxyLedger::Extraction do
 
       it "converts with enhanced fields" do
         extracted = GalaxyLedger::Extraction::ExtractedEntry.new(
-          entry_type: "guideline",
+          entry_type: "constraint",
           content: "Test rule",
           importance: "medium",
           category: "ruby-style",
@@ -77,7 +77,7 @@ describe GalaxyLedger::Extraction do
     describe "enhanced schema fields" do
       it "supports category" do
         entry = GalaxyLedger::Extraction::ExtractedEntry.new(
-          entry_type: "guideline",
+          entry_type: "constraint",
           content: "Test",
           category: "ruby-style"
         )
@@ -86,7 +86,7 @@ describe GalaxyLedger::Extraction do
 
       it "supports keywords" do
         entry = GalaxyLedger::Extraction::ExtractedEntry.new(
-          entry_type: "guideline",
+          entry_type: "constraint",
           content: "Test",
           keywords: ["key1", "key2"]
         )
@@ -96,7 +96,7 @@ describe GalaxyLedger::Extraction do
 
       it "keywords_array handles nil" do
         entry = GalaxyLedger::Extraction::ExtractedEntry.new(
-          entry_type: "guideline",
+          entry_type: "constraint",
           content: "Test"
         )
         entry.keywords.should be_nil
@@ -105,7 +105,7 @@ describe GalaxyLedger::Extraction do
 
       it "supports applies_when" do
         entry = GalaxyLedger::Extraction::ExtractedEntry.new(
-          entry_type: "guideline",
+          entry_type: "constraint",
           content: "Test",
           applies_when: "Writing Ruby code"
         )
@@ -114,7 +114,7 @@ describe GalaxyLedger::Extraction do
 
       it "supports source_file" do
         entry = GalaxyLedger::Extraction::ExtractedEntry.new(
-          entry_type: "guideline",
+          entry_type: "constraint",
           content: "Test",
           source_file: "ruby-style.md"
         )
@@ -212,42 +212,6 @@ describe GalaxyLedger::Extraction do
       it "does not include session_title in the output format" do
         prompt = GalaxyLedger::Extraction::Prompts.assistant_response_extraction("test")
         prompt.should_not contain("session_title")
-      end
-    end
-
-    describe ".guideline_extraction" do
-      it "includes file basename in the prompt" do
-        file_path = "/path/to/ruby-style.md"
-        prompt = GalaxyLedger::Extraction::Prompts.guideline_extraction(file_path)
-        prompt.should_not be_empty
-        # Prompt uses basename and file stem for category/keywords
-        prompt.should contain("ruby-style.md")
-        prompt.should contain("ruby-style")
-        prompt.should contain("guideline")
-        # Should include enhanced schema instructions
-        prompt.should contain("category")
-        prompt.should contain("keywords")
-        prompt.should contain("applies_when")
-      end
-    end
-
-    describe ".implementation_plan_extraction" do
-      it "includes file basename and mentions progress types" do
-        file_path = "/path/to/plan.md"
-        prompt = GalaxyLedger::Extraction::Prompts.implementation_plan_extraction(file_path)
-        prompt.should_not be_empty
-        # Prompt uses basename
-        prompt.should contain("plan.md")
-        prompt.should contain("implementation_plan")
-        # Should mention various progress markers (per user feedback)
-        prompt.should contain("milestone")
-        prompt.should contain("step")
-        prompt.should contain("phase")
-        prompt.should contain("PR")
-        # Should include enhanced schema instructions
-        prompt.should contain("category")
-        prompt.should contain("keywords")
-        prompt.should contain("applies_when")
       end
     end
   end

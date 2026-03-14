@@ -20,8 +20,16 @@ module GalaxyLedger
 
         if restoration
           counts = [] of String
-          gl = restoration.tier1.guidelines.size
-          ip = restoration.tier1.implementation_plans.size
+          gl = if files
+                 files.count { |f| f.file_type == "guideline" }
+               else
+                 0
+               end
+          ip = if files
+                 files.count { |f| f.file_type == "implementation_plan" }
+               else
+                 0
+               end
           hd = restoration.tier1.high_importance_decisions.size
           md = restoration.tier2.medium_decisions.size
           lr = restoration.tier2.learnings.size
@@ -69,20 +77,6 @@ module GalaxyLedger
         cutoff = max - suffix.size
         cutoff = 0 if cutoff < 0
         "#{text[0, cutoff]}#{suffix}"
-      end
-
-      # Group an array of StoredEntry by source_file into an ordered hash.
-      # Entries without a source_file are grouped under "(unknown)".
-      def group_entries_by_source_file(
-        entries : Array(Database::StoredEntry),
-      ) : Hash(String, Array(Database::StoredEntry))
-        grouped = {} of String => Array(Database::StoredEntry)
-        entries.each do |entry|
-          key = entry.source_file || "(unknown)"
-          grouped[key] ||= [] of Database::StoredEntry
-          grouped[key] << entry
-        end
-        grouped
       end
 
       # Build the final JSON output hash with systemMessage and additionalContext.

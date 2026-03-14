@@ -359,386 +359,6 @@ describe GalaxyLedger::Database do
     end
   end
 
-  describe ".has_extracted_source_file?" do
-    it "returns true when extraction_marker entries exist for the session" do
-      entry = GalaxyLedger::Entry.new(
-        entry_type: "extraction_marker",
-        content: "/home/user/agent-guidelines/ruby-style.md",
-        source_file: "/home/user/agent-guidelines/ruby-style.md",
-      )
-      ledger_session_id = GalaxyLedger::Database.create_session("sess-dedup")
-      GalaxyLedger::Database.insert(ledger_session_id, entry)
-
-      GalaxyLedger::Database.has_extracted_source_file?(ledger_session_id, "/home/user/agent-guidelines/ruby-style.md").should be_true
-    end
-
-    it "returns false when no source_file entries exist for the session" do
-      ledger_session_id = GalaxyLedger::Database.create_session("sess-empty")
-      GalaxyLedger::Database.has_extracted_source_file?(ledger_session_id, "/home/user/agent-guidelines/ruby-style.md").should be_false
-    end
-
-    it "does not match entries from other sessions" do
-      entry = GalaxyLedger::Entry.new(
-        entry_type: "extraction_marker",
-        content: "/home/user/agent-guidelines/ruby-style.md",
-        source_file: "/home/user/agent-guidelines/ruby-style.md",
-      )
-      lid_other = GalaxyLedger::Database.create_session("sess-other")
-      GalaxyLedger::Database.insert(lid_other, entry)
-
-      lid_mine = GalaxyLedger::Database.create_session("sess-mine")
-      GalaxyLedger::Database.has_extracted_source_file?(lid_mine, "/home/user/agent-guidelines/ruby-style.md").should be_false
-    end
-
-    it "does not match non-marker entry types" do
-      entry = GalaxyLedger::Entry.new(
-        entry_type: "guideline",
-        content: "Always use double-quotes",
-        source_file: "/home/user/agent-guidelines/ruby-style.md",
-      )
-      ledger_session_id = GalaxyLedger::Database.create_session("sess-filetype")
-      GalaxyLedger::Database.insert(ledger_session_id, entry)
-
-      GalaxyLedger::Database.has_extracted_source_file?(ledger_session_id, "/home/user/agent-guidelines/ruby-style.md").should be_false
-    end
-
-    it "does not match learning entry types" do
-      entry = GalaxyLedger::Entry.new(
-        entry_type: "learning",
-        content: "/home/user/agent-guidelines/ruby-style.md",
-        source_file: "/home/user/agent-guidelines/ruby-style.md",
-      )
-      ledger_session_id = GalaxyLedger::Database.create_session("sess-filetype2")
-      GalaxyLedger::Database.insert(ledger_session_id, entry)
-
-      GalaxyLedger::Database.has_extracted_source_file?(ledger_session_id, "/home/user/agent-guidelines/ruby-style.md").should be_false
-    end
-
-    it "distinguishes files with the same basename at different paths" do
-      marker1 = GalaxyLedger::Entry.new(
-        entry_type: "extraction_marker",
-        content: "/projects/kajabi/agent-guidelines/dev-setup.md",
-        source_file: "/projects/kajabi/agent-guidelines/dev-setup.md",
-      )
-      ledger_session_id = GalaxyLedger::Database.create_session("sess-collision")
-      GalaxyLedger::Database.insert(ledger_session_id, marker1)
-
-      # Same basename, different full path — should NOT match
-      GalaxyLedger::Database.has_extracted_source_file?(ledger_session_id, "/projects/other/agent-guidelines/dev-setup.md").should be_false
-      # Original full path — should match
-      GalaxyLedger::Database.has_extracted_source_file?(ledger_session_id, "/projects/kajabi/agent-guidelines/dev-setup.md").should be_true
-    end
-
-    it "returns false for empty inputs" do
-      GalaxyLedger::Database.has_extracted_source_file?(0_i64, "/home/user/agent-guidelines/ruby-style.md").should be_false
-      ledger_session_id = GalaxyLedger::Database.create_session("sess")
-      GalaxyLedger::Database.has_extracted_source_file?(ledger_session_id, "").should be_false
-    end
-  end
-
-  describe ".mark_entries_stale" do
-    it "marks entries with matching source_file as stale" do
-      entry = GalaxyLedger::Entry.new(
-        entry_type: "extraction_marker",
-        content: "/home/user/agent-guidelines/ruby-style.md",
-        source_file: "/home/user/agent-guidelines/ruby-style.md",
-      )
-      ledger_session_id = GalaxyLedger::Database.create_session("sess-stale")
-      GalaxyLedger::Database.insert(ledger_session_id, entry)
-
-      count = GalaxyLedger::Database.mark_entries_stale(ledger_session_id, "/home/user/agent-guidelines/ruby-style.md")
-      count.should eq(1)
-    end
-
-    it "marks both marker and extracted entries for the same source_file" do
-      marker = GalaxyLedger::Entry.new(
-        entry_type: "extraction_marker",
-        content: "/home/user/agent-guidelines/ruby-style.md",
-        source_file: "/home/user/agent-guidelines/ruby-style.md",
-      )
-      extracted = GalaxyLedger::Entry.new(
-        entry_type: "guideline",
-        content: "Always use double-quotes for strings",
-        source_file: "/home/user/agent-guidelines/ruby-style.md",
-      )
-      ledger_session_id = GalaxyLedger::Database.create_session("sess-stale2")
-      GalaxyLedger::Database.insert(ledger_session_id, marker)
-      GalaxyLedger::Database.insert(ledger_session_id, extracted)
-
-      count = GalaxyLedger::Database.mark_entries_stale(ledger_session_id, "/home/user/agent-guidelines/ruby-style.md")
-      count.should eq(2)
-    end
-
-    it "does not mark entries from other sessions" do
-      entry = GalaxyLedger::Entry.new(
-        entry_type: "extraction_marker",
-        content: "/home/user/agent-guidelines/ruby-style.md",
-        source_file: "/home/user/agent-guidelines/ruby-style.md",
-      )
-      lid_other = GalaxyLedger::Database.create_session("sess-other")
-      GalaxyLedger::Database.insert(lid_other, entry)
-
-      lid_mine = GalaxyLedger::Database.create_session("sess-mine")
-      count = GalaxyLedger::Database.mark_entries_stale(lid_mine, "/home/user/agent-guidelines/ruby-style.md")
-      count.should eq(0)
-    end
-
-    it "does not mark entries with different source_file" do
-      entry = GalaxyLedger::Entry.new(
-        entry_type: "extraction_marker",
-        content: "/home/user/agent-guidelines/rspec-style.md",
-        source_file: "/home/user/agent-guidelines/rspec-style.md",
-      )
-      ledger_session_id = GalaxyLedger::Database.create_session("sess-stale3")
-      GalaxyLedger::Database.insert(ledger_session_id, entry)
-
-      count = GalaxyLedger::Database.mark_entries_stale(ledger_session_id, "/home/user/agent-guidelines/ruby-style.md")
-      count.should eq(0)
-    end
-
-    it "does not cross-mark files with same basename at different paths" do
-      marker = GalaxyLedger::Entry.new(
-        entry_type: "extraction_marker",
-        content: "/projects/kajabi/agent-guidelines/dev-setup.md",
-        source_file: "/projects/kajabi/agent-guidelines/dev-setup.md",
-      )
-      ledger_session_id = GalaxyLedger::Database.create_session("sess-stale-collision")
-      GalaxyLedger::Database.insert(ledger_session_id, marker)
-
-      # Marking stale with different full path (same basename) should not match
-      count = GalaxyLedger::Database.mark_entries_stale(ledger_session_id, "/projects/other/agent-guidelines/dev-setup.md")
-      count.should eq(0)
-    end
-
-    it "returns 0 for empty inputs" do
-      GalaxyLedger::Database.mark_entries_stale(0_i64, "/home/user/agent-guidelines/ruby-style.md").should eq(0)
-      ledger_session_id = GalaxyLedger::Database.create_session("sess")
-      GalaxyLedger::Database.mark_entries_stale(ledger_session_id, "").should eq(0)
-    end
-  end
-
-  describe ".stale_entries" do
-    it "returns stale extraction_marker entries with full path and extraction type" do
-      marker = GalaxyLedger::Entry.new(
-        entry_type: "extraction_marker",
-        content: "/home/user/agent-guidelines/ruby-style.md",
-        source_file: "/home/user/agent-guidelines/ruby-style.md",
-        metadata: JSON.parse({"extraction_type" => "guideline"}.to_json),
-      )
-      ledger_session_id = GalaxyLedger::Database.create_session("sess-stale-q")
-      GalaxyLedger::Database.insert(ledger_session_id, marker)
-
-      # Mark it stale
-      GalaxyLedger::Database.mark_entries_stale(ledger_session_id, "/home/user/agent-guidelines/ruby-style.md")
-
-      results = GalaxyLedger::Database.stale_entries(ledger_session_id)
-      results.size.should eq(1)
-      results[0][:source_file].should eq("/home/user/agent-guidelines/ruby-style.md")
-      results[0][:full_path].should eq("/home/user/agent-guidelines/ruby-style.md")
-      results[0][:entry_type].should eq("guideline")
-    end
-
-    it "returns implementation_plan stale entries via metadata extraction_type" do
-      marker = GalaxyLedger::Entry.new(
-        entry_type: "extraction_marker",
-        content: "/home/user/implementation-plans/feature.md",
-        source_file: "/home/user/implementation-plans/feature.md",
-        metadata: JSON.parse({"extraction_type" => "implementation_plan"}.to_json),
-      )
-      ledger_session_id = GalaxyLedger::Database.create_session("sess-stale-ip")
-      GalaxyLedger::Database.insert(ledger_session_id, marker)
-      GalaxyLedger::Database.mark_entries_stale(ledger_session_id, "/home/user/implementation-plans/feature.md")
-
-      results = GalaxyLedger::Database.stale_entries(ledger_session_id)
-      results.size.should eq(1)
-      results[0][:entry_type].should eq("implementation_plan")
-    end
-
-    it "excludes stale extracted guideline entries (only returns markers)" do
-      marker = GalaxyLedger::Entry.new(
-        entry_type: "extraction_marker",
-        content: "/home/user/agent-guidelines/ruby-style.md",
-        source_file: "/home/user/agent-guidelines/ruby-style.md",
-        metadata: JSON.parse({"extraction_type" => "guideline"}.to_json),
-      )
-      extracted = GalaxyLedger::Entry.new(
-        entry_type: "guideline",
-        content: "Always use double-quotes for strings",
-        source_file: "/home/user/agent-guidelines/ruby-style.md",
-      )
-      ledger_session_id = GalaxyLedger::Database.create_session("sess-stale-ex")
-      GalaxyLedger::Database.insert(ledger_session_id, marker)
-      GalaxyLedger::Database.insert(ledger_session_id, extracted)
-      GalaxyLedger::Database.mark_entries_stale(ledger_session_id, "/home/user/agent-guidelines/ruby-style.md")
-
-      results = GalaxyLedger::Database.stale_entries(ledger_session_id)
-      # Only the extraction_marker should be returned, not the guideline entry
-      results.size.should eq(1)
-      results[0][:full_path].should eq("/home/user/agent-guidelines/ruby-style.md")
-    end
-
-    it "defaults to guideline extraction_type when metadata is missing" do
-      marker = GalaxyLedger::Entry.new(
-        entry_type: "extraction_marker",
-        content: "/home/user/agent-guidelines/ruby-style.md",
-        source_file: "/home/user/agent-guidelines/ruby-style.md",
-      )
-      ledger_session_id = GalaxyLedger::Database.create_session("sess-stale-nomd")
-      GalaxyLedger::Database.insert(ledger_session_id, marker)
-      GalaxyLedger::Database.mark_entries_stale(ledger_session_id, "/home/user/agent-guidelines/ruby-style.md")
-
-      results = GalaxyLedger::Database.stale_entries(ledger_session_id)
-      results.size.should eq(1)
-      results[0][:entry_type].should eq("guideline")
-    end
-
-    it "returns empty when nothing is stale" do
-      marker = GalaxyLedger::Entry.new(
-        entry_type: "extraction_marker",
-        content: "/home/user/agent-guidelines/ruby-style.md",
-        source_file: "/home/user/agent-guidelines/ruby-style.md",
-      )
-      ledger_session_id = GalaxyLedger::Database.create_session("sess-fresh")
-      GalaxyLedger::Database.insert(ledger_session_id, marker)
-
-      # Not marked stale
-      results = GalaxyLedger::Database.stale_entries(ledger_session_id)
-      results.should be_empty
-    end
-
-    it "returns empty for empty session_id" do
-      GalaxyLedger::Database.stale_entries(0_i64).should be_empty
-    end
-
-    it "does not return entries from other sessions" do
-      marker = GalaxyLedger::Entry.new(
-        entry_type: "extraction_marker",
-        content: "/home/user/agent-guidelines/ruby-style.md",
-        source_file: "/home/user/agent-guidelines/ruby-style.md",
-        metadata: JSON.parse({"extraction_type" => "guideline"}.to_json),
-      )
-      lid_other = GalaxyLedger::Database.create_session("sess-other-stale")
-      GalaxyLedger::Database.insert(lid_other, marker)
-      GalaxyLedger::Database.mark_entries_stale(lid_other, "/home/user/agent-guidelines/ruby-style.md")
-
-      lid_different = GalaxyLedger::Database.create_session("sess-different")
-      results = GalaxyLedger::Database.stale_entries(lid_different)
-      results.should be_empty
-    end
-  end
-
-  describe ".delete_entries_by_source_file" do
-    it "deletes marker and extracted guideline entries for a source file" do
-      marker = GalaxyLedger::Entry.new(
-        entry_type: "extraction_marker",
-        content: "/home/user/agent-guidelines/ruby-style.md",
-        source_file: "/home/user/agent-guidelines/ruby-style.md",
-      )
-      extracted = GalaxyLedger::Entry.new(
-        entry_type: "guideline",
-        content: "Always use double-quotes",
-        source_file: "/home/user/agent-guidelines/ruby-style.md",
-      )
-      ledger_session_id = GalaxyLedger::Database.create_session("sess-del")
-      GalaxyLedger::Database.insert(ledger_session_id, marker)
-      GalaxyLedger::Database.insert(ledger_session_id, extracted)
-
-      deleted = GalaxyLedger::Database.delete_entries_by_source_file(ledger_session_id, "/home/user/agent-guidelines/ruby-style.md")
-      deleted.should eq(2)
-
-      # Verify they're gone
-      GalaxyLedger::Database.has_extracted_source_file?(ledger_session_id, "/home/user/agent-guidelines/ruby-style.md").should be_false
-    end
-
-    it "does not delete entries with different source_file" do
-      marker1 = GalaxyLedger::Entry.new(
-        entry_type: "extraction_marker",
-        content: "/home/user/agent-guidelines/ruby-style.md",
-        source_file: "/home/user/agent-guidelines/ruby-style.md",
-      )
-      marker2 = GalaxyLedger::Entry.new(
-        entry_type: "extraction_marker",
-        content: "/home/user/agent-guidelines/rspec-style.md",
-        source_file: "/home/user/agent-guidelines/rspec-style.md",
-      )
-      ledger_session_id = GalaxyLedger::Database.create_session("sess-del2")
-      GalaxyLedger::Database.insert(ledger_session_id, marker1)
-      GalaxyLedger::Database.insert(ledger_session_id, marker2)
-
-      deleted = GalaxyLedger::Database.delete_entries_by_source_file(ledger_session_id, "/home/user/agent-guidelines/ruby-style.md")
-      deleted.should eq(1)
-
-      # rspec-style.md marker should still exist
-      GalaxyLedger::Database.has_extracted_source_file?(ledger_session_id, "/home/user/agent-guidelines/rspec-style.md").should be_true
-    end
-
-    it "does not delete non-guideline/implementation_plan/extraction_marker entries" do
-      marker = GalaxyLedger::Entry.new(
-        entry_type: "extraction_marker",
-        content: "/home/user/agent-guidelines/ruby-style.md",
-        source_file: "/home/user/agent-guidelines/ruby-style.md",
-      )
-      learning = GalaxyLedger::Entry.new(
-        entry_type: "learning",
-        content: "Something about ruby-style.md",
-        source_file: "/home/user/agent-guidelines/ruby-style.md",
-      )
-      ledger_session_id = GalaxyLedger::Database.create_session("sess-del3")
-      GalaxyLedger::Database.insert(ledger_session_id, marker)
-      GalaxyLedger::Database.insert(ledger_session_id, learning)
-
-      deleted = GalaxyLedger::Database.delete_entries_by_source_file(ledger_session_id, "/home/user/agent-guidelines/ruby-style.md")
-      deleted.should eq(1) # Only the extraction_marker
-
-      GalaxyLedger::Database.count_by_session(ledger_session_id).should eq(1) # Learning survives
-    end
-
-    it "does not delete entries from other sessions" do
-      entry = GalaxyLedger::Entry.new(
-        entry_type: "extraction_marker",
-        content: "/home/user/agent-guidelines/ruby-style.md",
-        source_file: "/home/user/agent-guidelines/ruby-style.md",
-      )
-      lid_keep = GalaxyLedger::Database.create_session("sess-keep")
-      GalaxyLedger::Database.insert(lid_keep, entry)
-
-      lid_other = GalaxyLedger::Database.create_session("sess-other")
-      deleted = GalaxyLedger::Database.delete_entries_by_source_file(lid_other, "/home/user/agent-guidelines/ruby-style.md")
-      deleted.should eq(0)
-
-      GalaxyLedger::Database.has_extracted_source_file?(lid_keep, "/home/user/agent-guidelines/ruby-style.md").should be_true
-    end
-
-    it "does not cross-delete files with same basename at different paths" do
-      marker1 = GalaxyLedger::Entry.new(
-        entry_type: "extraction_marker",
-        content: "/projects/kajabi/agent-guidelines/dev-setup.md",
-        source_file: "/projects/kajabi/agent-guidelines/dev-setup.md",
-      )
-      marker2 = GalaxyLedger::Entry.new(
-        entry_type: "extraction_marker",
-        content: "/projects/other/agent-guidelines/dev-setup.md",
-        source_file: "/projects/other/agent-guidelines/dev-setup.md",
-      )
-      ledger_session_id = GalaxyLedger::Database.create_session("sess-del-collision")
-      GalaxyLedger::Database.insert(ledger_session_id, marker1)
-      GalaxyLedger::Database.insert(ledger_session_id, marker2)
-
-      # Delete one full path should not affect the other
-      deleted = GalaxyLedger::Database.delete_entries_by_source_file(ledger_session_id, "/projects/kajabi/agent-guidelines/dev-setup.md")
-      deleted.should eq(1)
-
-      # The other path should still exist
-      GalaxyLedger::Database.has_extracted_source_file?(ledger_session_id, "/projects/other/agent-guidelines/dev-setup.md").should be_true
-    end
-
-    it "returns 0 for empty inputs" do
-      GalaxyLedger::Database.delete_entries_by_source_file(0_i64, "/home/user/agent-guidelines/ruby-style.md").should eq(0)
-      ledger_session_id = GalaxyLedger::Database.create_session("sess")
-      GalaxyLedger::Database.delete_entries_by_source_file(ledger_session_id, "").should eq(0)
-    end
-  end
-
   describe ".query_by_session" do
     it "returns entries for a session ordered by created_at DESC" do
       # Insert with different timestamps
@@ -937,7 +557,7 @@ describe GalaxyLedger::Database do
   describe ".search with prefix matching" do
     it "finds entries with prefix matching enabled" do
       ledger_session_id = GalaxyLedger::Database.create_session("s1")
-      GalaxyLedger::Database.insert(ledger_session_id, GalaxyLedger::Entry.new(entry_type: "guideline", content: "Use trailing commas on multiline structures"))
+      GalaxyLedger::Database.insert(ledger_session_id, GalaxyLedger::Entry.new(entry_type: "constraint", content: "Use trailing commas on multiline structures"))
 
       # "trail" should match "trailing" with prefix matching
       entries = GalaxyLedger::Database.search("trail")
@@ -947,7 +567,7 @@ describe GalaxyLedger::Database do
 
     it "respects prefix_match: false for exact matching" do
       ledger_session_id = GalaxyLedger::Database.create_session("s1")
-      GalaxyLedger::Database.insert(ledger_session_id, GalaxyLedger::Entry.new(entry_type: "guideline", content: "Use trailing commas"))
+      GalaxyLedger::Database.insert(ledger_session_id, GalaxyLedger::Entry.new(entry_type: "constraint", content: "Use trailing commas"))
 
       # "trail" should NOT match "trailing" with exact matching
       entries = GalaxyLedger::Database.search("trail", prefix_match: false)
@@ -960,7 +580,7 @@ describe GalaxyLedger::Database do
       ledger_session_id = GalaxyLedger::Database.create_session("s1")
       GalaxyLedger::Database.insert(ledger_session_id, GalaxyLedger::Entry.new(entry_type: "learning", content: "JWT tokens expire", importance: "high"))
       GalaxyLedger::Database.insert(ledger_session_id, GalaxyLedger::Entry.new(entry_type: "decision", content: "JWT storage in Redis", importance: "medium"))
-      GalaxyLedger::Database.insert(ledger_session_id, GalaxyLedger::Entry.new(entry_type: "guideline", content: "JWT best practices", importance: "high"))
+      GalaxyLedger::Database.insert(ledger_session_id, GalaxyLedger::Entry.new(entry_type: "constraint", content: "JWT best practices", importance: "high"))
     end
 
     it "filters by entry_type" do
@@ -976,9 +596,9 @@ describe GalaxyLedger::Database do
     end
 
     it "filters by both type and importance" do
-      entries = GalaxyLedger::Database.search("JWT", entry_type: "guideline", importance: "high")
+      entries = GalaxyLedger::Database.search("JWT", entry_type: "constraint", importance: "high")
       entries.size.should eq(1)
-      entries[0].entry_type.should eq("guideline")
+      entries[0].entry_type.should eq("constraint")
       entries[0].importance.should eq("high")
     end
   end
@@ -989,7 +609,7 @@ describe GalaxyLedger::Database do
       GalaxyLedger::Database.insert(ledger_session_id, GalaxyLedger::Entry.new(entry_type: "learning", content: "L1", importance: "high"))
       GalaxyLedger::Database.insert(ledger_session_id, GalaxyLedger::Entry.new(entry_type: "decision", content: "D1", importance: "medium"))
       GalaxyLedger::Database.insert(ledger_session_id, GalaxyLedger::Entry.new(entry_type: "learning", content: "L2", importance: "low"))
-      GalaxyLedger::Database.insert(ledger_session_id, GalaxyLedger::Entry.new(entry_type: "guideline", content: "G1", importance: "high"))
+      GalaxyLedger::Database.insert(ledger_session_id, GalaxyLedger::Entry.new(entry_type: "constraint", content: "G1", importance: "high"))
     end
 
     it "returns all entries with no filters" do
@@ -1019,35 +639,11 @@ describe GalaxyLedger::Database do
   describe ".query_tier1" do
     before_each do
       ledger_session_id = GalaxyLedger::Database.create_session("s1")
-      # Tier 1 entries
-      GalaxyLedger::Database.insert(ledger_session_id, GalaxyLedger::Entry.new(entry_type: "guideline", content: "G1", importance: "high"))
-      GalaxyLedger::Database.insert(ledger_session_id, GalaxyLedger::Entry.new(entry_type: "guideline", content: "G2", importance: "medium"))
-      GalaxyLedger::Database.insert(ledger_session_id, GalaxyLedger::Entry.new(entry_type: "implementation_plan", content: "IP1", importance: "high"))
+      # Tier 1 entries: high-importance decisions only
       GalaxyLedger::Database.insert(ledger_session_id, GalaxyLedger::Entry.new(entry_type: "decision", content: "D1 high", importance: "high"))
       GalaxyLedger::Database.insert(ledger_session_id, GalaxyLedger::Entry.new(entry_type: "decision", content: "D2 medium", importance: "medium"))
       # Non-tier1 entries
       GalaxyLedger::Database.insert(ledger_session_id, GalaxyLedger::Entry.new(entry_type: "learning", content: "L1", importance: "medium"))
-      # Extraction markers should NOT appear in tier1 results
-      GalaxyLedger::Database.insert(ledger_session_id, GalaxyLedger::Entry.new(entry_type: "extraction_marker", content: "/home/user/agent-guidelines/ruby-style.md", importance: "medium", source_file: "/home/user/agent-guidelines/ruby-style.md"))
-    end
-
-    it "returns guidelines for the session" do
-      ledger_session_id = GalaxyLedger::Database.resolve_session_identifier("s1").not_nil!
-      result = GalaxyLedger::Database.query_tier1(ledger_session_id)
-      result.guidelines.size.should eq(2)
-    end
-
-    it "returns implementation plans for the session" do
-      ledger_session_id = GalaxyLedger::Database.resolve_session_identifier("s1").not_nil!
-      result = GalaxyLedger::Database.query_tier1(ledger_session_id)
-      result.implementation_plans.size.should eq(1)
-    end
-
-    it "excludes extraction_marker entries from guidelines" do
-      ledger_session_id = GalaxyLedger::Database.resolve_session_identifier("s1").not_nil!
-      result = GalaxyLedger::Database.query_tier1(ledger_session_id)
-      all_types = result.guidelines.map(&.entry_type) + result.implementation_plans.map(&.entry_type) + result.high_importance_decisions.map(&.entry_type)
-      all_types.should_not contain("extraction_marker")
     end
 
     it "returns only high-importance decisions" do
@@ -1071,7 +667,7 @@ describe GalaxyLedger::Database do
     it "returns total count" do
       ledger_session_id = GalaxyLedger::Database.resolve_session_identifier("s1").not_nil!
       result = GalaxyLedger::Database.query_tier1(ledger_session_id)
-      result.total_count.should eq(4) # 2 guidelines + 1 impl_plan + 1 high decision
+      result.total_count.should eq(1) # 1 high decision
     end
 
     it "returns empty results for empty session_id" do
@@ -1124,9 +720,8 @@ describe GalaxyLedger::Database do
   describe ".query_for_restoration" do
     before_each do
       ledger_session_id = GalaxyLedger::Database.create_session("s1")
-      # Mix of tier 1 and tier 2 entries
-      GalaxyLedger::Database.insert(ledger_session_id, GalaxyLedger::Entry.new(entry_type: "guideline", content: "G1", importance: "high"))
-      GalaxyLedger::Database.insert(ledger_session_id, GalaxyLedger::Entry.new(entry_type: "implementation_plan", content: "IP1", importance: "high"))
+      # Tier 1 and tier 2 entries (guideline/implementation_plan entry types
+      # are no longer created, but decisions and learnings still are)
       GalaxyLedger::Database.insert(ledger_session_id, GalaxyLedger::Entry.new(entry_type: "decision", content: "D1 high", importance: "high"))
       GalaxyLedger::Database.insert(ledger_session_id, GalaxyLedger::Entry.new(entry_type: "decision", content: "D2 medium", importance: "medium"))
       GalaxyLedger::Database.insert(ledger_session_id, GalaxyLedger::Entry.new(entry_type: "learning", content: "L1", importance: "medium"))
@@ -1136,8 +731,6 @@ describe GalaxyLedger::Database do
       ledger_session_id = GalaxyLedger::Database.resolve_session_identifier("s1").not_nil!
       result = GalaxyLedger::Database.query_for_restoration(ledger_session_id)
 
-      result.tier1.guidelines.size.should eq(1)
-      result.tier1.implementation_plans.size.should eq(1)
       result.tier1.high_importance_decisions.size.should eq(1)
 
       result.tier2.learnings.size.should eq(1)
@@ -1147,7 +740,7 @@ describe GalaxyLedger::Database do
     it "returns combined total count" do
       ledger_session_id = GalaxyLedger::Database.resolve_session_identifier("s1").not_nil!
       result = GalaxyLedger::Database.query_for_restoration(ledger_session_id)
-      result.total_count.should eq(5)
+      result.total_count.should eq(3)
     end
 
     it "respects all limits" do
@@ -1169,70 +762,98 @@ describe GalaxyLedger::Database do
   # ============================================================
 
   describe "INTERNAL_ENTRY_TYPES exclusion" do
-    # Seed a session with a mix of real entries and internal extraction_marker entries.
-    # All public-facing queries should exclude the markers implicitly.
+    # Seed a session with a mix of real entries and internal (legacy) entries.
+    # Internal types (extraction_marker, guideline, implementation_plan) can no
+    # longer be created through Entry.new (validation rejects them), but they
+    # may exist in older databases. Insert them via raw SQL to simulate this.
+    # All public-facing queries should exclude internal types implicitly.
     before_each do
       ledger_session_id = GalaxyLedger::Database.create_session("s-excl")
-      GalaxyLedger::Database.insert(ledger_session_id, GalaxyLedger::Entry.new(entry_type: "guideline", content: "Use double-quotes for strings", importance: "high", source_file: "/home/user/agent-guidelines/ruby-style.md"))
+      # Insert legacy internal entries directly via SQL (bypasses Entry validation)
+      GalaxyLedger::Database.open do |db|
+        hash_gl = Digest::SHA256.hexdigest("guideline:Use double-quotes for strings")
+        db.exec(
+          "INSERT INTO ledger_entries (ledger_session_id, entry_type, content, importance, source_file, content_hash) VALUES (?, ?, ?, ?, ?, ?)",
+          ledger_session_id, "guideline", "Use double-quotes for strings", "high",
+          "/home/user/agent-guidelines/ruby-style.md", hash_gl,
+        )
+        hash_ip = Digest::SHA256.hexdigest("implementation_plan:Plan context")
+        db.exec(
+          "INSERT INTO ledger_entries (ledger_session_id, entry_type, content, importance, source_file, content_hash) VALUES (?, ?, ?, ?, ?, ?)",
+          ledger_session_id, "implementation_plan", "Plan context", "high",
+          "/home/user/implementation-plans/feature.md", hash_ip,
+        )
+        hash_em = Digest::SHA256.hexdigest("extraction_marker:/home/user/agent-guidelines/ruby-style.md")
+        db.exec(
+          "INSERT INTO ledger_entries (ledger_session_id, entry_type, content, importance, source_file, content_hash) VALUES (?, ?, ?, ?, ?, ?)",
+          ledger_session_id, "extraction_marker", "/home/user/agent-guidelines/ruby-style.md", "medium",
+          "/home/user/agent-guidelines/ruby-style.md", hash_em,
+        )
+      end
+      # This is the only public entry
       GalaxyLedger::Database.insert(ledger_session_id, GalaxyLedger::Entry.new(entry_type: "learning", content: "JWT tokens expire after 15 min", importance: "medium"))
-      GalaxyLedger::Database.insert(ledger_session_id, GalaxyLedger::Entry.new(entry_type: "extraction_marker", content: "/home/user/agent-guidelines/ruby-style.md", importance: "medium", source_file: "/home/user/agent-guidelines/ruby-style.md"))
     end
 
-    it "count excludes extraction_marker entries" do
-      GalaxyLedger::Database.count.should eq(2)
+    it "count excludes all internal entry types" do
+      GalaxyLedger::Database.count.should eq(1)
     end
 
-    it "count_by_session excludes extraction_marker entries" do
+    it "count_by_session excludes all internal entry types" do
       ledger_session_id = GalaxyLedger::Database.resolve_session_identifier("s-excl").not_nil!
-      GalaxyLedger::Database.count_by_session(ledger_session_id).should eq(2)
+      GalaxyLedger::Database.count_by_session(ledger_session_id).should eq(1)
     end
 
-    it "query_by_session excludes extraction_marker entries" do
+    it "query_by_session excludes all internal entry types" do
       ledger_session_id = GalaxyLedger::Database.resolve_session_identifier("s-excl").not_nil!
       entries = GalaxyLedger::Database.query_by_session(ledger_session_id)
-      entries.size.should eq(2)
-      entries.none? { |e| e.entry_type == "extraction_marker" }.should be_true
-    end
-
-    it "query_by_type returns extraction_marker entries when explicitly requested" do
-      ledger_session_id = GalaxyLedger::Database.resolve_session_identifier("s-excl").not_nil!
-      entries = GalaxyLedger::Database.query_by_type(ledger_session_id, "extraction_marker")
       entries.size.should eq(1)
-      entries.first.entry_type.should eq("extraction_marker")
+      entries.none? { |e| GalaxyLedger::Database::INTERNAL_ENTRY_TYPES.includes?(e.entry_type) }.should be_true
     end
 
-    it "query_by_importance excludes extraction_marker entries" do
+    it "query_by_type returns internal entries when explicitly requested" do
+      ledger_session_id = GalaxyLedger::Database.resolve_session_identifier("s-excl").not_nil!
+
+      markers = GalaxyLedger::Database.query_by_type(ledger_session_id, "extraction_marker")
+      markers.size.should eq(1)
+
+      guidelines = GalaxyLedger::Database.query_by_type(ledger_session_id, "guideline")
+      guidelines.size.should eq(1)
+
+      plans = GalaxyLedger::Database.query_by_type(ledger_session_id, "implementation_plan")
+      plans.size.should eq(1)
+    end
+
+    it "query_by_importance excludes all internal entry types" do
       ledger_session_id = GalaxyLedger::Database.resolve_session_identifier("s-excl").not_nil!
       entries = GalaxyLedger::Database.query_by_importance(ledger_session_id, "medium")
       entries.size.should eq(1)
       entries[0].entry_type.should eq("learning")
     end
 
-    it "search excludes extraction_marker entries" do
-      # The marker content is a file path containing "ruby-style" which is also in the guideline
+    it "search excludes all internal entry types" do
       entries = GalaxyLedger::Database.search("ruby")
-      entries.none? { |e| e.entry_type == "extraction_marker" }.should be_true
+      entries.none? { |e| GalaxyLedger::Database::INTERNAL_ENTRY_TYPES.includes?(e.entry_type) }.should be_true
     end
 
-    it "search_in_session excludes extraction_marker entries" do
+    it "search_in_session excludes all internal entry types" do
       ledger_session_id = GalaxyLedger::Database.resolve_session_identifier("s-excl").not_nil!
       entries = GalaxyLedger::Database.search_in_session(ledger_session_id, "ruby")
-      entries.none? { |e| e.entry_type == "extraction_marker" }.should be_true
+      entries.none? { |e| GalaxyLedger::Database::INTERNAL_ENTRY_TYPES.includes?(e.entry_type) }.should be_true
     end
 
-    it "query_recent_filtered excludes extraction_marker entries" do
+    it "query_recent_filtered excludes all internal entry types" do
       ledger_session_id = GalaxyLedger::Database.resolve_session_identifier("s-excl").not_nil!
       entries = GalaxyLedger::Database.query_recent_filtered(100, ledger_session_id: ledger_session_id)
-      entries.size.should eq(2)
-      entries.none? { |e| e.entry_type == "extraction_marker" }.should be_true
+      entries.size.should eq(1)
+      entries.none? { |e| GalaxyLedger::Database::INTERNAL_ENTRY_TYPES.includes?(e.entry_type) }.should be_true
     end
 
-    it "session_stats excludes extraction_marker entries from counts" do
+    it "session_stats excludes all internal entry types from counts" do
       ledger_session_id = GalaxyLedger::Database.resolve_session_identifier("s-excl").not_nil!
       stats = GalaxyLedger::Database.session_stats
       stat = stats.find { |s| s.ledger_session_id == ledger_session_id }
       stat.should_not be_nil
-      stat.not_nil!.entry_count.should eq(2)
+      stat.not_nil!.entry_count.should eq(1)
     end
   end
 
@@ -1244,7 +865,7 @@ describe GalaxyLedger::Database do
     describe ".insert with enhanced fields" do
       it "stores category, keywords, applies_when, source_file" do
         entry = GalaxyLedger::Entry.new(
-          entry_type: "guideline",
+          entry_type: "constraint",
           content: "Always use double-quotes for strings",
           importance: "medium",
           category: "ruby-style",
@@ -1290,7 +911,7 @@ describe GalaxyLedger::Database do
         ledger_session_id = GalaxyLedger::Database.create_session("s1")
         # Create entries with enhanced schema fields
         entry1 = GalaxyLedger::Entry.new(
-          entry_type: "guideline",
+          entry_type: "constraint",
           content: "Always use double-quotes for strings",
           importance: "medium",
           category: "ruby-style",
@@ -1299,7 +920,7 @@ describe GalaxyLedger::Database do
           source_file: "ruby-style.md"
         )
         entry2 = GalaxyLedger::Entry.new(
-          entry_type: "guideline",
+          entry_type: "constraint",
           content: "Use let! for database records",
           importance: "medium",
           category: "rspec",
@@ -1350,19 +971,19 @@ describe GalaxyLedger::Database do
       before_each do
         ledger_session_id = GalaxyLedger::Database.create_session("s1")
         entry1 = GalaxyLedger::Entry.new(
-          entry_type: "guideline",
+          entry_type: "constraint",
           content: "Ruby rule 1",
           importance: "medium",
           category: "ruby-style"
         )
         entry2 = GalaxyLedger::Entry.new(
-          entry_type: "guideline",
+          entry_type: "constraint",
           content: "RSpec rule 1",
           importance: "medium",
           category: "rspec"
         )
         entry3 = GalaxyLedger::Entry.new(
-          entry_type: "guideline",
+          entry_type: "constraint",
           content: "Ruby rule 2",
           importance: "high",
           category: "ruby-style"
@@ -1386,7 +1007,7 @@ describe GalaxyLedger::Database do
       end
 
       it "filters by category and type" do
-        entries = GalaxyLedger::Database.query_recent_filtered(100, entry_type: "guideline", category: "rspec")
+        entries = GalaxyLedger::Database.query_recent_filtered(100, entry_type: "constraint", category: "rspec")
         entries.size.should eq(1)
         entries[0].category.should eq("rspec")
       end
@@ -1395,7 +1016,7 @@ describe GalaxyLedger::Database do
     describe "StoredEntry#to_entry preserves enhanced fields" do
       it "converts with all enhanced fields" do
         entry = GalaxyLedger::Entry.new(
-          entry_type: "guideline",
+          entry_type: "constraint",
           content: "Test rule",
           importance: "medium",
           category: "test-category",

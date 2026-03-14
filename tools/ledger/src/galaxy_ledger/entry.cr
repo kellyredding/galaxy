@@ -9,10 +9,7 @@ module GalaxyLedger
     "learning",
     "decision",
     "discovery",
-    "guideline",
-    "implementation_plan",
     "reference",
-    "extraction_marker",
   ]
 
   # Importance levels for entries

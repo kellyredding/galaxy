@@ -48,12 +48,15 @@ describe "CLAUDE_CLI_SESSION_ID env var resolution" do
 
       # Add some data so the handoff context is non-empty
       entry = GalaxyLedger::Entry.new(
-        entry_type: "guideline",
+        entry_type: "learning",
         content: "Always use trailing commas",
         importance: "medium",
-        source_file: "/home/user/guidelines/style.md",
       )
       GalaxyLedger::Database.insert(original_ledger_id, entry)
+      GalaxyLedger::Database.upsert_session_file(
+        original_ledger_id, "/home/user/guidelines/style.md", :read,
+        file_type: "guideline",
+      )
 
       # Simulate on-clear with new hook session_id but same env var
       new_hook_id = "env-clear-cleared-#{rand(100000)}"

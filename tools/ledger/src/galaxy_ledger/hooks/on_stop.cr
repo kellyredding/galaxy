@@ -65,10 +65,6 @@ module GalaxyLedger
         # Short-circuits internally if name already finalized.
         name_suggestion_spawned = spawn_name_suggestion_async(ledger_session_id, current_sid)
 
-        # Re-extract any guideline/implementation plan files that were
-        # edited during this session (stale entries)
-        re_extracted_files = re_extract_stale_files(ledger_session_id, current_sid)
-
         # Re-read session record to get latest context_percentage
         session_record = Database.get_session_by_id(ledger_session_id)
         return unless session_record
@@ -78,7 +74,6 @@ module GalaxyLedger
           percentage: session_record.context_percentage,
           extraction_spawned: extraction_spawned,
           name_suggestion_spawned: name_suggestion_spawned,
-          re_extracted_files: re_extracted_files,
         )
         puts output_stop_json(system_message)
       end
@@ -155,7 +150,6 @@ module GalaxyLedger
         percentage : Float64,
         extraction_spawned : Bool,
         name_suggestion_spawned : Bool,
-        re_extracted_files : Array(String),
       ) : String
         parts = [] of String
         indicator = build_context_indicator(percentage)
@@ -165,7 +159,6 @@ module GalaxyLedger
         bg_count = 0
         bg_count += 1 if extraction_spawned
         bg_count += 1 if name_suggestion_spawned
-        bg_count += re_extracted_files.size
         if bg_count > 0
           label = bg_count == 1 ? "task" : "tasks"
           parts << "#{bg_count} background #{label} spawned"
@@ -239,52 +232,6 @@ module GalaxyLedger
         rescue
           false
         end
-      end
-
-      # Re-extract guideline/implementation plan files that were edited
-      # during this session. Reads fresh content from disk, prunes stale
-      # DB entries, and spawns async extract-file subprocesses.
-      # Returns list of file paths that were re-extracted.
-      # NOTE: extraction subprocesses use --session (not --pid) because their
-      # PPID is the hook process, not Claude Code.
-      private def re_extract_stale_files(ledger_session_id : Int64, current_sid : String) : Array(String)
-        re_extracted = [] of String
-
-        stale = Database.stale_entries(ledger_session_id)
-        return re_extracted if stale.empty?
-
-        binary = Process.executable_path || "galaxy-ledger"
-
-        stale.each do |entry|
-          # Read fresh content from disk; skip if file is gone
-          next unless File.exists?(entry[:full_path])
-
-          content = begin
-            File.read(entry[:full_path])
-          rescue
-            next
-          end
-
-          next if content.strip.empty?
-
-          # Prune stale entries, then spawn re-extraction with fresh content
-          Database.delete_entries_by_source_file(ledger_session_id, entry[:source_file])
-
-          begin
-            Process.new(
-              binary,
-              args: ["extract-file", "--session", current_sid, "--type", entry[:entry_type], "--path", entry[:full_path]],
-              input: IO::Memory.new(content),
-              output: Process::Redirect::Close,
-              error: Process::Redirect::Close,
-            )
-            re_extracted << entry[:full_path]
-          rescue
-            # Silently fail - re-extraction is best-effort
-          end
-        end
-
-        re_extracted
       end
     end
   end

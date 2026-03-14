@@ -151,40 +151,6 @@ module GalaxyLedger
       result
     end
 
-    # Extract guidelines from a guideline file
-    def self.extract_guidelines(file_path : String, content : String) : Result
-      return Result.new if content.strip.empty?
-
-      run_result = ClaudeCLI.run(
-        content: content,
-        prompt: Prompts.guideline_extraction(file_path),
-        model: EXTRACTION_MODEL,
-      )
-
-      return Result.new if run_result[:result].nil?
-
-      result = parse_extraction_result(run_result[:result].not_nil!, source_file: file_path)
-      apply_usage(result, run_result)
-      result
-    end
-
-    # Extract context from an implementation plan file
-    def self.extract_implementation_plan(file_path : String, content : String) : Result
-      return Result.new if content.strip.empty?
-
-      run_result = ClaudeCLI.run(
-        content: content,
-        prompt: Prompts.implementation_plan_extraction(file_path),
-        model: EXTRACTION_MODEL,
-      )
-
-      return Result.new if run_result[:result].nil?
-
-      result = parse_extraction_result(run_result[:result].not_nil!, source_file: file_path)
-      apply_usage(result, run_result)
-      result
-    end
-
     # Apply usage data from a ClaudeCLI RunResult to an extraction Result
     private def self.apply_usage(result : Result, run_result : ClaudeCLI::RunResult)
       result.cost_usd = run_result[:cost_usd]

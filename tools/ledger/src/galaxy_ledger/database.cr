@@ -24,6 +24,8 @@ module GalaxyLedger
     # These are used for internal tracking only and should never be exposed to CLI users.
     INTERNAL_ENTRY_TYPES = [
       "extraction_marker",
+      "guideline",
+      "implementation_plan",
     ]
 
     # SQL fragments for excluding internal types from queries.
@@ -178,6 +180,7 @@ module GalaxyLedger
             last_seen_at TEXT DEFAULT (datetime('now')),
             access_count INTEGER DEFAULT 1,
             metadata TEXT,
+            file_type TEXT NOT NULL DEFAULT 'other',
             UNIQUE(ledger_session_id, file_path, search_pattern),
             FOREIGN KEY (ledger_session_id) REFERENCES ledger_sessions(id) ON DELETE CASCADE
           )
@@ -1259,6 +1262,7 @@ module GalaxyLedger
       operation : Symbol,
       search_pattern : String = "",
       metadata : String? = nil,
+      file_type : String = "other",
     ) : Bool
       return false if ledger_session_id <= 0 || file_path.empty?
 
@@ -1273,9 +1277,10 @@ module GalaxyLedger
             <<-SQL,
               INSERT INTO ledger_session_files (
                 ledger_session_id, file_path, search_pattern,
-                is_read, is_edited, is_written, is_searched, metadata
+                is_read, is_edited, is_written, is_searched,
+                metadata, file_type
               )
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
               ON CONFLICT (ledger_session_id, file_path, search_pattern) DO UPDATE SET
                 is_read = MAX(ledger_session_files.is_read, excluded.is_read),
                 is_edited = MAX(ledger_session_files.is_edited, excluded.is_edited),
@@ -1293,6 +1298,7 @@ module GalaxyLedger
             is_written,
             is_searched,
             metadata,
+            file_type,
           )
           true
         end
@@ -1312,7 +1318,8 @@ module GalaxyLedger
             <<-SQL,
               SELECT id, ledger_session_id, file_path, search_pattern,
                      is_read, is_edited, is_written, is_searched,
-                     first_seen_at, last_seen_at, access_count, metadata
+                     first_seen_at, last_seen_at, access_count, metadata,
+                     file_type
               FROM ledger_session_files
               WHERE ledger_session_id = ?
               ORDER BY last_seen_at DESC
@@ -1484,122 +1491,6 @@ module GalaxyLedger
     end
 
     # Check if an extraction marker already exists for a source file in a session.
-    def self.has_extracted_source_file?(ledger_session_id : Int64, source_file : String) : Bool
-      return false if ledger_session_id <= 0 || source_file.empty?
-
-      begin
-        open do |db|
-          db.scalar(
-            <<-SQL,
-              SELECT COUNT(*) FROM ledger_entries
-              WHERE ledger_session_id = ? AND source_file = ?
-              AND entry_type = 'extraction_marker'
-              LIMIT 1
-            SQL
-            ledger_session_id,
-            source_file,
-          ).as(Int64) > 0
-        end
-      rescue
-        false
-      end
-    end
-
-    # Mark all entries for a source file as stale within a session.
-    def self.mark_entries_stale(ledger_session_id : Int64, source_file : String) : Int32
-      return 0 if ledger_session_id <= 0 || source_file.empty?
-
-      begin
-        open do |db|
-          db.exec(
-            <<-SQL,
-              UPDATE ledger_entries SET stale = 1
-              WHERE ledger_session_id = ? AND source_file = ?
-            SQL
-            ledger_session_id,
-            source_file,
-          )
-          db.scalar("SELECT changes()").as(Int64).to_i
-        end
-      rescue
-        0
-      end
-    end
-
-    # Find source files with stale extraction markers in a session.
-    # Returns the full path (from source_file) and the original extraction type
-    # (from metadata) for each stale marker.
-    def self.stale_entries(ledger_session_id : Int64) : Array(NamedTuple(source_file: String, full_path: String, entry_type: String))
-      results = [] of NamedTuple(source_file: String, full_path: String, entry_type: String)
-      return results if ledger_session_id <= 0
-
-      begin
-        open do |db|
-          db.query(
-            <<-SQL,
-              SELECT DISTINCT source_file, content, metadata
-              FROM ledger_entries
-              WHERE ledger_session_id = ? AND stale = 1
-                AND source_file IS NOT NULL
-                AND entry_type = 'extraction_marker'
-            SQL
-            ledger_session_id,
-          ) do |rs|
-            rs.each do
-              source_file = rs.read(String)
-              full_path = rs.read(String)
-              metadata_str = rs.read(String | Nil)
-
-              # Recover the original extraction type from metadata
-              extraction_type = "guideline" # default fallback
-              if metadata_str
-                begin
-                  meta = JSON.parse(metadata_str)
-                  if et = meta["extraction_type"]?.try(&.as_s?)
-                    extraction_type = et
-                  end
-                rescue
-                  # Use default
-                end
-              end
-
-              results << {
-                source_file: source_file,
-                full_path:   full_path,
-                entry_type:  extraction_type,
-              }
-            end
-          end
-        end
-      rescue
-        # Return empty on error
-      end
-
-      results
-    end
-
-    # Delete all guideline/implementation_plan/extraction_marker entries for a source file in a session.
-    def self.delete_entries_by_source_file(ledger_session_id : Int64, source_file : String) : Int32
-      return 0 if ledger_session_id <= 0 || source_file.empty?
-
-      begin
-        open do |db|
-          db.exec(
-            <<-SQL,
-              DELETE FROM ledger_entries
-              WHERE ledger_session_id = ? AND source_file = ?
-                AND entry_type IN ('guideline', 'implementation_plan', 'extraction_marker')
-            SQL
-            ledger_session_id,
-            source_file,
-          )
-          db.scalar("SELECT changes()").as(Int64).to_i
-        end
-      rescue
-        0
-      end
-    end
-
     # ============================================================
     # Query Operations
     # ============================================================
@@ -1900,52 +1791,24 @@ module GalaxyLedger
 
     # Tier 1: Essential context that should always be restored
     struct Tier1Result
-      getter guidelines : Array(StoredEntry)
-      getter implementation_plans : Array(StoredEntry)
       getter high_importance_decisions : Array(StoredEntry)
 
-      def initialize(@guidelines, @implementation_plans, @high_importance_decisions)
+      def initialize(@high_importance_decisions)
       end
 
       def total_count : Int32
-        guidelines.size + implementation_plans.size + high_importance_decisions.size
+        high_importance_decisions.size
       end
     end
 
     # Query Tier 1 essentials for a session
     def self.query_tier1(ledger_session_id : Int64, decision_limit : Int32 = 10) : Tier1Result
-      guidelines = [] of StoredEntry
-      impl_plans = [] of StoredEntry
       decisions = [] of StoredEntry
 
-      return Tier1Result.new(guidelines, impl_plans, decisions) if ledger_session_id <= 0
+      return Tier1Result.new(decisions) if ledger_session_id <= 0
 
       begin
         open do |db|
-          db.query(
-            <<-SQL,
-              SELECT id, created_at, ledger_session_id, entry_type, source, content, content_hash, metadata, importance, category, keywords, applies_when, source_file
-              FROM ledger_entries
-              WHERE ledger_session_id = ? AND entry_type = 'guideline'
-              ORDER BY created_at DESC
-            SQL
-            ledger_session_id
-          ) do |rs|
-            rs.each { guidelines << StoredEntry.from_row(rs) }
-          end
-
-          db.query(
-            <<-SQL,
-              SELECT id, created_at, ledger_session_id, entry_type, source, content, content_hash, metadata, importance, category, keywords, applies_when, source_file
-              FROM ledger_entries
-              WHERE ledger_session_id = ? AND entry_type = 'implementation_plan'
-              ORDER BY created_at DESC
-            SQL
-            ledger_session_id
-          ) do |rs|
-            rs.each { impl_plans << StoredEntry.from_row(rs) }
-          end
-
           db.query(
             <<-SQL,
               SELECT id, created_at, ledger_session_id, entry_type, source, content, content_hash, metadata, importance, category, keywords, applies_when, source_file
@@ -1964,7 +1827,7 @@ module GalaxyLedger
         # Return empty on error
       end
 
-      Tier1Result.new(guidelines, impl_plans, decisions)
+      Tier1Result.new(decisions)
     end
 
     # Tier 2: Supporting context (learnings + medium decisions)
@@ -3285,11 +3148,13 @@ module GalaxyLedger
       getter last_seen_at : String?
       getter access_count : Int64
       getter metadata : String?
+      getter file_type : String
 
       def initialize(
         @id, @ledger_session_id, @file_path, @search_pattern,
         @is_read, @is_edited, @is_written, @is_searched,
         @first_seen_at, @last_seen_at, @access_count, @metadata,
+        @file_type = "other",
       )
       end
 
@@ -3307,6 +3172,7 @@ module GalaxyLedger
           last_seen_at: rs.read(String?),
           access_count: rs.read(Int64),
           metadata: rs.read(String?),
+          file_type: rs.read(String),
         )
       end
     end

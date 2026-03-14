@@ -83,10 +83,9 @@ describe "OnCompact systemMessage" do
   it "includes entry counts when data exists" do
     3.times do |i|
       entry = GalaxyLedger::Entry.new(
-        entry_type: "guideline",
-        content: "Compact guideline #{i + 1}",
+        entry_type: "learning",
+        content: "Compact learning #{i + 1}",
         importance: "medium",
-        source_file: "/home/user/agent-guidelines/ruby-style.md"
       )
       GalaxyLedger::Database.insert(ledger_session_id, entry)
     end
@@ -100,7 +99,7 @@ describe "OnCompact systemMessage" do
     output = JSON.parse(result[:output])
     msg = output["systemMessage"].as_s
     msg.should contain("Handoff")
-    msg.should contain("3 guidelines")
+    msg.should contain("3 learnings")
   end
 end
 

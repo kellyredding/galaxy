@@ -110,102 +110,6 @@ def eval_assistant_learnings(fixtures_path : Path) : EvalResult
   end
 end
 
-def eval_guidelines(fixtures_path : Path) : EvalResult
-  start = Time.monotonic
-  begin
-    md_file = (fixtures_path / "guidelines" / "01_ruby_style.md").to_s
-    content = File.read(md_file)
-
-    result = GalaxyLedger::Extraction.extract_guidelines(md_file, content)
-
-    if result.extractions.size < 4
-      return EvalResult.new(
-        name: "guidelines",
-        passed: false,
-        message: "Expected at least 4 extractions, got #{result.extractions.size}",
-        duration: Time.monotonic - start,
-      )
-    end
-
-    bad_types = result.extractions.reject { |e| e.entry_type == "guideline" }
-    if bad_types.any?
-      return EvalResult.new(
-        name: "guidelines",
-        passed: false,
-        message: "Expected all guideline types, got: #{bad_types.map(&.entry_type).uniq.join(", ")}",
-        duration: Time.monotonic - start,
-      )
-    end
-
-    STDERR.puts "\n  [guideline:ruby_style] Guidelines:"
-    result.extractions.each do |e|
-      STDERR.puts "    - (#{e.importance}): #{e.content[0, 70]}..."
-    end
-
-    EvalResult.new(
-      name: "guidelines",
-      passed: true,
-      message: "#{result.extractions.size} guidelines",
-      duration: Time.monotonic - start,
-    )
-  rescue ex
-    EvalResult.new(
-      name: "guidelines",
-      passed: false,
-      message: "Exception: #{ex.message}",
-      duration: Time.monotonic - start,
-    )
-  end
-end
-
-def eval_implementation_plan(fixtures_path : Path) : EvalResult
-  start = Time.monotonic
-  begin
-    md_file = (fixtures_path / "implementation_plans" / "01_phased_plan.md").to_s
-    content = File.read(md_file)
-
-    result = GalaxyLedger::Extraction.extract_implementation_plan(md_file, content)
-
-    if result.extractions.size < 2
-      return EvalResult.new(
-        name: "implementation_plan",
-        passed: false,
-        message: "Expected at least 2 extractions, got #{result.extractions.size}",
-        duration: Time.monotonic - start,
-      )
-    end
-
-    bad_types = result.extractions.reject { |e| e.entry_type == "implementation_plan" }
-    if bad_types.any?
-      return EvalResult.new(
-        name: "implementation_plan",
-        passed: false,
-        message: "Expected all implementation_plan types, got: #{bad_types.map(&.entry_type).uniq.join(", ")}",
-        duration: Time.monotonic - start,
-      )
-    end
-
-    STDERR.puts "\n  [impl_plan:phased_plan] Context:"
-    result.extractions.each do |e|
-      STDERR.puts "    - (#{e.importance}): #{e.content[0, 70]}..."
-    end
-
-    EvalResult.new(
-      name: "implementation_plan",
-      passed: true,
-      message: "#{result.extractions.size} plan entries",
-      duration: Time.monotonic - start,
-    )
-  rescue ex
-    EvalResult.new(
-      name: "implementation_plan",
-      passed: false,
-      message: "Exception: #{ex.message}",
-      duration: Time.monotonic - start,
-    )
-  end
-end
-
 # --- CLI evals (subprocess run_binary calls) ---
 
 def eval_extract_assistant_input_file : EvalResult
@@ -585,7 +489,7 @@ describe "Evals", tags: "eval" do
 
   it "runs all evals concurrently" do
     channel = Channel(EvalResult).new
-    eval_count = 9
+    eval_count = 7
 
     # Spawn all 9 evals concurrently as fibers.
     # The 4 extraction evals call ClaudeCLI.run() which spawns `claude -p`.
@@ -596,8 +500,6 @@ describe "Evals", tags: "eval" do
     # Extraction evals (in-process Claude calls)
     spawn { channel.send(eval_user_directions(fixtures_path)) }
     spawn { channel.send(eval_assistant_learnings(fixtures_path)) }
-    spawn { channel.send(eval_guidelines(fixtures_path)) }
-    spawn { channel.send(eval_implementation_plan(fixtures_path)) }
 
     # CLI extraction evals (subprocess)
     spawn { channel.send(eval_extract_assistant_input_file) }
