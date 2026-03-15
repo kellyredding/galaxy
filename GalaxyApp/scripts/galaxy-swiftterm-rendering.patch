@@ -978,7 +978,7 @@ index 0417ede..c5c4809 100644
          let (min, max) = if Position.compare(start, end) == .before {
              (start, end)
 diff --git a/Sources/SwiftTerm/Terminal.swift b/Sources/SwiftTerm/Terminal.swift
-index 3ca5ffa..eac08c9 100644
+index 3ca5ffa..8fb3ec9 100644
 --- a/Sources/SwiftTerm/Terminal.swift
 +++ b/Sources/SwiftTerm/Terminal.swift
 @@ -91,7 +91,7 @@ public protocol TerminalDelegate: AnyObject {
@@ -1003,7 +1003,12 @@ index 3ca5ffa..eac08c9 100644
      var tabStopWidth : Int = 8
      
      /// Terminal configuration options.
-@@ -323,7 +323,7 @@ open class Terminal {
+@@ -319,11 +319,11 @@ open class Terminal {
+     public var options: TerminalOptions
+     
+     // The current buffers
+-    var normalBuffer, altBuffer: Buffer
++    public var normalBuffer, altBuffer: Buffer
      /**
       * Returns the active buffer (either the normal buffer or the alternative buffer)
       */
@@ -1047,3 +1052,12 @@ index 3ca5ffa..eac08c9 100644
      {
          let copy = Buffer(cols: source.cols, rows: source.rows, tabStopWidth: tabStopWidth, scrollback: source.scrollback)
          copy.xDisp = source.xDisp
+@@ -5267,7 +5268,7 @@ open class Terminal {
+         return copy
+     }
+ 
+-    func setViewYDisp (_ newValue: Int)
++    public func setViewYDisp (_ newValue: Int)
+     {
+         buffer.yDisp = newValue
+         synchronizedOutputBuffer?.yDisp = newValue

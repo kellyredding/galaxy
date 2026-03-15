@@ -50,13 +50,21 @@ class ScrollbackTerminalView: TerminalView {
         // Intentionally empty — read-only view
     }
 
-    /// No-op — catches the font-change resize path (resetFont → self.resize)
-    /// via dynamic dispatch, preventing terminal.resize() from mutating the
-    /// snapshot buffer's cols/rows. Frame-change resizes go through
-    /// processSizeChange → terminal.resize() directly (not through this
-    /// override) and are safe due to buffer reference isolation.
+    /// Resize the snapshot buffer with scroll-position anchoring.
+    /// The snapshot is wired as normalBuffer so resizeBuffers() hits
+    /// the right object. Skips softReset() (which super calls) to
+    /// preserve snapshot state.
     override func resize(cols: Int, rows: Int) {
-        // Intentionally empty — snapshot buffer dimensions are frozen
+        let buf = terminal.buffer
+        let scrollFraction = buf.yBase > 0
+            ? Double(buf.yDisp) / Double(buf.yBase)
+            : 1.0
+
+        terminal.resize(cols: cols, rows: rows)
+
+        // Restore scroll position proportionally after reflow
+        let newYDisp = Int(scrollFraction * Double(buf.yBase))
+        terminal.setViewYDisp(newYDisp)
     }
 
     // MARK: - Keyboard Handling

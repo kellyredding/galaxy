@@ -174,6 +174,9 @@ class TerminalHostView: NSView {
         terminalView.autoresizingMask = [.width, .height]
         addSubview(terminalView)
 
+        // Hide SwiftTerm's built-in caret — Claude Code renders its own cursor
+        terminalView.caretView.isHidden = true
+
         // Add drag highlight overlay ON TOP of terminal view
         let highlight = DragHighlightView(frame: bounds)
         highlight.autoresizingMask = [.width, .height]
@@ -427,7 +430,10 @@ class TerminalHostView: NSView {
             snapshot.yDisp = max(0, snapshot.yDisp - scrollLines)
         }
 
-        // Step 6: Inject snapshot into scrollback view's terminal
+        // Step 6: Inject snapshot into scrollback view's terminal.
+        // Set normalBuffer so resizeBuffers() targets the snapshot (not the
+        // empty default buffer). buffer is the active-buffer reference.
+        sbView.terminal.normalBuffer = snapshot
         sbView.terminal.buffer = snapshot
 
         // Step 6b: Sync terminal dimensions to match the snapshot buffer
