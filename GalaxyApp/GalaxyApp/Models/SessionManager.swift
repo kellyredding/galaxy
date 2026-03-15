@@ -526,6 +526,12 @@ class SessionManager: ObservableObject {
         session.afterNextIdle { [weak session] in
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak session] in
                 session?.sendCommand("/handoff")
+                // Claude's context was reset — clear the de-dup gate
+                // and re-apply the session name after handoff settles.
+                session?.resetNameSync()
+                session?.afterNextIdle { [weak session] in
+                    session?.syncSessionName()
+                }
             }
         }
     }

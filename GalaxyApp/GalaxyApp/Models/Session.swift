@@ -453,6 +453,13 @@ class Session: Identifiable, ObservableObject {
         }
     }
 
+    /// Clear the de-duplication gate so the next `syncSessionName()`
+    /// will re-send `/rename` even if the resolved name hasn't changed.
+    /// Used after `/clear` or `/compact` resets Claude's context.
+    func resetNameSync() {
+        lastRenamedTo = nil
+    }
+
     /// Request a /rename sync to Claude Code. If the session is idle,
     /// schedules a sustained-idle timer; if busy, defers to the next
     /// idle transition. The timer cancels if the session goes busy
