@@ -9,6 +9,7 @@ struct LedgerEntriesView: View {
     let entries: [LedgerEntry]?
     let isLoading: Bool
     let ledgerSessionId: Int64?
+    @Binding var searchQuery: String
     let onSearch: (String) -> Void
     let onClearSearch: () -> Void
     let scrollProxy: ScrollViewProxy
@@ -19,8 +20,6 @@ struct LedgerEntriesView: View {
 
     // Focus state for keyboard navigation
     @State private var focusedIndex: Int? = nil
-
-    @State private var searchText: String = ""
     @State private var expandedEntryIds: Set<Int64> = []
     @State private var sortColumn: SortColumn = .importance
     @State private var sortAscending: Bool = true
@@ -106,8 +105,8 @@ struct LedgerEntriesView: View {
         VStack(alignment: .leading, spacing: 8) {
             searchBar
 
-            if !searchText.isEmpty, let entries = entries {
-                Text("Showing \(entries.count) result\(entries.count == 1 ? "" : "s") for \"\(searchText)\"")
+            if !searchQuery.isEmpty, let entries = entries {
+                Text("Showing \(entries.count) result\(entries.count == 1 ? "" : "s") for \"\(searchQuery)\"")
                     .chromeFont(size: fontSize.caption2)
                     .foregroundColor(.secondary)
             }
@@ -121,10 +120,10 @@ struct LedgerEntriesView: View {
                     Spacer()
                 }
             } else if let entries = entries, entries.isEmpty {
-                if searchText.isEmpty {
+                if searchQuery.isEmpty {
                     emptyState
                 } else {
-                    Text("No entries matching \"\(searchText)\".")
+                    Text("No entries matching \"\(searchQuery)\".")
                         .chromeFont(size: fontSize.caption)
                         .foregroundColor(.secondary)
                         .padding(.vertical, 8)
@@ -170,23 +169,23 @@ struct LedgerEntriesView: View {
                 .foregroundColor(.secondary)
                 .font(.system(size: 12))
             SafeSearchField(
-                text: $searchText,
+                text: $searchQuery,
                 placeholder: "Search entries...",
                 fontSize: fontSize.caption2,
                 focusTrigger: searchFocusTrigger,
                 isActive: isSearchActive,
                 onTextChange: { searchSubject.send($0) },
                 onSubmit: {
-                    if searchText.isEmpty {
+                    if searchQuery.isEmpty {
                         onClearSearch()
                     } else {
-                        onSearch(searchText)
+                        onSearch(searchQuery)
                     }
                 }
             )
-            if !searchText.isEmpty {
+            if !searchQuery.isEmpty {
                 Button(action: {
-                    searchText = ""
+                    searchQuery = ""
                     onClearSearch()
                 }) {
                     Image(systemName: "xmark.circle.fill")
@@ -205,38 +204,60 @@ struct LedgerEntriesView: View {
         .frame(maxWidth: 300)
     }
 
+    // MARK: - Table Layout
+
+    /// Fixed column widths — Content is the flex column.
+    private static let colType: CGFloat = 90
+    private static let colImportance: CGFloat = 100
+    private static let colSource: CGFloat = 80
+    private static let colCategory: CGFloat = 90
+    private static let colCreated: CGFloat = 150
+    private static let colSpacing: CGFloat = 8
+    private static let rowPadding: CGFloat = 16  // 8 each side
+    /// Sum of fixed columns + inter-column gaps (5 gaps for 6 columns) + row padding
+    private static let fixedTotal: CGFloat =
+        colType + colImportance + colSource + colCategory + colCreated
+        + (colSpacing * 5) + rowPadding
+    private static let flexMin: CGFloat = 300
+
     // MARK: - Entries Content
 
     private var entriesContent: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Header row
-            headerRow
+        GeometryReader { geo in
+            let flexWidth = max(Self.flexMin, geo.size.width - Self.fixedTotal)
+            let tableWidth = Self.fixedTotal + flexWidth
 
-            // Data rows
-            ForEach(Array(sortedEntries.enumerated()), id: \.element.id) { index, entry in
-                entryRow(entry, index: index)
-                    .id(entry.id)
+            ScrollView(.horizontal, showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 0) {
+                    headerRow(flexWidth: flexWidth)
+
+                    ForEach(Array(sortedEntries.enumerated()), id: \.element.id) { index, entry in
+                        entryRow(entry, index: index, flexWidth: flexWidth)
+                            .id(entry.id)
+                    }
+                }
+                .frame(width: tableWidth)
             }
         }
     }
 
     // MARK: - Header
 
-    private var headerRow: some View {
-        HStack(spacing: 0) {
-            sortableHeader("Type", column: .entryType, width: 120)
-            sortableHeader("Importance", column: .importance, width: 100)
-            sortableHeader("Source", column: .source, width: 70)
-            sortableHeader("Content", column: .content, width: nil)
-            sortableHeader("Category", column: .category, width: 100)
-            sortableHeader("Created", column: .created, width: 140)
+    private func headerRow(flexWidth: CGFloat) -> some View {
+        HStack(spacing: Self.colSpacing) {
+            sortableHeader("Type", column: .entryType, width: Self.colType)
+            sortableHeader("Importance", column: .importance, width: Self.colImportance)
+            sortableHeader("Source", column: .source, width: Self.colSource)
+            sortableHeader("Content", column: .content, width: flexWidth)
+            sortableHeader("Category", column: .category, width: Self.colCategory)
+            sortableHeader("Created", column: .created, width: Self.colCreated)
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
         .background(Color.primary.opacity(0.05))
     }
 
-    private func sortableHeader(_ title: String, column: SortColumn, width: CGFloat?) -> some View {
+    private func sortableHeader(_ title: String, column: SortColumn, width: CGFloat) -> some View {
         Button(action: {
             if sortColumn == column {
                 sortAscending.toggle()
@@ -250,6 +271,7 @@ struct LedgerEntriesView: View {
                     .chromeFont(size: fontSize.caption2, weight: .semibold)
                     .foregroundColor(.secondary)
                     .textCase(.uppercase)
+                    .lineLimit(1)
                 if sortColumn == column {
                     Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
                         .font(.system(size: 8))
@@ -259,35 +281,41 @@ struct LedgerEntriesView: View {
         }
         .buttonStyle(.plain)
         .frame(width: width, alignment: .leading)
-        .frame(maxWidth: width == nil ? .infinity : nil, alignment: .leading)
     }
 
     // MARK: - Data Row
 
-    private func entryRow(_ entry: LedgerEntry, index: Int) -> some View {
+    private func entryRow(_ entry: LedgerEntry, index: Int, flexWidth: CGFloat) -> some View {
         let isExpanded = expandedEntryIds.contains(entry.id)
         let isFocused = focusedIndex == index
 
-        return HStack(alignment: .top, spacing: 0) {
+        return HStack(spacing: Self.colSpacing) {
             Text(entry.entryType)
                 .chromeFontMono(size: fontSize.caption2)
-                .frame(width: 120, alignment: .leading)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(width: Self.colType, alignment: .leading)
 
             Text(entry.importance)
                 .chromeFontMono(size: fontSize.caption2)
                 .foregroundColor(importanceColor(entry.importance))
-                .frame(width: 100, alignment: .leading)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(width: Self.colImportance, alignment: .leading)
 
             Text(entry.source ?? "--")
                 .chromeFontMono(size: fontSize.caption2)
                 .foregroundColor(.secondary)
-                .frame(width: 70, alignment: .leading)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(width: Self.colSource, alignment: .leading)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(isExpanded ? entry.content : String(entry.content.prefix(100)))
+                Text(isExpanded ? entry.content : String(entry.content.prefix(200)))
                     .chromeFontMono(size: fontSize.caption2)
-                    .lineLimit(isExpanded ? nil : 2)
-                if entry.content.count > 100 {
+                    .lineLimit(isExpanded ? nil : 1)
+                    .truncationMode(.tail)
+                if entry.content.count > 80 {
                     Button(isExpanded ? "Show less" : "Show more") {
                         if isExpanded {
                             expandedEntryIds.remove(entry.id)
@@ -300,16 +328,20 @@ struct LedgerEntriesView: View {
                     .foregroundColor(.accentColor)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(width: flexWidth, alignment: .leading)
 
             Text(entry.category ?? "--")
                 .chromeFontMono(size: fontSize.caption2)
                 .foregroundColor(.secondary)
-                .frame(width: 100, alignment: .leading)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(width: Self.colCategory, alignment: .leading)
 
             Text(formatTimestamp(entry.createdAt))
                 .chromeFontMono(size: fontSize.caption2)
-                .frame(width: 140, alignment: .leading)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(width: Self.colCreated, alignment: .leading)
         }
         .padding(.vertical, 3)
         .padding(.horizontal, 8)

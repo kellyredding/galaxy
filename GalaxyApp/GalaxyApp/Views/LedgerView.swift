@@ -43,11 +43,18 @@ struct LedgerView: View {
     /// Session detail fetched for identifiers subtab
     @State private var sessionDetail: LedgerSessionDetail? = nil
 
+    /// Current entries search query — lifted from LedgerEntriesView
+    /// so the refresh handler can re-apply it.
+    @State private var entriesSearchQuery: String = ""
+
     /// Whether a JIT fetch is in progress
     @State private var isLoading: Bool = false
 
-    /// Active fetch task — cancelled on tab/session switch
-    @State private var fetchTask: Task<Void, Never>? = nil
+    /// Per-subtab fetch tasks — independent cancellation so a files
+    /// fetch doesn't kill an entries fetch and vice versa.
+    @State private var filesFetchTask: Task<Void, Never>? = nil
+    @State private var entriesFetchTask: Task<Void, Never>? = nil
+    @State private var identifiersFetchTask: Task<Void, Never>? = nil
 
     /// True when this session is the visible one in the outer ZStack.
     private var isActiveSession: Bool {
@@ -100,15 +107,29 @@ struct LedgerView: View {
             guard isActiveSession else { return }
             fetchSubtabIfNeeded()
         }
+        .onChange(of: session.ledgerVersion) {
+            // Enrichment event arrived — refresh the active subtab
+            // with fresh data. Re-applies search if one is active.
+            guard isActiveSession,
+                  sessionManager.activeTab == .ledger else {
+                // Not visible — just invalidate caches so the next
+                // navigation triggers a fresh fetch.
+                files = nil
+                entries = nil
+                sessionDetail = nil
+                return
+            }
+            refreshCurrentSubtab()
+        }
         .onAppear {
             guard isActiveSession else { return }
-            triggerFetchForCurrentSubtab()
+            refreshCurrentSubtab()
         }
         .onDisappear {
             // Fires when session is removed from sessions array
-            fetchTask?.cancel()
-            fetchTask = nil
-            LedgerQueryService.shared.cancelAll()
+            filesFetchTask?.cancel(); filesFetchTask = nil
+            entriesFetchTask?.cancel(); entriesFetchTask = nil
+            identifiersFetchTask?.cancel(); identifiersFetchTask = nil
             files = nil
             entries = nil
             sessionDetail = nil
@@ -267,6 +288,7 @@ struct LedgerView: View {
                 entries: entries,
                 isLoading: isLoading,
                 ledgerSessionId: session.ledgerSessionId,
+                searchQuery: $entriesSearchQuery,
                 onSearch: { query in searchEntries(query: query) },
                 onClearSearch: { fetchEntriesData() },
                 scrollProxy: scrollProxy
@@ -291,10 +313,10 @@ struct LedgerView: View {
     // MARK: - Data Lifecycle
 
     private func handleSubtabSwitch() {
-        // Cancel in-flight fetch for the previous subtab
-        fetchTask?.cancel()
-        fetchTask = nil
-        LedgerQueryService.shared.cancelAll()
+        // Cancel in-flight fetches for previous subtabs
+        filesFetchTask?.cancel(); filesFetchTask = nil
+        entriesFetchTask?.cancel(); entriesFetchTask = nil
+        identifiersFetchTask?.cancel(); identifiersFetchTask = nil
         isLoading = false
 
         // Only fetch if the newly active subtab hasn't loaded yet.
@@ -303,15 +325,21 @@ struct LedgerView: View {
         fetchSubtabIfNeeded()
     }
 
-    /// Unconditional fetch — used on first appear to seed the initial subtab.
-    private func triggerFetchForCurrentSubtab() {
+    /// Unconditional refresh — re-fetches the active subtab's data,
+    /// re-applying the entries search query if one is active.
+    /// Used by the ledgerVersion change handler and onAppear.
+    private func refreshCurrentSubtab() {
         switch sessionManager.activeLedgerSubTab {
         case .lastActivity, .suggestedName:
-            break  // Uses data already on Session, no fetch needed
+            break  // Driven by Session @Published properties
         case .files:
             fetchFilesData()
         case .entries:
-            fetchEntriesData()
+            if entriesSearchQuery.isEmpty {
+                fetchEntriesData()
+            } else {
+                searchEntries(query: entriesSearchQuery)
+            }
         case .identifiers:
             fetchIdentifiersData()
         }
@@ -371,7 +399,8 @@ struct LedgerView: View {
     private func fetchFilesData() {
         guard let lsid = session.ledgerSessionId else { return }
         isLoading = true
-        fetchTask = Task {
+        filesFetchTask?.cancel()
+        filesFetchTask = Task {
             do {
                 let result = try await withFetchDeadline {
                     try await LedgerQueryService.shared.fetchFiles(ledgerSessionId: lsid)
@@ -395,7 +424,8 @@ struct LedgerView: View {
     private func fetchEntriesData() {
         guard let lsid = session.ledgerSessionId else { return }
         isLoading = true
-        fetchTask = Task {
+        entriesFetchTask?.cancel()
+        entriesFetchTask = Task {
             do {
                 let result = try await withFetchDeadline {
                     try await LedgerQueryService.shared.fetchEntries(ledgerSessionId: lsid)
@@ -419,9 +449,8 @@ struct LedgerView: View {
     private func searchEntries(query: String) {
         guard let lsid = session.ledgerSessionId else { return }
         isLoading = true
-        fetchTask?.cancel()
-        LedgerQueryService.shared.cancelAll()
-        fetchTask = Task {
+        entriesFetchTask?.cancel()
+        entriesFetchTask = Task {
             do {
                 let result = try await withFetchDeadline {
                     try await LedgerQueryService.shared.searchEntries(
@@ -447,7 +476,8 @@ struct LedgerView: View {
     private func fetchIdentifiersData() {
         guard let lsid = session.ledgerSessionId else { return }
         isLoading = true
-        fetchTask = Task {
+        identifiersFetchTask?.cancel()
+        identifiersFetchTask = Task {
             do {
                 let result = try await withFetchDeadline {
                     try await LedgerQueryService.shared.fetchSession(ledgerSessionId: lsid)

@@ -2,7 +2,7 @@ import Foundation
 
 /// Debounces events by the composite key (ledger_session_id, event, ref).
 ///
-/// Each unique key gets its own independent 200ms debounce window with
+/// Each unique key gets its own independent 400ms debounce window with
 /// replacement semantics: when a duplicate arrives during the quiet period,
 /// the previous pending event is discarded and the timer resets.
 ///
@@ -17,7 +17,7 @@ final class EventDebouncer {
     /// Callback invoked on the main queue when a debounced event fires
     var onFire: ((EventEnvelope) -> Void)?
 
-    init(interval: TimeInterval = 0.2) {
+    init(interval: TimeInterval = 0.4) {
         self.interval = interval
     }
 

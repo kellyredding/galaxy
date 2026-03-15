@@ -19,7 +19,7 @@ struct LedgerFilesView: View {
     @State private var sortAscending: Bool = false
 
     enum SortColumn {
-        case ops, filePath, pattern, accesses, lastSeen
+        case ops, fileType, filePath, pattern, accesses, lastSeen
     }
 
     private var sortedFiles: [LedgerFile] {
@@ -29,6 +29,8 @@ struct LedgerFilesView: View {
             switch sortColumn {
             case .ops:
                 result = opsString(a) < opsString(b)
+            case .fileType:
+                result = a.fileType < b.fileType
             case .filePath:
                 result = a.filePath < b.filePath
             case .pattern:
@@ -55,16 +57,7 @@ struct LedgerFilesView: View {
             } else if let files = files, files.isEmpty {
                 emptyState
             } else if files != nil {
-                VStack(alignment: .leading, spacing: 0) {
-                    // Header row
-                    headerRow
-
-                    // Data rows
-                    ForEach(Array(sortedFiles.enumerated()), id: \.element.id) { index, file in
-                        fileRow(file, index: index)
-                            .id(file.id)
-                    }
-                }
+                filesTable
             } else {
                 // No ledger session yet or fetch never started
                 emptyState
@@ -108,22 +101,58 @@ struct LedgerFilesView: View {
         .padding(.vertical, 40)
     }
 
+    // MARK: - Table Layout
+
+    /// Fixed column widths — File Path is the flex column.
+    private static let colOps: CGFloat = 50
+    private static let colType: CGFloat = 80
+    private static let colPattern: CGFloat = 120
+    private static let colAccesses: CGFloat = 70
+    private static let colLastSeen: CGFloat = 140
+    private static let colSpacing: CGFloat = 8
+    private static let rowPadding: CGFloat = 16  // 8 each side
+    /// Sum of fixed columns + inter-column gaps (5 gaps for 6 columns) + row padding
+    private static let fixedTotal: CGFloat =
+        colOps + colType + colPattern + colAccesses + colLastSeen
+        + (colSpacing * 5) + rowPadding
+    private static let flexMin: CGFloat = 300
+
+    private var filesTable: some View {
+        GeometryReader { geo in
+            let flexWidth = max(Self.flexMin, geo.size.width - Self.fixedTotal)
+            let tableWidth = Self.fixedTotal + flexWidth
+
+            ScrollView(.horizontal, showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 0) {
+                    headerRow(flexWidth: flexWidth)
+
+                    ForEach(Array(sortedFiles.enumerated()), id: \.element.id) { index, file in
+                        fileRow(file, index: index, flexWidth: flexWidth)
+                            .id(file.id)
+                    }
+                }
+                .frame(width: tableWidth)
+            }
+        }
+    }
+
     // MARK: - Header
 
-    private var headerRow: some View {
-        HStack(spacing: 0) {
-            sortableHeader("Ops", column: .ops, width: 50)
-            sortableHeader("File Path", column: .filePath, width: nil)
-            sortableHeader("Pattern", column: .pattern, width: 120)
-            sortableHeader("Accesses", column: .accesses, width: 70)
-            sortableHeader("Last Seen", column: .lastSeen, width: 140)
+    private func headerRow(flexWidth: CGFloat) -> some View {
+        HStack(spacing: Self.colSpacing) {
+            sortableHeader("Ops", column: .ops, width: Self.colOps)
+            sortableHeader("Type", column: .fileType, width: Self.colType)
+            sortableHeader("File Path", column: .filePath, width: flexWidth)
+            sortableHeader("Pattern", column: .pattern, width: Self.colPattern)
+            sortableHeader("Accesses", column: .accesses, width: Self.colAccesses)
+            sortableHeader("Last Seen", column: .lastSeen, width: Self.colLastSeen)
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
         .background(Color.primary.opacity(0.05))
     }
 
-    private func sortableHeader(_ title: String, column: SortColumn, width: CGFloat?) -> some View {
+    private func sortableHeader(_ title: String, column: SortColumn, width: CGFloat) -> some View {
         Button(action: {
             if sortColumn == column {
                 sortAscending.toggle()
@@ -137,6 +166,7 @@ struct LedgerFilesView: View {
                     .chromeFont(size: fontSize.caption2, weight: .semibold)
                     .foregroundColor(.secondary)
                     .textCase(.uppercase)
+                    .lineLimit(1)
                 if sortColumn == column {
                     Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
                         .font(.system(size: 8))
@@ -146,40 +176,51 @@ struct LedgerFilesView: View {
         }
         .buttonStyle(.plain)
         .frame(width: width, alignment: .leading)
-        .frame(maxWidth: width == nil ? .infinity : nil, alignment: .leading)
     }
 
     // MARK: - Data Row
 
-    private func fileRow(_ file: LedgerFile, index: Int) -> some View {
+    private func fileRow(_ file: LedgerFile, index: Int, flexWidth: CGFloat) -> some View {
         let isFocused = focusedIndex == index
 
-        return HStack(spacing: 0) {
+        return HStack(spacing: Self.colSpacing) {
             Text(opsString(file))
                 .chromeFontMono(size: fontSize.caption2)
                 .foregroundColor(.secondary)
-                .frame(width: 50, alignment: .leading)
+                .lineLimit(1)
+                .frame(width: Self.colOps, alignment: .leading)
+
+            Text(file.fileType)
+                .chromeFontMono(size: fontSize.caption2)
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(width: Self.colType, alignment: .leading)
 
             Text(abbreviatePath(file.filePath))
                 .chromeFontMono(size: fontSize.caption2)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .help(file.filePath)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(width: flexWidth, alignment: .leading)
 
             Text(file.searchPattern.isEmpty ? "" : file.searchPattern)
                 .chromeFontMono(size: fontSize.caption2)
                 .lineLimit(1)
+                .truncationMode(.tail)
                 .foregroundColor(.secondary)
-                .frame(width: 120, alignment: .leading)
+                .frame(width: Self.colPattern, alignment: .leading)
 
             Text(verbatim: "\(file.accessCount)")
                 .chromeFontMono(size: fontSize.caption2)
-                .frame(width: 70, alignment: .leading)
+                .lineLimit(1)
+                .frame(width: Self.colAccesses, alignment: .leading)
 
             Text(file.lastSeenAt.map { formatTimestamp($0) } ?? "--")
                 .chromeFontMono(size: fontSize.caption2)
-                .frame(width: 140, alignment: .leading)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(width: Self.colLastSeen, alignment: .leading)
         }
         .padding(.vertical, 3)
         .padding(.horizontal, 8)

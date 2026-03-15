@@ -1,34 +1,20 @@
 import Foundation
 
 /// Singleton service that fetches ledger data on demand by spawning
-/// the galaxy-ledger CLI as a subprocess. Each fetch cancels any
-/// in-flight query to prevent stale results during rapid navigation.
+/// the galaxy-ledger CLI as a subprocess. Each public method is
+/// designed to be called from independent per-subtab Tasks —
+/// concurrent CLI calls are expected and safe.
 class LedgerQueryService {
     static let shared = LedgerQueryService()
 
     private let binaryPath: String
     private let processTimeout: TimeInterval = 5.0
 
-    /// Currently running subprocess — terminated before each new fetch.
-    private var currentProcess: Process?
-    private let lock = NSLock()
-
     private init() {
         self.binaryPath = "\(NSHomeDirectory())/.claude/galaxy/bin/galaxy-ledger"
     }
 
     // MARK: - Public API
-
-    /// Cancel any in-flight CLI query.
-    func cancelAll() {
-        lock.lock()
-        let proc = currentProcess
-        currentProcess = nil
-        lock.unlock()
-        if let proc = proc, proc.isRunning {
-            proc.terminate()
-        }
-    }
 
     /// Fetch session detail (identifiers, PIDs) for a ledger session.
     func fetchSession(ledgerSessionId: Int64) async throws -> LedgerSessionDetail? {
@@ -79,12 +65,9 @@ class LedgerQueryService {
     // MARK: - CLI Subprocess
 
     /// Spawn the galaxy-ledger binary and collect stdout.
-    /// Cancels any previous in-flight process first.
+    /// No shared process tracking — each call is independent.
+    /// Task-level cancellation prevents stale data from being written.
     private func runCLI(args: [String]) async throws -> Data {
-        // Cancel previous (synchronous, safe to call from async)
-        cancelAll()
-
-        // Check for task cancellation
         try Task.checkCancellation()
 
         let process = Process()
@@ -96,13 +79,10 @@ class LedgerQueryService {
         process.standardOutput = stdout
         process.standardError = stderr
 
-        setCurrentProcess(process)
-
         return try await withCheckedThrowingContinuation { continuation in
             do {
                 try process.run()
             } catch {
-                self.clearCurrentProcess(process)
                 continuation.resume(throwing: error)
                 return
             }
@@ -116,8 +96,6 @@ class LedgerQueryService {
                 let stderrData = stderr.fileHandleForReading.readDataToEndOfFile()
 
                 process.waitUntilExit()
-
-                self.clearCurrentProcess(process)
 
                 guard process.terminationStatus == 0 else {
                     let errMsg = String(data: stderrData, encoding: .utf8) ?? "Unknown error"
@@ -133,20 +111,6 @@ class LedgerQueryService {
                 continuation.resume(returning: stdoutData)
             }
         }
-    }
-
-    /// Thread-safe setter for currentProcess.
-    private func setCurrentProcess(_ process: Process) {
-        lock.lock()
-        currentProcess = process
-        lock.unlock()
-    }
-
-    /// Thread-safe conditional clear of currentProcess.
-    private func clearCurrentProcess(_ process: Process) {
-        lock.lock()
-        if currentProcess === process { currentProcess = nil }
-        lock.unlock()
     }
 }
 
@@ -198,6 +162,7 @@ struct LedgerFile: Codable, Identifiable {
     let firstSeenAt: String?
     let lastSeenAt: String?
     let accessCount: Int64
+    let fileType: String
 }
 
 struct LedgerEntry: Codable, Identifiable {
