@@ -231,6 +231,20 @@ class MainMenu: NSObject, NSMenuDelegate {
 
         let activeSession = sessionManager.activeSession
 
+        // Scrollback: available when active session exists, disabled when not on Terminal tab
+        if activeSession != nil {
+            menu.addItem(.separator())
+
+            let onTerminalTab = sessionManager.activeTab == .terminal
+            let scrollbackItem = NSMenuItem(
+                title: "Scrollback",
+                action: onTerminalTab ? #selector(MenuActions.enterScrollback(_:)) : nil,
+                keyEquivalent: "s"
+            )
+            scrollbackItem.target = MenuActions.shared
+            menu.addItem(scrollbackItem)
+        }
+
         // Clear/Compact: only show when active session is running
         if let active = activeSession, active.isRunning && !active.hasExited {
             menu.addItem(.separator())
@@ -597,6 +611,10 @@ class MenuActions: NSObject {
     @objc func resumeSession(_ sender: Any?) {
         guard let activeId = SessionManager.shared.activeSessionId else { return }
         SessionManager.shared.resumeSession(sessionId: activeId)
+    }
+
+    @objc func enterScrollback(_ sender: Any?) {
+        NotificationCenter.default.post(name: .enterScrollback, object: nil)
     }
 
     @objc func clearSession(_ sender: Any?) {

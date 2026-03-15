@@ -536,10 +536,17 @@ struct SessionRow: View {
     }
 
     /// Return focus to the terminal if it's visible (running, not exited).
-    /// If the session is stopped, the terminal isn't in the view hierarchy
-    /// so window will be nil — natural no-op.
+    /// Routes through TerminalHostView so scrollback state is respected.
     private func restoreTerminalFocus() {
         DispatchQueue.main.async {
+            var view: NSView? = session.terminalView.superview
+            while let v = view {
+                if let host = v as? TerminalHostView {
+                    host.requestFocus()
+                    return
+                }
+                view = v.superview
+            }
             session.terminalView.window?.makeFirstResponder(session.terminalView)
         }
     }

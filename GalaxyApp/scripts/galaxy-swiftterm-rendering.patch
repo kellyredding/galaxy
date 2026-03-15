@@ -45,7 +45,7 @@ index deca240..4f8f287 100644
          dependencies: [
              "SwiftTerm",
 diff --git a/Sources/SwiftTerm/Apple/AppleTerminalView.swift b/Sources/SwiftTerm/Apple/AppleTerminalView.swift
-index 553a94c..c8cd0b7 100644
+index 553a94c..9b47034 100644
 --- a/Sources/SwiftTerm/Apple/AppleTerminalView.swift
 +++ b/Sources/SwiftTerm/Apple/AppleTerminalView.swift
 @@ -14,6 +14,13 @@ import ImageIO
@@ -179,8 +179,9 @@ index 553a94c..c8cd0b7 100644
 -        userScrolling = false
      }
 -    
+-    func scrollTo (row: Int, notifyAccessibility: Bool = true)
 +
-     func scrollTo (row: Int, notifyAccessibility: Bool = true)
++    public func scrollTo (row: Int, notifyAccessibility: Bool = true)
      {
          let displayBuffer = terminal.displayBuffer
          if row != displayBuffer.yDisp {
@@ -254,10 +255,71 @@ index 553a94c..c8cd0b7 100644
          queuePendingDisplay()
      }
      
+@@ -1573,33 +1651,10 @@ extension TerminalView {
+         feedFinish()
+     }
+          
+-    /**
+-     * Triggers a resize of the underlying terminal to the desired columsn and rows
+-     */
+-    public func resize (cols: Int, rows: Int)
+-    {
+-        terminal.resize (cols: cols, rows: rows)
+-        sizeChanged (source: terminal)
+-        terminal.softReset()
+-    }
+-    
+-    /**
+-     * Sends the specified slice of byte arrays to the program running under the terminal emulator
+-     * - Parameter data: the slice of an array to send to the client
+-     */
+-    public func send(data: ArraySlice<UInt8>)
+-    {
+-        ensureCaretIsVisible ()
+-        #if os(iOS) || os(visionOS)
+-        if TerminalView.textInputDebugEnabled {
+-            let previewBytes = data.prefix(32).map { String(format: "%02X", $0) }.joined(separator: " ")
+-            print("UITextInput[\(TerminalView.textInputLogCounter + 1)]: send bytes=\(data.count) [\(previewBytes)]")
+-            TerminalView.textInputLogCounter += 1
+-        }
+-        #endif
+-        terminalDelegate?.send (source: self, data: data)
+-    }
+-    
++    // GALAXY: resize(cols:rows:) and send(data:) relocated to
++    // MacTerminalView.swift class body (marked open) so subclasses
++    // in other modules can override them.
++
+     /**
+      * Sends the specified string encoded at utf8 to the program running under the terminal emulator
+      * - Parameter txt: the string to send to the client
 diff --git a/Sources/SwiftTerm/Buffer.swift b/Sources/SwiftTerm/Buffer.swift
-index a49310f..bb1de73 100644
+index a49310f..98f6942 100644
 --- a/Sources/SwiftTerm/Buffer.swift
 +++ b/Sources/SwiftTerm/Buffer.swift
+@@ -29,7 +29,7 @@ public final class Buffer {
+     /// This is the index into the `lines` array that corresponds to the top row of displayed
+     /// content in the terminal when the scroll is zero.   So the terminal contents that the application
+     /// has access to are `lines [yBase..(yBase+rows)]`
+-    var yBase: Int {
++    public var yBase: Int {
+         get { _yBase }
+         set {
+             if newValue > _lines.count {
+@@ -185,11 +185,11 @@ public final class Buffer {
+     public var savedCharset: [UInt8:String]? = nil
+     
+     var hasScrollback : Bool
+-    var cols: Int {
++    public var cols: Int {
+         get { _cols }
+         set { _cols = newValue }
+     }
+-    var rows: Int {
++    public var rows: Int {
+         get { _rows }
+         set { _rows = newValue }
+     }
 @@ -421,7 +421,7 @@ public final class Buffer {
              // Deal with columns increasing (reducing needs to happen after reflow)
              
@@ -285,6 +347,39 @@ index a49310f..bb1de73 100644
                  let line = lines [i]
                  if line.count < newCols {
                      print ("stop here newCols=\(newCols) but the element has: \(line.count)")
+diff --git a/Sources/SwiftTerm/Mac/MacCaretView.swift b/Sources/SwiftTerm/Mac/MacCaretView.swift
+index cf0816a..137c3cf 100644
+--- a/Sources/SwiftTerm/Mac/MacCaretView.swift
++++ b/Sources/SwiftTerm/Mac/MacCaretView.swift
+@@ -15,7 +15,7 @@ import CoreGraphics
+ import CoreText
+ 
+ // The CaretView is used to show the cursor
+-class CaretView: NSView, CALayerDelegate {
++public class CaretView: NSView, CALayerDelegate {
+     weak var terminal: TerminalView?
+     var ctline: CTLine?
+     var bgColor: CGColor
+@@ -108,14 +108,14 @@ class CaretView: NSView, CALayerDelegate {
+         setNeedsDisplay(bounds)
+     }
+     
+-    func draw(_ layer: CALayer, in context: CGContext) {
++    public func draw(_ layer: CALayer, in context: CGContext) {
+         drawCursor (in: context, hasFocus: tracksFocus ? (terminal?.hasFocus ?? true) : true)
+     }
+-    
+-    override func draw(_ dirtyRect: NSRect) {
++
++    public override func draw(_ dirtyRect: NSRect) {
+     }
+-    
+-    override func hitTest(_ point: NSPoint) -> NSView? {
++
++    public override func hitTest(_ point: NSPoint) -> NSView? {
+         // we do not want to steal hits, let the terminal view take them
+         return nil
+     }
 diff --git a/Sources/SwiftTerm/Mac/MacExtensions.swift b/Sources/SwiftTerm/Mac/MacExtensions.swift
 index 90402c0..d53edd9 100644
 --- a/Sources/SwiftTerm/Mac/MacExtensions.swift
@@ -313,7 +408,7 @@ index 90402c0..d53edd9 100644
                          blue: CGFloat (color.blue) / 65535.0,
                          alpha: 1.0)
 diff --git a/Sources/SwiftTerm/Mac/MacTerminalView.swift b/Sources/SwiftTerm/Mac/MacTerminalView.swift
-index 412b95a..dfe1180 100644
+index 412b95a..e7c28f9 100644
 --- a/Sources/SwiftTerm/Mac/MacTerminalView.swift
 +++ b/Sources/SwiftTerm/Mac/MacTerminalView.swift
 @@ -15,6 +15,27 @@ import AppKit
@@ -344,11 +439,20 @@ index 412b95a..dfe1180 100644
  /**
   * TerminalView provides an AppKit front-end to the `Terminal` termininal emulator.
   * It is up to a subclass to either wire the terminal emulator to a remote terminal
-@@ -99,7 +120,9 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -92,14 +113,16 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+     var pendingDisplay: Bool = false
+     
+     var cellDimension: CellDimension!
+-    var caretView: CaretView!
++    public var caretView: CaretView!
+     public var terminal: Terminal!
+     private var progressBarView: TerminalProgressBarView?
+     private var progressReportTimer: Timer?
      private var lastProgressValue: UInt8?
  
-     var selection: SelectionService!
+-    var selection: SelectionService!
 -    private var scroller: NSScroller!
++    public var selection: SelectionService!
 +    private var scroller: GalaxyScroller!
 +    // GALAXY: Tracks linesTop before each feed to detect buffer trims
 +    var preFeedLinesTop: Int = 0
@@ -601,6 +705,15 @@ index 412b95a..dfe1180 100644
      
      /// If set to true, the terminal treats the "Option" key as the Meta key in old terminals,
      /// which has the effect of sending the ESC character before the character that was
+@@ -653,7 +809,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+     // doCommand/noop: - but more research needs to take place to figure out the priority
+     // of those keys.
+     //
+-    public override func keyDown(with event: NSEvent) {
++    open override func keyDown(with event: NSEvent) {
+         selection.active = false
+         let eventFlags = event.modifierFlags
+         
 @@ -931,6 +1087,26 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
      
      open func selectionChanged(source: Terminal) {
@@ -723,13 +836,14 @@ index 412b95a..dfe1180 100644
          }
      }
      
+-    public override func scrollWheel(with event: NSEvent) {
 +    /// Accumulated fractional scroll delta for smooth sub-line trackpad scrolling.
 +    /// Trackpad momentum sends many small fractional deltas (e.g. 0.3, 0.7);
 +    /// accumulating them prevents swallowing small gestures while keeping
 +    /// discrete mouse-wheel clicks (which send integer deltas) responsive.
 +    private var scrollDeltaAccumulator: CGFloat = 0
 +
-     public override func scrollWheel(with event: NSEvent) {
++    open override func scrollWheel(with event: NSEvent) {
          if event.deltaY == 0 {
              return
          }
@@ -787,10 +901,50 @@ index 412b95a..dfe1180 100644
      public override func resetCursorRects() {
          addCursorRect(bounds, cursor: .iBeam)
      }
+@@ -1422,6 +1663,30 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+     public func iTermContent (source: Terminal, content: ArraySlice<UInt8>) {
+         terminalDelegate?.iTermContent(source: self, content: content)
+     }
++
++    // GALAXY: Relocated from extension TerminalView in AppleTerminalView.swift
++    // so subclasses in other modules can override. Swift does not allow
++    // cross-module override of non-@objc extension methods.
++
++    /**
++     * Triggers a resize of the underlying terminal to the desired columns and rows
++     */
++    open func resize (cols: Int, rows: Int)
++    {
++        terminal.resize (cols: cols, rows: rows)
++        sizeChanged (source: terminal)
++        terminal.softReset()
++    }
++
++    /**
++     * Sends the specified slice of byte arrays to the program running under the terminal emulator
++     * - Parameter data: the slice of an array to send to the client
++     */
++    open func send(data: ArraySlice<UInt8>)
++    {
++        ensureCaretIsVisible ()
++        terminalDelegate?.send (source: self, data: data)
++    }
+ }
+ 
+ 
 diff --git a/Sources/SwiftTerm/SelectionService.swift b/Sources/SwiftTerm/SelectionService.swift
-index 0417ede..9c86911 100644
+index 0417ede..c5c4809 100644
 --- a/Sources/SwiftTerm/SelectionService.swift
 +++ b/Sources/SwiftTerm/SelectionService.swift
+@@ -13,7 +13,7 @@ import Foundation
+  * property, and if that is true, then the `start` and `end` represents offsets within
+  * the terminal's buffer.  They are guaranteed to be ordered.
+  */
+-class SelectionService: CustomDebugStringConvertible {
++public class SelectionService: CustomDebugStringConvertible {
+     var terminal: Terminal
+     
+     public init (terminal: Terminal)
 @@ -531,7 +531,30 @@ class SelectionService: CustomDebugStringConvertible {
              selectionMode = .character
          }
@@ -824,9 +978,49 @@ index 0417ede..9c86911 100644
          let (min, max) = if Position.compare(start, end) == .before {
              (start, end)
 diff --git a/Sources/SwiftTerm/Terminal.swift b/Sources/SwiftTerm/Terminal.swift
-index 3ca5ffa..19637dd 100644
+index 3ca5ffa..eac08c9 100644
 --- a/Sources/SwiftTerm/Terminal.swift
 +++ b/Sources/SwiftTerm/Terminal.swift
+@@ -91,7 +91,7 @@ public protocol TerminalDelegate: AnyObject {
+     /// Invoked when synchronized output mode is toggled on or off.
+     /// The default implementation does nothing.
+     func synchronizedOutputChanged (source: Terminal, active: Bool)
+-    
++
+     /// Should raise the bell
+     /// The default implementation does nothing.
+     func bell (source: Terminal)
+@@ -308,10 +308,10 @@ open class Terminal {
+     let MINIMUM_ROWS = 1
+     
+     /// The current terminal columns (counting from 1)
+-    public private(set) var cols: Int = 80
++    public var cols: Int = 80
+     
+     /// The current terminal rows (counting from 1)
+-    public private(set) var rows: Int = 25
++    public var rows: Int = 25
+     var tabStopWidth : Int = 8
+     
+     /// Terminal configuration options.
+@@ -323,7 +323,7 @@ open class Terminal {
+     /**
+      * Returns the active buffer (either the normal buffer or the alternative buffer)
+      */
+-    public private(set) var buffer: Buffer
++    public var buffer: Buffer
+ 
+     private let synchronizedOutputTimeoutSeconds: TimeInterval = 1.0
+     private var synchronizedOutputActive: Bool = false
+@@ -331,7 +331,7 @@ open class Terminal {
+     private var synchronizedOutputBufferIsAlternate: Bool = false
+     private var synchronizedOutputTimeoutItem: DispatchWorkItem?
+ 
+-    var displayBuffer: Buffer {
++    public var displayBuffer: Buffer {
+         synchronizedOutputBuffer ?? buffer
+     }
+ 
 @@ -351,7 +351,7 @@ open class Terminal {
      
      // You can ignore most of the defaults set here, the function
@@ -836,3 +1030,20 @@ index 3ca5ffa..19637dd 100644
      var cursorHidden : Bool = false
      
      /// Controls the origin mode (DECOM), when set, the screen is limited to the top and bottom margins
+@@ -5214,6 +5214,7 @@ open class Terminal {
+         guard synchronizedOutputActive else {
+             return
+         }
++
+         synchronizedOutputActive = false
+         synchronizedOutputBuffer = nil
+         synchronizedOutputBufferIsAlternate = false
+@@ -5236,7 +5237,7 @@ open class Terminal {
+         DispatchQueue.main.asyncAfter(deadline: .now() + synchronizedOutputTimeoutSeconds, execute: workItem)
+     }
+ 
+-    private func snapshotBuffer (_ source: Buffer) -> Buffer
++    public func snapshotBuffer (_ source: Buffer) -> Buffer
+     {
+         let copy = Buffer(cols: source.cols, rows: source.rows, tabStopWidth: tabStopWidth, scrollback: source.scrollback)
+         copy.xDisp = source.xDisp

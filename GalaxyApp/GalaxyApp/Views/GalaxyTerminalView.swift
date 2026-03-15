@@ -67,4 +67,20 @@ class GalaxyTerminalView: LocalProcessTerminalView {
         super.dataReceived(slice: slice)
         onDataReceived?()
     }
+
+    // MARK: - Scroll Interception
+
+    /// Callback invoked on scroll-wheel-up before the parent handles
+    /// the event. Returns true if the event was consumed (scrollback
+    /// overlay created), false to let the parent proceed normally.
+    /// The NSEvent is passed so the callback can inspect deltaY, phase, etc.
+    var onScrollUp: ((NSEvent) -> Bool)?
+
+    public override func scrollWheel(with event: NSEvent) {
+        // Only intercept upward scrolls (positive deltaY)
+        if event.deltaY > 0, let callback = onScrollUp, callback(event) {
+            return  // Scrollback was created, event consumed
+        }
+        super.scrollWheel(with: event)
+    }
 }
