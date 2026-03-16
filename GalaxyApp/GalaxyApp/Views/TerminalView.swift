@@ -84,10 +84,6 @@ class TerminalHostView: NSView {
     private var scrollbackCooldown = false
     private var scrollbackCooldownTimer: DispatchWorkItem?
 
-    /// Pending resync work item — 400ms trailing debounce. Cancelled and
-    /// re-created on each resize/font trigger so rapid events coalesce.
-    private var pendingResync: DispatchWorkItem?
-
     /// Combine subscriptions for live settings sync (font, theme, hasExited).
     private var cancellables = Set<AnyCancellable>()
 
@@ -108,7 +104,6 @@ class TerminalHostView: NSView {
         }
         cancellables.removeAll()
         scrollbackCooldownTimer?.cancel()
-        pendingResync?.cancel()
     }
 
     /// Set up local event monitor to intercept Ctrl+Arrow for line navigation.
@@ -255,12 +250,6 @@ class TerminalHostView: NSView {
         terminalView.frame = bounds
         dragHighlightView?.frame = bounds
         scrollbackOverlay?.frame = bounds
-
-        // Trigger 2: debounced resync during resize (layout fires on
-        // every frame change, debounce coalesces to one resync).
-        if isScrollbackActive {
-            scheduleScrollbackResync()
-        }
     }
 
     func requestFocus() {
@@ -456,11 +445,6 @@ class TerminalHostView: NSView {
             self?.dismissScrollback()
         }
 
-        // Trigger 3: final resync when live window drag ends
-        sbView.onLiveResizeEnd = { [weak self] in
-            self?.scheduleScrollbackResync()
-        }
-
         // Create overlay container with border and pill
         let overlay = ScrollbackOverlayView(frame: bounds, scrollbackTerminalView: sbView)
         overlay.autoresizingMask = [.width, .height]
@@ -486,9 +470,6 @@ class TerminalHostView: NSView {
         if window?.firstResponder === overlay.scrollbackTerminalView {
             window?.makeFirstResponder(terminalView)
         }
-
-        pendingResync?.cancel()
-        pendingResync = nil
 
         overlay.removeFromSuperview()
         scrollbackOverlay = nil
@@ -557,54 +538,6 @@ class TerminalHostView: NSView {
         sbView.nativeBackgroundColor = theme.backgroundColorValue
         sbView.installColors(theme.swiftTermPalette)
         sbView.galaxyBoldForegroundColor = theme.boldForegroundColor
-
-        // Debounced resync — after Claude re-renders at the new font size,
-        // swap in a fresh snapshot to get properly-rendered content.
-        scheduleScrollbackResync()
-    }
-
-    // MARK: - Scrollback Buffer Resync
-
-    /// Schedule a debounced resync of the scrollback buffer from the live
-    /// terminal. Each call cancels any pending resync and starts a fresh
-    /// 400ms timer. Called from three trigger points: font/theme changes,
-    /// live-resize frames, and viewDidEndLiveResize.
-    private func scheduleScrollbackResync() {
-        guard isScrollbackActive else { return }
-        pendingResync?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            self?.resyncScrollbackBuffer()
-        }
-        pendingResync = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
-    }
-
-    /// Take a fresh snapshot from the live terminal and swap it into the
-    /// scrollback view's terminal. The overlay structure (pill, border,
-    /// first responder) is untouched — only the underlying buffer changes.
-    private func resyncScrollbackBuffer() {
-        guard let overlay = scrollbackOverlay else { return }
-        let sbView = overlay.scrollbackTerminalView
-
-        // Capture scroll position from top before swap
-        let savedYDisp = sbView.terminal.buffer.yDisp
-
-        // Fresh snapshot from the live terminal
-        let snapshot = terminalView.terminal.snapshotBuffer(
-            terminalView.terminal.buffer
-        )
-
-        // Swap buffer into existing scrollback terminal
-        sbView.terminal.normalBuffer = snapshot
-        sbView.terminal.buffer = snapshot
-        sbView.terminal.cols = snapshot.cols
-        sbView.terminal.rows = snapshot.rows
-
-        // Restore scroll position, clamped to new buffer bounds
-        let clampedYDisp = min(savedYDisp, snapshot.yBase)
-        sbView.terminal.setViewYDisp(clampedYDisp)
-
-        sbView.setNeedsDisplay(sbView.bounds)
     }
 
     // MARK: - Terminal Text Injection

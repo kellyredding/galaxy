@@ -22,9 +22,6 @@ class ScrollbackTerminalView: TerminalView {
     /// Called when the user presses Escape to dismiss the scrollback overlay.
     var onDismiss: (() -> Void)?
 
-    /// Called when a live window drag ends — triggers a final buffer resync.
-    var onLiveResizeEnd: (() -> Void)?
-
     override init(frame: NSRect) {
         super.init(frame: frame)
 
@@ -68,11 +65,6 @@ class ScrollbackTerminalView: TerminalView {
         // Restore scroll position proportionally after reflow
         let newYDisp = Int(scrollFraction * Double(buf.yBase))
         terminal.setViewYDisp(newYDisp)
-    }
-
-    override func viewDidEndLiveResize() {
-        super.viewDidEndLiveResize()
-        onLiveResizeEnd?()
     }
 
     // MARK: - Keyboard Handling
