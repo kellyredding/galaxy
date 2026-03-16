@@ -50,21 +50,26 @@ class ScrollbackTerminalView: TerminalView {
         // Intentionally empty — read-only view
     }
 
-    /// Resize the snapshot buffer with scroll-position anchoring.
-    /// The snapshot is wired as normalBuffer so resizeBuffers() hits
-    /// the right object. Skips softReset() (which super calls) to
-    /// preserve snapshot state.
+    // MARK: - Column Freeze (no reflow)
+
+    /// Return a fixed effective width so processSizeChange always computes
+    /// newCols == terminal.cols. This prevents Buffer.reflow from running
+    /// on resize or font change — the snapshot stays frozen and long lines
+    /// clip at the view edge rather than rewrapping.
+    override func getEffectiveWidth(size: CGSize) -> CGFloat {
+        // During init, terminal and cellDimension are nil — fall back to
+        // default behavior. Once the snapshot is injected, this returns
+        // a fixed width that locks processSizeChange to the snapshot cols.
+        guard terminal != nil, cellDimension != nil else {
+            return super.getEffectiveWidth(size: size)
+        }
+        return CGFloat(terminal.cols) * cellDimension.width
+    }
+
+    /// Safety net: if anything calls TerminalView.resize(cols:rows:)
+    /// directly, force cols back to the frozen snapshot value.
     override func resize(cols: Int, rows: Int) {
-        let buf = terminal.buffer
-        let scrollFraction = buf.yBase > 0
-            ? Double(buf.yDisp) / Double(buf.yBase)
-            : 1.0
-
-        terminal.resize(cols: cols, rows: rows)
-
-        // Restore scroll position proportionally after reflow
-        let newYDisp = Int(scrollFraction * Double(buf.yBase))
-        terminal.setViewYDisp(newYDisp)
+        terminal.resize(cols: terminal.cols, rows: rows)
     }
 
     // MARK: - Keyboard Handling

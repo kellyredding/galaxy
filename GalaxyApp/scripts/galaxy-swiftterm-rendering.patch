@@ -1,51 +1,5 @@
-diff --git a/Package.swift b/Package.swift
-index deca240..4f8f287 100644
---- a/Package.swift
-+++ b/Package.swift
-@@ -22,12 +22,9 @@ let targets: [Target] = [
-         name: "SwiftTerm",
-         dependencies: [],
-         path: "Sources/SwiftTerm",
--        exclude: platformExcludes + ["Mac/README.md"],
--//        swiftSettings: [
--//            .unsafeFlags(["-enforce-exclusivity=none"])
--//        ]
-+        exclude: platformExcludes + ["Mac/README.md"]
-     ),
--    .executableTarget (
-+    .executableTarget(
-         name: "SwiftTermFuzz",
-         dependencies: ["SwiftTerm"],
-         path: "Sources/SwiftTermFuzz"
-@@ -52,23 +49,15 @@ let targets: [Target] = [
-     .target(
-         name: "SwiftTerm",
-         //
--        // We can not use Swift Subprocess, because there is no way of configuring the child process to
--        // be a controlling terminal, as it is posix-spawn based.
--//        dependencies: [
--//            .product(name: "Subprocess", package: "swift-subprocess", condition: .when(platforms: [.macOS, .linux]))
--//        ],
-         path: "Sources/SwiftTerm",
--        exclude: platformExcludes + ["Mac/README.md"],
--//        swiftSettings: [
--//            .unsafeFlags(["-enforce-exclusivity=none"])
--//        ]
-+        exclude: platformExcludes + ["Mac/README.md"]
-     ),
--    .executableTarget (
-+    .executableTarget(
-         name: "SwiftTermFuzz",
-         dependencies: ["SwiftTerm"],
-         path: "Sources/SwiftTermFuzz"
-     ),
--    .executableTarget (
-+    .executableTarget(
-         name: "Termcast",
-         dependencies: [
-             "SwiftTerm",
 diff --git a/Sources/SwiftTerm/Apple/AppleTerminalView.swift b/Sources/SwiftTerm/Apple/AppleTerminalView.swift
-index 553a94c..9b47034 100644
+index 553a94c..7f5cef1 100644
 --- a/Sources/SwiftTerm/Apple/AppleTerminalView.swift
 +++ b/Sources/SwiftTerm/Apple/AppleTerminalView.swift
 @@ -14,6 +14,13 @@ import ImageIO
@@ -62,7 +16,17 @@ index 553a94c..9b47034 100644
  #if os(iOS) || os(visionOS)
  import UIKit
  typealias TTColor = UIColor
-@@ -191,6 +198,11 @@ extension TerminalView {
+@@ -57,7 +64,8 @@ struct ViewLineInfo {
+ }
+ 
+ extension TerminalView {
+-    typealias CellDimension = CGSize
++    // GALAXY: public so ScrollbackTerminalView can access cellDimension
++    public typealias CellDimension = CGSize
+     
+     func resetCaches ()
+     {
+@@ -191,6 +199,11 @@ extension TerminalView {
          switch color {
          case .defaultColor:
              if isFg {
@@ -74,7 +38,7 @@ index 553a94c..9b47034 100644
                  return nativeForegroundColor
              } else {
                  return nativeBackgroundColor
-@@ -332,7 +344,8 @@ extension TerminalView {
+@@ -332,7 +345,8 @@ extension TerminalView {
          var nsattr: [NSAttributedString.Key:Any] = [
              .font: tf,
              .foregroundColor: fg,
@@ -84,7 +48,7 @@ index 553a94c..9b47034 100644
          ]
          if flags.contains (.underline) {
              let underlineColor = attribute.underlineColor.map {
-@@ -400,7 +413,8 @@ extension TerminalView {
+@@ -400,7 +414,8 @@ extension TerminalView {
          var nsattr: [NSAttributedString.Key:Any] = [
              .font: tf,
              .foregroundColor: fgColor,
@@ -94,7 +58,7 @@ index 553a94c..9b47034 100644
          ]
          if flags.contains (.underline) {
              let underlineColor = attribute.underlineColor.map {
-@@ -575,7 +589,8 @@ extension TerminalView {
+@@ -575,7 +590,8 @@ extension TerminalView {
              // Renders block elements independently of the font
              // U+2580...U+259F
              } else if customBlockGlyphs,
@@ -104,7 +68,7 @@ index 553a94c..9b47034 100644
                        let rects = BlockElementMapping.rects(for: UInt32(ch.code)) {
                  let fgColor = (currentAttributes[.foregroundColor] as? TTColor) ?? nativeForegroundColor
                  blockElements.append(BlockElementRenderItem(column: col, columnWidth: width, rects: rects, foregroundColor: fgColor))
-@@ -1064,6 +1079,12 @@ extension TerminalView {
+@@ -1064,6 +1080,12 @@ extension TerminalView {
              #if os(macOS)
              context.setShouldSmoothFonts(true)
              context.setAllowsFontSmoothing(true)
@@ -117,7 +81,7 @@ index 553a94c..9b47034 100644
              #endif
  
              for segment in lineInfo.segments {
-@@ -1111,6 +1132,10 @@ extension TerminalView {
+@@ -1111,6 +1133,10 @@ extension TerminalView {
                      }
  
                      nativeForegroundColor.set()
@@ -128,7 +92,7 @@ index 553a94c..9b47034 100644
  
                      if runAttributes.keys.contains(.foregroundColor) {
                          let color = runAttributes[.foregroundColor] as! TTColor
-@@ -1119,8 +1144,26 @@ extension TerminalView {
+@@ -1119,8 +1145,26 @@ extension TerminalView {
                              context.setFillColorSpace(colorSpace)
                          }
                          context.setFillColor(cgColor)
@@ -156,7 +120,7 @@ index 553a94c..9b47034 100644
                      CTFontDrawGlyphs(runFont, runGlyphs, &positions, positions.count, context)
  
                      // Draw other attributes
-@@ -1471,13 +1514,12 @@ extension TerminalView {
+@@ -1471,13 +1515,12 @@ extension TerminalView {
      
      public func scroll (toPosition: Double)
      {
@@ -172,7 +136,7 @@ index 553a94c..9b47034 100644
          if newScrollPosition < 0 {
              newScrollPosition = 0
          }
-@@ -1488,18 +1530,17 @@ extension TerminalView {
+@@ -1488,18 +1531,17 @@ extension TerminalView {
          if newScrollPosition != oldPosition {
              scrollTo(row: newScrollPosition)
          }
@@ -195,7 +159,7 @@ index 553a94c..9b47034 100644
              // do the display update
              updateDisplay (notifyAccessibility: notifyAccessibility)
              //selectionView.notifyScrolled(source: terminal)
-@@ -1507,6 +1548,23 @@ extension TerminalView {
+@@ -1507,6 +1549,23 @@ extension TerminalView {
              updateScroller()
              setNeedsDisplay(frame)
          }
@@ -219,7 +183,7 @@ index 553a94c..9b47034 100644
      }
      
      /// Scrolls the content of the terminal one page up
-@@ -1547,13 +1605,33 @@ extension TerminalView {
+@@ -1547,13 +1606,33 @@ extension TerminalView {
      func feedPrepare()
      {
          search.invalidate()
@@ -255,7 +219,7 @@ index 553a94c..9b47034 100644
          queuePendingDisplay()
      }
      
-@@ -1573,33 +1651,10 @@ extension TerminalView {
+@@ -1573,33 +1652,10 @@ extension TerminalView {
          feedFinish()
      }
           
@@ -408,7 +372,7 @@ index 90402c0..d53edd9 100644
                          blue: CGFloat (color.blue) / 65535.0,
                          alpha: 1.0)
 diff --git a/Sources/SwiftTerm/Mac/MacTerminalView.swift b/Sources/SwiftTerm/Mac/MacTerminalView.swift
-index 412b95a..e7c28f9 100644
+index 412b95a..e7550dd 100644
 --- a/Sources/SwiftTerm/Mac/MacTerminalView.swift
 +++ b/Sources/SwiftTerm/Mac/MacTerminalView.swift
 @@ -15,6 +15,27 @@ import AppKit
@@ -439,11 +403,14 @@ index 412b95a..e7c28f9 100644
  /**
   * TerminalView provides an AppKit front-end to the `Terminal` termininal emulator.
   * It is up to a subclass to either wire the terminal emulator to a remote terminal
-@@ -92,14 +113,16 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -91,15 +112,18 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+     var debug: TerminalDebugView?
      var pendingDisplay: Bool = false
      
-     var cellDimension: CellDimension!
+-    var cellDimension: CellDimension!
 -    var caretView: CaretView!
++    // GALAXY: public so ScrollbackTerminalView can compute frozen col width
++    public var cellDimension: CellDimension!
 +    public var caretView: CaretView!
      public var terminal: Terminal!
      private var progressBarView: TerminalProgressBarView?
@@ -459,7 +426,7 @@ index 412b95a..e7c28f9 100644
      
      // Attribute dictionary, maps a console attribute (color, flags) to the corresponding dictionary
      // of attributes for an NSAttributedString
-@@ -305,6 +328,9 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -305,6 +329,9 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
              settingBg = true
              _nativeBg = newValue
              terminal.backgroundColor = nativeBackgroundColor.getTerminalColor ()
@@ -469,7 +436,7 @@ index 412b95a..e7c28f9 100644
              settingBg = false
          }
      }
-@@ -312,6 +338,12 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -312,6 +339,12 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
      /// Controls weather to use high ansi colors, if false terminal will use bold text instead of high ansi colors
      public var useBrightColors: Bool = true
  
@@ -482,7 +449,7 @@ index 412b95a..e7c28f9 100644
      /// When true, block element (U+2580-U+259F) and box drawing (U+2500-U+257F) characters use custom rendering.
      public var customBlockGlyphs: Bool = true {
          didSet {
-@@ -360,6 +392,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -360,6 +393,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
      @objc
      func scrollerActivated ()
      {
@@ -490,7 +457,7 @@ index 412b95a..e7c28f9 100644
          switch scroller.hitPart {
          case .decrementPage:
              pageUp()
-@@ -380,9 +413,22 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -380,9 +414,22 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
          default:
              print ("Scroller: New value introduced")
          }
@@ -513,7 +480,7 @@ index 412b95a..e7c28f9 100644
      func getScrollerFrame() -> CGRect {
          let scrollerWidth = NSScroller.scrollerWidth(for: .regular, scrollerStyle: scrollerStyle)
          return NSRect(x: bounds.maxX - scrollerWidth, y: 0, width: scrollerWidth, height: bounds.height)
-@@ -392,7 +438,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -392,7 +439,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
      {
          let scrollerFrame = getScrollerFrame()
          if scroller == nil {
@@ -522,7 +489,7 @@ index 412b95a..e7c28f9 100644
          } else {
              scroller?.frame = scrollerFrame
          }
-@@ -400,16 +446,74 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -400,16 +447,74 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
          scroller.scrollerStyle = scrollerStyle
          scroller.knobProportion = 0.1
          scroller.isEnabled = false
@@ -597,16 +564,19 @@ index 412b95a..e7c28f9 100644
      }
  
      /// This method sents the `nativeForegroundColor` and `nativeBackgroundColor`
-@@ -435,7 +539,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -435,8 +540,9 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
      {
          return NSRect (x: 0, y: 0, width: cellDimension.width * CGFloat(terminal.cols) + scroller.frame.width, height: cellDimension.height * CGFloat(terminal.rows))
      }
 -    
+-    func getEffectiveWidth (size: CGSize) -> CGFloat
 +
-     func getEffectiveWidth (size: CGSize) -> CGFloat
++    // GALAXY: open so ScrollbackTerminalView can freeze column count
++    open func getEffectiveWidth (size: CGSize) -> CGFloat
      {
          return (size.width-scroller.frame.width)
-@@ -448,7 +552,16 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+     }
+@@ -448,7 +554,16 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
      }
      
      open func linefeed(source: Terminal) {
@@ -624,7 +594,7 @@ index 412b95a..e7c28f9 100644
      }
      
      /// This vaiable controls whether mouse events are sent to the application running under the
-@@ -518,7 +631,35 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -518,7 +633,35 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
          updateScrollerFrame()
          updateCursorPosition()
          updateProgressBarFrame()
@@ -661,7 +631,7 @@ index 412b95a..e7c28f9 100644
      }
  
      public override func resizeSubviews(withOldSize oldSize: NSSize) {
-@@ -543,7 +684,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -543,7 +686,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
      //
      // NSTextInputClient protocol implementation
      //
@@ -670,7 +640,7 @@ index 412b95a..e7c28f9 100644
          let response = super.becomeFirstResponder()
          if response {
              hasFocus = true
-@@ -553,7 +694,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -553,7 +696,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
          return response
      }
      
@@ -679,7 +649,7 @@ index 412b95a..e7c28f9 100644
          let response = super.resignFirstResponder()
          if response {
              caretView.disableAnimations()
-@@ -627,10 +768,25 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -627,10 +770,25 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
          super.flagsChanged(with: event)
      }
      
@@ -705,7 +675,7 @@ index 412b95a..e7c28f9 100644
      
      /// If set to true, the terminal treats the "Option" key as the Meta key in old terminals,
      /// which has the effect of sending the ESC character before the character that was
-@@ -653,7 +809,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -653,7 +811,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
      // doCommand/noop: - but more research needs to take place to figure out the priority
      // of those keys.
      //
@@ -714,7 +684,7 @@ index 412b95a..e7c28f9 100644
          selection.active = false
          let eventFlags = event.modifierFlags
          
-@@ -931,6 +1087,26 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -931,6 +1089,26 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
      
      open func selectionChanged(source: Terminal) {
          needsDisplay = true
@@ -741,7 +711,7 @@ index 412b95a..e7c28f9 100644
      }
      
      func cut (sender: Any?) {}
-@@ -952,6 +1128,14 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -952,6 +1130,14 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
          let clipboard = NSPasteboard.general
          clipboard.clearContents()
          clipboard.setString(str, forType: .string)
@@ -756,7 +726,7 @@ index 412b95a..e7c28f9 100644
      }
      
      public override func selectAll(_ sender: Any?)
-@@ -1008,7 +1192,9 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -1008,7 +1194,9 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
      }
      
      private var autoScrollDelta = 0
@@ -767,7 +737,7 @@ index 412b95a..e7c28f9 100644
      private func scrollingTimerElapsed (source: Timer)
      {
          if autoScrollDelta == 0 {
-@@ -1017,7 +1203,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -1017,7 +1205,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
          if autoScrollDelta < 0 {
              scrollUp(lines: autoScrollDelta * -1)
          } else {
@@ -776,7 +746,7 @@ index 412b95a..e7c28f9 100644
          }
      }
      
-@@ -1078,6 +1264,11 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -1078,6 +1266,11 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
          //print ("Up at col=\(hit.col) row=\(hit.row) count=\(event.clickCount) selection.active=\(selection.active) didSelectionDrag=\(didSelectionDrag) ")
          #endif
          
@@ -788,7 +758,7 @@ index 412b95a..e7c28f9 100644
          didSelectionDrag = false
      }
      
-@@ -1106,14 +1297,38 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -1106,14 +1299,38 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
          }
          didSelectionDrag = true
          autoScrollDelta = 0
@@ -832,7 +802,7 @@ index 412b95a..e7c28f9 100644
          setNeedsDisplay(bounds)
      }
      
-@@ -1195,19 +1410,45 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -1195,19 +1412,45 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
          }
      }
      
@@ -884,7 +854,7 @@ index 412b95a..e7c28f9 100644
      {
          if delta > 9 {
              return max (terminal.rows, 20)
-@@ -1215,12 +1456,12 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -1215,12 +1458,12 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
          if delta > 5 {
              return 10
          }
@@ -901,7 +871,7 @@ index 412b95a..e7c28f9 100644
      public override func resetCursorRects() {
          addCursorRect(bounds, cursor: .iBeam)
      }
-@@ -1422,6 +1663,30 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -1422,6 +1665,30 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
      public func iTermContent (source: Terminal, content: ArraySlice<UInt8>) {
          terminalDelegate?.iTermContent(source: self, content: content)
      }
