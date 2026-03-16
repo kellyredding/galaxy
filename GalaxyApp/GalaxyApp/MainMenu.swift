@@ -523,7 +523,7 @@ class MainMenu: NSObject, NSMenuDelegate {
         let showItem = NSMenuItem(
             title: "Show Galaxy",
             action: #selector(MenuActions.showMainWindow(_:)),
-            keyEquivalent: "0"
+            keyEquivalent: ""
         )
         showItem.target = MenuActions.shared
         menu.addItem(showItem)
