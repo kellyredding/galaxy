@@ -95,17 +95,25 @@ struct SnapshotsView: View {
         .onChange(of: openSnapshot != nil) {
             syncReaderOpenState()
             updateEscapeMonitor()
+
+            // Re-fetch index after reader closes if data was nilled
+            // during a session switch while the reader was open.
+            if openSnapshot == nil,
+               session.id == sessionManager.activeSessionId,
+               sessionManager.activeTab == .snapshots,
+               snapshots == nil {
+                fetchSnapshotList()
+            }
         }
         .onChange(of: sessionManager.activeSessionId) {
             syncReaderOpenState()
             updateEscapeMonitor()
             restoreWebViewFocus()
 
-            // Nil index data for inactive sessions — re-fetched in
-            // <50ms on return. Only when reader is closed to avoid
-            // any edge case with reader's row-refocus on close.
-            if session.id != sessionManager.activeSessionId,
-               openSnapshot == nil {
+            // Nil index data for inactive sessions — always safe
+            // since the reader replaces the index view entirely,
+            // and the index re-fetches when the reader closes.
+            if session.id != sessionManager.activeSessionId {
                 snapshots = nil
             }
         }
@@ -118,6 +126,13 @@ struct SnapshotsView: View {
                session.id == sessionManager.activeSessionId,
                openSnapshot == nil {
                 fetchSnapshotList()
+            }
+            // Nil index data when switching away from Snapshots tab
+            // (only if reader is closed — preserve reader state)
+            if sessionManager.activeTab != .snapshots,
+               session.id == sessionManager.activeSessionId,
+               openSnapshot == nil {
+                snapshots = nil
             }
         }
         .onAppear {
