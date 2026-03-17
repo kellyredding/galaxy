@@ -1,16 +1,17 @@
 import SwiftUI
 
-/// Container that keeps a LedgerView alive per session using a ZStack.
-/// Opacity + allowsHitTesting toggle visibility without destroying state.
+/// Container that renders a single LedgerView for the active session.
+/// Conditional rendering tears down the view on session switch, freeing
+/// (N-1) × 6 view instances. The search query is hoisted to Session so
+/// it survives teardown; all other data re-fetches in <100ms on return.
 struct LedgerContainerView: View {
     @EnvironmentObject var sessionManager: SessionManager
 
     var body: some View {
-        ZStack {
-            ForEach(sessionManager.sessions) { session in
+        Group {
+            if let session = sessionManager.activeSession {
                 LedgerView(session: session)
-                    .opacity(session.id == sessionManager.activeSessionId ? 1 : 0)
-                    .allowsHitTesting(session.id == sessionManager.activeSessionId)
+                    .id(session.id)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -43,10 +44,6 @@ struct LedgerView: View {
     /// Session detail fetched for identifiers subtab
     @State private var sessionDetail: LedgerSessionDetail? = nil
 
-    /// Current entries search query — lifted from LedgerEntriesView
-    /// so the refresh handler can re-apply it.
-    @State private var entriesSearchQuery: String = ""
-
     /// Whether a JIT fetch is in progress
     @State private var isLoading: Bool = false
 
@@ -74,13 +71,8 @@ struct LedgerView: View {
                         // Subtab picker
                         subtabPicker
 
-                        // Subtab content — only build the heavy ZStack for
-                        // the active session; inactive sessions render nothing.
-                        // @State data survives because the LedgerView itself
-                        // stays alive in the outer per-session ZStack.
-                        if isActiveSession {
-                            subtabContent(scrollProxy: scrollProxy)
-                        }
+                        // Subtab content
+                        subtabContent(scrollProxy: scrollProxy)
                     }
                     .frame(width: geo.size.width - 40, alignment: .leading)
                     .padding(.horizontal, 20)
@@ -102,11 +94,6 @@ struct LedgerView: View {
                   isActiveSession else { return }
             fetchSubtabIfNeeded()
         }
-        .onChange(of: sessionManager.activeSessionId) {
-            // Seed data when this session becomes active
-            guard isActiveSession else { return }
-            fetchSubtabIfNeeded()
-        }
         .onChange(of: session.ledgerVersion) {
             // Enrichment event arrived — refresh the active subtab
             // with fresh data. Re-applies search if one is active.
@@ -126,7 +113,7 @@ struct LedgerView: View {
             refreshCurrentSubtab()
         }
         .onDisappear {
-            // Fires when session is removed from sessions array
+            // Fires on session switch (conditional rendering) and session removal
             filesFetchTask?.cancel(); filesFetchTask = nil
             entriesFetchTask?.cancel(); entriesFetchTask = nil
             identifiersFetchTask?.cancel(); identifiersFetchTask = nil
@@ -288,7 +275,10 @@ struct LedgerView: View {
                 entries: entries,
                 isLoading: isLoading,
                 ledgerSessionId: session.ledgerSessionId,
-                searchQuery: $entriesSearchQuery,
+                searchQuery: Binding(
+                    get: { session.ledgerEntriesSearchQuery },
+                    set: { session.ledgerEntriesSearchQuery = $0 }
+                ),
                 onSearch: { query in searchEntries(query: query) },
                 onClearSearch: { fetchEntriesData() },
                 scrollProxy: scrollProxy
@@ -335,10 +325,10 @@ struct LedgerView: View {
         case .files:
             fetchFilesData()
         case .entries:
-            if entriesSearchQuery.isEmpty {
+            if session.ledgerEntriesSearchQuery.isEmpty {
                 fetchEntriesData()
             } else {
-                searchEntries(query: entriesSearchQuery)
+                searchEntries(query: session.ledgerEntriesSearchQuery)
             }
         case .identifiers:
             fetchIdentifiersData()
@@ -346,7 +336,7 @@ struct LedgerView: View {
     }
 
     /// Lazy fetch — only fires when a subtab's data is still nil (first visit).
-    /// Preserves already-loaded or search-filtered data on return visits.
+    /// Re-applies the hoisted search query when entries need re-fetching.
     private func fetchSubtabIfNeeded() {
         switch sessionManager.activeLedgerSubTab {
         case .lastActivity, .suggestedName:
@@ -354,7 +344,13 @@ struct LedgerView: View {
         case .files:
             if files == nil { fetchFilesData() }
         case .entries:
-            if entries == nil { fetchEntriesData() }
+            if entries == nil {
+                if session.ledgerEntriesSearchQuery.isEmpty {
+                    fetchEntriesData()
+                } else {
+                    searchEntries(query: session.ledgerEntriesSearchQuery)
+                }
+            }
         case .identifiers:
             if sessionDetail == nil { fetchIdentifiersData() }
         }

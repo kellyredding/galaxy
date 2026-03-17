@@ -88,6 +88,10 @@ class Session: Identifiable, ObservableObject {
     /// Last active ledger subtab for this session. Defaults to last activity.
     var lastActiveLedgerSubTab: LedgerSubTab = .lastActivity
 
+    /// Current ledger entries search query. Hoisted from LedgerView
+    /// so it survives conditional view teardown on session switch.
+    var ledgerEntriesSearchQuery: String = ""
+
     /// Tracks the last name sent via /rename to avoid duplicate commands.
     /// Transient — not persisted. Cleared in processDidExit so resume
     /// re-sends the name.
