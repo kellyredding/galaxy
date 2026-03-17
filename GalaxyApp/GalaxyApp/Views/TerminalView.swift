@@ -13,7 +13,14 @@ struct FocusableTerminalView: NSViewRepresentable {
     let isActive: Bool
 
     func makeNSView(context: Context) -> TerminalHostView {
-        let container = TerminalHostView(terminalView: session.terminalView, session: session)
+        guard let terminalView = session.terminalView else {
+            preconditionFailure(
+                "FocusableTerminalView created for session without terminal"
+            )
+        }
+        let container = TerminalHostView(
+            terminalView: terminalView, session: session
+        )
         return container
     }
 

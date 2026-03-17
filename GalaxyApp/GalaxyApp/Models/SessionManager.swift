@@ -31,12 +31,12 @@ class SessionManager: ObservableObject {
             if let oldId = oldValue,
                let oldSession = sessions.first(where: { $0.id == oldId })
             {
-                oldSession.terminalView.suppressFocusEvents = true
+                oldSession.terminalView?.suppressFocusEvents = true
             }
             if let newId = activeSessionId,
                let newSession = sessions.first(where: { $0.id == newId })
             {
-                newSession.terminalView.suppressFocusEvents = true
+                newSession.terminalView?.suppressFocusEvents = true
             }
         }
     }
@@ -244,11 +244,11 @@ class SessionManager: ObservableObject {
         // Store a strong reference in session so it doesn't get deallocated
         let handler = TerminalProcessHandler(session: session, sessionManager: self)
         session.processHandler = handler
-        session.terminalView.processDelegate = handler
+        session.terminalView?.processDelegate = handler
 
         // Set up bell callback — handles sound/visual bell only.
         // Unread indicator is triggered by busy→idle, not bell events.
-        session.terminalView.onBell = { [weak session] in
+        session.terminalView?.onBell = { [weak session] in
             guard let session = session else { return }
             DispatchQueue.main.async {
                 let preference = SettingsManager.shared.settings.bellPreference
@@ -265,7 +265,7 @@ class SessionManager: ObservableObject {
         }
 
         // Set up data received callback for busy state detection
-        session.terminalView.onDataReceived = { [weak session] in
+        session.terminalView?.onDataReceived = { [weak session] in
             session?.markBusy()
         }
 
@@ -412,6 +412,12 @@ class SessionManager: ObservableObject {
         activeTab = .terminal
         activeLedgerSubTab = session.lastActiveLedgerSubTab
 
+        // Create terminal view BEFORE resetting hasExited.
+        // Setting hasExited = false triggers SwiftUI to swap
+        // StoppedSessionView → FocusableTerminalView, which
+        // needs session.terminalView to exist.
+        session.ensureTerminalView()
+
         // Reset session state
         session.hasExited = false
         session.exitCode = nil
@@ -423,22 +429,22 @@ class SessionManager: ObservableObject {
         // During resume, the view swap triggers a focus event before the new
         // process is ready to parse it, leaking a stray "I" into the input.
         // The new Claude process will re-enable mode 1004 when it initializes.
-        session.terminalView.feed(text: "\u{1b}[?1004l")
+        session.terminalView?.feed(text: "\u{1b}[?1004l")
 
         // Clear the visible screen before resuming so Claude redraws cleanly.
         // ESC[2J = clear screen, ESC[H = cursor home.
         // Note: ESC[3J (clear scrollback) is intentionally omitted to preserve
         // scroll history across resumes.
-        session.terminalView.feed(text: "\u{1b}[2J\u{1b}[H")
+        session.terminalView?.feed(text: "\u{1b}[2J\u{1b}[H")
 
         // Re-attach process handler
         let handler = TerminalProcessHandler(session: session, sessionManager: self)
         session.processHandler = handler
-        session.terminalView.processDelegate = handler
+        session.terminalView?.processDelegate = handler
 
         // Set up bell callback — handles sound/visual bell only.
         // Unread indicator is triggered by busy→idle, not bell events.
-        session.terminalView.onBell = { [weak session] in
+        session.terminalView?.onBell = { [weak session] in
             guard let session = session else { return }
             DispatchQueue.main.async {
                 let preference = SettingsManager.shared.settings.bellPreference
@@ -455,7 +461,7 @@ class SessionManager: ObservableObject {
         }
 
         // Set up data received callback for busy state detection
-        session.terminalView.onDataReceived = { [weak session] in
+        session.terminalView?.onDataReceived = { [weak session] in
             session?.markBusy()
         }
 

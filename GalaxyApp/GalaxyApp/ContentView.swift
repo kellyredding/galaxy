@@ -319,11 +319,12 @@ struct TerminalContainerView: View {
     private func restoreTerminalFocus() {
         guard let activeId = sessionManager.activeSessionId,
               let session = sessionManager.sessions.first(where: { $0.id == activeId }),
-              !session.hasExited else { return }
+              !session.hasExited,
+              let terminalView = session.terminalView else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
             // Walk up from the terminal view to find the TerminalHostView,
             // which knows whether scrollback is active.
-            var view: NSView? = session.terminalView.superview
+            var view: NSView? = terminalView.superview
             while let v = view {
                 if let host = v as? TerminalHostView {
                     host.requestFocus()
@@ -332,7 +333,7 @@ struct TerminalContainerView: View {
                 view = v.superview
             }
             // Fallback: direct focus if TerminalHostView not found
-            session.terminalView.window?.makeFirstResponder(session.terminalView)
+            terminalView.window?.makeFirstResponder(terminalView)
         }
     }
 }

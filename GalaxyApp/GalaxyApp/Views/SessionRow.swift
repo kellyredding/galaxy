@@ -539,7 +539,8 @@ struct SessionRow: View {
     /// Routes through TerminalHostView so scrollback state is respected.
     private func restoreTerminalFocus() {
         DispatchQueue.main.async {
-            var view: NSView? = session.terminalView.superview
+            guard let terminalView = session.terminalView else { return }
+            var view: NSView? = terminalView.superview
             while let v = view {
                 if let host = v as? TerminalHostView {
                     host.requestFocus()
@@ -547,7 +548,7 @@ struct SessionRow: View {
                 }
                 view = v.superview
             }
-            session.terminalView.window?.makeFirstResponder(session.terminalView)
+            terminalView.window?.makeFirstResponder(terminalView)
         }
     }
 }

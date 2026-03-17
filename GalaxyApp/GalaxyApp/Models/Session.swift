@@ -243,7 +243,7 @@ class Session: Identifiable, ObservableObject {
         }
     }
 
-    let terminalView: GalaxyTerminalView
+    private(set) var terminalView: GalaxyTerminalView?
     let createdAt: Date
     let workingDirectory: String
 
@@ -251,6 +251,7 @@ class Session: Identifiable, ObservableObject {
     var processHandler: TerminalProcessHandler?
 
     private var cancellables = Set<AnyCancellable>()
+    private var terminalCancellables = Set<AnyCancellable>()
 
     // Track the child process PID for termination (SwiftTerm doesn't expose this)
     private var childPid: pid_t = 0
@@ -276,6 +277,8 @@ class Session: Identifiable, ObservableObject {
     }
 
     private func configureTerminal() {
+        guard let terminalView = terminalView else { return }
+
         // Disable custom block glyph rendering so block elements (U+2580-U+259F)
         // and box drawing (U+2500-U+257F) fall through to CoreText font rendering.
         // This lets the system font fallback produce glyphs that match Terminal.app.
@@ -287,7 +290,9 @@ class Session: Identifiable, ObservableObject {
         // Apply initial font
         applyTerminalFontSize()
 
-        // Re-apply font when the font family setting changes
+        // Re-apply font when the font family setting changes.
+        // Stored in terminalCancellables so releaseTerminalView() can cancel
+        // these independently without affecting non-terminal subscriptions.
         SettingsManager.shared.$settings
             .map(\.terminalFontFamily)
             .removeDuplicates()
@@ -296,7 +301,7 @@ class Session: Identifiable, ObservableObject {
             .sink { [weak self] _ in
                 self?.applyTerminalFontSize()
             }
-            .store(in: &cancellables)
+            .store(in: &terminalCancellables)
 
         // Observe color theme changes
         SettingsManager.shared.$settings
@@ -307,7 +312,7 @@ class Session: Identifiable, ObservableObject {
             .sink { [weak self] _ in
                 self?.applyColorTheme()
             }
-            .store(in: &cancellables)
+            .store(in: &terminalCancellables)
 
         // Observe scrollback size changes
         SettingsManager.shared.$settings
@@ -318,11 +323,12 @@ class Session: Identifiable, ObservableObject {
             .sink { [weak self] _ in
                 self?.applyScrollbackSize()
             }
-            .store(in: &cancellables)
+            .store(in: &terminalCancellables)
     }
 
     /// Apply the selected color theme to the terminal view.
     private func applyColorTheme() {
+        guard let terminalView = terminalView else { return }
         let theme = TerminalColorTheme.theme(
             named: SettingsManager.shared.settings.terminalColorThemeName
         )
@@ -335,6 +341,7 @@ class Session: Identifiable, ObservableObject {
 
     /// Apply the current terminal font to the terminal view
     private func applyTerminalFontSize() {
+        guard let terminalView = terminalView else { return }
         let family = SettingsManager.shared.settings.terminalFontFamily
         let font: NSFont
         if family == "SF Mono" {
@@ -354,9 +361,56 @@ class Session: Identifiable, ObservableObject {
     /// Uses SwiftTerm's changeHistorySize() which supports runtime changes —
     /// increasing preserves existing history, decreasing trims oldest lines.
     private func applyScrollbackSize() {
+        guard let terminalView = terminalView else { return }
         let lines = SettingsManager.shared.settings.terminalScrollbackLines
         terminalView.terminal.changeHistorySize(lines)
         NSLog("Session[%@]: Applied scrollback size %d lines", sessionRef, lines)
+    }
+
+    /// Create the terminal view if it doesn't exist yet.
+    /// Called by SessionManager before resuming a stopped session.
+    /// Runs full configuration (theme, font, scrollback, observers).
+    func ensureTerminalView() {
+        guard terminalView == nil else { return }
+        terminalView = GalaxyTerminalView(
+            frame: NSRect(x: 0, y: 0, width: 800, height: 600)
+        )
+        configureTerminal()
+        applyScrollbackSize()
+        NSLog("Session[%@]: Created terminal view on demand", sessionRef)
+    }
+
+    /// Release the terminal view to free memory (~32MB scrollback buffer).
+    /// Called after a session exits and the terminal is no longer needed.
+    /// Safe to call multiple times. A subsequent ensureTerminalView()
+    /// will recreate everything.
+    ///
+    /// Does NOT call removeFromSuperview() — SwiftUI manages the view
+    /// hierarchy. The TerminalHostView holds its own strong reference
+    /// and releases it when SwiftUI tears down the FocusableTerminalView
+    /// during the hasExited transition.
+    func releaseTerminalView() {
+        guard terminalView != nil else { return }
+
+        // Clear callbacks to break any retain cycles
+        terminalView?.onBell = nil
+        terminalView?.onDataReceived = nil
+        terminalView?.processDelegate = nil
+
+        // Release the view — TerminalHostView retains its own copy
+        // until SwiftUI tears it down via the hasExited transition.
+        terminalView = nil
+
+        // Cancel terminal-specific Combine subscriptions only.
+        // ensureTerminalView() will re-subscribe via configureTerminal().
+        // Uses a dedicated set so non-terminal subscriptions in
+        // cancellables are unaffected.
+        terminalCancellables.removeAll()
+
+        // Clear process handler reference
+        processHandler = nil
+
+        NSLog("Session[%@]: Released terminal view", sessionRef)
     }
 
     /// Increase terminal font size by one step
@@ -415,14 +469,14 @@ class Session: Identifiable, ObservableObject {
         let wasBusy = isBusy
 
         // Send command text first
-        terminalView.send(txt: command)
+        terminalView?.send(txt: command)
 
         // Small delay to ensure text is processed before CR
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.commandSubmitDelay) { [weak self] in
             guard let self = self, self.isRunning, !self.hasExited else { return }
 
             // Send CR (0x0D) - same byte as keyboard Return
-            self.terminalView.send([0x0D])
+            self.terminalView?.send([0x0D])
 
             // Skip verification if session was already busy
             guard !wasBusy else { return }
@@ -448,7 +502,7 @@ class Session: Identifiable, ObservableObject {
             }
 
             NSLog("Session: Command CR not accepted, resending (%d retries left)", retriesLeft)
-            self.terminalView.send([0x0D])
+            self.terminalView?.send([0x0D])
             self.verifyCommandSubmit(retriesLeft: retriesLeft - 1)
         }
     }
@@ -667,7 +721,8 @@ class Session: Identifiable, ObservableObject {
     }
 
     /// Restore a session from persisted state. Creates in stopped
-    /// state with a fresh terminal view and no running process.
+    /// state with no terminal view and no running process.
+    /// Terminal is lazily created by ensureTerminalView() on resume.
     init(restoring state: PersistedSession) {
         self.id = state.id
         self.sessionRef = state.sessionRef
@@ -678,9 +733,10 @@ class Session: Identifiable, ObservableObject {
         self.isVibe = state.isVibe
         self.terminalFontSize = SettingsManager.shared
             .settings.defaultTerminalFontSize
-        self.terminalView = GalaxyTerminalView(
-            frame: NSRect(x: 0, y: 0, width: 800, height: 600)
-        )
+
+        // No terminal view — stopped sessions don't need one.
+        // ensureTerminalView() creates it on resume.
+        self.terminalView = nil
 
         // Restore Galaxy-only state
         self.givenName = state.givenName
@@ -688,8 +744,6 @@ class Session: Identifiable, ObservableObject {
         // Stopped state — no running process
         self.isRunning = false
         self.hasExited = true
-
-        applyScrollbackSize()
 
         // Restore ledger enrichment data (immediate sidebar content)
         self.ledgerSessionId = state.ledgerSessionId
@@ -708,7 +762,7 @@ class Session: Identifiable, ObservableObject {
         self.ledgerStartedAt = state.ledgerStartedAt
         self.ledgerUpdatedAt = state.ledgerUpdatedAt
 
-        configureTerminal()
+        // No configureTerminal() — nothing to configure
     }
 
     func startProcess(executablePath: String, resume: Bool = false) {
@@ -800,6 +854,10 @@ class Session: Identifiable, ObservableObject {
 
         // Start process directly (not via shell) so SwiftTerm can properly monitor it
         // SwiftTerm 1.10+ supports currentDirectory parameter directly
+        guard let terminalView = terminalView else {
+            NSLog("Session: Cannot start process - no terminal view")
+            return
+        }
         terminalView.startProcess(
             executable: executablePath,
             args: args,
@@ -836,9 +894,12 @@ class Session: Identifiable, ObservableObject {
             }
 
             // Clear any pending idle actions — session is dead
-            // Discard any pending idle actions — session is dead
             self.afterNextIdleActions.removeAll()
             self.afterNextIdleArmed = false
+
+            // Release terminal view to free ~32MB scrollback buffer.
+            // The view shows StoppedSessionView now, not the terminal.
+            self.releaseTerminalView()
         }
     }
 
