@@ -89,10 +89,18 @@ struct LedgerView: View {
             handleSubtabSwitch()
         }
         .onChange(of: sessionManager.activeTab) {
-            // Lazy-load on return to ledger tab — preserves search state
-            guard sessionManager.activeTab == .ledger,
-                  isActiveSession else { return }
-            fetchSubtabIfNeeded()
+            guard isActiveSession else { return }
+            if sessionManager.activeTab == .ledger {
+                fetchSubtabIfNeeded()
+            } else {
+                // Leaving the ledger tab — nil sub-tab data to free
+                // memory. Entries preserved if a search is active.
+                files = nil
+                if session.ledgerEntriesSearchQuery.isEmpty {
+                    entries = nil
+                }
+                sessionDetail = nil
+            }
         }
         .onChange(of: session.ledgerVersion) {
             // Enrichment event arrived — refresh the active subtab
@@ -309,9 +317,14 @@ struct LedgerView: View {
         identifiersFetchTask?.cancel(); identifiersFetchTask = nil
         isLoading = false
 
-        // Only fetch if the newly active subtab hasn't loaded yet.
-        // The ZStack keeps all views alive, so already-loaded data
-        // (including search-filtered entries) is preserved as-is.
+        // Nil data for non-active sub-tabs to free memory.
+        // Entries data is preserved when a search is active so the
+        // user returns to their filtered results on switch-back.
+        let active = sessionManager.activeLedgerSubTab
+        if active != .files { files = nil }
+        if active != .entries { entries = nil }
+        if active != .identifiers { sessionDetail = nil }
+
         fetchSubtabIfNeeded()
     }
 
