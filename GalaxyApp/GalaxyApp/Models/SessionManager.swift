@@ -248,8 +248,8 @@ class SessionManager: ObservableObject {
 
         // Set up bell callback — handles sound/visual bell only.
         // Unread indicator is triggered by busy→idle, not bell events.
-        session.terminalView?.onBell = { [weak session] in
-            guard let session = session else { return }
+        session.terminalView?.onBell = { [weak self, weak session] in
+            guard let self = self, let session = session else { return }
             DispatchQueue.main.async {
                 let preference = SettingsManager.shared.settings.bellPreference
 
@@ -444,8 +444,8 @@ class SessionManager: ObservableObject {
 
         // Set up bell callback — handles sound/visual bell only.
         // Unread indicator is triggered by busy→idle, not bell events.
-        session.terminalView?.onBell = { [weak session] in
-            guard let session = session else { return }
+        session.terminalView?.onBell = { [weak self, weak session] in
+            guard let self = self, let session = session else { return }
             DispatchQueue.main.async {
                 let preference = SettingsManager.shared.settings.bellPreference
 
@@ -840,6 +840,11 @@ class SessionManager: ObservableObject {
         pendingIdleNotificationTimers[sessionId]?.invalidate()
         pendingIdleNotificationTimers.removeValue(forKey: sessionId)
         NotificationService.shared.sessionClosed(sessionId)
+
+        // Clear session callbacks to stop idle/busy state machine activity
+        let session = sessions[index]
+        session.onBusyTransition = nil
+        session.onIdleTransition = nil
 
         // Remove the session (this will deallocate the terminal view which kills the process)
         sessions.remove(at: index)

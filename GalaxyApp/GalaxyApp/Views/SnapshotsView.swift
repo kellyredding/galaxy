@@ -100,6 +100,14 @@ struct SnapshotsView: View {
             syncReaderOpenState()
             updateEscapeMonitor()
             restoreWebViewFocus()
+
+            // Nil index data for inactive sessions — re-fetched in
+            // <50ms on return. Only when reader is closed to avoid
+            // any edge case with reader's row-refocus on close.
+            if session.id != sessionManager.activeSessionId,
+               openSnapshot == nil {
+                snapshots = nil
+            }
         }
         .onChange(of: sessionManager.activeTab) {
             syncReaderOpenState()
