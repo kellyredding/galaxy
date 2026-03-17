@@ -1,3 +1,49 @@
+diff --git a/Package.swift b/Package.swift
+index deca240..4f8f287 100644
+--- a/Package.swift
++++ b/Package.swift
+@@ -22,12 +22,9 @@ let targets: [Target] = [
+         name: "SwiftTerm",
+         dependencies: [],
+         path: "Sources/SwiftTerm",
+-        exclude: platformExcludes + ["Mac/README.md"],
+-//        swiftSettings: [
+-//            .unsafeFlags(["-enforce-exclusivity=none"])
+-//        ]
++        exclude: platformExcludes + ["Mac/README.md"]
+     ),
+-    .executableTarget (
++    .executableTarget(
+         name: "SwiftTermFuzz",
+         dependencies: ["SwiftTerm"],
+         path: "Sources/SwiftTermFuzz"
+@@ -52,23 +49,15 @@ let targets: [Target] = [
+     .target(
+         name: "SwiftTerm",
+         //
+-        // We can not use Swift Subprocess, because there is no way of configuring the child process to
+-        // be a controlling terminal, as it is posix-spawn based.
+-//        dependencies: [
+-//            .product(name: "Subprocess", package: "swift-subprocess", condition: .when(platforms: [.macOS, .linux]))
+-//        ],
+         path: "Sources/SwiftTerm",
+-        exclude: platformExcludes + ["Mac/README.md"],
+-//        swiftSettings: [
+-//            .unsafeFlags(["-enforce-exclusivity=none"])
+-//        ]
++        exclude: platformExcludes + ["Mac/README.md"]
+     ),
+-    .executableTarget (
++    .executableTarget(
+         name: "SwiftTermFuzz",
+         dependencies: ["SwiftTerm"],
+         path: "Sources/SwiftTermFuzz"
+     ),
+-    .executableTarget (
++    .executableTarget(
+         name: "Termcast",
+         dependencies: [
+             "SwiftTerm",
 diff --git a/Sources/SwiftTerm/Apple/AppleTerminalView.swift b/Sources/SwiftTerm/Apple/AppleTerminalView.swift
 index 553a94c..7f5cef1 100644
 --- a/Sources/SwiftTerm/Apple/AppleTerminalView.swift
@@ -311,6 +357,170 @@ index a49310f..98f6942 100644
                  let line = lines [i]
                  if line.count < newCols {
                      print ("stop here newCols=\(newCols) but the element has: \(line.count)")
+diff --git a/Sources/SwiftTerm/CircularList.swift b/Sources/SwiftTerm/CircularList.swift
+index 2aa060f..3553fc5 100644
+--- a/Sources/SwiftTerm/CircularList.swift
++++ b/Sources/SwiftTerm/CircularList.swift
+@@ -38,7 +38,11 @@ class CircularList<T> {
+             if maxLength != oldValue {
+                 let empty : T? = nil
+                 var newArray = Array(repeating: empty, count:Int(maxLength))
+-                let top = min (maxLength, array.count)
++                // GALAXY PATCH: Copy only _count live entries, not array.count.
++                // The upstream code used min(maxLength, array.count) which copies
++                // zombie entries left behind by trimStart into the new array,
++                // preventing ARC from freeing them. Do not revert to array.count.
++                let top = min (_count, maxLength)
+                 for i in 0..<top {
+                     newArray [i] = array [getCyclicIndex(i)]
+                 }
+@@ -54,7 +58,7 @@ class CircularList<T> {
+     /// does not exist, or the index requested otherwise
+     //
+     var makeEmpty: ((_ idx: Int) -> T)? = nil
+-    
++
+     public init (maxLength: Int)
+     {
+         array = Array.init(repeating: nil, count: Int(maxLength))
+@@ -62,15 +66,15 @@ class CircularList<T> {
+         self._count = 0
+         self.startIndex = 0
+     }
+-    
++
+     private func getCyclicIndex(_ index: Int) -> Int {
+         return Int(startIndex + index) % (array.count)
+     }
+-    
++
+     func debugGetCyclicIndex(_ index: Int) -> Int {
+         getCyclicIndex(index)
+     }
+-    
++
+     subscript (index: Int) -> T {
+         get {
+             let idx = getCyclicIndex(index)
+@@ -87,7 +91,7 @@ class CircularList<T> {
+             array [getCyclicIndex(index)] = newValue
+       }
+     }
+-    
++
+     func push (_ value: T)
+     {
+         array [getCyclicIndex(count)] = value
+@@ -109,17 +113,17 @@ class CircularList<T> {
+         }
+         let index = getCyclicIndex(count)
+         startIndex += 1
+-        startIndex = startIndex % maxLength        
++        startIndex = startIndex % maxLength
+         array [index] = makeEmpty! (-1)
+     }
+-    
++
+     @discardableResult
+     func pop () -> T {
+         let v = array [getCyclicIndex(count-1)]!
+         count = count - 1
+         return v
+     }
+-    
++
+     func splice (start: Int, deleteCount: Int, items: [T], change: (Int) -> Void)
+     {
+         if deleteCount > 0 {
+@@ -147,7 +151,7 @@ class CircularList<T> {
+             change(start + i)
+             array [getCyclicIndex(start + i)] = items [i]
+         }
+-        
++
+         // Adjust length as needed
+         if Int(count) + ic > array.count {
+             let countToTrim = count + items.count - array.count
+@@ -157,14 +161,23 @@ class CircularList<T> {
+             count = count + items.count
+         }
+      }
+-    
++
++    // GALAXY PATCH: Memory-critical — trimStart must nil vacated slots.
++    // Without this, every ESC[3J (clear scrollback) leaves ~10K BufferLine
++    // objects (~4KB each) alive as zombies in the backing array. Over a
++    // long session with repeated clears, this accumulates 400+ MB of
++    // unreachable-but-referenced heap. The nilling loop is the fix.
++    // Do not remove it or replace it with the upstream version.
+     func trimStart (count: Int)
+     {
+         let c = count > self.count ? self.count : count
++        for i in 0..<c {
++            array [(startIndex + i) % array.count] = nil
++        }
+         startIndex = startIndex + c
+         self.count -= count
+     }
+-    
++
+     func shiftElements (start: Int, count: Int, offset: Int) -> Bool
+     {
+         func dumpState (_ msg: String) -> Bool {
+@@ -250,7 +263,9 @@ internal class CircularBufferLineList {
+             if maxLength != oldValue {
+                 let empty : BufferLine? = nil
+                 var newArray = Array(repeating: empty, count:Int(maxLength))
+-                let top = min (maxLength, array.count)
++                // GALAXY PATCH: Copy only _count live entries, not array.count.
++                // See the matching comment on CircularList<T>.maxLength above.
++                let top = min (_count, maxLength)
+                 for i in 0..<top {
+                     newArray [i] = array [getCyclicIndex(i)]
+                 }
+@@ -383,20 +398,31 @@ internal class CircularBufferLineList {
+         }
+      }
+     
++    // GALAXY PATCH: Memory-critical — trimStart must nil vacated slots.
++    // This is the primary fix for the SwiftTerm scrollback memory leak.
++    // Each BufferLine holds a ContiguousArray<CharData> (~4KB). Without
++    // nilling, ESC[3J clears advance startIndex but leave the old
++    // BufferLine references alive in the backing array. Over repeated
++    // clear/refill cycles in a Claude session, this leaked 400+ MB.
++    // See CircularList<T>.trimStart above for the generic counterpart.
++    // Do not remove the nilling loop or replace with the upstream version.
+     func trimStart (count: Int)
+     {
+         let c = count > self.count ? self.count : count
++        for i in 0..<c {
++            array [(startIndex + i) % array.count] = nil
++        }
+         startIndex = startIndex + c
+         self.count -= count
+     }
+-    
++
+     func shiftElements (start: Int, count: Int, offset: Int) -> Bool
+     {
+         func dumpState (_ msg: String) -> Bool {
+             print ("Assertion at start=\(start) count=\(count) offset=\(offset): \(msg)")
+             return false
+         }
+-        
++
+         if count < 0 {
+             return dumpState ("count < 0")
+         }
+@@ -433,7 +459,7 @@ internal class CircularBufferLineList {
+         }
+         return true
+     }
+-    
++
+     var isFull: Bool {
+         get {
+             return count == maxLength
 diff --git a/Sources/SwiftTerm/Mac/MacCaretView.swift b/Sources/SwiftTerm/Mac/MacCaretView.swift
 index cf0816a..137c3cf 100644
 --- a/Sources/SwiftTerm/Mac/MacCaretView.swift
