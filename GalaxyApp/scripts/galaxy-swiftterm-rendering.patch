@@ -956,10 +956,16 @@ index 412b95a..e7550dd 100644
          }
      }
      
-@@ -1078,6 +1266,11 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -1068,7 +1256,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+     }
+
+-    public override func mouseUp(with event: NSEvent) {
++    open override func mouseUp(with event: NSEvent) {
+         if event.modifierFlags.contains(.command){
+@@ -1078,6 +1268,11 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
          //print ("Up at col=\(hit.col) row=\(hit.row) count=\(event.clickCount) selection.active=\(selection.active) didSelectionDrag=\(didSelectionDrag) ")
          #endif
-         
+
 +        // GALAXY: Stop drag-to-scroll timer on mouse release
 +        autoScrollTimer?.invalidate()
 +        autoScrollTimer = nil
@@ -967,8 +973,14 @@ index 412b95a..e7550dd 100644
 +
          didSelectionDrag = false
      }
-     
-@@ -1106,14 +1299,38 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+
+@@ -1094,7 +1289,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+     }
+
+-    public override func mouseDragged(with event: NSEvent) {
++    open override func mouseDragged(with event: NSEvent) {
+         let displayBuffer = terminal.displayBuffer
+@@ -1106,14 +1301,38 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
          }
          didSelectionDrag = true
          autoScrollDelta = 0

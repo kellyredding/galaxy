@@ -83,4 +83,54 @@ class GalaxyTerminalView: LocalProcessTerminalView {
         }
         super.scrollWheel(with: event)
     }
+
+    // MARK: - Drag Selection Interception
+
+    /// Callback invoked on the first mouseDragged during a text selection.
+    /// Returns the scrollback terminal view to forward remaining drag events
+    /// to, or nil if scrollback was not created. When a target is returned,
+    /// all subsequent mouseDragged/mouseUp events for this gesture are
+    /// forwarded to the scrollback view instead of the live terminal.
+    var onDragSelectionStart: ((NSEvent) -> NSView?)?
+
+    /// Target view for forwarding drag events after scrollback creation.
+    /// Set on the first mouseDragged when scrollback is triggered, cleared
+    /// on mouseUp.
+    private var dragForwardTarget: NSView?
+
+    /// Tracks whether the drag-selection callback has fired for the
+    /// current gesture. Reset on mouseUp.
+    private var dragSelectionFired = false
+
+    public override func mouseDragged(with event: NSEvent) {
+        // Forward to scrollback view if already handed off
+        if let target = dragForwardTarget {
+            target.mouseDragged(with: event)
+            return
+        }
+
+        // Try to trigger scrollback on first drag movement
+        if !dragSelectionFired, let callback = onDragSelectionStart {
+            dragSelectionFired = true
+            if let target = callback(event) {
+                dragForwardTarget = target
+                // Synthesize mouseDown to prime selection tracking in
+                // the scrollback view, then immediately send the drag
+                target.mouseDown(with: event)
+                target.mouseDragged(with: event)
+                return
+            }
+        }
+
+        super.mouseDragged(with: event)
+    }
+
+    public override func mouseUp(with event: NSEvent) {
+        if let target = dragForwardTarget {
+            target.mouseUp(with: event)
+            dragForwardTarget = nil
+        }
+        dragSelectionFired = false
+        super.mouseUp(with: event)
+    }
 }

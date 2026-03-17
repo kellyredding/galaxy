@@ -190,10 +190,13 @@ class TerminalHostView: NSView {
         addSubview(highlight, positioned: .above, relativeTo: terminalView)
         dragHighlightView = highlight
 
-        // Wire up scroll-wheel-up interception for scrollback creation
+        // Wire up scroll-wheel-up and drag-selection interception for scrollback creation
         if let galaxyTV = terminalView as? GalaxyTerminalView {
             galaxyTV.onScrollUp = { [weak self] event in
                 self?.handleScrollUp(event: event) ?? false
+            }
+            galaxyTV.onDragSelectionStart = { [weak self] event in
+                self?.handleDragSelectionStart(event: event)
             }
         }
 
@@ -389,6 +392,31 @@ class TerminalHostView: NSView {
         guard displayBuffer.yBase > 0 else { return }
 
         createScrollback(triggeringEvent: nil)
+    }
+
+    /// Handle drag-selection start on the live terminal. Returns the
+    /// scrollback terminal view to forward events to, or nil if entry
+    /// was skipped.
+    private func handleDragSelectionStart(event: NSEvent) -> NSView? {
+        // Already in scrollback — selection continues in the overlay
+        guard !isScrollbackActive else { return nil }
+
+        // Cooldown active — prevent rapid re-entry after dismiss
+        guard !scrollbackCooldown else { return nil }
+
+        // No scrollback content — nothing to protect
+        let displayBuffer = terminalView.terminal.displayBuffer
+        guard displayBuffer.yBase > 0 else { return nil }
+
+        // Clean up live terminal's selection state before creating scrollback.
+        // mouseDown started selection tracking — selectNone() triggers
+        // selectionChanged which evaluates yDisp vs yBase and sets
+        // userScrolling = false (since we're at the bottom). Without this,
+        // the live terminal stays frozen in userScrolling after dismiss.
+        terminalView.selection.selectNone()
+
+        createScrollback(triggeringEvent: nil)
+        return scrollbackOverlay?.scrollbackTerminalView
     }
 
     /// Handle scroll-wheel-up on the live terminal. Returns true if the event
