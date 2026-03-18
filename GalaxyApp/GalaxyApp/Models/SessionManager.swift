@@ -875,6 +875,8 @@ class SessionManager: ObservableObject {
             return
         }
 
+        guard let window = NSApp.keyWindow else { return }
+
         let alert = NSAlert()
         alert.messageText = "Confirm dismiss session?"
         alert.informativeText = """
@@ -884,9 +886,10 @@ class SessionManager: ObservableObject {
         alert.addButton(withTitle: "Confirm")
         alert.addButton(withTitle: "Cancel")
 
-        let response = alert.runModal()
-        if response == .alertFirstButtonReturn {
-            closeSession(sessionId: sessionId)
+        alert.beginSheetModal(for: window) { [weak self] response in
+            if response == .alertFirstButtonReturn {
+                self?.closeSession(sessionId: sessionId)
+            }
         }
     }
 
