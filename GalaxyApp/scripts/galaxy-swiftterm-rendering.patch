@@ -304,7 +304,7 @@ index 553a94c..7f5cef1 100644
       * Sends the specified string encoded at utf8 to the program running under the terminal emulator
       * - Parameter txt: the string to send to the client
 diff --git a/Sources/SwiftTerm/Buffer.swift b/Sources/SwiftTerm/Buffer.swift
-index a49310f..98f6942 100644
+index a49310f..54f2f6c 100644
 --- a/Sources/SwiftTerm/Buffer.swift
 +++ b/Sources/SwiftTerm/Buffer.swift
 @@ -29,7 +29,7 @@ public final class Buffer {
@@ -330,6 +330,15 @@ index a49310f..98f6942 100644
          get { _rows }
          set { _rows = newValue }
      }
+@@ -198,7 +198,7 @@ public final class Buffer {
+     
+     var scrollback: Int?
+     
+-    var lines : CircularBufferLineList {
++    public var lines : CircularBufferLineList {
+         get { return _lines }
+     }
+ 
 @@ -421,7 +421,7 @@ public final class Buffer {
              // Deal with columns increasing (reducing needs to happen after reflow)
              
@@ -357,8 +366,28 @@ index a49310f..98f6942 100644
                  let line = lines [i]
                  if line.count < newCols {
                      print ("stop here newCols=\(newCols) but the element has: \(line.count)")
+diff --git a/Sources/SwiftTerm/CharData.swift b/Sources/SwiftTerm/CharData.swift
+index 836a077..966f8b5 100644
+--- a/Sources/SwiftTerm/CharData.swift
++++ b/Sources/SwiftTerm/CharData.swift
+@@ -237,13 +237,13 @@ public struct CharData: CustomDebugStringConvertible {
+         return "CharData: \(code) \(ch)"
+     }
+     
+-    static let maxRune = 1 << 22
++    public static let maxRune = 1 << 22
+ 
+     static let defaultAttr = Attribute(fg: .defaultColor, bg: .defaultColor, style: .none)
+     static let invertedAttr = Attribute(fg: .defaultInvertedColor, bg: .defaultInvertedColor, style: .none)
+     
+     // Contains a rune, or a pointer into a Grapheme Cluster
+-    var code: Int32
++    public var code: Int32
+     
+     ///Contains the number of columns used by the `Character` stored in this `CharData` on the screen.
+     public private(set) var width: Int8
 diff --git a/Sources/SwiftTerm/CircularList.swift b/Sources/SwiftTerm/CircularList.swift
-index 2aa060f..3553fc5 100644
+index 2aa060f..5110569 100644
 --- a/Sources/SwiftTerm/CircularList.swift
 +++ b/Sources/SwiftTerm/CircularList.swift
 @@ -38,7 +38,11 @@ class CircularList<T> {
@@ -467,6 +496,19 @@ index 2aa060f..3553fc5 100644
      func shiftElements (start: Int, count: Int, offset: Int) -> Bool
      {
          func dumpState (_ msg: String) -> Bool {
+@@ -216,10 +229,10 @@ class CircularList<T> {
+     }
+ }
+ 
+-internal class CircularBufferLineList {
++public class CircularBufferLineList {
+     private var array: [BufferLine?]
+     private var startIndex: Int
+-    var count: Int {
++    public var count: Int {
+         get {
+             return _count
+         }
 @@ -250,7 +263,9 @@ internal class CircularBufferLineList {
              if maxLength != oldValue {
                  let empty : BufferLine? = nil
@@ -478,6 +520,15 @@ index 2aa060f..3553fc5 100644
                  for i in 0..<top {
                      newArray [i] = array [getCyclicIndex(i)]
                  }
+@@ -292,7 +307,7 @@ internal class CircularBufferLineList {
+         return getCyclicIndex(index)
+     }
+     
+-    subscript (index: Int) -> BufferLine {
++    public subscript (index: Int) -> BufferLine {
+         get {
+             let idx = getCyclicIndex(index)
+             if let p = array [idx] {
 @@ -383,20 +398,31 @@ internal class CircularBufferLineList {
          }
       }
@@ -582,7 +633,7 @@ index 90402c0..d53edd9 100644
                          blue: CGFloat (color.blue) / 65535.0,
                          alpha: 1.0)
 diff --git a/Sources/SwiftTerm/Mac/MacTerminalView.swift b/Sources/SwiftTerm/Mac/MacTerminalView.swift
-index 412b95a..e7550dd 100644
+index 412b95a..e6c6aaa 100644
 --- a/Sources/SwiftTerm/Mac/MacTerminalView.swift
 +++ b/Sources/SwiftTerm/Mac/MacTerminalView.swift
 @@ -15,6 +15,27 @@ import AppKit
@@ -947,7 +998,7 @@ index 412b95a..e7550dd 100644
      private func scrollingTimerElapsed (source: Timer)
      {
          if autoScrollDelta == 0 {
-@@ -1017,7 +1205,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -1017,11 +1205,11 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
          if autoScrollDelta < 0 {
              scrollUp(lines: autoScrollDelta * -1)
          } else {
@@ -956,16 +1007,24 @@ index 412b95a..e7550dd 100644
          }
      }
      
-@@ -1068,7 +1256,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
-     }
-
+-    public override func mouseDown(with event: NSEvent) {
++    open override func mouseDown(with event: NSEvent) {
+         if allowMouseReporting && terminal.mouseMode.sendButtonPress() {
+             sharedMouseEvent(with: event)
+             return
+@@ -1060,7 +1248,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+     
+     var didSelectionDrag: Bool = false
+     
 -    public override func mouseUp(with event: NSEvent) {
 +    open override func mouseUp(with event: NSEvent) {
          if event.modifierFlags.contains(.command){
-@@ -1078,6 +1268,11 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+             if let payload = getPayload(for: event) as? String {
+                 if let (url, params) = urlAndParamsFrom(payload: payload) {
+@@ -1078,10 +1266,15 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
          //print ("Up at col=\(hit.col) row=\(hit.row) count=\(event.clickCount) selection.active=\(selection.active) didSelectionDrag=\(didSelectionDrag) ")
          #endif
-
+         
 +        // GALAXY: Stop drag-to-scroll timer on mouse release
 +        autoScrollTimer?.invalidate()
 +        autoScrollTimer = nil
@@ -973,14 +1032,13 @@ index 412b95a..e7550dd 100644
 +
          didSelectionDrag = false
      }
-
-@@ -1094,7 +1289,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
-     }
-
+     
 -    public override func mouseDragged(with event: NSEvent) {
 +    open override func mouseDragged(with event: NSEvent) {
          let displayBuffer = terminal.displayBuffer
-@@ -1106,14 +1301,38 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+         let mouseHit = calculateMouseHit(with: event)
+         let hit = mouseHit.grid
+@@ -1106,14 +1299,38 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
          }
          didSelectionDrag = true
          autoScrollDelta = 0
@@ -1170,7 +1228,7 @@ index 0417ede..c5c4809 100644
          let (min, max) = if Position.compare(start, end) == .before {
              (start, end)
 diff --git a/Sources/SwiftTerm/Terminal.swift b/Sources/SwiftTerm/Terminal.swift
-index 3ca5ffa..8fb3ec9 100644
+index 3ca5ffa..34209a6 100644
 --- a/Sources/SwiftTerm/Terminal.swift
 +++ b/Sources/SwiftTerm/Terminal.swift
 @@ -91,7 +91,7 @@ public protocol TerminalDelegate: AnyObject {
@@ -1227,6 +1285,15 @@ index 3ca5ffa..8fb3ec9 100644
      var cursorHidden : Bool = false
      
      /// Controls the origin mode (DECOM), when set, the screen is limited to the top and bottom margins
+@@ -408,7 +408,7 @@ open class Terminal {
+     var refreshEnd = -1
+     var scrollInvariantRefreshStart = Int.max
+     var scrollInvariantRefreshEnd = -1
+-    var userScrolling = false
++    public var userScrolling = false
+     var lineFeedMode = false
+     
+     // We do not implement smooth scrolling here, dubious value, but
 @@ -5214,6 +5214,7 @@ open class Terminal {
          guard synchronizedOutputActive else {
              return

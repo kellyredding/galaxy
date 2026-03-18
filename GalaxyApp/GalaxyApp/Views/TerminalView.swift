@@ -79,17 +79,16 @@ class TerminalHostView: NSView {
 
     // MARK: - Scrollback State
 
-    /// The scrollback overlay (holds ScrollbackTerminalView + pill).
+    /// The scrollback overlay (holds ScrollbackWebView + pill).
     /// Non-nil when scrollback mode is active.
     private var scrollbackOverlay: ScrollbackOverlayView?
 
+    /// Retained buffer snapshot for settings-change rebuilds while scrollback
+    /// is active. Nil'd on dismiss to release the deep-copy buffer memory.
+    private var currentSnapshot: Buffer?
+
     /// True when the scrollback overlay is visible.
     var isScrollbackActive: Bool { scrollbackOverlay != nil }
-
-    /// Cooldown flag — when true, scroll-wheel-up is ignored to prevent
-    /// trackpad momentum from immediately re-creating the scrollback view.
-    private var scrollbackCooldown = false
-    private var scrollbackCooldownTimer: DispatchWorkItem?
 
     /// Combine subscriptions for live settings sync (font, theme, hasExited).
     private var cancellables = Set<AnyCancellable>()
@@ -110,7 +109,6 @@ class TerminalHostView: NSView {
             NSEvent.removeMonitor(monitor)
         }
         cancellables.removeAll()
-        scrollbackCooldownTimer?.cancel()
     }
 
     /// Set up local event monitor to intercept Ctrl+Arrow for line navigation.
@@ -119,7 +117,7 @@ class TerminalHostView: NSView {
     ///
     /// Naturally safe during scrollback: the guard checks
     /// `self.window?.firstResponder === self.terminalView`, which fails when
-    /// ScrollbackTerminalView is first responder, so no bytes are sent.
+    /// ScrollbackWebView is first responder, so no bytes are sent.
     private func setupKeyEventMonitor() {
         keyEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self = self else { return event }
@@ -190,16 +188,6 @@ class TerminalHostView: NSView {
         addSubview(highlight, positioned: .above, relativeTo: terminalView)
         dragHighlightView = highlight
 
-        // Wire up scroll-wheel-up and drag-selection interception for scrollback creation
-        if let galaxyTV = terminalView as? GalaxyTerminalView {
-            galaxyTV.onScrollUp = { [weak self] event in
-                self?.handleScrollUp(event: event) ?? false
-            }
-            galaxyTV.onDragSelectionStart = { [weak self] event in
-                self?.handleDragSelectionStart(event: event)
-            }
-        }
-
         // Observe session process exit — dismiss scrollback if process dies
         session.$hasExited
             .removeDuplicates()
@@ -265,13 +253,13 @@ class TerminalHostView: NSView {
     func requestFocus() {
         guard let window = window else { return }
 
-        // If scrollback is active, make the scrollback view first responder
+        // If scrollback is active, make the WKWebView first responder
         // instead of the live terminal — otherwise scrollback is visible but
         // keyboard-dead after session switches.
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             if let overlay = self.scrollbackOverlay {
-                window.makeFirstResponder(overlay.scrollbackTerminalView)
+                window.makeFirstResponder(overlay.scrollbackView.webView)
             } else {
                 window.makeFirstResponder(self.terminalView)
             }
@@ -391,108 +379,74 @@ class TerminalHostView: NSView {
         let displayBuffer = terminalView.terminal.displayBuffer
         guard displayBuffer.yBase > 0 else { return }
 
-        createScrollback(triggeringEvent: nil)
-    }
-
-    /// Handle drag-selection start on the live terminal. Returns the
-    /// scrollback terminal view to forward events to, or nil if entry
-    /// was skipped.
-    private func handleDragSelectionStart(event: NSEvent) -> NSView? {
-        // Already in scrollback — selection continues in the overlay
-        guard !isScrollbackActive else { return nil }
-
-        // Cooldown active — prevent rapid re-entry after dismiss
-        guard !scrollbackCooldown else { return nil }
-
-        // No scrollback content — nothing to protect
-        let displayBuffer = terminalView.terminal.displayBuffer
-        guard displayBuffer.yBase > 0 else { return nil }
-
-        // Clean up live terminal's selection state before creating scrollback.
-        // mouseDown started selection tracking — selectNone() triggers
-        // selectionChanged which evaluates yDisp vs yBase and sets
-        // userScrolling = false (since we're at the bottom). Without this,
-        // the live terminal stays frozen in userScrolling after dismiss.
+        // Capture the live terminal's current scroll position — the
+        // scrollback view opens at this position. Clear any selection now
+        // but defer scrolling the live view to bottom until after the
+        // WKWebView is visible (avoids a flash of the live view jumping).
+        let scrollPosition = displayBuffer.yDisp
         terminalView.selection.selectNone()
 
-        createScrollback(triggeringEvent: nil)
-        return scrollbackOverlay?.scrollbackTerminalView
+        createScrollback(initialScrollLine: scrollPosition)
     }
 
-    /// Handle scroll-wheel-up on the live terminal. Returns true if the event
-    /// was consumed (scrollback overlay created), false to let normal scroll proceed.
-    private func handleScrollUp(event: NSEvent) -> Bool {
-        // Already in scrollback — let the overlay handle scroll events
-        guard !isScrollbackActive else { return false }
+    /// Create the scrollback overlay with an HTML rendering of the live terminal's buffer.
+    private func createScrollback(initialScrollLine: Int? = nil) {
+        // Snapshot the live buffer (deep copy)
+        let snapshot = terminalView.terminal.snapshotBuffer(terminalView.terminal.buffer)
+        self.currentSnapshot = snapshot
 
-        // Cooldown active — ignore to prevent momentum re-entry
-        guard !scrollbackCooldown else { return false }
+        // Use provided scroll position, or default to bottom of buffer
+        let initialScrollLine = initialScrollLine ?? snapshot.yDisp
 
-        // No scrollback content — nothing above the viewport to show
-        let displayBuffer = terminalView.terminal.displayBuffer
-        guard displayBuffer.yBase > 0 else { return false }
-
-        createScrollback(triggeringEvent: event)
-        return true
-    }
-
-    /// Create the scrollback overlay with a snapshot of the live terminal's buffer.
-    /// If a triggering scroll event is provided, its delta is applied before the first draw.
-    private func createScrollback(triggeringEvent: NSEvent? = nil) {
-        // Step 3: Create scrollback view with the live terminal's frame
-        let sbView = ScrollbackTerminalView(frame: terminalView.bounds)
-
-        // Step 4: Apply the live terminal's font and color palette.
-        // Font MUST be applied before buffer injection so cellDimension is
-        // correct for the first draw.
-        sbView.customBlockGlyphs = terminalView.customBlockGlyphs
-        sbView.font = terminalView.font
+        // Get current font metrics for CSS matching
+        let font = terminalView.font
+            ?? NSFont.monospacedSystemFont(ofSize: 12, weight: .medium)
+        let cellDim = terminalView.cellDimension!
         let theme = TerminalColorTheme.theme(
             named: SettingsManager.shared.settings.terminalColorThemeName
         )
-        sbView.nativeForegroundColor = theme.foregroundColor
-        sbView.nativeBackgroundColor = theme.backgroundColorValue
-        sbView.installColors(theme.swiftTermPalette)
-        sbView.galaxyBoldForegroundColor = theme.boldForegroundColor
 
-        // Step 5: Snapshot the live buffer (deep copy)
-        let snapshot = terminalView.terminal.snapshotBuffer(terminalView.terminal.buffer)
+        // Render buffer to HTML
+        let html = ScrollbackBufferRenderer.render(
+            buffer: snapshot,
+            terminal: terminalView.terminal,
+            theme: theme,
+            fontFamily: font.fontName,
+            fontSize: font.pointSize,
+            cellHeight: cellDim.height,
+            cols: snapshot.cols
+        )
 
-        // Apply triggering scroll delta before first draw — prevents a
-        // single-frame flash of identical content.
-        if let event = triggeringEvent {
-            let scrollLines = max(1, Int(event.deltaY))
-            snapshot.yDisp = max(0, snapshot.yDisp - scrollLines)
-        }
-
-        // Step 6: Inject snapshot into scrollback view's terminal.
-        // Set normalBuffer so resizeBuffers() targets the snapshot (not the
-        // empty default buffer). buffer is the active-buffer reference.
-        sbView.terminal.normalBuffer = snapshot
-        sbView.terminal.buffer = snapshot
-
-        // Step 6b: Sync terminal dimensions to match the snapshot buffer
-        sbView.terminal.cols = snapshot.cols
-        sbView.terminal.rows = snapshot.rows
-
-        // Dismiss callback
-        sbView.onDismiss = { [weak self] in
+        // Create web view with theme background for rubber-band overscroll
+        let webView = ScrollbackWebView(
+            frame: terminalView.bounds,
+            html: html,
+            initialScrollLine: initialScrollLine,
+            backgroundColor: theme.backgroundColorValue
+        )
+        webView.onDismiss = { [weak self] in
             self?.dismissScrollback()
+        }
+        webView.onReady = { [weak self] in
+            // Scroll the live terminal to the bottom now that the scrollback
+            // overlay is visible — prevents a flash of the live view jumping.
+            guard let self = self else { return }
+            let buf = self.terminalView.terminal.displayBuffer
+            self.terminalView.terminal.userScrolling = false
+            buf.yDisp = buf.yBase
+            self.terminalView.setNeedsDisplay(self.terminalView.bounds)
         }
 
         // Create overlay container with border and pill
-        let overlay = ScrollbackOverlayView(frame: bounds, scrollbackTerminalView: sbView)
+        let overlay = ScrollbackOverlayView(frame: bounds, scrollbackView: webView)
         overlay.autoresizingMask = [.width, .height]
 
         // Add above drag highlight so it's the topmost interactive layer
         addSubview(overlay, positioned: .above, relativeTo: dragHighlightView)
         scrollbackOverlay = overlay
 
-        // Make scrollback view first responder for keyboard events
-        window?.makeFirstResponder(sbView)
-
-        // Force initial draw with correct scroll position
-        sbView.setNeedsDisplay(sbView.bounds)
+        // Make WKWebView first responder for keyboard events
+        window?.makeFirstResponder(webView.webView)
     }
 
     /// Dismiss and fully unload the scrollback overlay. Idempotent — safe to
@@ -500,79 +454,68 @@ class TerminalHostView: NSView {
     func dismissScrollback() {
         guard let overlay = scrollbackOverlay else { return }
 
-        // Restore first responder to live terminal only if scrollback view
+        // Restore first responder to live terminal only if the WKWebView
         // currently owns it — avoid stealing focus from something else.
-        if window?.firstResponder === overlay.scrollbackTerminalView {
+        if window?.firstResponder === overlay.scrollbackView.webView {
             window?.makeFirstResponder(terminalView)
         }
 
+        // Explicit teardown breaks the WKWebView retain cycle so the web
+        // process is freed immediately rather than leaking.
+        overlay.scrollbackView.teardown()
         overlay.removeFromSuperview()
         scrollbackOverlay = nil
-        // ARC frees ScrollbackOverlayView → ScrollbackTerminalView → Terminal → snapshot Buffer
+        currentSnapshot = nil
 
-        // Start cooldown to prevent trackpad momentum from re-creating scrollback
-        startScrollbackCooldown()
-    }
-
-    /// Start the post-dismiss cooldown. Clears on momentum end or ~300ms timeout
-    /// (whichever comes first).
-    private func startScrollbackCooldown() {
-        scrollbackCooldown = true
-        scrollbackCooldownTimer?.cancel()
-
-        // Monitor for momentum end — clears cooldown early for trackpads
-        var momentumMonitor: Any?
-        momentumMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-            if event.momentumPhase == .ended || (event.momentumPhase == [] && event.phase == .ended) {
-                self?.scrollbackCooldown = false
-                self?.scrollbackCooldownTimer?.cancel()
-                self?.scrollbackCooldownTimer = nil
-                if let monitor = momentumMonitor {
-                    NSEvent.removeMonitor(monitor)
-                    momentumMonitor = nil
-                }
-            }
-            return event
-        }
-
-        // Safety timeout — for discrete mouse wheels that don't send momentum events
-        let timer = DispatchWorkItem { [weak self] in
-            self?.scrollbackCooldown = false
-            self?.scrollbackCooldownTimer = nil
-            if let monitor = momentumMonitor {
-                NSEvent.removeMonitor(monitor)
-                momentumMonitor = nil
-            }
-        }
-        scrollbackCooldownTimer = timer
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: timer)
     }
 
     /// Apply current font/theme settings to the scrollback view if present.
+    /// Rebuilds the entire HTML document with the new theme/font, preserving
+    /// the current scroll position. Theme changes require a full rebuild
+    /// because inline <span> styles are baked from the original theme.
     private func applySettingsToScrollback() {
         guard let overlay = scrollbackOverlay else { return }
-        let sbView = overlay.scrollbackTerminalView
+        guard let snapshot = currentSnapshot else { return }
 
-        // Apply font (same logic as Session.applyTerminalFontSize)
-        let family = SettingsManager.shared.settings.terminalFontFamily
-        let size = session.terminalFontSize
-        let font: NSFont
-        if family == "SF Mono" {
-            font = NSFont.monospacedSystemFont(ofSize: size, weight: .medium)
-        } else {
-            font = NSFont(name: family, size: size)
-                ?? NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        // Save current scroll position before rebuilding
+        overlay.scrollbackView.webView.evaluateJavaScript(
+            "ScrollbackManager.getVisibleLine()"
+        ) { [weak self] result, _ in
+            guard let self = self else { return }
+            let scrollLine = result as? Int ?? 0
+
+            let theme = TerminalColorTheme.theme(
+                named: SettingsManager.shared.settings.terminalColorThemeName
+            )
+            let family = SettingsManager.shared.settings.terminalFontFamily
+            let size = self.session.terminalFontSize
+
+            // Compute font and cell height (same logic as Session)
+            let font: NSFont
+            if family == "SF Mono" {
+                font = NSFont.monospacedSystemFont(ofSize: size, weight: .medium)
+            } else {
+                font = NSFont(name: family, size: size)
+                    ?? NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+            }
+            let ctFont = font as CTFont
+            let cellHeight = ceil(
+                CTFontGetAscent(ctFont) + CTFontGetDescent(ctFont)
+                    + CTFontGetLeading(ctFont)
+            )
+
+            let html = ScrollbackBufferRenderer.render(
+                buffer: snapshot,
+                terminal: self.terminalView.terminal,
+                theme: theme,
+                fontFamily: font.fontName,
+                fontSize: size,
+                cellHeight: cellHeight,
+                cols: snapshot.cols
+            )
+
+            overlay.scrollbackView.reload(html: html, scrollToLine: scrollLine)
         }
-        sbView.font = font
-
-        // Apply color theme
-        let theme = TerminalColorTheme.theme(
-            named: SettingsManager.shared.settings.terminalColorThemeName
-        )
-        sbView.nativeForegroundColor = theme.foregroundColor
-        sbView.nativeBackgroundColor = theme.backgroundColorValue
-        sbView.installColors(theme.swiftTermPalette)
-        sbView.galaxyBoldForegroundColor = theme.boldForegroundColor
     }
 
     // MARK: - Terminal Text Injection

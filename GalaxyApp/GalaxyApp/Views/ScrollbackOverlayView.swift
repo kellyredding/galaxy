@@ -1,27 +1,26 @@
 import AppKit
-import SwiftTerm
 
-/// Container NSView that holds a ScrollbackTerminalView and a floating pill
-/// indicator. Draws a 1px accent-color border around the entire view.
+/// Container NSView that holds a ScrollbackWebView and a floating pill
+/// indicator. Draws a 2px accent-color border around the entire view.
 class ScrollbackOverlayView: NSView {
-    let scrollbackTerminalView: ScrollbackTerminalView
+    let scrollbackView: ScrollbackWebView
     private let pillLabel: NSTextField
 
-    init(frame: NSRect, scrollbackTerminalView: ScrollbackTerminalView) {
-        self.scrollbackTerminalView = scrollbackTerminalView
+    init(frame: NSRect, scrollbackView: ScrollbackWebView) {
+        self.scrollbackView = scrollbackView
         self.pillLabel = NSTextField(labelWithString: "Scrollback · Esc to exit")
         super.init(frame: frame)
         wantsLayer = true
 
-        // Add scrollback terminal view filling the entire frame
-        scrollbackTerminalView.frame = bounds
-        scrollbackTerminalView.autoresizingMask = [.width, .height]
-        addSubview(scrollbackTerminalView)
+        // Add scrollback web view filling the entire frame
+        scrollbackView.frame = bounds
+        scrollbackView.autoresizingMask = [.width, .height]
+        addSubview(scrollbackView)
 
         // Configure pill indicator
         configurePill()
 
-        // Draw 1px accent-color border
+        // Draw 2px accent-color border
         layer?.borderWidth = 2
         layer?.borderColor = NSColor.controlAccentColor.cgColor
     }
@@ -50,7 +49,7 @@ class ScrollbackOverlayView: NSView {
         let pillWidth = pillLabel.frame.width + hPadding * 2
         let pillHeight = pillLabel.frame.height + vPadding * 2
 
-        // Anchor flush to top-right corner (inside the 1px border)
+        // Anchor flush to top-right corner (inside the border)
         pillLabel.frame = NSRect(
             x: bounds.width - pillWidth - 1,
             y: bounds.height - pillHeight - 1,
@@ -67,7 +66,7 @@ class ScrollbackOverlayView: NSView {
         pillLabel.wantsLayer = true
         pillLabel.layer?.cornerRadius = 0
 
-        addSubview(pillLabel, positioned: .above, relativeTo: scrollbackTerminalView)
+        addSubview(pillLabel, positioned: .above, relativeTo: scrollbackView)
     }
 
     /// Compute contrasting text color based on accent color luminance.
@@ -83,12 +82,12 @@ class ScrollbackOverlayView: NSView {
     // MARK: - Event Passthrough
 
     /// Pill must be transparent to all events (scroll, click, drag) so they
-    /// pass through to the ScrollbackTerminalView underneath.
+    /// pass through to the ScrollbackWebView underneath.
     override func hitTest(_ point: NSPoint) -> NSView? {
-        // If the hit is on the pill, pass through to the terminal view
+        // If the hit is on the pill, pass through to the web view
         let pointInPill = pillLabel.convert(point, from: self)
         if pillLabel.bounds.contains(pointInPill) {
-            return scrollbackTerminalView.hitTest(convert(point, to: scrollbackTerminalView))
+            return scrollbackView.hitTest(convert(point, to: scrollbackView))
         }
         return super.hitTest(point)
     }

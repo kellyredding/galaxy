@@ -27,7 +27,8 @@
 		830B36A8A4CD211AC3DF03F3 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9DD26C1047DBD42B5051047 /* main.swift */; };
 		87FFE54A9802FACDDA0F15D9 /* GalaxyTerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7704E47DFEE80B330501660 /* GalaxyTerminalView.swift */; };
 		58D9BBDC4B604C0481F44868 /* ScrollbackOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE0938FAB0A346C494205DF7 /* ScrollbackOverlayView.swift */; };
-		588F38405D1B4CD2939836C8 /* ScrollbackTerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FF94269116043C188B2D7EF /* ScrollbackTerminalView.swift */; };
+		EE3333330000000000000001 /* ScrollbackBufferRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE4444440000000000000001 /* ScrollbackBufferRenderer.swift */; };
+		EE3333330000000000000002 /* ScrollbackWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE4444440000000000000002 /* ScrollbackWebView.swift */; };
 		88B1D264363994AD24AC8CC6 /* SessionDragCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA80B868DED26B32D6DEB65D /* SessionDragCoordinator.swift */; };
 		89EE54398E22AEA37B416F21 /* WindowStatePersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 899A0FEF2AD224B0D5701B42 /* WindowStatePersistence.swift */; };
 		951191037547FFAFD104A99F /* StoppedSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C599534AAFC2570BC5F292A /* StoppedSessionView.swift */; };
@@ -105,7 +106,8 @@
 		BAEF4E4E06E2AD409BFED23F /* SessionPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionPersistence.swift; sourceTree = "<group>"; };
 		C7704E47DFEE80B330501660 /* GalaxyTerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxyTerminalView.swift; sourceTree = "<group>"; };
 		BE0938FAB0A346C494205DF7 /* ScrollbackOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollbackOverlayView.swift; sourceTree = "<group>"; };
-		9FF94269116043C188B2D7EF /* ScrollbackTerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollbackTerminalView.swift; sourceTree = "<group>"; };
+		EE4444440000000000000001 /* ScrollbackBufferRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollbackBufferRenderer.swift; sourceTree = "<group>"; };
+		EE4444440000000000000002 /* ScrollbackWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollbackWebView.swift; sourceTree = "<group>"; };
 		CA7C61AE6C010B6F8091B0B3 /* SocketListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocketListener.swift; sourceTree = "<group>"; };
 		CEB9F0C617C86CE1FDD05FF3 /* MainWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowController.swift; sourceTree = "<group>"; };
 		D96AFD79CE59690C239E10B5 /* MainMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainMenu.swift; sourceTree = "<group>"; };
@@ -207,8 +209,9 @@
 				43C2EE51F5ED8F5A44D27580 /* DragHandleNSView.swift */,
 				73B3B51B18B326C9BFD98925 /* ExpandedSessionSidebar.swift */,
 				C7704E47DFEE80B330501660 /* GalaxyTerminalView.swift */,
+				EE4444440000000000000001 /* ScrollbackBufferRenderer.swift */,
 				BE0938FAB0A346C494205DF7 /* ScrollbackOverlayView.swift */,
-				9FF94269116043C188B2D7EF /* ScrollbackTerminalView.swift */,
+				EE4444440000000000000002 /* ScrollbackWebView.swift */,
 				BB2222220000000000000005 /* LedgerEntriesView.swift */,
 				BB2222220000000000000004 /* LedgerFilesView.swift */,
 				BB2222220000000000000006 /* LedgerIdentifiersView.swift */,
@@ -374,8 +377,9 @@
 				95B87341788CFD115DCAC557 /* GalaxyApp.swift in Sources */,
 				C27788ECAC3C2D2A1DA2024E /* GalaxyLog.swift in Sources */,
 				87FFE54A9802FACDDA0F15D9 /* GalaxyTerminalView.swift in Sources */,
+				EE3333330000000000000001 /* ScrollbackBufferRenderer.swift in Sources */,
 				58D9BBDC4B604C0481F44868 /* ScrollbackOverlayView.swift in Sources */,
-				588F38405D1B4CD2939836C8 /* ScrollbackTerminalView.swift in Sources */,
+				EE3333330000000000000002 /* ScrollbackWebView.swift in Sources */,
 				BB1111110000000000000005 /* LedgerEntriesView.swift in Sources */,
 				BB1111110000000000000004 /* LedgerFilesView.swift in Sources */,
 				BB1111110000000000000006 /* LedgerIdentifiersView.swift in Sources */,
