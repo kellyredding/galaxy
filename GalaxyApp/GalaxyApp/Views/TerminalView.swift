@@ -188,12 +188,14 @@ class TerminalHostView: NSView {
         addSubview(highlight, positioned: .above, relativeTo: terminalView)
         dragHighlightView = highlight
 
-        // Observe session process exit — dismiss scrollback if process dies
+        // Observe session process exit — dismiss scrollback if process dies.
+        // Force-dismiss to skip note confirmation — the process is gone so
+        // there's nothing to send notes to.
         session.$hasExited
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] exited in
-                if exited { self?.dismissScrollback() }
+                if exited { self?.dismissScrollback(force: true) }
             }
             .store(in: &cancellables)
 
@@ -284,9 +286,14 @@ class TerminalHostView: NSView {
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        // Dismiss scrollback on file drag entry
+        // Dismiss scrollback on file drag entry — if notes exist, show
+        // confirmation instead of auto-dismissing
         if isScrollbackActive {
-            dismissScrollback()
+            if scrollbackOverlay?.scrollbackView.hasNotes == true {
+                showDismissConfirmation()
+                return []
+            }
+            dismissScrollback(force: true)
         }
 
         guard canAcceptDrop else {
@@ -435,6 +442,22 @@ class TerminalHostView: NSView {
             self.terminalView.terminal.userScrolling = false
             buf.yDisp = buf.yBase
             self.terminalView.setNeedsDisplay(self.terminalView.bounds)
+
+            // Restore note cards if this is a reload (theme/font change)
+            webView.restoreNoteState()
+        }
+        webView.onConfirmDismiss = { [weak self] in
+            self?.showDismissConfirmation()
+        }
+        webView.onSendToClaude = { [weak self] message in
+            guard let self = self else { return }
+            self.dismissScrollback(force: true)
+            // Bracketed paste delivers multi-line content as a single
+            // input block, then CR after a delay submits it.
+            self.sendTextToTerminal(message, asPaste: true)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.terminalView.send([0x0D])
+            }
         }
 
         // Create overlay container with border and pill
@@ -450,9 +473,16 @@ class TerminalHostView: NSView {
     }
 
     /// Dismiss and fully unload the scrollback overlay. Idempotent — safe to
-    /// call from multiple exit paths in close succession.
-    func dismissScrollback() {
+    /// call from multiple exit paths in close succession. When `force` is
+    /// false and notes exist, shows a confirmation dialog instead.
+    func dismissScrollback(force: Bool = false) {
         guard let overlay = scrollbackOverlay else { return }
+
+        // Guard against losing unsaved notes
+        if !force && overlay.scrollbackView.hasNotes {
+            showDismissConfirmation()
+            return
+        }
 
         // Restore first responder to live terminal only if the WKWebView
         // currently owns it — avoid stealing focus from something else.
@@ -466,7 +496,28 @@ class TerminalHostView: NSView {
         overlay.removeFromSuperview()
         scrollbackOverlay = nil
         currentSnapshot = nil
+    }
 
+    /// Show an NSAlert sheet asking the user to confirm discarding notes.
+    private func showDismissConfirmation() {
+        guard let overlay = scrollbackOverlay else { return }
+        let noteCount = overlay.scrollbackView.notes.count
+
+        let alert = NSAlert()
+        alert.messageText = "Discard scrollback notes?"
+        alert.informativeText = "You have \(noteCount) unsaved note\(noteCount == 1 ? "" : "s"). They will be lost if you exit scrollback."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Discard")
+        alert.addButton(withTitle: "Cancel")
+
+        guard let window = window else { return }
+        alert.beginSheetModal(for: window) { [weak self] response in
+            if response == .alertFirstButtonReturn {
+                self?.dismissScrollback(force: true)
+            } else {
+                self?.requestFocus()
+            }
+        }
     }
 
     /// Apply current font/theme settings to the scrollback view if present.

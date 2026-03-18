@@ -1,6 +1,21 @@
 import AppKit
 import WebKit
 
+// MARK: - ScrollbackNote
+
+/// Ephemeral note attached to a range of lines in the scrollback buffer.
+/// Exists only while the scrollback overlay is active — no persistence.
+struct ScrollbackNote: Identifiable {
+    let id: UUID
+    let startLine: Int       // 0-based line index in buffer
+    let endLine: Int         // inclusive
+    let lineContent: String  // full text of lines startLine...endLine
+    var content: String      // the note text
+    let createdAt: Date
+}
+
+// MARK: - ScrollbackWebView
+
 /// WKWebView wrapper that renders the frozen terminal buffer as HTML.
 /// Replaces `ScrollbackTerminalView` for scrollback mode. Handles keyboard
 /// navigation via embedded JavaScript and communicates dismiss/ready events
@@ -16,6 +31,18 @@ class ScrollbackWebView: NSView {
 
     /// Called once when the HTML page has loaded and is visible.
     var onReady: (() -> Void)?
+
+    /// Called when JS requests dismiss confirmation (notes exist).
+    var onConfirmDismiss: (() -> Void)?
+
+    /// Called when JS sends the formatted note message to Claude.
+    var onSendToClaude: ((String) -> Void)?
+
+    /// In-memory note storage. Cleared on teardown.
+    private(set) var notes: [ScrollbackNote] = []
+
+    /// True when there's at least one note.
+    var hasNotes: Bool { !notes.isEmpty }
 
     /// Line index to scroll to once the HTML page signals "ready".
     private var initialScrollLine: Int
@@ -59,14 +86,16 @@ class ScrollbackWebView: NSView {
         self.wantsLayer = true
         self.layer?.backgroundColor = backgroundColor.cgColor
 
-        // Navigation delegate prevents the galaxy:// baseURL from being
-        // opened as an external URL by macOS.
+        // Navigation delegate prevents link-activated navigations from
+        // triggering macOS URL scheme handling.
         webView.navigationDelegate = self
 
         addSubview(webView)
 
-        // Load the rendered HTML
-        webView.loadHTMLString(html, baseURL: URL(string: "galaxy://scrollback-terminal-view"))
+        // Load the rendered HTML with bundle resource base URL so emoji
+        // JS files can be loaded via <script src="..."> tags.
+        let baseURL = Bundle.main.resourceURL
+        webView.loadHTMLString(html, baseURL: baseURL)
     }
 
     @available(*, unavailable)
@@ -88,9 +117,90 @@ class ScrollbackWebView: NSView {
             // Page loaded — scroll to initial position, then notify caller
             scrollToLine(initialScrollLine)
             onReady?()
+        case "confirmDismiss":
+            onConfirmDismiss?()
+        case "createNote":
+            handleCreateNote(body)
+        case "updateNote":
+            handleUpdateNote(body)
+        case "deleteNote":
+            handleDeleteNote(body)
+        case "sendToClaude":
+            guard let msg = body["message"] as? String else { return }
+            onSendToClaude?(msg)
         default:
             break
         }
+    }
+
+    // MARK: - Note Handlers
+
+    private func handleCreateNote(_ body: [String: Any]) {
+        guard let startLine = body["startLine"] as? Int,
+              let endLine = body["endLine"] as? Int,
+              let lineContent = body["lineContent"] as? String,
+              let content = body["content"] as? String
+        else { return }
+
+        let note = ScrollbackNote(
+            id: UUID(),
+            startLine: startLine,
+            endLine: endLine,
+            lineContent: lineContent,
+            content: content,
+            createdAt: Date()
+        )
+        notes.append(note)
+
+        // Respond to JS with the created note (including server-assigned ID)
+        let json = noteToJSON(note)
+        webView.evaluateJavaScript(
+            "ScrollbackManager.notes.noteCreated(\(json))"
+        )
+    }
+
+    private func handleUpdateNote(_ body: [String: Any]) {
+        guard let idStr = body["id"] as? String,
+              let id = UUID(uuidString: idStr),
+              let content = body["content"] as? String
+        else { return }
+
+        guard let idx = notes.firstIndex(where: { $0.id == id }) else { return }
+        notes[idx].content = content
+
+        let json = noteToJSON(notes[idx])
+        webView.evaluateJavaScript(
+            "ScrollbackManager.notes.noteUpdated(\(json))"
+        )
+    }
+
+    private func handleDeleteNote(_ body: [String: Any]) {
+        guard let idStr = body["id"] as? String,
+              let id = UUID(uuidString: idStr)
+        else { return }
+
+        notes.removeAll { $0.id == id }
+        webView.evaluateJavaScript(
+            "ScrollbackManager.notes.noteDeleted('\(idStr)')"
+        )
+    }
+
+    private func noteToJSON(_ note: ScrollbackNote) -> String {
+        let escapedContent = note.content
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "\\r")
+        let escapedLineContent = note.lineContent
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "\\r")
+        return """
+        {"id":"\(note.id.uuidString)","startLine":\(note.startLine),\
+        "endLine":\(note.endLine),"lineContent":"\(escapedLineContent)",\
+        "content":"\(escapedContent)","number":\(notes.count)}
+        """
     }
 
     // MARK: - JavaScript Interface
@@ -114,9 +224,24 @@ class ScrollbackWebView: NSView {
     }
 
     /// Reload the entire HTML document (used for full theme rebuilds).
+    /// Preserves note state across the reload by round-tripping through Swift.
     func reload(html: String, scrollToLine line: Int) {
         initialScrollLine = line
-        webView.loadHTMLString(html, baseURL: URL(string: "galaxy://scrollback-terminal-view"))
+        let baseURL = Bundle.main.resourceURL
+        webView.loadHTMLString(html, baseURL: baseURL)
+    }
+
+    /// After a reload, restore note cards and form state into the new HTML.
+    /// Called from the onReady callback after the page signals readiness.
+    func restoreNoteState() {
+        guard !notes.isEmpty else { return }
+        // Re-insert all note cards
+        for note in notes {
+            let json = noteToJSON(note)
+            webView.evaluateJavaScript(
+                "ScrollbackManager.notes.noteCreated(\(json))"
+            )
+        }
     }
 
     // MARK: - First Responder
@@ -137,8 +262,11 @@ class ScrollbackWebView: NSView {
         webView.configuration.userContentController
             .removeAllScriptMessageHandlers()
         webView.stopLoading()
+        notes.removeAll()
         onDismiss = nil
         onReady = nil
+        onConfirmDismiss = nil
+        onSendToClaude = nil
     }
 
     deinit {

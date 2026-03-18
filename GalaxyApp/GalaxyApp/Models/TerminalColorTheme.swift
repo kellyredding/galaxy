@@ -17,6 +17,15 @@ struct TerminalColorTheme: Codable, Identifiable {
     var foregroundColor: NSColor { Self.nsColor(from: foreground) }
     var backgroundColorValue: NSColor { Self.nsColor(from: background) }
 
+    /// Perceived brightness of the background (0 = black, 1 = white).
+    /// Uses the ITU-R BT.601 luma formula: 0.299R + 0.587G + 0.114B.
+    var backgroundLuminance: CGFloat {
+        let c = backgroundColorValue.usingColorSpace(.sRGB) ?? backgroundColorValue
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        c.getRed(&r, green: &g, blue: &b, alpha: &a)
+        return 0.299 * r + 0.587 * g + 0.114 * b
+    }
+
     /// Bold default foreground: use explicit bold color if provided,
     /// otherwise fall back to the theme's bright white (ANSI index 15).
     var boldForegroundColor: NSColor {
