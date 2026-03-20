@@ -525,7 +525,6 @@ struct SessionRow: View {
         // (nil means "never set" and is only the initial state)
         session.givenName = trimmed.isEmpty ? "" : trimmed
         SessionPersistence.shared.markDirty()
-        session.syncSessionName()
         isEditingName = false
         restoreTerminalFocus()
     }

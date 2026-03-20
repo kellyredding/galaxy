@@ -286,15 +286,6 @@ class SessionManager: ObservableObject {
         // Start the process
         session.startProcess(executablePath: executablePath, resume: isResume)
 
-        // Sync Galaxy session name to Claude after boot.
-        // afterNextIdle waits for the first busy→idle cycle (Claude has
-        // booted and produced output). syncSessionName() then schedules a
-        // sustained-idle timer, ensuring /rename only fires after a full
-        // quiet period — not during brief gaps between tool calls.
-        session.afterNextIdle { [weak session] in
-            session?.syncSessionName()
-        }
-
         sessions.append(session)
         saveViewState()
         activeSessionId = session.id
@@ -487,12 +478,8 @@ class SessionManager: ObservableObject {
         // Start process: --resume if session exists in Claude storage, --session-id if not
         session.startProcess(executablePath: executablePath, resume: canResume)
 
-        // Sync session name and handoff after Claude finishes booting.
-        // /rename uses sustained-idle timer (fires only when truly idle).
-        // /handoff at +2.5s from afterNextIdle — may fire before rename
-        // lands; both commands are independent so ordering doesn't matter.
+        // Send handoff after Claude finishes booting.
         session.afterNextIdle { [weak session] in
-            session?.syncSessionName()
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak session] in
                 session?.sendCommand("/handoff")
             }
@@ -532,12 +519,6 @@ class SessionManager: ObservableObject {
         session.afterNextIdle { [weak session] in
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak session] in
                 session?.sendCommand("/handoff")
-                // Claude's context was reset — clear the de-dup gate
-                // and re-apply the session name after handoff settles.
-                session?.resetNameSync()
-                session?.afterNextIdle { [weak session] in
-                    session?.syncSessionName()
-                }
             }
         }
     }

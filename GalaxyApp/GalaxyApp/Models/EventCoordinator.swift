@@ -266,11 +266,6 @@ final class EventCoordinator {
                     // Guard @Published property — only assign when value changed
                     if appSession.ledgerSuggestedName != sessionData.suggestedName {
                         appSession.ledgerSuggestedName = sessionData.suggestedName
-                        // Live-sync only after initial boot rename has completed.
-                        // Pre-boot enrichment is picked up by the afterNextIdle rename.
-                        if appSession.lastRenamedTo != nil {
-                            appSession.syncSessionName()
-                        }
                     }
 
                     appSession.ledgerClaudePids = sessionData.claudePids
