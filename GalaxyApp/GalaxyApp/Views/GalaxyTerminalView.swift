@@ -59,6 +59,20 @@ class GalaxyTerminalView: LocalProcessTerminalView {
         onBell?()
     }
 
+    // MARK: - Scroll Interception
+
+    /// Callback invoked on scroll-wheel-up before the parent handles
+    /// the event. Returns true if the event was consumed (scrollback
+    /// overlay created), false to let the parent proceed normally.
+    var onScrollUp: ((NSEvent) -> Bool)?
+
+    public override func scrollWheel(with event: NSEvent) {
+        if event.deltaY > 0, let callback = onScrollUp, callback(event) {
+            return
+        }
+        super.scrollWheel(with: event)
+    }
+
     // MARK: - PTY Activity
 
     /// Override dataReceived to detect PTY output activity.

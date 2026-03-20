@@ -336,8 +336,8 @@ struct TerminalSettingsTab: View {
                 }
             }
 
-            // Max scrollback settings
-            SettingsCard(title: "Max scrollback") {
+            // Scrollback settings
+            SettingsCard(title: "Scrollback") {
                 VStack(alignment: .leading, spacing: 6) {
                     SettingsRow(label: "History size") {
                         HStack(spacing: 4) {
@@ -387,6 +387,12 @@ struct TerminalSettingsTab: View {
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                         .padding(.leading, 2)
+
+                    Divider()
+
+                    Toggle("Scroll up to enter scrollback view",
+                           isOn: $settingsManager.settings.scrollToEnterScrollback)
+                        .toggleStyle(.checkbox)
                 }
             }
 

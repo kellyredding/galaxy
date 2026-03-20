@@ -90,6 +90,11 @@ class TerminalHostView: NSView {
     /// True when the scrollback overlay is visible.
     var isScrollbackActive: Bool { scrollbackOverlay != nil }
 
+    /// Cooldown flag — when true, scroll-wheel-up is ignored to prevent
+    /// trackpad momentum from immediately re-creating the scrollback view.
+    private var scrollbackCooldown = false
+    private var scrollbackCooldownTimer: DispatchWorkItem?
+
     /// Combine subscriptions for live settings sync (font, theme, hasExited).
     private var cancellables = Set<AnyCancellable>()
 
@@ -109,6 +114,7 @@ class TerminalHostView: NSView {
             NSEvent.removeMonitor(monitor)
         }
         cancellables.removeAll()
+        scrollbackCooldownTimer?.cancel()
     }
 
     /// Set up local event monitor to intercept Ctrl+Arrow for line navigation.
@@ -187,6 +193,13 @@ class TerminalHostView: NSView {
         highlight.autoresizingMask = [.width, .height]
         addSubview(highlight, positioned: .above, relativeTo: terminalView)
         dragHighlightView = highlight
+
+        // Wire up scroll-wheel-up interception for scrollback creation
+        if let galaxyTV = terminalView as? GalaxyTerminalView {
+            galaxyTV.onScrollUp = { [weak self] event in
+                self?.handleScrollUp(event: event) ?? false
+            }
+        }
 
         // Observe session process exit — dismiss scrollback if process dies.
         // Force-dismiss to skip note confirmation — the process is gone so
@@ -377,6 +390,58 @@ class TerminalHostView: NSView {
 
     // MARK: - Scrollback Lifecycle
 
+    /// Handle scroll-wheel-up on the live terminal. Returns true if the event
+    /// was consumed (scrollback overlay created), false to let normal scroll proceed.
+    private func handleScrollUp(event: NSEvent) -> Bool {
+        guard SettingsManager.shared.settings.scrollToEnterScrollback else { return false }
+        guard !isScrollbackActive else { return false }
+        guard !scrollbackCooldown else { return false }
+
+        let displayBuffer = terminalView.terminal.displayBuffer
+        guard displayBuffer.yBase > 0 else { return false }
+
+        let scrollPosition = displayBuffer.yDisp
+        terminalView.selection.selectNone()
+        createScrollback(initialScrollLine: scrollPosition)
+        return true
+    }
+
+    /// Start the post-dismiss cooldown. Clears on momentum end or ~300ms timeout
+    /// (whichever comes first). Prevents trackpad momentum from immediately
+    /// re-creating the scrollback view after dismiss.
+    private func startScrollbackCooldown() {
+        scrollbackCooldown = true
+        scrollbackCooldownTimer?.cancel()
+
+        // Monitor for momentum end — clears cooldown early for trackpads
+        var momentumMonitor: Any?
+        momentumMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            if event.momentumPhase == .ended
+                || (event.momentumPhase == [] && event.phase == .ended) {
+                self?.scrollbackCooldown = false
+                self?.scrollbackCooldownTimer?.cancel()
+                self?.scrollbackCooldownTimer = nil
+                if let monitor = momentumMonitor {
+                    NSEvent.removeMonitor(monitor)
+                    momentumMonitor = nil
+                }
+            }
+            return event
+        }
+
+        // Safety timeout — for discrete mouse wheels that don't send momentum events
+        let timer = DispatchWorkItem { [weak self] in
+            self?.scrollbackCooldown = false
+            self?.scrollbackCooldownTimer = nil
+            if let monitor = momentumMonitor {
+                NSEvent.removeMonitor(monitor)
+                momentumMonitor = nil
+            }
+        }
+        scrollbackCooldownTimer = timer
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: timer)
+    }
+
     /// Enter scrollback mode from Cmd+S menu action. Only the active session's
     /// TerminalHostView should respond — all others ignore.
     private func enterScrollbackFromMenu() {
@@ -502,6 +567,11 @@ class TerminalHostView: NSView {
         overlay.removeFromSuperview()
         scrollbackOverlay = nil
         currentSnapshot = nil
+
+        // Start cooldown to prevent trackpad momentum from re-creating scrollback
+        if SettingsManager.shared.settings.scrollToEnterScrollback {
+            startScrollbackCooldown()
+        }
     }
 
     /// Show an NSAlert sheet asking the user to confirm discarding notes.

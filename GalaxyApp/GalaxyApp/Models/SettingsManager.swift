@@ -119,6 +119,9 @@ struct AppSettings: Codable {
     // Session sidebar settings
     var gitStatusStyle: GitStatusStyle = .symbolic  // Git status display style
 
+    // Scrollback behavior settings
+    var scrollToEnterScrollback: Bool = false  // Scroll-up enters scrollback view
+
     // Session behavior settings
     var autoClearEnabled: Bool = true  // Auto-clear when context exceeds threshold
     var autoClearThreshold: Int = 97   // Context percentage (0-100) that triggers auto-clear
@@ -199,6 +202,8 @@ struct AppSettings: Codable {
         gitStatusStyle = try container.decodeIfPresent(GitStatusStyle.self, forKey: .gitStatusStyle) ?? .symbolic
         autoClearEnabled = try container.decodeIfPresent(Bool.self, forKey: .autoClearEnabled) ?? true
         autoClearThreshold = try container.decodeIfPresent(Int.self, forKey: .autoClearThreshold) ?? 97
+        scrollToEnterScrollback = try container.decodeIfPresent(
+            Bool.self, forKey: .scrollToEnterScrollback) ?? false
         notifySessionIdle = try container.decodeIfPresent(
             Bool.self, forKey: .notifySessionIdle) ?? false
         notifySessionIdleMinBusy = try container.decodeIfPresent(
