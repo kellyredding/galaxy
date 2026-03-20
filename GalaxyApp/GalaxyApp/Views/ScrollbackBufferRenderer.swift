@@ -320,6 +320,9 @@ enum ScrollbackBufferRenderer {
         },
 
         handleKey(e) {
+            // Let textareas handle their own arrow/cursor keys
+            if (e.target.tagName === 'TEXTAREA') return;
+
             const c = this.container;
             switch (e.key) {
             case 'Escape':
