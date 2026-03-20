@@ -38,6 +38,12 @@ class ScrollbackWebView: NSView {
     /// Called when JS sends the formatted note message to Claude.
     var onSendToClaude: ((String) -> Void)?
 
+    /// Called when JS requests confirmation to discard new note form content.
+    var onConfirmDiscardForm: (() -> Void)?
+
+    /// Called when JS requests confirmation to discard edit changes.
+    var onConfirmDiscardEdit: (() -> Void)?
+
     /// In-memory note storage. Cleared on teardown.
     private(set) var notes: [ScrollbackNote] = []
 
@@ -128,6 +134,10 @@ class ScrollbackWebView: NSView {
         case "sendToClaude":
             guard let msg = body["message"] as? String else { return }
             onSendToClaude?(msg)
+        case "confirmDiscardForm":
+            onConfirmDiscardForm?()
+        case "confirmDiscardEdit":
+            onConfirmDiscardEdit?()
         default:
             break
         }
@@ -267,6 +277,8 @@ class ScrollbackWebView: NSView {
         onReady = nil
         onConfirmDismiss = nil
         onSendToClaude = nil
+        onConfirmDiscardForm = nil
+        onConfirmDiscardEdit = nil
     }
 
     deinit {

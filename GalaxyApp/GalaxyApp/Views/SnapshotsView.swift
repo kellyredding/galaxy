@@ -155,13 +155,6 @@ struct SnapshotsView: View {
             sessionManager.listNavAction = nil
             handleListNavAction(action)
         }
-        .onChange(of: sessionManager.annotationAction) {
-            guard session.id == sessionManager.activeSessionId else { return }
-            guard sessionManager.activeTab == .snapshots else { return }
-            guard let action = sessionManager.annotationAction else { return }
-            sessionManager.annotationAction = nil
-            handleAnnotationAction(action)
-        }
         .onChange(of: sessionManager.pendingReviewCheck) {
             guard session.id == sessionManager.activeSessionId else { return }
             guard let snapshotId = sessionManager.pendingReviewCheck,
@@ -601,17 +594,19 @@ struct SnapshotsView: View {
                             })()
                         """)
                     case "editing":
-                        self.webViewRef?.evaluateJavaScript(
-                            "AnnotationManager.cancelEdit()"
-                        )
+                        self.showDiscardEditAlert()
                     case "expanded":
                         self.webViewRef?.evaluateJavaScript(
-                            "AnnotationManager.collapseExpanded(); AnnotationManager.focusTextarea()"
+                            "AnnotationManager.collapseExpanded()"
                         )
                     case "formHasText":
+                        self.showDiscardFormAlert()
+                    case "formVisible":
                         self.webViewRef?.evaluateJavaScript(
-                            "AnnotationManager.clearForm()"
+                            "AnnotationManager.dismissForm()"
                         )
+                    case "__consumed__":
+                        break  // JS already handled it
                     default:
                         DispatchQueue.main.async { closeReader() }
                     }
@@ -626,6 +621,44 @@ struct SnapshotsView: View {
         if let monitor = escapeMonitor {
             NSEvent.removeMonitor(monitor)
             escapeMonitor = nil
+        }
+    }
+
+    /// Show an NSAlert asking to discard new annotation form content.
+    /// On Discard: hides form and clears highlights. On Cancel: no-op.
+    private func showDiscardFormAlert() {
+        guard let window = webViewRef?.window else { return }
+        let alert = NSAlert()
+        alert.messageText = "Discard annotation?"
+        alert.informativeText = "You have unsaved text in the annotation form. It will be lost if you dismiss."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Discard")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { [self] response in
+            if response == .alertFirstButtonReturn {
+                self.webViewRef?.evaluateJavaScript(
+                    "AnnotationManager.dismissForm()"
+                )
+            }
+        }
+    }
+
+    /// Show an NSAlert asking to discard edit changes.
+    /// On Discard: cancels edit, returns to expanded card. On Cancel: no-op.
+    private func showDiscardEditAlert() {
+        guard let window = webViewRef?.window else { return }
+        let alert = NSAlert()
+        alert.messageText = "Discard changes?"
+        alert.informativeText = "You have unsaved changes to this annotation. They will be lost if you cancel editing."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Discard")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { [self] response in
+            if response == .alertFirstButtonReturn {
+                self.webViewRef?.evaluateJavaScript(
+                    "AnnotationManager.cancelEdit()"
+                )
+            }
         }
     }
 
@@ -713,19 +746,7 @@ struct SnapshotsView: View {
         }
     }
 
-    // MARK: - Annotation Actions
-
-    private func handleAnnotationAction(_ action: AnnotationAction) {
-        guard openSnapshot != nil else { return }
-        let jsFunction: String
-        switch action {
-        case .moveUp: jsFunction = "AnnotationManager.moveUp()"
-        case .moveDown: jsFunction = "AnnotationManager.moveDown()"
-        case .extendUp: jsFunction = "AnnotationManager.extendHighlightUp()"
-        case .extendDown: jsFunction = "AnnotationManager.extendHighlightDown()"
-        }
-        webViewRef?.evaluateJavaScript(jsFunction)
-    }
+    // MARK: - Annotation Messages
 
     private func handleAnnotationMessage(_ message: AnnotationMessage, snapshotId: Int64) {
         switch message {

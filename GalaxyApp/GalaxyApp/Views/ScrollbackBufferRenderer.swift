@@ -370,12 +370,11 @@ enum ScrollbackBufferRenderer {
         handleEscape() {
             const n = this.notes;
 
-            // 1. Editing a note — cancel edit
-            if (n.editingId) {
-                const note = n.items.find(x => x.id === n.editingId);
-                if (note) n.cancelEdit(n.editingId, note.content);
-                return;
-            }
+            // 1. Editing a note — the edit textarea's keydown handler
+            // manages its own escape (emoji → confirm → cancel).
+            // If we still reach here while editing, it means the
+            // textarea didn't catch it — just ignore.
+            if (n.editingId) return;
 
             // 2. Note expanded — collapse
             if (n.expandedId) {
@@ -383,21 +382,19 @@ enum ScrollbackBufferRenderer {
                 return;
             }
 
-            // 3. Form has text — clear it
+            // 3. Form visible — delegate to form escape handler
             if (n.formElement && n.formElement.style.display !== 'none') {
                 const ta = n.formElement.querySelector('textarea');
-                if (ta && ta.value.length > 0) {
-                    ta.value = '';
-                    ta.style.height = 'auto';
+                if (ta) {
+                    n.handleFormEscape(ta);
                     return;
                 }
-                // 4. Form visible but empty — hide
                 n.hideForm();
                 n.clearHighlights();
                 return;
             }
 
-            // 5. Has notes — confirm dismiss
+            // 4. Has notes — confirm dismiss
             if (n.items.length > 0) {
                 window.webkit.messageHandlers.scrollback.postMessage({
                     action: 'confirmDismiss'
@@ -405,7 +402,7 @@ enum ScrollbackBufferRenderer {
                 return;
             }
 
-            // 6. No notes — dismiss scrollback
+            // 5. No notes — dismiss scrollback
             window.webkit.messageHandlers.scrollback.postMessage({
                 action: 'dismiss'
             });
@@ -821,6 +818,8 @@ enum ScrollbackBufferRenderer {
         highlightedLines: [],
         formStartLine: null,
         formEndLine: null,
+        pendingEditCancelId: null,
+        pendingEditOriginalContent: null,
         editIconSVG: '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>',
         deleteIconSVG: '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M5 6v14a1 1 0 001 1h12a1 1 0 001-1V6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>',
 
@@ -958,10 +957,24 @@ enum ScrollbackBufferRenderer {
                 EmojiAutocomplete.dismiss(ta);
                 return;
             }
-            if (ta.value.length > 0) {
-                ta.value = '';
-                ta.style.height = 'auto';
-                } else {
+            if (ta.value.trim().length > 0) {
+                // Has content — ask Swift for confirmation via NSAlert
+                window.webkit.messageHandlers.scrollback.postMessage({
+                    action: 'confirmDiscardForm'
+                });
+            } else {
+                this.hideForm();
+                this.clearHighlights();
+            }
+        },
+
+        forceDiscardForm() {
+            if (this.formElement) {
+                var ta = this.formElement.querySelector('textarea');
+                if (ta) {
+                    ta.value = '';
+                    ta.style.height = 'auto';
+                }
                 this.hideForm();
                 this.clearHighlights();
             }
@@ -1226,7 +1239,22 @@ enum ScrollbackBufferRenderer {
                 if (e.key === 'Escape') {
                     e.preventDefault();
                     e.stopPropagation();
-                    self.cancelEdit(noteId, originalContent);
+                    // Check emoji popup first
+                    if (typeof EmojiAutocomplete !== 'undefined' &&
+                        EmojiAutocomplete.isActive(ta)) {
+                        EmojiAutocomplete.dismiss(ta);
+                        return;
+                    }
+                    if (ta.value !== originalContent) {
+                        // Has changes — ask Swift for confirmation
+                        self.pendingEditCancelId = noteId;
+                        self.pendingEditOriginalContent = originalContent;
+                        window.webkit.messageHandlers.scrollback.postMessage({
+                            action: 'confirmDiscardEdit'
+                        });
+                    } else {
+                        self.cancelEdit(noteId, originalContent);
+                    }
                 }
             });
 
@@ -1262,6 +1290,14 @@ enum ScrollbackBufferRenderer {
             const contentEl = card.querySelector('.note-card-content');
             contentEl.innerHTML = '';
             contentEl.textContent = originalContent;
+        },
+
+        forceDiscardEdit() {
+            if (this.pendingEditCancelId) {
+                this.cancelEdit(this.pendingEditCancelId, this.pendingEditOriginalContent);
+                this.pendingEditCancelId = null;
+                this.pendingEditOriginalContent = null;
+            }
         },
 
         // --- Delete ---

@@ -285,14 +285,11 @@ class MainMenu: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        // Session switching / annotation navigation - vim style (⌘k/j)
-        // When snapshot reader is open, these become annotation form movement.
-        // Keep always enabled when reader open (JS no-ops at boundaries).
-        let isReaderOpen = sessionManager.isSnapshotReaderOpen
-        let canGoPrev = isReaderOpen || sessionManager.canSwitchToPreviousSession
-        let canGoNext = isReaderOpen || sessionManager.canSwitchToNextSession
-        let prevTitle = isReaderOpen ? "Previous block" : "Previous session"
-        let nextTitle = isReaderOpen ? "Next block" : "Next session"
+        // Session switching - vim style (⌘k/j)
+        let canGoPrev = sessionManager.canSwitchToPreviousSession
+        let canGoNext = sessionManager.canSwitchToNextSession
+        let prevTitle = "Previous session"
+        let nextTitle = "Next session"
 
         let prevItem = NSMenuItem(title: prevTitle, action: #selector(MenuActions.previousSession(_:)), keyEquivalent: "k")
         prevItem.target = MenuActions.shared
@@ -403,18 +400,16 @@ class MainMenu: NSObject, NSMenuDelegate {
         nextTabArrowItem.isAlternate = true
         menu.addItem(nextTabArrowItem)
 
-        // List item navigation / highlight extension: ⌘⇧K / ⌘⇧J and ⌘⇧↑ / ⌘⇧↓
-        // When snapshot reader is open, these become highlight extend actions.
+        // List item navigation: ⌘⇧K / ⌘⇧J and ⌘⇧↑ / ⌘⇧↓
         let hasListFocus: Bool = {
-            if isReaderOpen { return true }  // Always enabled for highlight extend
             switch sessionManager.activeTab {
             case .snapshots: return true
             case .ledger: return [.files, .entries].contains(sessionManager.activeLedgerSubTab)
             case .terminal: return false
             }
         }()
-        let focusPrevTitle = isReaderOpen ? "Resize selection up" : "Previous item"
-        let focusNextTitle = isReaderOpen ? "Resize selection down" : "Next item"
+        let focusPrevTitle = "Previous item"
+        let focusNextTitle = "Next item"
 
         let focusPrevItem = NSMenuItem(
             title: focusPrevTitle,
@@ -466,7 +461,7 @@ class MainMenu: NSObject, NSMenuDelegate {
         )
         activateItem.target = MenuActions.shared
         activateItem.keyEquivalentModifierMask = []
-        activateItem.isEnabled = sessionManager.activeTab == .snapshots && !isReaderOpen
+        activateItem.isEnabled = sessionManager.activeTab == .snapshots && !sessionManager.isSnapshotReaderOpen
         menu.addItem(activateItem)
 
         menu.addItem(.separator())
@@ -640,19 +635,11 @@ class MenuActions: NSObject {
     }
 
     @objc func previousSession(_ sender: Any?) {
-        if SessionManager.shared.isSnapshotReaderOpen {
-            SessionManager.shared.annotationAction = .moveUp
-        } else {
-            SessionManager.shared.switchToPreviousSession()
-        }
+        SessionManager.shared.switchToPreviousSession()
     }
 
     @objc func nextSession(_ sender: Any?) {
-        if SessionManager.shared.isSnapshotReaderOpen {
-            SessionManager.shared.annotationAction = .moveDown
-        } else {
-            SessionManager.shared.switchToNextSession()
-        }
+        SessionManager.shared.switchToNextSession()
     }
 
     @objc func previousView(_ sender: Any?) {
@@ -674,19 +661,11 @@ class MenuActions: NSObject {
     // MARK: - List Navigation Actions
 
     @objc func focusPreviousListItem(_ sender: Any?) {
-        if SessionManager.shared.isSnapshotReaderOpen {
-            SessionManager.shared.annotationAction = .extendUp
-        } else {
-            SessionManager.shared.listNavAction = .up
-        }
+        SessionManager.shared.listNavAction = .up
     }
 
     @objc func focusNextListItem(_ sender: Any?) {
-        if SessionManager.shared.isSnapshotReaderOpen {
-            SessionManager.shared.annotationAction = .extendDown
-        } else {
-            SessionManager.shared.listNavAction = .down
-        }
+        SessionManager.shared.listNavAction = .down
     }
 
     @objc func activateFocusedListItem(_ sender: Any?) {

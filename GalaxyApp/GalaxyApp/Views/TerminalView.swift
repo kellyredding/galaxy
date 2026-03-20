@@ -459,6 +459,12 @@ class TerminalHostView: NSView {
                 self?.terminalView.send([0x0D])
             }
         }
+        webView.onConfirmDiscardForm = { [weak self] in
+            self?.showDiscardNoteFormConfirmation()
+        }
+        webView.onConfirmDiscardEdit = { [weak self] in
+            self?.showDiscardNoteEditConfirmation()
+        }
 
         // Create overlay container with border and pill
         let overlay = ScrollbackOverlayView(frame: bounds, scrollbackView: webView)
@@ -514,6 +520,50 @@ class TerminalHostView: NSView {
         alert.beginSheetModal(for: window) { [weak self] response in
             if response == .alertFirstButtonReturn {
                 self?.dismissScrollback(force: true)
+            } else {
+                self?.requestFocus()
+            }
+        }
+    }
+
+    /// Show an NSAlert asking to discard new note form content.
+    private func showDiscardNoteFormConfirmation() {
+        guard let overlay = scrollbackOverlay else { return }
+        let alert = NSAlert()
+        alert.messageText = "Discard note?"
+        alert.informativeText = "You have unsaved text in the note form. It will be lost if you dismiss."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Discard")
+        alert.addButton(withTitle: "Cancel")
+
+        guard let window = window else { return }
+        alert.beginSheetModal(for: window) { [weak self] response in
+            if response == .alertFirstButtonReturn {
+                overlay.scrollbackView.webView.evaluateJavaScript(
+                    "ScrollbackManager.notes.forceDiscardForm()"
+                )
+            } else {
+                self?.requestFocus()
+            }
+        }
+    }
+
+    /// Show an NSAlert asking to discard edit changes to a note.
+    private func showDiscardNoteEditConfirmation() {
+        guard let overlay = scrollbackOverlay else { return }
+        let alert = NSAlert()
+        alert.messageText = "Discard changes?"
+        alert.informativeText = "You have unsaved changes to this note. They will be lost if you cancel editing."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Discard")
+        alert.addButton(withTitle: "Cancel")
+
+        guard let window = window else { return }
+        alert.beginSheetModal(for: window) { [weak self] response in
+            if response == .alertFirstButtonReturn {
+                overlay.scrollbackView.webView.evaluateJavaScript(
+                    "ScrollbackManager.notes.forceDiscardEdit()"
+                )
             } else {
                 self?.requestFocus()
             }

@@ -685,7 +685,6 @@ private func buildFullHTML(
         currentBlockIndex: 0,
         highlightStart: 0,
         highlightEnd: 0,
-        highlightAnchor: 0,    // Block where shift-highlight started
         annotations: [],
         annotationHTMLMap: {},
         formElement: null,
@@ -709,113 +708,101 @@ private func buildFullHTML(
             this.annotationHTMLMap = data.htmlMap || {};
 
             // Enumerate leaf-level blocks (no md-block children)
-            const allBlocks = document.querySelectorAll('.md-block');
+            var allBlocks = document.querySelectorAll('.md-block');
             this.blocks = Array.from(allBlocks).filter(
-                el => !el.querySelector('.md-block')
+                function(el) { return !el.querySelector('.md-block'); }
             );
 
             if (this.blocks.length === 0) return;
 
-            this.currentBlockIndex = 0;
-            this.highlightStart = 0;
-            this.highlightEnd = 0;
-            this.highlightAnchor = 0;
+            this.currentBlockIndex = -1;
+            this.highlightStart = -1;
+            this.highlightEnd = -1;
 
             this.createForm();
-            this.updateHighlights();
-            this.positionForm();
             this.renderAllAnnotations();
 
-            // Auto-focus the textarea so typing works immediately
+            // Drag-select detection on md-blocks
+            var self = this;
+            document.addEventListener('mouseup', function(e) {
+                // Ignore clicks on annotation UI elements
+                if (e.target.closest('.annotation-form') ||
+                    e.target.closest('.annotation-card')) return;
+
+                var sel = window.getSelection();
+                if (!sel || sel.isCollapsed) return;
+
+                var range = sel.getRangeAt(0);
+                var startBlock = self.findBlockElement(range.startContainer);
+                var endBlock = self.findBlockElement(range.endContainer);
+
+                if (!startBlock || !endBlock) return;
+
+                var startIdx = self.blocks.indexOf(startBlock);
+                var endIdx = self.blocks.indexOf(endBlock);
+                if (startIdx < 0 || endIdx < 0) return;
+
+                self.showFormForSelection(
+                    Math.min(startIdx, endIdx),
+                    Math.max(startIdx, endIdx)
+                );
+
+                sel.removeAllRanges();
+            });
+        },
+
+        findBlockElement(node) {
+            var el = node.nodeType === 3 ? node.parentElement : node;
+            while (el && !el.classList.contains('md-block')) {
+                el = el.parentElement;
+            }
+            if (!el) return null;
+            // Walk to leaf block (no md-block children)
+            while (el.querySelector('.md-block')) {
+                el = el.querySelector('.md-block');
+            }
+            return el;
+        },
+
+        showFormForSelection(startIdx, endIdx) {
+            this.collapseExpanded();
+            this.currentBlockIndex = endIdx;
+            this.highlightStart = startIdx;
+            this.highlightEnd = endIdx;
+            this.updateHighlights();
+            this.positionForm();
+            this.formElement.style.display = '';
+
             var ta = this.formElement.querySelector('textarea');
-            if (ta) ta.focus();
+            if (ta) { ta.value = ''; autoGrow(ta); }
+            this.updateFormReference();
+            requestAnimationFrame(function() {
+                if (ta) ta.focus();
+            });
         },
 
         restoreFormState(state) {
             if (!state || this.blocks.length === 0) return;
             var maxIdx = this.blocks.length - 1;
-            this.currentBlockIndex = Math.min(state.currentBlockIndex || 0, maxIdx);
-            this.highlightStart = Math.min(state.highlightStart || 0, maxIdx);
-            this.highlightEnd = Math.min(state.highlightEnd || 0, maxIdx);
-            this.highlightAnchor = Math.min(state.highlightAnchor || 0, maxIdx);
-            this.updateHighlights();
-            this.positionForm();
-            if (state.textareaValue) {
-                var ta = this.formElement.querySelector('textarea');
-                if (ta) { ta.value = state.textareaValue; autoGrow(ta); }
+
+            // Only restore form visibility if it was visible (valid selection)
+            if (state.formVisible && state.currentBlockIndex >= 0) {
+                this.currentBlockIndex = Math.min(state.currentBlockIndex, maxIdx);
+                this.highlightStart = Math.min(state.highlightStart || 0, maxIdx);
+                this.highlightEnd = Math.min(state.highlightEnd || 0, maxIdx);
+                this.updateHighlights();
+                this.positionForm();
+                this.formElement.style.display = '';
+                this.updateFormReference();
+                if (state.textareaValue) {
+                    var ta = this.formElement.querySelector('textarea');
+                    if (ta) { ta.value = state.textareaValue; autoGrow(ta); }
+                }
             }
             // Restore expanded annotation after theme change
             if (state.expandedNumber != null) {
                 this.expandAnnotation(state.expandedNumber);
             }
-        },
-
-        // --- Block Navigation ---
-
-        moveUp() {
-            this.collapseExpanded();
-            if (this.currentBlockIndex <= 0) return;
-            this.currentBlockIndex--;
-            // Non-shift move resets highlight to single block and resets anchor
-            this.highlightStart = this.currentBlockIndex;
-            this.highlightEnd = this.currentBlockIndex;
-            this.highlightAnchor = this.currentBlockIndex;
-            this.updateHighlights();
-            this.positionForm(false, 'up');
-            this.focusTextarea();
-        },
-
-        moveDown() {
-            this.collapseExpanded();
-            if (this.currentBlockIndex >= this.blocks.length - 1) return;
-            this.currentBlockIndex++;
-            // Non-shift move resets highlight to single block and resets anchor
-            this.highlightStart = this.currentBlockIndex;
-            this.highlightEnd = this.currentBlockIndex;
-            this.highlightAnchor = this.currentBlockIndex;
-            this.updateHighlights();
-            this.positionForm(false, 'down');
-            this.focusTextarea();
-        },
-
-        extendHighlightUp() {
-            this.collapseExpanded();
-            // Shift+Up: if highlight end is above anchor, extend start upward.
-            // Otherwise, shrink end upward toward anchor.
-            if (this.highlightEnd > this.highlightAnchor) {
-                // Shrink: move end up toward anchor
-                this.highlightEnd--;
-                this.currentBlockIndex = this.highlightEnd;
-                this.updateHighlights();
-                this.positionForm(false, 'up');
-            } else {
-                // Extend: move start upward past anchor
-                if (this.highlightStart <= 0) return;
-                this.highlightStart--;
-                this.updateHighlights();
-                this.updateFormReference();
-            }
-            this.focusTextarea();
-        },
-
-        extendHighlightDown() {
-            this.collapseExpanded();
-            // Shift+Down: if highlight start is below anchor, extend end downward.
-            // Otherwise, if start is above anchor, shrink start downward toward anchor.
-            if (this.highlightStart < this.highlightAnchor) {
-                // Shrink: move start down toward anchor
-                this.highlightStart++;
-                this.updateHighlights();
-                this.updateFormReference();
-            } else {
-                // Extend: move end downward past anchor
-                if (this.highlightEnd >= this.blocks.length - 1) return;
-                this.highlightEnd++;
-                this.currentBlockIndex = this.highlightEnd;
-                this.updateHighlights();
-                this.positionForm(false, 'down');
-            }
-            this.focusTextarea();
         },
 
         focusTextarea() {
@@ -826,13 +813,15 @@ private func buildFullHTML(
         // --- Highlighting ---
 
         updateHighlights() {
+            var hs = this.highlightStart;
+            var he = this.highlightEnd;
             this.blocks.forEach(function(block, i) {
-                var inFormRange = i >= this.highlightStart && i <= this.highlightEnd;
+                var inFormRange = hs >= 0 && he >= 0 && i >= hs && i <= he;
                 var hasExpanded = block.classList.contains('annotation-expanded-highlight');
                 // Yellow expanded highlight takes precedence over blue form highlight
                 block.classList.toggle('annotation-highlight',
                     inFormRange && !hasExpanded);
-            }.bind(this));
+            });
         },
 
         // --- Form Management ---
@@ -841,12 +830,13 @@ private func buildFullHTML(
             var form = document.createElement('div');
             form.className = 'annotation-form';
             form.id = 'annotation-form';
+            form.style.display = 'none';
             form.innerHTML =
                 '<div class="annotation-form-header">' +
                 '<span class="annotation-form-ref"></span>' +
                 '</div>' +
                 '<textarea class="annotation-textarea" ' +
-                'placeholder="Add annotation\\u2026 (\\u2318Enter to save)" ' +
+                'placeholder="Add annotation\\u2026 (\\u2318Enter to save \\u00b7 Esc to dismiss)" ' +
                 'rows="1"></textarea>';
 
             var ta = form.querySelector('textarea');
@@ -1421,13 +1411,8 @@ private func buildFullHTML(
 
             this.renderAllAnnotations();
 
-            // Clear form and reset highlight
-            var ta = this.formElement.querySelector('textarea');
-            if (ta) { ta.value = ''; autoGrow(ta); ta.focus(); }
-            this.highlightStart = this.highlightEnd = this.currentBlockIndex;
-            this.highlightAnchor = this.currentBlockIndex;
-            this.updateHighlights();
-            this.updateFormReference();
+            // Hide form and clear highlights after creation
+            this.dismissForm();
 
             // Restore scroll to undo any browser clamping from DOM
             // teardown, then nudge viewport if the new card pushed
@@ -1467,6 +1452,11 @@ private func buildFullHTML(
 
         // --- Escape Context ---
 
+        isFormVisible() {
+            return this.formElement &&
+                this.formElement.style.display !== 'none';
+        },
+
         getEscapeContext() {
             // Emoji popup takes highest priority — dismiss it first
             if (typeof EmojiAutocomplete !== 'undefined') {
@@ -1481,18 +1471,46 @@ private func buildFullHTML(
                     if (editTa && EmojiAutocomplete.isActive(editTa)) return 'emojiPopup';
                 }
             }
-            if (this.editingNumber !== null) return 'editing';
+            if (this.editingNumber !== null) {
+                // Check if content has changed from original
+                var card = document.querySelector(
+                    '.annotation-card[data-number="' + this.editingNumber + '"]'
+                );
+                if (card) {
+                    var ta = card.querySelector('.annotation-edit-textarea');
+                    var ann = this.annotations.find(function(a) {
+                        return a.number === AnnotationManager.editingNumber;
+                    });
+                    if (ta && ann && ta.value !== ann.content) return 'editing';
+                }
+                // No changes — just cancel directly
+                this.cancelEdit();
+                return '__consumed__';
+            }
             if (this.expandedNumber !== null) return 'expanded';
-            var ta = this.formElement
-                ? this.formElement.querySelector('textarea') : null;
-            if (ta && ta.value.trim()) return 'formHasText';
+            if (this.isFormVisible()) {
+                var ta = this.formElement.querySelector('textarea');
+                if (ta && ta.value.trim()) return 'formHasText';
+                return 'formVisible';
+            }
             return 'close';
         },
 
-        clearForm() {
-            var ta = this.formElement
-                ? this.formElement.querySelector('textarea') : null;
-            if (ta) { ta.value = ''; autoGrow(ta); }
+        dismissForm() {
+            if (this.formElement) {
+                var ta = this.formElement.querySelector('textarea');
+                if (ta) { ta.value = ''; autoGrow(ta); }
+                this.formElement.style.display = 'none';
+            }
+            // Remove form spacer so it doesn't take up space
+            this.removeSpacer(this.formSpacer, this.formSpacerRow);
+            this.formSpacer = null;
+            this.formSpacerRow = null;
+            this.highlightStart = -1;
+            this.highlightEnd = -1;
+            this.currentBlockIndex = -1;
+            this.updateHighlights();
+            this.syncAllPositions();
         },
 
         // --- Date Formatting ---
@@ -1514,7 +1532,7 @@ private func buildFullHTML(
                 currentBlockIndex: this.currentBlockIndex,
                 highlightStart: this.highlightStart,
                 highlightEnd: this.highlightEnd,
-                highlightAnchor: this.highlightAnchor,
+                formVisible: this.isFormVisible(),
                 textareaValue: ta ? ta.value : '',
                 expandedNumber: this.expandedNumber
             };

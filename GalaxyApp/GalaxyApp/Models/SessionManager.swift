@@ -7,11 +7,6 @@ enum ListNavAction {
     case up, down, activate
 }
 
-enum AnnotationAction {
-    case moveUp, moveDown
-    case extendUp, extendDown
-}
-
 class SessionManager: ObservableObject {
     // Singleton instance for access from AppDelegate
     static let shared = SessionManager()
@@ -72,13 +67,8 @@ class SessionManager: ObservableObject {
     /// Set by MenuActions, consumed by the active list view's onChange handler.
     @Published var listNavAction: ListNavAction? = nil
 
-    /// Whether the snapshot reader is open (controls keyboard shortcut routing).
-    /// When true, Cmd+J/K dispatch annotation actions instead of session switching.
+    /// Whether the snapshot reader is open (used by views that need to know).
     @Published var isSnapshotReaderOpen: Bool = false
-
-    /// Annotation navigation action bridged from menu shortcuts when reader is open.
-    /// Set by MenuActions, consumed by SnapshotsView's onChange handler.
-    @Published var annotationAction: AnnotationAction? = nil
 
     /// Called when a session is removed from the session list.
     /// Used by EventCoordinator to clean up cached ledger_session_id mappings.
