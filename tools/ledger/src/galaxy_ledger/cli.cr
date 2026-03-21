@@ -104,6 +104,10 @@ module GalaxyLedger
         handle_publish_command(rest)
       when "sessions"
         handle_sessions_command(rest)
+      when "resolve-session"
+        handle_resolve_session_command(rest)
+      when "session-identifiers"
+        handle_session_identifiers_command(rest)
       when "spend"
         handle_spend_command(rest)
       when "snapshot"
@@ -170,6 +174,8 @@ module GalaxyLedger
 
       Session Data:
         sessions                Query session state as JSON
+        resolve-session         Resolve PID or session identifier to ledger session ID
+        session-identifiers     List session identifiers for a ledger session (JSON)
 
       Run 'galaxy-ledger <command> --help' for detailed command usage.
       BANNER
@@ -2918,6 +2924,146 @@ module GalaxyLedger
         galaxy-ledger sessions --json --session abc-123
         galaxy-ledger sessions --json --session abc-123 --session def-456
         galaxy-ledger sessions --json --ledger-session-id 42
+      HELP
+    end
+
+    # ========================================
+    # Resolve Session Command
+    # ========================================
+
+    private def self.handle_resolve_session_command(args : Array(String))
+      if args.first? == "-h" || args.first? == "--help"
+        show_resolve_session_help
+        return
+      end
+
+      pid_str : String? = nil
+      session_id : String? = nil
+      i = 0
+      while i < args.size
+        arg = args[i]
+        if arg == "--pid" && i + 1 < args.size
+          pid_str = args[i + 1]
+          i += 2
+        elsif arg == "--session" && i + 1 < args.size
+          session_id = args[i + 1]
+          i += 2
+        else
+          i += 1
+        end
+      end
+
+      ledger_session_id : Int64? = nil
+      if ps = pid_str
+        ledger_session_id = resolve_pid_to_ledger_session_id(ps)
+      elsif sid = session_id
+        ledger_session_id = resolve_session_to_ledger_session_id(sid)
+      end
+
+      unless ledger_session_id
+        STDERR.puts "Error: --pid or --session is required"
+        STDERR.puts "Run 'galaxy-ledger resolve-session --help' for usage"
+        exit(1)
+      end
+
+      puts ledger_session_id
+    end
+
+    private def self.show_resolve_session_help
+      puts <<-HELP
+      galaxy-ledger resolve-session - Resolve a PID or session identifier to a ledger session ID
+
+      USAGE:
+        galaxy-ledger resolve-session --pid PID
+        galaxy-ledger resolve-session --session SESSION_IDENTIFIER
+
+      REQUIRED (one of):
+        --pid PID                  Claude Code process ID
+        --session SESSION_ID       Session identifier string
+
+      OUTPUT:
+        Prints the ledger session ID (integer) to stdout.
+        Exits non-zero if not found.
+
+      EXAMPLES:
+        galaxy-ledger resolve-session --pid 12345
+        galaxy-ledger resolve-session --session abc-123-def-456
+      HELP
+    end
+
+    # ========================================
+    # Session Identifiers Command
+    # ========================================
+
+    private def self.handle_session_identifiers_command(args : Array(String))
+      if args.first? == "-h" || args.first? == "--help"
+        show_session_identifiers_help
+        return
+      end
+
+      ledger_session_id_str : String? = nil
+      json_flag = false
+      i = 0
+      while i < args.size
+        arg = args[i]
+        if arg == "--ledger-session-id" && i + 1 < args.size
+          ledger_session_id_str = args[i + 1]
+          i += 2
+        elsif arg == "--json"
+          json_flag = true
+          i += 1
+        else
+          i += 1
+        end
+      end
+
+      unless json_flag
+        STDERR.puts "Error: --json is required"
+        STDERR.puts "Run 'galaxy-ledger session-identifiers --help' for usage"
+        exit(1)
+      end
+
+      unless ledger_session_id_str
+        STDERR.puts "Error: --ledger-session-id is required"
+        STDERR.puts "Run 'galaxy-ledger session-identifiers --help' for usage"
+        exit(1)
+      end
+
+      ledger_session_id = resolve_ledger_session_id_str(ledger_session_id_str)
+      identifiers = Database.session_identifiers(ledger_session_id)
+
+      io = IO::Memory.new
+      builder = JSON::Builder.new(io)
+      builder.document do
+        builder.object do
+          builder.field("session_identifiers") do
+            builder.array do
+              identifiers.each { |sid| builder.scalar(sid) }
+            end
+          end
+        end
+      end
+
+      puts io.to_s
+    end
+
+    private def self.show_session_identifiers_help
+      puts <<-HELP
+      galaxy-ledger session-identifiers - List session identifiers for a ledger session
+
+      USAGE:
+        galaxy-ledger session-identifiers --json --ledger-session-id N
+
+      REQUIRED:
+        --json                     Output format (required)
+        --ledger-session-id N      Ledger session ID
+
+      OUTPUT:
+        JSON object with session_identifiers array:
+        {"session_identifiers": ["abc-123", "def-456"]}
+
+      EXAMPLES:
+        galaxy-ledger session-identifiers --json --ledger-session-id 42
       HELP
     end
 

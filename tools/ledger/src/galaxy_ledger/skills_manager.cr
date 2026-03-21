@@ -100,163 +100,9 @@ module GalaxyLedger
        comparisons — whatever is interesting in the data
     SKILL
 
-    SNAPSHOT_SKILL = <<-'SKILL'
-    ---
-    name: ledger:snapshot
-    description: >-
-      This skill should be used when the user asks to "snapshot this",
-      "save this exchange", "capture this interaction", "take a
-      snapshot", "snapshot our progress", "remember this conversation",
-      or wants to preserve important exchanges for future reference in
-      the session.
-    ---
-
-    Capture and save verbatim conversation exchanges as a session
-    snapshot in the Galaxy Ledger. Snapshots preserve full-fidelity
-    user/assistant exchanges and are automatically restored on
-    context handoff (/clear, /compact).
-
-    ## Workflow
-
-    ### Step 1 — Determine Scope
-
-    Based on the user's request, determine how many exchanges back
-    to capture. An "exchange" is one user message plus all assistant
-    responses before the next user message.
-
-    IMPORTANT: The exchange where the user asked for the snapshot
-    is NEVER counted. It is purely operational. Start counting
-    backward from the exchange immediately before the snapshot
-    request. Any follow-up exchanges for scope negotiation (e.g.,
-    the user adjusting your suggestion) are also excluded.
-
-    **Explicit count — use directly, no confirmation:**
-    "snapshot the last 3 exchanges", "save exchanges 2 through 5"
-
-    **Obvious single exchange — capture 1, no confirmation:**
-    Singular demonstratives, bare requests, and "last" without a
-    quantity all refer to the most recent exchange. Proceed
-    directly to Step 2 without confirming.
-
-    Examples:
-    - "snapshot this" / "save that exchange" / "capture this"
-    - "take a snapshot" / "remember this"
-    - "save these findings" / "snapshot this result"
-    - "snapshot what we just discussed"
-    - "save this for later" / "save our last exchange"
-
-    **Ambiguous scope — confirm with the user:**
-    Plural language, vague quantities, and topic references that
-    could span multiple exchanges require confirmation. List the
-    candidate exchanges (truncate user messages to ~80 chars) and
-    ask the user to confirm or adjust.
-
-    Examples:
-    - "save the last few findings" / "snapshot our recent work"
-    - "capture everything about the refactor"
-    - "snapshot our auth system discussion"
-    - "save what we've been working on"
-
-    Confirmation format:
-    ```
-    I'd suggest snapshotting the last 3 exchanges:
-
-    1. Your message: "Let's design the caching layer..."
-    2. Your message: "What about Redis vs Memcached..."
-    3. Your message: "Can we benchmark both approaches..."
-
-    (Each includes my full response.) Does that look right, or
-    should I go further back / trim it down?
-    ```
-
-    ### Step 2 — Generate Title
-
-    Generate a concise, descriptive title (e.g., "Caching layer
-    design discussion", "Ruby style correction on trailing commas").
-    No user prompting — just pick something reasonable. Timestamps
-    provide ordering context.
-
-    ### Step 3 — Format Content
-
-    Format the selected exchanges as clean markdown:
-
-    ```markdown
-    ## Exchange 1
-
-    ### User
-    [Full user message text]
-
-    ### Assistant
-    [Full assistant text response — no tool calls, no thinking blocks]
-
-    ---
-
-    ## Exchange 2
-    ...
-    ```
-
-    ### Step 4 — Save via CLI
-
-    Pipe the formatted markdown to the CLI. The `$LEDGER_PID` comes
-    from the "Ledger PID" value in your session context:
-
-    ```bash
-    galaxy-ledger snapshot create \
-      --pid $LEDGER_PID \
-      --title "Generated title here" \
-      --exchanges N \
-      <<< "formatted markdown content"
-    ```
-
-    For multi-line content, use a heredoc:
-
-    ```bash
-    galaxy-ledger snapshot create \
-      --pid $LEDGER_PID \
-      --title "Title" \
-      --exchanges 2 \
-      <<'SNAPSHOT_EOF'
-    ## Exchange 1
-    ...content...
-    SNAPSHOT_EOF
-    ```
-
-    ### Step 5 — Confirm
-
-    Report to the user: snapshot number, title, exchange count, and
-    approximate size. Example:
-
-    "Saved as snapshot #3 — 'Caching layer design discussion'
-    (2 exchanges, ~3.2k chars)"
-
-    ## Viewing & Referencing Snapshots
-
-    - Reference snapshots by number or title when justifying
-      decisions: "Per snapshot #1 ('caching design'), we agreed..."
-    - If the user asks to view a snapshot in the terminal, run:
-      `galaxy-ledger snapshot view --pid $LEDGER_PID N`
-    - If the user asks to open a snapshot in an editor, run:
-      `galaxy-ledger snapshot open --pid $LEDGER_PID N`
-      This writes the snapshot to a stable temp file and opens it
-      using the configured editor (config, $VISUAL, $EDITOR, or
-      macOS `open`). No manual temp file handling needed.
-    - To list all snapshots:
-      `galaxy-ledger snapshot list --pid $LEDGER_PID`
-    - To delete:
-      `galaxy-ledger snapshot delete --pid $LEDGER_PID N`
-
-    ## Important Notes
-
-    - Snapshots are session-scoped — they persist across /clear and
-      /compact within the same session
-    - If full snapshot content isn't in your context (over budget),
-      use the view command to load it before responding
-    - The agent formats the content — the CLI just stores it
-    SKILL
-
     ARTIFACT_SKILL = <<-'SKILL'
     ---
-    name: ledger:artifact
+    name: galaxy:artifact
     description: >-
       This skill should be used when the user asks about produced documents,
       wants to see artifacts from the session, asks to "show me that report",
@@ -358,130 +204,20 @@ module GalaxyLedger
       manually saved artifacts should have descriptive titles
     SKILL
 
-    PRUNE_SKILL = <<-'SKILL'
-    ---
-    name: ledger:prune
-    description: >-
-      This skill should be used when the user asks to "prune sessions",
-      "clean up old data", "prune the ledger", "delete old session
-      data", "free up ledger space", "how big is the ledger", "ledger
-      maintenance", or wants to remove stale entries and files from
-      old sessions.
-    ---
-
-    Prune stale entries and file-access records from old Galaxy Ledger
-    sessions. Session records, daily usage metrics, snapshots, and
-    artifacts are always preserved.
-
-    ## Workflow
-
-    ### Step 1 — Show Options
-
-    Run `galaxy-ledger prune --summary` to get counts for all periods.
-
-    Present the output to the user as a numbered list they can choose
-    from:
-
-    ```
-    Here's what can be pruned (by last-active date):
-
-     1. Older than 1 week:   12 sessions →    580 entries,    340 files
-     2. Older than 2 weeks:  28 sessions →  1,200 entries,    890 files
-     3. Older than 1 month:  45 sessions →  2,100 entries,  1,500 files
-     ...
-
-    Session records, daily usages, snapshots, and artifacts are always preserved.
-    Which timeframe? (enter a number, or "none" to cancel)
-    ```
-
-    Skip rows where all counts are 0 — no point showing "Older than
-    5 years: 0 sessions" if the ledger is 2 months old.
-
-    If the user specified a period directly ("prune data older than
-    6 months"), skip the summary and go straight to Step 2 with that
-    period.
-
-    ### Step 2 — Confirm
-
-    After the user picks a number (or gave a specific period):
-
-    Run `galaxy-ledger prune --older-than PERIOD` (preview mode) and
-    show the detailed preview. Ask for explicit confirmation before
-    proceeding:
-
-    "This will prune 5,500 entries and 4,100 files across 120
-    sessions. Session records, daily usages, snapshots, and artifacts
-    are preserved. Go ahead?"
-
-    ### Step 3 — Execute
-
-    On confirmation, run:
-    `galaxy-ledger prune --older-than PERIOD --apply`
-
-    ### Step 4 — Report
-
-    Present the results to the user:
-
-    "Done — pruned 5,500 entries and 4,100 files across 120 sessions.
-    Database: 85 MB → 52 MB."
-
-    ## Period Mapping
-
-    When the user picks a number, map to these CLI periods:
-    1 → 1w, 2 → 2w, 3 → 1m, 4 → 2m, 5 → 3m, 6 → 6m, 7 → 1y,
-    8 → 2y, 9 → 5y
-
-    ## Important Notes
-
-    - Always show the summary first for vague requests
-    - Always confirm before applying — never auto-prune
-    - If all counts are 0, tell the user there's nothing to prune
-    - The CLI handles VACUUM automatically after pruning
-    SKILL
-
-    NAME_SKILL = <<-'SKILL'
-    ---
-    name: ledger:name
-    description: >-
-      This skill should be used when the user asks "what is this
-      session named?", "show me the session name", "check the
-      session name", "did the rename work?", or wants to verify
-      the Claude Code session name.
-    ---
-
-    Look up the current Claude Code session name.
-
-    ## Execution
-
-    You MUST use the Bash tool to run this CLI command. Replace
-    `$LEDGER_PID` with the Ledger PID from your session context
-    (e.g., from the `**Ledger PID**: \`12345\`` line):
-
-    ```bash
-    galaxy-ledger session-name --pid $LEDGER_PID
-    ```
-
-    Do NOT skip the CLI call. Do NOT guess the session name from
-    context. Always run the command and report its output.
-
-    ## Output
-
-    The command outputs the session name or "(unnamed)".
-
-    Keep it brief — just report the result:
-    - Named: `Session name: **my-session-name**`
-    - Unnamed: `This session has no name set.`
-    SKILL
-
     # All ledger-managed skills: name => SKILL.md content
     LEDGER_SKILLS = {
       "handoff"         => HANDOFF_SKILL,
       "spend"           => SPEND_SKILL,
-      "ledger:snapshot" => SNAPSHOT_SKILL,
-      "ledger:artifact" => ARTIFACT_SKILL,
-      "ledger:prune"    => PRUNE_SKILL,
-      "ledger:name"     => NAME_SKILL,
+      "galaxy:artifact" => ARTIFACT_SKILL,
     }
+
+    # Old skill names to clean up on install (renamed or removed)
+    OLD_SKILL_NAMES = [
+      "ledger:snapshot",
+      "ledger:artifact",
+      "ledger:prune",
+      "ledger:name",
+    ]
 
     struct SkillInfo
       getter name : String
@@ -505,6 +241,17 @@ module GalaxyLedger
     # symlinks. Skips if a non-Galaxy file/symlink already exists at the
     # target path (won't clobber user-created skills).
     def self.install : Bool
+      # Clean up old skill names (renamed or removed skills)
+      OLD_SKILL_NAMES.each do |old_name|
+        old_source = SKILLS_DIR / old_name
+        old_symlink = CLAUDE_SKILLS_DIR / old_name
+
+        if File.symlink?(old_symlink) && galaxy_symlink?(old_symlink)
+          File.delete(old_symlink)
+        end
+        FileUtils.rm_rf(old_source.to_s) if Dir.exists?(old_source)
+      end
+
       LEDGER_SKILLS.each do |name, content|
         source_dir = SKILLS_DIR / name
         source_file = source_dir / "SKILL.md"
@@ -526,6 +273,7 @@ module GalaxyLedger
     # Remove all ledger skills. Only removes Galaxy-owned symlinks and
     # source directories. Non-ledger skills are left untouched.
     def self.uninstall : Bool
+      # Uninstall current skills
       LEDGER_SKILLS.each_key do |name|
         source_dir = SKILLS_DIR / name
         symlink_path = CLAUDE_SKILLS_DIR / name
@@ -538,6 +286,18 @@ module GalaxyLedger
         # Remove source directory
         FileUtils.rm_rf(source_dir.to_s) if Dir.exists?(source_dir)
       end
+
+      # Also clean up any old skill names
+      OLD_SKILL_NAMES.each do |old_name|
+        old_source = SKILLS_DIR / old_name
+        old_symlink = CLAUDE_SKILLS_DIR / old_name
+
+        if File.symlink?(old_symlink) && galaxy_symlink?(old_symlink)
+          File.delete(old_symlink)
+        end
+        FileUtils.rm_rf(old_source.to_s) if Dir.exists?(old_source)
+      end
+
       true
     rescue ex
       STDERR.puts "Error uninstalling skills: #{ex.message}"
