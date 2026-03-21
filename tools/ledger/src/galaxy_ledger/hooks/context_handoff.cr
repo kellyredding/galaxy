@@ -75,7 +75,7 @@ module GalaxyLedger
         exchanges = extract_exchanges(session_record)
 
         # Query snapshot stats for budget-aware rendering
-        snapshot_stats = Database.session_snapshot_stats(ledger_session_id)
+        snapshot_stats = query_snapshot_stats(ledger_session_id)
 
         # Query artifact count
         artifact_count = Database.session_artifact_count(ledger_session_id)
@@ -371,41 +371,49 @@ module GalaxyLedger
 
         # Session snapshots section (budget-aware)
         if snapshot_stats[:count] > 0
-          config = Config.load
-          inline_char_cap = config.snapshots.inline_char_cap
+          inline_char_cap = config_inline_char_cap
 
           lines << "---"
           lines << ""
 
           if snapshot_stats[:total_chars] <= inline_char_cap
-            # Under budget — inline full content
-            snapshots = Database.list_snapshots(ledger_session_id)
-            lines << "### Session Snapshots (#{snapshots.size} saved)"
+            # Under budget — get full content via CLI
+            snapshots_json = query_snapshots_with_content(
+              ledger_session_id,
+            )
+            lines << "### Session Snapshots " \
+                     "(#{snapshots_json.size} saved)"
             lines << ""
-            snapshots.each do |snap|
-              exchange_label = snap.exchange_count == 1 ? "exchange" : "exchanges"
-              time_str = begin
-                utc_time = Time.parse_utc(snap.created_at, "%Y-%m-%d %H:%M:%S")
-                utc_time.to_local.to_s("%H:%M")
-              rescue
-                snap.created_at
-              end
-              lines << "**##{snap.number} \u2014 \"#{snap.title}\"** (#{snap.exchange_count} #{exchange_label}, #{time_str})"
+            snapshots_json.each do |snap|
+              exchange_count = snap["exchange_count"].as_i
+              exchange_label = exchange_count == 1 ? "exchange" : "exchanges"
+              time_str = snap["created_at"].as_s
+              lines << "**##{snap["number"].as_i} \u2014 " \
+                       "\"#{snap["title"].as_s}\"** " \
+                       "(#{exchange_count} #{exchange_label}, #{time_str})"
               lines << ""
-              lines << snap.content
+              lines << snap["content"].as_s
               lines << ""
             end
           else
             # Over budget — metadata only with CLI query commands
-            snapshots = Database.list_snapshots(ledger_session_id)
-            lines << "### Session Snapshots (#{snapshots.size} saved \u2014 query for full content)"
+            snapshots_json = query_snapshots_metadata(ledger_session_id)
+            lines << "### Session Snapshots " \
+                     "(#{snapshots_json.size} saved \u2014 " \
+                     "query for full content)"
             lines << ""
             lines << "Snapshots exceed inline budget. Load individually:"
-            snapshots.each do |snap|
-              exchange_label = snap.exchange_count == 1 ? "exchange" : "exchanges"
-              chars_formatted = format_char_count(snap.char_count)
-              lines << "- ##{snap.number} \"#{snap.title}\" (#{snap.exchange_count} #{exchange_label}, #{chars_formatted} chars) \u2192"
-              lines << "  `galaxy-ledger snapshot view --pid #{claude_pid} #{snap.number}`"
+            snapshots_json.each do |snap|
+              exchange_count = snap["exchange_count"].as_i
+              exchange_label = exchange_count == 1 ? "exchange" : "exchanges"
+              char_count = snap["char_count"].as_i
+              chars_formatted = format_char_count(char_count)
+              number = snap["number"].as_i
+              lines << "- ##{number} \"#{snap["title"].as_s}\" " \
+                       "(#{exchange_count} #{exchange_label}, " \
+                       "#{chars_formatted} chars) \u2192"
+              lines << "  `galaxy-snapshots view --pid #{claude_pid} " \
+                       "#{number}`"
             end
             lines << ""
           end
@@ -569,6 +577,105 @@ module GalaxyLedger
         else
           chars.to_s
         end
+      end
+
+      private def self.query_snapshot_stats(
+        ledger_session_id : Int64,
+      ) : NamedTuple(count: Int32, total_chars: Int64)
+        snapshots_bin = (
+          GalaxyLedger::GALAXY_DIR / "bin" / "galaxy-snapshots"
+        ).to_s
+        return {count: 0, total_chars: 0_i64} unless File.exists?(
+                                                       snapshots_bin,
+                                                     )
+
+        output = IO::Memory.new
+        status = Process.run(
+          snapshots_bin,
+          args: [
+            "stats",
+            "--ledger-session-id", ledger_session_id.to_s,
+            "--json",
+          ],
+          output: output,
+          error: Process::Redirect::Close,
+        )
+        return {count: 0, total_chars: 0_i64} unless status.success?
+
+        json = JSON.parse(output.to_s)
+        {
+          count:       json["count"].as_i,
+          total_chars: json["total_chars"].as_i64,
+        }
+      rescue
+        {count: 0, total_chars: 0_i64}
+      end
+
+      private def self.query_snapshots_with_content(
+        ledger_session_id : Int64,
+      ) : Array(JSON::Any)
+        snapshots_bin = (
+          GalaxyLedger::GALAXY_DIR / "bin" / "galaxy-snapshots"
+        ).to_s
+
+        output = IO::Memory.new
+        status = Process.run(
+          snapshots_bin,
+          args: [
+            "list",
+            "--ledger-session-id", ledger_session_id.to_s,
+            "--json",
+            "--content",
+          ],
+          output: output,
+          error: Process::Redirect::Close,
+        )
+        return [] of JSON::Any unless status.success?
+
+        json = JSON.parse(output.to_s)
+        json["snapshots"].as_a
+      rescue
+        [] of JSON::Any
+      end
+
+      private def self.query_snapshots_metadata(
+        ledger_session_id : Int64,
+      ) : Array(JSON::Any)
+        snapshots_bin = (
+          GalaxyLedger::GALAXY_DIR / "bin" / "galaxy-snapshots"
+        ).to_s
+
+        output = IO::Memory.new
+        status = Process.run(
+          snapshots_bin,
+          args: [
+            "list",
+            "--ledger-session-id", ledger_session_id.to_s,
+            "--json",
+          ],
+          output: output,
+          error: Process::Redirect::Close,
+        )
+        return [] of JSON::Any unless status.success?
+
+        json = JSON.parse(output.to_s)
+        json["snapshots"].as_a
+      rescue
+        [] of JSON::Any
+      end
+
+      # Read inline_char_cap from snapshots tool's config
+      private def self.config_inline_char_cap : Int32
+        snapshots_config = GalaxyLedger::GALAXY_DIR / "snapshots" /
+                           "config.json"
+        if File.exists?(snapshots_config)
+          json = JSON.parse(File.read(snapshots_config))
+          json["inline_char_cap"]?.try(&.as_i?) || 15000
+        else
+          15000
+        end
+      rescue
+        15000
       end
 
       private def self.output_empty

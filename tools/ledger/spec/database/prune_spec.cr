@@ -1,6 +1,6 @@
 require "../spec_helper"
 
-# Seed a session with entries, files, a daily usage, a snapshot, and an artifact.
+# Seed a session with entries, files, a daily usage, and an artifact.
 # Sets updated_at to the given timestamp. Returns the session ID.
 private def seed_prune_db_session(identifier : String, updated_at : String) : Int64
   session_id = GalaxyLedger::Database.create_session(identifier)
@@ -26,9 +26,6 @@ private def seed_prune_db_session(identifier : String, updated_at : String) : In
 
   # Add a file access record
   GalaxyLedger::Database.upsert_session_file(session_id, "/tmp/test-#{identifier}.cr", :read)
-
-  # Add a snapshot
-  GalaxyLedger::Database.save_snapshot(session_id, "Snapshot for #{identifier}", "snapshot content", 1)
 
   # Add a daily usage record via direct SQL
   GalaxyLedger::Database.open do |db|
@@ -132,7 +129,6 @@ describe GalaxyLedger::Database do
 
       # Preserved data counts
       counts.daily_usages.should eq(2)
-      counts.snapshots.should eq(2)
       counts.artifacts.should eq(2)
     end
   end
@@ -181,17 +177,6 @@ describe GalaxyLedger::Database do
         ).as(Int64).to_i
       end
       count.should eq(1)
-    end
-
-    it "preserves snapshots for pruned sessions" do
-      old_date = (Time.utc - 60.days).to_s("%Y-%m-%d %H:%M:%S")
-      old_id = seed_prune_db_session("prune-preserve-snapshots", old_date)
-
-      cutoff = (Time.utc - 30.days).to_s("%Y-%m-%d %H:%M:%S")
-      GalaxyLedger::Database.prune_session_data(cutoff)
-
-      snapshots = GalaxyLedger::Database.list_snapshots(old_id)
-      snapshots.size.should eq(1)
     end
 
     it "preserves artifacts for pruned sessions" do

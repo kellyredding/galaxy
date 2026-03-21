@@ -61,6 +61,7 @@
 #
 
 require "db"
+require "json"
 
 module GalaxyLedger
   module Migrations
@@ -223,6 +224,305 @@ module GalaxyLedger
           # Table doesn't exist yet (partial DB in migration tests) — skip
         end
       },
+      "0.4.1" => ->(db : DB::Database) {
+        # Migrate snapshots to standalone galaxy-snapshots tool.
+        #
+        # Belt-and-suspenders: if tables are already gone, short-circuit.
+        table_exists = false
+        table_check_sql = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'ledger_snapshots'"
+        db.query_one?(table_check_sql) do |rs|
+          table_exists = rs.read(Int64) > 0
+        end
+
+        if table_exists
+          snapshots_bin = (
+            GalaxyLedger::GALAXY_DIR / "bin" / "galaxy-snapshots"
+          ).to_s
+
+          skip_migration = false
+
+          # Check that the snapshots binary exists
+          unless File.exists?(snapshots_bin)
+            STDERR.puts(
+              "[galaxy-ledger] Warning: galaxy-snapshots binary not " \
+              "found at #{snapshots_bin}. Skipping snapshot migration. " \
+              "Install galaxy-snapshots and re-run ledger to retry.",
+            )
+            skip_migration = true
+          end
+
+          unless skip_migration
+            # Collect sessions that have snapshots
+            session_ids = [] of Int64
+            db.query(
+              "SELECT DISTINCT ledger_session_id FROM ledger_snapshots",
+            ) do |rs|
+              rs.each { session_ids << rs.read(Int64) }
+            end
+
+            if session_ids.empty?
+              # No snapshots to migrate — drop tables and move on
+              db.exec("DROP TABLE IF EXISTS ledger_snapshot_annotations")
+              db.exec("DROP TABLE IF EXISTS ledger_snapshot_reviews")
+              db.exec("DROP TABLE IF EXISTS ledger_snapshots")
+              db.exec("DROP INDEX IF EXISTS idx_snapshots_session")
+              db.exec(
+                "DROP INDEX IF EXISTS idx_snapshot_annotations_snapshot",
+              )
+              db.exec("DROP INDEX IF EXISTS idx_snapshot_reviews_snapshot")
+            else
+              migration_ok = true
+
+              session_ids.each do |sid|
+                # Export snapshots in number order (trust sequential insertion)
+                db.query(
+                  <<-SQL,
+                    SELECT number, title, content, exchange_count
+                    FROM ledger_snapshots
+                    WHERE ledger_session_id = ?
+                    ORDER BY number ASC
+                  SQL
+                  sid,
+                ) do |rs|
+                  rs.each do
+                    number = rs.read(Int64).to_i
+                    title = rs.read(String)
+                    content = rs.read(String)
+                    exchange_count = rs.read(Int64).to_i
+
+                    # Create snapshot via CLI
+                    output = IO::Memory.new
+                    error = IO::Memory.new
+                    status = Process.run(
+                      snapshots_bin,
+                      args: [
+                        "create",
+                        "--ledger-session-id", sid.to_s,
+                        "--title", title,
+                        "--exchanges", exchange_count.to_s,
+                      ],
+                      input: IO::Memory.new(content),
+                      output: output,
+                      error: error,
+                    )
+
+                    unless status.success?
+                      STDERR.puts(
+                        "[galaxy-ledger] Failed to migrate snapshot " \
+                        "##{number} for session #{sid}: " \
+                        "#{error.to_s.strip}",
+                      )
+                      migration_ok = false
+                      break
+                    end
+                  end
+                end
+
+                break unless migration_ok
+
+                # Export annotations for each snapshot in this session
+                db.query(
+                  <<-SQL,
+                    SELECT ls.number AS snap_number,
+                           la.start_line, la.end_line, la.content,
+                           ls.id AS ledger_snapshot_id
+                    FROM ledger_snapshot_annotations la
+                    JOIN ledger_snapshots ls ON la.ledger_snapshot_id = ls.id
+                    WHERE ls.ledger_session_id = ?
+                    ORDER BY ls.number ASC, la.number ASC
+                  SQL
+                  sid,
+                ) do |rs|
+                  rs.each do
+                    snap_number = rs.read(Int64).to_i
+                    start_line = rs.read(Int64).to_i
+                    end_line = rs.read(Int64).to_i
+                    ann_content = rs.read(String)
+                    _ledger_snapshot_id = rs.read(Int64)
+
+                    # Resolve the snapshot ID in the new snapshots.db
+                    # by querying for it via the snapshots CLI
+                    snap_id_output = IO::Memory.new
+                    snap_id_status = Process.run(
+                      snapshots_bin,
+                      args: [
+                        "view",
+                        "--ledger-session-id", sid.to_s,
+                        "--json",
+                        snap_number.to_s,
+                      ],
+                      output: snap_id_output,
+                      error: Process::Redirect::Close,
+                    )
+
+                    unless snap_id_status.success?
+                      STDERR.puts(
+                        "[galaxy-ledger] Failed to resolve snapshot " \
+                        "##{snap_number} for annotation migration " \
+                        "(session #{sid})",
+                      )
+                      migration_ok = false
+                      break
+                    end
+
+                    snap_json = JSON.parse(snap_id_output.to_s)
+                    new_snapshot_id = snap_json["snapshot"]["id"].as_i64
+
+                    # Create annotation via CLI
+                    ann_output = IO::Memory.new
+                    ann_error = IO::Memory.new
+                    ann_status = Process.run(
+                      snapshots_bin,
+                      args: [
+                        "annotation", "create",
+                        "--snapshot-id", new_snapshot_id.to_s,
+                        "--start-line", start_line.to_s,
+                        "--end-line", end_line.to_s,
+                      ],
+                      input: IO::Memory.new(ann_content),
+                      output: ann_output,
+                      error: ann_error,
+                    )
+
+                    unless ann_status.success?
+                      STDERR.puts(
+                        "[galaxy-ledger] Failed to migrate annotation " \
+                        "for snapshot ##{snap_number} (session #{sid}): " \
+                        "#{ann_error.to_s.strip}",
+                      )
+                      migration_ok = false
+                      break
+                    end
+                  end
+                end
+
+                break unless migration_ok
+
+                # Export reviews for each snapshot in this session
+                db.query(
+                  <<-SQL,
+                    SELECT ls.number AS snap_number, ls.id AS ledger_snapshot_id
+                    FROM ledger_snapshot_reviews sr
+                    JOIN ledger_snapshots ls ON sr.ledger_snapshot_id = ls.id
+                    WHERE ls.ledger_session_id = ?
+                    ORDER BY ls.number ASC, sr.number ASC
+                  SQL
+                  sid,
+                ) do |rs|
+                  rs.each do
+                    snap_number = rs.read(Int64).to_i
+                    _ledger_snapshot_id = rs.read(Int64)
+
+                    # Resolve snapshot ID in new DB
+                    snap_id_output = IO::Memory.new
+                    Process.run(
+                      snapshots_bin,
+                      args: [
+                        "view",
+                        "--ledger-session-id", sid.to_s,
+                        "--json",
+                        snap_number.to_s,
+                      ],
+                      output: snap_id_output,
+                      error: Process::Redirect::Close,
+                    )
+
+                    snap_json = JSON.parse(snap_id_output.to_s)
+                    new_snapshot_id = snap_json["snapshot"]["id"].as_i64
+
+                    # Create review via CLI
+                    rev_error = IO::Memory.new
+                    rev_status = Process.run(
+                      snapshots_bin,
+                      args: [
+                        "review", "create",
+                        "--snapshot-id", new_snapshot_id.to_s,
+                      ],
+                      output: Process::Redirect::Close,
+                      error: rev_error,
+                    )
+
+                    unless rev_status.success?
+                      STDERR.puts(
+                        "[galaxy-ledger] Failed to migrate review " \
+                        "for snapshot ##{snap_number} (session #{sid}): " \
+                        "#{rev_error.to_s.strip}",
+                      )
+                      # Reviews are non-critical — log but continue
+                    end
+                  end
+                end
+              end
+
+              # Verify migration
+              if migration_ok
+                session_ids.each do |sid|
+                  # Count snapshots in ledger
+                  ledger_count = 0
+                  count_sql = "SELECT COUNT(*) FROM ledger_snapshots WHERE ledger_session_id = ?"
+                  db.query_one?(count_sql, sid) do |rs|
+                    ledger_count = rs.read(Int64).to_i
+                  end
+
+                  # Count snapshots in new tool
+                  stats_output = IO::Memory.new
+                  stats_status = Process.run(
+                    snapshots_bin,
+                    args: [
+                      "stats",
+                      "--ledger-session-id", sid.to_s,
+                      "--json",
+                    ],
+                    output: stats_output,
+                    error: Process::Redirect::Close,
+                  )
+
+                  if stats_status.success?
+                    stats_json = JSON.parse(stats_output.to_s)
+                    new_count = stats_json["count"].as_i
+
+                    if new_count != ledger_count
+                      STDERR.puts(
+                        "[galaxy-ledger] Snapshot count mismatch for " \
+                        "session #{sid}: ledger=#{ledger_count} " \
+                        "snapshots=#{new_count}. Keeping ledger tables.",
+                      )
+                      migration_ok = false
+                      break
+                    end
+                  else
+                    STDERR.puts(
+                      "[galaxy-ledger] Failed to verify migration for " \
+                      "session #{sid}. Keeping ledger tables.",
+                    )
+                    migration_ok = false
+                    break
+                  end
+                end
+              end
+
+              if migration_ok
+                # Drop tables (order matters for FK constraints)
+                db.exec("DROP TABLE IF EXISTS ledger_snapshot_annotations")
+                db.exec("DROP TABLE IF EXISTS ledger_snapshot_reviews")
+                db.exec("DROP TABLE IF EXISTS ledger_snapshots")
+                db.exec("DROP INDEX IF EXISTS idx_snapshots_session")
+                db.exec(
+                  "DROP INDEX IF EXISTS idx_snapshot_annotations_snapshot",
+                )
+                db.exec("DROP INDEX IF EXISTS idx_snapshot_reviews_snapshot")
+              else
+                STDERR.puts(
+                  "[galaxy-ledger] Snapshot migration incomplete. " \
+                  "Tables preserved. Will retry on next startup.",
+                )
+                # Don't drop tables — migration will retry next time
+                # because version is set but tables still exist
+              end
+            end
+          end
+        end
+      },
     }
 
     # ==========================================================================
@@ -240,27 +540,6 @@ module GalaxyLedger
     #   },
     #
     CONFIG_MIGRATIONS = {
-      "0.2.0" => Proc(JSON::Any, JSON::Any).new { |config_json|
-        obj = config_json.as_h.dup
-        unless obj.has_key?("snapshots")
-          obj["snapshots"] = JSON::Any.new({
-            "inline_char_cap" => JSON::Any.new(15000_i64),
-            "max_per_session" => JSON::Any.new(10_i64),
-          })
-        end
-        JSON::Any.new(obj)
-      },
-      "0.3.0" => Proc(JSON::Any, JSON::Any).new { |config_json|
-        obj = config_json.as_h.dup
-        if snapshots = obj["snapshots"]?.try(&.as_h?)
-          unless snapshots.has_key?("editor")
-            snap = snapshots.dup
-            snap["editor"] = JSON::Any.new("")
-            obj["snapshots"] = JSON::Any.new(snap)
-          end
-        end
-        JSON::Any.new(obj)
-      },
       "0.3.1" => Proc(JSON::Any, JSON::Any).new { |config_json|
         obj = config_json.as_h.dup
         unless obj.has_key?("backups")
@@ -290,6 +569,40 @@ module GalaxyLedger
             "enabled" => JSON::Any.new(true),
           })
         end
+        JSON::Any.new(obj)
+      },
+      "0.4.1" => Proc(JSON::Any, JSON::Any).new { |config_json|
+        obj = config_json.as_h.dup
+
+        # Copy snapshot config to snapshots tool's config file
+        if snapshots_config = obj["snapshots"]?.try(&.as_h?)
+          snapshots_config_dir = GalaxyLedger::GALAXY_DIR / "snapshots"
+          snapshots_config_file = snapshots_config_dir / "config.json"
+
+          unless File.exists?(snapshots_config_file)
+            Dir.mkdir_p(snapshots_config_dir)
+            new_config = Hash(String, JSON::Any).new
+            new_config["_schema_version"] = JSON::Any.new("0.1.0")
+            new_config["inline_char_cap"] = snapshots_config["inline_char_cap"]? ||
+                                            JSON::Any.new(15000_i64)
+            new_config["max_per_session"] = snapshots_config["max_per_session"]? ||
+                                            JSON::Any.new(10_i64)
+            new_config["editor"] = snapshots_config["editor"]? ||
+                                   JSON::Any.new("")
+            new_config["backups"] = JSON::Any.new({
+              "enabled"        => JSON::Any.new(true),
+              "retention_days" => JSON::Any.new(3_i64),
+              "path"           => JSON::Any.new(""),
+            })
+            File.write(
+              snapshots_config_file,
+              JSON::Any.new(new_config).to_pretty_json,
+            )
+          end
+        end
+
+        # Remove snapshots section from ledger config
+        obj.delete("snapshots")
         JSON::Any.new(obj)
       },
     }
