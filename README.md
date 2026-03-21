@@ -7,6 +7,7 @@
 | Tool | Description | Status |
 |------|-------------|--------|
 | [statusline](tools/statusline/) | Customizable status line with context usage, git status, and more | Active |
+| [snapshots](tools/snapshots/) | Session snapshot management for Claude Code | Active |
 
 ## Quick Install
 
@@ -18,6 +19,7 @@ cd galaxy
 # Build and install all tools
 make statusline-install
 make ledger-install
+make snapshots-install
 ```
 
 Or build individual tools:
@@ -49,6 +51,12 @@ A customizable status line for Claude Code sessions that displays:
 
 See [tools/statusline/README.md](tools/statusline/README.md) for detailed documentation.
 
+### snapshots
+
+Session snapshot management for Claude Code. Captures and restores session context snapshots, enabling persistent context across sessions.
+
+See [tools/snapshots/](tools/snapshots/) for detailed documentation.
+
 ## Development
 
 Each tool is self-contained in its own directory under `tools/`. Tools may be written in different languages, but currently all are written in [Crystal](https://crystal-lang.org/).
@@ -78,7 +86,9 @@ galaxy/
 ├── bin/                      # Root scripts (future)
 ├── shared/                   # Shared code (if needed)
 └── tools/
-    └── statusline/           # Status line tool
+    ├── statusline/           # Status line tool
+    ├── ledger/               # Continuous context management
+    └── snapshots/            # Session snapshot management
 ```
 
 ## License
