@@ -1,6 +1,6 @@
 require "../spec_helper"
 
-# Seed a session with entries, files, a daily usage, and an artifact.
+# Seed a session with entries, files, and a daily usage.
 # Sets updated_at to the given timestamp. Returns the session ID.
 private def seed_prune_db_session(identifier : String, updated_at : String) : Int64
   session_id = GalaxyLedger::Database.create_session(identifier)
@@ -37,22 +37,6 @@ private def seed_prune_db_session(identifier : String, updated_at : String) : In
           baseline_tokens, current_tokens, cumulative_tokens,
           oneshot_cost_usd, oneshot_tokens
         ) VALUES (?, '2026-02-18', 0.0, 1.50, 1.50, 0, 10000, 10000, 0.0, 0)
-      SQL
-      session_id,
-    )
-  end
-
-  # Add an artifact record via direct SQL
-  GalaxyLedger::Database.open do |db|
-    db.exec(
-      <<-SQL,
-        INSERT INTO ledger_artifacts (
-          ledger_session_id, number, title, artifact_type, mime_type,
-          original_filename, stored_path, source_path, file_size,
-          content_hash
-        ) VALUES (?, 1, 'Test artifact', 'document', 'text/csv',
-          'test.csv', '/tmp/stored/test.csv', '/tmp/source/test.csv',
-          1024, 'abc123')
       SQL
       session_id,
     )
@@ -129,7 +113,6 @@ describe GalaxyLedger::Database do
 
       # Preserved data counts
       counts.daily_usages.should eq(2)
-      counts.artifacts.should eq(2)
     end
   end
 
@@ -177,17 +160,6 @@ describe GalaxyLedger::Database do
         ).as(Int64).to_i
       end
       count.should eq(1)
-    end
-
-    it "preserves artifacts for pruned sessions" do
-      old_date = (Time.utc - 60.days).to_s("%Y-%m-%d %H:%M:%S")
-      old_id = seed_prune_db_session("prune-preserve-artifacts", old_date)
-
-      cutoff = (Time.utc - 30.days).to_s("%Y-%m-%d %H:%M:%S")
-      GalaxyLedger::Database.prune_session_data(cutoff)
-
-      artifact_count = GalaxyLedger::Database.session_artifact_count(old_id)
-      artifact_count.should eq(1)
     end
 
     it "does not touch sessions newer than cutoff" do

@@ -77,8 +77,8 @@ module GalaxyLedger
         # Query snapshot stats for budget-aware rendering
         snapshot_stats = query_snapshot_stats(ledger_session_id)
 
-        # Query artifact count
-        artifact_count = Database.session_artifact_count(ledger_session_id)
+        # Query artifact count via standalone artifacts CLI
+        artifact_count = query_artifact_count(ledger_session_id)
 
         # Build systemMessage and additionalContext
         system_message = Helpers.build_system_message(
@@ -421,20 +421,23 @@ module GalaxyLedger
 
         # Session artifacts section (metadata only — files can be large/binary)
         if artifact_count > 0
-          artifacts = Database.list_artifacts(ledger_session_id)
+          artifacts_json = query_artifacts_metadata(ledger_session_id)
           lines << "---"
           lines << ""
-          lines << "### Session Artifacts (#{artifacts.size} saved)"
+          lines << "### Session Artifacts (#{artifacts_json.size} saved)"
           lines << ""
           lines << "| # | Type | Title | Size |"
           lines << "|---|------|-------|------|"
-          artifacts.each do |art|
-            size_formatted = format_file_size(art.file_size)
-            lines << "| #{art.number} | #{art.artifact_type} | #{art.title} | #{size_formatted} |"
+          artifacts_json.each do |art|
+            size_formatted = format_file_size(art["file_size"].as_i64)
+            lines << "| #{art["number"].as_i} " \
+                     "| #{art["artifact_type"].as_s} " \
+                     "| #{art["title"].as_s} " \
+                     "| #{size_formatted} |"
           end
           lines << ""
-          lines << "View: `galaxy-ledger artifact view --pid #{claude_pid} N`"
-          lines << "Open: `galaxy-ledger artifact open --pid #{claude_pid} N`"
+          lines << "View: `galaxy-artifacts view --pid #{claude_pid} N`"
+          lines << "Open: `galaxy-artifacts open --pid #{claude_pid} N`"
           lines << ""
         end
 
@@ -445,7 +448,7 @@ module GalaxyLedger
         lines << "**Bash-created artifacts** (pandoc, mermaid-cli, python scripts,"
         lines << "curl downloads) need manual registration:"
         lines << ""
-        lines << "    galaxy-ledger artifact save --pid #{claude_pid} \\\\"
+        lines << "    galaxy-artifacts save --pid #{claude_pid} \\\\"
         lines << "      --title \"Title\" --source-path /path/to/file \\\\"
         lines << "      --description \"Brief context\""
         lines << ""
@@ -676,6 +679,59 @@ module GalaxyLedger
         end
       rescue
         15000
+      end
+
+      private def self.query_artifact_count(
+        ledger_session_id : Int64,
+      ) : Int32
+        artifacts_bin = (
+          GalaxyLedger::GALAXY_DIR / "bin" / "galaxy-artifacts"
+        ).to_s
+        return 0 unless File.exists?(artifacts_bin)
+
+        output = IO::Memory.new
+        status = Process.run(
+          artifacts_bin,
+          args: [
+            "stats",
+            "--ledger-session-id", ledger_session_id.to_s,
+            "--json",
+          ],
+          output: output,
+          error: Process::Redirect::Close,
+        )
+        return 0 unless status.success?
+
+        json = JSON.parse(output.to_s)
+        json["count"].as_i
+      rescue
+        0
+      end
+
+      private def self.query_artifacts_metadata(
+        ledger_session_id : Int64,
+      ) : Array(JSON::Any)
+        artifacts_bin = (
+          GalaxyLedger::GALAXY_DIR / "bin" / "galaxy-artifacts"
+        ).to_s
+
+        output = IO::Memory.new
+        status = Process.run(
+          artifacts_bin,
+          args: [
+            "list",
+            "--ledger-session-id", ledger_session_id.to_s,
+            "--json",
+          ],
+          output: output,
+          error: Process::Redirect::Close,
+        )
+        return [] of JSON::Any unless status.success?
+
+        json = JSON.parse(output.to_s)
+        json["artifacts"].as_a
+      rescue
+        [] of JSON::Any
       end
 
       private def self.output_empty

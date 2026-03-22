@@ -376,37 +376,9 @@ describe "OnClear additionalContext" do
     output = JSON.parse(result[:output])
     ctx = output["hookSpecificOutput"]["additionalContext"].as_s
     ctx.should contain("### Artifact Capture")
-    ctx.should contain("artifact save --pid")
+    ctx.should contain("galaxy-artifacts save --pid")
     ctx.should contain("--source-path")
     ctx.should contain("Do this silently")
-  end
-
-  it "includes artifact capture directive alongside artifact listing" do
-    # Create a temp file and save an artifact via CLI
-    source = File.tempname("handoff-art-test", ".csv")
-    File.write(source, "id,name\n1,test")
-    run_binary([
-      "artifact", "save",
-      "--pid", Process.pid.to_s,
-      "--source-path", source,
-      "--title", "Test Export",
-    ])
-
-    hook_input = {
-      "session_id" => test_session_id,
-      "source"     => "clear",
-    }.to_json
-
-    result = run_binary(["on-clear"], stdin: hook_input)
-    output = JSON.parse(result[:output])
-    ctx = output["hookSpecificOutput"]["additionalContext"].as_s
-    # Both sections should be present
-    ctx.should contain("### Session Artifacts")
-    ctx.should contain("Test Export")
-    ctx.should contain("### Artifact Capture")
-    ctx.should contain("artifact save --pid")
-  ensure
-    File.delete(source) if source && File.exists?(source)
   end
 end
 

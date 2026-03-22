@@ -523,6 +523,165 @@ module GalaxyLedger
           end
         end
       },
+      "0.5.0" => ->(db : DB::Database) {
+        # Migrate artifacts to standalone galaxy-artifacts tool.
+        #
+        # Belt-and-suspenders: if table is already gone, short-circuit.
+        table_exists = false
+        table_check_sql = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'ledger_artifacts'"
+        db.query_one?(table_check_sql) do |rs|
+          table_exists = rs.read(Int64) > 0
+        end
+
+        if table_exists
+          artifacts_bin = (
+            GalaxyLedger::GALAXY_DIR / "bin" / "galaxy-artifacts"
+          ).to_s
+
+          skip_migration = false
+
+          # Check that the artifacts binary exists
+          unless File.exists?(artifacts_bin)
+            STDERR.puts(
+              "[galaxy-ledger] Warning: galaxy-artifacts binary not " \
+              "found at #{artifacts_bin}. Skipping artifact migration. " \
+              "Install galaxy-artifacts and re-run ledger to retry.",
+            )
+            skip_migration = true
+          end
+
+          unless skip_migration
+            # Collect sessions that have artifacts
+            session_ids = [] of Int64
+            db.query(
+              "SELECT DISTINCT ledger_session_id FROM ledger_artifacts",
+            ) do |rs|
+              rs.each { session_ids << rs.read(Int64) }
+            end
+
+            if session_ids.empty?
+              # No artifacts to migrate — drop table and move on
+              db.exec("DROP TABLE IF EXISTS ledger_artifacts")
+              db.exec("DROP INDEX IF EXISTS idx_artifacts_session")
+              db.exec("DROP INDEX IF EXISTS idx_artifacts_source_path")
+            else
+              migration_ok = true
+
+              session_ids.each do |sid|
+                # Export artifacts in number order
+                artifact_query = "SELECT number, title, artifact_type, mime_type, original_filename, stored_path, source_path, file_size, content_hash, description FROM ledger_artifacts WHERE ledger_session_id = ? ORDER BY number ASC"
+                db.query(artifact_query, sid) do |rs|
+                  rs.each do
+                    number = rs.read(Int64).to_i
+                    title = rs.read(String)
+                    artifact_type = rs.read(String)
+                    mime_type = rs.read(String)
+                    original_filename = rs.read(String)
+                    stored_path = rs.read(String)
+                    source_path = rs.read(String?)
+                    file_size = rs.read(Int64)
+                    content_hash = rs.read(String)
+                    description = rs.read(String?)
+
+                    cli_args = [
+                      "save",
+                      "--ledger-session-id", sid.to_s,
+                      "--source-path", stored_path,
+                      "--title", title,
+                      "--artifact-type", artifact_type,
+                      "--mime-type", mime_type,
+                      "--content-hash", content_hash,
+                      "--file-size", file_size.to_s,
+                    ]
+
+                    if desc = description
+                      cli_args << "--description"
+                      cli_args << desc
+                    end
+
+                    output = IO::Memory.new
+                    error = IO::Memory.new
+                    status = Process.run(
+                      artifacts_bin,
+                      args: cli_args,
+                      output: output,
+                      error: error,
+                    )
+
+                    unless status.success?
+                      STDERR.puts(
+                        "[galaxy-ledger] Failed to migrate artifact " \
+                        "##{number} for session #{sid}: " \
+                        "#{error.to_s.strip}",
+                      )
+                      migration_ok = false
+                      break
+                    end
+                  end
+                end
+
+                break unless migration_ok
+              end
+
+              # Verify migration
+              if migration_ok
+                session_ids.each do |sid|
+                  ledger_count = 0
+                  count_sql = "SELECT COUNT(*) FROM ledger_artifacts WHERE ledger_session_id = ?"
+                  db.query_one?(count_sql, sid) do |rs|
+                    ledger_count = rs.read(Int64).to_i
+                  end
+
+                  stats_output = IO::Memory.new
+                  stats_status = Process.run(
+                    artifacts_bin,
+                    args: [
+                      "stats",
+                      "--ledger-session-id", sid.to_s,
+                      "--json",
+                    ],
+                    output: stats_output,
+                    error: Process::Redirect::Close,
+                  )
+
+                  if stats_status.success?
+                    stats_json = JSON.parse(stats_output.to_s)
+                    new_count = stats_json["count"].as_i
+
+                    if new_count != ledger_count
+                      STDERR.puts(
+                        "[galaxy-ledger] Artifact count mismatch for " \
+                        "session #{sid}: ledger=#{ledger_count} " \
+                        "artifacts=#{new_count}. Keeping ledger table.",
+                      )
+                      migration_ok = false
+                      break
+                    end
+                  else
+                    STDERR.puts(
+                      "[galaxy-ledger] Failed to verify migration for " \
+                      "session #{sid}. Keeping ledger table.",
+                    )
+                    migration_ok = false
+                    break
+                  end
+                end
+              end
+
+              if migration_ok
+                db.exec("DROP TABLE IF EXISTS ledger_artifacts")
+                db.exec("DROP INDEX IF EXISTS idx_artifacts_session")
+                db.exec("DROP INDEX IF EXISTS idx_artifacts_source_path")
+              else
+                STDERR.puts(
+                  "[galaxy-ledger] Artifact migration incomplete. " \
+                  "Table preserved. Will retry on next startup.",
+                )
+              end
+            end
+          end
+        end
+      },
     }
 
     # ==========================================================================
@@ -603,6 +762,40 @@ module GalaxyLedger
 
         # Remove snapshots section from ledger config
         obj.delete("snapshots")
+        JSON::Any.new(obj)
+      },
+      "0.5.0" => Proc(JSON::Any, JSON::Any).new { |config_json|
+        obj = config_json.as_h.dup
+
+        # Copy artifact config to artifacts tool's config file
+        if artifacts_config = obj["artifacts"]?.try(&.as_h?)
+          artifacts_config_dir = GalaxyLedger::GALAXY_DIR / "artifacts"
+          artifacts_config_file = artifacts_config_dir / "config.json"
+
+          unless File.exists?(artifacts_config_file)
+            Dir.mkdir_p(artifacts_config_dir)
+            new_config = Hash(String, JSON::Any).new
+            new_config["_schema_version"] = JSON::Any.new("0.1.0")
+            new_config["enabled"] = artifacts_config["enabled"]? ||
+                                    JSON::Any.new(true)
+            new_config["auto_detect"] = artifacts_config["auto_detect"]? ||
+                                        JSON::Any.new(true)
+            new_config["max_file_size"] = artifacts_config["max_file_size"]? ||
+                                          JSON::Any.new(52_428_800_i64)
+            new_config["backups"] = JSON::Any.new({
+              "enabled"        => JSON::Any.new(true),
+              "retention_days" => JSON::Any.new(3_i64),
+              "path"           => JSON::Any.new(""),
+            })
+            File.write(
+              artifacts_config_file,
+              JSON::Any.new(new_config).to_pretty_json,
+            )
+          end
+        end
+
+        # Remove artifacts section from ledger config
+        obj.delete("artifacts")
         JSON::Any.new(obj)
       },
     }

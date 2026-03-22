@@ -1,4 +1,5 @@
 require "json"
+require "digest/sha256"
 
 module GalaxyLedger
   module Hooks
@@ -129,67 +130,49 @@ module GalaxyLedger
         )
       end
 
-      # Detect if a written file is an artifact and store it.
-      # Runs silently — failures are ignored. The original file is
-      # always left in place; artifact storage is a copy.
+      # Detect if a written file is an artifact and delegate to
+      # galaxy-artifacts for storage. Classification stays in ledger
+      # as the gate logic. Runs silently — failures are ignored.
       private def detect_and_store_artifact(
         ledger_session_id : Int64,
         file_path : String,
       )
-        config = Config.load
-        return unless config.artifacts.enabled && config.artifacts.auto_detect
-
-        # Classify the file
+        # Classification stays in ledger — it's a hook-level gate
         classification = ArtifactClassifier.classify(file_path)
         return unless classification
 
         # Check file size limit
-        source_size = ArtifactStorage.file_size(file_path)
-        return if source_size <= 0
-        return if source_size > config.artifacts.max_file_size
+        file_size = File.size(file_path).to_i64 rescue return
+        return if file_size <= 0
 
-        original_filename = File.basename(file_path)
-        title = ArtifactStorage.title_from_filename(original_filename)
+        artifacts_bin = (
+          GalaxyLedger::GALAXY_DIR / "bin" / "galaxy-artifacts"
+        ).to_s
+        return unless File.exists?(artifacts_bin)
 
         # Compute hash from tool_input content if available, else from file
-        hash = if content = @tool_input.try(&.["content"]?.try(&.as_s?))
-                 ArtifactStorage.content_hash(content)
-               else
-                 ArtifactStorage.file_hash(file_path)
-               end
+        content_hash = if content = @tool_input.try(&.["content"]?.try(&.as_s?))
+                         Digest::SHA256.hexdigest(content)
+                       else
+                         Digest::SHA256.hexdigest(File.read(file_path))
+                       end
 
-        result = Database.save_artifact(
-          ledger_session_id,
-          title: title,
-          artifact_type: classification.artifact_type,
-          mime_type: classification.mime_type,
-          original_filename: original_filename,
-          stored_path: "", # Placeholder, updated after storage
-          source_path: file_path,
-          file_size: source_size,
-          content_hash: hash,
+        cli_args = [
+          "save",
+          "--ledger-session-id", ledger_session_id.to_s,
+          "--source-path", file_path,
+          "--artifact-type", classification.artifact_type,
+          "--mime-type", classification.mime_type,
+          "--content-hash", content_hash,
+          "--file-size", file_size.to_s,
+        ]
+
+        Process.run(
+          artifacts_bin,
+          args: cli_args,
+          output: Process::Redirect::Close,
+          error: Process::Redirect::Close,
         )
-        return if result.action.failed?
-        number = result.number
-
-        # Enrichment means same file, same content — skip file copy.
-        return if result.action.enrichment?
-
-        # Insert or VersionUpdate — store/overwrite the file.
-        stored_path = if content = @tool_input.try(&.["content"]?.try(&.as_s?))
-                        ArtifactStorage.store_content(
-                          ledger_session_id, number, content, original_filename,
-                        )
-                      else
-                        ArtifactStorage.store(
-                          ledger_session_id, number, file_path, original_filename,
-                        )
-                      end
-
-        # Update the stored_path in the DB record
-        if stored_path
-          Database.update_artifact_stored_path(ledger_session_id, number, stored_path)
-        end
       rescue
         # Silently fail — artifact capture is best-effort
       end

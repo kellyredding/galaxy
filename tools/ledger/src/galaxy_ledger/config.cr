@@ -17,7 +17,6 @@ module GalaxyLedger
     property storage : Storage
     property restoration : Restoration
     property backups : Backups = Backups.new
-    property artifacts : Artifacts = Artifacts.new
 
     @[JSON::Field(key: "suggested_name")]
     property suggested_name : SuggestedNameConfig = SuggestedNameConfig.new
@@ -151,25 +150,6 @@ module GalaxyLedger
       end
     end
 
-    class Artifacts
-      include JSON::Serializable
-
-      property enabled : Bool
-
-      @[JSON::Field(key: "auto_detect")]
-      property auto_detect : Bool
-
-      @[JSON::Field(key: "max_file_size")]
-      property max_file_size : Int64
-
-      def initialize(
-        @enabled = true,
-        @auto_detect = true,
-        @max_file_size = 52_428_800_i64, # 50 MB
-      )
-      end
-    end
-
     class SuggestedNameConfig
       include JSON::Serializable
 
@@ -188,7 +168,6 @@ module GalaxyLedger
       @storage = Storage.new,
       @restoration = Restoration.new,
       @backups = Backups.new,
-      @artifacts = Artifacts.new,
       @suggested_name = SuggestedNameConfig.new,
     )
     end
@@ -269,8 +248,6 @@ module GalaxyLedger
         set_restoration(parts[1]?, parts[2]?, value)
       when "backups"
         set_backups(parts[1]?, value)
-      when "artifacts"
-        set_artifacts(parts[1]?, value)
       when "suggested_name"
         set_suggested_name(parts[1]?, value)
       else
@@ -296,8 +273,6 @@ module GalaxyLedger
         get_restoration(parts[1]?, parts[2]?)
       when "backups"
         get_backups(parts[1]?)
-      when "artifacts"
-        get_artifacts(parts[1]?)
       when "suggested_name"
         get_suggested_name(parts[1]?)
       else
@@ -523,35 +498,6 @@ module GalaxyLedger
       when "path"           then backups.path
       else
         raise "Unknown backups field: backups.#{field}"
-      end
-    end
-
-    private def set_artifacts(field : String?, value : String)
-      raise "Missing artifacts field (e.g., artifacts.enabled)" unless field
-
-      case field
-      when "enabled"
-        artifacts.enabled = parse_bool(value)
-      when "auto_detect"
-        artifacts.auto_detect = parse_bool(value)
-      when "max_file_size"
-        int_value = value.to_i64? || raise "Invalid value: #{value} (must be integer)"
-        raise "Value must be positive" if int_value < 1
-        artifacts.max_file_size = int_value
-      else
-        raise "Unknown artifacts field: artifacts.#{field}"
-      end
-    end
-
-    private def get_artifacts(field : String?) : String
-      raise "Missing artifacts field (e.g., artifacts.enabled)" unless field
-
-      case field
-      when "enabled"       then artifacts.enabled.to_s
-      when "auto_detect"   then artifacts.auto_detect.to_s
-      when "max_file_size" then artifacts.max_file_size.to_s
-      else
-        raise "Unknown artifacts field: artifacts.#{field}"
       end
     end
 

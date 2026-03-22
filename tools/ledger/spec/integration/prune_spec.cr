@@ -1,6 +1,6 @@
 require "../spec_helper"
 
-# Seed a session with entries, files, daily usage, and artifact.
+# Seed a session with entries, files, and daily usage.
 # Sets updated_at to the given timestamp. Returns the session ID.
 private def seed_prune_session(identifier : String, updated_at : String) : Int64
   session_id = GalaxyLedger::Database.create_session(identifier)
@@ -31,14 +31,6 @@ private def seed_prune_session(identifier : String, updated_at : String) : Int64
   GalaxyLedger::Database.open do |db|
     db.exec(
       "INSERT INTO ledger_session_daily_usages (ledger_session_id, date, baseline_cost_usd, current_cost_usd, cumulative_cost_usd, baseline_tokens, current_tokens, cumulative_tokens, oneshot_cost_usd, oneshot_tokens) VALUES (?, '2026-02-18', 0.0, 1.0, 1.0, 0, 5000, 5000, 0.0, 0)",
-      session_id,
-    )
-  end
-
-  # Artifact
-  GalaxyLedger::Database.open do |db|
-    db.exec(
-      "INSERT INTO ledger_artifacts (ledger_session_id, number, title, artifact_type, mime_type, original_filename, stored_path, source_path, file_size, content_hash) VALUES (?, 1, 'Test artifact', 'document', 'text/csv', 'test.csv', '/tmp/stored/test.csv', '/tmp/source/test.csv', 1024, 'abc123')",
       session_id,
     )
   end
@@ -91,7 +83,6 @@ describe "CLI prune commands", tags: "integration" do
       result[:output].should contain("Files")
       result[:output].should contain("Database size:")
       result[:output].should contain("Preserved per session:")
-      result[:output].should contain("artifacts")
     end
 
     it "skips periods with zero counts" do
@@ -122,7 +113,6 @@ describe "CLI prune commands", tags: "integration" do
       result[:output].should contain("Files:")
       result[:output].should contain("Preserved:")
       result[:output].should contain("Session records:")
-      result[:output].should contain("Artifacts:")
       result[:output].should contain("Run with --apply to execute.")
 
       # Data should NOT have been modified
@@ -161,7 +151,7 @@ describe "CLI prune commands", tags: "integration" do
       remaining.size.should eq(0)
     end
 
-    it "preserves sessions, usages, and artifacts" do
+    it "preserves sessions and usages" do
       old_date = (Time.utc - 60.days).to_s("%Y-%m-%d %H:%M:%S")
       old_id = seed_prune_session("apply-preserve", old_date)
 
@@ -170,10 +160,6 @@ describe "CLI prune commands", tags: "integration" do
       # Session record preserved
       session = GalaxyLedger::Database.get_session_by_id(old_id)
       session.should_not be_nil
-
-      # Artifact preserved
-      artifact_count = GalaxyLedger::Database.session_artifact_count(old_id)
-      artifact_count.should eq(1)
 
       # Daily usage preserved
       usage_count = 0
