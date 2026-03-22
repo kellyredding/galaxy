@@ -1,6 +1,6 @@
 import Foundation
 
-/// Fetches snapshot data on demand by spawning galaxy-ledger CLI.
+/// Fetches snapshot data on demand by spawning galaxy-snapshots CLI.
 /// Separate from LedgerQueryService to maintain independent
 /// cancellation domains — switching ledger subtabs shouldn't cancel
 /// an in-flight snapshot fetch and vice versa.
@@ -15,7 +15,7 @@ class SnapshotQueryService {
     private let lock = NSLock()
 
     private init() {
-        self.binaryPath = "\(NSHomeDirectory())/.claude/galaxy/bin/galaxy-ledger"
+        self.binaryPath = "\(NSHomeDirectory())/.claude/galaxy/bin/galaxy-snapshots"
     }
 
     // MARK: - Public API
@@ -34,7 +34,7 @@ class SnapshotQueryService {
     /// Fetch snapshot index (metadata only, no content).
     func fetchSnapshots(ledgerSessionId: Int64) async throws -> [SnapshotSummary] {
         let data = try await runCLI(
-            args: ["snapshot", "list", "--json",
+            args: ["list", "--json",
                    "--ledger-session-id", String(ledgerSessionId)]
         )
         let decoder = JSONDecoder()
@@ -49,7 +49,7 @@ class SnapshotQueryService {
         number: Int32
     ) async throws -> SnapshotDetail {
         let data = try await runCLI(
-            args: ["snapshot", "view", "--json",
+            args: ["view", "--json",
                    "--ledger-session-id", String(ledgerSessionId),
                    String(number)]
         )
@@ -60,10 +60,10 @@ class SnapshotQueryService {
     }
 
     /// Fetch all annotations for a snapshot.
-    func fetchAnnotations(ledgerSnapshotId: Int64) async throws -> [SnapshotAnnotation] {
+    func fetchAnnotations(snapshotId: Int64) async throws -> [SnapshotAnnotation] {
         let data = try await runCLI(
-            args: ["snapshot", "annotation", "list", "--json",
-                   "--ledger-snapshot-id", String(ledgerSnapshotId)]
+            args: ["annotation", "list", "--json",
+                   "--snapshot-id", String(snapshotId)]
         )
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -73,14 +73,14 @@ class SnapshotQueryService {
 
     /// Create an annotation on a snapshot. Content piped via stdin.
     func createAnnotation(
-        ledgerSnapshotId: Int64,
+        snapshotId: Int64,
         startLine: Int32,
         endLine: Int32,
         content: String
     ) async throws -> SnapshotAnnotation {
         let data = try await runCLI(
-            args: ["snapshot", "annotation", "create",
-                   "--ledger-snapshot-id", String(ledgerSnapshotId),
+            args: ["annotation", "create",
+                   "--snapshot-id", String(snapshotId),
                    "--start-line", String(startLine),
                    "--end-line", String(endLine)],
             stdinContent: content
@@ -93,13 +93,13 @@ class SnapshotQueryService {
 
     /// Update an annotation's content. Content piped via stdin.
     func updateAnnotation(
-        ledgerSnapshotId: Int64,
+        snapshotId: Int64,
         number: Int32,
         content: String
     ) async throws -> SnapshotAnnotation {
         let data = try await runCLI(
-            args: ["snapshot", "annotation", "update",
-                   "--ledger-snapshot-id", String(ledgerSnapshotId),
+            args: ["annotation", "update",
+                   "--snapshot-id", String(snapshotId),
                    String(number)],
             stdinContent: content
         )
@@ -111,21 +111,21 @@ class SnapshotQueryService {
 
     /// Delete an annotation by number.
     func deleteAnnotation(
-        ledgerSnapshotId: Int64,
+        snapshotId: Int64,
         number: Int32
     ) async throws {
         _ = try await runCLI(
-            args: ["snapshot", "annotation", "delete",
-                   "--ledger-snapshot-id", String(ledgerSnapshotId),
+            args: ["annotation", "delete",
+                   "--snapshot-id", String(snapshotId),
                    String(number)]
         )
     }
 
     /// Create a review from all unreviewed annotations.
-    func createReview(ledgerSnapshotId: Int64) async throws -> SnapshotReviewCreateResult {
+    func createReview(snapshotId: Int64) async throws -> SnapshotReviewCreateResult {
         let data = try await runCLI(
-            args: ["snapshot", "review", "create",
-                   "--ledger-snapshot-id", String(ledgerSnapshotId)]
+            args: ["review", "create",
+                   "--snapshot-id", String(snapshotId)]
         )
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -135,10 +135,10 @@ class SnapshotQueryService {
     /// Check if a snapshot has unreviewed annotations.
     /// Uses an independent process — safe to call while other
     /// SnapshotQueryService operations are in-flight.
-    func checkHasPending(ledgerSnapshotId: Int64) async throws -> Bool {
+    func checkHasPending(snapshotId: Int64) async throws -> Bool {
         let data = try await runIndependent(
-            args: ["snapshot", "review", "has-pending",
-                   "--ledger-snapshot-id", String(ledgerSnapshotId)]
+            args: ["review", "has-pending",
+                   "--snapshot-id", String(snapshotId)]
         )
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -148,7 +148,7 @@ class SnapshotQueryService {
 
     // MARK: - CLI Subprocess
 
-    /// Spawn the galaxy-ledger binary and collect stdout.
+    /// Spawn the galaxy-snapshots binary and collect stdout.
     /// Cancels any previous in-flight process first.
     /// When stdinContent is provided, it's written to the process's stdin pipe.
     private func runCLI(args: [String], stdinContent: String? = nil) async throws -> Data {
@@ -232,7 +232,7 @@ class SnapshotQueryService {
         lock.unlock()
     }
 
-    /// Spawn the galaxy-ledger binary independently of the shared
+    /// Spawn the galaxy-snapshots binary independently of the shared
     /// currentProcess. Safe to call while other operations are
     /// in-flight — won't cancel them and won't be canceled by them.
     private func runIndependent(args: [String]) async throws -> Data {
@@ -285,7 +285,7 @@ enum SnapshotQueryError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .cliError(let status, let message):
-            return "galaxy-ledger exited with status \(status): \(message)"
+            return "galaxy-snapshots exited with status \(status): \(message)"
         }
     }
 }
@@ -339,12 +339,12 @@ struct SnapshotAnnotation: Codable, Identifiable {
     let id: Int64
     let createdAt: String
     let updatedAt: String
-    let ledgerSnapshotId: Int64
+    let snapshotId: Int64
     let number: Int32
     let startLine: Int32
     let endLine: Int32
     let content: String
-    let ledgerSnapshotReviewId: Int64?
+    let snapshotReviewId: Int64?
     let reviewNumber: Int32?
     let reviewReviewedAt: String?
 }
@@ -359,7 +359,7 @@ struct SnapshotReviewCreateResult: Codable {
 struct SnapshotReviewSummary: Codable {
     let id: Int64
     let number: Int32
-    let ledgerSnapshotId: Int64
+    let snapshotId: Int64
     let createdAt: String
     let updatedAt: String
     let reviewedAt: String?
@@ -367,7 +367,7 @@ struct SnapshotReviewSummary: Codable {
 
 /// Result from checking if unreviewed annotations exist.
 struct HasPendingResult: Codable {
-    let ledgerSnapshotId: Int64
+    let snapshotId: Int64
     let hasPending: Bool
     let count: Int32
 }

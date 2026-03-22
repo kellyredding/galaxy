@@ -470,7 +470,7 @@ struct SnapshotsView: View {
 
                 // Fetch annotations using the snapshot's database ID
                 let annotations = try await SnapshotQueryService.shared
-                    .fetchAnnotations(ledgerSnapshotId: detail.id)
+                    .fetchAnnotations(snapshotId: detail.id)
                 guard !Task.isCancelled else { return }
 
                 // Pre-render annotation markdown to HTML
@@ -485,7 +485,7 @@ struct SnapshotsView: View {
                     annotationHTMLMap = htmlMap
                     isLoadingContent = false
                     hasUnreviewedAnnotations = annotations.contains {
-                        $0.ledgerSnapshotReviewId == nil
+                        $0.snapshotReviewId == nil
                     }
                 }
             } catch {
@@ -692,7 +692,7 @@ struct SnapshotsView: View {
 
                 // Fetch annotations for the snapshot
                 let annotations = try await SnapshotQueryService.shared
-                    .fetchAnnotations(ledgerSnapshotId: detail.id)
+                    .fetchAnnotations(snapshotId: detail.id)
                 guard !Task.isCancelled else { return }
 
                 var htmlMap: [Int32: String] = [:]
@@ -707,7 +707,7 @@ struct SnapshotsView: View {
                     openAnnotations = annotations
                     annotationHTMLMap = htmlMap
                     hasUnreviewedAnnotations = annotations.contains {
-                        $0.ledgerSnapshotReviewId == nil
+                        $0.snapshotReviewId == nil
                     }
                 }
             } catch {
@@ -755,7 +755,7 @@ struct SnapshotsView: View {
                 do {
                     let annotation = try await SnapshotQueryService.shared
                         .createAnnotation(
-                            ledgerSnapshotId: snapshotId,
+                            snapshotId: snapshotId,
                             startLine: startLine,
                             endLine: endLine,
                             content: content
@@ -788,7 +788,7 @@ struct SnapshotsView: View {
                 do {
                     let annotation = try await SnapshotQueryService.shared
                         .updateAnnotation(
-                            ledgerSnapshotId: snapshotId,
+                            snapshotId: snapshotId,
                             number: number,
                             content: content
                         )
@@ -820,7 +820,7 @@ struct SnapshotsView: View {
                 do {
                     try await SnapshotQueryService.shared
                         .deleteAnnotation(
-                            ledgerSnapshotId: snapshotId,
+                            snapshotId: snapshotId,
                             number: number
                         )
                     await MainActor.run {
@@ -872,7 +872,7 @@ struct SnapshotsView: View {
         Task {
             do {
                 let hasPending = try await SnapshotQueryService.shared
-                    .checkHasPending(ledgerSnapshotId: snapshotId)
+                    .checkHasPending(snapshotId: snapshotId)
                 await MainActor.run {
                     hasUnreviewedAnnotations = hasPending
                 }
@@ -940,7 +940,7 @@ struct SnapshotsView: View {
                                     let _ = try await
                                         SnapshotQueryService.shared
                                         .createReview(
-                                            ledgerSnapshotId: snapshotId
+                                            snapshotId: snapshotId
                                         )
                                     await MainActor.run {
                                         session.sendCommand(message)
@@ -975,7 +975,7 @@ struct SnapshotsView: View {
                 // Session is running — create review and send
                 do {
                     let _ = try await SnapshotQueryService.shared
-                        .createReview(ledgerSnapshotId: snapshotId)
+                        .createReview(snapshotId: snapshotId)
 
                     let message = buildReviewMessage(
                         ledgerSessionId: lsid,
@@ -1011,7 +1011,7 @@ struct SnapshotsView: View {
     ) async {
         do {
             let annotations = try await SnapshotQueryService.shared
-                .fetchAnnotations(ledgerSnapshotId: snapshotId)
+                .fetchAnnotations(snapshotId: snapshotId)
 
             var htmlMap: [Int32: String] = [:]
             for ann in annotations {
@@ -1025,7 +1025,7 @@ struct SnapshotsView: View {
                 openAnnotations = annotations
                 annotationHTMLMap = htmlMap
                 hasUnreviewedAnnotations = annotations.contains {
-                    $0.ledgerSnapshotReviewId == nil
+                    $0.snapshotReviewId == nil
                 }
 
                 // Push updated annotations to JS for card re-render
