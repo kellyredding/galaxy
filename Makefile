@@ -1,6 +1,6 @@
-.PHONY: all clean statusline-build statusline-test statusline-check statusline-install statusline-clean ledger-build ledger-test ledger-check ledger-install ledger-clean snapshots-build snapshots-dev snapshots-test snapshots-check snapshots-install snapshots-clean app-build app-clean
+.PHONY: all clean statusline-build statusline-test statusline-check statusline-install statusline-clean ledger-build ledger-test ledger-check ledger-install ledger-clean snapshots-build snapshots-dev snapshots-test snapshots-check snapshots-install snapshots-clean artifacts-build artifacts-dev artifacts-test artifacts-check artifacts-install artifacts-clean app-build app-clean
 
-all: statusline-build ledger-build snapshots-build
+all: statusline-build ledger-build snapshots-build artifacts-build
 
 # Statusline tool
 statusline-build:
@@ -59,6 +59,25 @@ snapshots-install:
 snapshots-clean:
 	$(MAKE) -C tools/snapshots clean
 
+# Artifacts tool
+artifacts-build:
+	$(MAKE) -C tools/artifacts build
+
+artifacts-dev:
+	$(MAKE) -C tools/artifacts dev
+
+artifacts-test:
+	$(MAKE) -C tools/artifacts test
+
+artifacts-check:
+	$(MAKE) -C tools/artifacts check
+
+artifacts-install:
+	$(MAKE) -C tools/artifacts install
+
+artifacts-clean:
+	$(MAKE) -C tools/artifacts clean
+
 # Galaxy.app (SwiftUI Mac app)
 # Always uses -derivedDataPath to avoid polluting ~/Library/Developer/Xcode/DerivedData
 APP_DERIVED_DATA = GalaxyApp/build
@@ -73,4 +92,4 @@ app-clean:
 	xcodebuild -project GalaxyApp/GalaxyApp.xcodeproj -scheme GalaxyApp -derivedDataPath $(APP_DERIVED_DATA) clean
 	rm -rf $(APP_DERIVED_DATA)
 
-clean: statusline-clean ledger-clean snapshots-clean app-clean
+clean: statusline-clean ledger-clean snapshots-clean artifacts-clean app-clean

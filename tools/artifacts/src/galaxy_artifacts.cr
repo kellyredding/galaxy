@@ -1,0 +1,18 @@
+require "./galaxy_artifacts/*"
+
+module GalaxyArtifacts
+  VERSION = {{ read_file("#{__DIR__}/../version.txt").strip }}
+
+  CLAUDE_CONFIG_DIR = Path.new(ENV.fetch("GALAXY_CLAUDE_CONFIG_DIR", (Path.home / ".claude").to_s))
+  GALAXY_DIR        = Path.new(ENV.fetch("GALAXY_DIR", (CLAUDE_CONFIG_DIR / "galaxy").to_s))
+  DATA_DIR          = GALAXY_DIR / "data"
+  CONFIG_DIR        = Path.new(ENV.fetch("GALAXY_ARTIFACTS_CONFIG_DIR", (GALAXY_DIR / "artifacts").to_s))
+  CONFIG_FILE       = CONFIG_DIR / "config.json"
+  SKILLS_DIR        = GALAXY_DIR / "artifacts" / "skills"
+  CLAUDE_SKILLS_DIR = CLAUDE_CONFIG_DIR / "skills"
+  LEDGER_BIN        = Path.new(ENV.fetch("GALAXY_LEDGER_BIN", (GALAXY_DIR / "bin" / "galaxy-ledger").to_s))
+end
+
+unless ENV.has_key?("GALAXY_ARTIFACTS_SKIP_CLI")
+  GalaxyArtifacts::CLI.run(ARGV)
+end
