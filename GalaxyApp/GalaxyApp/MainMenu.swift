@@ -1,13 +1,18 @@
 import AppKit
+import Combine
 import SwiftUI  // For withAnimation
 import Carbon.HIToolbox
 
 /// Builds and manages the application's menu bar using AppKit NSMenu.
 /// This provides full control over menu items, avoiding SwiftUI's auto-injected File > Close.
 /// Uses NSMenuDelegate to rebuild menus just before display, ensuring current state.
+/// Also subscribes to session state changes via Combine so that keyboard shortcuts
+/// (e.g. ⌘R for Resume) work immediately — `menuNeedsUpdate` only fires reliably
+/// when the menu is opened visually, not when macOS matches key equivalents.
 class MainMenu: NSObject, NSMenuDelegate {
     private let sessionManager: SessionManager
     private let settingsManager: SettingsManager
+    private var cancellables = Set<AnyCancellable>()
 
     // Menus that use delegate for dynamic rebuilding
     private var sessionsMenu: NSMenu?
@@ -18,6 +23,22 @@ class MainMenu: NSObject, NSMenuDelegate {
         self.sessionManager = sessionManager
         self.settingsManager = settingsManager
         super.init()
+        observeSessionState()
+    }
+
+    /// Subscribe to session state changes that affect File menu items.
+    /// This ensures key equivalents (⌘W, ⌘R) reflect current state even
+    /// when the menu hasn't been opened visually.
+    private func observeSessionState() {
+        // Active session changed or resume-ability changed — rebuild File menu
+        sessionManager.$activeSessionId
+            .merge(with: sessionManager.$activeSessionCanResume.map { _ in nil as UUID? })
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self, let menu = self.fileMenu else { return }
+                self.buildFileMenu(menu)
+            }
+            .store(in: &cancellables)
     }
 
     /// Creates and returns the main menu bar
