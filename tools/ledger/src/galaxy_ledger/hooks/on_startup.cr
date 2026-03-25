@@ -79,6 +79,27 @@ module GalaxyLedger
           rescue ex
             STDERR.puts "[galaxy-ledger] Backup error: #{ex.message}"
           end
+
+          # Back up sibling tool databases (snapshots, artifacts).
+          # Each tool's `backup` command loads its own config, creates
+          # the backup, and prunes old ones — same as the ledger block
+          # above but kept in-process in each tool's binary.
+          {"galaxy-snapshots", "galaxy-artifacts"}.each do |tool|
+            begin
+              Process.run(
+                tool, ["backup", "--session-id", ledger_session_id.to_s],
+                output: Process::Redirect::Close,
+                error: Process::Redirect::Pipe,
+              ) do |proc|
+                stderr = proc.error.gets_to_end
+                unless proc.wait.success?
+                  STDERR.puts "[galaxy-ledger] #{tool} backup failed: #{stderr.strip}"
+                end
+              end
+            rescue ex
+              STDERR.puts "[galaxy-ledger] #{tool} backup error: #{ex.message}"
+            end
+          end
         end
 
         # Notify Galaxy.app of the new/resumed session (fire-and-forget)
