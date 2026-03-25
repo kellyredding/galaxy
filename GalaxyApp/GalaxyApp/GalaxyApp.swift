@@ -10,6 +10,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var eventCoordinator: EventCoordinator?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Enable click-through: clicking into the Galaxy window from another
+        // app activates AND delivers the click in one action, instead of
+        // requiring a second click. SwiftUI creates internal NSView subclasses
+        // that return false from acceptsFirstMouse(for:) by default, and we
+        // can't subclass them — so we swizzle the base NSView method.
+        NSView.enableClickThrough()
+
         // Probe the file system to trigger the macOS TCC permission dialog
         // before any session tries to access the working directory. Without
         // this, the first session launch fails because claude can't access
@@ -266,5 +273,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func showRestoreSession() {
         guard let window = mainWindowController?.window else { return }
         RestoreSessionSheetController.present(on: window)
+    }
+}
+
+// MARK: - Click-Through Swizzle
+
+extension NSView {
+    /// Swizzle acceptsFirstMouse(for:) on NSView to return true globally.
+    /// This enables click-through for all views, including SwiftUI's internal
+    /// view classes that we can't subclass. Called once at app launch.
+    static func enableClickThrough() {
+        let original = class_getInstanceMethod(
+            NSView.self, #selector(acceptsFirstMouse(for:))
+        )!
+        let replacement = class_getInstanceMethod(
+            NSView.self, #selector(galaxy_acceptsFirstMouse(for:))
+        )!
+        method_exchangeImplementations(original, replacement)
+    }
+
+    @objc private func galaxy_acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        return true
     }
 }
