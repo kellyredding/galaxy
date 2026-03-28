@@ -74,6 +74,7 @@ module GalaxyTimeline
       source : String? = nil
       occurred_at : String? = nil
       detail_data : String? = nil
+      detail_data_stdin = false
       json_mode = false
 
       i = 0
@@ -128,6 +129,9 @@ module GalaxyTimeline
             STDERR.puts "Error: --detail-data requires a value"
             exit(1)
           end
+        when "--detail-data-stdin"
+          detail_data_stdin = true
+          i += 1
         when "--json"
           json_mode = true
           i += 1
@@ -135,6 +139,14 @@ module GalaxyTimeline
           STDERR.puts "Error: Unknown option '#{arg}'"
           STDERR.puts "Run 'galaxy-timeline record --help' for usage"
           exit(1)
+        end
+      end
+
+      # --detail-data-stdin takes precedence over --detail-data
+      if detail_data_stdin
+        stdin_content = STDIN.gets_to_end
+        unless stdin_content.strip.empty?
+          detail_data = stdin_content.strip
         end
       end
 
@@ -816,6 +828,8 @@ module GalaxyTimeline
         --occurred-at DATETIME  When the event occurred
                                 (default: now, UTC)
         --detail-data JSON      JSON blob of event details
+        --detail-data-stdin     Read detail_data JSON from
+                                stdin (for large payloads)
         --json                  Output event ID as JSON
                                 (e.g. {"id":1})
       HELP

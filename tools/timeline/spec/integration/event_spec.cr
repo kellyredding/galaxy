@@ -119,6 +119,122 @@ describe "CLI event commands", tags: "integration" do
       parsed["id"].as_i.should be > 0
     end
 
+    it "records an event with detail-data via stdin" do
+      stdin_data = %({"annotations":[{"line":1,"text":"note"}]})
+      result = run_binary(
+        [
+          "record",
+          "--ledger-session-id", "1",
+          "--event-type", "snapshot:reviewed",
+          "--source", "galaxy-app/views/snapshots",
+          "--detail-data-stdin",
+        ],
+        stdin: stdin_data,
+      )
+
+      result[:status].should eq(0)
+      result[:output].should contain("recorded")
+
+      # Verify detail_data was stored correctly
+      list_result = run_binary([
+        "list", "--ledger-session-id", "1", "--json",
+      ])
+      event_id = JSON.parse(
+        list_result[:output],
+      )["events"].as_a[0]["id"].as_i.to_s
+
+      show_result = run_binary(["show", event_id, "--json"])
+      parsed = JSON.parse(show_result[:output])
+      detail = JSON.parse(parsed["detail_data"].as_s)
+      detail["annotations"].as_a.size.should eq(1)
+      detail["annotations"].as_a[0]["line"].as_i.should eq(1)
+      detail["annotations"].as_a[0]["text"].as_s.should eq("note")
+    end
+
+    it "prefers --detail-data-stdin over --detail-data on record" do
+      result = run_binary(
+        [
+          "record",
+          "--ledger-session-id", "1",
+          "--event-type", "snapshot:reviewed",
+          "--source", "test",
+          "--detail-data", %({"from":"arg"}),
+          "--detail-data-stdin",
+          "--json",
+        ],
+        stdin: %({"from":"stdin"}),
+      )
+
+      result[:status].should eq(0)
+      event_id = JSON.parse(result[:output])["id"].as_i.to_s
+
+      show_result = run_binary(["show", event_id, "--json"])
+      parsed = JSON.parse(show_result[:output])
+      detail = JSON.parse(parsed["detail_data"].as_s)
+      detail["from"].as_s.should eq("stdin")
+    end
+
+    it "handles empty stdin with --detail-data-stdin on record" do
+      result = run_binary(
+        [
+          "record",
+          "--ledger-session-id", "1",
+          "--event-type", "snapshot:reviewed",
+          "--source", "test",
+          "--detail-data-stdin",
+          "--json",
+        ],
+        stdin: "   ",
+      )
+
+      result[:status].should eq(0)
+      event_id = JSON.parse(result[:output])["id"].as_i.to_s
+
+      # detail_data should be nil when stdin is empty/whitespace
+      show_result = run_binary(["show", event_id, "--json"])
+      parsed = JSON.parse(show_result[:output])
+      parsed["detail_data"].as_s?.should be_nil
+    end
+
+    it "handles large payload via --detail-data-stdin on record" do
+      large_content = "x" * 10_000
+      payload = {
+        snapshot_id:      42,
+        annotation_count: 3,
+        annotations:      [
+          {
+            number:       1,
+            start_line:   10,
+            end_line:     15,
+            line_content: large_content,
+            annotation:   "review note",
+          },
+        ],
+      }.to_json
+
+      result = run_binary(
+        [
+          "record",
+          "--ledger-session-id", "1",
+          "--event-type", "snapshot:reviewed",
+          "--source", "galaxy-app/views/snapshots",
+          "--detail-data-stdin",
+          "--json",
+        ],
+        stdin: payload,
+      )
+
+      result[:status].should eq(0)
+      event_id = JSON.parse(result[:output])["id"].as_i.to_s
+
+      show_result = run_binary(["show", event_id, "--json"])
+      parsed = JSON.parse(show_result[:output])
+      detail = JSON.parse(parsed["detail_data"].as_s)
+      detail["snapshot_id"].as_i.should eq(42)
+      ann = detail["annotations"].as_a[0]
+      ann["line_content"].as_s.size.should eq(10_000)
+    end
+
     it "outputs human-readable format without --json" do
       result = run_binary([
         "record",
