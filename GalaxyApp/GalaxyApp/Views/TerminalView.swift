@@ -516,6 +516,36 @@ class TerminalHostView: NSView {
         }
         webView.onSendToClaude = { [weak self] message in
             guard let self = self else { return }
+
+            // Record timeline event before dismiss destroys
+            // the web view and its notes.
+            if let lsid = self.session.ledgerSessionId,
+               let overlay = self.scrollbackOverlay {
+                let notes = overlay.scrollbackView.notes
+                let expandedNotes: [[String: Any]] = notes.map {
+                    note in
+                    [
+                        "start_line": note.startLine,
+                        "end_line": note.endLine,
+                        "line_content": note.lineContent,
+                        "note": note.content,
+                    ] as [String: Any]
+                }
+
+                let detailData: [String: Any] = [
+                    "note_count": notes.count,
+                    "message": message,
+                    "notes": expandedNotes,
+                ]
+
+                TimelineService.recordViaStdin(
+                    ledgerSessionId: lsid,
+                    eventType: "scrollback:reviewed",
+                    source: "galaxy-app/views/terminal",
+                    detailData: detailData
+                )
+            }
+
             self.dismissScrollback(force: true)
             // Bracketed paste delivers multi-line content as a single
             // input block, then CR after a delay submits it.

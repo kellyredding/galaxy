@@ -978,6 +978,12 @@ struct SnapshotsView: View {
                                             snapshotId: snapshotId
                                         )
                                     await MainActor.run {
+                                        recordSnapshotReviewedEvent(
+                                            ledgerSessionId: lsid,
+                                            snapshotId: snapshotId
+                                        )
+                                    }
+                                    await MainActor.run {
                                         session.sendCommand(message)
                                     }
                                     // Refresh so cards reflect
@@ -1011,6 +1017,13 @@ struct SnapshotsView: View {
                 do {
                     let _ = try await SnapshotQueryService.shared
                         .createReview(snapshotId: snapshotId)
+
+                    await MainActor.run {
+                        recordSnapshotReviewedEvent(
+                            ledgerSessionId: lsid,
+                            snapshotId: snapshotId
+                        )
+                    }
 
                     let message = buildReviewMessage(
                         ledgerSessionId: lsid,
@@ -1118,6 +1131,58 @@ struct SnapshotsView: View {
             + " `galaxy-ledger snapshot review mark-reviewed"
             + " --ledger-session-id \(sid) --snapshot \(sn) REVIEW_NUMBER`,"
             + " then respond to each annotation in the conversation."
+    }
+
+    /// Record a snapshot:reviewed timeline event with expanded
+    /// annotation content. Fire-and-forget — safe to call from
+    /// any context.
+    private func recordSnapshotReviewedEvent(
+        ledgerSessionId: Int64,
+        snapshotId: Int64
+    ) {
+        guard let snapshot = openSnapshot else { return }
+        let annotations = openAnnotations
+
+        let lines = snapshot.content.components(
+            separatedBy: "\n"
+        )
+
+        // Build expanded annotations array. Annotation lines
+        // are 1-based (from swift-markdown SourceRange).
+        let expandedAnnotations: [[String: Any]] = annotations
+            .map { ann in
+                let start = max(Int(ann.startLine) - 1, 0)
+                let end = min(
+                    Int(ann.endLine), lines.count
+                )
+                let lineContent = lines[start..<end]
+                    .joined(separator: "\n")
+
+                return [
+                    "number": ann.number,
+                    "start_line": ann.startLine,
+                    "end_line": ann.endLine,
+                    "line_content": lineContent,
+                    "annotation": ann.content,
+                ] as [String: Any]
+            }
+
+        let detailData: [String: Any] = [
+            "snapshot_id": snapshotId,
+            "snapshot_number": snapshot.number,
+            "title": snapshot.title,
+            "exchange_count": snapshot.exchangeCount,
+            "char_count": snapshot.charCount,
+            "annotation_count": annotations.count,
+            "annotations": expandedAnnotations,
+        ]
+
+        TimelineService.recordViaStdin(
+            ledgerSessionId: ledgerSessionId,
+            eventType: "snapshot:reviewed",
+            source: "galaxy-app/views/snapshots",
+            detailData: detailData
+        )
     }
 
     // MARK: - Formatting
