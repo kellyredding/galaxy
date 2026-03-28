@@ -468,6 +468,17 @@ class SessionManager: ObservableObject {
         // Start process: --resume if session exists in Claude storage, --session-id if not
         session.startProcess(executablePath: executablePath, resume: canResume)
 
+        // After the resumed session settles, restore working directory
+        // via the ledger:resume skill. Lighter than /handoff — only
+        // restores cwd and confirms state, no full context rebuild.
+        if canResume {
+            session.afterNextIdle { [weak session] in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak session] in
+                    session?.sendCommand("/ledger:resume")
+                }
+            }
+        }
+
         // Make this the active session
         activeSessionId = session.id
         SessionPersistence.shared.markDirty()
