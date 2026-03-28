@@ -78,6 +78,8 @@ module GalaxyLedger
         handle_on_startup_command(rest)
       when "on-stop"
         handle_on_stop_command(rest)
+      when "on-session-end"
+        handle_on_session_end_command(rest)
       when "on-clear"
         handle_on_clear_command(rest)
       when "on-compact"
@@ -157,6 +159,7 @@ module GalaxyLedger
         on-clear            Restore context after /clear
         on-compact          Restore context after auto/manual compact
         on-stop             Capture last exchange, check thresholds
+        on-session-end      Record session:ended timeline event
         on-post-tool-use    Track file operations with type detection
         on-user-prompt-submit  Capture user directions/preferences
 
@@ -1152,6 +1155,54 @@ module GalaxyLedger
                 "type": "command",
                 "command": "galaxy-ledger on-stop",
                 "timeout": 30
+              }]
+            }]
+          }
+        }
+      HELP
+    end
+
+    private def self.handle_on_session_end_command(
+      args : Array(String),
+    )
+      if args.first? == "-h" || args.first? == "--help"
+        show_on_session_end_help
+        return
+      end
+      handler = Hooks::OnSessionEnd.new
+      handler.run
+    end
+
+    private def self.show_on_session_end_help
+      puts <<-HELP
+      galaxy-ledger on-session-end - Handle SessionEnd hook
+
+      USAGE:
+        galaxy-ledger on-session-end
+
+      DESCRIPTION:
+        Called by Claude Code's SessionEnd hook when the session
+        exits. Records a single session:ended timeline event
+        with final session metrics. This is the inverse of
+        on-startup.
+
+      INPUT (stdin):
+        JSON object with hook data:
+        {
+          "session_id": "abc123",
+          "cwd": "/current/working/directory",
+          "hook_event_name": "SessionEnd"
+        }
+
+      HOOK CONFIGURATION:
+        Add to ~/.claude/settings.json:
+        {
+          "hooks": {
+            "SessionEnd": [{
+              "hooks": [{
+                "type": "command",
+                "command": "galaxy-ledger on-session-end",
+                "timeout": 10
               }]
             }]
           }

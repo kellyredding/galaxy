@@ -41,6 +41,17 @@ module GalaxyLedger
           ],
         },
       ],
+      "SessionEnd" => [
+        {
+          "hooks" => [
+            {
+              "type"    => "command",
+              "command" => "~/.claude/galaxy/bin/galaxy-ledger on-session-end",
+              "timeout" => 10,
+            },
+          ],
+        },
+      ],
       "SessionStart" => [
         {
           "matcher" => "startup",
