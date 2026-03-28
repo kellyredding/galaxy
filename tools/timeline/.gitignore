@@ -1,0 +1,21 @@
+# Dependencies
+/lib/
+/.shards/
+
+# Build output
+/build/
+*.dwarf
+
+# Release artifacts
+/releases/
+
+# Generated docs
+/docs/
+
+# macOS
+.DS_Store
+
+# Editor/IDE
+.idea/
+*.swp
+*~

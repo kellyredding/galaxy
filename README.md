@@ -10,6 +10,7 @@
 | [ledger](tools/ledger/) | Continuous context management for Claude Code | Active |
 | [snapshots](tools/snapshots/) | Session snapshot management for Claude Code | Active |
 | [artifacts](tools/artifacts/) | Session artifact management for Claude Code | Active |
+| [timeline](tools/timeline/) | Session timeline event recording for Claude Code | Active |
 
 ## Quick Install
 
@@ -23,6 +24,7 @@ make statusline-install
 make ledger-install
 make snapshots-install
 make artifacts-install
+make timeline-install
 ```
 
 Or build individual tools:
@@ -66,6 +68,12 @@ Session artifact management for Claude Code. Stores, retrieves, and manages docu
 
 See [tools/artifacts/](tools/artifacts/) for detailed documentation.
 
+### timeline
+
+Session timeline event recording for Claude Code. Records timestamped events across the Galaxy ecosystem, providing a unified chronological log of session activity (starts, stops, clears, snapshots, etc.).
+
+See [tools/timeline/](tools/timeline/) for detailed documentation.
+
 ## Development
 
 Each tool is self-contained in its own directory under `tools/`. Tools may be written in different languages, but currently all are written in [Crystal](https://crystal-lang.org/).
@@ -98,7 +106,8 @@ galaxy/
     ├── statusline/           # Status line tool
     ├── ledger/               # Continuous context management
     ├── snapshots/            # Session snapshot management
-    └── artifacts/            # Session artifact management
+    ├── artifacts/            # Session artifact management
+    └── timeline/             # Session timeline events
 ```
 
 ## License
