@@ -45,7 +45,7 @@ index deca240..4f8f287 100644
          dependencies: [
              "SwiftTerm",
 diff --git a/Sources/SwiftTerm/Apple/AppleTerminalView.swift b/Sources/SwiftTerm/Apple/AppleTerminalView.swift
-index 553a94c..7f5cef1 100644
+index 553a94c..1b796d1 100644
 --- a/Sources/SwiftTerm/Apple/AppleTerminalView.swift
 +++ b/Sources/SwiftTerm/Apple/AppleTerminalView.swift
 @@ -14,6 +14,13 @@ import ImageIO
@@ -229,11 +229,24 @@ index 553a94c..7f5cef1 100644
      }
      
      /// Scrolls the content of the terminal one page up
-@@ -1547,13 +1606,33 @@ extension TerminalView {
+@@ -1547,13 +1606,46 @@ extension TerminalView {
      func feedPrepare()
      {
          search.invalidate()
 -        selection.active = false
++        // GALAXY: Recover from stuck userScrolling before the feed
++        // runs. A transient selection (click-drag that clears before
++        // the next data chunk) can leave userScrolling true while the
++        // viewport is still at the bottom. Clearing it here ensures
++        // Terminal.scroll() keeps yDisp tracking yBase during this
++        // feed. Only fires when at bottom with no active selection —
++        // genuine scroll-up (yDisp < yBase) is not affected.
++        if !selection.active && terminal.userScrolling {
++            let buf = terminal.displayBuffer
++            if buf.yDisp >= buf.yBase {
++                terminal.userScrolling = false
++            }
++        }
 +        // GALAXY: Only clear selection when following live output.
 +        // When the user has scrolled up or has an active selection,
 +        // incoming data goes to yBase+y (beyond the frozen viewport)
@@ -265,7 +278,7 @@ index 553a94c..7f5cef1 100644
          queuePendingDisplay()
      }
      
-@@ -1573,33 +1652,10 @@ extension TerminalView {
+@@ -1573,33 +1665,10 @@ extension TerminalView {
          feedFinish()
      }
           
