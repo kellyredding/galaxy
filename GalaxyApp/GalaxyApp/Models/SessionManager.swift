@@ -468,13 +468,6 @@ class SessionManager: ObservableObject {
         // Start process: --resume if session exists in Claude storage, --session-id if not
         session.startProcess(executablePath: executablePath, resume: canResume)
 
-        // Send handoff after Claude finishes booting.
-        session.afterNextIdle { [weak session] in
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak session] in
-                session?.sendCommand("/handoff")
-            }
-        }
-
         // Make this the active session
         activeSessionId = session.id
         SessionPersistence.shared.markDirty()
