@@ -129,9 +129,10 @@ describe GalaxyLedger::SkillsManager do
     it "reports not installed when nothing installed" do
       status = GalaxyLedger::SkillsManager.status
       status.installed.should be_false
-      status.skills.size.should eq(2)
+      status.skills.size.should eq(3)
       status.skills.map(&.name).should contain("handoff")
       status.skills.map(&.name).should contain("spend")
+      status.skills.map(&.name).should contain("ledger:resume")
       status.skills.all?(&.installed).should be_false
     end
 
@@ -182,6 +183,51 @@ describe GalaxyLedger::SkillsManager do
       content.should contain("MANDATORY")
       content.should contain("code block")
       content.should contain("Do NOT summarize")
+    end
+  end
+
+  describe "ledger:resume skill" do
+    it "writes SKILL.md to the source directory" do
+      GalaxyLedger::SkillsManager.install
+
+      source_file = GalaxyLedger::SKILLS_DIR / "ledger:resume" / "SKILL.md"
+      File.exists?(source_file).should be_true
+
+      content = File.read(source_file)
+      content.should contain("name: ledger:resume")
+      content.should contain("disable-model-invocation: true")
+    end
+
+    it "creates symlink in Claude skills directory" do
+      GalaxyLedger::SkillsManager.install
+
+      symlink_path = GalaxyLedger::CLAUDE_SKILLS_DIR / "ledger:resume"
+      File.symlink?(symlink_path).should be_true
+
+      target = File.readlink(symlink_path.to_s)
+      target.should contain("galaxy")
+      target.should contain("skills/ledger:resume")
+    end
+
+    it "includes CWD restore as Step 1" do
+      content = GalaxyLedger::SkillsManager::RESUME_SKILL
+      content.should contain("Step 1")
+      content.should contain("Restore Working Directory")
+      content.should contain("`cd`")
+      content.should contain("Working directory")
+    end
+
+    it "includes brief check-in as Step 2" do
+      content = GalaxyLedger::SkillsManager::RESUME_SKILL
+      content.should contain("Step 2")
+      content.should contain("Brief Check-In")
+      content.should contain("Do NOT re-read guideline files")
+    end
+
+    it "is lighter than full handoff" do
+      content = GalaxyLedger::SkillsManager::RESUME_SKILL
+      content.should contain("lighter than")
+      content.should contain("conversation history is intact")
     end
   end
 

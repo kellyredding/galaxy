@@ -162,9 +162,13 @@ end
 # Use after Database writes that precede run_binary() subprocess calls.
 # Uses Database.open to inherit busy_timeout, preventing lock contention
 # when called from concurrent fibers (e.g., eval tests).
+# Flush WAL to main DB so subprocess connections see recently
+# committed data. Uses TRUNCATE mode to guarantee a full
+# checkpoint — PASSIVE can skip pages if concurrent readers/writers
+# hold locks, causing subprocess resolution failures in evals.
 def flush_wal
   GalaxyLedger::Database.open do |db|
-    db.exec("PRAGMA wal_checkpoint(PASSIVE)")
+    db.exec("PRAGMA wal_checkpoint(TRUNCATE)")
   end
 end
 

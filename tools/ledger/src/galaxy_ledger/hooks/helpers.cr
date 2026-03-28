@@ -71,6 +71,33 @@ module GalaxyLedger
         end
       end
 
+      # Determine the best working directory from a session record.
+      #
+      # Preference chain:
+      #   1. last_stop_cwd  — stamped by Stop hook at turn boundary
+      #   2. previous_cwd   — saved by status line before overwrite
+      #   3. cwd column     — live value (may reflect post-reset root)
+      def best_cwd(
+        session_record : Database::SessionRecord?,
+      ) : String?
+        return nil unless session_record
+
+        begin
+          ctx = JSON.parse(session_record.context)
+
+          if stop_cwd = ctx["last_stop_cwd"]?.try(&.as_s?)
+            return stop_cwd unless stop_cwd.empty?
+          end
+
+          if prev = ctx["previous_cwd"]?.try(&.as_s?)
+            return prev unless prev.empty?
+          end
+        rescue
+        end
+
+        session_record.cwd
+      end
+
       # Truncate text to a maximum length, appending a suffix if truncated.
       def truncate(text : String, max : Int32, suffix : String = "...") : String
         return text if text.size <= max

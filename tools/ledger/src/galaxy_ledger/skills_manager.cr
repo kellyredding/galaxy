@@ -100,10 +100,47 @@ module GalaxyLedger
        comparisons — whatever is interesting in the data
     SKILL
 
+    RESUME_SKILL = <<-'SKILL'
+    ---
+    name: ledger:resume
+    description: Restore working directory and confirm session state after resume
+    disable-model-invocation: true
+    ---
+
+    Restore session state after a resume. This is lighter than a
+    full /handoff — conversation history is already restored by
+    Claude Code's --resume flag.
+
+    Follow these steps in order. Do not skip or reorder steps.
+
+    ## Step 1 — Restore Working Directory
+
+    Run `pwd` to check your current directory, then compare it
+    to the Working directory from the Galaxy Ledger context
+    injected above (look for `**Working directory**` under
+    `## Galaxy Ledger`).
+
+    If they differ, `cd` to the Working directory immediately.
+
+    If no Working directory is present in the context, skip
+    this step.
+
+    ## Step 2 — Brief Check-In
+
+    Present a one-line confirmation:
+    - Working directory status (restored or already correct)
+    - Git branch (from the ledger context if available)
+
+    Do NOT re-read guideline files or present a full handoff
+    summary — the conversation history is intact on resume.
+    Keep this fast and minimal.
+    SKILL
+
     # All ledger-managed skills: name => SKILL.md content
     LEDGER_SKILLS = {
-      "handoff" => HANDOFF_SKILL,
-      "spend"   => SPEND_SKILL,
+      "handoff"       => HANDOFF_SKILL,
+      "spend"         => SPEND_SKILL,
+      "ledger:resume" => RESUME_SKILL,
     }
 
     # Old skill names to clean up on install (renamed or removed)

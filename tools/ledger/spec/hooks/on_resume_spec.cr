@@ -250,6 +250,59 @@ describe "OnResume cwd and git_branch in additionalContext" do
     ctx.should contain("**Working directory**: `~/projects/galaxy`")
     ctx.should contain("**Git branch**: `main`")
   end
+
+  it "includes CWD restore directive when cwd is present" do
+    test_session_id = "resume-cwd-directive-#{Random.rand(10000)}"
+    ledger_id = GalaxyLedger::Database.create_session(test_session_id)
+    GalaxyLedger::Database.update_session(
+      ledger_id,
+      cwd: "#{Path.home}/projects/my-app",
+    )
+
+    hook_input = {"session_id" => test_session_id}.to_json
+
+    result = run_binary(["on-resume"], stdin: hook_input)
+    output = JSON.parse(result[:output])
+    ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+    ctx.should contain("**REQUIRED**")
+    ctx.should contain("`cd`")
+  end
+
+  it "omits CWD restore directive when cwd is nil" do
+    test_session_id = "resume-no-directive-#{Random.rand(10000)}"
+    GalaxyLedger::Database.create_session(test_session_id)
+
+    hook_input = {"session_id" => test_session_id}.to_json
+
+    result = run_binary(["on-resume"], stdin: hook_input)
+    output = JSON.parse(result[:output])
+    ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+    ctx.should_not contain("**REQUIRED**")
+  end
+
+  it "prefers last_stop_cwd over cwd column via best_cwd" do
+    test_session_id = "resume-best-cwd-#{Random.rand(10000)}"
+    ledger_id = GalaxyLedger::Database.create_session(test_session_id)
+
+    # Set the cwd column to the project root
+    GalaxyLedger::Database.update_session(
+      ledger_id,
+      cwd: "#{Path.home}/projects/galaxy",
+    )
+
+    # Stamp last_stop_cwd to a deeper subdirectory
+    GalaxyLedger::Database.stamp_stop_cwd(
+      ledger_id,
+      "#{Path.home}/projects/galaxy/tools/ledger",
+    )
+
+    hook_input = {"session_id" => test_session_id}.to_json
+
+    result = run_binary(["on-resume"], stdin: hook_input)
+    output = JSON.parse(result[:output])
+    ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+    ctx.should contain("~/projects/galaxy/tools/ledger")
+  end
 end
 
 describe "OnResume resolves to original session via env var" do

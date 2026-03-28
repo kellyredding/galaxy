@@ -120,7 +120,7 @@ module GalaxyLedger
           claude_pid: claude_pid,
           restoration: restoration,
           files: files,
-          cwd: session_record.try(&.cwd),
+          cwd: Helpers.best_cwd(session_record),
           git_branch: session_record.try(&.git_branch),
         )
 
@@ -221,6 +221,17 @@ module GalaxyLedger
         if branch = git_branch
           lines << "**Git branch**: `#{branch}`" unless branch.empty?
         end
+
+        # CWD restore directive — tells Claude to cd on resume
+        if cwd_val = cwd
+          unless cwd_val.empty?
+            lines << ""
+            lines << "**REQUIRED**: If your current working directory"
+            lines << "differs from the Working directory above, `cd`"
+            lines << "to it before responding to the user."
+          end
+        end
+
         lines << ""
         lines << "A persistent context ledger is active for this session. It"
         lines << "automatically captures the following as you work:"

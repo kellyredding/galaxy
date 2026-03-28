@@ -171,6 +171,95 @@ describe GalaxyLedger::Hooks::Helpers do
     end
   end
 
+  describe ".best_cwd" do
+    it "returns nil for nil session_record" do
+      GalaxyLedger::Hooks::Helpers.best_cwd(nil).should be_nil
+    end
+
+    it "prefers last_stop_cwd over previous_cwd and cwd" do
+      ctx = {
+        "last_stop_cwd" => "/home/user/deep/subdir",
+        "previous_cwd"  => "/home/user/projects",
+      }.to_json
+      record = make_session_record(
+        context_json: ctx,
+        cwd: "/home/user",
+      )
+
+      result = GalaxyLedger::Hooks::Helpers.best_cwd(record)
+      result.should eq("/home/user/deep/subdir")
+    end
+
+    it "falls back to previous_cwd when last_stop_cwd missing" do
+      ctx = {"previous_cwd" => "/home/user/projects"}.to_json
+      record = make_session_record(
+        context_json: ctx,
+        cwd: "/home/user",
+      )
+
+      result = GalaxyLedger::Hooks::Helpers.best_cwd(record)
+      result.should eq("/home/user/projects")
+    end
+
+    it "falls back to cwd column when context has neither key" do
+      record = make_session_record(
+        context_json: "{}",
+        cwd: "/home/user/fallback",
+      )
+
+      result = GalaxyLedger::Hooks::Helpers.best_cwd(record)
+      result.should eq("/home/user/fallback")
+    end
+
+    it "skips empty last_stop_cwd and uses previous_cwd" do
+      ctx = {
+        "last_stop_cwd" => "",
+        "previous_cwd"  => "/home/user/projects",
+      }.to_json
+      record = make_session_record(
+        context_json: ctx,
+        cwd: "/home/user",
+      )
+
+      result = GalaxyLedger::Hooks::Helpers.best_cwd(record)
+      result.should eq("/home/user/projects")
+    end
+
+    it "skips empty previous_cwd and uses cwd column" do
+      ctx = {
+        "last_stop_cwd" => "",
+        "previous_cwd"  => "",
+      }.to_json
+      record = make_session_record(
+        context_json: ctx,
+        cwd: "/home/user/fallback",
+      )
+
+      result = GalaxyLedger::Hooks::Helpers.best_cwd(record)
+      result.should eq("/home/user/fallback")
+    end
+
+    it "handles invalid context JSON gracefully" do
+      record = make_session_record(
+        context_json: "not valid json",
+        cwd: "/home/user/rescue",
+      )
+
+      result = GalaxyLedger::Hooks::Helpers.best_cwd(record)
+      result.should eq("/home/user/rescue")
+    end
+
+    it "returns nil when all sources are nil/empty" do
+      record = make_session_record(
+        context_json: "{}",
+        cwd: nil,
+      )
+
+      result = GalaxyLedger::Hooks::Helpers.best_cwd(record)
+      result.should be_nil
+    end
+  end
+
   describe ".output_json" do
     it "produces valid JSON with expected structure" do
       json_str = GalaxyLedger::Hooks::Helpers.output_json("status line", "context here")
@@ -180,6 +269,36 @@ describe GalaxyLedger::Hooks::Helpers do
       parsed["hookSpecificOutput"]["additionalContext"].as_s.should eq("context here")
     end
   end
+end
+
+# Helper to build a SessionRecord with specific context and cwd
+def make_session_record(
+  context_json : String = "{}",
+  cwd : String? = nil,
+) : GalaxyLedger::Database::SessionRecord
+  GalaxyLedger::Database::SessionRecord.new(
+    id: 1_i64,
+    suggested_name: nil,
+    suggested_name_data: "{}",
+    current_session_identifier: nil,
+    current_claude_pid: nil,
+    started_at: nil,
+    updated_at: nil,
+    cwd: cwd,
+    project_dir: nil,
+    git_branch: nil,
+    model_id: nil,
+    model_display_name: nil,
+    claude_version: nil,
+    context_percentage: 0.0,
+    tokens_used: 0_i64,
+    tokens_max: 0_i64,
+    cost_usd: 0.0,
+    lines_added: 0_i64,
+    lines_removed: 0_i64,
+    context: context_json,
+    last_interaction: nil,
+  )
 end
 
 # Helper to create a StoredEntry for testing
