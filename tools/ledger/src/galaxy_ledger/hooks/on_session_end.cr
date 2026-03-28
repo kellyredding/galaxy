@@ -9,14 +9,28 @@ module GalaxyLedger
     #
     # Not to be confused with the Stop hook, which fires after
     # every assistant turn.
+    #
+    # Claude Code fires SessionEnd before SessionStart(clear),
+    # so /clear triggers a spurious session:ended event. We
+    # skip the timeline event when reason is "clear" because
+    # the session continues — only the context was reset.
     class OnSessionEnd
+      # Reasons that indicate a context reset, not a true
+      # session exit. SessionEnd with these reasons is noise.
+      CONTEXT_RESET_REASONS = ["clear"]
+
       @stdin_session_identifier : String?
       @stdin_cwd : String?
+      @stdin_reason : String?
 
       def run
         return if ENV["GALAXY_SKIP_HOOKS"]? == "1"
 
         parse_hook_input
+
+        # Skip timeline event for context resets — the
+        # session continues, only the context was cleared.
+        return if context_reset?
 
         claude_pid = Process.ppid.to_i64
         env_session_id = ENV[Resolver::ENV_SESSION_ID_KEY]?
@@ -64,6 +78,11 @@ module GalaxyLedger
         end
       end
 
+      private def context_reset? : Bool
+        return false unless reason = @stdin_reason
+        CONTEXT_RESET_REASONS.includes?(reason)
+      end
+
       private def parse_hook_input
         begin
           input = STDIN.gets_to_end
@@ -73,6 +92,7 @@ module GalaxyLedger
           @stdin_session_identifier = json["session_id"]?
             .try(&.as_s?)
           @stdin_cwd = json["cwd"]?.try(&.as_s?)
+          @stdin_reason = json["reason"]?.try(&.as_s?)
         rescue
           # Silently ignore parse errors
         end

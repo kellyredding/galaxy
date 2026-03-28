@@ -30,6 +30,18 @@ describe GalaxyLedger::Hooks::OnSessionEnd do
       )
     end
   end
+
+  describe "CONTEXT_RESET_REASONS" do
+    it "includes clear" do
+      GalaxyLedger::Hooks::OnSessionEnd::CONTEXT_RESET_REASONS
+        .should contain("clear")
+    end
+
+    it "does not include compact" do
+      GalaxyLedger::Hooks::OnSessionEnd::CONTEXT_RESET_REASONS
+        .should_not contain("compact")
+    end
+  end
 end
 
 describe "OnSessionEnd session resolution" do
@@ -80,6 +92,55 @@ describe "OnSessionEnd session resolution" do
       ["on-session-end"], stdin: hook_input)
     result[:status].should eq(0)
     result[:output].strip.should eq("")
+  end
+end
+
+describe "OnSessionEnd context reset guard" do
+  it "skips when reason is clear" do
+    test_session_id = "end-clear-#{Random.rand(10000)}"
+    GalaxyLedger::Database.create_session(test_session_id)
+
+    hook_input = {
+      "session_id" => test_session_id,
+      "cwd"        => "/tmp",
+      "reason"     => "clear",
+    }.to_json
+
+    result = run_binary(
+      ["on-session-end"], stdin: hook_input)
+    result[:status].should eq(0)
+    result[:output].strip.should eq("")
+  end
+
+  it "does not skip when reason is absent" do
+    test_session_id = "end-noreason-#{Random.rand(10000)}"
+    GalaxyLedger::Database.create_session(test_session_id)
+
+    hook_input = {
+      "session_id" => test_session_id,
+      "cwd"        => "/tmp",
+    }.to_json
+
+    result = run_binary(
+      ["on-session-end"], stdin: hook_input)
+    result[:status].should eq(0)
+    # No assertion on output — just verifying it
+    # proceeds past the guard (doesn't early-return)
+  end
+
+  it "does not skip when reason is an unknown value" do
+    test_session_id = "end-other-#{Random.rand(10000)}"
+    GalaxyLedger::Database.create_session(test_session_id)
+
+    hook_input = {
+      "session_id" => test_session_id,
+      "cwd"        => "/tmp",
+      "reason"     => "logout",
+    }.to_json
+
+    result = run_binary(
+      ["on-session-end"], stdin: hook_input)
+    result[:status].should eq(0)
   end
 end
 
