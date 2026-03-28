@@ -342,3 +342,31 @@ describe "OnStartup without env var (no persona)" do
     sessions.size.should eq(1)
   end
 end
+
+describe "OnStartup timeline recording" do
+  it "succeeds even when galaxy-timeline is unavailable" do
+    # The fire-and-forget Process.new to galaxy-timeline may fail
+    # (binary not in PATH) — the hook must still complete normally.
+    test_session_id = "startup-timeline-#{Random.rand(10000)}"
+    hook_input = {"session_id" => test_session_id}.to_json
+
+    result = run_binary(["on-startup"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    output = JSON.parse(result[:output])
+    output["systemMessage"].as_s.should contain("Ledger active")
+    ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+    ctx.should contain("## Galaxy Ledger")
+  end
+
+  it "does not affect session creation" do
+    test_session_id = "startup-timeline-create-#{Random.rand(10000)}"
+    hook_input = {"session_id" => test_session_id}.to_json
+
+    result = run_binary(["on-startup"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    session = GalaxyLedger::Database.get_session(test_session_id)
+    session.should_not be_nil
+  end
+end

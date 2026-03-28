@@ -70,6 +70,23 @@ describe "CLI snapshot commands", tags: "integration" do
       result[:status].should_not eq(0)
       result[:error].should contain("no content provided on stdin")
     end
+
+    it "succeeds even when galaxy-timeline is unavailable" do
+      # The fire-and-forget timeline recording should not affect
+      # snapshot creation when the binary is not in PATH.
+      result = run_binary(
+        ["create", "--ledger-session-id", "1", "--title", "Timeline test"],
+        stdin: "## Test\n\nTimeline integration content",
+      )
+
+      result[:status].should eq(0)
+      result[:output].should contain("Snapshot #1 saved")
+      result[:output].should contain("Timeline test")
+
+      snapshot = GalaxySnapshots::Database.get_snapshot_by_number(1_i64, 1)
+      snapshot.should_not be_nil
+      snapshot.not_nil!.title.should eq("Timeline test")
+    end
   end
 
   describe "list" do

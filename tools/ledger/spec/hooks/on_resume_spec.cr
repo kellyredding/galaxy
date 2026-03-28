@@ -515,6 +515,44 @@ describe "OnResume orphan cleanup" do
   end
 end
 
+describe "OnResume timeline recording" do
+  it "succeeds even when galaxy-timeline is unavailable" do
+    test_session_id = "resume-timeline-#{Random.rand(10000)}"
+    GalaxyLedger::Database.create_session(test_session_id)
+
+    hook_input = {"session_id" => test_session_id}.to_json
+
+    result = run_binary(["on-resume"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    output = JSON.parse(result[:output])
+    output["systemMessage"].as_s.should contain("Resumed")
+    ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+    ctx.should contain("## Galaxy Ledger")
+  end
+
+  it "does not affect restoration data output" do
+    test_session_id = "resume-timeline-data-#{Random.rand(10000)}"
+    ledger_id = GalaxyLedger::Database.create_session(test_session_id)
+
+    entry = GalaxyLedger::Entry.new(
+      entry_type: "learning",
+      content: "Timeline test learning",
+      importance: "medium",
+    )
+    GalaxyLedger::Database.insert(ledger_id, entry)
+
+    hook_input = {"session_id" => test_session_id}.to_json
+
+    result = run_binary(["on-resume"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    output = JSON.parse(result[:output])
+    msg = output["systemMessage"].as_s
+    msg.should contain("1 learning")
+  end
+end
+
 describe "OnResume edge cases" do
   it "handles empty stdin gracefully" do
     result = run_binary(["on-resume"], stdin: "")

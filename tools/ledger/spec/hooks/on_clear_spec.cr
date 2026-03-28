@@ -1069,3 +1069,58 @@ describe "OnClear extraction await" do
     end
   end
 end
+
+describe "OnClear timeline recording" do
+  it "succeeds even when galaxy-timeline is unavailable" do
+    # OnClear calls galaxy-timeline record --json synchronously.
+    # When the binary is unavailable, record_timeline_event returns nil
+    # and ContextHandoff receives timeline_event_id: nil — both the
+    # initial record and the enrichment are skipped gracefully.
+    test_session_id = "clear-timeline-#{Random.rand(10000)}"
+    ledger_session_id = GalaxyLedger::Database.create_session(
+      test_session_id, claude_pid: Process.pid.to_i64)
+
+    hook_input = {
+      "session_id" => test_session_id,
+      "source"     => "clear",
+    }.to_json
+
+    result = run_binary(["on-clear"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    output = JSON.parse(result[:output])
+    output["systemMessage"].as_s.should contain("Handoff")
+    ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+    ctx.should contain("## Session Context Handoff")
+  end
+
+  it "still produces full handoff with restoration data" do
+    test_session_id = "clear-timeline-data-#{Random.rand(10000)}"
+    ledger_session_id = GalaxyLedger::Database.create_session(
+      test_session_id, claude_pid: Process.pid.to_i64)
+
+    entry = GalaxyLedger::Entry.new(
+      entry_type: "decision",
+      content: "Timeline integration test decision",
+      importance: "high",
+    )
+    GalaxyLedger::Database.insert(ledger_session_id, entry)
+    GalaxyLedger::Database.upsert_session_file(
+      ledger_session_id, "/tmp/test.cr", :edit,
+    )
+
+    hook_input = {
+      "session_id" => test_session_id,
+      "source"     => "clear",
+    }.to_json
+
+    result = run_binary(["on-clear"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    output = JSON.parse(result[:output])
+    ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+    ctx.should contain("### Key Decisions")
+    ctx.should contain("Timeline integration test decision")
+    ctx.should contain("### Session File Manifest")
+  end
+end

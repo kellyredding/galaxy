@@ -108,6 +108,33 @@ module GalaxyLedger
           event: "session.startup",
         )
 
+        # Record timeline event (fire-and-forget)
+        begin
+          Process.new(
+            "galaxy-timeline",
+            args: [
+              "record",
+              "--ledger-session-id",
+              ledger_session_id.to_s,
+              "--event-type", "session:started",
+              "--source",
+              "galaxy-ledger/hooks/on_startup",
+              "--detail-data",
+              {
+                cwd:                current_cwd,
+                git_branch:         current_git_branch,
+                session_identifier: session_id,
+                env_session_id:     env_session_id,
+              }.to_json,
+            ],
+            input: Process::Redirect::Close,
+            output: Process::Redirect::Close,
+            error: Process::Redirect::Close,
+          )
+        rescue
+          # Best-effort — timeline unavailable is not fatal
+        end
+
         # Query existing session data (will be empty for fresh session)
         restoration = Database.query_for_restoration(ledger_session_id)
         files = Database.session_files(ledger_session_id)

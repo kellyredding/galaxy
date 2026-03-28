@@ -69,6 +69,36 @@ module GalaxyLedger
         session_record = Database.get_session_by_id(ledger_session_id)
         return unless session_record
 
+        # Record timeline event (fire-and-forget)
+        begin
+          Process.new(
+            "galaxy-timeline",
+            args: [
+              "record",
+              "--ledger-session-id",
+              ledger_session_id.to_s,
+              "--event-type", "session:stopped",
+              "--source",
+              "galaxy-ledger/hooks/on_stop",
+              "--detail-data",
+              {
+                cwd:                @stdin_cwd,
+                git_branch:         compute_git_branch,
+                context_percentage: session_record
+                  .context_percentage,
+                tokens_used: session_record.tokens_used,
+                tokens_max:  session_record.tokens_max,
+                cost_usd:    session_record.cost_usd,
+              }.to_json,
+            ],
+            input: Process::Redirect::Close,
+            output: Process::Redirect::Close,
+            error: Process::Redirect::Close,
+          )
+        rescue
+          # Best-effort — timeline unavailable is not fatal
+        end
+
         # Build and output structured JSON system message
         system_message = build_system_message(
           percentage: session_record.context_percentage,
@@ -232,6 +262,20 @@ module GalaxyLedger
         rescue
           false
         end
+      end
+
+      private def compute_git_branch : String?
+        output = IO::Memory.new
+        status = Process.run(
+          "git", ["rev-parse", "--abbrev-ref", "HEAD"],
+          output: output,
+          error: Process::Redirect::Close,
+        )
+        return nil unless status.success?
+        branch = output.to_s.strip
+        branch.empty? ? nil : branch
+      rescue
+        nil
       end
     end
   end

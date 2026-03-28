@@ -216,6 +216,54 @@ describe "OnCompact cwd and git_branch in additionalContext" do
   end
 end
 
+describe "OnCompact timeline recording" do
+  it "succeeds even when galaxy-timeline is unavailable" do
+    test_session_id = "compact-timeline-#{Random.rand(10000)}"
+    ledger_session_id = GalaxyLedger::Database.create_session(
+      test_session_id, claude_pid: Process.pid.to_i64)
+
+    hook_input = {
+      "session_id" => test_session_id,
+      "source"     => "compact",
+    }.to_json
+
+    result = run_binary(["on-compact"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    output = JSON.parse(result[:output])
+    output["systemMessage"].as_s.should contain("Handoff")
+    ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+    ctx.should contain("## Session Context Handoff")
+  end
+
+  it "still produces full handoff with restoration data" do
+    test_session_id = "compact-timeline-data-#{Random.rand(10000)}"
+    ledger_session_id = GalaxyLedger::Database.create_session(
+      test_session_id, claude_pid: Process.pid.to_i64)
+
+    entry = GalaxyLedger::Entry.new(
+      entry_type: "learning",
+      content: "Compact timeline test learning",
+      importance: "medium",
+    )
+    GalaxyLedger::Database.insert(ledger_session_id, entry)
+
+    hook_input = {
+      "session_id" => test_session_id,
+      "source"     => "compact",
+    }.to_json
+
+    result = run_binary(["on-compact"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    output = JSON.parse(result[:output])
+    msg = output["systemMessage"].as_s
+    msg.should contain("1 learning")
+    ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+    ctx.should contain("Compact timeline test learning")
+  end
+end
+
 describe "OnCompact edge cases" do
   it "handles empty stdin gracefully" do
     result = run_binary(["on-compact"], stdin: "")

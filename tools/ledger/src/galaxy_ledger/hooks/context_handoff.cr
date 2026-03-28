@@ -26,6 +26,7 @@ module GalaxyLedger
         source : String?,
         event_name : String? = nil,
         transcript_path : String? = nil,
+        timeline_event_id : Int64? = nil,
       )
         # Resolve session via 3-tier chain (env var → PID → hook session_id),
         # creating a new session as last resort.
@@ -102,6 +103,23 @@ module GalaxyLedger
           snapshot_stats: snapshot_stats,
           artifact_count: artifact_count,
         )
+
+        # Enrich timeline event with full handoff data
+        if tl_id = timeline_event_id
+          enrich_timeline_event(
+            tl_id,
+            source: source,
+            restoration: restoration,
+            files: files,
+            exchanges: exchanges,
+            snapshot_stats: snapshot_stats,
+            artifact_count: artifact_count,
+            cwd: handoff_cwd(session_record),
+            git_branch: session_record.try(&.git_branch),
+            handoff_system_message: system_message,
+            handoff_content: context,
+          )
+        end
 
         puts Helpers.output_json(system_message, context)
       end
@@ -732,6 +750,68 @@ module GalaxyLedger
         json["artifacts"].as_a
       rescue
         [] of JSON::Any
+      end
+
+      private def self.enrich_timeline_event(
+        event_id : Int64,
+        source : String?,
+        restoration : Database::RestorationResult,
+        files : Array(Database::SessionFile),
+        exchanges : Array(Exchange::LastExchange),
+        snapshot_stats : NamedTuple(
+          count: Int32, total_chars: Int64,
+        ),
+        artifact_count : Int32,
+        cwd : String?,
+        git_branch : String?,
+        handoff_system_message : String,
+        handoff_content : String,
+      )
+        edited = files.count { |f|
+          f.is_edited || f.is_written
+        }
+        read_only = files.count { |f|
+          f.is_read && !f.is_edited &&
+            !f.is_written && !f.is_searched
+        }
+        decisions = restoration.tier1
+          .high_importance_decisions.size +
+                    restoration.tier2.medium_decisions.size
+        learnings = restoration.tier2.learnings.size
+
+        enriched = {
+          source:                 source,
+          cwd:                    cwd,
+          git_branch:             git_branch,
+          decisions_count:        decisions,
+          learnings_count:        learnings,
+          files_edited_count:     edited,
+          files_read_count:       read_only,
+          exchanges_count:        exchanges.size,
+          snapshot_count:         snapshot_stats[:count],
+          snapshot_total_chars:   snapshot_stats[:total_chars],
+          artifact_count:         artifact_count,
+          handoff_system_message: handoff_system_message,
+          handoff_content:        handoff_content,
+        }.to_json
+
+        # Fire-and-forget update via stdin to avoid arg
+        # length limits (handoff_content can be 8-10KB+)
+        begin
+          Process.new(
+            "galaxy-timeline",
+            args: [
+              "update",
+              event_id.to_s,
+              "--detail-data-stdin",
+            ],
+            input: IO::Memory.new(enriched),
+            output: Process::Redirect::Close,
+            error: Process::Redirect::Close,
+          )
+        rescue
+          # Best-effort — enrichment failure is not fatal
+        end
       end
 
       private def self.output_empty

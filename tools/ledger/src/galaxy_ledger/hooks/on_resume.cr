@@ -74,6 +74,39 @@ module GalaxyLedger
         restoration = Database.query_for_restoration(ledger_session_id)
         files = Database.session_files(ledger_session_id)
 
+        # Record timeline event (fire-and-forget)
+        begin
+          decisions = restoration.tier1
+            .high_importance_decisions.size +
+                      restoration.tier2.medium_decisions.size
+          learnings = restoration.tier2.learnings.size
+
+          Process.new(
+            "galaxy-timeline",
+            args: [
+              "record",
+              "--ledger-session-id",
+              ledger_session_id.to_s,
+              "--event-type", "session:resumed",
+              "--source",
+              "galaxy-ledger/hooks/on_resume",
+              "--detail-data",
+              {
+                cwd:             Dir.current,
+                git_branch:      compute_git_branch,
+                decisions_count: decisions,
+                learnings_count: learnings,
+                files_count:     files.size,
+              }.to_json,
+            ],
+            input: Process::Redirect::Close,
+            output: Process::Redirect::Close,
+            error: Process::Redirect::Close,
+          )
+        rescue
+          # Best-effort — timeline unavailable is not fatal
+        end
+
         # Build systemMessage
         system_message = Helpers.build_system_message(
           prefix: "Resumed",
@@ -238,6 +271,20 @@ module GalaxyLedger
         lines << "4. **Fall back to normal exploration** \u2014 Grep, Glob, Read as usual"
 
         lines.join("\n")
+      end
+
+      private def compute_git_branch : String?
+        output = IO::Memory.new
+        status = Process.run(
+          "git", ["rev-parse", "--abbrev-ref", "HEAD"],
+          output: output,
+          error: Process::Redirect::Close,
+        )
+        return nil unless status.success?
+        branch = output.to_s.strip
+        branch.empty? ? nil : branch
+      rescue
+        nil
       end
 
       private def output_empty

@@ -66,4 +66,18 @@ describe "CLI help and version", tags: "integration" do
     result[:status].should_not eq(0)
     result[:error].should contain("Unknown command")
   end
+
+  it "record help mentions --json flag" do
+    result = run_binary(["record", "--help"])
+
+    result[:status].should eq(0)
+    result[:output].should contain("--json")
+  end
+
+  it "update help mentions --detail-data-stdin flag" do
+    result = run_binary(["update", "--help"])
+
+    result[:status].should eq(0)
+    result[:output].should contain("--detail-data-stdin")
+  end
 end

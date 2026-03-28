@@ -74,6 +74,7 @@ module GalaxyTimeline
       source : String? = nil
       occurred_at : String? = nil
       detail_data : String? = nil
+      json_mode = false
 
       i = 0
       while i < args.size
@@ -127,6 +128,9 @@ module GalaxyTimeline
             STDERR.puts "Error: --detail-data requires a value"
             exit(1)
           end
+        when "--json"
+          json_mode = true
+          i += 1
         else
           STDERR.puts "Error: Unknown option '#{arg}'"
           STDERR.puts "Run 'galaxy-timeline record --help' for usage"
@@ -171,7 +175,12 @@ module GalaxyTimeline
           "timeline.event_recorded",
           ref: id.to_s,
         )
-        puts "Event ##{id} recorded (type: #{event_type}, source: #{source})"
+        if json_mode
+          puts ({id: id}).to_json
+        else
+          puts "Event ##{id} recorded " \
+               "(type: #{event_type}, source: #{source})"
+        end
       else
         STDERR.puts "Error: failed to record event"
         exit(1)
@@ -366,6 +375,7 @@ module GalaxyTimeline
     private def self.handle_update(args : Array(String))
       event_id : Int64? = nil
       detail_data : String? = nil
+      detail_data_stdin = false
 
       i = 0
       while i < args.size
@@ -379,6 +389,9 @@ module GalaxyTimeline
             STDERR.puts "Error: --detail-data requires a value"
             exit(1)
           end
+        when "--detail-data-stdin"
+          detail_data_stdin = true
+          i += 1
         else
           if n = arg.to_i64?
             event_id = n
@@ -394,6 +407,14 @@ module GalaxyTimeline
       unless event_id
         STDERR.puts "Error: event ID is required"
         exit(1)
+      end
+
+      # --detail-data-stdin takes precedence over --detail-data
+      if detail_data_stdin
+        stdin_content = STDIN.gets_to_end
+        unless stdin_content.strip.empty?
+          detail_data = stdin_content
+        end
       end
 
       result = Database.update_event(event_id, detail_data)
@@ -795,6 +816,8 @@ module GalaxyTimeline
         --occurred-at DATETIME  When the event occurred
                                 (default: now, UTC)
         --detail-data JSON      JSON blob of event details
+        --json                  Output event ID as JSON
+                                (e.g. {"id":1})
       HELP
     end
 
@@ -840,8 +863,12 @@ module GalaxyTimeline
 
       REQUIRED:
         ID                     Event ID (positional)
+
+      OPTIONS (one of):
         --detail-data JSON     Replacement JSON blob
                                (replaces existing data)
+        --detail-data-stdin    Read detail_data JSON from
+                               stdin (for large payloads)
       HELP
     end
 

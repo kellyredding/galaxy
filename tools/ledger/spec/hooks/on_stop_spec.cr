@@ -737,6 +737,49 @@ describe "OnStop background task count in systemMessage" do
   end
 end
 
+describe "OnStop timeline recording" do
+  test_session_id = "on-stop-timeline-#{Random.rand(10000)}"
+  ledger_session_id = 0_i64
+
+  before_each do
+    GalaxyLedger::Database.delete_session(test_session_id)
+    ledger_session_id = GalaxyLedger::Database.create_session(
+      test_session_id,
+    )
+  end
+
+  after_each do
+    GalaxyLedger::Database.delete_session(test_session_id)
+  end
+
+  it "succeeds even when galaxy-timeline is unavailable" do
+    transcript_file = File.tempfile("transcript", ".jsonl")
+    transcript_file.print(
+      %|{"type":"user","timestamp":"2026-02-01T10:00:00Z",| \
+      %|"message":{"role":"user","content":"Test"}}\n|,
+    )
+    transcript_file.print(
+      %|{"type":"assistant","timestamp":"2026-02-01T10:01:00Z",| \
+      %|"message":{"role":"assistant","content":"Response"}}\n|,
+    )
+    transcript_file.close
+
+    hook_input = {
+      "session_id"       => test_session_id,
+      "transcript_path"  => transcript_file.path,
+      "stop_hook_active" => false,
+    }.to_json
+
+    result = run_binary(["on-stop"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    json = JSON.parse(result[:output])
+    json["decision"].as_s.should eq("approve")
+
+    File.delete(transcript_file.path)
+  end
+end
+
 describe "OnStop CLI help" do
   it "shows help with -h flag" do
     result = run_binary(["on-stop", "-h"])

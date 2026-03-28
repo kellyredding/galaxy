@@ -173,6 +173,33 @@ module GalaxySnapshots
           event: "snapshot.created",
           ref: number.to_s,
         )
+
+        # Record timeline event (fire-and-forget)
+        begin
+          Process.new(
+            "galaxy-timeline",
+            args: [
+              "record",
+              "--ledger-session-id",
+              ledger_session_id.to_s,
+              "--event-type", "snapshot:created",
+              "--source",
+              "galaxy-snapshots/cli/create",
+              "--detail-data",
+              {
+                snapshot_number: number,
+                title:           title,
+                exchange_count:  exchange_count,
+                char_count:      content.size,
+              }.to_json,
+            ],
+            input: Process::Redirect::Close,
+            output: Process::Redirect::Close,
+            error: Process::Redirect::Close,
+          )
+        rescue
+          # Best-effort — timeline unavailable is not fatal
+        end
       else
         STDERR.puts "Error: failed to save snapshot"
         exit(1)
