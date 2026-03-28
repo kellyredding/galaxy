@@ -9,6 +9,7 @@ enum AnnotationMessage {
     case create(startLine: Int32, endLine: Int32, content: String)
     case update(number: Int32, content: String)
     case delete(number: Int32)
+    case confirmDragReplace(startIdx: Int, endIdx: Int)
 }
 
 // MARK: - Silent WKWebView
@@ -154,6 +155,16 @@ struct MarkdownReaderView: NSViewRepresentable {
             case "delete":
                 guard let number = body["number"] as? Int else { return }
                 onAnnotationMessage?(.delete(number: Int32(number)))
+            case "confirmDragReplace":
+                guard let startIdx = body["startIdx"] as? Int,
+                      let endIdx = body["endIdx"] as? Int
+                else { return }
+                onAnnotationMessage?(
+                    .confirmDragReplace(
+                        startIdx: startIdx,
+                        endIdx: endIdx
+                    )
+                )
             default:
                 break
             }
@@ -742,11 +753,28 @@ private func buildFullHTML(
                 var endIdx = self.blocks.indexOf(endBlock);
                 if (startIdx < 0 || endIdx < 0) return;
 
-                self.showFormForSelection(
-                    Math.min(startIdx, endIdx),
-                    Math.max(startIdx, endIdx)
-                );
+                var lo = Math.min(startIdx, endIdx);
+                var hi = Math.max(startIdx, endIdx);
 
+                // Guard: if the form is open with unsaved text,
+                // ask Swift for confirmation before replacing it.
+                if (self.isFormVisible()) {
+                    var ta = self.formElement
+                        ? self.formElement.querySelector('textarea')
+                        : null;
+                    if (ta && ta.value.trim()) {
+                        window.webkit.messageHandlers.annotation
+                            .postMessage({
+                                action: 'confirmDragReplace',
+                                startIdx: lo,
+                                endIdx: hi
+                            });
+                        sel.removeAllRanges();
+                        return;
+                    }
+                }
+
+                self.showFormForSelection(lo, hi);
                 sel.removeAllRanges();
             });
         },
@@ -1455,6 +1483,14 @@ private func buildFullHTML(
         isFormVisible() {
             return this.formElement &&
                 this.formElement.style.display !== 'none';
+        },
+
+        focusForm() {
+            if (!this.isFormVisible()) return;
+            var ta = this.formElement
+                ? this.formElement.querySelector('textarea')
+                : null;
+            if (ta) ta.focus();
         },
 
         getEscapeContext() {

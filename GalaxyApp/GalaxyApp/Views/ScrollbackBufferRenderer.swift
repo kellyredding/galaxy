@@ -845,11 +845,28 @@ enum ScrollbackBufferRenderer {
                 const startIdx = parseInt(startLine.dataset.line);
                 const endIdx = parseInt(endLine.dataset.line);
 
-                self.showNoteForm(
-                    Math.min(startIdx, endIdx),
-                    Math.max(startIdx, endIdx)
-                );
+                const lo = Math.min(startIdx, endIdx);
+                const hi = Math.max(startIdx, endIdx);
 
+                // Guard: if the form is open with unsaved text,
+                // ask Swift for confirmation before replacing it.
+                if (self.formElement
+                    && self.formElement.style.display !== 'none') {
+                    const ta = self.formElement
+                        .querySelector('textarea');
+                    if (ta && ta.value.trim()) {
+                        window.webkit.messageHandlers.scrollback
+                            .postMessage({
+                                action: 'confirmDragReplace',
+                                startLine: lo,
+                                endLine: hi
+                            });
+                        sel.removeAllRanges();
+                        return;
+                    }
+                }
+
+                self.showNoteForm(lo, hi);
                 sel.removeAllRanges();
             });
 
@@ -966,6 +983,13 @@ enum ScrollbackBufferRenderer {
                 this.hideForm();
                 this.clearHighlights();
             }
+        },
+
+        focusForm() {
+            if (!this.formElement
+                || this.formElement.style.display === 'none') return;
+            const ta = this.formElement.querySelector('textarea');
+            if (ta) ta.focus();
         },
 
         forceDiscardForm() {

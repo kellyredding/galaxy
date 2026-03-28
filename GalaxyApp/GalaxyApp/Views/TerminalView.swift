@@ -530,6 +530,13 @@ class TerminalHostView: NSView {
         webView.onConfirmDiscardEdit = { [weak self] in
             self?.showDiscardNoteEditConfirmation()
         }
+        webView.onConfirmDragReplace = {
+            [weak self] startLine, endLine in
+            self?.showDragReplaceNoteConfirmation(
+                startLine: startLine,
+                endLine: endLine
+            )
+        }
 
         // Create overlay container with border and pill
         let overlay = ScrollbackOverlayView(frame: bounds, scrollbackView: webView)
@@ -576,68 +583,93 @@ class TerminalHostView: NSView {
 
     /// Show an NSAlert sheet asking the user to confirm discarding notes.
     private func showDismissConfirmation() {
-        guard let overlay = scrollbackOverlay else { return }
+        guard let overlay = scrollbackOverlay,
+              let window = window else { return }
         let noteCount = overlay.scrollbackView.notes.count
 
-        let alert = NSAlert()
-        alert.messageText = "Discard scrollback notes?"
-        alert.informativeText = "You have \(noteCount) unsaved note\(noteCount == 1 ? "" : "s"). They will be lost if you exit scrollback."
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Discard")
-        alert.addButton(withTitle: "Cancel")
-
-        guard let window = window else { return }
-        alert.beginSheetModal(for: window) { [weak self] response in
-            if response == .alertFirstButtonReturn {
+        SheetAlert.confirm(
+            in: window,
+            message: "Discard scrollback notes?",
+            detail: "You have \(noteCount) unsaved "
+                + "note\(noteCount == 1 ? "" : "s"). "
+                + "They will be lost if you exit scrollback.",
+            onConfirm: { [weak self] in
                 self?.dismissScrollback(force: true)
-            } else {
+            },
+            onCancel: { [weak self] in
                 self?.requestFocus()
             }
-        }
+        )
     }
 
     /// Show an NSAlert asking to discard new note form content.
     private func showDiscardNoteFormConfirmation() {
-        guard let overlay = scrollbackOverlay else { return }
-        let alert = NSAlert()
-        alert.messageText = "Discard note?"
-        alert.informativeText = "You have unsaved text in the note form. It will be lost if you dismiss."
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Discard")
-        alert.addButton(withTitle: "Cancel")
+        guard let overlay = scrollbackOverlay,
+              let window = window else { return }
 
-        guard let window = window else { return }
-        alert.beginSheetModal(for: window) { [weak self] response in
-            if response == .alertFirstButtonReturn {
+        SheetAlert.confirm(
+            in: window,
+            message: "Discard note?",
+            detail: "You have unsaved text in the note form. "
+                + "It will be lost if you dismiss.",
+            onConfirm: {
                 overlay.scrollbackView.webView.evaluateJavaScript(
                     "ScrollbackManager.notes.forceDiscardForm()"
                 )
-            } else {
+            },
+            onCancel: { [weak self] in
                 self?.requestFocus()
             }
-        }
+        )
     }
 
     /// Show an NSAlert asking to discard edit changes to a note.
     private func showDiscardNoteEditConfirmation() {
-        guard let overlay = scrollbackOverlay else { return }
-        let alert = NSAlert()
-        alert.messageText = "Discard changes?"
-        alert.informativeText = "You have unsaved changes to this note. They will be lost if you cancel editing."
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Discard")
-        alert.addButton(withTitle: "Cancel")
+        guard let overlay = scrollbackOverlay,
+              let window = window else { return }
 
-        guard let window = window else { return }
-        alert.beginSheetModal(for: window) { [weak self] response in
-            if response == .alertFirstButtonReturn {
+        SheetAlert.confirm(
+            in: window,
+            message: "Discard changes?",
+            detail: "You have unsaved changes to this note. "
+                + "They will be lost if you cancel editing.",
+            onConfirm: {
                 overlay.scrollbackView.webView.evaluateJavaScript(
                     "ScrollbackManager.notes.forceDiscardEdit()"
                 )
-            } else {
+            },
+            onCancel: { [weak self] in
                 self?.requestFocus()
             }
-        }
+        )
+    }
+
+    /// Show an NSAlert asking to discard unsaved note form content
+    /// before opening a new form at a different drag selection.
+    private func showDragReplaceNoteConfirmation(
+        startLine: Int,
+        endLine: Int
+    ) {
+        guard let overlay = scrollbackOverlay,
+              let window = window else { return }
+
+        SheetAlert.confirm(
+            in: window,
+            message: "Discard note?",
+            detail: "You have unsaved text in the note form. "
+                + "It will be lost if you start a new note.",
+            onConfirm: {
+                overlay.scrollbackView.webView.evaluateJavaScript(
+                    "ScrollbackManager.notes"
+                    + ".showNoteForm(\(startLine), \(endLine))"
+                )
+            },
+            onCancel: {
+                overlay.scrollbackView.webView.evaluateJavaScript(
+                    "ScrollbackManager.notes.focusForm()"
+                )
+            }
+        )
     }
 
     /// Apply current font/theme settings to the scrollback view if present.

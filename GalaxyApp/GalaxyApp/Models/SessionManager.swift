@@ -841,19 +841,16 @@ class SessionManager: ObservableObject {
 
         guard let window = NSApp.keyWindow else { return }
 
-        let alert = NSAlert()
-        alert.messageText = "Confirm dismiss session?"
-        alert.informativeText = """
-            "\(session.displayName)" will be removed from the sidebar.
-            """
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Confirm")
-        alert.addButton(withTitle: "Cancel")
-
-        alert.beginSheetModal(for: window) { [weak self] response in
-            if response == .alertFirstButtonReturn {
-                self?.closeSession(sessionId: sessionId)
-            }
+        SheetAlert.confirm(
+            in: window,
+            message: "Confirm dismiss session?",
+            detail: """
+                "\(session.displayName)" will be removed \
+                from the sidebar.
+                """,
+            confirm: "Confirm"
+        ) { [weak self] in
+            self?.closeSession(sessionId: sessionId)
         }
     }
 

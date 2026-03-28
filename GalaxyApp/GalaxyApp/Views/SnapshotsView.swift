@@ -628,38 +628,67 @@ struct SnapshotsView: View {
     /// On Discard: hides form and clears highlights. On Cancel: no-op.
     private func showDiscardFormAlert() {
         guard let window = webViewRef?.window else { return }
-        let alert = NSAlert()
-        alert.messageText = "Discard annotation?"
-        alert.informativeText = "You have unsaved text in the annotation form. It will be lost if you dismiss."
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Discard")
-        alert.addButton(withTitle: "Cancel")
-        alert.beginSheetModal(for: window) { [self] response in
-            if response == .alertFirstButtonReturn {
+
+        SheetAlert.confirm(
+            in: window,
+            message: "Discard annotation?",
+            detail: "You have unsaved text in the annotation "
+                + "form. It will be lost if you dismiss.",
+            onConfirm: { [self] in
                 self.webViewRef?.evaluateJavaScript(
                     "AnnotationManager.dismissForm()"
                 )
             }
-        }
+        )
     }
 
     /// Show an NSAlert asking to discard edit changes.
-    /// On Discard: cancels edit, returns to expanded card. On Cancel: no-op.
+    /// On Discard: cancels edit, returns to expanded card.
+    /// On Cancel: no-op.
     private func showDiscardEditAlert() {
         guard let window = webViewRef?.window else { return }
-        let alert = NSAlert()
-        alert.messageText = "Discard changes?"
-        alert.informativeText = "You have unsaved changes to this annotation. They will be lost if you cancel editing."
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Discard")
-        alert.addButton(withTitle: "Cancel")
-        alert.beginSheetModal(for: window) { [self] response in
-            if response == .alertFirstButtonReturn {
+
+        SheetAlert.confirm(
+            in: window,
+            message: "Discard changes?",
+            detail: "You have unsaved changes to this "
+                + "annotation. They will be lost if you "
+                + "cancel editing.",
+            onConfirm: { [self] in
                 self.webViewRef?.evaluateJavaScript(
                     "AnnotationManager.cancelEdit()"
                 )
             }
-        }
+        )
+    }
+
+    /// Show an NSAlert asking to discard unsaved annotation form
+    /// content before opening a new form at a different selection.
+    private func showDragReplaceAnnotationAlert(
+        startIdx: Int,
+        endIdx: Int
+    ) {
+        guard let window = webViewRef?.window else { return }
+
+        SheetAlert.confirm(
+            in: window,
+            message: "Discard annotation?",
+            detail: "You have unsaved text in the annotation "
+                + "form. It will be lost if you start a new "
+                + "annotation.",
+            onConfirm: { [self] in
+                self.webViewRef?.evaluateJavaScript(
+                    "AnnotationManager"
+                    + ".showFormForSelection("
+                    + "\(startIdx), \(endIdx))"
+                )
+            },
+            onCancel: { [self] in
+                self.webViewRef?.evaluateJavaScript(
+                    "AnnotationManager.focusForm()"
+                )
+            }
+        )
     }
 
     private func handlePendingSnapshot() {
@@ -835,6 +864,12 @@ struct SnapshotsView: View {
                           error.localizedDescription)
                 }
             }
+
+        case .confirmDragReplace(let startIdx, let endIdx):
+            showDragReplaceAnnotationAlert(
+                startIdx: startIdx,
+                endIdx: endIdx
+            )
         }
     }
 

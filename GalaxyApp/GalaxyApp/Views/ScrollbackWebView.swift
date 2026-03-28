@@ -44,6 +44,10 @@ class ScrollbackWebView: NSView {
     /// Called when JS requests confirmation to discard edit changes.
     var onConfirmDiscardEdit: (() -> Void)?
 
+    /// Called when JS requests confirmation to replace the current
+    /// note form (which has unsaved text) with a new drag selection.
+    var onConfirmDragReplace: ((_ startLine: Int, _ endLine: Int) -> Void)?
+
     /// In-memory note storage. Cleared on teardown.
     private(set) var notes: [ScrollbackNote] = []
 
@@ -138,6 +142,11 @@ class ScrollbackWebView: NSView {
             onConfirmDiscardForm?()
         case "confirmDiscardEdit":
             onConfirmDiscardEdit?()
+        case "confirmDragReplace":
+            guard let startLine = body["startLine"] as? Int,
+                  let endLine = body["endLine"] as? Int
+            else { return }
+            onConfirmDragReplace?(startLine, endLine)
         default:
             break
         }
