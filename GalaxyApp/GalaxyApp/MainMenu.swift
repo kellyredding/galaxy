@@ -598,7 +598,7 @@ class MenuActions: NSObject {
 
     @objc func stopSession(_ sender: Any?) {
         guard let activeId = SessionManager.shared.activeSessionId else { return }
-        SessionManager.shared.stopSession(sessionId: activeId)
+        SessionManager.shared.confirmAndStopSession(sessionId: activeId)
     }
 
     @objc func dismissSession(_ sender: Any?) {

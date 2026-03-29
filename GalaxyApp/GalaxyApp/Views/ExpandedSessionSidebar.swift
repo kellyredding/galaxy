@@ -36,7 +36,7 @@ struct ExpandedSessionSidebar: View {
                                     isWindowFocused: sessionManager.isWindowFocused,
                                     isOnTerminalTab: sessionManager.activeTab == .terminal,
                                     onStop: {
-                                        sessionManager.stopSession(sessionId: session.id)
+                                        sessionManager.confirmAndStopSession(sessionId: session.id)
                                     },
                                     onClose: {
                                         sessionManager.confirmAndDismissSession(sessionId: session.id)

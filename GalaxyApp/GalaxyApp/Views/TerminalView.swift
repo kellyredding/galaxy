@@ -213,6 +213,15 @@ class TerminalHostView: NSView {
             }
         }
 
+        // Wire up scrollback unsaved-work check for session stop
+        // confirmation. SessionManager calls this before terminating.
+        session.checkScrollbackUnsavedWork = {
+            [weak self] completion in
+            self?.checkScrollbackUnsavedWork(
+                completion: completion
+            ) ?? completion(false)
+        }
+
         // Observe session process exit — tear down scrollback if process dies.
         // Skip note confirmation — the process is gone so there's nothing
         // to send notes to.
@@ -736,6 +745,27 @@ class TerminalHostView: NSView {
                 self?.requestFocus()
             }
         )
+    }
+
+    /// Query the scrollback JS for unsaved work (submitted notes,
+    /// form content, or in-progress edits). Completes with false
+    /// if scrollback isn't active.
+    private func checkScrollbackUnsavedWork(
+        completion: @escaping (Bool) -> Void
+    ) {
+        guard let overlay = scrollbackOverlay else {
+            completion(false)
+            return
+        }
+
+        overlay.scrollbackView.webView.evaluateJavaScript(
+            "ScrollbackManager.notes.hasUnsavedWork()"
+        ) { result, _ in
+            let hasWork = result as? Bool ?? false
+            DispatchQueue.main.async {
+                completion(hasWork)
+            }
+        }
     }
 
     /// Show an NSAlert asking to discard new note form content.

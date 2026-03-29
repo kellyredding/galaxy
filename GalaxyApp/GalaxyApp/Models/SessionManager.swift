@@ -318,6 +318,41 @@ class SessionManager: ObservableObject {
         NSLog("SessionManager: Session marked as exited, keeping in sidebar")
     }
 
+    func confirmAndStopSession(sessionId: UUID) {
+        guard let session = sessions.first(
+            where: { $0.id == sessionId }
+        ) else { return }
+        guard !session.hasExited else { return }
+
+        // Check if scrollback has unsaved work
+        if let checker = session.checkScrollbackUnsavedWork {
+            checker { [weak self] hasWork in
+                if hasWork {
+                    guard let window = NSApp.keyWindow
+                    else { return }
+                    SheetAlert.confirm(
+                        in: window,
+                        message: "Stop session with unsaved "
+                            + "scrollback notes?",
+                        detail: "Unsaved notes will be lost "
+                            + "when the session stops.",
+                        confirm: "Stop"
+                    ) { [weak self] in
+                        self?.stopSession(
+                            sessionId: sessionId
+                        )
+                    }
+                } else {
+                    self?.stopSession(
+                        sessionId: sessionId
+                    )
+                }
+            }
+        } else {
+            stopSession(sessionId: sessionId)
+        }
+    }
+
     func stopSession(sessionId: UUID) {
         guard let session = sessions.first(where: { $0.id == sessionId }) else {
             NSLog("SessionManager: Cannot stop - session not found")

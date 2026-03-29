@@ -85,6 +85,12 @@ class Session: Identifiable, ObservableObject {
     // session.metrics event. Plain var (not @Published) until a
     // specific property is promoted for UI rendering.
 
+    /// Closure set by TerminalHostView to check whether scrollback
+    /// has unsaved work (notes, form content, or in-progress edits).
+    /// Called by SessionManager before stopping a session.
+    var checkScrollbackUnsavedWork:
+        ((@escaping (Bool) -> Void) -> Void)?
+
     /// Ledger session ID for fast event matching. Set when the event
     /// system first matches this session via session_identifiers array.
     /// Optional because it's not known until the first event or

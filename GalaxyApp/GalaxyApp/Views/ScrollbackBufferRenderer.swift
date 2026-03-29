@@ -1416,6 +1416,37 @@ enum ScrollbackBufferRenderer {
             const div = document.createElement('div');
             div.textContent = str;
             return div.innerHTML.replace(/\\n/g, '<br>');
+        },
+
+        hasUnsavedWork() {
+            // Submitted notes that haven't been sent to Claude
+            if (this.items.length > 0) return true;
+            // New note form open with content
+            if (this.formElement
+                && this.formElement.style.display !== 'none') {
+                const ta = this.formElement
+                    .querySelector('textarea');
+                if (ta && ta.value.trim().length > 0) return true;
+            }
+            // Edit in progress with changes
+            if (this.editingId) {
+                const card = document.querySelector(
+                    '[data-note-id="' + this.editingId + '"]'
+                );
+                if (card) {
+                    const ta = card.querySelector(
+                        '.note-edit-textarea'
+                    );
+                    const note = this.items.find(
+                        n => n.id === this.editingId
+                    );
+                    if (ta && note
+                        && ta.value !== note.content) {
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
     };
     """
