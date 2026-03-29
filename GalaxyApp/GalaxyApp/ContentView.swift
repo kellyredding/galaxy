@@ -159,6 +159,11 @@ struct ContentView: View {
                     .opacity(sessionManager.activeTab == .snapshots ? 1 : 0)
                     .allowsHitTesting(sessionManager.activeTab == .snapshots)
                     .zIndex(sessionManager.activeTab == .snapshots ? 1 : 0)
+
+                TimelineContainerView()
+                    .opacity(sessionManager.activeTab == .timeline ? 1 : 0)
+                    .allowsHitTesting(sessionManager.activeTab == .timeline)
+                    .zIndex(sessionManager.activeTab == .timeline ? 1 : 0)
             }
         }
     }

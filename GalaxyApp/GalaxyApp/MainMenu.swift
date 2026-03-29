@@ -427,6 +427,7 @@ class MainMenu: NSObject, NSMenuDelegate {
             case .snapshots: return true
             case .ledger: return [.files, .entries].contains(sessionManager.activeLedgerSubTab)
             case .terminal: return false
+            case .timeline: return false
             }
         }()
         let focusPrevTitle = "Previous item"

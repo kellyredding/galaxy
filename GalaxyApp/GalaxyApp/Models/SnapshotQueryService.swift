@@ -194,14 +194,16 @@ class SnapshotQueryService {
                 pipe.fileHandleForWriting.closeFile()
             }
 
-            // Wait on background thread to avoid blocking
+            // Read stdout/stderr BEFORE waitUntilExit to avoid
+            // pipe buffer deadlock when output exceeds ~64KB.
             DispatchQueue.global(qos: .userInitiated).async {
+                let outData = stdout.fileHandleForReading.readDataToEndOfFile()
+                let errData = stderr.fileHandleForReading.readDataToEndOfFile()
                 process.waitUntilExit()
 
                 self.clearCurrentProcess(process)
 
                 guard process.terminationStatus == 0 else {
-                    let errData = stderr.fileHandleForReading.readDataToEndOfFile()
                     let errMsg = String(data: errData, encoding: .utf8) ?? "Unknown error"
                     continuation.resume(
                         throwing: SnapshotQueryError.cliError(
@@ -212,8 +214,7 @@ class SnapshotQueryService {
                     return
                 }
 
-                let data = stdout.fileHandleForReading.readDataToEndOfFile()
-                continuation.resume(returning: data)
+                continuation.resume(returning: outData)
             }
         }
     }
@@ -255,11 +256,14 @@ class SnapshotQueryService {
                 return
             }
 
+            // Read stdout/stderr BEFORE waitUntilExit to avoid
+            // pipe buffer deadlock when output exceeds ~64KB.
             DispatchQueue.global(qos: .userInitiated).async {
+                let outData = stdout.fileHandleForReading.readDataToEndOfFile()
+                let errData = stderr.fileHandleForReading.readDataToEndOfFile()
                 process.waitUntilExit()
 
                 guard process.terminationStatus == 0 else {
-                    let errData = stderr.fileHandleForReading.readDataToEndOfFile()
                     let errMsg = String(data: errData, encoding: .utf8) ?? "Unknown error"
                     continuation.resume(
                         throwing: SnapshotQueryError.cliError(
@@ -270,8 +274,7 @@ class SnapshotQueryService {
                     return
                 }
 
-                let data = stdout.fileHandleForReading.readDataToEndOfFile()
-                continuation.resume(returning: data)
+                continuation.resume(returning: outData)
             }
         }
     }
