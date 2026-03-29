@@ -79,9 +79,21 @@ class TerminalHostView: NSView {
 
     // MARK: - Scrollback State
 
+    /// Exit reason for scrollback timeline events.
+    private enum ScrollbackExitReason: String {
+        case dismissed
+        case reviewed
+        case sessionEnded = "session_ended"
+    }
+
     /// The scrollback overlay (holds ScrollbackWebView + pill).
     /// Non-nil when scrollback mode is active.
     private var scrollbackOverlay: ScrollbackOverlayView?
+
+    /// Duration identifier for pairing scrollback:entered
+    /// and scrollback:exited timeline events. Generated in
+    /// createScrollback(), consumed in performScrollbackTeardown().
+    private var scrollbackDurationId: String?
 
     /// Retained buffer snapshot for settings-change rebuilds while scrollback
     /// is active. Nil'd on dismiss to release the deep-copy buffer memory.
@@ -201,14 +213,22 @@ class TerminalHostView: NSView {
             }
         }
 
-        // Observe session process exit — dismiss scrollback if process dies.
-        // Force-dismiss to skip note confirmation — the process is gone so
-        // there's nothing to send notes to.
+        // Observe session process exit — tear down scrollback if process dies.
+        // Skip note confirmation — the process is gone so there's nothing
+        // to send notes to.
+        //
+        // No .receive(on: .main) here — processDidExit already sets
+        // hasExited on main queue. An extra async hop would let SwiftUI
+        // tear down this view (hasExited swaps to StoppedSessionView)
+        // before the sink fires, preventing the scrollback:exited event.
         session.$hasExited
             .removeDuplicates()
-            .receive(on: DispatchQueue.main)
             .sink { [weak self] exited in
-                if exited { self?.dismissScrollback(force: true) }
+                if exited {
+                    self?.performScrollbackTeardown(
+                        reason: .sessionEnded
+                    )
+                }
             }
             .store(in: &cancellables)
 
@@ -306,7 +326,7 @@ class TerminalHostView: NSView {
                 showDismissConfirmation()
                 return []
             }
-            dismissScrollback(force: true)
+            performScrollbackTeardown(reason: .dismissed)
         }
 
         guard canAcceptDrop else {
@@ -497,7 +517,7 @@ class TerminalHostView: NSView {
             backgroundColor: theme.backgroundColorValue
         )
         webView.onDismiss = { [weak self] in
-            self?.dismissScrollback()
+            self?.dismissScrollback(reason: .dismissed)
         }
         webView.onReady = { [weak self] in
             // Scroll the live terminal to the bottom now that the scrollback
@@ -546,7 +566,7 @@ class TerminalHostView: NSView {
                 )
             }
 
-            self.dismissScrollback(force: true)
+            self.performScrollbackTeardown(reason: .reviewed)
             // Bracketed paste delivers multi-line content as a single
             // input block, then CR after a delay submits it.
             self.sendTextToTerminal(message, asPaste: true)
@@ -576,37 +596,121 @@ class TerminalHostView: NSView {
         addSubview(overlay, positioned: .above, relativeTo: dragHighlightView)
         scrollbackOverlay = overlay
 
+        // Generate duration ID and fire scrollback:entered event
+        let durationId = "scrollback--\(UUID().uuidString)"
+        scrollbackDurationId = durationId
+        if let lsid = session.ledgerSessionId {
+            TimelineService.record(
+                ledgerSessionId: lsid,
+                eventType: "scrollback:entered",
+                source: "galaxy-app/views/terminal",
+                durationIdentifier: durationId
+            )
+        }
+
         // Make WKWebView first responder for keyboard events
         window?.makeFirstResponder(webView.webView)
     }
 
-    /// Dismiss and fully unload the scrollback overlay. Idempotent — safe to
-    /// call from multiple exit paths in close succession. When `force` is
-    /// false and notes exist, shows a confirmation dialog instead.
-    func dismissScrollback(force: Bool = false) {
+    /// Dismiss scrollback with a reason. When reason is `.dismissed`
+    /// and unsaved notes exist, shows a confirmation dialog instead
+    /// of tearing down immediately.
+    private func dismissScrollback(reason: ScrollbackExitReason) {
         guard let overlay = scrollbackOverlay else { return }
 
-        // Guard against losing unsaved notes
-        if !force && overlay.scrollbackView.hasNotes {
+        // Guard against losing unsaved notes — only for user-
+        // initiated dismiss (not reviewed or sessionEnded).
+        if reason == .dismissed
+            && overlay.scrollbackView.hasNotes {
             showDismissConfirmation()
             return
         }
 
-        // Restore first responder to live terminal only if the WKWebView
-        // currently owns it — avoid stealing focus from something else.
-        if window?.firstResponder === overlay.scrollbackView.webView {
+        performScrollbackTeardown(reason: reason)
+    }
+
+    /// Unconditional scrollback teardown. Fires the
+    /// scrollback:exited timeline event, destroys the WKWebView,
+    /// nils the overlay, and starts the re-entry cooldown.
+    /// Idempotent — safe to call from multiple exit paths.
+    private func performScrollbackTeardown(
+        reason: ScrollbackExitReason
+    ) {
+        guard let overlay = scrollbackOverlay else { return }
+
+        // Fire scrollback:exited timeline event before teardown
+        // destroys the overlay and its notes.
+        if let lsid = session.ledgerSessionId {
+            let notes = overlay.scrollbackView.notes
+            let durationId = scrollbackDurationId
+
+            if reason == .reviewed {
+                // Notes already captured in scrollback:reviewed
+                TimelineService.record(
+                    ledgerSessionId: lsid,
+                    eventType: "scrollback:exited",
+                    source: "galaxy-app/views/terminal",
+                    durationIdentifier: durationId,
+                    detailData: [
+                        "reason": reason.rawValue,
+                        "note_count": notes.count,
+                    ]
+                )
+            } else if notes.isEmpty {
+                TimelineService.record(
+                    ledgerSessionId: lsid,
+                    eventType: "scrollback:exited",
+                    source: "galaxy-app/views/terminal",
+                    durationIdentifier: durationId,
+                    detailData: [
+                        "reason": reason.rawValue,
+                    ]
+                )
+            } else {
+                // Capture discarded notes for recovery
+                let expandedNotes: [[String: Any]] =
+                    notes.map { note in
+                        [
+                            "start_line": note.startLine,
+                            "end_line": note.endLine,
+                            "line_content": note.lineContent,
+                            "note": note.content,
+                        ] as [String: Any]
+                    }
+                TimelineService.recordViaStdin(
+                    ledgerSessionId: lsid,
+                    eventType: "scrollback:exited",
+                    source: "galaxy-app/views/terminal",
+                    durationIdentifier: durationId,
+                    detailData: [
+                        "reason": reason.rawValue,
+                        "note_count": notes.count,
+                        "discarded_notes": expandedNotes,
+                    ]
+                )
+            }
+        }
+
+        // Restore first responder to live terminal only if the
+        // WKWebView currently owns it — avoid stealing focus
+        // from something else.
+        if window?.firstResponder
+            === overlay.scrollbackView.webView {
             window?.makeFirstResponder(terminalView)
         }
 
-        // Explicit teardown breaks the WKWebView retain cycle so the web
-        // process is freed immediately rather than leaking.
+        // Explicit teardown breaks the WKWebView retain cycle so
+        // the web process is freed immediately rather than leaking.
         overlay.scrollbackView.teardown()
         overlay.removeFromSuperview()
         scrollbackOverlay = nil
+        scrollbackDurationId = nil
         currentSnapshot = nil
 
-        // Start cooldown to prevent trackpad momentum from re-creating scrollback
-        if SettingsManager.shared.settings.scrollToEnterScrollback {
+        // Start cooldown to prevent trackpad momentum from
+        // re-creating scrollback
+        if SettingsManager.shared.settings
+            .scrollToEnterScrollback {
             startScrollbackCooldown()
         }
     }
@@ -624,7 +728,9 @@ class TerminalHostView: NSView {
                 + "note\(noteCount == 1 ? "" : "s"). "
                 + "They will be lost if you exit scrollback.",
             onConfirm: { [weak self] in
-                self?.dismissScrollback(force: true)
+                self?.performScrollbackTeardown(
+                    reason: .dismissed
+                )
             },
             onCancel: { [weak self] in
                 self?.requestFocus()

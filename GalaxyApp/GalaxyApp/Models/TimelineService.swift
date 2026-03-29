@@ -13,6 +13,7 @@ enum TimelineService {
         ledgerSessionId: Int64,
         eventType: String,
         source: String,
+        durationIdentifier: String? = nil,
         detailData: [String: Any]? = nil
     ) {
         var args = [
@@ -21,6 +22,11 @@ enum TimelineService {
             "--event-type", eventType,
             "--source", source,
         ]
+
+        if let durationIdentifier = durationIdentifier {
+            args.append("--duration-identifier")
+            args.append(durationIdentifier)
+        }
 
         if let detailData = detailData,
            let jsonData = try? JSONSerialization.data(
@@ -43,15 +49,21 @@ enum TimelineService {
         ledgerSessionId: Int64,
         eventType: String,
         source: String,
+        durationIdentifier: String? = nil,
         detailData: [String: Any]
     ) {
-        let args = [
+        var args = [
             "record",
             "--ledger-session-id", String(ledgerSessionId),
             "--event-type", eventType,
             "--source", source,
             "--detail-data-stdin",
         ]
+
+        if let durationIdentifier = durationIdentifier {
+            args.append("--duration-identifier")
+            args.append(durationIdentifier)
+        }
 
         guard let jsonData = try? JSONSerialization.data(
             withJSONObject: detailData
