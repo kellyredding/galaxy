@@ -90,6 +90,8 @@ module GalaxyLedger
               "--event-type", "session:resumed",
               "--source",
               "galaxy-ledger/hooks/on_resume",
+              "--duration-identifier",
+              "ledger-session-id--#{ledger_session_id}",
               "--detail-data",
               {
                 cwd:             Dir.current,

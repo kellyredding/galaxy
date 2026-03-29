@@ -119,6 +119,8 @@ module GalaxyLedger
               "--event-type", "session:started",
               "--source",
               "galaxy-ledger/hooks/on_startup",
+              "--duration-identifier",
+              "ledger-session-id--#{ledger_session_id}",
               "--detail-data",
               {
                 cwd:                current_cwd,

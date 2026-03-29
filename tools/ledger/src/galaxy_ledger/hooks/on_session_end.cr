@@ -58,6 +58,8 @@ module GalaxyLedger
               "--event-type", "session:ended",
               "--source",
               "galaxy-ledger/hooks/on_session_end",
+              "--duration-identifier",
+              "ledger-session-id--#{ledger_session_id}",
               "--detail-data",
               {
                 cwd:                @stdin_cwd,
