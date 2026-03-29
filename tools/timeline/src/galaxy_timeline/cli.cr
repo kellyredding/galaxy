@@ -75,6 +75,7 @@ module GalaxyTimeline
       occurred_at : String? = nil
       detail_data : String? = nil
       detail_data_stdin = false
+      duration_identifier : String? = nil
       json_mode = false
 
       i = 0
@@ -132,6 +133,14 @@ module GalaxyTimeline
         when "--detail-data-stdin"
           detail_data_stdin = true
           i += 1
+        when "--duration-identifier"
+          if i + 1 < args.size
+            duration_identifier = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --duration-identifier requires a value"
+            exit(1)
+          end
         when "--json"
           json_mode = true
           i += 1
@@ -179,6 +188,7 @@ module GalaxyTimeline
         source: source,
         occurred_at: occurred_at,
         detail_data: detail_data,
+        duration_identifier: duration_identifier,
       )
 
       if id > 0
@@ -286,6 +296,8 @@ module GalaxyTimeline
                     json.field "event_type", ev.event_type
                     json.field "occurred_at", ev.occurred_at
                     json.field "source", ev.source
+                    json.field "duration_identifier",
+                      ev.duration_identifier
                     json.field "detail_data", ev.detail_data
                     json.field "created_at", ev.created_at
                     json.field "updated_at", ev.updated_at
@@ -359,8 +371,11 @@ module GalaxyTimeline
             json.field "event_type", event.event_type
             json.field "occurred_at", event.occurred_at
             json.field "source", event.source
+            json.field "duration_identifier",
+              event.duration_identifier
             json.field "detail_data", event.detail_data
-            json.field "ledger_session_id", event.ledger_session_id
+            json.field "ledger_session_id",
+              event.ledger_session_id
             json.field "created_at", event.created_at
             json.field "updated_at", event.updated_at
           end
@@ -372,6 +387,9 @@ module GalaxyTimeline
         puts "  Occurred:   #{format_timestamp(event.occurred_at)}"
         puts "  Source:     #{event.source}"
         puts "  Session:    #{event.ledger_session_id}"
+        if di = event.duration_identifier
+          puts "  Duration:   #{di}"
+        end
         puts "  Created:    #{format_timestamp(event.created_at)}"
         puts "  Updated:    #{format_timestamp(event.updated_at)}"
         if dd = event.detail_data
@@ -830,6 +848,9 @@ module GalaxyTimeline
         --detail-data JSON      JSON blob of event details
         --detail-data-stdin     Read detail_data JSON from
                                 stdin (for large payloads)
+        --duration-identifier ID
+                                Identifier for pairing
+                                duration events (start/end)
         --json                  Output event ID as JSON
                                 (e.g. {"id":1})
       HELP

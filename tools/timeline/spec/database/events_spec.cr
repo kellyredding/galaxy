@@ -81,6 +81,63 @@ describe GalaxyTimeline::Database do
       event.should_not be_nil
       event.not_nil!.detail_data.should be_nil
     end
+
+    it "records an event with duration_identifier" do
+      id = GalaxyTimeline::Database.record_event(
+        1_i64,
+        event_type: "session:started",
+        source: "galaxy-ledger/hooks/on_startup",
+        duration_identifier: "ledger-session-id--1",
+      )
+      event = GalaxyTimeline::Database.get_event(id)
+      event.should_not be_nil
+      event.not_nil!.duration_identifier.should eq(
+        "ledger-session-id--1",
+      )
+    end
+
+    it "records event with nil duration_identifier by default" do
+      id = GalaxyTimeline::Database.record_event(
+        1_i64,
+        event_type: "context:cleared",
+        source: "galaxy-ledger/hooks/on_clear",
+      )
+      event = GalaxyTimeline::Database.get_event(id)
+      event.should_not be_nil
+      event.not_nil!.duration_identifier.should be_nil
+    end
+
+    it "records event with both detail_data and duration_identifier" do
+      id = GalaxyTimeline::Database.record_event(
+        1_i64,
+        event_type: "session:started",
+        source: "galaxy-ledger/hooks/on_startup",
+        detail_data: %({"cwd":"/tmp"}),
+        duration_identifier: "ledger-session-id--42",
+      )
+      event = GalaxyTimeline::Database.get_event(id)
+      event.should_not be_nil
+      event.not_nil!.detail_data.should eq(%({"cwd":"/tmp"}))
+      event.not_nil!.duration_identifier.should eq(
+        "ledger-session-id--42",
+      )
+    end
+
+    it "records event with occurred_at and duration_identifier" do
+      id = GalaxyTimeline::Database.record_event(
+        1_i64,
+        event_type: "session:started",
+        source: "galaxy-ledger/hooks/on_startup",
+        occurred_at: "2026-01-15 10:30:00",
+        duration_identifier: "ledger-session-id--5",
+      )
+      event = GalaxyTimeline::Database.get_event(id)
+      event.should_not be_nil
+      event.not_nil!.occurred_at.should eq("2026-01-15 10:30:00")
+      event.not_nil!.duration_identifier.should eq(
+        "ledger-session-id--5",
+      )
+    end
   end
 
   describe ".list_events" do
@@ -150,6 +207,27 @@ describe GalaxyTimeline::Database do
       events.size.should eq(1)
     end
 
+    it "includes duration_identifier in listed events" do
+      GalaxyTimeline::Database.record_event(
+        1_i64,
+        event_type: "session:started",
+        source: "galaxy-ledger/hooks/on_startup",
+        duration_identifier: "ledger-session-id--1",
+      )
+      GalaxyTimeline::Database.record_event(
+        1_i64,
+        event_type: "context:cleared",
+        source: "galaxy-ledger/hooks/on_clear",
+      )
+
+      events = GalaxyTimeline::Database.list_events(1_i64)
+      events.size.should eq(2)
+      events[0].duration_identifier.should eq(
+        "ledger-session-id--1",
+      )
+      events[1].duration_identifier.should be_nil
+    end
+
     it "respects limit" do
       5.times do |i|
         GalaxyTimeline::Database.record_event(
@@ -176,6 +254,20 @@ describe GalaxyTimeline::Database do
       event.should_not be_nil
       event.not_nil!.event_type.should eq("session:started")
       event.not_nil!.source.should eq("galaxy-ledger/hooks/on_startup")
+    end
+
+    it "includes duration_identifier" do
+      id = GalaxyTimeline::Database.record_event(
+        1_i64,
+        event_type: "session:started",
+        source: "galaxy-ledger/hooks/on_startup",
+        duration_identifier: "ledger-session-id--10",
+      )
+      event = GalaxyTimeline::Database.get_event(id)
+      event.should_not be_nil
+      event.not_nil!.duration_identifier.should eq(
+        "ledger-session-id--10",
+      )
     end
 
     it "returns nil for nonexistent ID" do

@@ -235,6 +235,141 @@ describe "CLI event commands", tags: "integration" do
       ann["line_content"].as_s.size.should eq(10_000)
     end
 
+    it "records an event with --duration-identifier" do
+      result = run_binary([
+        "record",
+        "--ledger-session-id", "1",
+        "--event-type", "session:started",
+        "--source", "test-source",
+        "--duration-identifier", "ledger-session-id--1",
+        "--json",
+      ])
+
+      result[:status].should eq(0)
+      event_id = JSON.parse(result[:output])["id"].as_i.to_s
+
+      # Verify via show
+      show_result = run_binary(["show", event_id, "--json"])
+      parsed = JSON.parse(show_result[:output])
+      parsed["duration_identifier"].as_s.should eq(
+        "ledger-session-id--1",
+      )
+    end
+
+    it "records event with nil duration_identifier by default" do
+      result = run_binary([
+        "record",
+        "--ledger-session-id", "1",
+        "--event-type", "context:cleared",
+        "--source", "test-source",
+        "--json",
+      ])
+
+      result[:status].should eq(0)
+      event_id = JSON.parse(result[:output])["id"].as_i.to_s
+
+      show_result = run_binary(["show", event_id, "--json"])
+      parsed = JSON.parse(show_result[:output])
+      parsed["duration_identifier"].as_s?.should be_nil
+    end
+
+    it "errors when --duration-identifier has no value" do
+      result = run_binary([
+        "record",
+        "--ledger-session-id", "1",
+        "--event-type", "session:started",
+        "--source", "test",
+        "--duration-identifier",
+      ])
+
+      result[:status].should_not eq(0)
+      result[:error].should contain(
+        "--duration-identifier requires a value",
+      )
+    end
+
+    it "includes duration_identifier in list JSON output" do
+      run_binary([
+        "record",
+        "--ledger-session-id", "1",
+        "--event-type", "session:started",
+        "--source", "test",
+        "--duration-identifier", "ledger-session-id--5",
+      ])
+      run_binary([
+        "record",
+        "--ledger-session-id", "1",
+        "--event-type", "context:cleared",
+        "--source", "test",
+      ])
+
+      result = run_binary([
+        "list", "--ledger-session-id", "1", "--json",
+      ])
+
+      result[:status].should eq(0)
+      parsed = JSON.parse(result[:output])
+      events = parsed["events"].as_a
+      events.size.should eq(2)
+      events[0]["duration_identifier"].as_s.should eq(
+        "ledger-session-id--5",
+      )
+      events[1]["duration_identifier"].as_s?.should be_nil
+    end
+
+    it "includes duration_identifier in show JSON output" do
+      result = run_binary([
+        "record",
+        "--ledger-session-id", "1",
+        "--event-type", "session:started",
+        "--source", "test",
+        "--duration-identifier", "scrollback--abc-123",
+        "--json",
+      ])
+
+      event_id = JSON.parse(result[:output])["id"].as_i.to_s
+
+      show_result = run_binary(["show", event_id, "--json"])
+      parsed = JSON.parse(show_result[:output])
+      parsed["duration_identifier"].as_s.should eq(
+        "scrollback--abc-123",
+      )
+    end
+
+    it "shows duration_identifier in human-readable show output" do
+      result = run_binary([
+        "record",
+        "--ledger-session-id", "1",
+        "--event-type", "session:started",
+        "--source", "test",
+        "--duration-identifier", "ledger-session-id--7",
+        "--json",
+      ])
+
+      event_id = JSON.parse(result[:output])["id"].as_i.to_s
+
+      show_result = run_binary(["show", event_id])
+      show_result[:status].should eq(0)
+      show_result[:output].should contain("Duration:")
+      show_result[:output].should contain("ledger-session-id--7")
+    end
+
+    it "omits Duration line when duration_identifier is nil" do
+      result = run_binary([
+        "record",
+        "--ledger-session-id", "1",
+        "--event-type", "context:cleared",
+        "--source", "test",
+        "--json",
+      ])
+
+      event_id = JSON.parse(result[:output])["id"].as_i.to_s
+
+      show_result = run_binary(["show", event_id])
+      show_result[:status].should eq(0)
+      show_result[:output].should_not contain("Duration:")
+    end
+
     it "outputs human-readable format without --json" do
       result = run_binary([
         "record",

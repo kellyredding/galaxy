@@ -80,7 +80,8 @@ module GalaxyTimeline
             event_type TEXT NOT NULL,
             occurred_at TEXT NOT NULL DEFAULT (datetime('now')),
             detail_data TEXT,
-            source TEXT NOT NULL
+            source TEXT NOT NULL,
+            duration_identifier TEXT
           )
         SQL
 
@@ -97,6 +98,12 @@ module GalaxyTimeline
         db.exec(<<-SQL)
           CREATE INDEX IF NOT EXISTS idx_events_occurred
           ON events(occurred_at)
+        SQL
+
+        db.exec(<<-SQL)
+          CREATE INDEX IF NOT EXISTS
+            idx_events_duration_identifier
+          ON events(duration_identifier)
         SQL
 
         # Stamp with current version
@@ -124,6 +131,7 @@ module GalaxyTimeline
       source : String,
       occurred_at : String? = nil,
       detail_data : String? = nil,
+      duration_identifier : String? = nil,
     ) : Int64
       return 0_i64 if ledger_session_id <= 0
       return 0_i64 if event_type.empty?
@@ -136,29 +144,33 @@ module GalaxyTimeline
               <<-SQL,
                 INSERT INTO events (
                   ledger_session_id, event_type,
-                  occurred_at, detail_data, source
+                  occurred_at, detail_data, source,
+                  duration_identifier
                 )
-                VALUES (?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?)
               SQL
               ledger_session_id,
               event_type,
               ts,
               detail_data,
               source,
+              duration_identifier,
             )
           else
             db.exec(
               <<-SQL,
                 INSERT INTO events (
                   ledger_session_id, event_type,
-                  detail_data, source
+                  detail_data, source,
+                  duration_identifier
                 )
-                VALUES (?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?)
               SQL
               ledger_session_id,
               event_type,
               detail_data,
               source,
+              duration_identifier,
             )
           end
 
@@ -189,7 +201,8 @@ module GalaxyTimeline
               <<-SQL,
                 SELECT id, created_at, updated_at,
                        ledger_session_id, event_type,
-                       occurred_at, detail_data, source
+                       occurred_at, detail_data, source,
+                       duration_identifier
                 FROM events
                 WHERE ledger_session_id = ?
                   AND event_type = ?
@@ -209,7 +222,8 @@ module GalaxyTimeline
               <<-SQL,
                 SELECT id, created_at, updated_at,
                        ledger_session_id, event_type,
-                       occurred_at, detail_data, source
+                       occurred_at, detail_data, source,
+                       duration_identifier
                 FROM events
                 WHERE ledger_session_id = ?
                 ORDER BY occurred_at ASC
@@ -240,7 +254,8 @@ module GalaxyTimeline
             <<-SQL,
               SELECT id, created_at, updated_at,
                      ledger_session_id, event_type,
-                     occurred_at, detail_data, source
+                     occurred_at, detail_data, source,
+                     duration_identifier
               FROM events
               WHERE id = ?
             SQL
@@ -420,6 +435,7 @@ module GalaxyTimeline
       getter occurred_at : String
       getter detail_data : String?
       getter source : String
+      getter duration_identifier : String?
 
       def initialize(
         @id,
@@ -430,6 +446,7 @@ module GalaxyTimeline
         @occurred_at,
         @detail_data,
         @source,
+        @duration_identifier = nil,
       )
       end
 
@@ -443,6 +460,7 @@ module GalaxyTimeline
           occurred_at: rs.read(String),
           detail_data: rs.read(String?),
           source: rs.read(String),
+          duration_identifier: rs.read(String?),
         )
       end
     end

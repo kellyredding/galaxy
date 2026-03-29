@@ -12,7 +12,19 @@ module GalaxyTimeline
     # The initial schema is created in Database.create_schema (called for fresh
     # installs). Migrations run for upgrades from older versions.
     #
-    DATABASE_MIGRATIONS = {} of String => Proc(DB::Database, Nil)
+    DATABASE_MIGRATIONS = {
+      "0.1.1" => ->(db : DB::Database) {
+        db.exec(<<-SQL)
+          ALTER TABLE events
+          ADD COLUMN duration_identifier TEXT
+        SQL
+        db.exec(<<-SQL)
+          CREATE INDEX IF NOT EXISTS
+            idx_events_duration_identifier
+          ON events(duration_identifier)
+        SQL
+      },
+    } of String => Proc(DB::Database, Nil)
 
     # ==========================================================================
     # VERSION UTILITIES
