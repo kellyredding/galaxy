@@ -324,32 +324,57 @@ class SessionManager: ObservableObject {
         ) else { return }
         guard !session.hasExited else { return }
 
-        // Check if scrollback has unsaved work
+        let isBusy = session.isBusy
+
+        let proceed: () -> Void = { [weak self] in
+            self?.stopSession(sessionId: sessionId)
+        }
+
+        let showConfirm = {
+            (message: String, detail: String) in
+            guard let window = NSApp.keyWindow
+            else { return }
+            SheetAlert.confirm(
+                in: window,
+                message: message,
+                detail: detail,
+                confirm: "Stop",
+                onConfirm: proceed
+            )
+        }
+
+        // Check scrollback unsaved work (async JS query).
+        // Scrollback message takes priority over busy since
+        // it's more specific — stopping also kills the turn.
         if let checker = session.checkScrollbackUnsavedWork {
-            checker { [weak self] hasWork in
+            checker { hasWork in
                 if hasWork {
-                    guard let window = NSApp.keyWindow
-                    else { return }
-                    SheetAlert.confirm(
-                        in: window,
-                        message: "Stop session with unsaved "
+                    showConfirm(
+                        "Stop session with unsaved "
                             + "scrollback notes?",
-                        detail: "Unsaved notes will be lost "
-                            + "when the session stops.",
-                        confirm: "Stop"
-                    ) { [weak self] in
-                        self?.stopSession(
-                            sessionId: sessionId
-                        )
-                    }
-                } else {
-                    self?.stopSession(
-                        sessionId: sessionId
+                        "Unsaved notes will be lost "
+                            + "when the session stops."
                     )
+                } else if isBusy {
+                    showConfirm(
+                        "Stop session while Claude "
+                            + "is responding?",
+                        "Claude's current response "
+                            + "will be interrupted."
+                    )
+                } else {
+                    proceed()
                 }
             }
+        } else if isBusy {
+            showConfirm(
+                "Stop session while Claude "
+                    + "is responding?",
+                "Claude's current response "
+                    + "will be interrupted."
+            )
         } else {
-            stopSession(sessionId: sessionId)
+            proceed()
         }
     }
 
