@@ -399,9 +399,12 @@ struct TimelineContentBreak: View {
 // MARK: - Ruler Segment
 
 /// Hash ticks, time labels, and rail edge line for a segment.
+/// Hover over any 5-second slot to see the full date/time.
 struct TimelineRulerSegment: View {
     let segment: LayoutSegment
     let originHash: Date
+
+    @State private var hoveredHashIndex: Int? = nil
 
     private let railWidth: CGFloat = 76.0
 
@@ -412,11 +415,155 @@ struct TimelineRulerSegment: View {
         return fmt
     }()
 
+    private static let weekdayMonthFormatter:
+        DateFormatter =
+    {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "EEE MMM"
+        fmt.timeZone = .current
+        return fmt
+    }()
+
+    private static let yearFormatter:
+        DateFormatter =
+    {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy"
+        fmt.timeZone = .current
+        return fmt
+    }()
+
+    private static let hoverTimeFormatter:
+        DateFormatter =
+    {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "h:mm:ss a"
+        fmt.timeZone = .current
+        return fmt
+    }()
+
     var body: some View {
         Canvas { context, size in
             drawHashRail(context: context, size: size)
         }
         .frame(height: segment.height)
+        .contentShape(Rectangle())
+        .onContinuousHover { phase in
+            switch phase {
+            case .active(let point):
+                let hashHeight =
+                    TimelineLayoutEngine.hashHeight
+                let idx = Int(point.y / hashHeight)
+                if idx >= 0,
+                    idx < segment.hashCount
+                {
+                    hoveredHashIndex = idx
+                } else {
+                    hoveredHashIndex = nil
+                }
+            case .ended:
+                hoveredHashIndex = nil
+            @unknown default:
+                hoveredHashIndex = nil
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            if let idx = hoveredHashIndex {
+                hashTooltip(localIndex: idx)
+            }
+        }
+    }
+
+    // MARK: - Hover Tooltip
+
+    private func hashTooltip(
+        localIndex: Int
+    ) -> some View {
+        let hashHeight =
+            TimelineLayoutEngine.hashHeight
+        let centerY = CGFloat(localIndex)
+            * hashHeight + hashHeight / 2.0
+        let date = dateForHash(localIndex)
+
+        return Text(formatFullDateTime(date))
+            .font(.system(
+                size: 10.0,
+                weight: .bold,
+                design: .monospaced
+            ))
+            .foregroundColor(
+                Color.primary.opacity(0.85)
+            )
+            .fixedSize(
+                horizontal: true,
+                vertical: false
+            )
+            .shadow(
+                color: Color(.textBackgroundColor),
+                radius: 3, x: 0, y: 0
+            )
+            .shadow(
+                color: Color(.textBackgroundColor),
+                radius: 3, x: 0, y: 0
+            )
+            .padding(.horizontal, 2)
+            .background(
+                Color(.textBackgroundColor)
+                    .opacity(0.3),
+                in: Capsule()
+            )
+            .offset(
+                x: 4,
+                y: centerY - 10
+            )
+            .allowsHitTesting(false)
+    }
+
+    private func dateForHash(
+        _ localIndex: Int
+    ) -> Date {
+        let globalHash =
+            segment.startHash + localIndex
+        let seconds = Double(globalHash)
+            * TimelineLayoutEngine.hashGranularity
+        return originHash.addingTimeInterval(seconds)
+    }
+
+    private func formatFullDateTime(
+        _ date: Date
+    ) -> String {
+        let calendar = Calendar.current
+        let day = calendar.component(
+            .day, from: date
+        )
+        let prefix =
+            Self.weekdayMonthFormatter.string(
+                from: date
+            )
+        let year = Self.yearFormatter.string(
+            from: date
+        )
+        let time = Self.hoverTimeFormatter.string(
+            from: date
+        )
+        return "\(prefix) \(day)"
+            + "\(ordinalSuffix(day))"
+            + " \(year) — \(time)"
+    }
+
+    private func ordinalSuffix(
+        _ day: Int
+    ) -> String {
+        switch day {
+        case 11, 12, 13: return "th"
+        default:
+            switch day % 10 {
+            case 1: return "st"
+            case 2: return "nd"
+            case 3: return "rd"
+            default: return "th"
+            }
+        }
     }
 
     private func drawHashRail(
