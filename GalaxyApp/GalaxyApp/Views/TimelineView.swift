@@ -53,6 +53,11 @@ struct TimelineView: View {
         UUID()
     @State private var hScrollOffset: CGFloat = 0
 
+    // Live refresh state
+    @State private var refreshTask: Task<Void, Never>?
+        = nil
+    @State private var isAtBottom: Bool = true
+
     // Crosshair hover state (shared across segments)
     @State private var hoverSegmentId: UUID? = nil
     @State private var hoverRow: Int? = nil
@@ -278,6 +283,16 @@ struct TimelineView: View {
                                         "timeline-bottom"
                                     )
                             }
+                            .background(
+                                VScrollAtBottomReader(
+                                    isAtBottom:
+                                        $isAtBottom
+                                )
+                                .frame(
+                                    width: 0,
+                                    height: 0
+                                )
+                            )
                         }
                         .onAppear {
                             proxy.scrollTo(
@@ -631,6 +646,7 @@ struct TimelineView: View {
                     self.isLoading = false
                     self.scrollToBottomTrigger =
                         UUID()
+                    startPolling()
                 }
             } catch {
                 guard !Task.isCancelled
@@ -642,13 +658,182 @@ struct TimelineView: View {
         }
     }
 
+    // MARK: - Live Refresh
+
+    private func refreshTimelineEvents() {
+        guard let lsid = session.ledgerSessionId
+        else { return }
+
+        Task {
+            do {
+                let fetched =
+                    try await TimelineQueryService
+                    .shared.fetchEvents(
+                        ledgerSessionId: lsid
+                    )
+                guard !Task.isCancelled
+                else { return }
+
+                await MainActor.run {
+                    self.events = fetched
+                    self.timeAxis =
+                        TimelineLayoutEngine
+                        .computeTimeAxis(
+                            events: fetched
+                        )
+                    if let ta = self.timeAxis {
+                        self.layout =
+                            TimelineLayoutEngine
+                            .computeSpatial(
+                                timeAxis: ta,
+                                availableWidth: 800
+                            )
+                    } else {
+                        self.layout = nil
+                    }
+                    if self.isAtBottom {
+                        self.scrollToBottomTrigger =
+                            UUID()
+                    }
+                }
+            } catch {
+                // Silently ignore refresh errors —
+                // next tick will retry
+            }
+        }
+    }
+
+    private func startPolling() {
+        stopPolling()
+        refreshTask = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(
+                    for: .seconds(5)
+                )
+                guard !Task.isCancelled
+                else { break }
+                refreshTimelineEvents()
+            }
+        }
+    }
+
+    private func stopPolling() {
+        refreshTask?.cancel()
+        refreshTask = nil
+    }
+
     private func nilAllState() {
+        stopPolling()
         events = nil
         timeAxis = nil
         layout = nil
         hoveredItem = nil
         hoveredItemPoint = nil
         viewportMousePoint = nil
+    }
+}
+
+// MARK: - Vertical Scroll At-Bottom Reader
+
+/// NSViewRepresentable that tracks whether the
+/// enclosing vertical NSScrollView is scrolled to
+/// the bottom. Mirrors the HScrollOffsetReader
+/// pattern but reports a boolean instead of an offset.
+struct VScrollAtBottomReader: NSViewRepresentable {
+    @Binding var isAtBottom: Bool
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeNSView(
+        context: Context
+    ) -> AtBottomTrackingNSView {
+        let view = AtBottomTrackingNSView()
+        view.coordinator = context.coordinator
+        context.coordinator.updateBinding = {
+            [weak view] in
+            guard let view = view,
+                let scrollView =
+                    view.enclosingScrollView
+            else { return }
+            let clip = scrollView.contentView
+            let docHeight =
+                scrollView.documentView?
+                .frame.height ?? 0
+            let visibleMax =
+                clip.bounds.origin.y
+                + clip.bounds.height
+            self.isAtBottom =
+                visibleMax >= docHeight - 20
+        }
+        return view
+    }
+
+    func updateNSView(
+        _ nsView: AtBottomTrackingNSView,
+        context: Context
+    ) {
+        context.coordinator.updateBinding = {
+            [weak nsView] in
+            guard let nsView = nsView,
+                let scrollView =
+                    nsView.enclosingScrollView
+            else { return }
+            let clip = scrollView.contentView
+            let docHeight =
+                scrollView.documentView?
+                .frame.height ?? 0
+            let visibleMax =
+                clip.bounds.origin.y
+                + clip.bounds.height
+            self.isAtBottom =
+                visibleMax >= docHeight - 20
+        }
+    }
+
+    class Coordinator {
+        var updateBinding: (() -> Void)?
+    }
+
+    class AtBottomTrackingNSView: NSView {
+        weak var coordinator: Coordinator?
+        private var observation: Any?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if window != nil, observation == nil {
+                setupObservation()
+            }
+        }
+
+        private func setupObservation() {
+            guard let scrollView =
+                enclosingScrollView
+            else { return }
+            scrollView.contentView
+                .postsBoundsChangedNotifications =
+                true
+            observation =
+                NotificationCenter.default
+                .addObserver(
+                    forName: NSView
+                        .boundsDidChangeNotification,
+                    object:
+                        scrollView.contentView,
+                    queue: .main
+                ) { [weak self] _ in
+                    self?.coordinator?
+                        .updateBinding?()
+                }
+        }
+
+        deinit {
+            if let obs = observation {
+                NotificationCenter.default
+                    .removeObserver(obs)
+            }
+        }
     }
 }
 
