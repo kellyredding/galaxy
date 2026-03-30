@@ -132,7 +132,7 @@ describe GalaxyLedger::SkillsManager do
       status.skills.size.should eq(3)
       status.skills.map(&.name).should contain("handoff")
       status.skills.map(&.name).should contain("spend")
-      status.skills.map(&.name).should contain("ledger:resume")
+      status.skills.map(&.name).should contain("galaxy:resume")
       status.skills.all?(&.installed).should be_false
     end
 
@@ -186,27 +186,27 @@ describe GalaxyLedger::SkillsManager do
     end
   end
 
-  describe "ledger:resume skill" do
+  describe "galaxy:resume skill" do
     it "writes SKILL.md to the source directory" do
       GalaxyLedger::SkillsManager.install
 
-      source_file = GalaxyLedger::SKILLS_DIR / "ledger:resume" / "SKILL.md"
+      source_file = GalaxyLedger::SKILLS_DIR / "galaxy:resume" / "SKILL.md"
       File.exists?(source_file).should be_true
 
       content = File.read(source_file)
-      content.should contain("name: ledger:resume")
+      content.should contain("name: galaxy:resume")
       content.should contain("disable-model-invocation: true")
     end
 
     it "creates symlink in Claude skills directory" do
       GalaxyLedger::SkillsManager.install
 
-      symlink_path = GalaxyLedger::CLAUDE_SKILLS_DIR / "ledger:resume"
+      symlink_path = GalaxyLedger::CLAUDE_SKILLS_DIR / "galaxy:resume"
       File.symlink?(symlink_path).should be_true
 
       target = File.readlink(symlink_path.to_s)
       target.should contain("galaxy")
-      target.should contain("skills/ledger:resume")
+      target.should contain("skills/galaxy:resume")
     end
 
     it "includes CWD restore as Step 1" do

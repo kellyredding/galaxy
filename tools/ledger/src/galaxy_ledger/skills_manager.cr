@@ -102,7 +102,7 @@ module GalaxyLedger
 
     RESUME_SKILL = <<-'SKILL'
     ---
-    name: ledger:resume
+    name: galaxy:resume
     description: Restore working directory and confirm session state after resume
     disable-model-invocation: true
     ---
@@ -140,7 +140,7 @@ module GalaxyLedger
     LEDGER_SKILLS = {
       "handoff"       => HANDOFF_SKILL,
       "spend"         => SPEND_SKILL,
-      "ledger:resume" => RESUME_SKILL,
+      "galaxy:resume" => RESUME_SKILL,
     }
 
     # Old skill names to clean up on install (renamed or removed)
@@ -150,6 +150,7 @@ module GalaxyLedger
       "ledger:prune",
       "ledger:name",
       "galaxy:artifact", # Moved to galaxy-artifacts tool
+      "ledger:resume",   # Renamed to galaxy:resume
     ]
 
     struct SkillInfo
