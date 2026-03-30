@@ -145,7 +145,7 @@ struct TimelineView: View {
     private var emptyStateView: some View {
         VStack(spacing: 12) {
             Spacer()
-            Image(systemName: "chart.bar.xaxis")
+            Image(systemName: "clock.arrow.circlepath")
                 .chromeFont(size: fontSize.iconLarge)
                 .foregroundColor(.secondary)
             Text("No timeline events yet")

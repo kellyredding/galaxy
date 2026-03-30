@@ -5,9 +5,9 @@ import Foundation
 /// ContentView's activeViewContent, and add a menu shortcut.
 enum SessionTab: String, CaseIterable {
     case terminal
+    case timeline
     case ledger
     case snapshots
-    case timeline
 
     var title: String {
         switch self {
@@ -23,7 +23,7 @@ enum SessionTab: String, CaseIterable {
         case .terminal: return "terminal"
         case .ledger: return "book.closed"
         case .snapshots: return "camera.viewfinder"
-        case .timeline: return "chart.bar.xaxis"
+        case .timeline: return "clock.arrow.circlepath"
         }
     }
 
