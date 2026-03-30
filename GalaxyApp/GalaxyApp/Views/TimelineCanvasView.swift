@@ -12,6 +12,11 @@ struct TimelineContentCanvas: View {
     let laneMaxSubColumns: [Int]
     let dotDiameter: CGFloat = 10.0
 
+    // Shared crosshair state (owned by TimelineView)
+    @Binding var hoverSegmentId: UUID?
+    @Binding var hoverRow: Int?
+    @Binding var hoverColX: CGFloat?
+
     private let subColPitch: CGFloat = 25.0
 
     private var lanePadding: CGFloat {
@@ -49,6 +54,9 @@ struct TimelineContentCanvas: View {
 
     var body: some View {
         Canvas { context, size in
+            drawCrosshair(
+                context: context, size: size
+            )
             drawLaneSeparators(
                 context: context, size: size
             )
@@ -56,6 +64,103 @@ struct TimelineContentCanvas: View {
             drawDots(context: context, size: size)
         }
         .frame(height: segment.height)
+        .contentShape(Rectangle())
+        .onContinuousHover { phase in
+            switch phase {
+            case .active(let point):
+                updateHover(at: point)
+            case .ended:
+                hoverSegmentId = nil
+                hoverRow = nil
+                hoverColX = nil
+            @unknown default:
+                hoverSegmentId = nil
+                hoverRow = nil
+                hoverColX = nil
+            }
+        }
+    }
+
+    // MARK: - Hover
+
+    private func updateHover(at point: CGPoint) {
+        hoverSegmentId = segment.id
+
+        let hashHeight =
+            TimelineLayoutEngine.hashHeight
+        let row = Int(point.y / hashHeight)
+        hoverRow = (row >= 0
+            && row < segment.hashCount)
+            ? row : nil
+
+        // Find lane and sub-column
+        let offsets = laneXOffsets
+        let widths = laneWidths
+        hoverColX = nil
+
+        for i in 0..<activeLanes.count {
+            let laneStart = offsets[i]
+            let laneEnd = laneStart + widths[i]
+            guard point.x >= laneStart,
+                point.x < laneEnd
+            else { continue }
+
+            let relX = point.x - laneStart
+                - lanePadding / 2.0
+            if relX >= 0 {
+                let subCol = Int(
+                    relX / subColPitch
+                )
+                if subCol >= 0,
+                    subCol < laneMaxSubColumns[i]
+                {
+                    let centerX = offsets[i]
+                        + laneInset
+                        + CGFloat(subCol)
+                            * subColPitch
+                    hoverColX = centerX
+                        - subColPitch / 2.0
+                }
+            }
+            break
+        }
+    }
+
+    // MARK: - Crosshair
+
+    private func drawCrosshair(
+        context: GraphicsContext, size: CGSize
+    ) {
+        let hashHeight =
+            TimelineLayoutEngine.hashHeight
+        let highlight = Color.primary.opacity(0.06)
+
+        // Row highlight: only in the hovered segment
+        if hoverSegmentId == segment.id,
+            let row = hoverRow
+        {
+            let y = CGFloat(row) * hashHeight
+            context.fill(
+                Path(CGRect(
+                    x: 0, y: y,
+                    width: size.width,
+                    height: hashHeight
+                )),
+                with: .color(highlight)
+            )
+        }
+
+        // Column highlight: all segments (disabled)
+        // if let colX = hoverColX {
+        //     context.fill(
+        //         Path(CGRect(
+        //             x: colX, y: 0,
+        //             width: subColPitch,
+        //             height: size.height
+        //         )),
+        //         with: .color(highlight)
+        //     )
+        // }
     }
 
     // MARK: - Drawing
@@ -274,6 +379,11 @@ struct TimelineContentHeaderSpacer: View {
     var continuationBars: [PlacedBar] = []
     var activeLanes: [TimelineResource] = []
     var laneMaxSubColumns: [Int] = []
+    var hoverColX: CGFloat? = nil
+    var isHighlighted: Bool = false
+    var segmentId: UUID? = nil
+    var hoverSegmentIdBinding: Binding<UUID?>? = nil
+    var hoverRowBinding: Binding<Int?>? = nil
 
     private let dotDiameter: CGFloat = 10.0
     private let subColPitch: CGFloat = 25.0
@@ -289,15 +399,44 @@ struct TimelineContentHeaderSpacer: View {
     }
 
     var body: some View {
-        if !continuationBars.isEmpty {
-            Canvas { context, size in
+        Canvas { context, size in
+            // Row highlight for header
+            if isHighlighted {
+                context.fill(
+                    Path(CGRect(
+                        x: 0, y: 0,
+                        width: size.width,
+                        height: size.height
+                    )),
+                    with: .color(
+                        Color.primary
+                            .opacity(0.06)
+                    )
+                )
+            }
+            if !continuationBars.isEmpty {
                 drawContinuationBars(
                     context: context, size: size
                 )
             }
-            .frame(height: Self.height)
-        } else {
-            Color.clear.frame(height: Self.height)
+        }
+        .frame(height: Self.height)
+        .contentShape(Rectangle())
+        .onContinuousHover { phase in
+            switch phase {
+            case .active:
+                hoverSegmentIdBinding?
+                    .wrappedValue = segmentId
+                hoverRowBinding?
+                    .wrappedValue = -1
+            case .ended:
+                hoverSegmentIdBinding?
+                    .wrappedValue = nil
+                hoverRowBinding?
+                    .wrappedValue = nil
+            @unknown default:
+                break
+            }
         }
     }
 
@@ -348,12 +487,15 @@ struct TimelineContentHeaderSpacer: View {
 /// Dashed line with duration label between content segments.
 struct TimelineContentBreak: View {
     let duration: String
+    var hoverColX: CGFloat? = nil
     @Environment(\.chromeFontSize)
     private var chromeFontSize
 
     private var fontSize: ChromeFontSize {
         ChromeFontSize(chromeFontSize)
     }
+
+    private let subColPitch: CGFloat = 25.0
 
     static let breakHeight: CGFloat = 16.0
 
@@ -368,6 +510,24 @@ struct TimelineContentBreak: View {
         }
         .padding(.horizontal, 12)
         .frame(height: Self.breakHeight)
+        // Column highlight background (disabled)
+        // .background {
+        //     if let colX = hoverColX {
+        //         Canvas { context, size in
+        //             context.fill(
+        //                 Path(CGRect(
+        //                     x: colX, y: 0,
+        //                     width: subColPitch,
+        //                     height: size.height
+        //                 )),
+        //                 with: .color(
+        //                     Color.primary
+        //                         .opacity(0.06)
+        //                 )
+        //             )
+        //         }
+        //     }
+        // }
     }
 
     private var dashedLine: some View {
@@ -403,6 +563,13 @@ struct TimelineContentBreak: View {
 struct TimelineRulerSegment: View {
     let segment: LayoutSegment
     let originHash: Date
+    var isHoveredSegment: Bool = false
+    var hoverRow: Int? = nil
+
+    // Shared crosshair bindings for ruler-initiated
+    // hover (sets same state as content hover).
+    var hoverSegmentIdBinding: Binding<UUID?>? = nil
+    var hoverRowBinding: Binding<Int?>? = nil
 
     @State private var hoveredHashIndex: Int? = nil
 
@@ -444,6 +611,9 @@ struct TimelineRulerSegment: View {
 
     var body: some View {
         Canvas { context, size in
+            drawRowHighlight(
+                context: context, size: size
+            )
             drawHashRail(context: context, size: size)
         }
         .frame(height: segment.height)
@@ -458,13 +628,29 @@ struct TimelineRulerSegment: View {
                     idx < segment.hashCount
                 {
                     hoveredHashIndex = idx
+                    hoverSegmentIdBinding?
+                        .wrappedValue = segment.id
+                    hoverRowBinding?
+                        .wrappedValue = idx
                 } else {
                     hoveredHashIndex = nil
+                    hoverSegmentIdBinding?
+                        .wrappedValue = nil
+                    hoverRowBinding?
+                        .wrappedValue = nil
                 }
             case .ended:
                 hoveredHashIndex = nil
+                hoverSegmentIdBinding?
+                    .wrappedValue = nil
+                hoverRowBinding?
+                    .wrappedValue = nil
             @unknown default:
                 hoveredHashIndex = nil
+                hoverSegmentIdBinding?
+                    .wrappedValue = nil
+                hoverRowBinding?
+                    .wrappedValue = nil
             }
         }
         .overlay(alignment: .topLeading) {
@@ -481,42 +667,48 @@ struct TimelineRulerSegment: View {
     ) -> some View {
         let hashHeight =
             TimelineLayoutEngine.hashHeight
-        let centerY = CGFloat(localIndex)
-            * hashHeight + hashHeight / 2.0
+        let topY = CGFloat(localIndex) * hashHeight
         let date = dateForHash(localIndex)
 
-        return Text(formatFullDateTime(date))
-            .font(.system(
-                size: 10.0,
-                weight: .bold,
-                design: .monospaced
-            ))
-            .foregroundColor(
-                Color.primary.opacity(0.85)
-            )
-            .fixedSize(
-                horizontal: true,
-                vertical: false
-            )
-            .shadow(
-                color: Color(.textBackgroundColor),
-                radius: 3, x: 0, y: 0
-            )
-            .shadow(
-                color: Color(.textBackgroundColor),
-                radius: 3, x: 0, y: 0
-            )
-            .padding(.horizontal, 2)
-            .background(
-                Color(.textBackgroundColor)
-                    .opacity(0.3),
-                in: Capsule()
-            )
-            .offset(
-                x: 4,
-                y: centerY - 10
-            )
-            .allowsHitTesting(false)
+        return VStack {
+            Spacer()
+                .frame(height: topY)
+            Text(formatFullDateTime(date))
+                .font(.system(
+                    size: 10.0,
+                    weight: .bold,
+                    design: .monospaced
+                ))
+                .foregroundColor(
+                    Color.primary.opacity(0.85)
+                )
+                .fixedSize(
+                    horizontal: true,
+                    vertical: false
+                )
+                .shadow(
+                    color: Color(
+                        .textBackgroundColor
+                    ),
+                    radius: 3, x: 0, y: 0
+                )
+                .shadow(
+                    color: Color(
+                        .textBackgroundColor
+                    ),
+                    radius: 3, x: 0, y: 0
+                )
+                .padding(.horizontal, 2)
+                .background(
+                    Color(.textBackgroundColor)
+                        .opacity(0.3),
+                    in: Capsule()
+                )
+                .frame(height: hashHeight)
+                .padding(.leading, 4)
+            Spacer()
+        }
+        .allowsHitTesting(false)
     }
 
     private func dateForHash(
@@ -564,6 +756,29 @@ struct TimelineRulerSegment: View {
             default: return "th"
             }
         }
+    }
+
+    private func drawRowHighlight(
+        context: GraphicsContext, size: CGSize
+    ) {
+        guard isHoveredSegment,
+            let row = hoverRow,
+            row >= 0, row < segment.hashCount
+        else { return }
+
+        let hashHeight =
+            TimelineLayoutEngine.hashHeight
+        let y = CGFloat(row) * hashHeight
+        context.fill(
+            Path(CGRect(
+                x: 0, y: y,
+                width: size.width,
+                height: hashHeight
+            )),
+            with: .color(
+                Color.primary.opacity(0.06)
+            )
+        )
     }
 
     private func drawHashRail(
@@ -685,6 +900,10 @@ struct TimelineRulerSegment: View {
 struct TimelineRulerHeader: View {
     let date: Date
     let showDate: Bool
+    var segmentId: UUID? = nil
+    var isHighlighted: Bool = false
+    var hoverSegmentIdBinding: Binding<UUID?>? = nil
+    var hoverRowBinding: Binding<Int?>? = nil
 
     private static let weekdayMonthFormatter:
         DateFormatter =
@@ -750,11 +969,30 @@ struct TimelineRulerHeader: View {
         // The actual text is rendered as an overlay
         // with fixedSize so it overflows right without
         // inflating the VStack's intrinsic width.
-        Color.clear
+        (isHighlighted
+            ? Color.primary.opacity(0.06)
+            : Color.clear)
             .frame(
                 height: TimelineContentHeaderSpacer
                     .height
             )
+            .contentShape(Rectangle())
+            .onContinuousHover { phase in
+                switch phase {
+                case .active:
+                    hoverSegmentIdBinding?
+                        .wrappedValue = segmentId
+                    hoverRowBinding?
+                        .wrappedValue = -1
+                case .ended:
+                    hoverSegmentIdBinding?
+                        .wrappedValue = nil
+                    hoverRowBinding?
+                        .wrappedValue = nil
+                @unknown default:
+                    break
+                }
+            }
             .overlay(alignment: .leading) {
                 Text(headerText)
                     .font(.system(
@@ -788,6 +1026,7 @@ struct TimelineRulerHeader: View {
                         in: Capsule()
                     )
                     .padding(.leading, 4)
+                    .allowsHitTesting(false)
             }
     }
 }

@@ -53,6 +53,11 @@ struct TimelineView: View {
         UUID()
     @State private var hScrollOffset: CGFloat = 0
 
+    // Crosshair hover state (shared across segments)
+    @State private var hoverSegmentId: UUID? = nil
+    @State private var hoverRow: Int? = nil
+    @State private var hoverColX: CGFloat? = nil
+
     /// Height of the frozen lane header row.
     private let headerHeight: CGFloat = 28.0
     /// Width of the frozen ruler column.
@@ -339,12 +344,29 @@ struct TimelineView: View {
                         shouldShowDateHeader(
                             layout: layout,
                             segmentIndex: index
-                        )
+                        ),
+                    segmentId: segment.id,
+                    isHighlighted:
+                        hoverSegmentId
+                            == segment.id
+                            && hoverRow == -1,
+                    hoverSegmentIdBinding:
+                        $hoverSegmentId,
+                    hoverRowBinding:
+                        $hoverRow
                 )
 
                 TimelineRulerSegment(
                     segment: segment,
-                    originHash: layout.originHash
+                    originHash: layout.originHash,
+                    isHoveredSegment:
+                        hoverSegmentId
+                            == segment.id,
+                    hoverRow: hoverRow,
+                    hoverSegmentIdBinding:
+                        $hoverSegmentId,
+                    hoverRowBinding:
+                        $hoverRow
                 )
 
                 if layout.breakAfter(segment) != nil
@@ -378,7 +400,17 @@ struct TimelineView: View {
                     activeLanes:
                         layout.activeLanes,
                     laneMaxSubColumns:
-                        layout.laneMaxSubColumns
+                        layout.laneMaxSubColumns,
+                    hoverColX: hoverColX,
+                    isHighlighted:
+                        hoverSegmentId
+                            == segment.id
+                            && hoverRow == -1,
+                    segmentId: segment.id,
+                    hoverSegmentIdBinding:
+                        $hoverSegmentId,
+                    hoverRowBinding:
+                        $hoverRow
                 )
 
                 TimelineContentCanvas(
@@ -389,7 +421,11 @@ struct TimelineView: View {
                     originHash:
                         layout.originHash,
                     laneMaxSubColumns:
-                        layout.laneMaxSubColumns
+                        layout.laneMaxSubColumns,
+                    hoverSegmentId:
+                        $hoverSegmentId,
+                    hoverRow: $hoverRow,
+                    hoverColX: $hoverColX
                 )
 
                 if let brk = layout.breakAfter(
@@ -397,7 +433,8 @@ struct TimelineView: View {
                 ) {
                     TimelineContentBreak(
                         duration:
-                            brk.formattedDuration
+                            brk.formattedDuration,
+                        hoverColX: hoverColX
                     )
                 }
             }
