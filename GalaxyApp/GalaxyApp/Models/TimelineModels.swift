@@ -139,3 +139,303 @@ struct PlacedBar {
     /// Whether this bar continues into a later segment (no bottom cap).
     let continuesIntoNext: Bool
 }
+
+// MARK: - Hover Hit-Testing
+
+/// Identifies the timeline item currently under the
+/// mouse cursor, used for tooltip display.
+enum HoveredTimelineItem {
+    case dot(PlacedDot)
+    case bar(PlacedBar)
+
+    var event: TimelineEvent {
+        switch self {
+        case .dot(let d): return d.event
+        case .bar(let b): return b.startEvent
+        }
+    }
+
+    var endEvent: TimelineEvent? {
+        switch self {
+        case .dot: return nil
+        case .bar(let b): return b.endEvent
+        }
+    }
+
+    var resource: TimelineResource {
+        switch self {
+        case .dot(let d): return d.resource
+        case .bar(let b): return b.resource
+        }
+    }
+}
+
+// MARK: - Tooltip Formatting
+
+/// Formats detail_data for tooltip display per event type.
+enum TimelineTooltipFormatter {
+    /// Human-readable event type label.
+    static func label(
+        for eventType: String
+    ) -> String {
+        switch eventType {
+        case "session:started": return "Session Started"
+        case "session:resumed": return "Session Resumed"
+        case "session:ended": return "Session Ended"
+        case "context:cleared": return "Context Cleared"
+        case "context:compacted":
+            return "Context Compacted"
+        case "scrollback:entered":
+            return "Scrollback Entered"
+        case "scrollback:exited":
+            return "Scrollback Exited"
+        case "scrollback:reviewed":
+            return "Scrollback Reviewed"
+        case "snapshot:created":
+            return "Snapshot Created"
+        case "snapshot:reviewed":
+            return "Snapshot Reviewed"
+        default: return eventType
+        }
+    }
+
+    /// Parse detail_data JSON and return summary lines.
+    static func detailLines(
+        for eventType: String,
+        detailData: String?
+    ) -> [String] {
+        guard let data = detailData,
+            let jsonData = data.data(using: .utf8),
+            let dict = try? JSONSerialization
+                .jsonObject(with: jsonData)
+                as? [String: Any]
+        else { return [] }
+
+        switch eventType {
+        case "session:started":
+            return sessionStartedLines(dict)
+        case "session:resumed":
+            return sessionResumedLines(dict)
+        case "session:ended":
+            return sessionEndedLines(dict)
+        case "context:cleared", "context:compacted":
+            return contextLines(dict)
+        case "snapshot:created":
+            return snapshotCreatedLines(dict)
+        case "snapshot:reviewed":
+            return snapshotReviewedLines(dict)
+        case "scrollback:reviewed":
+            return scrollbackReviewedLines(dict)
+        case "scrollback:exited":
+            return scrollbackExitedLines(dict)
+        default:
+            return []
+        }
+    }
+
+    // MARK: - Per-Type Formatters
+
+    private static func sessionStartedLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        if let cwd = d["cwd"] as? String {
+            let short = abbreviatePath(cwd)
+            lines.append("cwd: \(short)")
+        }
+        if let branch = d["git_branch"] as? String {
+            lines.append("branch: \(branch)")
+        }
+        return lines
+    }
+
+    private static func sessionResumedLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        if let cwd = d["cwd"] as? String {
+            let short = abbreviatePath(cwd)
+            lines.append("cwd: \(short)")
+        }
+        if let branch = d["git_branch"] as? String {
+            lines.append("branch: \(branch)")
+        }
+        if let dc = d["decisions_count"] as? Int,
+            dc > 0
+        {
+            lines.append("decisions: \(dc)")
+        }
+        if let lc = d["learnings_count"] as? Int,
+            lc > 0
+        {
+            lines.append("learnings: \(lc)")
+        }
+        if let fc = d["files_count"] as? Int,
+            fc > 0
+        {
+            lines.append("files: \(fc)")
+        }
+        return lines
+    }
+
+    private static func sessionEndedLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        if let cost = d["cost_usd"] as? Double {
+            lines.append(
+                String(
+                    format: "cost: $%.2f", cost
+                )
+            )
+        } else if let cost = d["cost_usd"]
+            as? String,
+            let val = Double(cost)
+        {
+            lines.append(
+                String(
+                    format: "cost: $%.2f", val
+                )
+            )
+        }
+        if let pct = d["context_percentage"]
+            as? Int
+        {
+            lines.append("context: \(pct)%")
+        } else if let pct =
+            d["context_percentage"] as? String
+        {
+            lines.append("context: \(pct)%")
+        }
+        if let tokens = d["tokens_used"] as? Int {
+            lines.append(
+                "tokens: \(formatNumber(tokens))"
+            )
+        }
+        return lines
+    }
+
+    private static func contextLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        if let dc = d["decisions_count"] as? Int {
+            lines.append("decisions: \(dc)")
+        }
+        if let lc = d["learnings_count"] as? Int {
+            lines.append("learnings: \(lc)")
+        }
+        if let ec = d["exchanges_count"] as? Int {
+            lines.append("exchanges: \(ec)")
+        }
+        if let fe = d["files_edited_count"]
+            as? Int
+        {
+            lines.append("files edited: \(fe)")
+        }
+        return lines
+    }
+
+    private static func snapshotCreatedLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        if let num = d["snapshot_number"]
+            as? Int
+        {
+            lines.append("#\(num)")
+        }
+        if let title = d["title"] as? String {
+            let truncated = title.count > 40
+                ? String(title.prefix(37)) + "…"
+                : title
+            lines.append(truncated)
+        }
+        return lines
+    }
+
+    private static func snapshotReviewedLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        if let num = d["snapshot_number"]
+            as? Int
+        {
+            lines.append("#\(num)")
+        }
+        if let title = d["title"] as? String {
+            let truncated = title.count > 40
+                ? String(title.prefix(37)) + "…"
+                : title
+            lines.append(truncated)
+        }
+        if let ac = d["annotation_count"]
+            as? Int
+        {
+            lines.append(
+                "\(ac) annotation\(ac == 1 ? "" : "s")"
+            )
+        }
+        return lines
+    }
+
+    private static func scrollbackReviewedLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        if let nc = d["note_count"] as? Int {
+            lines.append(
+                "\(nc) note\(nc == 1 ? "" : "s")"
+            )
+        }
+        return lines
+    }
+
+    private static func scrollbackExitedLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        if let reason = d["reason"] as? String {
+            lines.append("reason: \(reason)")
+        }
+        if let nc = d["note_count"] as? Int,
+            nc > 0
+        {
+            lines.append(
+                "\(nc) note\(nc == 1 ? "" : "s")"
+            )
+        }
+        return lines
+    }
+
+    // MARK: - Helpers
+
+    private static func abbreviatePath(
+        _ path: String
+    ) -> String {
+        let home = FileManager.default
+            .homeDirectoryForCurrentUser.path
+        if path.hasPrefix(home) {
+            return "~"
+                + path.dropFirst(home.count)
+        }
+        return path
+    }
+
+    private static func formatNumber(
+        _ n: Int
+    ) -> String {
+        if n >= 1_000_000 {
+            return String(
+                format: "%.1fM",
+                Double(n) / 1_000_000
+            )
+        } else if n >= 1_000 {
+            return String(
+                format: "%.1fK",
+                Double(n) / 1_000
+            )
+        }
+        return "\(n)"
+    }
+}

@@ -17,6 +17,10 @@ struct TimelineContentCanvas: View {
     @Binding var hoverRow: Int?
     @Binding var hoverColX: CGFloat?
 
+    // Item tooltip state (owned by TimelineView)
+    @Binding var hoveredItem: HoveredTimelineItem?
+    @Binding var hoveredItemPoint: CGPoint?
+
     private let subColPitch: CGFloat = 25.0
 
     private var lanePadding: CGFloat {
@@ -73,10 +77,14 @@ struct TimelineContentCanvas: View {
                 hoverSegmentId = nil
                 hoverRow = nil
                 hoverColX = nil
+                hoveredItem = nil
+                hoveredItemPoint = nil
             @unknown default:
                 hoverSegmentId = nil
                 hoverRow = nil
                 hoverColX = nil
+                hoveredItem = nil
+                hoveredItemPoint = nil
             }
         }
     }
@@ -124,6 +132,85 @@ struct TimelineContentCanvas: View {
             }
             break
         }
+
+        // Hit-test placed items
+        hitTestItem(at: point)
+    }
+
+    private func hitTestItem(at point: CGPoint) {
+        let hashHeight =
+            TimelineLayoutEngine.hashHeight
+        let halfDot = dotDiameter / 2.0
+        let offsets = laneXOffsets
+
+        // Check dots first (smaller targets, higher
+        // priority when overlapping bars)
+        for dot in segment.placedDots {
+            let centerX = offsets[dot.laneIndex]
+                + laneInset
+                + CGFloat(dot.subColumn)
+                    * subColPitch
+            let centerY = CGFloat(dot.hashIndex)
+                * hashHeight + hashHeight / 2.0
+            let dx = point.x - centerX
+            let dy = point.y - centerY
+            let hitRadius = halfDot + 3.0
+            if dx * dx + dy * dy
+                <= hitRadius * hitRadius
+            {
+                hoveredItem = .dot(dot)
+                hoveredItemPoint = point
+                return
+            }
+        }
+
+        // Check bars
+        for bar in segment.placedBars {
+            let barWidth = dotDiameter
+            let laneCenterX =
+                offsets[bar.laneIndex]
+                + laneInset
+                + CGFloat(bar.subColumn)
+                    * subColPitch
+
+            var topY = CGFloat(bar.startHashIndex)
+                * hashHeight + hashHeight / 2.0
+                - halfDot
+            var bottomY = CGFloat(bar.endHashIndex)
+                * hashHeight + hashHeight / 2.0
+                + halfDot
+
+            if bar.continuesFromPrevious {
+                topY = 0
+            }
+            if bar.continuesIntoNext
+                || bar.isOpenEnded
+            {
+                bottomY = CGFloat(
+                    segment.hashCount
+                ) * hashHeight
+            }
+
+            let hitPad: CGFloat = 3.0
+            let rect = CGRect(
+                x: laneCenterX - barWidth / 2.0
+                    - hitPad,
+                y: topY,
+                width: barWidth + hitPad * 2.0,
+                height: max(
+                    dotDiameter,
+                    bottomY - topY
+                )
+            )
+            if rect.contains(point) {
+                hoveredItem = .bar(bar)
+                hoveredItemPoint = point
+                return
+            }
+        }
+
+        hoveredItem = nil
+        hoveredItemPoint = nil
     }
 
     // MARK: - Crosshair
@@ -384,6 +471,10 @@ struct TimelineContentHeaderSpacer: View {
     var segmentId: UUID? = nil
     var hoverSegmentIdBinding: Binding<UUID?>? = nil
     var hoverRowBinding: Binding<Int?>? = nil
+    var hoveredItemBinding:
+        Binding<HoveredTimelineItem?>? = nil
+    var hoveredItemPointBinding:
+        Binding<CGPoint?>? = nil
 
     private let dotDiameter: CGFloat = 10.0
     private let subColPitch: CGFloat = 25.0
@@ -424,20 +515,70 @@ struct TimelineContentHeaderSpacer: View {
         .contentShape(Rectangle())
         .onContinuousHover { phase in
             switch phase {
-            case .active:
+            case .active(let point):
                 hoverSegmentIdBinding?
                     .wrappedValue = segmentId
                 hoverRowBinding?
                     .wrappedValue = -1
+                hitTestHeaderBar(at: point)
             case .ended:
                 hoverSegmentIdBinding?
                     .wrappedValue = nil
                 hoverRowBinding?
                     .wrappedValue = nil
+                hoveredItemBinding?
+                    .wrappedValue = nil
+                hoveredItemPointBinding?
+                    .wrappedValue = nil
             @unknown default:
                 break
             }
         }
+    }
+
+    private func hitTestHeaderBar(
+        at point: CGPoint
+    ) {
+        let widths = computeLaneWidths()
+        var offsets: [CGFloat] = []
+        var x: CGFloat = 0
+        for w in widths {
+            offsets.append(x)
+            x += w
+        }
+
+        let hitPad: CGFloat = 3.0
+        for bar in continuationBars {
+            guard bar.laneIndex < offsets.count
+            else { continue }
+
+            let laneCenterX =
+                offsets[bar.laneIndex]
+                + laneInset
+                + CGFloat(bar.subColumn)
+                    * subColPitch
+            let rect = CGRect(
+                x: laneCenterX
+                    - dotDiameter / 2.0
+                    - hitPad,
+                y: 0,
+                width: dotDiameter
+                    + hitPad * 2.0,
+                height: Self.height
+            )
+            if rect.contains(point) {
+                hoveredItemBinding?
+                    .wrappedValue = .bar(bar)
+                hoveredItemPointBinding?
+                    .wrappedValue = point
+                return
+            }
+        }
+
+        hoveredItemBinding?
+            .wrappedValue = nil
+        hoveredItemPointBinding?
+            .wrappedValue = nil
     }
 
     private func drawContinuationBars(
@@ -1177,5 +1318,150 @@ struct TimelineLaneHeader: View {
             Spacer(minLength: 0)
         }
         .padding(.vertical, 6)
+    }
+}
+
+// MARK: - Item Tooltip
+
+/// Compact tooltip shown when hovering a placed dot or
+/// bar. Displays event type, timestamp, and parsed
+/// detail_data summary.
+struct TimelineItemTooltip: View {
+    let item: HoveredTimelineItem
+
+    private static let timeFormatter:
+        DateFormatter =
+    {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "h:mm:ss a"
+        fmt.timeZone = .current
+        return fmt
+    }()
+
+    private static let dateTimeFormatter:
+        DateFormatter =
+    {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "MMM d, yyyy  h:mm:ss a"
+        fmt.timeZone = .current
+        return fmt
+    }()
+
+    var body: some View {
+        VStack(
+            alignment: .leading, spacing: 3
+        ) {
+            // Header: colored dot + event label
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(item.resource.color)
+                    .frame(width: 8, height: 8)
+                Text(
+                    TimelineTooltipFormatter
+                        .label(
+                            for: item.event
+                                .eventType
+                        )
+                )
+                .font(.system(
+                    size: 11, weight: .semibold
+                ))
+                .foregroundColor(.primary)
+            }
+
+            // Timestamp
+            Text(
+                Self.dateTimeFormatter.string(
+                    from: item.event.occurredAt
+                )
+            )
+            .font(.system(
+                size: 10, design: .monospaced
+            ))
+            .foregroundColor(
+                .secondary
+            )
+
+            // Duration end time (for bars)
+            if let endEvt = item.endEvent {
+                Text(
+                    "→ "
+                        + Self.timeFormatter
+                            .string(
+                                from: endEvt
+                                    .occurredAt
+                            )
+                )
+                .font(.system(
+                    size: 10,
+                    design: .monospaced
+                ))
+                .foregroundColor(
+                    .secondary
+                )
+            } else if case .bar(let b) = item,
+                b.isOpenEnded
+            {
+                Text("→ ongoing")
+                    .font(.system(
+                        size: 10,
+                        design: .monospaced
+                    ))
+                    .foregroundColor(
+                        .secondary.opacity(0.7)
+                    )
+            }
+
+            // Detail lines
+            let details =
+                TimelineTooltipFormatter
+                .detailLines(
+                    for: item.event.eventType,
+                    detailData: item.event
+                        .detailData
+                )
+            if !details.isEmpty {
+                Divider()
+                    .padding(.vertical, 1)
+                ForEach(
+                    details, id: \.self
+                ) { line in
+                    Text(line)
+                        .font(.system(
+                            size: 10,
+                            design: .monospaced
+                        ))
+                        .foregroundColor(
+                            .primary.opacity(0.8)
+                        )
+                        .lineLimit(1)
+                }
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(
+            minWidth: 140,
+            maxWidth: 260,
+            alignment: .leading
+        )
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(
+                    Color(.windowBackgroundColor)
+                )
+                .shadow(
+                    color: Color.black
+                        .opacity(0.2),
+                    radius: 4, x: 0, y: 2
+                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(
+                    Color.primary.opacity(0.1),
+                    lineWidth: 0.5
+                )
+        )
     }
 }

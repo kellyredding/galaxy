@@ -58,6 +58,15 @@ struct TimelineView: View {
     @State private var hoverRow: Int? = nil
     @State private var hoverColX: CGFloat? = nil
 
+    // Item tooltip state
+    @State private var hoveredItem:
+        HoveredTimelineItem? = nil
+    @State private var hoveredItemPoint:
+        CGPoint? = nil
+    // Viewport-level mouse position for tooltip
+    @State private var viewportMousePoint:
+        CGPoint? = nil
+
     /// Height of the frozen lane header row.
     private let headerHeight: CGFloat = 28.0
     /// Width of the frozen ruler column.
@@ -318,8 +327,84 @@ struct TimelineView: View {
                         .frame(height: 1)
                 }
                 .zIndex(2)
+
+                // Item tooltip overlay — positioned
+                // from the top-leading corner so
+                // leading edge placement is exact.
+                if let item = hoveredItem,
+                    let pt = viewportMousePoint
+                {
+                    let pos =
+                        tooltipOffset(
+                            anchor: pt,
+                            viewSize: geo.size
+                        )
+                    TimelineItemTooltip(
+                        item: item
+                    )
+                    .fixedSize()
+                    .frame(
+                        maxWidth: .infinity,
+                        maxHeight: .infinity,
+                        alignment: pos.alignment
+                    )
+                    .offset(
+                        x: pos.x, y: pos.y
+                    )
+                    .allowsHitTesting(false)
+                    .zIndex(3)
+                }
+
+            }
+            .onContinuousHover { phase in
+                switch phase {
+                case .active(let pt):
+                    viewportMousePoint = pt
+                case .ended:
+                    viewportMousePoint = nil
+                @unknown default:
+                    viewportMousePoint = nil
+                }
             }
         }
+    }
+
+    // MARK: - Tooltip Positioning
+
+    private struct TooltipPosition {
+        let x: CGFloat
+        let y: CGFloat
+        let alignment: Alignment
+    }
+
+    /// Compute offset from the alignment corner.
+    /// Uses .topLeading when placing right of cursor,
+    /// .topTrailing when placing left of cursor.
+    private func tooltipOffset(
+        anchor: CGPoint,
+        viewSize: CGSize
+    ) -> TooltipPosition {
+        let gap: CGFloat = 12.0
+        let maxW: CGFloat = 260.0
+
+        // Try right side first: leading edge at
+        // anchor.x + gap
+        let rightLeading = anchor.x + gap
+        if rightLeading + maxW <= viewSize.width {
+            // Place right of cursor, topLeading
+            return TooltipPosition(
+                x: rightLeading,
+                y: anchor.y,
+                alignment: .topLeading
+            )
+        }
+
+        // Flip left: trailing edge at anchor.x - gap
+        return TooltipPosition(
+            x: -(viewSize.width - anchor.x + gap),
+            y: anchor.y,
+            alignment: .topTrailing
+        )
     }
 
     // MARK: - Ruler Column
@@ -410,7 +495,11 @@ struct TimelineView: View {
                     hoverSegmentIdBinding:
                         $hoverSegmentId,
                     hoverRowBinding:
-                        $hoverRow
+                        $hoverRow,
+                    hoveredItemBinding:
+                        $hoveredItem,
+                    hoveredItemPointBinding:
+                        $hoveredItemPoint
                 )
 
                 TimelineContentCanvas(
@@ -425,7 +514,11 @@ struct TimelineView: View {
                     hoverSegmentId:
                         $hoverSegmentId,
                     hoverRow: $hoverRow,
-                    hoverColX: $hoverColX
+                    hoverColX: $hoverColX,
+                    hoveredItem:
+                        $hoveredItem,
+                    hoveredItemPoint:
+                        $hoveredItemPoint
                 )
 
                 if let brk = layout.breakAfter(
@@ -534,6 +627,9 @@ struct TimelineView: View {
         events = nil
         timeAxis = nil
         layout = nil
+        hoveredItem = nil
+        hoveredItemPoint = nil
+        viewportMousePoint = nil
     }
 }
 
