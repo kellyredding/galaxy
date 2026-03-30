@@ -67,6 +67,23 @@ struct TimelineView: View {
     @State private var viewportMousePoint:
         CGPoint? = nil
 
+    /// Identifier used to highlight the hovered item
+    /// and all related segments (cross-break bars).
+    /// Uses startEvent.id so cross-segment splits of the
+    /// same bar highlight together, but different bars
+    /// sharing a durationIdentifier (e.g. multiple
+    /// session resume/end pairs) highlight independently.
+    private var highlightId: String? {
+        guard let item = hoveredItem
+        else { return nil }
+        switch item {
+        case .bar(let b):
+            return "\(b.startEvent.id)"
+        case .dot(let d):
+            return "\(d.event.id)"
+        }
+    }
+
     /// Height of the frozen lane header row.
     private let headerHeight: CGFloat = 28.0
     /// Width of the frozen ruler column.
@@ -499,7 +516,8 @@ struct TimelineView: View {
                     hoveredItemBinding:
                         $hoveredItem,
                     hoveredItemPointBinding:
-                        $hoveredItemPoint
+                        $hoveredItemPoint,
+                    highlightId: highlightId
                 )
 
                 TimelineContentCanvas(
@@ -518,7 +536,8 @@ struct TimelineView: View {
                     hoveredItem:
                         $hoveredItem,
                     hoveredItemPoint:
-                        $hoveredItemPoint
+                        $hoveredItemPoint,
+                    highlightId: highlightId
                 )
 
                 if let brk = layout.breakAfter(

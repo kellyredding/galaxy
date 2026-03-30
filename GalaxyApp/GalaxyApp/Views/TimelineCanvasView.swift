@@ -21,6 +21,10 @@ struct TimelineContentCanvas: View {
     @Binding var hoveredItem: HoveredTimelineItem?
     @Binding var hoveredItemPoint: CGPoint?
 
+    // Cross-segment highlight (duration ID or event
+    // ID of the currently hovered item).
+    var highlightId: String? = nil
+
     private let subColPitch: CGFloat = 25.0
 
     private var lanePadding: CGFloat {
@@ -282,6 +286,35 @@ struct TimelineContentCanvas: View {
         }
     }
 
+    /// Whether dimming is active (something is hovered).
+    private var isDimming: Bool {
+        highlightId != nil
+    }
+
+    /// Opacity for non-highlighted items when dimming.
+    private let dimOpacity: Double = 0.3
+
+    /// Whether a bar matches the current highlight.
+    /// Matches by startEvent.id so cross-segment splits
+    /// highlight together but different bars with the
+    /// same durationIdentifier highlight independently.
+    private func isBarHighlighted(
+        _ bar: PlacedBar
+    ) -> Bool {
+        guard let hid = highlightId
+        else { return false }
+        return "\(bar.startEvent.id)" == hid
+    }
+
+    /// Whether a dot matches the current highlight.
+    private func isDotHighlighted(
+        _ dot: PlacedDot
+    ) -> Bool {
+        guard let hid = highlightId
+        else { return false }
+        return "\(dot.event.id)" == hid
+    }
+
     private func drawBars(
         context: GraphicsContext, size: CGSize
     ) {
@@ -333,10 +366,30 @@ struct TimelineContentCanvas: View {
                 roundTop: roundTop,
                 roundBottom: roundBottom
             )
+
+            let highlighted = isBarHighlighted(bar)
+            let color = bar.resource.color
+            let fillOpacity =
+                isDimming && !highlighted
+                ? dimOpacity : 1.0
+
             context.fill(
                 path,
-                with: .color(bar.resource.color)
+                with: .color(
+                    color.opacity(fillOpacity)
+                )
             )
+
+            // Stroke on highlighted bars
+            if highlighted {
+                context.stroke(
+                    path,
+                    with: .color(
+                        color.opacity(0.9)
+                    ),
+                    lineWidth: 2.0
+                )
+            }
         }
     }
 
@@ -440,6 +493,12 @@ struct TimelineContentCanvas: View {
             let centerY = CGFloat(dot.hashIndex)
                 * hashHeight + hashHeight / 2.0
 
+            let highlighted = isDotHighlighted(dot)
+            let color = dot.resource.color
+            let fillOpacity =
+                isDimming && !highlighted
+                ? dimOpacity : 1.0
+
             let rect = CGRect(
                 x: laneCenterX - diameter / 2.0,
                 y: centerY - diameter / 2.0,
@@ -449,8 +508,21 @@ struct TimelineContentCanvas: View {
             let path = Path(ellipseIn: rect)
             context.fill(
                 path,
-                with: .color(dot.resource.color)
+                with: .color(
+                    color.opacity(fillOpacity)
+                )
             )
+
+            // Stroke on highlighted dots
+            if highlighted {
+                context.stroke(
+                    path,
+                    with: .color(
+                        color.opacity(0.9)
+                    ),
+                    lineWidth: 2.0
+                )
+            }
         }
     }
 }
@@ -475,6 +547,7 @@ struct TimelineContentHeaderSpacer: View {
         Binding<HoveredTimelineItem?>? = nil
     var hoveredItemPointBinding:
         Binding<CGPoint?>? = nil
+    var highlightId: String? = nil
 
     private let dotDiameter: CGFloat = 10.0
     private let subColPitch: CGFloat = 25.0
@@ -592,9 +665,25 @@ struct TimelineContentHeaderSpacer: View {
             x += w
         }
 
+        let isDimming = highlightId != nil
+        let dimOpacity: Double = 0.3
+
         for bar in continuationBars {
             guard bar.laneIndex < offsets.count
             else { continue }
+
+            let highlighted: Bool
+            if let hid = highlightId {
+                highlighted =
+                    "\(bar.startEvent.id)" == hid
+            } else {
+                highlighted = false
+            }
+
+            let color = bar.resource.color
+            let fillOpacity =
+                isDimming && !highlighted
+                ? dimOpacity : 1.0
 
             let laneCenterX = offsets[bar.laneIndex]
                 + laneInset
@@ -607,8 +696,20 @@ struct TimelineContentHeaderSpacer: View {
             )
             context.fill(
                 Path(rect),
-                with: .color(bar.resource.color)
+                with: .color(
+                    color.opacity(fillOpacity)
+                )
             )
+
+            if highlighted {
+                context.stroke(
+                    Path(rect),
+                    with: .color(
+                        color.opacity(0.9)
+                    ),
+                    lineWidth: 2.0
+                )
+            }
         }
     }
 
