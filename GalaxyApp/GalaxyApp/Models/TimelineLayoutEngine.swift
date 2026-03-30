@@ -38,11 +38,20 @@ enum TimelineLayoutEngine {
         let durations = pairDurations(sorted: sorted)
 
         // 5. Snap to hashes and compute hash range
+        // Extend to "now" so trailing inactivity is
+        // visible as either empty hashes or a break.
         let firstTime = sorted.first!.0.occurredAt
-        let lastTime = sorted.last!.0.occurredAt
+        let lastTime = max(
+            sorted.last!.0.occurredAt, Date()
+        )
         let originHash = snapToHash(firstTime)
         let endHash = snapToHash(lastTime)
-        let totalHashes = max(1, hashIndex(for: endHash, origin: originHash) + 1)
+        let totalHashes = max(
+            1,
+            hashIndex(
+                for: endHash, origin: originHash
+            ) + 1
+        )
 
         // 6. Build hash -> events mapping for point events
         var pointsByHash: [Int: [(TimelineEvent, EventRegistration)]] = [:]
@@ -613,6 +622,11 @@ enum TimelineLayoutEngine {
                 activeHashes.insert(end)
             }
         }
+
+        // Mark the final hash (now) as active so
+        // trailing inactivity produces either empty
+        // hashes or a collapsed break at the bottom.
+        activeHashes.insert(totalHashes - 1)
 
         // Walk hashes and detect gaps
         guard !activeHashes.isEmpty else {
