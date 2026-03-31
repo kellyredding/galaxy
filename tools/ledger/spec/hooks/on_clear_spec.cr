@@ -1124,3 +1124,56 @@ describe "OnClear timeline recording" do
     ctx.should contain("### Session File Manifest")
   end
 end
+
+describe "OnClear orphan turn cleanup" do
+  it "deletes orphaned turn state file during clear" do
+    test_session_id = "clear-orphan-#{Random.rand(10000)}"
+    ledger_session_id = GalaxyLedger::Database.create_session(
+      test_session_id, claude_pid: Process.pid.to_i64)
+
+    # Create an orphaned turn state file
+    GalaxyLedger::Hooks::TurnState.write(
+      test_session_id,
+      "orphan-uuid-clear",
+      "orphan message from clear",
+    )
+
+    GalaxyLedger::Hooks::TurnState.exists?(
+      test_session_id,
+    ).should be_true
+
+    hook_input = {
+      "session_id" => test_session_id,
+      "source"     => "clear",
+    }.to_json
+
+    result = run_binary(["on-clear"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    # The orphaned turn state file should be cleaned up
+    GalaxyLedger::Hooks::TurnState.exists?(
+      test_session_id,
+    ).should be_false
+  end
+
+  it "succeeds when no orphaned turn state exists" do
+    test_session_id = "clear-no-orphan-#{Random.rand(10000)}"
+    GalaxyLedger::Database.create_session(
+      test_session_id, claude_pid: Process.pid.to_i64)
+
+    GalaxyLedger::Hooks::TurnState.exists?(
+      test_session_id,
+    ).should be_false
+
+    hook_input = {
+      "session_id" => test_session_id,
+      "source"     => "clear",
+    }.to_json
+
+    result = run_binary(["on-clear"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    output = JSON.parse(result[:output])
+    output["systemMessage"].should be_a(JSON::Any)
+  end
+end

@@ -173,6 +173,92 @@ describe "OnSessionEnd timeline recording" do
   end
 end
 
+describe "OnSessionEnd orphan turn cleanup" do
+  it "deletes orphaned turn state file during session end" do
+    test_session_id = "end-orphan-#{Random.rand(10000)}"
+    GalaxyLedger::Database.create_session(
+      test_session_id, claude_pid: Process.pid.to_i64)
+
+    # Create an orphaned turn state file
+    GalaxyLedger::Hooks::TurnState.write(
+      test_session_id,
+      "orphan-uuid-end",
+      "orphan message from session end",
+    )
+
+    GalaxyLedger::Hooks::TurnState.exists?(
+      test_session_id,
+    ).should be_true
+
+    hook_input = {
+      "session_id" => test_session_id,
+      "cwd"        => "/tmp",
+    }.to_json
+
+    result = run_binary(
+      ["on-session-end"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    # The orphaned turn state file should be cleaned up
+    GalaxyLedger::Hooks::TurnState.exists?(
+      test_session_id,
+    ).should be_false
+  end
+
+  it "succeeds when no orphaned turn state exists" do
+    test_session_id = "end-no-orphan-#{Random.rand(10000)}"
+    GalaxyLedger::Database.create_session(
+      test_session_id, claude_pid: Process.pid.to_i64)
+
+    GalaxyLedger::Hooks::TurnState.exists?(
+      test_session_id,
+    ).should be_false
+
+    hook_input = {
+      "session_id" => test_session_id,
+      "cwd"        => "/tmp",
+    }.to_json
+
+    result = run_binary(
+      ["on-session-end"], stdin: hook_input)
+    result[:status].should eq(0)
+  end
+
+  it "does not clean orphan when reason is clear" do
+    test_session_id = "end-orphan-clear-#{Random.rand(10000)}"
+    GalaxyLedger::Database.create_session(
+      test_session_id, claude_pid: Process.pid.to_i64)
+
+    # Create an orphaned turn state file
+    GalaxyLedger::Hooks::TurnState.write(
+      test_session_id,
+      "orphan-uuid-clear-skip",
+      "should not be cleaned",
+    )
+
+    hook_input = {
+      "session_id" => test_session_id,
+      "cwd"        => "/tmp",
+      "reason"     => "clear",
+    }.to_json
+
+    result = run_binary(
+      ["on-session-end"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    # Session end with reason=clear returns early (context
+    # reset guard), so orphan cleanup should NOT happen —
+    # on_clear handles it instead.
+    GalaxyLedger::Hooks::TurnState.exists?(
+      test_session_id,
+    ).should be_true
+  ensure
+    if sid = test_session_id
+      GalaxyLedger::Hooks::TurnState.delete(sid)
+    end
+  end
+end
+
 describe "OnSessionEnd help" do
   it "shows help with --help flag" do
     result = run_binary(["on-session-end", "--help"])

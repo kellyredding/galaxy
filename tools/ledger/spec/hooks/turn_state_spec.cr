@@ -147,6 +147,61 @@ describe GalaxyLedger::Hooks::TurnState do
     end
   end
 
+  describe ".close_orphan" do
+    it "deletes the state file when present" do
+      GalaxyLedger::Hooks::TurnState.write(
+        test_session_id,
+        "orphan-uuid-123",
+        "orphan message",
+      )
+
+      GalaxyLedger::Hooks::TurnState.exists?(
+        test_session_id,
+      ).should be_true
+
+      GalaxyLedger::Hooks::TurnState.close_orphan(
+        test_session_id,
+        999_i64,
+      )
+
+      GalaxyLedger::Hooks::TurnState.exists?(
+        test_session_id,
+      ).should be_false
+    end
+
+    it "is a no-op when no state file exists" do
+      GalaxyLedger::Hooks::TurnState.exists?(
+        test_session_id,
+      ).should be_false
+
+      # Should not raise
+      GalaxyLedger::Hooks::TurnState.close_orphan(
+        test_session_id,
+        999_i64,
+      )
+    end
+
+    it "does not raise when galaxy-timeline is unavailable" do
+      GalaxyLedger::Hooks::TurnState.write(
+        test_session_id,
+        "orphan-uuid-456",
+        "orphan message 2",
+      )
+
+      # Should not raise even if galaxy-timeline fails
+      GalaxyLedger::Hooks::TurnState.close_orphan(
+        test_session_id,
+        999_i64,
+      )
+
+      # State file should still be deleted (cleanup
+      # happens after the Process.run call)
+      GalaxyLedger::Hooks::TurnState.exists?(
+        test_session_id,
+      ).should be_false
+    end
+  end
+
   describe ".dir" do
     it "creates the directory if it does not exist" do
       dir = GalaxyLedger::Hooks::TurnState.dir

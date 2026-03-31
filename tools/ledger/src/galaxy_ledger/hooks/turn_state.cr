@@ -88,6 +88,44 @@ module GalaxyLedger
         File.exists?(state_path(claude_session_id))
       end
 
+      # Close an orphaned turn by recording turn:abandoned
+      # and deleting the state file. Synchronous — the
+      # timeline event must be recorded before the caller's
+      # own event (context:cleared, session:ended, etc.)
+      # to preserve chronological ordering.
+      def self.close_orphan(
+        claude_session_id : String,
+        ledger_session_id : Int64,
+      )
+        state = read(claude_session_id)
+        return unless state
+
+        detail_data = {
+          "user_message" => state.user_message,
+        }.to_json
+
+        Process.run(
+          "galaxy-timeline",
+          args: [
+            "record",
+            "--ledger-session-id",
+            ledger_session_id.to_s,
+            "--event-type", "turn:abandoned",
+            "--source", "galaxy-ledger",
+            "--duration-identifier",
+            "turn--#{state.uuid}",
+            "--detail-data-stdin",
+          ],
+          input: IO::Memory.new(detail_data),
+          output: Process::Redirect::Close,
+          error: Process::Redirect::Close,
+        )
+
+        delete(claude_session_id)
+      rescue
+        # Best-effort — orphan cleanup is not fatal
+      end
+
       # Full path to the state file for a Claude session.
       def self.state_path(
         claude_session_id : String,

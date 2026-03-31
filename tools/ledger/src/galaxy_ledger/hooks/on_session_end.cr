@@ -42,6 +42,13 @@ module GalaxyLedger
         )
         return unless ledger_session_id
 
+        # Close any orphaned turn before recording session end
+        if sid = @stdin_session_identifier
+          if TurnState.exists?(sid)
+            TurnState.close_orphan(sid, ledger_session_id)
+          end
+        end
+
         session_record = Database.get_session_by_id(
           ledger_session_id,
         )

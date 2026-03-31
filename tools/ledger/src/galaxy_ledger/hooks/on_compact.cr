@@ -18,6 +18,15 @@ module GalaxyLedger
 
         parse_hook_input
 
+        # Close any orphaned turn from this session
+        # (e.g. context limit hit before Stop could fire)
+        if sid = @stdin_session_identifier
+          if TurnState.exists?(sid)
+            lsid = resolve_session_for_timeline
+            TurnState.close_orphan(sid, lsid) if lsid > 0
+          end
+        end
+
         # Record timeline event synchronously (basic data).
         # Must fire before ContextHandoff.run which calls exit.
         timeline_event_id = record_timeline_event(
