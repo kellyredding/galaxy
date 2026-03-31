@@ -577,9 +577,95 @@ class SessionManager: ObservableObject {
         }
     }
 
+    /// Build the turn state file path for a session.
+    /// Matches Crystal TurnState module:
+    /// ~/.claude/galaxy/ledger/turn-state/{claude_session_id}.json
+    private func turnStateFilePath(
+        for session: Session
+    ) -> String {
+        let home = NSHomeDirectory()
+        return "\(home)/.claude/galaxy/ledger/turn-state"
+            + "/\(session.claudeSessionId).json"
+    }
+
+    /// Read and parse the turn state file for a session.
+    /// Returns (uuid, user_message) or nil if file is
+    /// missing or unreadable.
+    private func readTurnState(
+        for session: Session
+    ) -> (uuid: String, userMessage: String)? {
+        let path = turnStateFilePath(for: session)
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: path),
+              let data = fm.contents(atPath: path),
+              let dict = try? JSONSerialization.jsonObject(
+                  with: data
+              ) as? [String: Any],
+              let uuid = dict["uuid"] as? String,
+              let msg = dict["user_message"] as? String
+        else { return nil }
+        return (uuid: uuid, userMessage: msg)
+    }
+
+    /// Detect user interrupts on busy→idle by checking the
+    /// turn state file. If present, Stop hook never ran —
+    /// the user interrupted. Records turn:interrupted and
+    /// cleans up the state file.
+    private func checkForInterrupt(
+        for session: Session
+    ) {
+        // Guard: need ledgerSessionId for timeline recording
+        guard let ledgerSessionId = session.ledgerSessionId
+        else { return }
+
+        // Step 1: Immediate read on idle transition
+        guard let captured = readTurnState(for: session)
+        else { return }
+
+        // Step 2: 0.5s safety delay
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + 0.5
+        ) { [weak self, weak session] in
+            guard let self, let session else { return }
+
+            // Step 3: Re-read and decide
+            let current = self.readTurnState(for: session)
+
+            if current == nil {
+                // File gone — Stop hook consumed it (was
+                // slow). Not an interrupt.
+                return
+            }
+
+            // Record turn:interrupted using captured data
+            TimelineService.record(
+                ledgerSessionId: ledgerSessionId,
+                eventType: "turn:interrupted",
+                source: "galaxy-app",
+                durationIdentifier:
+                    "turn--\(captured.uuid)",
+                detailData: [
+                    "user_message": captured.userMessage,
+                ]
+            )
+
+            // Delete only if UUID still matches (we own it)
+            if current?.uuid == captured.uuid {
+                try? FileManager.default.removeItem(
+                    atPath: self.turnStateFilePath(
+                        for: session
+                    )
+                )
+            }
+        }
+    }
+
     /// Called on every busy→idle transition for a session.
     /// Checks context usage and auto-clears if above threshold.
     private func handleIdleTransition(for session: Session) {
+        // Check for user interrupt (state file left behind)
+        checkForInterrupt(for: session)
+
         let settings = SettingsManager.shared.settings
 
         // Show unread indicator when a session goes idle and the user
