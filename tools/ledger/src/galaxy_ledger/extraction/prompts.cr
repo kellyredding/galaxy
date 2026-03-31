@@ -17,7 +17,7 @@ module GalaxyLedger
         - Brainstorming or exploration without decisions
         - Acknowledgments ("yes", "ok", "continue", "sounds good", "that looks good")
         - One-time instructions for the current task only (e.g., "add a comment here" is one-time; "always add comments for complex logic" is durable)
-        - Standard language/framework conventions that any developer would know
+        - Conventions implied by standard practice UNLESS the user explicitly states them as a directive (e.g., "always use trailing commas" IS a direction even though trailing commas are a known convention — the user is explicitly requiring it)
 
         ## Importance levels:
         - **high**: Security requirements, architectural constraints, explicit "always/never" rules
