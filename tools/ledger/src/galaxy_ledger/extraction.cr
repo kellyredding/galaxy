@@ -118,6 +118,7 @@ module GalaxyLedger
         content: prompt,
         prompt: Prompts.user_prompt_extraction,
         model: EXTRACTION_MODEL,
+        prefill: "{",
       )
 
       return Result.new if run_result[:result].nil?
@@ -142,6 +143,7 @@ module GalaxyLedger
         content: assistant_content,
         prompt: full_prompt,
         model: EXTRACTION_MODEL,
+        prefill: "{",
       )
 
       return Result.new if run_result[:result].nil?

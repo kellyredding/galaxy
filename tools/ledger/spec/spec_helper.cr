@@ -25,21 +25,19 @@ Dir.mkdir_p(SPEC_GALAXY_DIR)
 Dir.mkdir_p(SPEC_CONFIG_DIR)
 Dir.mkdir_p(SPEC_DATA_DIR)
 
-# Disable extraction in test config to prevent real Claude CLI calls.
-# Extraction logic is covered by stubbed pipeline specs and eval specs.
+# Disable extraction and backups in test config to prevent real Claude
+# CLI calls and unnecessary VACUUM INTO operations.
+# Generated from Config.default to include all required fields so
+# subprocess Config.from_json never falls back to defaults.
 # This is also used by Spec.before_each to reset config between tests,
 # preventing config file leakage from tests that write custom configs.
-SPEC_DEFAULT_CONFIG = {
-  "extraction" => {
-    "on_stop"           => false,
-    "on_guideline_read" => false,
-  },
-  "backups" => {
-    "enabled"        => false,
-    "retention_days" => 3,
-    "path"           => "",
-  },
-}.to_json
+SPEC_DEFAULT_CONFIG = begin
+  config = GalaxyLedger::Config.default
+  config.extraction.on_stop = false
+  config.extraction.on_guideline_read = false
+  config.backups.enabled = false
+  config.to_pretty_json
+end
 File.write(SPEC_CONFIG_DIR / "config.json", SPEC_DEFAULT_CONFIG)
 
 # Skip CLI auto-run when loading module for specs
