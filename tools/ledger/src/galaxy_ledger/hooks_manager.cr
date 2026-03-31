@@ -41,6 +41,18 @@ module GalaxyLedger
           ],
         },
       ],
+      "StopFailure" => [
+        {
+          "hooks" => [
+            {
+              "type"    => "command",
+              "command" => "~/.claude/galaxy/bin/galaxy-ledger on-stop-failure",
+              "async"   => true,
+              "timeout" => 10,
+            },
+          ],
+        },
+      ],
       "SessionEnd" => [
         {
           "hooks" => [

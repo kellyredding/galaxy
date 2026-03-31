@@ -780,6 +780,120 @@ describe "OnStop timeline recording" do
   end
 end
 
+describe "OnStop turn state consumption" do
+  test_session_id = "stop-turn-test-#{Random.rand(100000)}"
+  ledger_session_id = 0_i64
+
+  before_each do
+    GalaxyLedger::Database.delete_session(test_session_id)
+    ledger_session_id = GalaxyLedger::Database.create_session(
+      test_session_id,
+    )
+    GalaxyLedger::Hooks::TurnState.delete(test_session_id)
+  end
+
+  after_each do
+    GalaxyLedger::Database.delete_session(test_session_id)
+    GalaxyLedger::Hooks::TurnState.delete(test_session_id)
+  end
+
+  it "deletes turn state file when it exists" do
+    GalaxyLedger::Hooks::TurnState.write(
+      test_session_id,
+      "stop-uuid-123",
+      "Tell me about the architecture",
+    )
+    flush_wal
+
+    transcript_file = File.tempfile("transcript", ".jsonl")
+    transcript_file.print(
+      %|{"type":"user","timestamp":"2026-02-01T10:00:00Z",| \
+      %|"message":{"role":"user","content":"Test"}}\n|,
+    )
+    transcript_file.close
+
+    hook_input = {
+      "session_id"             => test_session_id,
+      "transcript_path"        => transcript_file.path,
+      "stop_hook_active"       => false,
+      "last_assistant_message" => "Here is the architecture...",
+    }.to_json
+
+    result = run_binary(["on-stop"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    # State file should be consumed
+    GalaxyLedger::Hooks::TurnState.exists?(
+      test_session_id,
+    ).should be_false
+
+    File.delete(transcript_file.path)
+  end
+
+  it "runs cleanly when no state file exists" do
+    flush_wal
+
+    transcript_file = File.tempfile("transcript", ".jsonl")
+    transcript_file.print(
+      %|{"type":"user","timestamp":"2026-02-01T10:00:00Z",| \
+      %|"message":{"role":"user","content":"Test"}}\n|,
+    )
+    transcript_file.close
+
+    hook_input = {
+      "session_id"             => test_session_id,
+      "transcript_path"        => transcript_file.path,
+      "stop_hook_active"       => false,
+      "last_assistant_message" => "Agent-initiated response",
+    }.to_json
+
+    result = run_binary(["on-stop"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    # Should still produce valid output
+    json = JSON.parse(result[:output])
+    json["decision"].as_s.should eq("approve")
+
+    File.delete(transcript_file.path)
+  end
+
+  it "skips turn recording for mismatched session_id" do
+    # Write a state file for a different session
+    GalaxyLedger::Hooks::TurnState.write(
+      "other-session-id",
+      "other-uuid",
+      "other message",
+    )
+    flush_wal
+
+    transcript_file = File.tempfile("transcript", ".jsonl")
+    transcript_file.print(
+      %|{"type":"user","timestamp":"2026-02-01T10:00:00Z",| \
+      %|"message":{"role":"user","content":"Test"}}\n|,
+    )
+    transcript_file.close
+
+    hook_input = {
+      "session_id"             => test_session_id,
+      "transcript_path"        => transcript_file.path,
+      "stop_hook_active"       => false,
+      "last_assistant_message" => "Response",
+    }.to_json
+
+    result = run_binary(["on-stop"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    # The other session's state file should still exist
+    # (not consumed by this session's Stop)
+    GalaxyLedger::Hooks::TurnState.exists?(
+      "other-session-id",
+    ).should be_true
+
+    File.delete(transcript_file.path)
+    GalaxyLedger::Hooks::TurnState.delete("other-session-id")
+  end
+end
+
 describe "OnStop CLI help" do
   it "shows help with -h flag" do
     result = run_binary(["on-stop", "-h"])

@@ -133,6 +133,148 @@ describe GalaxyLedger::Hooks::OnUserPromptSubmit do
     end
   end
 
+  describe "turn state file management" do
+    test_session_id = "turn-test-#{Random.rand(100000)}"
+
+    before_each do
+      GalaxyLedger::Database.delete_session(
+        test_session_id,
+      )
+      GalaxyLedger::Hooks::TurnState.delete(
+        test_session_id,
+      )
+    end
+
+    after_each do
+      GalaxyLedger::Database.delete_session(
+        test_session_id,
+      )
+      GalaxyLedger::Hooks::TurnState.delete(
+        test_session_id,
+      )
+    end
+
+    it "writes turn state file for matching session" do
+      ledger_id = GalaxyLedger::Database.create_session(
+        test_session_id,
+      )
+      flush_wal
+
+      input = {
+        "session_id"      => test_session_id,
+        "prompt"          => "Tell me about the codebase architecture",
+        "hook_event_name" => "UserPromptSubmit",
+      }.to_json
+
+      result = run_binary(
+        ["on-user-prompt-submit"],
+        stdin: input,
+      )
+      result[:status].should eq(0)
+
+      state = GalaxyLedger::Hooks::TurnState.read(
+        test_session_id,
+      )
+      state.should_not be_nil
+      state = state.not_nil!
+      state.user_message.should eq(
+        "Tell me about the codebase architecture",
+      )
+      state.uuid.should_not be_empty
+    end
+
+    it "skips turn state for task-notification prompts" do
+      ledger_id = GalaxyLedger::Database.create_session(
+        test_session_id,
+      )
+      flush_wal
+
+      input = {
+        "session_id"      => test_session_id,
+        "prompt"          => "<task-notification>\n<task-id>abc123</task-id>\n<status>completed</status>\n</task-notification>",
+        "hook_event_name" => "UserPromptSubmit",
+      }.to_json
+
+      result = run_binary(
+        ["on-user-prompt-submit"],
+        stdin: input,
+      )
+      result[:status].should eq(0)
+
+      GalaxyLedger::Hooks::TurnState.exists?(
+        test_session_id,
+      ).should be_false
+    end
+
+    it "skips turn state for mismatched session_id" do
+      ledger_id = GalaxyLedger::Database.create_session(
+        test_session_id,
+      )
+      flush_wal
+
+      # Use a different session_id in the hook input
+      # than the one registered in the ledger
+      input = {
+        "session_id"      => "different-session-id",
+        "prompt"          => "This should not create a state file",
+        "hook_event_name" => "UserPromptSubmit",
+      }.to_json
+
+      result = run_binary(
+        ["on-user-prompt-submit"],
+        stdin: input,
+      )
+      result[:status].should eq(0)
+
+      GalaxyLedger::Hooks::TurnState.exists?(
+        "different-session-id",
+      ).should be_false
+    end
+
+    it "overwrites state file on subsequent prompts" do
+      ledger_id = GalaxyLedger::Database.create_session(
+        test_session_id,
+      )
+      flush_wal
+
+      # First prompt
+      input1 = {
+        "session_id"      => test_session_id,
+        "prompt"          => "First message in the queue",
+        "hook_event_name" => "UserPromptSubmit",
+      }.to_json
+      run_binary(
+        ["on-user-prompt-submit"],
+        stdin: input1,
+      )
+
+      first_state = GalaxyLedger::Hooks::TurnState.read(
+        test_session_id,
+      ).not_nil!
+      first_uuid = first_state.uuid
+
+      # Second prompt (overwrites)
+      input2 = {
+        "session_id"      => test_session_id,
+        "prompt"          => "Second message overwrites first",
+        "hook_event_name" => "UserPromptSubmit",
+      }.to_json
+      run_binary(
+        ["on-user-prompt-submit"],
+        stdin: input2,
+      )
+
+      second_state = GalaxyLedger::Hooks::TurnState.read(
+        test_session_id,
+      ).not_nil!
+
+      second_state.uuid.should_not eq(first_uuid)
+      second_state.user_message.should eq(
+        "Second message overwrites first",
+      )
+    end
+  end
+
   describe "CLI help" do
     it "shows help with -h flag" do
       result = run_binary(["on-user-prompt-submit", "-h"])

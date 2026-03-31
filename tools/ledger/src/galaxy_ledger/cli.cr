@@ -88,6 +88,8 @@ module GalaxyLedger
         handle_on_resume_command(rest)
       when "on-post-tool-use"
         handle_on_post_tool_use_command(rest)
+      when "on-stop-failure"
+        handle_on_stop_failure_command(rest)
       when "on-user-prompt-submit"
         handle_on_user_prompt_submit_command(rest)
       when "install"
@@ -159,6 +161,7 @@ module GalaxyLedger
         on-clear            Restore context after /clear
         on-compact          Restore context after auto/manual compact
         on-stop             Capture last exchange, check thresholds
+        on-stop-failure     Record turn:failed on API/response errors
         on-session-end      Record session:ended timeline event
         on-post-tool-use    Track file operations with type detection
         on-user-prompt-submit  Capture user directions/preferences
@@ -1155,6 +1158,59 @@ module GalaxyLedger
                 "type": "command",
                 "command": "galaxy-ledger on-stop",
                 "timeout": 30
+              }]
+            }]
+          }
+        }
+      HELP
+    end
+
+    private def self.handle_on_stop_failure_command(
+      args : Array(String),
+    )
+      if args.first? == "-h" || args.first? == "--help"
+        show_on_stop_failure_help
+        return
+      end
+      handler = Hooks::OnStopFailure.new
+      handler.run
+    end
+
+    private def self.show_on_stop_failure_help
+      puts <<-HELP
+      galaxy-ledger on-stop-failure - Handle StopFailure hook
+
+      USAGE:
+        galaxy-ledger on-stop-failure
+
+      DESCRIPTION:
+        Called by Claude Code's StopFailure hook when the agent
+        response fails (API error, rate limit, etc.). This hook:
+        - Consumes the turn state file if present
+        - Records a turn:failed timeline event
+
+      INPUT (stdin):
+        JSON object with hook data:
+        {
+          "session_id": "abc123",
+          "transcript_path": "/path/to/transcript.jsonl",
+          "hook_event_name": "StopFailure",
+          "last_assistant_message": "..."
+        }
+
+      OUTPUT (stdout):
+        No output (async hook, non-blocking).
+
+      HOOK CONFIGURATION:
+        Add to ~/.claude/settings.json:
+        {
+          "hooks": {
+            "StopFailure": [{
+              "hooks": [{
+                "type": "command",
+                "command": "galaxy-ledger on-stop-failure",
+                "async": true,
+                "timeout": 10
               }]
             }]
           }

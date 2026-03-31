@@ -4,6 +4,7 @@ module GalaxyLedger
   module Hooks
     # Handles the Stop hook — RESOLVE MODE
     # - Resolves session by Claude Code PID
+    # - Records turn:completed or turn:continued timeline events
     # - Parses transcript to capture last exchange
     # - Writes last interaction to DB session record
     # - Reports context usage via colored status indicator
@@ -16,6 +17,7 @@ module GalaxyLedger
       @transcript_path : String?
       @stdin_cwd : String?
       @stop_hook_active : Bool = false
+      @last_assistant_message : String?
 
       def run
         # Skip if GALAXY_SKIP_HOOKS is set (prevents recursion from extraction subprocesses)
@@ -55,6 +57,10 @@ module GalaxyLedger
         session_record = Database.get_session_by_id(ledger_session_id)
         current_sid = session_record.try(&.current_session_identifier) || @stdin_session_identifier
         return unless current_sid
+
+        # Record turn event: turn:completed (state file exists)
+        # or turn:continued (no state file, agent-initiated).
+        record_turn_event(ledger_session_id, current_sid)
 
         # Spawn async extraction process for exchange capture + learnings/decisions/summary.
         # Exchange capture is done in the subprocess with exponential backoff because
@@ -96,9 +102,88 @@ module GalaxyLedger
           @transcript_path = json["transcript_path"]?.try(&.as_s?)
           @stdin_cwd = json["cwd"]?.try(&.as_s?)
           @stop_hook_active = json["stop_hook_active"]?.try(&.as_bool?) || false
+          @last_assistant_message = json["last_assistant_message"]?.try(&.as_s?)
         rescue
           # Silently ignore parse errors
         end
+      end
+
+      private def record_turn_event(
+        ledger_session_id : Int64,
+        current_sid : String,
+      )
+        stdin_sid = @stdin_session_identifier
+        return unless stdin_sid
+
+        # Filter: session_id must match the ledger's current
+        # session identifier (skip extraction sub-sessions)
+        return unless stdin_sid == current_sid
+
+        state = TurnState.read(stdin_sid)
+
+        if state
+          # State file exists — user initiated this turn.
+          # Record turn:completed with the paired UUID.
+          detail_data = {
+            "user_message"       => state.user_message,
+            "follow_up_messages" => [] of String,
+            "assistant_response" => @last_assistant_message,
+          }.to_json
+
+          begin
+            Process.new(
+              "galaxy-timeline",
+              args: [
+                "record",
+                "--ledger-session-id",
+                ledger_session_id.to_s,
+                "--event-type", "turn:completed",
+                "--source", "galaxy-ledger",
+                "--duration-identifier",
+                "turn--#{state.uuid}",
+                "--detail-data-stdin",
+              ],
+              input: IO::Memory.new(detail_data),
+              output: Process::Redirect::Close,
+              error: Process::Redirect::Close,
+            )
+          rescue
+            # Best-effort
+          end
+
+          TurnState.delete(stdin_sid)
+        else
+          # No state file — agent responded without a user
+          # prompt (e.g., task-notification follow-up).
+          # Record turn:continued as a point event.
+          assistant_msg = @last_assistant_message
+          return unless assistant_msg
+
+          detail_data = {
+            "assistant_response" => assistant_msg,
+          }.to_json
+
+          begin
+            Process.new(
+              "galaxy-timeline",
+              args: [
+                "record",
+                "--ledger-session-id",
+                ledger_session_id.to_s,
+                "--event-type", "turn:continued",
+                "--source", "galaxy-ledger",
+                "--detail-data-stdin",
+              ],
+              input: IO::Memory.new(detail_data),
+              output: Process::Redirect::Close,
+              error: Process::Redirect::Close,
+            )
+          rescue
+            # Best-effort
+          end
+        end
+      rescue
+        # Turn tracking failure is not fatal
       end
 
       # Build the context indicator when above warning thresholds.
