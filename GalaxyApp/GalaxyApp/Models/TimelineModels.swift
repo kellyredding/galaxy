@@ -81,6 +81,7 @@ let timelineEventRegistry: [String: EventRegistration] = [
     "turn:completed":      EventRegistration(resource: .turn, mode: .durationEnd),
     "turn:failed":         EventRegistration(resource: .turn, mode: .durationEnd),
     "turn:interrupted":    EventRegistration(resource: .turn, mode: .durationEnd),
+    "turn:abandoned":      EventRegistration(resource: .turn, mode: .durationEnd),
     "turn:continued":      EventRegistration(resource: .turn, mode: .point),
 ]
 
@@ -211,6 +212,8 @@ enum TimelineTooltipFormatter {
             return "Turn Failed"
         case "turn:interrupted":
             return "Turn Interrupted"
+        case "turn:abandoned":
+            return "Turn Abandoned"
         case "turn:continued":
             return "Turn Continued"
         default: return eventType
@@ -254,6 +257,8 @@ enum TimelineTooltipFormatter {
             return turnFailedLines(dict)
         case "turn:interrupted":
             return turnInterruptedLines(dict)
+        case "turn:abandoned":
+            return turnAbandonedLines(dict)
         case "turn:continued":
             return turnContinuedLines(dict)
         default:
@@ -500,6 +505,17 @@ enum TimelineTooltipFormatter {
             lines.append(truncate(msg, to: 80))
         }
         lines.append("⚠ interrupted")
+        return lines
+    }
+
+    private static func turnAbandonedLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        if let msg = d["user_message"] as? String {
+            lines.append(truncate(msg, to: 80))
+        }
+        lines.append("⚠ abandoned")
         return lines
     }
 

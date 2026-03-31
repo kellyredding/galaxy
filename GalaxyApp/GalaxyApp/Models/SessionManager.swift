@@ -607,56 +607,168 @@ class SessionManager: ObservableObject {
         return (uuid: uuid, userMessage: msg)
     }
 
+    /// Normalize text for fuzzy matching: strip
+    /// non-alphanumeric/non-space characters and condense
+    /// runs of whitespace to a single space. This removes
+    /// prompt artifacts (❯), non-breaking spaces, and other
+    /// terminal rendering differences.
+    private static func normalizeForMatch(
+        _ text: String
+    ) -> String {
+        let stripped = text.unicodeScalars.map { scalar in
+            if CharacterSet.alphanumerics
+                .contains(scalar)
+                || scalar == " "
+            {
+                return Character(scalar)
+            }
+            return Character(" ")
+        }
+        return String(stripped)
+            .components(separatedBy: .whitespaces)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+
+    // Claude Code terminal markers for interrupt detection.
+    // Matched with hasPrefix on terminal buffer lines.
+    // Note: the space after ⎿ is U+0020 followed by U+00A0
+    // (non-breaking space) — this is how Claude Code renders
+    // these markers in the terminal.
+    private static let stopMarker =
+        "  \u{23BF} \u{00A0}Stop says: "
+    private static let interruptMarker =
+        "  \u{23BF} \u{00A0}Interrupted \u{00B7} "
+
+    /// Check the SwiftTerm buffer for a genuine interrupt.
+    /// Scans backwards through the scrollback for the last
+    /// stop marker (previous turn boundary), then forward
+    /// for an interrupt marker, then verifies the user
+    /// message appears between them.
+    private func isGenuineInterrupt(
+        session: Session,
+        userMessage: String
+    ) -> Bool {
+        guard let tv = session.terminalView,
+              let terminal = tv.terminal
+        else { return false }
+        let buf = terminal.buffer
+        let top = buf.linesTop
+        let end = top + buf.lines.count
+        let scanStart = top
+
+        NSLog(
+            "isGenuineInterrupt: top=%d end=%d"
+            + " scanStart=%d userMsg='%@'",
+            top, end, scanStart,
+            String(userMessage.prefix(50))
+        )
+
+        // Step 1: Find last stop marker (scan backwards
+        // through scrollback)
+        var stopRow = -1
+        for row in stride(
+            from: end - 1, through: scanStart, by: -1
+        ) {
+            guard let line = terminal
+                .getScrollInvariantLine(row: row)
+            else { continue }
+            let text = line.translateToString(
+                trimRight: true
+            )
+            if text.hasPrefix(Self.stopMarker) {
+                stopRow = row
+                break
+            }
+        }
+        guard stopRow >= 0 else { return false }
+
+        // Step 2: Find interrupt marker after stop marker
+        var interruptRow = -1
+        for row in (stopRow + 1)..<end {
+            guard let line = terminal
+                .getScrollInvariantLine(row: row)
+            else { continue }
+            let text = line.translateToString(
+                trimRight: true
+            )
+            if text.hasPrefix(Self.interruptMarker) {
+                interruptRow = row
+                break
+            }
+        }
+        guard interruptRow > stopRow else { return false }
+
+        // Step 3: Concatenate between markers, check
+        // for user message. Normalize both sides: strip
+        // non-alphanumeric characters and condense
+        // whitespace so prompt artifacts (❯, NBSP, etc.)
+        // don't prevent matching.
+        var combined = ""
+        for row in stopRow...interruptRow {
+            guard let line = terminal
+                .getScrollInvariantLine(row: row)
+            else { continue }
+            combined += line.translateToString(
+                trimRight: true
+            )
+            combined += " "
+        }
+
+        let normalizedCombined =
+            Self.normalizeForMatch(combined)
+        let normalizedMessage =
+            Self.normalizeForMatch(userMessage)
+
+        let match = normalizedCombined.contains(
+            normalizedMessage
+        )
+        NSLog(
+            "isGenuineInterrupt: stopRow=%d"
+            + " interruptRow=%d match=%d",
+            stopRow, interruptRow, match ? 1 : 0
+        )
+        return match
+    }
+
     /// Detect user interrupts on busy→idle by checking the
-    /// turn state file. If present, Stop hook never ran —
-    /// the user interrupted. Records turn:interrupted and
-    /// cleans up the state file.
+    /// turn state file and corroborating with the SwiftTerm
+    /// buffer. Records turn:interrupted only when the buffer
+    /// confirms a genuine interrupt (stop marker → user
+    /// message → interrupt marker chain).
     private func checkForInterrupt(
         for session: Session
     ) {
-        // Guard: need ledgerSessionId for timeline recording
         guard let ledgerSessionId = session.ledgerSessionId
         else { return }
 
-        // Step 1: Immediate read on idle transition
         guard let captured = readTurnState(for: session)
         else { return }
 
-        // Step 2: 0.5s safety delay
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + 0.5
-        ) { [weak self, weak session] in
-            guard let self, let session else { return }
+        guard isGenuineInterrupt(
+            session: session,
+            userMessage: captured.userMessage
+        ) else { return }
 
-            // Step 3: Re-read and decide
-            let current = self.readTurnState(for: session)
+        TimelineService.record(
+            ledgerSessionId: ledgerSessionId,
+            eventType: "turn:interrupted",
+            source: "galaxy-app",
+            durationIdentifier:
+                "turn--\(captured.uuid)",
+            detailData: [
+                "user_message": captured.userMessage,
+            ]
+        )
 
-            if current == nil {
-                // File gone — Stop hook consumed it (was
-                // slow). Not an interrupt.
-                return
-            }
-
-            // Record turn:interrupted using captured data
-            TimelineService.record(
-                ledgerSessionId: ledgerSessionId,
-                eventType: "turn:interrupted",
-                source: "galaxy-app",
-                durationIdentifier:
-                    "turn--\(captured.uuid)",
-                detailData: [
-                    "user_message": captured.userMessage,
-                ]
-            )
-
-            // Delete only if UUID still matches (we own it)
-            if current?.uuid == captured.uuid {
-                try? FileManager.default.removeItem(
-                    atPath: self.turnStateFilePath(
-                        for: session
-                    )
+        // Delete only if UUID still matches (we own it)
+        let current = readTurnState(for: session)
+        if current?.uuid == captured.uuid {
+            try? FileManager.default.removeItem(
+                atPath: turnStateFilePath(
+                    for: session
                 )
-            }
+            )
         }
     }
 
