@@ -1453,17 +1453,13 @@ struct TimelineItemTooltip: View {
             alignment: .leading, spacing: 3
         ) {
             // Header: colored dot + event label
+            // For completed bars, show combined label
+            // (e.g., "Turn Initiated → Completed").
             HStack(spacing: 6) {
                 Circle()
                     .fill(item.resource.color)
                     .frame(width: 8, height: 8)
-                Text(
-                    TimelineTooltipFormatter
-                        .label(
-                            for: item.event
-                                .eventType
-                        )
-                )
+                Text(tooltipLabel)
                 .font(.system(
                     size: 11, weight: .semibold
                 ))
@@ -1513,14 +1509,9 @@ struct TimelineItemTooltip: View {
                     )
             }
 
-            // Detail lines
-            let details =
-                TimelineTooltipFormatter
-                .detailLines(
-                    for: item.event.eventType,
-                    detailData: item.event
-                        .detailData
-                )
+            // Detail lines — for bars with an end event,
+            // show start lines then end lines.
+            let details = tooltipDetails
             if !details.isEmpty {
                 Divider()
                     .padding(.vertical, 1)
@@ -1564,5 +1555,62 @@ struct TimelineItemTooltip: View {
                     lineWidth: 0.5
                 )
         )
+    }
+
+    // MARK: - Computed Helpers
+
+    /// Combined label for bars with end events:
+    /// "Session Started → Ended". For dots and
+    /// open-ended bars, just the start label.
+    private var tooltipLabel: String {
+        let startLabel =
+            TimelineTooltipFormatter.label(
+                for: item.event.eventType
+            )
+        guard let endEvt = item.endEvent else {
+            return startLabel
+        }
+        let endLabel =
+            TimelineTooltipFormatter.label(
+                for: endEvt.eventType
+            )
+        // Extract the short suffix after the
+        // resource prefix (e.g., "Turn Completed"
+        // → "Completed").
+        let startPrefix = startLabel.split(
+            separator: " "
+        ).first.map(String.init) ?? ""
+        let endSuffix: String
+        if endLabel.hasPrefix(startPrefix) {
+            endSuffix = String(
+                endLabel.dropFirst(
+                    startPrefix.count
+                )
+            ).trimmingCharacters(
+                in: .whitespaces
+            )
+        } else {
+            endSuffix = endLabel
+        }
+        return "\(startLabel) → \(endSuffix)"
+    }
+
+    /// Detail lines from both start and end events.
+    /// For dots: just the event's detail lines.
+    /// For bars: start lines + end lines concatenated.
+    private var tooltipDetails: [String] {
+        var lines = TimelineTooltipFormatter
+            .detailLines(
+                for: item.event.eventType,
+                detailData: item.event.detailData
+            )
+        if let endEvt = item.endEvent {
+            lines += TimelineTooltipFormatter
+                .detailLines(
+                    for: endEvt.eventType,
+                    detailData: endEvt.detailData
+                )
+        }
+        return lines
     }
 }

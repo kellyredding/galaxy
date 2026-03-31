@@ -23,6 +23,7 @@ struct TimelineEvent: Codable, Identifiable {
 /// Resource lanes for the swimlane diagram.
 enum TimelineResource: Int, CaseIterable {
     case session = 0
+    case turn
     case context
     case scrollback
     case snapshot
@@ -31,6 +32,7 @@ enum TimelineResource: Int, CaseIterable {
     var displayName: String {
         switch self {
         case .session: return "Session"
+        case .turn: return "Turn"
         case .context: return "Context"
         case .scrollback: return "Scrollback"
         case .snapshot: return "Snapshot"
@@ -41,7 +43,8 @@ enum TimelineResource: Int, CaseIterable {
     var color: Color {
         switch self {
         case .session: return .orange
-        case .context: return .purple
+        case .turn: return .purple
+        case .context: return .red
         case .scrollback: return .blue
         case .snapshot: return .teal
         case .agent: return .green
@@ -74,6 +77,11 @@ let timelineEventRegistry: [String: EventRegistration] = [
     "scrollback:reviewed": EventRegistration(resource: .scrollback, mode: .point),
     "snapshot:created":    EventRegistration(resource: .snapshot, mode: .point),
     "snapshot:reviewed":   EventRegistration(resource: .snapshot, mode: .point),
+    "turn:initiated":      EventRegistration(resource: .turn, mode: .durationStart),
+    "turn:completed":      EventRegistration(resource: .turn, mode: .durationEnd),
+    "turn:failed":         EventRegistration(resource: .turn, mode: .durationEnd),
+    "turn:interrupted":    EventRegistration(resource: .turn, mode: .durationEnd),
+    "turn:continued":      EventRegistration(resource: .turn, mode: .point),
 ]
 
 // MARK: - Layout Output Types
@@ -195,6 +203,16 @@ enum TimelineTooltipFormatter {
             return "Snapshot Created"
         case "snapshot:reviewed":
             return "Snapshot Reviewed"
+        case "turn:initiated":
+            return "Turn Initiated"
+        case "turn:completed":
+            return "Turn Completed"
+        case "turn:failed":
+            return "Turn Failed"
+        case "turn:interrupted":
+            return "Turn Interrupted"
+        case "turn:continued":
+            return "Turn Continued"
         default: return eventType
         }
     }
@@ -228,6 +246,16 @@ enum TimelineTooltipFormatter {
             return scrollbackReviewedLines(dict)
         case "scrollback:exited":
             return scrollbackExitedLines(dict)
+        case "turn:initiated":
+            return turnInitiatedLines(dict)
+        case "turn:completed":
+            return turnCompletedLines(dict)
+        case "turn:failed":
+            return turnFailedLines(dict)
+        case "turn:interrupted":
+            return turnInterruptedLines(dict)
+        case "turn:continued":
+            return turnContinuedLines(dict)
         default:
             return []
         }
@@ -408,7 +436,102 @@ enum TimelineTooltipFormatter {
         return lines
     }
 
+    // MARK: - Turn Formatters
+
+    private static func turnInitiatedLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        if let msg = d["user_message"] as? String {
+            lines.append(truncate(msg, to: 80))
+        }
+        return lines
+    }
+
+    private static func turnCompletedLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        if let msg = d["user_message"] as? String {
+            lines.append(truncate(msg, to: 80))
+        }
+        if let followUps = d["follow_up_messages"]
+            as? [[String: Any]],
+            !followUps.isEmpty
+        {
+            let n = followUps.count
+            lines.append(
+                "+ \(n) follow-up\(n == 1 ? "" : "s")"
+            )
+        }
+        if let resp = d["assistant_response"]
+            as? String
+        {
+            lines.append(truncate(resp, to: 80))
+        }
+        return lines
+    }
+
+    private static func turnFailedLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        if let msg = d["user_message"] as? String {
+            lines.append(truncate(msg, to: 80))
+        }
+        if let followUps = d["follow_up_messages"]
+            as? [[String: Any]],
+            !followUps.isEmpty
+        {
+            let n = followUps.count
+            lines.append(
+                "+ \(n) follow-up\(n == 1 ? "" : "s")"
+            )
+        }
+        lines.append("⚠ error")
+        return lines
+    }
+
+    private static func turnInterruptedLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        if let msg = d["user_message"] as? String {
+            lines.append(truncate(msg, to: 80))
+        }
+        lines.append("⚠ interrupted")
+        return lines
+    }
+
+    private static func turnContinuedLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        if let resp = d["assistant_response"]
+            as? String
+        {
+            lines.append(truncate(resp, to: 80))
+        }
+        return lines
+    }
+
     // MARK: - Helpers
+
+    private static func truncate(
+        _ text: String, to maxLength: Int
+    ) -> String {
+        let cleaned = text
+            .replacingOccurrences(
+                of: "\n", with: " "
+            )
+            .trimmingCharacters(in: .whitespaces)
+        if cleaned.count > maxLength {
+            return String(
+                cleaned.prefix(maxLength - 1)
+            ) + "…"
+        }
+        return cleaned
+    }
 
     private static func abbreviatePath(
         _ path: String

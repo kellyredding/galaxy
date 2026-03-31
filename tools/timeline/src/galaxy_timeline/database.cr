@@ -189,7 +189,7 @@ module GalaxyTimeline
     def self.list_events(
       ledger_session_id : Int64,
       event_type : String? = nil,
-      limit : Int32 = 100,
+      limit : Int32 = 5000,
     ) : Array(Event)
       events = [] of Event
       return events if ledger_session_id <= 0
