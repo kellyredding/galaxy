@@ -124,11 +124,28 @@ module GalaxyLedger
         if state
           # State file exists — user initiated this turn.
           # Record turn:completed with the paired UUID.
-          detail_data = {
-            "user_message"       => state.user_message,
-            "follow_up_messages" => [] of String,
-            "assistant_response" => @last_assistant_message,
-          }.to_json
+          # Scan transcript for mid-turn follow-up messages.
+          follow_ups = [] of TranscriptScanner::FollowUpMessage
+          if tp = @transcript_path
+            follow_ups = TranscriptScanner.follow_up_messages(
+              tp,
+              state.initiated_at,
+              stdin_sid,
+            )
+          end
+
+          detail_data = JSON.build do |json|
+            json.object do
+              json.field "user_message", state.user_message
+              json.field "follow_up_messages" do
+                json.array do
+                  follow_ups.each(&.to_json(json))
+                end
+              end
+              json.field "assistant_response",
+                @last_assistant_message
+            end
+          end
 
           begin
             Process.new(
