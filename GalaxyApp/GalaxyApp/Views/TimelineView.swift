@@ -661,6 +661,10 @@ struct TimelineView: View {
     // MARK: - Live Refresh
 
     private func refreshTimelineEvents() {
+        // Skip refresh while hovering to avoid
+        // re-render flashing dimmed items.
+        guard hoveredItem == nil else { return }
+
         guard let lsid = session.ledgerSessionId
         else { return }
 
