@@ -44,6 +44,9 @@ module GalaxyLedger
   # Skills directories
   SKILLS_DIR        = GALAXY_DIR / "ledger" / "skills"
   CLAUDE_SKILLS_DIR = CLAUDE_CONFIG_DIR / "skills"
+  TIMELINE_BIN_NAME = ENV.fetch(
+    "GALAXY_TIMELINE_BIN", "galaxy-timeline"
+  )
 end
 
 # Only run CLI when executed directly, not when required by specs

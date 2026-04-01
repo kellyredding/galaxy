@@ -83,7 +83,7 @@ module GalaxyLedger
         detail_data = {"user_message" => prompt}.to_json
         begin
           Process.new(
-            "galaxy-timeline",
+            TIMELINE_BIN_NAME,
             args: [
               "record",
               "--ledger-session-id",

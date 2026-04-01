@@ -105,7 +105,7 @@ module GalaxyLedger
         }.to_json
 
         Process.run(
-          "galaxy-timeline",
+          TIMELINE_BIN_NAME,
           args: [
             "record",
             "--ledger-session-id",

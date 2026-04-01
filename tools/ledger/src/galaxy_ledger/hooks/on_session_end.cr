@@ -57,7 +57,7 @@ module GalaxyLedger
         # Record timeline event (fire-and-forget)
         begin
           Process.new(
-            "galaxy-timeline",
+            TIMELINE_BIN_NAME,
             args: [
               "record",
               "--ledger-session-id",

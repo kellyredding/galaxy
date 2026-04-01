@@ -62,7 +62,7 @@ module GalaxyLedger
 
         output = IO::Memory.new
         status = Process.run(
-          "galaxy-timeline",
+          TIMELINE_BIN_NAME,
           args: [
             "record", "--json",
             "--ledger-session-id",
