@@ -27,6 +27,7 @@ enum TimelineResource: Int, CaseIterable {
     case context
     case scrollback
     case snapshot
+    case artifact
     case agent
 
     var displayName: String {
@@ -36,6 +37,7 @@ enum TimelineResource: Int, CaseIterable {
         case .context: return "Context"
         case .scrollback: return "Scrollback"
         case .snapshot: return "Snapshot"
+        case .artifact: return "Artifact"
         case .agent: return "Agent"
         }
     }
@@ -47,6 +49,7 @@ enum TimelineResource: Int, CaseIterable {
         case .context: return .red
         case .scrollback: return .blue
         case .snapshot: return .teal
+        case .artifact: return .yellow
         case .agent: return .green
         }
     }
@@ -77,6 +80,9 @@ let timelineEventRegistry: [String: EventRegistration] = [
     "scrollback:reviewed": EventRegistration(resource: .scrollback, mode: .point),
     "snapshot:created":    EventRegistration(resource: .snapshot, mode: .point),
     "snapshot:reviewed":   EventRegistration(resource: .snapshot, mode: .point),
+    "artifact:created":    EventRegistration(resource: .artifact, mode: .point),
+    "artifact:updated":    EventRegistration(resource: .artifact, mode: .point),
+    "artifact:deleted":    EventRegistration(resource: .artifact, mode: .point),
     "turn:initiated":      EventRegistration(resource: .turn, mode: .durationStart),
     "turn:completed":      EventRegistration(resource: .turn, mode: .durationEnd),
     "turn:failed":         EventRegistration(resource: .turn, mode: .durationEnd),
@@ -204,6 +210,12 @@ enum TimelineTooltipFormatter {
             return "Snapshot Created"
         case "snapshot:reviewed":
             return "Snapshot Reviewed"
+        case "artifact:created":
+            return "Artifact Created"
+        case "artifact:updated":
+            return "Artifact Updated"
+        case "artifact:deleted":
+            return "Artifact Deleted"
         case "turn:initiated":
             return "Turn Initiated"
         case "turn:completed":
@@ -249,6 +261,12 @@ enum TimelineTooltipFormatter {
             return scrollbackReviewedLines(dict)
         case "scrollback:exited":
             return scrollbackExitedLines(dict)
+        case "artifact:created":
+            return artifactCreatedLines(dict)
+        case "artifact:updated":
+            return artifactUpdatedLines(dict)
+        case "artifact:deleted":
+            return artifactDeletedLines(dict)
         case "turn:initiated":
             return turnInitiatedLines(dict)
         case "turn:completed":
@@ -528,6 +546,84 @@ enum TimelineTooltipFormatter {
         return lines
     }
 
+    // MARK: - Artifact Formatters
+
+    private static func artifactCreatedLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        if let num = d["number"] as? Int {
+            lines.append("#\(num)")
+        }
+        if let title = d["title"] as? String {
+            let truncated = title.count > 40
+                ? String(title.prefix(37)) + "…"
+                : title
+            lines.append(truncated)
+        }
+        if let type = d["artifact_type"] as? String {
+            lines.append("type: \(type)")
+        }
+        if let size = d["file_size"] as? Int {
+            lines.append(
+                "size: \(formatFileSize(size))"
+            )
+        }
+        if let trigger = d["trigger"] as? String {
+            lines.append("trigger: \(trigger)")
+        }
+        return lines
+    }
+
+    private static func artifactUpdatedLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        if let num = d["number"] as? Int {
+            lines.append("#\(num)")
+        }
+        if let title = d["title"] as? String {
+            let truncated = title.count > 40
+                ? String(title.prefix(37)) + "…"
+                : title
+            lines.append(truncated)
+        }
+        if let size = d["file_size"] as? Int,
+            let prev = d["previous_file_size"] as? Int
+        {
+            let delta = size - prev
+            let sign = delta >= 0 ? "+" : ""
+            lines.append(
+                "size: \(formatFileSize(size))"
+                    + " (\(sign)\(formatFileSize(delta)))"
+            )
+        } else if let size = d["file_size"] as? Int {
+            lines.append(
+                "size: \(formatFileSize(size))"
+            )
+        }
+        return lines
+    }
+
+    private static func artifactDeletedLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        if let num = d["number"] as? Int {
+            lines.append("#\(num)")
+        }
+        if let title = d["title"] as? String {
+            let truncated = title.count > 40
+                ? String(title.prefix(37)) + "…"
+                : title
+            lines.append(truncated)
+        }
+        if let type = d["artifact_type"] as? String {
+            lines.append("type: \(type)")
+        }
+        return lines
+    }
+
     // MARK: - Helpers
 
     private static func truncate(
@@ -556,6 +652,23 @@ enum TimelineTooltipFormatter {
                 + path.dropFirst(home.count)
         }
         return path
+    }
+
+    private static func formatFileSize(
+        _ bytes: Int
+    ) -> String {
+        if abs(bytes) >= 1_048_576 {
+            return String(
+                format: "%.1fM",
+                Double(bytes) / 1_048_576
+            )
+        } else if abs(bytes) >= 1024 {
+            return String(
+                format: "%.1fK",
+                Double(bytes) / 1024
+            )
+        }
+        return "\(bytes)B"
     }
 
     private static func formatNumber(
