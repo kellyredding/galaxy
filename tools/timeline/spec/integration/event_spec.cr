@@ -491,6 +491,158 @@ describe "CLI event commands", tags: "integration" do
       result[:status].should_not eq(0)
       result[:error].should contain("--pid")
     end
+
+    it "limits results with --limit" do
+      3.times do
+        run_binary([
+          "record",
+          "--ledger-session-id", "1",
+          "--event-type", "turn:completed",
+          "--source", "test",
+        ])
+      end
+
+      result = run_binary([
+        "list",
+        "--ledger-session-id", "1",
+        "--limit", "2",
+        "--json",
+      ])
+      result[:status].should eq(0)
+      json = JSON.parse(result[:output])
+      json["events"].as_a.size.should eq(2)
+    end
+
+    it "returns most recent first with --reverse" do
+      run_binary([
+        "record",
+        "--ledger-session-id", "1",
+        "--event-type", "turn:completed",
+        "--source", "test",
+        "--occurred-at", "2026-01-15 10:00:00",
+      ])
+      run_binary([
+        "record",
+        "--ledger-session-id", "1",
+        "--event-type", "turn:completed",
+        "--source", "test",
+        "--occurred-at", "2026-01-15 11:00:00",
+      ])
+
+      result = run_binary([
+        "list",
+        "--ledger-session-id", "1",
+        "--reverse",
+        "--json",
+      ])
+      result[:status].should eq(0)
+      json = JSON.parse(result[:output])
+      events = json["events"].as_a
+      events[0]["occurred_at"].as_s.should contain(
+        "11:00:00",
+      )
+      events[1]["occurred_at"].as_s.should contain(
+        "10:00:00",
+      )
+    end
+
+    it "filters by comma-separated --event-type" do
+      run_binary([
+        "record",
+        "--ledger-session-id", "1",
+        "--event-type", "turn:completed",
+        "--source", "test",
+      ])
+      run_binary([
+        "record",
+        "--ledger-session-id", "1",
+        "--event-type", "turn:failed",
+        "--source", "test",
+      ])
+      run_binary([
+        "record",
+        "--ledger-session-id", "1",
+        "--event-type", "session:started",
+        "--source", "test",
+      ])
+
+      result = run_binary([
+        "list",
+        "--ledger-session-id", "1",
+        "--event-type",
+        "turn:completed,turn:failed",
+        "--json",
+      ])
+      result[:status].should eq(0)
+      json = JSON.parse(result[:output])
+      events = json["events"].as_a
+      events.size.should eq(2)
+      types = events.map { |e| e["event_type"].as_s }
+      types.should contain("turn:completed")
+      types.should contain("turn:failed")
+    end
+
+    it "combines --limit, --reverse, and --event-type" do
+      run_binary([
+        "record",
+        "--ledger-session-id", "1",
+        "--event-type", "turn:completed",
+        "--source", "test",
+        "--occurred-at", "2026-01-15 10:00:00",
+      ])
+      run_binary([
+        "record",
+        "--ledger-session-id", "1",
+        "--event-type", "session:started",
+        "--source", "test",
+        "--occurred-at", "2026-01-15 10:01:00",
+      ])
+      run_binary([
+        "record",
+        "--ledger-session-id", "1",
+        "--event-type", "turn:completed",
+        "--source", "test",
+        "--occurred-at", "2026-01-15 10:02:00",
+      ])
+      run_binary([
+        "record",
+        "--ledger-session-id", "1",
+        "--event-type", "turn:failed",
+        "--source", "test",
+        "--occurred-at", "2026-01-15 10:03:00",
+      ])
+
+      result = run_binary([
+        "list",
+        "--ledger-session-id", "1",
+        "--event-type",
+        "turn:completed,turn:failed",
+        "--limit", "2",
+        "--reverse",
+        "--json",
+      ])
+      result[:status].should eq(0)
+      json = JSON.parse(result[:output])
+      events = json["events"].as_a
+      events.size.should eq(2)
+      # Most recent first, only turn types
+      events[0]["event_type"].as_s.should eq(
+        "turn:failed",
+      )
+      events[1]["event_type"].as_s.should eq(
+        "turn:completed",
+      )
+    end
+
+    it "errors when --limit has no value" do
+      result = run_binary([
+        "list",
+        "--ledger-session-id", "1",
+        "--limit",
+      ])
+      result[:status].should_not eq(0)
+      result[:error].should contain("--limit requires a value")
+    end
   end
 
   describe "show" do

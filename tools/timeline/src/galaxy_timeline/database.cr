@@ -186,55 +186,66 @@ module GalaxyTimeline
     end
 
     # List events for a session, ordered by occurred_at.
+    #
+    # Filtering:
+    # - event_type: single type string (backward compat)
+    # - event_types: array of type strings (IN query)
+    # - If both provided, event_types takes precedence
+    #
+    # Ordering:
+    # - reverse: true returns most recent first (DESC)
     def self.list_events(
       ledger_session_id : Int64,
       event_type : String? = nil,
+      event_types : Array(String)? = nil,
       limit : Int32 = 5000,
+      reverse : Bool = false,
     ) : Array(Event)
       events = [] of Event
       return events if ledger_session_id <= 0
 
       begin
         open do |db|
-          if et = event_type
-            db.query(
-              <<-SQL,
-                SELECT id, created_at, updated_at,
-                       ledger_session_id, event_type,
-                       occurred_at, detail_data, source,
-                       duration_identifier
-                FROM events
-                WHERE ledger_session_id = ?
-                  AND event_type = ?
-                ORDER BY occurred_at ASC
-                LIMIT ?
-              SQL
-              ledger_session_id,
-              et,
-              limit,
-            ) do |rs|
-              rs.each do
-                events << Event.from_row(rs)
+          order = reverse ? "DESC" : "ASC"
+          sql = String.build do |s|
+            s << "SELECT id, created_at, updated_at,"
+            s << " ledger_session_id, event_type,"
+            s << " occurred_at, detail_data, source,"
+            s << " duration_identifier"
+            s << " FROM events"
+            s << " WHERE ledger_session_id = ?"
+
+            if ets = event_types
+              unless ets.empty?
+                placeholders = ets.map { "?" }.join(", ")
+                s << " AND event_type IN ("
+                s << placeholders << ")"
               end
+            elsif et = event_type
+              s << " AND event_type = ?"
             end
-          else
-            db.query(
-              <<-SQL,
-                SELECT id, created_at, updated_at,
-                       ledger_session_id, event_type,
-                       occurred_at, detail_data, source,
-                       duration_identifier
-                FROM events
-                WHERE ledger_session_id = ?
-                ORDER BY occurred_at ASC
-                LIMIT ?
-              SQL
-              ledger_session_id,
-              limit,
-            ) do |rs|
-              rs.each do
-                events << Event.from_row(rs)
-              end
+
+            s << " ORDER BY occurred_at " << order
+            s << " LIMIT ?"
+          end
+
+          # Build args array
+          args = [] of DB::Any
+          args << ledger_session_id
+
+          if ets = event_types
+            unless ets.empty?
+              ets.each { |t| args << t }
+            end
+          elsif et = event_type
+            args << et
+          end
+
+          args << limit
+
+          db.query(sql, args: args) do |rs|
+            rs.each do
+              events << Event.from_row(rs)
             end
           end
         end

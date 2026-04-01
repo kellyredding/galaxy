@@ -42,19 +42,42 @@ module GalaxyLedger
     Read them now, silently. Do not narrate each file read to the
     user.
 
-    ## Step 3 — Present the Summary
+    ## Step 3 — Read Recent Turns
 
-    Focus on the Last Interaction above all else — this is what the
-    user most needs to verify for continuity. Quote what they asked
-    and what was accomplished.
+    Run this command to retrieve the last 5 turn events (replace
+    PID with the Ledger PID from the handoff context):
+
+        galaxy-timeline list --pid PID \
+          --event-type turn:completed,turn:failed,turn:abandoned,turn:interrupted \
+          --limit 5 --reverse --json
+
+    Parse each event's `detail_data` JSON for:
+    - `user_message`: what the user asked
+    - `assistant_response`: what was accomplished (may be absent
+      on failed/abandoned turns)
+    - `follow_up_messages`: mid-turn user messages
+
+    Read the full sequence to understand the narrative arc of
+    recent work — what the user was doing, what was accomplished,
+    and where they left off. If work was incomplete or the
+    previous agent left next-step instructions, continue that
+    work immediately. If all work was completed, proceed to the
+    summary.
+
+    ## Step 4 — Present the Summary
+
+    Focus on the last substantive interaction above all else —
+    this is what the user most needs to verify for continuity.
+    Quote what they asked and what was accomplished.
 
     Then briefly note:
-    - Guideline files restored (count + file paths, not full rules)
+    - Guideline files restored (count + file paths, not full
+      rules)
     - Any key decisions captured (with importance level)
     - Session file counts (how many edited/written vs read)
 
-    End with a brief confirmation that context has been handed off
-    and you're ready to continue.
+    End with a brief confirmation that context has been handed
+    off and you're ready to continue.
 
     ## No Handoff Available
 
@@ -66,7 +89,8 @@ module GalaxyLedger
 
     Keep the summary output concise — this is a quick confirmation
     the user can scan in 5 seconds, not a data dump. The file reads
-    in Step 2 are silent background work, not part of the output.
+    in Step 2 and turn queries in Step 3 are silent background
+    work, not part of the output.
     SKILL
 
     SPEND_SKILL = <<-'SKILL'

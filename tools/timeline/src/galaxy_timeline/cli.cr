@@ -218,6 +218,8 @@ module GalaxyTimeline
       session_id : String? = nil
       ledger_session_id_str : String? = nil
       event_type_filter : String? = nil
+      limit_str : String? = nil
+      reverse = false
       json_mode = false
 
       i = 0
@@ -256,6 +258,17 @@ module GalaxyTimeline
             STDERR.puts "Error: --event-type requires a value"
             exit(1)
           end
+        when "--limit"
+          if i + 1 < args.size
+            limit_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --limit requires a value"
+            exit(1)
+          end
+        when "--reverse"
+          reverse = true
+          i += 1
         when "--json"
           json_mode = true
           i += 1
@@ -280,10 +293,39 @@ module GalaxyTimeline
         exit(1)
       end
 
-      events = Database.list_events(
-        ledger_session_id,
-        event_type: event_type_filter,
-      )
+      # Parse limit
+      limit = 5000
+      if ls = limit_str
+        limit = ls.to_i? || 5000
+      end
+
+      # Parse event_type for comma-separated values
+      event_types : Array(String)? = nil
+      single_type : String? = nil
+      if etf = event_type_filter
+        parts = etf.split(",").map(&.strip).reject(&.empty?)
+        if parts.size > 1
+          event_types = parts
+        else
+          single_type = parts.first? || etf
+        end
+      end
+
+      events = if ets = event_types
+                 Database.list_events(
+                   ledger_session_id,
+                   event_types: ets,
+                   limit: limit,
+                   reverse: reverse,
+                 )
+               else
+                 Database.list_events(
+                   ledger_session_id,
+                   event_type: single_type,
+                   limit: limit,
+                   reverse: reverse,
+                 )
+               end
 
       if json_mode
         JSON.build(STDOUT) do |json|
@@ -869,7 +911,12 @@ module GalaxyTimeline
         --ledger-session-id ID  Direct ledger session ID
 
       OPTIONS:
-        --event-type TYPE  Filter by event type
+        --event-type TYPE  Filter by event type (comma-
+                           separated for multiple, e.g.
+                           turn:completed,turn:failed)
+        --limit N          Maximum events to return
+                           (default: 5000)
+        --reverse          Most recent first (DESC)
         --json             Output as JSON
       HELP
     end

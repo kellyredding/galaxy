@@ -5,14 +5,13 @@ module GalaxyLedger
 
       # Build the systemMessage status line for hook JSON output.
       #
-      # Format:  {prefix} | {counts} | {file_count} session files | Last: "snippet"
+      # Format:  {prefix} | {counts} | {file_count} session files
       # Empty:   {prefix} | {empty_message}
       def build_system_message(
         prefix : String,
         empty_message : String,
         restoration : Database::RestorationResult? = nil,
         files : Array(Database::SessionFile)? = nil,
-        last_exchange : Exchange::LastExchange? = nil,
         snapshot_count : Int32 = 0,
         artifact_count : Int32 = 0,
       ) : String
@@ -47,11 +46,6 @@ module GalaxyLedger
 
         if files && files.size > 0
           parts << "#{files.size} session file#{files.size == 1 ? "" : "s"}"
-        end
-
-        if last_exchange
-          snippet = last_exchange_snippet(last_exchange, 125)
-          parts << "Last: \"#{snippet}\"" if snippet && !snippet.empty?
         end
 
         if parts.empty?
@@ -116,21 +110,6 @@ module GalaxyLedger
           },
         }
         output.to_json
-      end
-
-      # Extract a short snippet from the last exchange for the systemMessage.
-      # Prefers summary.user_request, falls back to user_message.
-      private def last_exchange_snippet(
-        exchange : Exchange::LastExchange,
-        max_length : Int32,
-      ) : String?
-        text = if summary = exchange.summary
-                 summary.user_request
-               else
-                 exchange.user_message
-               end
-        return nil if text.strip.empty?
-        truncate(text.gsub('\n', ' ').strip, max_length)
       end
     end
   end

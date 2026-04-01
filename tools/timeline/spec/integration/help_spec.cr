@@ -88,4 +88,25 @@ describe "CLI help and version", tags: "integration" do
     result[:status].should eq(0)
     result[:output].should contain("--detail-data-stdin")
   end
+
+  it "list help mentions --limit flag" do
+    result = run_binary(["list", "--help"])
+
+    result[:status].should eq(0)
+    result[:output].should contain("--limit")
+  end
+
+  it "list help mentions --reverse flag" do
+    result = run_binary(["list", "--help"])
+
+    result[:status].should eq(0)
+    result[:output].should contain("--reverse")
+  end
+
+  it "list help mentions comma-separated event types" do
+    result = run_binary(["list", "--help"])
+
+    result[:status].should eq(0)
+    result[:output].should contain("comma-")
+  end
 end

@@ -177,6 +177,27 @@ describe GalaxyLedger::SkillsManager do
     end
   end
 
+  describe "handoff skill content" do
+    it "includes Read Recent Turns as Step 3" do
+      content = GalaxyLedger::SkillsManager::HANDOFF_SKILL
+      content.should contain("Step 3")
+      content.should contain("Read Recent Turns")
+      content.should contain("galaxy-timeline list")
+      content.should contain("turn:completed")
+    end
+
+    it "instructs agent to continue incomplete work" do
+      content = GalaxyLedger::SkillsManager::HANDOFF_SKILL
+      content.should contain("continue that\nwork immediately")
+    end
+
+    it "includes Present the Summary as Step 4" do
+      content = GalaxyLedger::SkillsManager::HANDOFF_SKILL
+      content.should contain("Step 4")
+      content.should contain("Present the Summary")
+    end
+  end
+
   describe "spend skill" do
     it "requires mandatory verbatim CLI output in a code block" do
       content = GalaxyLedger::SkillsManager::SPEND_SKILL

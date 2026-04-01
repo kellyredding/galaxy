@@ -241,6 +241,152 @@ describe GalaxyTimeline::Database do
       events = GalaxyTimeline::Database.list_events(1_i64, limit: 3)
       events.size.should eq(3)
     end
+
+    it "filters by multiple event_types" do
+      GalaxyTimeline::Database.record_event(
+        1_i64,
+        event_type: "turn:completed",
+        source: "test",
+      )
+      GalaxyTimeline::Database.record_event(
+        1_i64,
+        event_type: "turn:failed",
+        source: "test",
+      )
+      GalaxyTimeline::Database.record_event(
+        1_i64,
+        event_type: "session:started",
+        source: "test",
+      )
+
+      events = GalaxyTimeline::Database.list_events(
+        1_i64,
+        event_types: ["turn:completed", "turn:failed"],
+      )
+      events.size.should eq(2)
+      types = events.map(&.event_type)
+      types.should contain("turn:completed")
+      types.should contain("turn:failed")
+    end
+
+    it "event_types takes precedence over event_type" do
+      GalaxyTimeline::Database.record_event(
+        1_i64,
+        event_type: "turn:completed",
+        source: "test",
+      )
+      GalaxyTimeline::Database.record_event(
+        1_i64,
+        event_type: "turn:failed",
+        source: "test",
+      )
+
+      events = GalaxyTimeline::Database.list_events(
+        1_i64,
+        event_type: "turn:completed",
+        event_types: ["turn:failed"],
+      )
+      events.size.should eq(1)
+      events[0].event_type.should eq("turn:failed")
+    end
+
+    it "ignores empty event_types array" do
+      GalaxyTimeline::Database.record_event(
+        1_i64,
+        event_type: "turn:completed",
+        source: "test",
+      )
+      GalaxyTimeline::Database.record_event(
+        1_i64,
+        event_type: "session:started",
+        source: "test",
+      )
+
+      events = GalaxyTimeline::Database.list_events(
+        1_i64,
+        event_types: [] of String,
+      )
+      events.size.should eq(2)
+    end
+
+    it "returns results in reverse order" do
+      GalaxyTimeline::Database.record_event(
+        1_i64,
+        event_type: "turn:completed",
+        source: "test",
+        occurred_at: "2026-01-15 10:00:00",
+      )
+      GalaxyTimeline::Database.record_event(
+        1_i64,
+        event_type: "turn:completed",
+        source: "test",
+        occurred_at: "2026-01-15 11:00:00",
+      )
+
+      events = GalaxyTimeline::Database.list_events(
+        1_i64, reverse: true)
+      events[0].occurred_at.should eq(
+        "2026-01-15 11:00:00",
+      )
+      events[1].occurred_at.should eq(
+        "2026-01-15 10:00:00",
+      )
+    end
+
+    it "combines reverse with limit" do
+      5.times do |i|
+        GalaxyTimeline::Database.record_event(
+          1_i64,
+          event_type: "turn:completed",
+          source: "test",
+          occurred_at: "2026-01-15 10:0#{i}:00",
+        )
+      end
+
+      events = GalaxyTimeline::Database.list_events(
+        1_i64, limit: 2, reverse: true)
+      events.size.should eq(2)
+      # Most recent first
+      events[0].occurred_at.should eq(
+        "2026-01-15 10:04:00",
+      )
+      events[1].occurred_at.should eq(
+        "2026-01-15 10:03:00",
+      )
+    end
+
+    it "combines event_types with reverse and limit" do
+      GalaxyTimeline::Database.record_event(
+        1_i64,
+        event_type: "turn:completed",
+        source: "test",
+        occurred_at: "2026-01-15 10:00:00",
+      )
+      GalaxyTimeline::Database.record_event(
+        1_i64,
+        event_type: "session:started",
+        source: "test",
+        occurred_at: "2026-01-15 10:01:00",
+      )
+      GalaxyTimeline::Database.record_event(
+        1_i64,
+        event_type: "turn:failed",
+        source: "test",
+        occurred_at: "2026-01-15 10:02:00",
+      )
+
+      events = GalaxyTimeline::Database.list_events(
+        1_i64,
+        event_types: [
+          "turn:completed", "turn:failed",
+        ],
+        limit: 5,
+        reverse: true,
+      )
+      events.size.should eq(2)
+      events[0].event_type.should eq("turn:failed")
+      events[1].event_type.should eq("turn:completed")
+    end
   end
 
   describe ".get_event" do
