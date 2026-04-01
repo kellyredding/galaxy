@@ -254,6 +254,36 @@ module GalaxyArtifacts
         ref: number.to_s,
       )
 
+      # Publish timeline event (fire-and-forget)
+      trigger = content_hash_arg ? "auto" : "manual"
+      case result.action
+      when .insert?
+        TimelinePublisher.artifact_created(
+          ledger_session_id,
+          number: number,
+          title: artifact_title,
+          artifact_type: effective_artifact_type,
+          source_path: source_path,
+          file_size: fsize,
+          content_hash: hash,
+          trigger: trigger,
+        )
+      when .version_update?
+        TimelinePublisher.artifact_updated(
+          ledger_session_id,
+          number: number,
+          title: artifact_title,
+          artifact_type: effective_artifact_type,
+          source_path: source_path,
+          file_size: fsize,
+          content_hash: hash,
+          previous_file_size: result.previous_file_size || 0_i64,
+          previous_content_hash: result.previous_content_hash || "",
+        )
+      end
+      # Enrichment — no timeline event (metadata-only, no
+      # content change)
+
       action_label = result.action.insert? ? "saved" : "updated"
       puts "Artifact ##{number} #{action_label} (title: \"#{artifact_title}\", type: #{effective_artifact_type}, size: #{format_file_size(fsize)})"
     end
@@ -604,7 +634,19 @@ module GalaxyArtifacts
         exit(1)
       end
 
-      result = Database.delete_artifact_by_number(ledger_session_id, number)
+      # Fetch artifact metadata before deletion (for timeline event)
+      artifact = Database.get_artifact_by_number(
+        ledger_session_id, number,
+      )
+
+      unless artifact
+        STDERR.puts "Error: artifact ##{number} not found"
+        exit(1)
+      end
+
+      result = Database.delete_artifact_by_number(
+        ledger_session_id, number,
+      )
 
       if result
         EventPublisher.publish(
@@ -612,9 +654,17 @@ module GalaxyArtifacts
           "artifact.deleted",
           ref: number.to_s,
         )
+        TimelinePublisher.artifact_deleted(
+          ledger_session_id,
+          number: number,
+          title: artifact.title,
+          artifact_type: artifact.artifact_type,
+        )
         puts "Artifact ##{number} deleted"
       else
-        STDERR.puts "Error: artifact ##{number} not found"
+        STDERR.puts(
+          "Error: failed to delete artifact ##{number}",
+        )
         exit(1)
       end
     end

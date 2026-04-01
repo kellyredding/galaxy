@@ -211,4 +211,78 @@ describe "CLI artifact commands", tags: "integration" do
       result[:error].should contain("not found")
     end
   end
+
+  describe "timeline events" do
+    it "publishes artifact:created on new save" do
+      source = create_test_file(
+        "timeline-create.csv", "data",
+      )
+
+      result = run_binary([
+        "save",
+        "--ledger-session-id", "1",
+        "--source-path", source,
+        "--title", "Timeline test",
+        "--artifact-type", "csv",
+        "--mime-type", "text/csv",
+      ])
+
+      result[:status].should eq(0)
+      result[:output].should contain("Artifact #1 saved")
+    end
+
+    it "publishes artifact:updated on version update" do
+      source = create_test_file(
+        "timeline-update.csv", "v1 data",
+      )
+
+      run_binary([
+        "save",
+        "--ledger-session-id", "1",
+        "--source-path", source,
+        "--title", "Timeline test",
+        "--artifact-type", "csv",
+        "--mime-type", "text/csv",
+      ])
+
+      # Overwrite source with new content
+      File.write(source, "v2 data with more content")
+
+      result = run_binary([
+        "save",
+        "--ledger-session-id", "1",
+        "--source-path", source,
+        "--title", "Timeline test",
+        "--artifact-type", "csv",
+        "--mime-type", "text/csv",
+      ])
+
+      result[:status].should eq(0)
+      result[:output].should contain("updated")
+    end
+
+    it "publishes artifact:deleted on delete" do
+      source = create_test_file(
+        "timeline-delete.csv", "delete me",
+      )
+
+      run_binary([
+        "save",
+        "--ledger-session-id", "1",
+        "--source-path", source,
+        "--title", "Delete timeline",
+        "--artifact-type", "csv",
+        "--mime-type", "text/csv",
+      ])
+
+      result = run_binary([
+        "delete",
+        "--ledger-session-id", "1",
+        "1",
+      ])
+
+      result[:status].should eq(0)
+      result[:output].should contain("deleted")
+    end
+  end
 end

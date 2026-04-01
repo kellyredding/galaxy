@@ -84,7 +84,7 @@ describe GalaxyArtifacts::Database do
       art.not_nil!.description.should eq("new desc")
     end
 
-    it "returns version_update when same source_path but different content_hash" do
+    it "returns version_update with previous state" do
       GalaxyArtifacts::Database.save_artifact(
         1_i64, title: "Original", artifact_type: "csv", mime_type: "text/csv",
         original_filename: "test.csv", stored_path: "/stored/001_test.csv",
@@ -98,6 +98,8 @@ describe GalaxyArtifacts::Database do
       )
       r.action.should eq(GalaxyArtifacts::Database::SaveArtifactAction::VersionUpdate)
       r.number.should eq(1)
+      r.previous_content_hash.should eq("hash_v1")
+      r.previous_file_size.should eq(100_i64)
     end
 
     it "inserts new when source_path is nil" do

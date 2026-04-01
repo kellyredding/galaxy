@@ -149,17 +149,17 @@ module GalaxyArtifacts
           if source_path
             existing = db.query_one?(
               <<-SQL,
-                SELECT number, content_hash
+                SELECT number, content_hash, file_size
                 FROM artifacts
                 WHERE ledger_session_id = ? AND source_path = ?
               SQL
               ledger_session_id,
               source_path,
-              as: {Int64, String},
+              as: {Int64, String, Int64},
             )
 
             if existing
-              existing_number, existing_hash = existing
+              existing_number, existing_hash, existing_size = existing
 
               if existing_hash == content_hash
                 # Enrichment: same file, same content — update metadata only.
@@ -209,7 +209,12 @@ module GalaxyArtifacts
                   ledger_session_id,
                   existing_number,
                 )
-                return SaveArtifactResult.new(SaveArtifactAction::VersionUpdate, existing_number.to_i)
+                return SaveArtifactResult.new(
+                  SaveArtifactAction::VersionUpdate,
+                  existing_number.to_i,
+                  previous_content_hash: existing_hash,
+                  previous_file_size: existing_size,
+                )
               end
             end
           end
@@ -544,8 +549,15 @@ module GalaxyArtifacts
     struct SaveArtifactResult
       getter action : SaveArtifactAction
       getter number : Int32
+      getter previous_content_hash : String?
+      getter previous_file_size : Int64?
 
-      def initialize(@action, @number)
+      def initialize(
+        @action,
+        @number,
+        @previous_content_hash = nil,
+        @previous_file_size = nil,
+      )
       end
     end
   end
