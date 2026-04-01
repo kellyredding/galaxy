@@ -612,6 +612,7 @@ enum TimelineLayoutEngine {
             let isBreakable =
                 dur.resource == .session
                 || dur.resource == .turn
+                || dur.resource == .scrollback
             if !isBreakable, let end = dur.endHash {
                 for h in dur.startHash...end {
                     activeHashes.insert(h)
