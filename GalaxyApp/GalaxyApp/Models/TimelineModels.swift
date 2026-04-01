@@ -457,9 +457,6 @@ enum TimelineTooltipFormatter {
         _ d: [String: Any]
     ) -> [String] {
         var lines: [String] = []
-        if let msg = d["user_message"] as? String {
-            lines.append(truncate(msg, to: 80))
-        }
         if let followUps = d["follow_up_messages"]
             as? [[String: Any]],
             !followUps.isEmpty
