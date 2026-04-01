@@ -303,13 +303,14 @@ describe "CLI Integration - spend" do
 
     it "shows weekly sparkline and weekly bars for qtd" do
       lid = GalaxyLedger::Database.create_session("sess-tier-weekly")
-      today = Time.utc
-      quarter_month = ((today.month - 1) // 3) * 3 + 1
-      q_first = Time.utc(today.year, quarter_month, 1)
+      # Pin to mid-quarter so q_first and today are never the same
+      fake_today = Time.utc(Time.utc.year, Time.utc.month, 15)
+      quarter_month = ((fake_today.month - 1) // 3) * 3 + 1
+      q_first = Time.utc(fake_today.year, quarter_month, 1)
       seed_daily_usage(lid, q_first.to_s("%Y-%m-%d"), 4.00, 80000_i64)
-      seed_daily_usage(lid, today.to_s("%Y-%m-%d"), 6.00, 120000_i64)
+      seed_daily_usage(lid, fake_today.to_s("%Y-%m-%d"), 6.00, 120000_i64)
 
-      result = run_binary(["spend", "qtd"])
+      result = run_binary(["spend", "qtd"], extra_env: {"GALAXY_LEDGER_TODAY" => fake_today.to_s("%Y-%m-%d")})
       result[:status].should eq(0)
       result[:output].should contain("Weekly:")
       result[:output].should contain("/wk")
@@ -362,13 +363,14 @@ describe "CLI Integration - spend" do
 
     it "shows weeks footnote for weekly periods" do
       lid = GalaxyLedger::Database.create_session("sess-footnote-weekly")
-      today = Time.utc
-      quarter_month = ((today.month - 1) // 3) * 3 + 1
-      q_first = Time.utc(today.year, quarter_month, 1)
+      # Pin to mid-quarter so q_first and today are never the same
+      fake_today = Time.utc(Time.utc.year, Time.utc.month, 15)
+      quarter_month = ((fake_today.month - 1) // 3) * 3 + 1
+      q_first = Time.utc(fake_today.year, quarter_month, 1)
       seed_daily_usage(lid, q_first.to_s("%Y-%m-%d"), 3.00, 50000_i64)
-      seed_daily_usage(lid, today.to_s("%Y-%m-%d"), 5.00, 100000_i64)
+      seed_daily_usage(lid, fake_today.to_s("%Y-%m-%d"), 5.00, 100000_i64)
 
-      result = run_binary(["spend", "qtd"])
+      result = run_binary(["spend", "qtd"], extra_env: {"GALAXY_LEDGER_TODAY" => fake_today.to_s("%Y-%m-%d")})
       result[:status].should eq(0)
       result[:output].should contain("excludes weeks with no usage")
     end
