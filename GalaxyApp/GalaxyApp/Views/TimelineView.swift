@@ -811,6 +811,14 @@ struct VScrollAtBottomReader: NSViewRepresentable {
             guard let scrollView =
                 enclosingScrollView
             else { return }
+
+            // Use legacy scrollers so the
+            // scrollbar has a dedicated track
+            // outside the content — always
+            // visible and reliably draggable.
+            scrollView.scrollerStyle = .legacy
+            scrollView.hasVerticalScroller = true
+
             scrollView.contentView
                 .postsBoundsChangedNotifications =
                 true
