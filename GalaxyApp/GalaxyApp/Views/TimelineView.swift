@@ -412,30 +412,46 @@ struct TimelineView: View {
     /// Compute offset from the alignment corner.
     /// Uses .topLeading when placing right of cursor,
     /// .topTrailing when placing left of cursor.
+    /// Flips above the cursor when near the bottom.
     private func tooltipOffset(
         anchor: CGPoint,
         viewSize: CGSize
     ) -> TooltipPosition {
         let gap: CGFloat = 12.0
         let maxW: CGFloat = 260.0
+        let maxH: CGFloat = 120.0
 
-        // Try right side first: leading edge at
-        // anchor.x + gap
+        // Vertical: flip above cursor when tooltip
+        // would extend beyond the bottom edge.
+        let nearBottom =
+            anchor.y + maxH > viewSize.height
+        let yComponent: (CGFloat, vertical: String) =
+            nearBottom
+            ? (-(viewSize.height - anchor.y + gap),
+                "bottom")
+            : (anchor.y, "top")
+
+        // Horizontal: try right side first, flip
+        // left if it would overflow.
         let rightLeading = anchor.x + gap
         if rightLeading + maxW <= viewSize.width {
-            // Place right of cursor, topLeading
+            let align: Alignment =
+                yComponent.vertical == "bottom"
+                ? .bottomLeading : .topLeading
             return TooltipPosition(
                 x: rightLeading,
-                y: anchor.y,
-                alignment: .topLeading
+                y: yComponent.0,
+                alignment: align
             )
         }
 
-        // Flip left: trailing edge at anchor.x - gap
+        let align: Alignment =
+            yComponent.vertical == "bottom"
+            ? .bottomTrailing : .topTrailing
         return TooltipPosition(
             x: -(viewSize.width - anchor.x + gap),
-            y: anchor.y,
-            alignment: .topTrailing
+            y: yComponent.0,
+            alignment: align
         )
     }
 
