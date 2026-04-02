@@ -128,7 +128,7 @@ struct AppSettings: Codable {
 
     // Session notification settings
     var notifySessionIdle: Bool = false
-    var notifySessionIdleMinBusy: Int = 3  // seconds
+    var notifySessionIdleMinBusy: Int = 1  // seconds
     var notifySessionIdleMinIdle: Int = 3  // seconds
     var notifySessionExitedUnexpectedly: Bool = false
     var notifyHighContext: Bool = false
@@ -207,7 +207,7 @@ struct AppSettings: Codable {
         notifySessionIdle = try container.decodeIfPresent(
             Bool.self, forKey: .notifySessionIdle) ?? false
         notifySessionIdleMinBusy = try container.decodeIfPresent(
-            Int.self, forKey: .notifySessionIdleMinBusy) ?? 3
+            Int.self, forKey: .notifySessionIdleMinBusy) ?? 1
         notifySessionIdleMinIdle = try container.decodeIfPresent(
             Int.self, forKey: .notifySessionIdleMinIdle) ?? 3
         notifySessionExitedUnexpectedly = try container.decodeIfPresent(
