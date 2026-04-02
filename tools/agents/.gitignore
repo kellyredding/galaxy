@@ -1,0 +1,7 @@
+/lib/
+/.shards/
+/build/
+/docs/
+.DS_Store
+*.swp
+*.swo

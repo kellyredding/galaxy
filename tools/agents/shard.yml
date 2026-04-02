@@ -1,0 +1,17 @@
+name: galaxy-agents
+version: 0.1.0
+
+authors:
+  - Kelly Redding <kelly@kellyredding.com>
+
+targets:
+  galaxy-agents:
+    main: src/galaxy_agents.cr
+
+license: MIT
+crystal: ">= 1.0.0"
+
+dependencies:
+  sqlite3:
+    github: crystal-lang/crystal-sqlite3
+    version: ~> 0.22.0

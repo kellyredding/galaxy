@@ -11,6 +11,7 @@
 | [snapshots](tools/snapshots/) | Session snapshot management for Claude Code | Active |
 | [artifacts](tools/artifacts/) | Session artifact management for Claude Code | Active |
 | [timeline](tools/timeline/) | Session timeline event recording for Claude Code | Active |
+| [agents](tools/agents/) | Subagent lifecycle tracking for Claude Code | Active |
 
 ## Quick Install
 
@@ -25,6 +26,7 @@ make ledger-install
 make snapshots-install
 make artifacts-install
 make timeline-install
+make agents-install
 ```
 
 Or build individual tools:
@@ -74,6 +76,12 @@ Session timeline event recording for Claude Code. Records timestamped events acr
 
 See [tools/timeline/](tools/timeline/) for detailed documentation.
 
+### agents
+
+Subagent lifecycle tracking for Claude Code. Records when agents start, stop, fail, or are abandoned, with timeline event publishing and real-time socket notifications.
+
+See [tools/agents/](tools/agents/) for detailed documentation.
+
 ## Development
 
 Each tool is self-contained in its own directory under `tools/`. Tools may be written in different languages, but currently all are written in [Crystal](https://crystal-lang.org/).
@@ -107,7 +115,8 @@ galaxy/
     ├── ledger/               # Continuous context management
     ├── snapshots/            # Session snapshot management
     ├── artifacts/            # Session artifact management
-    └── timeline/             # Session timeline events
+    ├── timeline/             # Session timeline events
+    └── agents/               # Subagent lifecycle tracking
 ```
 
 ## License

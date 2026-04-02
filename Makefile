@@ -1,6 +1,6 @@
-.PHONY: all clean statusline-build statusline-test statusline-check statusline-install statusline-clean ledger-build ledger-test ledger-check ledger-install ledger-clean snapshots-build snapshots-dev snapshots-test snapshots-check snapshots-install snapshots-clean artifacts-build artifacts-dev artifacts-test artifacts-check artifacts-install artifacts-clean timeline-build timeline-dev timeline-test timeline-check timeline-install timeline-clean app-build app-clean
+.PHONY: all clean statusline-build statusline-test statusline-check statusline-install statusline-clean ledger-build ledger-test ledger-check ledger-install ledger-clean snapshots-build snapshots-dev snapshots-test snapshots-check snapshots-install snapshots-clean artifacts-build artifacts-dev artifacts-test artifacts-check artifacts-install artifacts-clean timeline-build timeline-dev timeline-test timeline-check timeline-install timeline-clean agents-build agents-dev agents-test agents-check agents-install agents-clean app-build app-clean
 
-all: statusline-build ledger-build snapshots-build artifacts-build timeline-build
+all: statusline-build ledger-build snapshots-build artifacts-build timeline-build agents-build
 
 # Statusline tool
 statusline-build:
@@ -97,6 +97,25 @@ timeline-install:
 timeline-clean:
 	$(MAKE) -C tools/timeline clean
 
+# Agents tool
+agents-build:
+	$(MAKE) -C tools/agents build
+
+agents-dev:
+	$(MAKE) -C tools/agents dev
+
+agents-test:
+	$(MAKE) -C tools/agents test
+
+agents-check:
+	$(MAKE) -C tools/agents check
+
+agents-install:
+	$(MAKE) -C tools/agents install
+
+agents-clean:
+	$(MAKE) -C tools/agents clean
+
 # Galaxy.app (SwiftUI Mac app)
 # Always uses -derivedDataPath to avoid polluting ~/Library/Developer/Xcode/DerivedData
 APP_DERIVED_DATA = GalaxyApp/build
@@ -111,4 +130,4 @@ app-clean:
 	xcodebuild -project GalaxyApp/GalaxyApp.xcodeproj -scheme GalaxyApp -derivedDataPath $(APP_DERIVED_DATA) clean
 	rm -rf $(APP_DERIVED_DATA)
 
-clean: statusline-clean ledger-clean snapshots-clean artifacts-clean timeline-clean app-clean
+clean: statusline-clean ledger-clean snapshots-clean artifacts-clean timeline-clean agents-clean app-clean
