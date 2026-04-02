@@ -57,6 +57,10 @@ module GalaxyLedger
       on failed/abandoned turns)
     - `follow_up_messages`: mid-turn user messages
 
+    Read each `assistant_response` in full — do not skim or
+    summarize from the first sentence. The critical details are
+    often in the middle or end of the response.
+
     Read the full sequence to understand the narrative arc of
     recent work — what the user was doing, what was accomplished,
     and where they left off. If work was incomplete or the
