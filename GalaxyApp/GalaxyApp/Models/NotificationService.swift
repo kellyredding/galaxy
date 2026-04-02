@@ -178,6 +178,34 @@ final class NotificationService: NSObject,
         UNUserNotificationCenter.current().add(request)
     }
 
+    /// Send a "Terminal Bell" notification with context
+    /// from the most recent turn event.
+    func notifyTerminalBell(
+        sessionId: UUID,
+        displayName: String,
+        bodyText: String?
+    ) {
+        let content = UNMutableNotificationContent()
+        content.title = displayName
+        content.subtitle = "Terminal bell"
+        if let text = bodyText, !text.isEmpty {
+            content.body = text
+        }
+        content.sound = .default
+        content.userInfo = [
+            "sessionId": sessionId.uuidString,
+            "tab": "terminal",
+        ]
+
+        let request = UNNotificationRequest(
+            identifier:
+                "terminal-bell-\(sessionId.uuidString)",
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request)
+    }
+
     // MARK: - UNUserNotificationCenterDelegate
 
     /// Handle notification click — deep link to the session and tab.

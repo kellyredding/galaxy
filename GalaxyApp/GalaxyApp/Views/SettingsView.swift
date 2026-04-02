@@ -563,6 +563,23 @@ struct NotificationsSettingsTab: View {
             // Section 2: Session (new notification controls)
             SettingsCard(title: "Session") {
                 VStack(alignment: .leading, spacing: 12) {
+                    // Terminal Bell
+                    HStack {
+                        Toggle(
+                            "Terminal bell",
+                            isOn: $settingsManager.settings
+                                .notifyTerminalBell
+                        )
+                        .toggleStyle(.checkbox)
+                        .onChange(
+                            of: settingsManager.settings
+                                .notifyTerminalBell
+                        ) { _, enabled in
+                            if enabled { requestAuth() }
+                        }
+                        Spacer()
+                    }
+
                     // Session Idle
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
@@ -744,6 +761,7 @@ struct NotificationsSettingsTab: View {
             || s.notifyHighContext
             || s.notifyAutoClearOccurred
             || s.notifySnapshotCreated
+            || s.notifyTerminalBell
     }
 
     private func requestAuth() {

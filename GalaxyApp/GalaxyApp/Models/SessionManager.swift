@@ -236,20 +236,59 @@ class SessionManager: ObservableObject {
         session.processHandler = handler
         session.terminalView?.processDelegate = handler
 
-        // Set up bell callback — handles sound/visual bell only.
-        // Unread indicator is triggered by busy→idle, not bell events.
+        // Set up bell callback — handles sound/visual bell
+        // and optionally sends a macOS notification with
+        // context from the most recent turn event.
         session.terminalView?.onBell = { [weak self, weak session] in
             guard let self = self, let session = session else { return }
             DispatchQueue.main.async {
-                let preference = SettingsManager.shared.settings.bellPreference
+                let settings = SettingsManager.shared.settings
 
-                switch preference {
+                switch settings.bellPreference {
                 case .visualBell:
                     self.triggerVisualBell(for: session)
                 case .none:
                     break
                 default:
                     SettingsManager.shared.handleBell()
+                }
+
+                // Terminal bell notification
+                guard settings.notifyTerminalBell else { return }
+                let isViewing = session.id == self.activeSessionId
+                    && self.activeTab == .terminal
+                    && self.isWindowFocused
+                guard !isViewing else { return }
+
+                guard let lsid = session.ledgerSessionId else { return }
+                let sessionId = session.id
+                let displayName = session.displayName
+
+                Task {
+                    do {
+                        let event = try await TimelineQueryService
+                            .shared
+                            .fetchMostRecentTurnEvent(
+                                ledgerSessionId: lsid
+                            )
+                        let bodyText = Self.bellNotificationBody(from: event)
+                        await MainActor.run {
+                            NotificationService.shared.notifyTerminalBell(
+                                sessionId: sessionId,
+                                displayName: displayName,
+                                bodyText: bodyText
+                            )
+                        }
+                    } catch {
+                        // Best-effort — send without body
+                        await MainActor.run {
+                            NotificationService.shared.notifyTerminalBell(
+                                sessionId: sessionId,
+                                displayName: displayName,
+                                bodyText: nil
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -491,20 +530,59 @@ class SessionManager: ObservableObject {
         session.processHandler = handler
         session.terminalView?.processDelegate = handler
 
-        // Set up bell callback — handles sound/visual bell only.
-        // Unread indicator is triggered by busy→idle, not bell events.
+        // Set up bell callback — handles sound/visual bell
+        // and optionally sends a macOS notification with
+        // context from the most recent turn event.
         session.terminalView?.onBell = { [weak self, weak session] in
             guard let self = self, let session = session else { return }
             DispatchQueue.main.async {
-                let preference = SettingsManager.shared.settings.bellPreference
+                let settings = SettingsManager.shared.settings
 
-                switch preference {
+                switch settings.bellPreference {
                 case .visualBell:
                     self.triggerVisualBell(for: session)
                 case .none:
                     break
                 default:
                     SettingsManager.shared.handleBell()
+                }
+
+                // Terminal bell notification
+                guard settings.notifyTerminalBell else { return }
+                let isViewing = session.id == self.activeSessionId
+                    && self.activeTab == .terminal
+                    && self.isWindowFocused
+                guard !isViewing else { return }
+
+                guard let lsid = session.ledgerSessionId else { return }
+                let sessionId = session.id
+                let displayName = session.displayName
+
+                Task {
+                    do {
+                        let event = try await TimelineQueryService
+                            .shared
+                            .fetchMostRecentTurnEvent(
+                                ledgerSessionId: lsid
+                            )
+                        let bodyText = Self.bellNotificationBody(from: event)
+                        await MainActor.run {
+                            NotificationService.shared.notifyTerminalBell(
+                                sessionId: sessionId,
+                                displayName: displayName,
+                                bodyText: bodyText
+                            )
+                        }
+                    } catch {
+                        // Best-effort — send without body
+                        await MainActor.run {
+                            NotificationService.shared.notifyTerminalBell(
+                                sessionId: sessionId,
+                                displayName: displayName,
+                                bodyText: nil
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -1271,6 +1349,48 @@ class SessionManager: ObservableObject {
 
         let unreadCount = sessions.filter { $0.hasUnreadResponse }.count
         NSApp.dockTile.badgeLabel = unreadCount > 0 ? "\(unreadCount)" : nil
+    }
+
+    /// Extract notification body text from a turn event.
+    /// For turn-ending events, prefer assistant_response.
+    /// For turn:initiated, use user_message.
+    private static func bellNotificationBody(
+        from event: TimelineEvent?
+    ) -> String? {
+        guard let event = event,
+              let detailData = event.detailData,
+              let data = detailData.data(using: .utf8),
+              let dict = try? JSONSerialization
+                  .jsonObject(with: data)
+                  as? [String: Any]
+        else { return nil }
+
+        let text: String?
+        switch event.eventType {
+        case "turn:completed", "turn:continued":
+            text = dict["assistant_response"] as? String
+                ?? dict["user_message"] as? String
+        case "turn:failed", "turn:interrupted",
+             "turn:abandoned":
+            text = dict["assistant_response"] as? String
+                ?? dict["user_message"] as? String
+        case "turn:initiated":
+            text = dict["user_message"] as? String
+        default:
+            text = nil
+        }
+
+        guard let raw = text, !raw.isEmpty else {
+            return nil
+        }
+
+        let cleaned = raw
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespaces)
+        if cleaned.count > 150 {
+            return String(cleaned.prefix(147)) + "…"
+        }
+        return cleaned
     }
 
     /// Trigger visual bell with 3 flashes, each shorter than the last

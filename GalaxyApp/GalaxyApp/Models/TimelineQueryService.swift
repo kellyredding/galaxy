@@ -51,6 +51,42 @@ class TimelineQueryService {
         return response.events
     }
 
+    /// Fetch the most recent turn event for a session.
+    /// Queries turn-ending events (completed, failed,
+    /// interrupted, abandoned) plus turn:initiated as
+    /// fallback. Returns nil if no turn events exist.
+    func fetchMostRecentTurnEvent(
+        ledgerSessionId: Int64
+    ) async throws -> TimelineEvent? {
+        let eventTypes = [
+            "turn:completed",
+            "turn:failed",
+            "turn:interrupted",
+            "turn:abandoned",
+            "turn:initiated",
+        ].joined(separator: ",")
+
+        let data = try await runCLI(
+            args: [
+                "list", "--json",
+                "--ledger-session-id",
+                String(ledgerSessionId),
+                "--event-type", eventTypes,
+                "--reverse",
+                "--limit", "1",
+            ]
+        )
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        decoder.dateDecodingStrategy = .formatted(
+            Self.dateFormatter
+        )
+        let response = try decoder.decode(
+            TimelineEventsResponse.self, from: data
+        )
+        return response.events.first
+    }
+
     // MARK: - CLI Subprocess
 
     /// Spawn the galaxy-timeline binary and collect stdout.

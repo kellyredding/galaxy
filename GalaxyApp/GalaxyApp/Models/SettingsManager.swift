@@ -135,6 +135,7 @@ struct AppSettings: Codable {
     var notifyHighContextThreshold: Int = 90
     var notifyAutoClearOccurred: Bool = false
     var notifySnapshotCreated: Bool = false
+    var notifyTerminalBell: Bool = false
 
     // Sidebar width constraints
     static let sidebarWidthRange: ClosedRange<CGFloat> = 150...500
@@ -220,6 +221,8 @@ struct AppSettings: Codable {
             Bool.self, forKey: .notifyAutoClearOccurred) ?? false
         notifySnapshotCreated = try container.decodeIfPresent(
             Bool.self, forKey: .notifySnapshotCreated) ?? false
+        notifyTerminalBell = try container.decodeIfPresent(
+            Bool.self, forKey: .notifyTerminalBell) ?? false
         restoreColNameWidth = try container.decodeIfPresent(
             CGFloat.self, forKey: .restoreColNameWidth) ?? 250
         restoreColPersonaWidth = try container.decodeIfPresent(
