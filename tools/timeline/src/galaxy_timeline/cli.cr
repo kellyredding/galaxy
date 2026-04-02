@@ -194,7 +194,7 @@ module GalaxyTimeline
       if id > 0
         EventPublisher.publish(
           ledger_session_id,
-          "timeline.event_recorded",
+          "timeline.#{event_type}",
           ref: id.to_s,
         )
         if json_mode
