@@ -482,7 +482,6 @@ class ResizeHandleNSView: NSView {
         dragStartWidth = currentWidth
         NSCursor.closedHand.set()  // Grabbing cursor
         StatusLineService.shared.pauseUpdates()  // Pause for performance
-        SessionManager.shared.pauseAllBusyObservers()
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -512,7 +511,6 @@ class ResizeHandleNSView: NSView {
         isDragging = false
         NSCursor.arrow.set()  // Reset cursor, tracking area will update if still hovering
         StatusLineService.shared.resumeUpdates()  // Resume after drag
-        SessionManager.shared.resumeAllBusyObservers()
 
         // Calculate final width
         let currentX = NSEvent.mouseLocation.x

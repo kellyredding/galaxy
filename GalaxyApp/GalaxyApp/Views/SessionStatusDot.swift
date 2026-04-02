@@ -27,7 +27,7 @@ struct SessionStatusDot: View {
             )
             .frame(width: 8, height: 8)
             .opacity(isPulsePhase ? 0.3 : 1.0)
-            .onChange(of: session.isBusy) { _, newValue in
+            .onChange(of: session.isInTurn) { _, newValue in
                 if newValue {
                     withAnimation(
                         .easeInOut(duration: 0.6)

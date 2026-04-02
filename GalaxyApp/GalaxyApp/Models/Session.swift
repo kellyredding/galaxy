@@ -66,6 +66,39 @@ class Session: Identifiable, ObservableObject {
     @Published var visualBellActive: Bool = false
     @Published var isBusy: Bool = false
 
+    // MARK: - Turn State
+    //
+    // Socket-driven turn model (Phase 3):
+    // - isBusy (micro): PTY activity toggle with 500ms debounce.
+    //   Drives: sendCommand CR verification, resume startup
+    //   detection (afterNextIdle), interrupt detection
+    //   (checkForInterrupt on micro-idle). Does NOT touch isInTurn.
+    // - isInTurn (turn): exclusively socket-driven via
+    //   startTurn/endTurn. Set by timeline.turn:initiated socket
+    //   event or sendCommand(). Cleared by turn-end socket events
+    //   (completed/failed/continued/interrupted). All user-visible
+    //   consumers observe isInTurn.
+
+    /// True when the session is in an active turn (Claude is
+    /// working). Set by startTurn() (socket event or
+    /// sendCommand), cleared by endTurn() (socket event).
+    /// All user-visible consumers observe this, not isBusy.
+    @Published var isInTurn: Bool = false
+
+    /// When the current turn started (startTurn called).
+    /// Used to compute turn duration for notification/unread gates.
+    private var turnStartTime: Date?
+
+    /// Persistent callback fired when a new turn starts
+    /// (isInTurn goes true). Set by SessionManager to cancel
+    /// pending idle notification timers.
+    var onTurnStart: ((Session) -> Void)?
+
+    /// Persistent callback fired when the turn ends. Passes
+    /// the turn duration (seconds) for consumers that gate on
+    /// minimum busy time.
+    var onTurnEnd: ((Session, TimeInterval?) -> Void)?
+
     // MARK: - View State (per-session, not persisted)
     // Tracks which tab/subtab this session was on when the user switched
     // away. Restored by SessionManager when switching back.
@@ -192,9 +225,6 @@ class Session: Identifiable, ObservableObject {
     /// How long after the last PTY output before transitioning busy→idle
     private static let busyDebounceInterval: TimeInterval = 0.5
 
-    /// When true, busy state changes are frozen (during drag/resize operations)
-    private var isBusyPaused: Bool = false
-
     /// One-shot closures to fire on the next busy→idle transition.
     /// Armed when the session transitions idle→busy after being set.
     /// Fired and cleared on the subsequent busy→idle transition.
@@ -205,12 +235,9 @@ class Session: Identifiable, ObservableObject {
     /// idle transition that was already in progress when actions were set.
     private var afterNextIdleArmed: Bool = false
 
-    /// Persistent callback fired on every idle→busy transition.
-    /// Set once by SessionManager to cancel pending idle notification timers.
-    var onBusyTransition: ((Session) -> Void)?
-
     /// Persistent callback fired on every busy→idle transition.
-    /// Set once by SessionManager for auto-clear context checks.
+    /// Narrowed to interrupt detection only — all other consumers
+    /// moved to onTurnEnd.
     var onIdleTransition: ((Session) -> Void)?
 
     /// Current terminal font size for this session (transient, not persisted)
@@ -369,6 +396,9 @@ class Session: Identifiable, ObservableObject {
     func releaseTerminalView() {
         guard terminalView != nil else { return }
 
+        // Stop content monitor before clearing callbacks
+        terminalView?.stopContentMonitor()
+
         // Clear callbacks to break any retain cycles
         terminalView?.onBell = nil
         terminalView?.onDataReceived = nil
@@ -441,6 +471,11 @@ class Session: Identifiable, ObservableObject {
 
         NSLog("Session: Sending command: %@", command)
 
+        // Galaxy-initiated turn — enter immediately.
+        // The hook's turn:initiated socket event will arrive
+        // as a redundant no-op (startTurn guards on !isInTurn).
+        startTurn(source: "sendCommand:\(command)")
+
         // If already busy we can't use isBusy as a verification signal.
         // Fall back to the original fire-and-forget behavior.
         let wasBusy = isBusy
@@ -484,79 +519,100 @@ class Session: Identifiable, ObservableObject {
         }
     }
 
-    // MARK: - Busy State
+    // MARK: - Busy State (micro-level)
+    //
+    // Tracks PTY activity with a 500ms debounce.
+    // Does NOT drive turn state (isInTurn) — that's
+    // socket-driven via startTurn/endTurn.
+    //
+    // Consumers:
+    // - sendCommand CR verification (needs sub-250ms
+    //   signal that PTY output started)
+    // - Resume startup detection (afterNextIdle needs
+    //   a busy→idle cycle to detect transcript restore
+    //   completion)
+    // - Interrupt detection (checkForInterrupt runs on
+    //   every micro-idle via onIdleTransition)
 
-    /// Called from onDataReceived callback (fires on SwiftTerm's dispatch queue).
-    /// Dispatches to main thread for all state mutation.
+    /// Called from onDataReceived callback.
     func markBusy() {
         DispatchQueue.main.async { [weak self] in
-            guard let self = self, self.isRunning, !self.hasExited, !self.isBusyPaused else {
-                return
-            }
+            guard let self = self,
+                  self.isRunning, !self.hasExited
+            else { return }
 
-            // Only trigger @Published when actually changing (idle → busy)
-            // This prevents unnecessary SessionRow re-renders during sustained output
             if !self.isBusy {
                 self.isBusy = true
-                self.onBusyTransition?(self)
-                NotificationService.shared.sessionDidBecomeBusy(self.id)
-
-                // Arm pending one-shot actions on idle→busy transition
-                if !self.afterNextIdleActions.isEmpty {
-                    self.afterNextIdleArmed = true
-                }
             }
 
-            // Always reset the debounce timer (even when already busy)
             self.busyDebounceTimer?.invalidate()
-            self.busyDebounceTimer = Timer.scheduledTimer(
-                withTimeInterval: Self.busyDebounceInterval,
-                repeats: false
-            ) { [weak self] _ in
-                guard let self = self else { return }
-                self.isBusy = false
-
-                // Fire armed one-shot actions
-                if self.afterNextIdleArmed && !self.afterNextIdleActions.isEmpty {
-                    let actions = self.afterNextIdleActions
-                    self.afterNextIdleActions.removeAll()
-                    self.afterNextIdleArmed = false
-                    for action in actions {
-                        action()
+            self.busyDebounceTimer = Timer
+                .scheduledTimer(
+                    withTimeInterval:
+                        Self.busyDebounceInterval,
+                    repeats: false
+                ) { [weak self] _ in
+                    guard let self = self else {
+                        return
                     }
-                } else if !self.afterNextIdleActions.isEmpty {
-                    // Actions pending but not armed — skip (no busy→idle cycle yet)
+                    self.isBusy = false
+                    self.onIdleTransition?(self)
                 }
-
-                // Fire persistent idle callback
-                self.onIdleTransition?(self)
-            }
         }
     }
 
-    /// Freeze busy state during drag/resize operations to prevent animation jank
-    func pauseBusyObserver() {
-        isBusyPaused = true
-        busyDebounceTimer?.invalidate()
-        busyDebounceTimer = nil
+    // MARK: - Turn State (socket-driven)
+
+    /// Called when a turn-start signal arrives (socket
+    /// turn:initiated event, or sendCommand). Sets
+    /// isInTurn and fires the onTurnStart callback.
+    func startTurn(source: String = "unknown") {
+        guard !isInTurn else { return }
+        GalaxyLog.events(
+            "[\(sessionRef)] TurnState:"
+            + " startTurn() source=\(source)"
+        )
+        isInTurn = true
+        turnStartTime = Date()
+        onTurnStart?(self)
+
+        // Arm pending one-shot actions
+        if !afterNextIdleActions.isEmpty {
+            afterNextIdleArmed = true
+        }
     }
 
-    /// Resume busy state observation after drag/resize completes.
-    /// If still busy, restarts debounce timer so it can naturally transition to idle.
-    func resumeBusyObserver() {
-        isBusyPaused = false
+    /// Called when an authoritative turn-end signal
+    /// arrives (socket event). Clears turn state and
+    /// fires the onTurnEnd callback with the turn's
+    /// duration.
+    func endTurn(source: String = "unknown") {
+        GalaxyLog.events(
+            "[\(sessionRef)] TurnState: endTurn()"
+            + " source=\(source)"
+            + " wasInTurn=\(isInTurn)"
+        )
+        guard isInTurn else { return }
+        isInTurn = false
 
-        // If we were busy when paused, restart the debounce timer
-        // so it transitions to idle if no more output arrives
-        if isBusy {
-            busyDebounceTimer?.invalidate()
-            busyDebounceTimer = Timer.scheduledTimer(
-                withTimeInterval: Self.busyDebounceInterval,
-                repeats: false
-            ) { [weak self] _ in
-                self?.isBusy = false
+        let duration = turnStartTime.map {
+            Date().timeIntervalSince($0)
+        }
+        turnStartTime = nil
+
+        // Fire armed one-shot actions (afterNextIdle)
+        if afterNextIdleArmed,
+           !afterNextIdleActions.isEmpty
+        {
+            let actions = afterNextIdleActions
+            afterNextIdleActions.removeAll()
+            afterNextIdleArmed = false
+            for action in actions {
+                action()
             }
         }
+
+        onTurnEnd?(self, duration)
     }
 
     /// Register a one-shot action to fire after the next complete
@@ -785,6 +841,12 @@ class Session: Identifiable, ObservableObject {
             self.busyDebounceTimer = nil
             if self.isBusy {
                 self.isBusy = false
+            }
+
+            // Clear turn state
+            if self.isInTurn {
+                self.isInTurn = false
+                self.turnStartTime = nil
             }
 
             // Clear any pending idle actions — session is dead

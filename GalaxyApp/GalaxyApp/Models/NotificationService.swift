@@ -7,10 +7,6 @@ final class NotificationService: NSObject,
 {
     static let shared = NotificationService()
 
-    /// Track when each session last entered busy state
-    /// (for minimum busy duration filtering)
-    private var busyStartTimes: [UUID: Date] = [:]
-
     /// Track the last context percentage we warned about per session
     /// to avoid re-firing on every enrichment cycle
     private var lastWarnedContextPct: [UUID: Int] = [:]
@@ -20,26 +16,8 @@ final class NotificationService: NSObject,
         UNUserNotificationCenter.current().delegate = self
     }
 
-    // MARK: - Busy Duration Tracking
-
-    /// Called when a session transitions idle → busy.
-    /// Records the timestamp for minimum-busy-duration filtering.
-    func sessionDidBecomeBusy(_ sessionId: UUID) {
-        busyStartTimes[sessionId] = Date()
-    }
-
-    /// Returns the duration the session was busy, or nil if
-    /// not tracked.
-    func sessionBusyDuration(_ sessionId: UUID) -> TimeInterval? {
-        guard let start = busyStartTimes[sessionId] else {
-            return nil
-        }
-        return Date().timeIntervalSince(start)
-    }
-
     /// Clean up tracking state when a session is closed.
     func sessionClosed(_ sessionId: UUID) {
-        busyStartTimes.removeValue(forKey: sessionId)
         lastWarnedContextPct.removeValue(forKey: sessionId)
     }
 

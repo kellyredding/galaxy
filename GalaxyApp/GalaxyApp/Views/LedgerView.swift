@@ -155,7 +155,7 @@ struct LedgerView: View {
             }
             return "Stopped"
         }
-        if session.isBusy { return "Running — busy" }
+        if session.isInTurn { return "Running — busy" }
         if session.isRunning { return "Running — idle" }
         return "Starting"
     }

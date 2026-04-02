@@ -259,15 +259,23 @@ class SessionManager: ObservableObject {
             session?.markBusy()
         }
 
-        // Cancel pending idle notification timer when session goes busy again
-        session.onBusyTransition = { [weak self] session in
+        // Start buffer content monitor (Phase 0 de-risk logging)
+        session.terminalView?.startContentMonitor()
+
+        // Cancel pending idle notification timer when turn starts
+        session.onTurnStart = { [weak self] session in
             self?.pendingIdleNotificationTimers[session.id]?.invalidate()
             self?.pendingIdleNotificationTimers.removeValue(forKey: session.id)
         }
 
-        // Register persistent idle callback for auto-clear + unread indicator
+        // Micro-idle: only runs interrupt detection
         session.onIdleTransition = { [weak self] session in
-            self?.handleIdleTransition(for: session)
+            self?.checkForInterrupt(for: session)
+        }
+
+        // Turn-end: all consumer logic (unread, notifications, auto-clear)
+        session.onTurnEnd = { [weak self] session, duration in
+            self?.handleTurnEnd(for: session, duration: duration)
         }
 
         // Determine if this is a resume (resumeSessionId provided means URL had resume param)
@@ -324,7 +332,7 @@ class SessionManager: ObservableObject {
         ) else { return }
         guard !session.hasExited else { return }
 
-        let isBusy = session.isBusy
+        let isBusy = session.isInTurn
 
         let proceed: () -> Void = { [weak self] in
             self?.stopSession(sessionId: sessionId)
@@ -506,15 +514,23 @@ class SessionManager: ObservableObject {
             session?.markBusy()
         }
 
-        // Cancel pending idle notification timer when session goes busy again
-        session.onBusyTransition = { [weak self] session in
+        // Start buffer content monitor (Phase 0 de-risk logging)
+        session.terminalView?.startContentMonitor()
+
+        // Cancel pending idle notification timer when turn starts
+        session.onTurnStart = { [weak self] session in
             self?.pendingIdleNotificationTimers[session.id]?.invalidate()
             self?.pendingIdleNotificationTimers.removeValue(forKey: session.id)
         }
 
-        // Register persistent idle callback for auto-clear + unread indicator
+        // Micro-idle: only runs interrupt detection
         session.onIdleTransition = { [weak self] session in
-            self?.handleIdleTransition(for: session)
+            self?.checkForInterrupt(for: session)
+        }
+
+        // Turn-end: all consumer logic (unread, notifications, auto-clear)
+        session.onTurnEnd = { [weak self] session, duration in
+            self?.handleTurnEnd(for: session, duration: duration)
         }
 
         // Determine executable path: claude-persona for persona sessions, claude for vanilla
@@ -528,14 +544,16 @@ class SessionManager: ObservableObject {
         // Start process: --resume if session exists in Claude storage, --session-id if not
         session.startProcess(executablePath: executablePath, resume: canResume)
 
-        // After the resumed session settles, restore working directory
-        // via the galaxy:resume skill. Lighter than /handoff — only
-        // restores cwd and confirms state, no full context rebuild.
+        // After the resumed session settles, restore working
+        // directory via the galaxy:resume skill. Uses a fixed
+        // 3-second delay — there's no turn:initiated event
+        // during transcript restore, so afterNextIdle can't
+        // arm. The 3s covers observed restore times (0.5–2s).
         if canResume {
-            session.afterNextIdle { [weak session] in
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak session] in
-                    session?.sendCommand("/galaxy:resume")
-                }
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + 3.0
+            ) { [weak session] in
+                session?.sendCommand("/galaxy:resume")
             }
         }
 
@@ -772,109 +790,114 @@ class SessionManager: ObservableObject {
         }
     }
 
-    /// Called on every busy→idle transition for a session.
-    /// Checks context usage and auto-clears if above threshold.
-    private func handleIdleTransition(for session: Session) {
-        // Check for user interrupt (state file left behind)
-        checkForInterrupt(for: session)
-
+    /// Called when a turn ends (socket event, interrupt detection,
+    /// or fallback timer). Handles all turn-end consumers with the
+    /// correct turn duration.
+    private func handleTurnEnd(
+        for session: Session,
+        duration: TimeInterval?
+    ) {
         let settings = SettingsManager.shared.settings
+        let turnDuration = duration ?? 0
 
-        // Show unread indicator when a session goes idle and the user
-        // isn't actively viewing it — either a different session is
-        // selected, a non-terminal tab is active, or the app window
-        // isn't focused. State is set when either sidebar indicators
-        // or dock badge is enabled; each display surface gates its
-        // own visibility independently.
-        let isViewingThisSession = session.id == activeSessionId && activeTab == .terminal && isWindowFocused
-        let trackUnread = settings.showUnreadIndicator || settings.showDockBadge
+        let isViewingThisSession =
+            session.id == activeSessionId
+            && activeTab == .terminal
+            && isWindowFocused
 
-        // Require a minimum busy duration before setting unread indicator.
-        // Brief PTY blips (cursor redraws, prompt refreshes) shouldn't
-        // create unread dots — only real work (Claude responding) should.
+        // Unread indicator
+        let trackUnread = settings.showUnreadIndicator
+            || settings.showDockBadge
         let unreadMinBusy: TimeInterval = 3.0
-        let busyDuration = NotificationService.shared
-            .sessionBusyDuration(session.id) ?? 0
-
-        if trackUnread && !isViewingThisSession && busyDuration >= unreadMinBusy {
+        if trackUnread
+            && !isViewingThisSession
+            && turnDuration >= unreadMinBusy
+        {
             session.hasUnreadResponse = true
             updateDockBadge()
         }
 
         // Session Idle notification
-        // Note: when auto-clear is about to fire, both Session Idle and
-        // Auto-Clear notifications will appear near-simultaneously. This is
-        // intentional — they're independently togglable (both off by default),
-        // so a user with Session Idle ON but Auto-Clear notification OFF
-        // would miss the idle signal if we suppressed here. The minimum busy
-        // duration filter prevents the post-auto-clear idle from re-firing.
-        if settings.notifySessionIdle && !isViewingThisSession {
-            let minBusy = TimeInterval(settings.notifySessionIdleMinBusy)
-            let busyDuration = NotificationService.shared
-                .sessionBusyDuration(session.id) ?? 0
+        if settings.notifySessionIdle
+            && !isViewingThisSession
+        {
+            let minBusy = TimeInterval(
+                settings.notifySessionIdleMinBusy
+            )
+            if turnDuration >= minBusy {
+                let minIdle = TimeInterval(
+                    settings.notifySessionIdleMinIdle
+                )
+                pendingIdleNotificationTimers[session.id]?
+                    .invalidate()
+                pendingIdleNotificationTimers[session.id] =
+                    Timer.scheduledTimer(
+                        withTimeInterval: minIdle,
+                        repeats: false
+                    ) { [weak self] _ in
+                        guard let self else { return }
+                        self.pendingIdleNotificationTimers
+                            .removeValue(forKey: session.id)
 
-            if busyDuration >= minBusy {
-                // Schedule notification after sustained idle delay.
-                // If the session goes busy again before the timer fires,
-                // onBusyTransition cancels it — filtering brief gaps
-                // between tool calls during multi-step agentic turns.
-                let minIdle = TimeInterval(settings.notifySessionIdleMinIdle)
-                pendingIdleNotificationTimers[session.id]?.invalidate()
-                pendingIdleNotificationTimers[session.id] = Timer.scheduledTimer(
-                    withTimeInterval: minIdle,
-                    repeats: false
-                ) { [weak self] _ in
-                    guard let self else { return }
-                    self.pendingIdleNotificationTimers.removeValue(
-                        forKey: session.id
-                    )
+                        // Re-check: still idle and not viewing?
+                        guard !session.isInTurn
+                        else { return }
+                        let stillViewing =
+                            session.id == self.activeSessionId
+                            && self.activeTab == .terminal
+                            && self.isWindowFocused
+                        guard !stillViewing else { return }
 
-                    // Re-check: still idle and not viewing this session?
-                    guard !session.isBusy else { return }
-                    let stillViewing = session.id == self.activeSessionId
-                        && self.activeTab == .terminal
-                        && self.isWindowFocused
-                    guard !stillViewing else { return }
-
-                    NotificationService.shared.notifySessionIdle(
-                        sessionId: session.id,
-                        displayName: session.displayName,
-                        responsePreview: self.lastResponsePreview(
-                            for: session
-                        ),
-                        contextPct: session.ledgerContextPercentage,
-                        linesAdded: session.ledgerLinesAdded,
-                        linesRemoved: session.ledgerLinesRemoved
-                    )
-                }
+                        NotificationService.shared
+                            .notifySessionIdle(
+                                sessionId: session.id,
+                                displayName:
+                                    session.displayName,
+                                responsePreview:
+                                    self.lastResponsePreview(
+                                        for: session
+                                    ),
+                                contextPct:
+                                    session
+                                    .ledgerContextPercentage,
+                                linesAdded:
+                                    session.ledgerLinesAdded,
+                                linesRemoved:
+                                    session.ledgerLinesRemoved
+                            )
+                    }
             }
         }
 
+        // Auto-clear
         guard settings.autoClearEnabled else { return }
 
-        // ledgerContextPercentage is 0–100 (integer scale), matching the setting
         let threshold = Double(settings.autoClearThreshold)
         guard let contextPct = session.ledgerContextPercentage,
               contextPct > threshold else { return }
 
-        // Cooldown: don't re-trigger within 30 seconds of last auto-clear
         if let lastClear = lastAutoClearTime[session.id],
-           Date().timeIntervalSince(lastClear) < Self.autoClearCooldown {
+           Date().timeIntervalSince(lastClear)
+               < Self.autoClearCooldown
+        {
             return
         }
 
-        NSLog("SessionManager: Auto-clearing %@ — context at %.0f%%",
-              session.sessionRef, contextPct)
+        NSLog(
+            "SessionManager: Auto-clearing %@"
+                + " — context at %.0f%%",
+            session.sessionRef, contextPct
+        )
 
-        // Auto-Clear Occurred notification
-        // Reuse isViewingThisSession (computed earlier in this method).
-        // contextPct is already unwrapped and verified > threshold above.
-        if settings.notifyAutoClearOccurred && !isViewingThisSession {
-            NotificationService.shared.notifyAutoClearOccurred(
-                sessionId: session.id,
-                displayName: session.displayName,
-                contextPct: Int(contextPct)
-            )
+        if settings.notifyAutoClearOccurred
+            && !isViewingThisSession
+        {
+            NotificationService.shared
+                .notifyAutoClearOccurred(
+                    sessionId: session.id,
+                    displayName: session.displayName,
+                    contextPct: Int(contextPct)
+                )
         }
 
         lastAutoClearTime[session.id] = Date()
@@ -1076,8 +1099,9 @@ class SessionManager: ObservableObject {
 
         // Clear session callbacks to stop idle/busy state machine activity
         let session = sessions[index]
-        session.onBusyTransition = nil
         session.onIdleTransition = nil
+        session.onTurnStart = nil
+        session.onTurnEnd = nil
 
         // Remove the session (this will deallocate the terminal view which kills the process)
         sessions.remove(at: index)
@@ -1234,16 +1258,6 @@ class SessionManager: ObservableObject {
         guard indexB >= 0 && indexB < sessions.count else { return }
         sessions.swapAt(indexA, indexB)
         SessionPersistence.shared.markDirty()
-    }
-
-    /// Pause busy state observation on all sessions (during drag/resize)
-    func pauseAllBusyObservers() {
-        sessions.forEach { $0.pauseBusyObserver() }
-    }
-
-    /// Resume busy state observation on all sessions (after drag/resize)
-    func resumeAllBusyObservers() {
-        sessions.forEach { $0.resumeBusyObserver() }
     }
 
     /// Update the dock badge to reflect the current unread session count.

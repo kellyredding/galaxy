@@ -317,10 +317,16 @@ index 553a94c..1b796d1 100644
       * Sends the specified string encoded at utf8 to the program running under the terminal emulator
       * - Parameter txt: the string to send to the client
 diff --git a/Sources/SwiftTerm/Buffer.swift b/Sources/SwiftTerm/Buffer.swift
-index a49310f..54f2f6c 100644
+index a49310f..2adbc95 100644
 --- a/Sources/SwiftTerm/Buffer.swift
 +++ b/Sources/SwiftTerm/Buffer.swift
-@@ -29,7 +29,7 @@ public final class Buffer {
+@@ -24,12 +24,12 @@ public final class Buffer {
+     
+     // this keeps incrementing even as we run out of space in _lines and trim out
+     // old lines.
+-    var linesTop: Int 
++    public var linesTop: Int
+     
      /// This is the index into the `lines` array that corresponds to the top row of displayed
      /// content in the terminal when the scroll is zero.   So the terminal contents that the application
      /// has access to are `lines [yBase..(yBase+rows)]`
@@ -646,7 +652,7 @@ index 90402c0..d53edd9 100644
                          blue: CGFloat (color.blue) / 65535.0,
                          alpha: 1.0)
 diff --git a/Sources/SwiftTerm/Mac/MacTerminalView.swift b/Sources/SwiftTerm/Mac/MacTerminalView.swift
-index 412b95a..e6c6aaa 100644
+index 412b95a..b4cee75 100644
 --- a/Sources/SwiftTerm/Mac/MacTerminalView.swift
 +++ b/Sources/SwiftTerm/Mac/MacTerminalView.swift
 @@ -15,6 +15,27 @@ import AppKit
@@ -1095,6 +1101,15 @@ index 412b95a..e6c6aaa 100644
          setNeedsDisplay(bounds)
      }
      
+@@ -1181,7 +1398,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+         }
+     }
+     
+-    public override func mouseMoved(with event: NSEvent) {
++    open override func mouseMoved(with event: NSEvent) {
+         let hit = calculateMouseHit(with: event)
+         if commandActive {
+             if let payload = getPayload(for: event) as? String {
 @@ -1195,19 +1412,45 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
          }
      }

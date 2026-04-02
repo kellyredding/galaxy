@@ -35,6 +35,24 @@ final class EventCoordinator {
         "annotation.updated",
         "annotation.deleted",
         "review.created",
+        "timeline.turn:initiated",
+        "timeline.turn:completed",
+        "timeline.turn:failed",
+        "timeline.turn:continued",
+        "timeline.turn:interrupted",
+    ]
+
+    /// Turn-start event that triggers startTurn().
+    private static let turnStartEvent =
+        "timeline.turn:initiated"
+
+    /// Turn-end events that trigger immediate session.endTurn().
+    /// These are real-time state signals, not enrichment triggers.
+    private static let turnEndEvents: Set<String> = [
+        "timeline.turn:completed",
+        "timeline.turn:failed",
+        "timeline.turn:continued",
+        "timeline.turn:interrupted",
     ]
 
     private(set) var phase: Phase = .idle
@@ -134,7 +152,58 @@ final class EventCoordinator {
     /// Route a single event to the appropriate handler.
     private func routeEvent(_ envelope: EventEnvelope) {
         // Check if this event is for a session we know about
-        guard matchesAppSession(envelope) else { return }
+        guard matchesAppSession(envelope) else {
+            GalaxyLog.events(
+                "routeEvent: no match for event=\(envelope.event)"
+                + " ledger_session_id=\(envelope.ledgerSessionId)"
+                + " identifiers=\(envelope.sessionIdentifiers)"
+            )
+            return
+        }
+
+        // Turn-start event: enter turn immediately
+        if envelope.event == Self.turnStartEvent {
+            if let appSessionId =
+                ledgerSessionIdCache[
+                    envelope.ledgerSessionId
+                ],
+               let session = sessionManager?.sessions
+                   .first(where: { $0.id == appSessionId })
+            {
+                GalaxyLog.events(
+                    "[\(session.sessionRef)]"
+                    + " routeEvent:"
+                    + " \(envelope.event)"
+                )
+                session.startTurn(
+                    source:
+                        "socket:\(envelope.event)"
+                )
+            }
+            // No enrichment needed for turn start
+            return
+        }
+
+        // Turn-end events: transition session to idle immediately
+        // (no debouncing — this is a real-time state signal).
+        if Self.turnEndEvents.contains(envelope.event) {
+            if let appSessionId =
+                ledgerSessionIdCache[envelope.ledgerSessionId],
+               let session = sessionManager?.sessions
+                   .first(where: { $0.id == appSessionId })
+            {
+                GalaxyLog.events(
+                    "[\(session.sessionRef)] routeEvent:"
+                    + " \(envelope.event)"
+                )
+                session.endTurn(
+                    source: "socket:\(envelope.event)"
+                )
+            }
+            // Also trigger enrichment (context may have changed)
+            debouncer.submit(envelope)
+            return
+        }
 
         // Check if we handle this event type
         guard Self.knownEvents.contains(envelope.event) else { return }
