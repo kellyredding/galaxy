@@ -64,6 +64,30 @@ module GalaxyLedger
           ],
         },
       ],
+      "SubagentStart" => [
+        {
+          "hooks" => [
+            {
+              "type"    => "command",
+              "command" => "~/.claude/galaxy/bin/galaxy-ledger on-subagent-start",
+              "async"   => true,
+              "timeout" => 10,
+            },
+          ],
+        },
+      ],
+      "SubagentStop" => [
+        {
+          "hooks" => [
+            {
+              "type"    => "command",
+              "command" => "~/.claude/galaxy/bin/galaxy-ledger on-subagent-stop",
+              "async"   => true,
+              "timeout" => 10,
+            },
+          ],
+        },
+      ],
       "SessionStart" => [
         {
           "matcher" => "startup",

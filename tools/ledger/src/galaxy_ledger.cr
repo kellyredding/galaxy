@@ -47,6 +47,9 @@ module GalaxyLedger
   TIMELINE_BIN_NAME = ENV.fetch(
     "GALAXY_TIMELINE_BIN", "galaxy-timeline"
   )
+  AGENTS_BIN_NAME = ENV.fetch(
+    "GALAXY_AGENTS_BIN", "galaxy-agents"
+  )
 end
 
 # Only run CLI when executed directly, not when required by specs

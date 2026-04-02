@@ -92,6 +92,10 @@ module GalaxyLedger
         handle_on_stop_failure_command(rest)
       when "on-user-prompt-submit"
         handle_on_user_prompt_submit_command(rest)
+      when "on-subagent-start"
+        handle_on_subagent_start_command(rest)
+      when "on-subagent-stop"
+        handle_on_subagent_stop_command(rest)
       when "install"
         handle_install_command(rest)
       when "uninstall"
@@ -164,6 +168,8 @@ module GalaxyLedger
         on-stop-failure     Record turn:failed on API/response errors
         on-session-end      Record session:ended timeline event
         on-post-tool-use    Track file operations with type detection
+        on-subagent-start      Dispatch agent start to galaxy-agents
+        on-subagent-stop       Dispatch agent stop to galaxy-agents
         on-user-prompt-submit  Capture user directions/preferences
 
       Session Metrics:
@@ -1571,6 +1577,83 @@ module GalaxyLedger
             }]
           }
         }
+      HELP
+    end
+
+    private def self.handle_on_subagent_start_command(
+      args : Array(String),
+    )
+      if args.first? == "-h" || args.first? == "--help"
+        show_on_subagent_start_help
+        return
+      end
+      handler = Hooks::OnSubagentStart.new
+      handler.run
+    end
+
+    private def self.show_on_subagent_start_help
+      puts <<-HELP
+      galaxy-ledger on-subagent-start - Handle SubagentStart hook
+
+      USAGE:
+        galaxy-ledger on-subagent-start
+
+      DESCRIPTION:
+        Called by Claude Code's SubagentStart hook when an agent
+        is spawned. Dispatches to galaxy-agents CLI to record the
+        agent start event. Skills (empty agent_type) are filtered
+        out.
+
+      INPUT (stdin):
+        JSON object with hook data:
+        {
+          "session_id": "abc123",
+          "agent_id": "a8e18b5ce5e38189c",
+          "agent_type": "Explore",
+          "transcript_path": "/path/to/parent.jsonl"
+        }
+
+      OUTPUT (stdout):
+        No output (async hook, non-blocking).
+      HELP
+    end
+
+    private def self.handle_on_subagent_stop_command(
+      args : Array(String),
+    )
+      if args.first? == "-h" || args.first? == "--help"
+        show_on_subagent_stop_help
+        return
+      end
+      handler = Hooks::OnSubagentStop.new
+      handler.run
+    end
+
+    private def self.show_on_subagent_stop_help
+      puts <<-HELP
+      galaxy-ledger on-subagent-stop - Handle SubagentStop hook
+
+      USAGE:
+        galaxy-ledger on-subagent-stop
+
+      DESCRIPTION:
+        Called by Claude Code's SubagentStop hook when an agent
+        completes. Dispatches to galaxy-agents CLI to record the
+        agent stop event with transcript path and last message.
+        Skills (empty agent_type) are filtered out.
+
+      INPUT (stdin):
+        JSON object with hook data:
+        {
+          "session_id": "abc123",
+          "agent_id": "a8e18b5ce5e38189c",
+          "agent_type": "Explore",
+          "agent_transcript_path": "/path/to/agent.jsonl",
+          "last_assistant_message": "Found 20 results..."
+        }
+
+      OUTPUT (stdout):
+        No output (async hook, non-blocking).
       HELP
     end
 

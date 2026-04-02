@@ -25,6 +25,12 @@ SPEC_TIMELINE_NOOP = SPEC_GALAXY_DIR / "bin" /
                      "galaxy-timeline"
 ENV["GALAXY_TIMELINE_BIN"] = SPEC_TIMELINE_NOOP.to_s
 
+# Point agents binary to a no-op so fire-and-forget calls
+# don't hit the real agents database during tests.
+SPEC_AGENTS_NOOP = SPEC_GALAXY_DIR / "bin" /
+                   "galaxy-agents"
+ENV["GALAXY_AGENTS_BIN"] = SPEC_AGENTS_NOOP.to_s
+
 # Ensure test directories exist
 Dir.mkdir_p(SPEC_CLAUDE_CONFIG_DIR)
 Dir.mkdir_p(SPEC_GALAXY_DIR)
@@ -33,6 +39,8 @@ Dir.mkdir_p(SPEC_DATA_DIR)
 Dir.mkdir_p(SPEC_GALAXY_DIR / "bin")
 File.write(SPEC_TIMELINE_NOOP, "#!/bin/sh\nexit 0\n")
 File.chmod(SPEC_TIMELINE_NOOP, 0o755)
+File.write(SPEC_AGENTS_NOOP, "#!/bin/sh\nexit 0\n")
+File.chmod(SPEC_AGENTS_NOOP, 0o755)
 
 # Disable extraction and backups in test config to prevent real Claude
 # CLI calls and unnecessary VACUUM INTO operations.
@@ -90,6 +98,7 @@ def run_binary(
     "GALAXY_DIR"                  => SPEC_GALAXY_DIR.to_s,
     "GALAXY_LEDGER_DATABASE_PATH" => SPEC_DATABASE_PATH.to_s,
     "GALAXY_TIMELINE_BIN"         => SPEC_TIMELINE_NOOP.to_s,
+    "GALAXY_AGENTS_BIN"           => SPEC_AGENTS_NOOP.to_s,
     "HOME"                        => ENV["HOME"],
     "PATH"                        => ENV["PATH"],
     # Clear CLAUDE_CLI_SESSION_ID so subprocesses don't inherit it from

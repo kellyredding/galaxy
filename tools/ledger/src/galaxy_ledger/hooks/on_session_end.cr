@@ -49,6 +49,24 @@ module GalaxyLedger
           end
         end
 
+        # Abandon any still-running agents (best-effort)
+        begin
+          Process.new(
+            AGENTS_BIN_NAME,
+            args: [
+              "abandon",
+              "--ledger-session-id",
+              ledger_session_id.to_s,
+            ],
+            input: Process::Redirect::Close,
+            output: Process::Redirect::Close,
+            error: Process::Redirect::Close,
+          )
+        rescue
+          # Best-effort — galaxy-agents unavailable is
+          # not fatal
+        end
+
         session_record = Database.get_session_by_id(
           ledger_session_id,
         )
