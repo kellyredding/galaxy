@@ -166,17 +166,33 @@ Spec.before_each do
   File.write(SPEC_CONFIG_DIR / "config.json", SPEC_DEFAULT_CONFIG)
 end
 
-# Flush WAL to main DB so subprocess connections see recently committed data.
-# Use after Database writes that precede run_binary() subprocess calls.
-# Uses Database.open to inherit busy_timeout, preventing lock contention
-# when called from concurrent fibers (e.g., eval tests).
-# Flush WAL to main DB so subprocess connections see recently
-# committed data. Uses TRUNCATE mode to guarantee a full
-# checkpoint — PASSIVE can skip pages if concurrent readers/writers
-# hold locks, causing subprocess resolution failures in evals.
+# Flush WAL to main DB so subprocess connections see
+# recently committed data. Use after Database writes
+# that precede run_binary() subprocess calls.
+# Uses TRUNCATE mode to guarantee a full checkpoint —
+# PASSIVE can skip pages if concurrent readers/writers
+# hold locks.
 def flush_wal
   GalaxyLedger::Database.open do |db|
     db.exec("PRAGMA wal_checkpoint(TRUNCATE)")
+  end
+end
+
+# Flush WAL and verify a session is resolvable before
+# returning. Under concurrent eval fibers, a single
+# TRUNCATE checkpoint can race with other fibers'
+# writes, leaving the session invisible to subprocess
+# connections. Retries the checkpoint up to 3 times
+# with a brief sleep between attempts.
+def flush_wal_for(session_id : String, retries = 3)
+  retries.times do |i|
+    GalaxyLedger::Database.open do |db|
+      db.exec("PRAGMA wal_checkpoint(TRUNCATE)")
+    end
+    resolved = GalaxyLedger::Database
+      .resolve_session_identifier(session_id)
+    return if resolved
+    sleep 50.milliseconds if i < retries - 1
   end
 end
 
