@@ -596,6 +596,20 @@ class TerminalHostView: NSView {
                 endLine: endLine
             )
         }
+        webView.onNoteChanged = {
+            [weak self] action, detailData in
+            guard let lsid =
+                self?.session.ledgerSessionId
+            else { return }
+            TimelineService.record(
+                ledgerSessionId: lsid,
+                eventType:
+                    "scrollback.note:\(action)",
+                source:
+                    "galaxy-app/views/scrollback",
+                detailData: detailData
+            )
+        }
 
         // Create overlay container with border and pill
         let overlay = ScrollbackOverlayView(frame: bounds, scrollbackView: webView)

@@ -7,6 +7,7 @@ import WebKit
 /// Exists only while the scrollback overlay is active — no persistence.
 struct ScrollbackNote: Identifiable {
     let id: UUID
+    let number: Int          // monotonic, never reused
     let startLine: Int       // 0-based line index in buffer
     let endLine: Int         // inclusive
     let lineContent: String  // full text of lines startLine...endLine
@@ -48,8 +49,17 @@ class ScrollbackWebView: NSView {
     /// note form (which has unsaved text) with a new drag selection.
     var onConfirmDragReplace: ((_ startLine: Int, _ endLine: Int) -> Void)?
 
+    /// Called when a note is created, updated, or deleted so the
+    /// parent can publish timeline events with session context.
+    var onNoteChanged: ((_ action: String, _ detailData: [String: Any]) -> Void)?
+
     /// In-memory note storage. Cleared on teardown.
     private(set) var notes: [ScrollbackNote] = []
+
+    /// Monotonically increasing note counter for the
+    /// lifetime of this scrollback session. Never resets
+    /// on delete, so each note gets a unique number.
+    private var nextNoteNumber: Int = 1
 
     /// True when there's at least one note.
     var hasNotes: Bool { !notes.isEmpty }
@@ -161,8 +171,12 @@ class ScrollbackWebView: NSView {
               let content = body["content"] as? String
         else { return }
 
+        let noteNumber = nextNoteNumber
+        nextNoteNumber += 1
+
         let note = ScrollbackNote(
             id: UUID(),
+            number: noteNumber,
             startLine: startLine,
             endLine: endLine,
             lineContent: lineContent,
@@ -176,6 +190,13 @@ class ScrollbackWebView: NSView {
         webView.evaluateJavaScript(
             "ScrollbackManager.notes.noteCreated(\(json))"
         )
+
+        onNoteChanged?("created", [
+            "note_number": noteNumber,
+            "start_line": startLine,
+            "end_line": endLine,
+            "content": content,
+        ])
     }
 
     private func handleUpdateNote(_ body: [String: Any]) {
@@ -191,6 +212,11 @@ class ScrollbackWebView: NSView {
         webView.evaluateJavaScript(
             "ScrollbackManager.notes.noteUpdated(\(json))"
         )
+
+        onNoteChanged?("updated", [
+            "note_number": notes[idx].number,
+            "content": content,
+        ])
     }
 
     private func handleDeleteNote(_ body: [String: Any]) {
@@ -198,10 +224,23 @@ class ScrollbackWebView: NSView {
               let id = UUID(uuidString: idStr)
         else { return }
 
+        // Capture note before removing so the timeline
+        // event has its number and content for the tooltip.
+        let deletedNote = notes.first(
+            where: { $0.id == id }
+        )
+
         notes.removeAll { $0.id == id }
         webView.evaluateJavaScript(
             "ScrollbackManager.notes.noteDeleted('\(idStr)')"
         )
+
+        var detail: [String: Any] = [:]
+        if let note = deletedNote {
+            detail["note_number"] = note.number
+            detail["content"] = note.content
+        }
+        onNoteChanged?("deleted", detail)
     }
 
     private func noteToJSON(_ note: ScrollbackNote) -> String {
@@ -218,7 +257,7 @@ class ScrollbackWebView: NSView {
         return """
         {"id":"\(note.id.uuidString)","startLine":\(note.startLine),\
         "endLine":\(note.endLine),"lineContent":"\(escapedLineContent)",\
-        "content":"\(escapedContent)","number":\(notes.count)}
+        "content":"\(escapedContent)","number":\(note.number)}
         """
     }
 
@@ -288,6 +327,7 @@ class ScrollbackWebView: NSView {
         onSendToClaude = nil
         onConfirmDiscardForm = nil
         onConfirmDiscardEdit = nil
+        onNoteChanged = nil
     }
 
     deinit {

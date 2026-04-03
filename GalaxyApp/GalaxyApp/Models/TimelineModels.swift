@@ -78,6 +78,18 @@ let timelineEventRegistry: [String: EventRegistration] = [
     "scrollback:entered":  EventRegistration(resource: .scrollback, mode: .durationStart),
     "scrollback:exited":   EventRegistration(resource: .scrollback, mode: .durationEnd),
     "scrollback:reviewed": EventRegistration(resource: .scrollback, mode: .point),
+    "scrollback.note:created":
+        EventRegistration(
+            resource: .scrollback, mode: .point
+        ),
+    "scrollback.note:updated":
+        EventRegistration(
+            resource: .scrollback, mode: .point
+        ),
+    "scrollback.note:deleted":
+        EventRegistration(
+            resource: .scrollback, mode: .point
+        ),
     "snapshot:created":    EventRegistration(resource: .snapshot, mode: .point),
     "snapshot:reviewed":   EventRegistration(resource: .snapshot, mode: .point),
     "snapshot.annotation:created":
@@ -226,6 +238,12 @@ enum TimelineTooltipFormatter {
             return "Scrollback Exited"
         case "scrollback:reviewed":
             return "Scrollback Reviewed"
+        case "scrollback.note:created":
+            return "Note Created"
+        case "scrollback.note:updated":
+            return "Note Updated"
+        case "scrollback.note:deleted":
+            return "Note Deleted"
         case "snapshot:created":
             return "Snapshot Created"
         case "snapshot:reviewed":
@@ -305,6 +323,12 @@ enum TimelineTooltipFormatter {
             return scrollbackReviewedLines(dict)
         case "scrollback:exited":
             return scrollbackExitedLines(dict)
+        case "scrollback.note:created":
+            return noteCreatedLines(dict)
+        case "scrollback.note:updated":
+            return noteUpdatedLines(dict)
+        case "scrollback.note:deleted":
+            return noteDeletedLines(dict)
         case "artifact:created":
             return artifactCreatedLines(dict)
         case "artifact:updated":
@@ -629,6 +653,76 @@ enum TimelineTooltipFormatter {
         {
             lines.append(
                 "\(nc) note\(nc == 1 ? "" : "s")"
+            )
+        }
+        return lines
+    }
+
+    // MARK: - Scrollback Note Formatters
+
+    private static func noteCreatedLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        if let num = d["note_number"]
+            as? Int
+        {
+            lines.append("Note #\(num)")
+        }
+        if let sl = d["start_line"] as? Int,
+           let el = d["end_line"] as? Int
+        {
+            if sl == el {
+                lines.append("Line \(sl)")
+            } else {
+                lines.append(
+                    "Lines \(sl)–\(el)"
+                )
+            }
+        }
+        if let content = d["content"]
+            as? String
+        {
+            lines.append(
+                "\"\(truncate(content, to: 80))\""
+            )
+        }
+        return lines
+    }
+
+    private static func noteUpdatedLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        if let num = d["note_number"]
+            as? Int
+        {
+            lines.append("Note #\(num)")
+        }
+        if let content = d["content"]
+            as? String
+        {
+            lines.append(
+                "\"\(truncate(content, to: 80))\""
+            )
+        }
+        return lines
+    }
+
+    private static func noteDeletedLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        if let num = d["note_number"]
+            as? Int
+        {
+            lines.append("Note #\(num)")
+        }
+        if let content = d["content"]
+            as? String
+        {
+            lines.append(
+                "\"\(truncate(content, to: 80))\""
             )
         }
         return lines
