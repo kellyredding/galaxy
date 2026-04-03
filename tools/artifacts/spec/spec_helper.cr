@@ -40,7 +40,6 @@ SPEC_DEFAULT_CONFIG = {
   "_schema_version" => "0.0.0",
   "enabled"         => true,
   "auto_detect"     => true,
-  "max_file_size"   => 52_428_800,
   "backups"         => {
     "enabled"        => false,
     "retention_days" => 3,

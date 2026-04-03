@@ -12,9 +12,6 @@ module GalaxyArtifacts
     @[JSON::Field(key: "auto_detect")]
     property auto_detect : Bool
 
-    @[JSON::Field(key: "max_file_size")]
-    property max_file_size : Int64
-
     @[JSON::Field(key: "backups")]
     property backups : BackupsConfig
 
@@ -22,7 +19,6 @@ module GalaxyArtifacts
       @schema_version = GalaxyArtifacts::VERSION,
       @enabled = true,
       @auto_detect = true,
-      @max_file_size = 52_428_800_i64,
       @backups = BackupsConfig.new,
     )
     end
