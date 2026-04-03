@@ -179,19 +179,12 @@ module GalaxyAgents
         description,
       )
 
-      # Timeline event (fire-and-forget)
+      # Timeline event + socket signal (fire-and-forget)
       TimelinePublisher.agent_started(
         ledger_session_id,
         agent_id: agent_id,
         agent_type: agent_type,
         description: description,
-      )
-
-      # Socket event (fire-and-forget)
-      EventPublisher.publish(
-        ledger_session_id,
-        "agent.started",
-        ref: agent_id,
       )
 
       puts "Agent #{agent_id} started"
@@ -355,14 +348,6 @@ module GalaxyAgents
         )
       end
 
-      # Socket event
-      event_name = status == "stopped" ? "agent.stopped" : "agent.failed"
-      EventPublisher.publish(
-        ledger_session_id,
-        event_name,
-        ref: agent_id,
-      )
-
       duration_str = format_duration(dm)
       puts "Agent #{agent_id} #{status} (#{duration_str})"
     end
@@ -413,11 +398,6 @@ module GalaxyAgents
           ledger_session_id,
           agent_id: agent.agent_id,
           agent_type: agent.agent_type,
-        )
-        EventPublisher.publish(
-          ledger_session_id,
-          "agent.abandoned",
-          ref: agent.agent_id,
         )
       end
 
