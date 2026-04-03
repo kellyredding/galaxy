@@ -22,19 +22,27 @@ final class EventCoordinator {
         case live         // Real-time event processing
     }
 
-    /// Known event names that we handle
+    /// Known event names that we handle.
+    ///
+    /// Lifecycle events flow through the timeline pipeline
+    /// (timeline.* prefix). Refresh signals (session.metrics,
+    /// ledger.entry) remain as direct socket events — they
+    /// are high-frequency operational signals with no
+    /// historical value.
     private static let knownEvents: Set<String> = [
+        // Refresh signals (direct socket, no DB)
         "session.metrics",
-        "session.startup",
-        "session.resume",
-        "session.clear",
-        "session.compact",
-        "snapshot.created",
         "ledger.entry",
-        "annotation.created",
-        "annotation.updated",
-        "annotation.deleted",
-        "review.created",
+        // Lifecycle events (timeline → DB → socket)
+        "timeline.session:started",
+        "timeline.session:resumed",
+        "timeline.context:cleared",
+        "timeline.context:compacted",
+        "timeline.snapshot:created",
+        "timeline.snapshot.annotation:created",
+        "timeline.snapshot.annotation:updated",
+        "timeline.snapshot.annotation:deleted",
+        "timeline.snapshot.review:created",
         "timeline.turn:initiated",
         "timeline.turn:completed",
         "timeline.turn:failed",
@@ -64,8 +72,8 @@ final class EventCoordinator {
     /// (no turn:completed is ever published), so they serve
     /// as the turn-end signal for Galaxy-initiated turns.
     private static let contextResetEvents: Set<String> = [
-        "session.clear",
-        "session.compact",
+        "timeline.context:cleared",
+        "timeline.context:compacted",
     ]
 
     private(set) var phase: Phase = .idle
@@ -243,13 +251,13 @@ final class EventCoordinator {
             }
         }
 
-        // Resume event: the on_resume hook publishes
-        // session.resume during SessionStart processing,
-        // before Claude has fully rendered the transcript
-        // and shown the prompt. Poll the terminal buffer
-        // for the resume marker (the hook's output line),
-        // then send /galaxy:resume once it appears.
-        if envelope.event == "session.resume" {
+        // Resume event: the on_resume hook records a
+        // session:resumed timeline event during SessionStart
+        // processing, before Claude has fully rendered the
+        // transcript and shown the prompt. Poll the terminal
+        // buffer for the resume marker (the hook's output
+        // line), then send /galaxy:resume once it appears.
+        if envelope.event == "timeline.session:resumed" {
             if let appSessionId =
                 ledgerSessionIdCache[envelope.ledgerSessionId],
                let session = sessionManager?.sessions
@@ -277,55 +285,82 @@ final class EventCoordinator {
         // Check if we handle this event type
         guard Self.knownEvents.contains(envelope.event) else { return }
 
-        // Snapshot-specific handling: switch tab and queue auto-open
-        if envelope.event == "snapshot.created",
-           let ref = envelope.ref,
-           let number = Int32(ref)
+        // Snapshot-specific handling: switch tab and queue auto-open.
+        // The snapshot_number comes from the timeline event's
+        // detail_data (populated by TimelinePublisher).
+        if envelope.event == "timeline.snapshot:created",
+           let number = envelope.detailValue(
+               "snapshot_number", as: Int64.self
+           )
         {
+            let snapNumber = Int32(number)
             DispatchQueue.main.async { [weak self] in
-                guard let sm = self?.sessionManager else { return }
-                let appSessionId = self?.ledgerSessionIdCache[
-                    envelope.ledgerSessionId
-                ]
+                guard let sm = self?.sessionManager
+                else { return }
+                let appSessionId =
+                    self?.ledgerSessionIdCache[
+                        envelope.ledgerSessionId
+                    ]
 
-                // Existing auto-switch for active session
+                // Auto-switch for active session
                 if let appSessionId,
                    appSessionId == sm.activeSessionId
                 {
                     sm.activeTab = .snapshots
-                    sm.pendingSnapshotNumber = number
+                    sm.pendingSnapshotNumber = snapNumber
                 }
 
                 // Snapshot Created notification
-                if SettingsManager.shared.settings.notifySnapshotCreated,
+                if SettingsManager.shared.settings
+                    .notifySnapshotCreated,
                    let appSessionId,
                    let session = sm.sessions.first(
-                       where: { $0.id == appSessionId }
+                       where: {
+                           $0.id == appSessionId
+                       }
                    )
                 {
-                    let isViewingSession = appSessionId
+                    let isViewingSession =
+                        appSessionId
                             == sm.activeSessionId
                         && sm.isWindowFocused
                     if !isViewingSession {
-                        NotificationService.shared.notifySnapshotCreated(
-                            sessionId: appSessionId,
-                            displayName: session.displayName,
-                            snapshotNumber: number
-                        )
+                        NotificationService.shared
+                            .notifySnapshotCreated(
+                                sessionId: appSessionId,
+                                displayName:
+                                    session.displayName,
+                                snapshotNumber:
+                                    snapNumber
+                            )
                     }
                 }
             }
         }
 
-        // Annotation/review events: notify SessionManager for button refresh
-        if ["annotation.created", "annotation.updated",
-            "annotation.deleted", "review.created"].contains(envelope.event),
-           let ref = envelope.ref,
-           let snapshotId = Int64(ref) {
+        // Annotation/review events: notify SessionManager
+        // for button refresh. The snapshot_id comes from the
+        // timeline event's detail_data.
+        if [
+            "timeline.snapshot.annotation:created",
+            "timeline.snapshot.annotation:updated",
+            "timeline.snapshot.annotation:deleted",
+            "timeline.snapshot.review:created",
+        ].contains(envelope.event),
+           let snapshotId = envelope.detailValue(
+               "snapshot_id", as: Int64.self
+           )
+        {
             DispatchQueue.main.async { [weak self] in
-                guard let sm = self?.sessionManager else { return }
-                if let appSessionId = self?.ledgerSessionIdCache[envelope.ledgerSessionId],
-                   appSessionId == sm.activeSessionId {
+                guard let sm = self?.sessionManager
+                else { return }
+                if let appSessionId =
+                    self?.ledgerSessionIdCache[
+                        envelope.ledgerSessionId
+                    ],
+                   appSessionId
+                       == sm.activeSessionId
+                {
                     sm.pendingReviewCheck = snapshotId
                 }
             }

@@ -80,6 +80,22 @@ let timelineEventRegistry: [String: EventRegistration] = [
     "scrollback:reviewed": EventRegistration(resource: .scrollback, mode: .point),
     "snapshot:created":    EventRegistration(resource: .snapshot, mode: .point),
     "snapshot:reviewed":   EventRegistration(resource: .snapshot, mode: .point),
+    "snapshot.annotation:created":
+        EventRegistration(
+            resource: .snapshot, mode: .point
+        ),
+    "snapshot.annotation:updated":
+        EventRegistration(
+            resource: .snapshot, mode: .point
+        ),
+    "snapshot.annotation:deleted":
+        EventRegistration(
+            resource: .snapshot, mode: .point
+        ),
+    "snapshot.review:created":
+        EventRegistration(
+            resource: .snapshot, mode: .point
+        ),
     "artifact:created":    EventRegistration(resource: .artifact, mode: .point),
     "artifact:updated":    EventRegistration(resource: .artifact, mode: .point),
     "artifact:deleted":    EventRegistration(resource: .artifact, mode: .point),
@@ -214,6 +230,14 @@ enum TimelineTooltipFormatter {
             return "Snapshot Created"
         case "snapshot:reviewed":
             return "Snapshot Reviewed"
+        case "snapshot.annotation:created":
+            return "Annotation Created"
+        case "snapshot.annotation:updated":
+            return "Annotation Updated"
+        case "snapshot.annotation:deleted":
+            return "Annotation Deleted"
+        case "snapshot.review:created":
+            return "Review Submitted"
         case "artifact:created":
             return "Artifact Created"
         case "artifact:updated":
@@ -269,6 +293,14 @@ enum TimelineTooltipFormatter {
             return snapshotCreatedLines(dict)
         case "snapshot:reviewed":
             return snapshotReviewedLines(dict)
+        case "snapshot.annotation:created":
+            return annotationCreatedLines(dict)
+        case "snapshot.annotation:updated":
+            return annotationUpdatedLines(dict)
+        case "snapshot.annotation:deleted":
+            return annotationDeletedLines(dict)
+        case "snapshot.review:created":
+            return reviewCreatedLines(dict)
         case "scrollback:reviewed":
             return scrollbackReviewedLines(dict)
         case "scrollback:exited":
@@ -448,6 +480,129 @@ enum TimelineTooltipFormatter {
             )
         }
         return lines
+    }
+
+    // MARK: - Annotation/Review Formatters
+
+    private static func annotationCreatedLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        lines.append(
+            contentsOf: snapshotRefLines(d)
+        )
+        if let num = d["annotation_number"]
+            as? Int
+        {
+            lines.append("Annotation #\(num)")
+        }
+        if let sl = d["start_line"] as? Int,
+           let el = d["end_line"] as? Int
+        {
+            if sl == el {
+                lines.append("Line \(sl)")
+            } else {
+                lines.append(
+                    "Lines \(sl)–\(el)"
+                )
+            }
+        }
+        if let content = d["content"]
+            as? String
+        {
+            lines.append(
+                "\"\(truncate(content, to: 80))\""
+            )
+        }
+        return lines
+    }
+
+    private static func annotationUpdatedLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        lines.append(
+            contentsOf: snapshotRefLines(d)
+        )
+        if let num = d["annotation_number"]
+            as? Int
+        {
+            lines.append("Annotation #\(num)")
+        }
+        if let content = d["content"]
+            as? String
+        {
+            lines.append(
+                "\"\(truncate(content, to: 80))\""
+            )
+        }
+        return lines
+    }
+
+    private static func annotationDeletedLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        lines.append(
+            contentsOf: snapshotRefLines(d)
+        )
+        if let num = d["annotation_number"]
+            as? Int
+        {
+            lines.append("Annotation #\(num)")
+        }
+        if let content = d["content"]
+            as? String
+        {
+            lines.append(
+                "\"\(truncate(content, to: 80))\""
+            )
+        }
+        return lines
+    }
+
+    private static func reviewCreatedLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        lines.append(
+            contentsOf: snapshotRefLines(d)
+        )
+        if let num = d["review_number"]
+            as? Int
+        {
+            lines.append("Review #\(num)")
+        }
+        if let ac = d["annotation_count"]
+            as? Int
+        {
+            lines.append(
+                "\(ac) annotation\(ac == 1 ? "" : "s")"
+            )
+        }
+        return lines
+    }
+
+    /// Shared helper: "#N  title" from snapshot_number
+    /// and snapshot_title in detail_data.
+    private static func snapshotRefLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var parts: [String] = []
+        if let num = d["snapshot_number"]
+            as? Int
+        {
+            parts.append("#\(num)")
+        }
+        if let title = d["snapshot_title"]
+            as? String
+        {
+            parts.append(
+                truncate(title, to: 40)
+            )
+        }
+        guard !parts.isEmpty else { return [] }
+        return [parts.joined(separator: "  ")]
     }
 
     private static func scrollbackReviewedLines(
