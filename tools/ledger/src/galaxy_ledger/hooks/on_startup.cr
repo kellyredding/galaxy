@@ -103,13 +103,9 @@ module GalaxyLedger
           end
         end
 
-        # Notify Galaxy.app of the new/resumed session (fire-and-forget)
-        EventPublisher.publish(
-          ledger_session_id: ledger_session_id,
-          event: "session.startup",
-        )
-
-        # Record timeline event (fire-and-forget)
+        # Record timeline event (fire-and-forget).
+        # The timeline tool persists the event and publishes
+        # timeline.session:started to the Galaxy socket.
         begin
           Process.new(
             TIMELINE_BIN_NAME,

@@ -34,7 +34,6 @@ module GalaxyLedger
         ContextHandoff.run(
           @stdin_session_identifier,
           @source,
-          event_name: "session.clear",
           transcript_path: @transcript_path,
           timeline_event_id: timeline_event_id,
         )

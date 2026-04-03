@@ -61,12 +61,6 @@ module GalaxyLedger
           end
         end
 
-        # Notify Galaxy.app of the resumed session (fire-and-forget)
-        EventPublisher.publish(
-          ledger_session_id: ledger_session_id,
-          event: "session.resume",
-        )
-
         # Fetch session record for cwd/git_branch
         session_record = Database.get_session_by_id(ledger_session_id)
 
