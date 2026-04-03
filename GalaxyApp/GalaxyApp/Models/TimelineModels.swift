@@ -663,6 +663,27 @@ enum TimelineTooltipFormatter {
     private static func noteCreatedLines(
         _ d: [String: Any]
     ) -> [String] {
+        noteDetailLines(d)
+    }
+
+    private static func noteUpdatedLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        noteDetailLines(d)
+    }
+
+    private static func noteDeletedLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        noteDetailLines(d)
+    }
+
+    /// Shared helper for scrollback note tooltips.
+    /// Shows note number, line range, the terminal
+    /// content the note refers to, and the note text.
+    private static func noteDetailLines(
+        _ d: [String: Any]
+    ) -> [String] {
         var lines: [String] = []
         if let num = d["note_number"]
             as? Int
@@ -680,43 +701,12 @@ enum TimelineTooltipFormatter {
                 )
             }
         }
-        if let content = d["content"]
+        if let lc = d["line_content"]
             as? String
         {
             lines.append(
-                "\"\(truncate(content, to: 80))\""
+                truncate(lc, to: 80)
             )
-        }
-        return lines
-    }
-
-    private static func noteUpdatedLines(
-        _ d: [String: Any]
-    ) -> [String] {
-        var lines: [String] = []
-        if let num = d["note_number"]
-            as? Int
-        {
-            lines.append("Note #\(num)")
-        }
-        if let content = d["content"]
-            as? String
-        {
-            lines.append(
-                "\"\(truncate(content, to: 80))\""
-            )
-        }
-        return lines
-    }
-
-    private static func noteDeletedLines(
-        _ d: [String: Any]
-    ) -> [String] {
-        var lines: [String] = []
-        if let num = d["note_number"]
-            as? Int
-        {
-            lines.append("Note #\(num)")
         }
         if let content = d["content"]
             as? String

@@ -195,6 +195,7 @@ class ScrollbackWebView: NSView {
             "note_number": noteNumber,
             "start_line": startLine,
             "end_line": endLine,
+            "line_content": lineContent,
             "content": content,
         ])
     }
@@ -215,6 +216,9 @@ class ScrollbackWebView: NSView {
 
         onNoteChanged?("updated", [
             "note_number": notes[idx].number,
+            "start_line": notes[idx].startLine,
+            "end_line": notes[idx].endLine,
+            "line_content": notes[idx].lineContent,
             "content": content,
         ])
     }
@@ -238,6 +242,9 @@ class ScrollbackWebView: NSView {
         var detail: [String: Any] = [:]
         if let note = deletedNote {
             detail["note_number"] = note.number
+            detail["start_line"] = note.startLine
+            detail["end_line"] = note.endLine
+            detail["line_content"] = note.lineContent
             detail["content"] = note.content
         }
         onNoteChanged?("deleted", detail)
