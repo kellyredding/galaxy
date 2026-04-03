@@ -37,8 +37,11 @@ module GalaxyAgents
       (GALAXY_DIR / "bin" / "galaxy-artifacts").to_s,
     ),
   )
-  TIMELINE_BIN_NAME = ENV.fetch(
-    "GALAXY_TIMELINE_BIN", "galaxy-timeline",
+  TIMELINE_BIN = Path.new(
+    ENV.fetch(
+      "GALAXY_TIMELINE_BIN",
+      (GALAXY_DIR / "bin" / "galaxy-timeline").to_s,
+    ),
   )
 end
 

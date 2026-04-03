@@ -132,7 +132,7 @@ module GalaxyAgents
       end
 
       Process.new(
-        TIMELINE_BIN_NAME,
+        TIMELINE_BIN.to_s,
         args: args,
         input: IO::Memory.new(detail_data),
         output: Process::Redirect::Close,
