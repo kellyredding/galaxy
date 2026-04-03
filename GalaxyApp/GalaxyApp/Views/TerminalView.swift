@@ -83,7 +83,8 @@ class TerminalHostView: NSView {
     private enum ScrollbackExitReason: String {
         case dismissed
         case reviewed
-        case sessionEnded = "session_ended"
+        case sessionEnded = "session-ended"
+        case appQuit = "app-quit"
     }
 
     /// The scrollback overlay (holds ScrollbackWebView + pill).
@@ -270,6 +271,22 @@ class TerminalHostView: NSView {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.applySettingsToScrollback()
+            }
+            .store(in: &cancellables)
+
+        // Close scrollback on app quit so the
+        // scrollback:exited duration event fires.
+        // No .receive(on:) — willTerminate already
+        // fires on the main thread, and an async hop
+        // would be dropped during app teardown.
+        NotificationCenter.default.publisher(
+            for: NSApplication
+                .willTerminateNotification
+        )
+            .sink { [weak self] _ in
+                self?.performScrollbackTeardown(
+                    reason: .appQuit
+                )
             }
             .store(in: &cancellables)
 

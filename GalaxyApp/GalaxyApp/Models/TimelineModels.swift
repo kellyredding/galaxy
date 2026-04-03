@@ -92,6 +92,8 @@ let timelineEventRegistry: [String: EventRegistration] = [
         ),
     "snapshot:created":    EventRegistration(resource: .snapshot, mode: .point),
     "snapshot:reviewed":   EventRegistration(resource: .snapshot, mode: .point),
+    "snapshot:opened":     EventRegistration(resource: .snapshot, mode: .durationStart),
+    "snapshot:closed":     EventRegistration(resource: .snapshot, mode: .durationEnd),
     "snapshot.annotation:created":
         EventRegistration(
             resource: .snapshot, mode: .point
@@ -248,6 +250,10 @@ enum TimelineTooltipFormatter {
             return "Snapshot Created"
         case "snapshot:reviewed":
             return "Snapshot Reviewed"
+        case "snapshot:opened":
+            return "Snapshot Opened"
+        case "snapshot:closed":
+            return "Snapshot Closed"
         case "snapshot.annotation:created":
             return "Annotation Created"
         case "snapshot.annotation:updated":
@@ -319,6 +325,10 @@ enum TimelineTooltipFormatter {
             return annotationDeletedLines(dict)
         case "snapshot.review:created":
             return reviewCreatedLines(dict)
+        case "snapshot:opened":
+            return snapshotCreatedLines(dict)
+        case "snapshot:closed":
+            return snapshotClosedLines(dict)
         case "scrollback:reviewed":
             return scrollbackReviewedLines(dict)
         case "scrollback:exited":
@@ -498,6 +508,26 @@ enum TimelineTooltipFormatter {
         }
         if let ac = d["annotation_count"]
             as? Int
+        {
+            lines.append(
+                "\(ac) annotation\(ac == 1 ? "" : "s")"
+            )
+        }
+        return lines
+    }
+
+    private static func snapshotClosedLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        // Number and title come from the opened
+        // event — only show close-specific fields
+        // to avoid duplication in duration tooltips.
+        var lines: [String] = []
+        if let reason = d["reason"] as? String {
+            lines.append("reason: \(reason)")
+        }
+        if let ac = d["annotation_count"]
+            as? Int, ac > 0
         {
             lines.append(
                 "\(ac) annotation\(ac == 1 ? "" : "s")"

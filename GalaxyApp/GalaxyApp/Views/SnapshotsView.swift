@@ -47,6 +47,9 @@ struct SnapshotsView: View {
     // Review state
     @State private var hasUnreviewedAnnotations: Bool = false
 
+    // Duration tracking for timeline events
+    @State private var snapshotDurationId: String? = nil
+
     // Focus state for keyboard navigation
     @State private var focusedIndex: Int? = nil
 
@@ -163,20 +166,25 @@ struct SnapshotsView: View {
             sessionManager.pendingReviewCheck = nil
             checkReviewButtonVisibility(snapshotId: snapshotId)
         }
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: NSApplication
+                    .willTerminateNotification
+            )
+        ) { _ in
+            if openSnapshot != nil {
+                closeReader(reason: "app-quit")
+            }
+        }
         .onDisappear {
-            // Fires when session is removed from sessions array
+            // Fires when session is removed from
+            // sessions array
+            if openSnapshot != nil {
+                closeReader(reason: "session-removed")
+            }
             fetchTask?.cancel()
             fetchTask = nil
             SnapshotQueryService.shared.cancelAll()
-            removeEscapeMonitor()
-            if session.id == sessionManager.activeSessionId {
-                sessionManager.isSnapshotReaderOpen = false
-            }
-            webViewRef = nil
-            openSnapshot = nil
-            openAnnotations = []
-            annotationHTMLMap = [:]
-            hasUnreviewedAnnotations = false
             snapshots = nil
         }
     }
@@ -487,6 +495,23 @@ struct SnapshotsView: View {
                     hasUnreviewedAnnotations = annotations.contains {
                         $0.snapshotReviewId == nil
                     }
+
+                    // Fire snapshot:opened duration event
+                    let durationId =
+                        "snapshot--\(UUID().uuidString)"
+                    snapshotDurationId = durationId
+                    TimelineService.record(
+                        ledgerSessionId: lsid,
+                        eventType: "snapshot:opened",
+                        source:
+                            "galaxy-app/views/snapshots",
+                        durationIdentifier: durationId,
+                        detailData: [
+                            "snapshot_number":
+                                detail.number,
+                            "title": detail.title,
+                        ]
+                    )
                 }
             } catch {
                 guard !Task.isCancelled else { return }
@@ -498,7 +523,33 @@ struct SnapshotsView: View {
         }
     }
 
-    private func closeReader() {
+    private func closeReader(reason: String = "dismissed") {
+        // Fire snapshot:closed duration event before
+        // clearing state
+        if let lsid = session.ledgerSessionId,
+           let durationId = snapshotDurationId
+        {
+            var detailData: [String: Any] = [
+                "reason": reason,
+            ]
+            if let snapshot = openSnapshot {
+                detailData["snapshot_number"]
+                    = snapshot.number
+                detailData["title"] = snapshot.title
+                detailData["annotation_count"]
+                    = openAnnotations.count
+            }
+            TimelineService.record(
+                ledgerSessionId: lsid,
+                eventType: "snapshot:closed",
+                source:
+                    "galaxy-app/views/snapshots",
+                durationIdentifier: durationId,
+                detailData: detailData
+            )
+            snapshotDurationId = nil
+        }
+
         let closingNumber = openSnapshot?.number
         removeEscapeMonitor()
         sessionManager.isSnapshotReaderOpen = false
@@ -695,6 +746,12 @@ struct SnapshotsView: View {
         guard let number = sessionManager.pendingSnapshotNumber else { return }
         sessionManager.pendingSnapshotNumber = nil
 
+        // Close any currently-open snapshot so its
+        // duration event fires and state is cleaned up.
+        if openSnapshot != nil {
+            closeReader(reason: "auto-open")
+        }
+
         // Fetch fresh list first, then open the snapshot
         guard let lsid = session.ledgerSessionId else { return }
         fetchTask?.cancel()
@@ -738,6 +795,26 @@ struct SnapshotsView: View {
                     hasUnreviewedAnnotations = annotations.contains {
                         $0.snapshotReviewId == nil
                     }
+
+                    // Fire snapshot:opened duration
+                    // event for the auto-opened
+                    // snapshot.
+                    let durationId =
+                        "snapshot--\(UUID().uuidString)"
+                    snapshotDurationId = durationId
+                    TimelineService.record(
+                        ledgerSessionId: lsid,
+                        eventType: "snapshot:opened",
+                        source:
+                            "galaxy-app/views/snapshots",
+                        durationIdentifier: durationId,
+                        detailData: [
+                            "snapshot_number":
+                                detail.number,
+                            "title": detail.title,
+                            "trigger": "auto-open",
+                        ]
+                    )
                 }
             } catch {
                 guard !Task.isCancelled else { return }
