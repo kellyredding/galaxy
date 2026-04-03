@@ -62,6 +62,7 @@
 		CC1111110000000000000007 /* github-dark.min.css in Resources */ = {isa = PBXBuildFile; fileRef = CC2222220000000000000007 /* github-dark.min.css */; };
 		CC1111110000000000000008 /* emoji-data.js in Resources */ = {isa = PBXBuildFile; fileRef = CC2222220000000000000008 /* emoji-data.js */; };
 		CC1111110000000000000009 /* emoji-autocomplete.js in Resources */ = {isa = PBXBuildFile; fileRef = CC2222220000000000000009 /* emoji-autocomplete.js */; };
+		CC111111000000000000000C /* mermaid.min.js in Resources */ = {isa = PBXBuildFile; fileRef = CC222222000000000000000C /* mermaid.min.js */; };
 		CC111111000000000000000A /* CopyButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC222222000000000000000A /* CopyButton.swift */; };
 		CC111111000000000000000B /* SheetAlert.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC222222000000000000000B /* SheetAlert.swift */; };
 		B1E71F47DE9403A1808277EC /* WatermarkBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6658F001C5C56071EC60514E /* WatermarkBackground.swift */; };
@@ -148,6 +149,7 @@
 		CC2222220000000000000007 /* github-dark.min.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = "github-dark.min.css"; sourceTree = "<group>"; };
 		CC2222220000000000000008 /* emoji-data.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = "emoji-data.js"; sourceTree = "<group>"; };
 		CC2222220000000000000009 /* emoji-autocomplete.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = "emoji-autocomplete.js"; sourceTree = "<group>"; };
+		CC222222000000000000000C /* mermaid.min.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = "mermaid.min.js"; sourceTree = "<group>"; };
 		CC222222000000000000000A /* CopyButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopyButton.swift; sourceTree = "<group>"; };
 		CC222222000000000000000B /* SheetAlert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SheetAlert.swift; sourceTree = "<group>"; };
 		DD1111110000000000000001 /* NewSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewSessionView.swift; sourceTree = "<group>"; };
@@ -302,6 +304,7 @@
 				CC2222220000000000000005 /* highlight.min.js */,
 				CC2222220000000000000008 /* emoji-data.js */,
 				CC2222220000000000000009 /* emoji-autocomplete.js */,
+				CC222222000000000000000C /* mermaid.min.js */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -373,6 +376,7 @@
 				CC1111110000000000000007 /* github-dark.min.css in Resources */,
 				CC1111110000000000000008 /* emoji-data.js in Resources */,
 				CC1111110000000000000009 /* emoji-autocomplete.js in Resources */,
+				CC111111000000000000000C /* mermaid.min.js in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

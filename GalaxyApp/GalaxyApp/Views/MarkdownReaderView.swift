@@ -27,14 +27,81 @@ class SilentFunctionKeyWebView: WKWebView {
     override var previousValidKeyView: NSView? { nil }
     override var nextValidKeyView: NSView? { nil }
 
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    /// Current zoom level (1.0 = 100%)
+    private var zoomLevel: CGFloat = 1.0
+
+    override func performKeyEquivalent(
+        with event: NSEvent
+    ) -> Bool {
+        // F1 (0xF704) through F20 (0xF717) —
+        // consume silently
         if event.modifierFlags.contains(.function),
-           event.charactersIgnoringModifiers?.unicodeScalars
-               .first.map({ $0.value >= 0xF704 && $0.value <= 0xF717 }) == true {
-            // F1 (0xF704) through F20 (0xF717) — consume silently
+           event.charactersIgnoringModifiers?
+               .unicodeScalars.first
+               .map({
+                   $0.value >= 0xF704
+                       && $0.value <= 0xF717
+               }) == true
+        {
             return true
         }
-        return super.performKeyEquivalent(with: event)
+
+        // Cmd+= or Cmd++: zoom in
+        if event.modifierFlags.contains(.command),
+           let chars = event
+               .charactersIgnoringModifiers,
+           chars == "=" || chars == "+"
+        {
+            adjustZoom(by: 0.1)
+            return true
+        }
+
+        // Cmd+-: zoom out
+        if event.modifierFlags.contains(.command),
+           let chars = event
+               .charactersIgnoringModifiers,
+           chars == "-"
+        {
+            adjustZoom(by: -0.1)
+            return true
+        }
+
+        // Cmd+0: reset zoom
+        if event.modifierFlags.contains(.command),
+           let chars = event
+               .charactersIgnoringModifiers,
+           chars == "0"
+        {
+            resetZoom()
+            return true
+        }
+
+        return super.performKeyEquivalent(
+            with: event
+        )
+    }
+
+    private func adjustZoom(by delta: CGFloat) {
+        zoomLevel = min(
+            3.0, max(0.5, zoomLevel + delta)
+        )
+        applyZoom()
+    }
+
+    private func resetZoom() {
+        zoomLevel = 1.0
+        applyZoom()
+    }
+
+    private func applyZoom() {
+        evaluateJavaScript("""
+            document.body.style.transform
+                = 'scale(\(zoomLevel))';
+            document.body.style.transformOrigin
+                = 'top left';
+            document.body.style.width
+                = '\(100.0 / zoomLevel)%';
+        """)
     }
 }
 
@@ -279,6 +346,18 @@ private let emojiAutocompleteJS: String = {
     return content
 }()
 
+private let mermaidJS: String = {
+    guard let url = Bundle.main.url(
+        forResource: "mermaid.min",
+        withExtension: "js"
+    ),
+        let content = try? String(
+            contentsOf: url, encoding: .utf8
+        )
+    else { return "" }
+    return content
+}()
+
 /// Build a complete HTML document with embedded styles, highlight.js,
 /// and the AnnotationManager JavaScript module.
 private func buildFullHTML(
@@ -382,6 +461,15 @@ private func buildFullHTML(
         padding: 0;
         font-size: 85%;
         border-radius: 0;
+    }
+    .mermaid {
+        text-align: center;
+        margin-bottom: 16px;
+        overflow-x: auto;
+    }
+    .mermaid svg {
+        max-width: 100%;
+        height: auto;
     }
     blockquote {
         margin: 0 0 16px 0;
@@ -1577,6 +1665,19 @@ private func buildFullHTML(
     </script>
     <script>\(emojiDataJS)</script>
     <script>\(emojiAutocompleteJS)</script>
+    <script>\(mermaidJS)</script>
+    <script>
+    if (typeof mermaid !== 'undefined'
+        && document.querySelector('.mermaid')) {
+        mermaid.initialize({
+            startOnLoad: false,
+            theme: '\(themeClass)' === 'dark'
+                ? 'dark' : 'default',
+            securityLevel: 'loose',
+        });
+        mermaid.run();
+    }
+    </script>
     </body>
     </html>
     """
@@ -1625,6 +1726,19 @@ struct LineAnchoredHTMLVisitor: MarkupVisitor {
     }
 
     func visitCodeBlock(_ codeBlock: CodeBlock) -> String {
+        // Mermaid code blocks render as diagrams
+        if codeBlock.language?.lowercased()
+            == "mermaid"
+        {
+            let escaped = escapeHTML(codeBlock.code)
+            let inner = "<div class=\"mermaid\">"
+                + "\(escaped)</div>"
+            return wrapBlock(
+                "div", markup: codeBlock,
+                inner: inner
+            )
+        }
+
         let escaped = escapeHTML(codeBlock.code)
         let langAttr: String
         if let lang = codeBlock.language, !lang.isEmpty {
