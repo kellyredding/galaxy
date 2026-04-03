@@ -55,6 +55,15 @@ final class EventCoordinator {
         "timeline.turn:interrupted",
     ]
 
+    /// Context-reset events from /clear and /compact slash
+    /// commands. These skip the normal prompt→stop lifecycle
+    /// (no turn:completed is ever published), so they serve
+    /// as the turn-end signal for Galaxy-initiated turns.
+    private static let contextResetEvents: Set<String> = [
+        "session.clear",
+        "session.compact",
+    ]
+
     private(set) var phase: Phase = .idle
 
     private let socketListener: SocketListener
@@ -205,6 +214,62 @@ final class EventCoordinator {
             return
         }
 
+        // Context-reset events: /clear and /compact are slash
+        // commands that skip the normal prompt→stop lifecycle,
+        // so no turn:completed event is ever published. End
+        // the Galaxy-side turn here so afterNextIdle actions
+        // (e.g. queued /handoff) can fire. Fall through to
+        // normal enrichment handling below.
+        if Self.contextResetEvents.contains(envelope.event) {
+            if let appSessionId =
+                ledgerSessionIdCache[envelope.ledgerSessionId],
+               let session = sessionManager?.sessions
+                   .first(where: { $0.id == appSessionId }),
+               session.isInTurn
+            {
+                GalaxyLog.events(
+                    "[\(session.sessionRef)] routeEvent:"
+                    + " context-reset endTurn"
+                    + " via \(envelope.event)"
+                )
+                session.endTurn(
+                    source:
+                        "socket:\(envelope.event)"
+                )
+            }
+        }
+
+        // Resume event: the on_resume hook publishes
+        // session.resume during SessionStart processing,
+        // before Claude has fully rendered the transcript
+        // and shown the prompt. Poll the terminal buffer
+        // for the resume marker (the hook's output line),
+        // then send /galaxy:resume once it appears.
+        if envelope.event == "session.resume" {
+            if let appSessionId =
+                ledgerSessionIdCache[envelope.ledgerSessionId],
+               let session = sessionManager?.sessions
+                   .first(where: { $0.id == appSessionId }),
+               session.isRunning && !session.hasExited
+            {
+                GalaxyLog.events(
+                    "[\(session.sessionRef)] routeEvent:"
+                    + " waiting for resume marker"
+                    + " via \(envelope.event)"
+                )
+                session.waitForResumeMarker {
+                    GalaxyLog.events(
+                        "[\(session.sessionRef)]"
+                        + " resume marker found,"
+                        + " sending /galaxy:resume"
+                    )
+                    session.sendCommand(
+                        "/galaxy:resume"
+                    )
+                }
+            }
+        }
+
         // Check if we handle this event type
         guard Self.knownEvents.contains(envelope.event) else { return }
 
@@ -324,6 +389,22 @@ final class EventCoordinator {
             for appSession in sessionManager.sessions {
                 let claudeId = appSession.claudeSessionId
                 if sessionData.sessionIdentifiers.contains(claudeId) {
+                    // Don't let two app sessions claim the
+                    // same ledger session. Polluted identifier
+                    // lists (from orphan consolidation or PID
+                    // recycling) can cause a ledger session's
+                    // identifiers to match multiple app
+                    // sessions. Without this guard, enrichment
+                    // cycles could converge both sessions to
+                    // the same claudeSessionId/ledgerSessionId.
+                    let alreadyClaimed =
+                        sessionManager.sessions.contains {
+                            $0.id != appSession.id
+                            && $0.ledgerSessionId
+                                == sessionData.ledgerSessionId
+                        }
+                    if alreadyClaimed { continue }
+
                     // Cache the mapping
                     ledgerSessionIdCache[sessionData.ledgerSessionId] = appSession.id
 
@@ -431,7 +512,19 @@ final class EventCoordinator {
 
         // Collect all known session identifiers from the app
         let sessionIds: [String] = DispatchQueue.main.sync {
-            sessionManager.sessions.map { $0.claudeSessionId }
+            // Pre-populate ledgerSessionIdCache from persisted
+            // values so the fast path works immediately for
+            // events that arrive before enrichment completes.
+            // Without this, the slow path can match the wrong
+            // session when identifiers overlap across sessions.
+            for session in sessionManager.sessions {
+                if let lsid = session.ledgerSessionId {
+                    self.ledgerSessionIdCache[lsid]
+                        = session.id
+                }
+            }
+            return sessionManager.sessions
+                .map { $0.claudeSessionId }
         }
 
         guard !sessionIds.isEmpty else {

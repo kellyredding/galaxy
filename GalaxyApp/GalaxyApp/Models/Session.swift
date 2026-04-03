@@ -617,12 +617,101 @@ class Session: Identifiable, ObservableObject {
 
     /// Register a one-shot action to fire after the next complete
     /// busy→idle cycle. Multiple actions can be queued; all fire
-    /// together. The armed pattern ensures we wait for the session
-    /// to go busy first, preventing premature fires if the session
-    /// is already idle when this is called.
+    /// together. If the session is already in a turn, the action
+    /// arms immediately so it fires when that turn ends. If idle,
+    /// arming is deferred to the next startTurn call, preventing
+    /// premature fires on stale idle state.
     func afterNextIdle(_ action: @escaping () -> Void) {
         afterNextIdleActions.append(action)
-        afterNextIdleArmed = false
+        if isInTurn {
+            afterNextIdleArmed = true
+        }
+    }
+
+    // Terminal marker emitted by the on_resume hook after
+    // transcript restore completes. SwiftTerm renders
+    // inter-word spaces as null bytes (U+0000), so match
+    // on the contiguous portion before the first space.
+    private static let resumeMarker =
+        "SessionStart:resume"
+
+    /// Poll interval and attempt limit for resume marker scan.
+    private static let resumeMarkerPollInterval:
+        TimeInterval = 0.25
+    private static let resumeMarkerMaxAttempts = 40  // 10s
+
+    /// Polls the terminal buffer for the resume marker,
+    /// then calls the completion handler. The on_resume hook
+    /// prints this marker once Claude has restored the
+    /// transcript and processed startup hooks — meaning the
+    /// prompt is ready (or nearly ready) for input.
+    func waitForResumeMarker(
+        then action: @escaping () -> Void
+    ) {
+        var attempts = 0
+        Timer.scheduledTimer(
+            withTimeInterval: Self.resumeMarkerPollInterval,
+            repeats: true
+        ) { [weak self] timer in
+            attempts += 1
+            guard let self = self else {
+                timer.invalidate()
+                return
+            }
+            if self.bufferContainsResumeMarker() {
+                timer.invalidate()
+                action()
+                return
+            }
+            if attempts >= Self.resumeMarkerMaxAttempts {
+                timer.invalidate()
+                // Timeout — fire anyway as a fallback
+                NSLog(
+                    "Session: resume marker not found"
+                    + " after %d attempts, firing"
+                    + " anyway",
+                    attempts
+                )
+                action()
+            }
+        }
+    }
+
+    /// How many rows above the input box to scan for the
+    /// resume marker. The marker appears in the last few
+    /// lines of output, just above the prompt.
+    private static let resumeMarkerScanRows = 10
+
+    /// Scan the scrollback buffer backwards for the resume
+    /// marker. Uses getScrollInvariantLine — the same API
+    /// as isGenuineInterrupt in SessionManager — which
+    /// produces clean strings without null-byte artifacts.
+    private func bufferContainsResumeMarker() -> Bool {
+        guard let tv = terminalView,
+              let terminal = tv.terminal
+        else { return false }
+
+        let buf = terminal.buffer
+        let top = buf.linesTop
+        let end = top + buf.lines.count
+        let scanStart = max(
+            top, end - Self.resumeMarkerScanRows
+        )
+
+        for row in stride(
+            from: end - 1, through: scanStart, by: -1
+        ) {
+            guard let line = terminal
+                .getScrollInvariantLine(row: row)
+            else { continue }
+            let text = line.translateToString(
+                trimRight: true
+            )
+            if text.contains(Self.resumeMarker) {
+                return true
+            }
+        }
+        return false
     }
 
     /// Returns the CLI command to resume this session outside of Galaxy.

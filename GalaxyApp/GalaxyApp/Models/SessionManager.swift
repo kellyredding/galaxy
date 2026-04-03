@@ -622,18 +622,10 @@ class SessionManager: ObservableObject {
         // Start process: --resume if session exists in Claude storage, --session-id if not
         session.startProcess(executablePath: executablePath, resume: canResume)
 
-        // After the resumed session settles, restore working
-        // directory via the galaxy:resume skill. Uses a fixed
-        // 3-second delay — there's no turn:initiated event
-        // during transcript restore, so afterNextIdle can't
-        // arm. The 3s covers observed restore times (0.5–2s).
-        if canResume {
-            DispatchQueue.main.asyncAfter(
-                deadline: .now() + 3.0
-            ) { [weak session] in
-                session?.sendCommand("/galaxy:resume")
-            }
-        }
+        // /galaxy:resume is now triggered by the session.resume
+        // socket event in EventCoordinator.routeEvent() — no
+        // delay needed. The on_resume hook publishes that event
+        // once Claude has restored the transcript.
 
         // Make this the active session
         activeSessionId = session.id
