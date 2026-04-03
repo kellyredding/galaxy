@@ -244,7 +244,13 @@ enum TimelineLayoutEngine {
                         columns.append([])
                     }
                     let lo = barEntries[bi].localStart
-                    let hi = barEntries[bi].localEnd
+                    let hi = barEntries[bi].dur.endEvent
+                        == nil
+                        ? max(
+                            barEntries[bi].localEnd,
+                            hashCount - 1
+                        )
+                        : barEntries[bi].localEnd
                     guard lo <= hi else { continue }
                     columns[prevCol].append(lo...hi)
                     barSubCols[bi] = prevCol
@@ -257,7 +263,17 @@ enum TimelineLayoutEngine {
                     where !prePlaced.contains(bi)
                 {
                     let lo = barEntries[bi].localStart
-                    let hi = barEntries[bi].localEnd
+                    // Open-ended bars render to the full
+                    // segment height, so claim the entire
+                    // segment for packing to prevent dots
+                    // from being placed behind the bar.
+                    let hi = barEntries[bi].dur.endEvent
+                        == nil
+                        ? max(
+                            barEntries[bi].localEnd,
+                            hashCount - 1
+                        )
+                        : barEntries[bi].localEnd
                     guard lo <= hi else { continue }
                     let range: ClosedRange<Int> = lo...hi
                     var placed = false
