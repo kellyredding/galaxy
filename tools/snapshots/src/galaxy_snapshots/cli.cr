@@ -167,39 +167,17 @@ module GalaxySnapshots
       if number > 0
         puts "Snapshot ##{number} saved (title: \"#{title}\", chars: #{content.size})"
 
-        # Publish event for Galaxy.app (fire-and-forget)
-        EventPublisher.publish(
-          ledger_session_id: ledger_session_id,
-          event: "snapshot.created",
-          ref: number.to_s,
+        # Record timeline event (fire-and-forget).
+        # Timeline publishes to the socket as
+        # timeline.snapshot:created — no separate
+        # EventPublisher call needed.
+        TimelinePublisher.snapshot_created(
+          ledger_session_id,
+          snapshot_number: number,
+          title: title,
+          exchange_count: exchange_count,
+          char_count: content.size,
         )
-
-        # Record timeline event (fire-and-forget)
-        begin
-          Process.new(
-            "galaxy-timeline",
-            args: [
-              "record",
-              "--ledger-session-id",
-              ledger_session_id.to_s,
-              "--event-type", "snapshot:created",
-              "--source",
-              "galaxy-snapshots/cli/create",
-              "--detail-data",
-              {
-                snapshot_number: number,
-                title:           title,
-                exchange_count:  exchange_count,
-                char_count:      content.size,
-              }.to_json,
-            ],
-            input: Process::Redirect::Close,
-            output: Process::Redirect::Close,
-            error: Process::Redirect::Close,
-          )
-        rescue
-          # Best-effort — timeline unavailable is not fatal
-        end
       else
         STDERR.puts "Error: failed to save snapshot"
         exit(1)
@@ -884,10 +862,16 @@ module GalaxySnapshots
         end
         puts ""
 
-        EventPublisher.publish(
-          ledger_session_id: resolve_ledger_session_id_for_snapshot(snapshot_id),
-          event: "annotation.created",
-          ref: snapshot_id.to_s,
+        snap = resolve_snapshot(snapshot_id)
+        TimelinePublisher.annotation_created(
+          snap.ledger_session_id,
+          snapshot_id: snapshot_id,
+          snapshot_number: snap.number,
+          snapshot_title: snap.title,
+          annotation_number: ann.number,
+          start_line: ann.start_line,
+          end_line: ann.end_line,
+          content: ann.content,
         )
       else
         STDERR.puts "Error: failed to create annotation"
@@ -1137,10 +1121,14 @@ module GalaxySnapshots
         end
         puts ""
 
-        EventPublisher.publish(
-          ledger_session_id: resolve_ledger_session_id_for_snapshot(snapshot_id),
-          event: "annotation.updated",
-          ref: snapshot_id.to_s,
+        snap = resolve_snapshot(snapshot_id)
+        TimelinePublisher.annotation_updated(
+          snap.ledger_session_id,
+          snapshot_id: snapshot_id,
+          snapshot_number: snap.number,
+          snapshot_title: snap.title,
+          annotation_number: ann.number,
+          content: ann.content,
         )
       else
         STDERR.puts "Error: annotation ##{number} not found"
@@ -1207,15 +1195,26 @@ module GalaxySnapshots
         exit(1)
       end
 
-      result = Database.delete_snapshot_annotation(snapshot_id, number)
+      # Fetch annotation before deleting so we can
+      # include its content in the timeline event.
+      ann = Database.get_snapshot_annotation(
+        snapshot_id, number,
+      )
+      result = Database.delete_snapshot_annotation(
+        snapshot_id, number,
+      )
 
       if result
         puts "Annotation ##{number} deleted"
 
-        EventPublisher.publish(
-          ledger_session_id: resolve_ledger_session_id_for_snapshot(snapshot_id),
-          event: "annotation.deleted",
-          ref: snapshot_id.to_s,
+        snap = resolve_snapshot(snapshot_id)
+        TimelinePublisher.annotation_deleted(
+          snap.ledger_session_id,
+          snapshot_id: snapshot_id,
+          snapshot_number: snap.number,
+          snapshot_title: snap.title,
+          annotation_number: number,
+          content: ann.try(&.content),
         )
       else
         STDERR.puts "Error: annotation ##{number} not found"
@@ -1344,11 +1343,16 @@ module GalaxySnapshots
 
       review, annotation_count = result
 
-      # Emit event so Galaxy app can update button visibility.
-      EventPublisher.publish(
-        ledger_session_id: resolve_ledger_session_id_for_snapshot(snapshot_id),
-        event: "review.created",
-        ref: snapshot_id.to_s,
+      # Record timeline event — timeline publishes to
+      # the socket so Galaxy app can update review state.
+      snap = resolve_snapshot(snapshot_id)
+      TimelinePublisher.review_created(
+        snap.ledger_session_id,
+        snapshot_id: snapshot_id,
+        snapshot_number: snap.number,
+        snapshot_title: snap.title,
+        review_number: review.number,
+        annotation_count: annotation_count,
       )
 
       JSON.build(STDOUT) do |json|
@@ -1720,14 +1724,13 @@ module GalaxySnapshots
       end
     end
 
-    # Helper to resolve ledger_session_id from a snapshot's DB primary key.
-    # Used by event emission — EventPublisher.publish needs the session ID
-    # to populate the envelope's session_identifiers.
-    private def self.resolve_ledger_session_id_for_snapshot(
+    # Resolve the snapshot record from its DB primary key.
+    # Used by TimelinePublisher calls that need
+    # ledger_session_id, snapshot number, and title.
+    private def self.resolve_snapshot(
       snapshot_id : Int64,
-    ) : Int64
-      snapshot = Database.get_snapshot_by_id(snapshot_id)
-      snapshot.not_nil!.ledger_session_id
+    ) : Database::Snapshot
+      Database.get_snapshot_by_id(snapshot_id).not_nil!
     end
 
     # ============================================================

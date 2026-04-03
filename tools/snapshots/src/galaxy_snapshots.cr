@@ -11,6 +11,7 @@ module GalaxySnapshots
   SKILLS_DIR        = GALAXY_DIR / "snapshots" / "skills"
   CLAUDE_SKILLS_DIR = CLAUDE_CONFIG_DIR / "skills"
   LEDGER_BIN        = Path.new(ENV.fetch("GALAXY_LEDGER_BIN", (GALAXY_DIR / "bin" / "galaxy-ledger").to_s))
+  TIMELINE_BIN      = ENV.fetch("GALAXY_TIMELINE_BIN", "galaxy-timeline")
 end
 
 unless ENV.has_key?("GALAXY_SNAPSHOTS_SKIP_CLI")

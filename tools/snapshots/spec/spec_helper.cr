@@ -17,11 +17,22 @@ ENV["GALAXY_SNAPSHOTS_CONFIG_DIR"] = SPEC_CONFIG_DIR.to_s
 ENV["GALAXY_DIR"] = SPEC_GALAXY_DIR.to_s
 ENV["GALAXY_SNAPSHOTS_DATABASE_PATH"] = SPEC_DATABASE_PATH.to_s
 
+# Point timeline binary to a no-op so fire-and-forget
+# calls don't hit the real timeline during tests.
+SPEC_TIMELINE_NOOP = SPEC_GALAXY_DIR / "bin" /
+                     "galaxy-timeline"
+ENV["GALAXY_TIMELINE_BIN"] = SPEC_TIMELINE_NOOP.to_s
+
 # Ensure test directories exist
 Dir.mkdir_p(SPEC_CLAUDE_CONFIG_DIR)
 Dir.mkdir_p(SPEC_GALAXY_DIR)
 Dir.mkdir_p(SPEC_CONFIG_DIR)
 Dir.mkdir_p(SPEC_DATA_DIR)
+Dir.mkdir_p(SPEC_GALAXY_DIR / "bin")
+File.write(
+  SPEC_TIMELINE_NOOP, "#!/bin/sh\nexit 0\n",
+)
+File.chmod(SPEC_TIMELINE_NOOP, 0o755)
 
 # Disable backups in test config to prevent real backup operations.
 # This is also used by Spec.before_each to reset config between tests.
@@ -71,6 +82,7 @@ def run_binary(
     "GALAXY_SNAPSHOTS_CONFIG_DIR"    => SPEC_CONFIG_DIR.to_s,
     "GALAXY_DIR"                     => SPEC_GALAXY_DIR.to_s,
     "GALAXY_SNAPSHOTS_DATABASE_PATH" => SPEC_DATABASE_PATH.to_s,
+    "GALAXY_TIMELINE_BIN"            => SPEC_TIMELINE_NOOP.to_s,
     "HOME"                           => ENV["HOME"],
     "PATH"                           => ENV["PATH"],
     # Clear editor env vars so they don't leak into snapshot open tests.
