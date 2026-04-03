@@ -31,7 +31,7 @@ enum TimelineLayoutEngine {
 
         // 3. Determine active lanes
         let activeResources = Set(sorted.map { $0.1.resource })
-        let activeLanes = TimelineResource.allCases.filter { activeResources.contains($0) }
+        let activeLanes = Array(TimelineResource.allCases)
         guard !activeLanes.isEmpty else { return nil }
 
         // 4. Pair duration events
