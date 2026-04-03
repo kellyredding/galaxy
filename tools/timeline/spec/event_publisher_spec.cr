@@ -45,6 +45,34 @@ describe GalaxyTimeline::EventPublisher do
       parsed["ref"]?.should be_nil
     end
 
+    it "includes detail_data as parsed JSON" do
+      dd = %({"snapshot_number":3,"title":"Test"})
+      json = GalaxyTimeline::EventPublisher
+        .build_envelope(
+          event: "timeline.snapshot:created",
+          ledger_session_id: 42_i64,
+          session_identifiers: ["abc-123"],
+          detail_data: dd,
+        )
+
+      parsed = JSON.parse(json)
+      detail = parsed["detail_data"]
+      detail["snapshot_number"].as_i.should eq(3)
+      detail["title"].as_s.should eq("Test")
+    end
+
+    it "omits detail_data when not provided" do
+      json = GalaxyTimeline::EventPublisher
+        .build_envelope(
+          event: "timeline.turn:completed",
+          ledger_session_id: 42_i64,
+          session_identifiers: ["abc-123"],
+        )
+
+      parsed = JSON.parse(json)
+      parsed["detail_data"]?.should be_nil
+    end
+
     it "handles empty session_identifiers array" do
       json = GalaxyTimeline::EventPublisher.build_envelope(
         event: "timeline.turn:failed",

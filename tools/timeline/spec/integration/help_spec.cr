@@ -34,21 +34,21 @@ describe "CLI help and version", tags: "integration" do
     result = run_binary(["version"])
 
     result[:status].should eq(0)
-    result[:output].should contain("galaxy-timeline 0.1.1")
+    result[:output].should contain("galaxy-timeline 0.1.2")
   end
 
   it "shows version with --version" do
     result = run_binary(["--version"])
 
     result[:status].should eq(0)
-    result[:output].should contain("galaxy-timeline 0.1.1")
+    result[:output].should contain("galaxy-timeline 0.1.2")
   end
 
   it "shows version with -v" do
     result = run_binary(["-v"])
 
     result[:status].should eq(0)
-    result[:output].should contain("galaxy-timeline 0.1.1")
+    result[:output].should contain("galaxy-timeline 0.1.2")
   end
 
   it "shows subcommand help with --help flag" do

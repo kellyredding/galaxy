@@ -30,6 +30,7 @@ module GalaxyTimeline
       ledger_session_id : Int64,
       session_identifiers : Array(String),
       ref : String? = nil,
+      detail_data : String? = nil,
     ) : String
       io = IO::Memory.new
       builder = JSON::Builder.new(io)
@@ -46,6 +47,10 @@ module GalaxyTimeline
           builder.field("ts", Time.utc.to_unix)
           if r = ref
             builder.field("ref", r)
+          end
+          if dd = detail_data
+            builder.field("detail_data",
+              JSON.parse(dd))
           end
         end
       end
@@ -66,6 +71,7 @@ module GalaxyTimeline
       ledger_session_id : Int64,
       event : String,
       ref : String? = nil,
+      detail_data : String? = nil,
     ) : Bool
       identifiers = resolve_session_identifiers(ledger_session_id)
 
@@ -74,6 +80,7 @@ module GalaxyTimeline
         ledger_session_id: ledger_session_id,
         session_identifiers: identifiers,
         ref: ref,
+        detail_data: detail_data,
       )
 
       send_to_socket(envelope)

@@ -196,6 +196,7 @@ module GalaxyTimeline
           ledger_session_id,
           "timeline.#{event_type}",
           ref: id.to_s,
+          detail_data: detail_data,
         )
         if json_mode
           puts ({id: id}).to_json
