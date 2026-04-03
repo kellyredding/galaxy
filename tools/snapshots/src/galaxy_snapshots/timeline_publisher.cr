@@ -174,7 +174,7 @@ module GalaxySnapshots
       ]
 
       Process.new(
-        TIMELINE_BIN,
+        TIMELINE_BIN.to_s,
         args: args,
         input: IO::Memory.new(detail_data),
         output: Process::Redirect::Close,
