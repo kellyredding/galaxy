@@ -44,11 +44,29 @@ module GalaxyLedger
   # Skills directories
   SKILLS_DIR        = GALAXY_DIR / "ledger" / "skills"
   CLAUDE_SKILLS_DIR = CLAUDE_CONFIG_DIR / "skills"
-  TIMELINE_BIN_NAME = ENV.fetch(
-    "GALAXY_TIMELINE_BIN", "galaxy-timeline"
+  TIMELINE_BIN      = Path.new(
+    ENV.fetch(
+      "GALAXY_TIMELINE_BIN",
+      (GALAXY_DIR / "bin" / "galaxy-timeline").to_s
+    )
   )
-  AGENTS_BIN_NAME = ENV.fetch(
-    "GALAXY_AGENTS_BIN", "galaxy-agents"
+  AGENTS_BIN = Path.new(
+    ENV.fetch(
+      "GALAXY_AGENTS_BIN",
+      (GALAXY_DIR / "bin" / "galaxy-agents").to_s
+    )
+  )
+  SNAPSHOTS_BIN = Path.new(
+    ENV.fetch(
+      "GALAXY_SNAPSHOTS_BIN",
+      (GALAXY_DIR / "bin" / "galaxy-snapshots").to_s
+    )
+  )
+  ARTIFACTS_BIN = Path.new(
+    ENV.fetch(
+      "GALAXY_ARTIFACTS_BIN",
+      (GALAXY_DIR / "bin" / "galaxy-artifacts").to_s
+    )
   )
 end
 

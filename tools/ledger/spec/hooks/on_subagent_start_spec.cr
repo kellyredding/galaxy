@@ -31,9 +31,9 @@ describe GalaxyLedger::Hooks::OnSubagentStart do
   end
 
   describe "AGENTS_BIN" do
-    it "references the AGENTS_BIN_NAME constant" do
+    it "references the AGENTS_BIN constant" do
       GalaxyLedger::Hooks::OnSubagentStart::AGENTS_BIN
-        .should eq(GalaxyLedger::AGENTS_BIN_NAME)
+        .should eq(GalaxyLedger::AGENTS_BIN.to_s)
     end
   end
 end

@@ -52,7 +52,7 @@ module GalaxyLedger
         # Abandon any still-running agents (best-effort)
         begin
           Process.new(
-            AGENTS_BIN_NAME,
+            AGENTS_BIN.to_s,
             args: [
               "abandon",
               "--ledger-session-id",
@@ -75,7 +75,7 @@ module GalaxyLedger
         # Record timeline event (fire-and-forget)
         begin
           Process.new(
-            TIMELINE_BIN_NAME,
+            TIMELINE_BIN.to_s,
             args: [
               "record",
               "--ledger-session-id",

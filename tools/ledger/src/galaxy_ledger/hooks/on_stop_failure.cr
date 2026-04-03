@@ -77,7 +77,7 @@ module GalaxyLedger
 
         begin
           Process.new(
-            TIMELINE_BIN_NAME,
+            TIMELINE_BIN.to_s,
             args: [
               "record",
               "--ledger-session-id",

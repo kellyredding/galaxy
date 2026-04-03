@@ -76,7 +76,7 @@ module GalaxyLedger
           learnings = restoration.tier2.learnings.size
 
           Process.new(
-            TIMELINE_BIN_NAME,
+            TIMELINE_BIN.to_s,
             args: [
               "record",
               "--ledger-session-id",

@@ -583,7 +583,7 @@ module GalaxyLedger
         # length limits (handoff_content can be 8-10KB+)
         begin
           Process.new(
-            TIMELINE_BIN_NAME,
+            TIMELINE_BIN.to_s,
             args: [
               "update",
               event_id.to_s,

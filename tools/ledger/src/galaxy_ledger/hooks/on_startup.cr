@@ -84,8 +84,8 @@ module GalaxyLedger
           # Each tool's `backup` command loads its own config, creates
           # the backup, and prunes old ones — same as the ledger block
           # above but kept in-process in each tool's binary.
-          {"galaxy-snapshots", "galaxy-artifacts",
-           TIMELINE_BIN_NAME}.each do |tool|
+          {SNAPSHOTS_BIN.to_s, ARTIFACTS_BIN.to_s,
+           TIMELINE_BIN.to_s}.each do |tool|
             begin
               Process.run(
                 tool, ["backup", "--session-id", ledger_session_id.to_s],
@@ -108,7 +108,7 @@ module GalaxyLedger
         # timeline.session:started to the Galaxy socket.
         begin
           Process.new(
-            TIMELINE_BIN_NAME,
+            TIMELINE_BIN.to_s,
             args: [
               "record",
               "--ledger-session-id",

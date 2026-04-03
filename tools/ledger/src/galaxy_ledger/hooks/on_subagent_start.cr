@@ -11,7 +11,7 @@ module GalaxyLedger
     #
     # Fire-and-forget: errors are silently ignored.
     class OnSubagentStart
-      AGENTS_BIN = GalaxyLedger::AGENTS_BIN_NAME
+      AGENTS_BIN = GalaxyLedger::AGENTS_BIN.to_s
 
       @stdin_session_id : String?
       @stdin_agent_id : String?
