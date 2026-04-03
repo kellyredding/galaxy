@@ -24,11 +24,11 @@ struct TimelineEvent: Codable, Identifiable {
 enum TimelineResource: Int, CaseIterable {
     case session = 0
     case turn
+    case agent
+    case artifact
     case context
     case scrollback
     case snapshot
-    case artifact
-    case agent
 
     var displayName: String {
         switch self {
@@ -83,6 +83,10 @@ let timelineEventRegistry: [String: EventRegistration] = [
     "artifact:created":    EventRegistration(resource: .artifact, mode: .point),
     "artifact:updated":    EventRegistration(resource: .artifact, mode: .point),
     "artifact:deleted":    EventRegistration(resource: .artifact, mode: .point),
+    "agent:started":       EventRegistration(resource: .agent, mode: .durationStart),
+    "agent:stopped":       EventRegistration(resource: .agent, mode: .durationEnd),
+    "agent:failed":        EventRegistration(resource: .agent, mode: .durationEnd),
+    "agent:abandoned":     EventRegistration(resource: .agent, mode: .durationEnd),
     "turn:initiated":      EventRegistration(resource: .turn, mode: .durationStart),
     "turn:completed":      EventRegistration(resource: .turn, mode: .durationEnd),
     "turn:failed":         EventRegistration(resource: .turn, mode: .durationEnd),
@@ -216,6 +220,14 @@ enum TimelineTooltipFormatter {
             return "Artifact Updated"
         case "artifact:deleted":
             return "Artifact Deleted"
+        case "agent:started":
+            return "Agent Started"
+        case "agent:stopped":
+            return "Agent Stopped"
+        case "agent:failed":
+            return "Agent Failed"
+        case "agent:abandoned":
+            return "Agent Abandoned"
         case "turn:initiated":
             return "Turn Initiated"
         case "turn:completed":
@@ -267,6 +279,14 @@ enum TimelineTooltipFormatter {
             return artifactUpdatedLines(dict)
         case "artifact:deleted":
             return artifactDeletedLines(dict)
+        case "agent:started":
+            return agentStartedLines(dict)
+        case "agent:stopped":
+            return agentStoppedLines(dict)
+        case "agent:failed":
+            return agentFailedLines(dict)
+        case "agent:abandoned":
+            return agentAbandonedLines(dict)
         case "turn:initiated":
             return turnInitiatedLines(dict)
         case "turn:completed":
@@ -624,6 +644,128 @@ enum TimelineTooltipFormatter {
         return lines
     }
 
+    // MARK: - Agent Formatters
+
+    private static func agentStartedLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        if let agentType = d["agent_type"]
+            as? String
+        {
+            lines.append(agentType)
+        }
+        if let desc = d["description"] as? String {
+            lines.append(
+                "\"\(truncate(desc, to: 80))\""
+            )
+        } else if let agentId = d["agent_id"]
+            as? String
+        {
+            let short = String(
+                agentId.prefix(8)
+            )
+            lines.append(short)
+        }
+        return lines
+    }
+
+    private static func agentStoppedLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        if let agentType = d["agent_type"]
+            as? String
+        {
+            if let ms = d["duration_ms"] as? Int {
+                lines.append(
+                    "\(agentType)"
+                    + " (\(formatDuration(ms)))"
+                )
+            } else if let ms = d["duration_ms"]
+                as? Int64
+            {
+                lines.append(
+                    "\(agentType)"
+                    + " (\(formatDuration(Int(ms))))"
+                )
+            } else {
+                lines.append(agentType)
+            }
+        }
+        if let prompt = d["prompt"] as? String {
+            lines.append(
+                "\"\(truncate(prompt, to: 80))\""
+            )
+        }
+        if let msg = d["last_message"] as? String {
+            lines.append(
+                "→ \"\(truncate(msg, to: 80))\""
+            )
+        }
+        return lines
+    }
+
+    private static func agentFailedLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        if let agentType = d["agent_type"]
+            as? String
+        {
+            if let ms = d["duration_ms"] as? Int {
+                lines.append(
+                    "\(agentType)"
+                    + " (\(formatDuration(ms)))"
+                    + " — FAILED"
+                )
+            } else if let ms = d["duration_ms"]
+                as? Int64
+            {
+                lines.append(
+                    "\(agentType)"
+                    + " (\(formatDuration(Int(ms))))"
+                    + " — FAILED"
+                )
+            } else {
+                lines.append(
+                    "\(agentType) — FAILED"
+                )
+            }
+        }
+        if let prompt = d["prompt"] as? String {
+            lines.append(
+                "\"\(truncate(prompt, to: 80))\""
+            )
+        }
+        if let msg = d["last_message"] as? String {
+            lines.append(
+                "→ \"\(truncate(msg, to: 80))\""
+            )
+        }
+        return lines
+    }
+
+    private static func agentAbandonedLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        if let agentType = d["agent_type"]
+            as? String
+        {
+            lines.append(
+                "\(agentType) — abandoned"
+            )
+        }
+        if let agentId = d["agent_id"] as? String {
+            let short = String(
+                agentId.prefix(8)
+            )
+            lines.append(short)
+        }
+        return lines
+    }
+
     // MARK: - Helpers
 
     private static func truncate(
@@ -669,6 +811,21 @@ enum TimelineTooltipFormatter {
             )
         }
         return "\(bytes)B"
+    }
+
+    private static func formatDuration(
+        _ ms: Int
+    ) -> String {
+        let seconds = Double(ms) / 1000.0
+        if seconds >= 60 {
+            let minutes = seconds / 60.0
+            return String(
+                format: "%.1fm", minutes
+            )
+        }
+        return String(
+            format: "%.1fs", seconds
+        )
     }
 
     private static func formatNumber(
