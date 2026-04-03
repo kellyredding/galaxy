@@ -425,6 +425,7 @@ class MainMenu: NSObject, NSMenuDelegate {
         let hasListFocus: Bool = {
             switch sessionManager.activeTab {
             case .snapshots: return true
+            case .agents: return true
             case .ledger: return [.files, .entries].contains(sessionManager.activeLedgerSubTab)
             case .terminal: return false
             case .timeline: return false

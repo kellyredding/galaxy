@@ -155,6 +155,11 @@ struct ContentView: View {
                     .allowsHitTesting(sessionManager.activeTab == .ledger)
                     .zIndex(sessionManager.activeTab == .ledger ? 1 : 0)
 
+                AgentsContainerView()
+                    .opacity(sessionManager.activeTab == .agents ? 1 : 0)
+                    .allowsHitTesting(sessionManager.activeTab == .agents)
+                    .zIndex(sessionManager.activeTab == .agents ? 1 : 0)
+
                 SnapshotsContainerView()
                     .opacity(sessionManager.activeTab == .snapshots ? 1 : 0)
                     .allowsHitTesting(sessionManager.activeTab == .snapshots)
@@ -205,6 +210,16 @@ struct ContentView: View {
                             isOnTerminalTab: sessionManager.activeTab == .terminal
                         )
                         .withClearBehavior()
+                    }
+                }
+                .overlay(alignment: .trailing) {
+                    if tab == .agents,
+                       let session = activeSession
+                    {
+                        AgentRunningBadge(
+                            session: session
+                        )
+                        .offset(x: 6)
                     }
                 }
             }

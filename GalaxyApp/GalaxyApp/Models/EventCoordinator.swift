@@ -70,6 +70,17 @@ final class EventCoordinator {
         "timeline.turn:interrupted",
     ]
 
+    /// Agent-start event that increments runningAgentCount.
+    private static let agentStartEvent =
+        "timeline.agent:started"
+
+    /// Agent-end events that decrement runningAgentCount.
+    private static let agentEndEvents: Set<String> = [
+        "timeline.agent:stopped",
+        "timeline.agent:failed",
+        "timeline.agent:abandoned",
+    ]
+
     /// Context-reset events from /clear and /compact slash
     /// commands. These skip the normal prompt→stop lifecycle
     /// (no turn:completed is ever published), so they serve
@@ -225,6 +236,65 @@ final class EventCoordinator {
                 )
             }
             // Also trigger enrichment (context may have changed)
+            debouncer.submit(envelope)
+            return
+        }
+
+        // Agent-start event: increment running count
+        // and notify AgentsView.
+        if envelope.event == Self.agentStartEvent {
+            if let appSessionId =
+                ledgerSessionIdCache[
+                    envelope.ledgerSessionId
+                ],
+               let session = sessionManager?.sessions
+                   .first(where: {
+                       $0.id == appSessionId
+                   })
+            {
+                GalaxyLog.events(
+                    "[\(session.sessionRef)]"
+                    + " routeEvent:"
+                    + " agent count +1"
+                    + " via \(envelope.event)"
+                )
+                session.runningAgentCount += 1
+                sessionManager?
+                    .agentRefreshTrigger =
+                    (appSessionId, Date())
+            }
+            debouncer.submit(envelope)
+            return
+        }
+
+        // Agent-end events: decrement running count
+        // and notify AgentsView.
+        if Self.agentEndEvents.contains(
+            envelope.event
+        ) {
+            if let appSessionId =
+                ledgerSessionIdCache[
+                    envelope.ledgerSessionId
+                ],
+               let session = sessionManager?.sessions
+                   .first(where: {
+                       $0.id == appSessionId
+                   })
+            {
+                GalaxyLog.events(
+                    "[\(session.sessionRef)]"
+                    + " routeEvent:"
+                    + " agent count -1"
+                    + " via \(envelope.event)"
+                )
+                session.runningAgentCount = max(
+                    0,
+                    session.runningAgentCount - 1
+                )
+                sessionManager?
+                    .agentRefreshTrigger =
+                    (appSessionId, Date())
+            }
             debouncer.submit(envelope)
             return
         }
@@ -594,6 +664,11 @@ final class EventCoordinator {
                 GalaxyLog.events("Startup sync returned no data")
             }
 
+            // Seed running agent counts from CLI
+            self.seedRunningAgentCounts(
+                sessionManager: sessionManager
+            )
+
             // Step 3: Drain buffer
             self.phase = .draining
             GalaxyLog.events("Phase → draining (\(self.eventBuffer.count) buffered events)")
@@ -622,6 +697,53 @@ final class EventCoordinator {
 
             for pid in pids {
                 _ = kill(pid_t(pid), 0) == 0
+            }
+        }
+    }
+
+    // MARK: - Agent Count Seeding
+
+    /// Seed running agent counts from the CLI during
+    /// startup sync. Called on the main queue after
+    /// enrichment completes.
+    private func seedRunningAgentCounts(
+        sessionManager: SessionManager
+    ) {
+        for session in sessionManager.sessions {
+            guard let lsid = session.ledgerSessionId
+            else { continue }
+
+            // Fire-and-forget async query per session
+            Task {
+                do {
+                    let count =
+                        try await AgentsQueryService
+                        .shared
+                        .fetchRunningCount(
+                            ledgerSessionId: lsid
+                        )
+                    await MainActor.run {
+                        if session.runningAgentCount
+                            != count
+                        {
+                            session.runningAgentCount
+                                = count
+                            GalaxyLog.events(
+                                "[\(session.sessionRef)]"
+                                + " seeded"
+                                + " runningAgentCount"
+                                + " = \(count)"
+                            )
+                        }
+                    }
+                } catch {
+                    GalaxyLog.events(
+                        "Agent count seed failed"
+                        + " for session"
+                        + " \(session.sessionRef):"
+                        + " \(error)"
+                    )
+                }
             }
         }
     }

@@ -63,6 +63,12 @@ class SessionManager: ObservableObject {
     /// SnapshotsView observes this to refresh review button visibility.
     @Published var pendingReviewCheck: Int64? = nil
 
+    /// Set by EventCoordinator on agent lifecycle events.
+    /// AgentsView observes this to refresh its data.
+    /// Tuple of (sessionId, timestamp) for targeted refresh.
+    @Published var agentRefreshTrigger:
+        (UUID, Date)? = nil
+
     /// List navigation action bridged from menu shortcuts.
     /// Set by MenuActions, consumed by the active list view's onChange handler.
     @Published var listNavAction: ListNavAction? = nil

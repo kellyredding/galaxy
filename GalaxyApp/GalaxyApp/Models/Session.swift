@@ -85,6 +85,12 @@ class Session: Identifiable, ObservableObject {
     /// All user-visible consumers observe this, not isBusy.
     @Published var isInTurn: Bool = false
 
+    /// Number of currently running agents. Maintained by
+    /// EventCoordinator (increment on agent:started, decrement
+    /// on agent:stopped/failed/abandoned). Seeded at startup
+    /// via CLI query. Corrected when AgentsView fetches.
+    @Published var runningAgentCount: Int = 0
+
     /// When the current turn started (startTurn called).
     /// Used to compute turn duration for notification/unread gates.
     private var turnStartTime: Date?

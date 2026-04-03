@@ -248,6 +248,11 @@ struct SnapshotsView: View {
                         .padding(.top, 12)
                         .padding(.bottom, 20)
                     }
+                    .onAppear {
+                        if let lastId = sortedSnapshots.last?.id {
+                            scrollProxy.scrollTo(lastId, anchor: .bottom)
+                        }
+                    }
                     .onChange(of: focusedIndex) {
                         if let idx = focusedIndex, idx < sortedSnapshots.count {
                             scrollProxy.scrollTo(sortedSnapshots[idx].id)
