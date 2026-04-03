@@ -40,10 +40,10 @@ final class EventCoordinator {
         "timeline.turn:failed",
         "timeline.turn:continued",
         "timeline.turn:interrupted",
-        "agent.started",
-        "agent.stopped",
-        "agent.failed",
-        "agent.abandoned",
+        "timeline.agent:started",
+        "timeline.agent:stopped",
+        "timeline.agent:failed",
+        "timeline.agent:abandoned",
     ]
 
     /// Turn-start event that triggers startTurn().
