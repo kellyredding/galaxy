@@ -11,8 +11,11 @@ module GalaxyArtifacts
   SKILLS_DIR        = GALAXY_DIR / "artifacts" / "skills"
   CLAUDE_SKILLS_DIR = CLAUDE_CONFIG_DIR / "skills"
   LEDGER_BIN        = Path.new(ENV.fetch("GALAXY_LEDGER_BIN", (GALAXY_DIR / "bin" / "galaxy-ledger").to_s))
-  TIMELINE_BIN_NAME = ENV.fetch(
-    "GALAXY_TIMELINE_BIN", "galaxy-timeline"
+  TIMELINE_BIN      = Path.new(
+    ENV.fetch(
+      "GALAXY_TIMELINE_BIN",
+      (GALAXY_DIR / "bin" / "galaxy-timeline").to_s,
+    ),
   )
 end
 
