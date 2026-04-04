@@ -1,5 +1,20 @@
 require "../spec_helper"
 
+describe "OnStartup SIBLING_BACKUP_TOOLS" do
+  it "includes all sibling tool binaries" do
+    tools = GalaxyLedger::Hooks::OnStartup::SIBLING_BACKUP_TOOLS
+    tools.should contain(GalaxyLedger::SNAPSHOTS_BIN.to_s)
+    tools.should contain(GalaxyLedger::ARTIFACTS_BIN.to_s)
+    tools.should contain(GalaxyLedger::TIMELINE_BIN.to_s)
+    tools.should contain(GalaxyLedger::AGENTS_BIN.to_s)
+  end
+
+  it "contains exactly four tools" do
+    tools = GalaxyLedger::Hooks::OnStartup::SIBLING_BACKUP_TOOLS
+    tools.size.should eq(4)
+  end
+end
+
 describe "OnStartup GALAXY_SKIP_HOOKS" do
   it "returns early when GALAXY_SKIP_HOOKS=1 is set" do
     ENV["GALAXY_SKIP_HOOKS"] = "1"

@@ -15,6 +15,13 @@ module GalaxyLedger
     # PID is not used for resolution here — on startup the PID is always
     # a new process, so any PID match would be stale.
     class OnStartup
+      SIBLING_BACKUP_TOOLS = {
+        SNAPSHOTS_BIN.to_s,
+        ARTIFACTS_BIN.to_s,
+        TIMELINE_BIN.to_s,
+        AGENTS_BIN.to_s,
+      }
+
       @session_identifier : String?
 
       def run
@@ -80,12 +87,11 @@ module GalaxyLedger
             STDERR.puts "[galaxy-ledger] Backup error: #{ex.message}"
           end
 
-          # Back up sibling tool databases (snapshots, artifacts).
+          # Back up sibling tool databases.
           # Each tool's `backup` command loads its own config, creates
           # the backup, and prunes old ones — same as the ledger block
           # above but kept in-process in each tool's binary.
-          {SNAPSHOTS_BIN.to_s, ARTIFACTS_BIN.to_s,
-           TIMELINE_BIN.to_s}.each do |tool|
+          SIBLING_BACKUP_TOOLS.each do |tool|
             begin
               Process.run(
                 tool, ["backup", "--session-id", ledger_session_id.to_s],
