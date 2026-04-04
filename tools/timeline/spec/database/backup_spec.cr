@@ -38,7 +38,7 @@ describe GalaxyTimeline::Database do
       end
     end
 
-    it "is idempotent — returns existing path if already backed up" do
+    it "overwrites existing backup when called twice with same session ID" do
       backup_dir = Path.new(Dir.tempdir) / "galaxy-timeline-backup-test-#{Random.rand(100000)}"
       begin
         GalaxyTimeline::Database.record_event(
@@ -48,11 +48,22 @@ describe GalaxyTimeline::Database do
         )
 
         r1 = GalaxyTimeline::Database.backup(backup_dir, 1_i64)
-        r2 = GalaxyTimeline::Database.backup(backup_dir, 1_i64)
-
         r1.should_not be_nil
+        first_mtime = File.info(r1.not_nil!).modification_time
+
+        # Add more data so the backup content changes
+        GalaxyTimeline::Database.record_event(
+          1_i64,
+          event_type: "session:stopped",
+          source: "galaxy-ledger/hooks/on_shutdown",
+        )
+
+        r2 = GalaxyTimeline::Database.backup(backup_dir, 1_i64)
         r2.should_not be_nil
-        r1.not_nil!.to_s.should eq(r2.not_nil!.to_s)
+        r2.not_nil!.to_s.should eq(r1.not_nil!.to_s)
+
+        second_mtime = File.info(r2.not_nil!).modification_time
+        second_mtime.should be >= first_mtime
       ensure
         FileUtils.rm_rf(backup_dir.to_s)
       end

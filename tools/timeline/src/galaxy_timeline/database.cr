@@ -384,8 +384,8 @@ module GalaxyTimeline
 
       backup_file = date_dir / "timeline_#{session_id}.db"
 
-      # Skip if backup already exists (idempotent — same session starting twice)
-      return backup_file if File.exists?(backup_file)
+      # Remove existing backup so VACUUM INTO can write a fresh file.
+      File.delete(backup_file) if File.exists?(backup_file)
 
       open do |db|
         db.exec("VACUUM INTO '#{backup_file}'")
