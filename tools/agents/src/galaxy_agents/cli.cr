@@ -783,7 +783,7 @@ module GalaxyAgents
         i += 1
       end
 
-      config = Config.load
+      config = SharedBackupConfig.load
 
       if list_mode
         backup_list(config)
@@ -794,7 +794,9 @@ module GalaxyAgents
       end
     end
 
-    private def self.backup_list(config : Config)
+    private def self.backup_list(
+      config : SharedBackupConfig,
+    )
       backup_dir = config.effective_backup_path
 
       unless Dir.exists?(backup_dir)
@@ -881,7 +883,8 @@ module GalaxyAgents
     end
 
     private def self.backup_create_and_prune(
-      config : Config, session_id : Int64,
+      config : SharedBackupConfig,
+      session_id : Int64,
     )
       unless config.backups.enabled
         puts "Backups are disabled."
@@ -910,7 +913,7 @@ module GalaxyAgents
     end
 
     private def self.backup_prune_only(
-      config : Config,
+      config : SharedBackupConfig,
     )
       backup_dir = config.effective_backup_path
       pruned = Database.prune_backups(
@@ -1426,9 +1429,11 @@ module GalaxyAgents
         --prune-only      Only prune old backups
 
       CONFIGURATION:
-        backups.enabled          Enable/disable backups (default: true)
-        backups.retention_days   Days to keep (default: 3)
-        backups.path             Custom backup directory
+        Backup settings are managed by the shared Galaxy config.
+        Use 'galaxy config' to view and 'galaxy config set' to change:
+          galaxy config set backups.enabled true
+          galaxy config set backups.retention_days 7
+          galaxy config set backups.path /path/to/backups
 
       DESCRIPTION:
         Creates point-in-time database backups using SQLite

@@ -45,10 +45,18 @@ File.write(
 )
 File.chmod(SPEC_ARTIFACTS_NOOP, 0o755)
 
-# Disable backups in test config.
+# Tool-level config (no backup settings).
 SPEC_DEFAULT_CONFIG = {
   "_schema_version" => "0.0.0",
   "enabled"         => true,
+}.to_json
+File.write(
+  SPEC_CONFIG_DIR / "config.json", SPEC_DEFAULT_CONFIG,
+)
+
+# Shared Galaxy config with backups disabled for tests.
+SPEC_SHARED_CONFIG = {
+  "_schema_version" => "0.0.1",
   "backups"         => {
     "enabled"        => false,
     "retention_days" => 3,
@@ -56,7 +64,7 @@ SPEC_DEFAULT_CONFIG = {
   },
 }.to_json
 File.write(
-  SPEC_CONFIG_DIR / "config.json", SPEC_DEFAULT_CONFIG,
+  SPEC_GALAXY_DIR / "config.json", SPEC_SHARED_CONFIG,
 )
 
 # Skip CLI auto-run when loading module for specs
@@ -142,6 +150,10 @@ Spec.before_each do
   File.write(
     SPEC_CONFIG_DIR / "config.json",
     SPEC_DEFAULT_CONFIG,
+  )
+  File.write(
+    SPEC_GALAXY_DIR / "config.json",
+    SPEC_SHARED_CONFIG,
   )
 end
 

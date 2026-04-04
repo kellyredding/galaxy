@@ -17,10 +17,18 @@ describe "CLI backup command", tags: "integration" do
   Random.rand(100000)
 }"
       begin
-        config = GalaxyAgents::Config.load
-        config.backups.enabled = true
-        config.backups.path = backup_dir.to_s
-        config.save
+        shared_config = {
+          "_schema_version" => "0.0.1",
+          "backups"         => {
+            "enabled"        => true,
+            "retention_days" => 3,
+            "path"           => backup_dir.to_s,
+          },
+        }.to_json
+        File.write(
+          SPEC_GALAXY_DIR / "config.json",
+          shared_config,
+        )
 
         run_binary([
           "start", "--ledger-session-id", "1",
@@ -68,10 +76,18 @@ describe "CLI backup command", tags: "integration" do
           old_dir / "agents_1.db", "fake backup",
         )
 
-        config = GalaxyAgents::Config.load
-        config.backups.path = backup_dir.to_s
-        config.backups.retention_days = 3
-        config.save
+        shared_config = {
+          "_schema_version" => "0.0.1",
+          "backups"         => {
+            "enabled"        => true,
+            "retention_days" => 3,
+            "path"           => backup_dir.to_s,
+          },
+        }.to_json
+        File.write(
+          SPEC_GALAXY_DIR / "config.json",
+          shared_config,
+        )
 
         result = run_binary([
           "backup", "--prune-only",
@@ -94,9 +110,18 @@ describe "CLI backup command", tags: "integration" do
       begin
         Dir.mkdir_p(backup_dir)
 
-        config = GalaxyAgents::Config.load
-        config.backups.path = backup_dir.to_s
-        config.save
+        shared_config = {
+          "_schema_version" => "0.0.1",
+          "backups"         => {
+            "enabled"        => true,
+            "retention_days" => 3,
+            "path"           => backup_dir.to_s,
+          },
+        }.to_json
+        File.write(
+          SPEC_GALAXY_DIR / "config.json",
+          shared_config,
+        )
 
         result = run_binary([
           "backup", "--prune-only",
@@ -113,11 +138,12 @@ describe "CLI backup command", tags: "integration" do
   end
 
   describe "help" do
-    it "shows backup help" do
+    it "shows backup help with galaxy config reference" do
       result = run_binary(["backup", "--help"])
 
       result[:status].should eq(0)
       result[:output].should contain("backup")
+      result[:output].should contain("galaxy config")
     end
   end
 end
