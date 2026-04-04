@@ -33,10 +33,11 @@ describe Galaxy::CLI do
   end
 
   describe "GALAXY_DIR" do
-    it "defaults to ~/.claude/galaxy" do
-      # When GALAXY_DIR env var is not set, uses default
-      expected_default = Path.home / ".claude" / "galaxy"
-      Galaxy::GALAXY_DIR.to_s.should eq(expected_default.to_s)
+    it "respects env var override" do
+      # spec_helper sets GALAXY_DIR to a temp directory
+      Galaxy::GALAXY_DIR.to_s.should eq(
+        SPEC_GALAXY_DIR.to_s,
+      )
     end
   end
 
@@ -137,6 +138,22 @@ describe Galaxy::CLI do
       Galaxy::CLI::GALAXY_COMMANDS.should contain("help")
       Galaxy::CLI::GALAXY_COMMANDS.should contain("version")
       Galaxy::CLI::GALAXY_COMMANDS.should contain("update")
+      Galaxy::CLI::GALAXY_COMMANDS.should contain("config")
+      Galaxy::CLI::GALAXY_COMMANDS.should contain("backups")
+    end
+  end
+
+  describe "CONFIG_FILE" do
+    it "is under GALAXY_DIR" do
+      Galaxy::CONFIG_FILE.to_s.should start_with(
+        Galaxy::GALAXY_DIR.to_s,
+      )
+    end
+
+    it "ends with config.json" do
+      Galaxy::CONFIG_FILE.to_s.should end_with(
+        "config.json",
+      )
     end
   end
 end

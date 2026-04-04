@@ -11,6 +11,9 @@ module Galaxy
     )
   )
 
+  # Shared Galaxy config file
+  CONFIG_FILE = GALAXY_DIR / "config.json"
+
   # URL scheme for communicating with Galaxy.app
   URL_SCHEME = "galaxy"
 

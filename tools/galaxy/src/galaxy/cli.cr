@@ -4,7 +4,7 @@ require "uri"
 module Galaxy
   class CLI
     # Galaxy's own commands — checked before delegation
-    GALAXY_COMMANDS = %w[help version update]
+    GALAXY_COMMANDS = %w[help version update config backups]
 
     def self.run(args : Array(String))
       # Save original args before OptionParser modifies the array in-place.
@@ -81,6 +81,9 @@ module Galaxy
         return
       when "update"
         handle_update_command(rest)
+        return
+      when "config"
+        handle_config_command(rest)
         return
       end
 
@@ -273,6 +276,8 @@ module Galaxy
         ... and all other claude-persona commands.
         Run 'claude-persona help' for the full reference.
 
+        galaxy config                   Manage Galaxy configuration
+        galaxy backups                  Manage backups
         galaxy update                   Update Galaxy
         galaxy version                  Show version
         galaxy help                     Show this help
@@ -287,6 +292,8 @@ module Galaxy
         galaxy                          Open Galaxy with a new Claude session
         galaxy --resume <id>            Resume a session
 
+        galaxy config                   Manage Galaxy configuration
+        galaxy backups                  Manage backups
         galaxy update                   Update Galaxy
         galaxy version                  Show version
         galaxy help                     Show this help
@@ -338,6 +345,124 @@ module Galaxy
     rescue File::NotFoundError
       false
     end
+
+    # --- Config command ---
+
+    private def self.handle_config_command(
+      args : Array(String),
+    )
+      if args.empty?
+        config = SharedConfig.load
+        puts config.to_pretty_json
+        return
+      end
+
+      subcommand = args[0]
+      rest = args[1..]? || [] of String
+
+      case subcommand
+      when "help", "-h", "--help"
+        show_config_help
+      when "set"
+        config_set(rest)
+      when "get"
+        config_get(rest)
+      when "reset"
+        config_reset
+      when "path"
+        puts CONFIG_FILE
+      else
+        STDERR.puts(
+          "Error: Unknown config command '#{subcommand}'"
+        )
+        STDERR.puts(
+          "Run 'galaxy config help' for usage"
+        )
+        exit(1)
+      end
+    end
+
+    private def self.show_config_help
+      puts <<-HELP
+      galaxy config - Manage shared Galaxy configuration
+
+      USAGE:
+        galaxy config                    Show current configuration
+        galaxy config help               Configuration documentation
+        galaxy config set KEY VALUE      Set a configuration value
+        galaxy config get KEY            Get a configuration value
+        galaxy config reset              Reset to defaults
+        galaxy config path               Show config file location
+
+      CONFIGURATION FILE:
+        #{CONFIG_FILE}
+
+      AVAILABLE SETTINGS:
+
+        backups.*                    Database backup settings
+          backups.enabled            Enable/disable backups (default: true)
+          backups.retention_days     Days to keep backups (default: 3)
+          backups.path               Custom backup directory (default: #{GALAXY_DIR / "data" / "backups"})
+
+      EXAMPLES:
+        galaxy config set backups.retention_days 7
+        galaxy config set backups.enabled false
+        galaxy config set backups.path /path/to/backups
+        galaxy config get backups.retention_days
+        galaxy config reset
+      HELP
+    end
+
+    private def self.config_set(args : Array(String))
+      if args.size < 2
+        STDERR.puts(
+          "Usage: galaxy config set KEY VALUE"
+        )
+        exit(1)
+      end
+
+      key = args[0]
+      value = args[1]
+
+      config = SharedConfig.load
+      begin
+        config.set(key, value)
+        config.save
+        puts "Set #{key} = #{value}"
+      rescue ex
+        STDERR.puts "Error: #{ex.message}"
+        exit(1)
+      end
+    end
+
+    private def self.config_get(args : Array(String))
+      if args.empty?
+        STDERR.puts(
+          "Usage: galaxy config get KEY"
+        )
+        exit(1)
+      end
+
+      key = args[0]
+      config = SharedConfig.load
+
+      begin
+        value = config.get(key)
+        puts value
+      rescue ex
+        STDERR.puts "Error: #{ex.message}"
+        exit(1)
+      end
+    end
+
+    private def self.config_reset
+      config = SharedConfig.default
+      config.save
+      puts "Configuration reset to defaults"
+      puts "  #{CONFIG_FILE}"
+    end
+
+    # --- Update command ---
 
     private def self.show_update_help
       puts <<-HELP
