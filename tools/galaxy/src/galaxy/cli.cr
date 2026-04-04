@@ -1,3 +1,4 @@
+require "file_utils"
 require "option_parser"
 require "uri"
 
@@ -84,6 +85,9 @@ module Galaxy
         return
       when "config"
         handle_config_command(rest)
+        return
+      when "backups"
+        handle_backups_command(rest, dryrun: dryrun)
         return
       end
 
@@ -460,6 +464,331 @@ module Galaxy
       config.save
       puts "Configuration reset to defaults"
       puts "  #{CONFIG_FILE}"
+    end
+
+    # --- Backups command ---
+
+    private def self.handle_backups_command(
+      args : Array(String),
+      dryrun : Bool = false,
+    )
+      if args.empty?
+        show_backups_help
+        return
+      end
+
+      subcommand = args[0]
+      rest = args[1..]? || [] of String
+
+      case subcommand
+      when "help", "-h", "--help"
+        show_backups_help
+      when "create"
+        # --dry-run can come from top-level parser or
+        # from subcommand args
+        dry = dryrun || rest.includes?("--dry-run")
+        backups_create(rest, dry_run: dry)
+      when "list"
+        backups_list
+      when "prune"
+        backups_prune
+      else
+        STDERR.puts(
+          "Error: Unknown backups command " \
+          "'#{subcommand}'"
+        )
+        STDERR.puts(
+          "Run 'galaxy backups help' for usage"
+        )
+        exit(1)
+      end
+    end
+
+    private def self.show_backups_help
+      puts <<-HELP
+      galaxy backups - Manage backups for all Galaxy tools and app data
+
+      USAGE:
+        galaxy backups create            Back up everything
+        galaxy backups create --dry-run  Show what would be backed up
+        galaxy backups list              List all backups
+        galaxy backups prune             Prune old backups
+        galaxy backups help              Show this help
+
+      CONFIGURATION:
+        Backup settings are in #{CONFIG_FILE}:
+          backups.enabled          Enable/disable backups (default: true)
+          backups.retention_days   Days to keep (default: 3)
+          backups.path             Custom backup directory
+
+        Use 'galaxy config set backups.retention_days 7' to configure.
+
+      DESCRIPTION:
+        Creates point-in-time backups of all Galaxy tool databases
+        (ledger, snapshots, artifacts, timeline, agents) and Galaxy.app
+        data files (sessions, settings, window state).
+
+        Tool databases are backed up via SQLite VACUUM INTO. App data
+        files are copied. All backups land in date-stamped directories
+        under the configured backup path.
+
+        Backups also run automatically on every fresh session start via
+        the ledger startup hook. This command provides manual control.
+      HELP
+    end
+
+    private def self.backups_create(
+      args : Array(String),
+      dry_run : Bool = false,
+    )
+      config = SharedConfig.load
+      backup_dir = config.effective_backup_path
+      today = Time.local.to_s("%Y-%m-%d")
+      date_dir = backup_dir / today
+
+      unless config.backups.enabled
+        puts "Backups are disabled."
+        puts(
+          "  Enable with: galaxy config set " \
+          "backups.enabled true"
+        )
+        return
+      end
+
+      if dry_run
+        puts "Dry run — no changes will be made.\n"
+        puts "Backup directory: #{date_dir}\n"
+        puts "Tool backups:"
+        BACKUP_TOOLS.each do |name, bin|
+          puts "  #{bin} backup --session-id 0"
+        end
+        puts "\nApp data copies:"
+        APP_DATA_FILES.each do |filename|
+          src = APP_SUPPORT_DIR / filename
+          dst_name = "galaxy-app-#{filename}"
+          if File.exists?(src)
+            puts "  #{src} → #{date_dir}/#{dst_name}"
+          else
+            puts(
+              "  #{src} → #{date_dir}/#{dst_name}" \
+              " (skip: not found)"
+            )
+          end
+        end
+        return
+      end
+
+      Dir.mkdir_p(date_dir) unless Dir.exists?(date_dir)
+
+      # Back up each sub-tool database
+      failures = [] of String
+      BACKUP_TOOLS.each do |name, bin|
+        unless File.exists?(bin)
+          STDERR.puts(
+            "  ✗ #{name}: binary not found " \
+            "(#{bin})"
+          )
+          failures << name
+          next
+        end
+
+        stderr_io = IO::Memory.new
+        status = Process.run(
+          bin.to_s,
+          args: ["backup", "--session-id", "0"],
+          output: Process::Redirect::Inherit,
+          error: stderr_io,
+        )
+
+        if status.success?
+          puts "  ✓ #{name}"
+        else
+          err = stderr_io.to_s.strip
+          STDERR.puts "  ✗ #{name}: backup failed"
+          STDERR.puts "    #{err}" unless err.empty?
+          failures << name
+        end
+      end
+
+      # Copy Galaxy.app data files
+      app_copied = 0
+      APP_DATA_FILES.each do |filename|
+        src = APP_SUPPORT_DIR / filename
+        next unless File.exists?(src)
+
+        dst = date_dir / "galaxy-app-#{filename}"
+        begin
+          File.copy(src, dst)
+          app_copied += 1
+        rescue ex
+          STDERR.puts(
+            "  ✗ app data: #{filename} " \
+            "(#{ex.message})"
+          )
+          failures << "app:#{filename}"
+        end
+      end
+
+      # Summary
+      tool_count = BACKUP_TOOLS.size - failures
+        .count { |f| !f.starts_with?("app:") }
+      puts(
+        "\nBackup complete: #{tool_count}/" \
+        "#{BACKUP_TOOLS.size} tools, " \
+        "#{app_copied} app files"
+      )
+      if failures.any?
+        puts(
+          "  Failures: #{failures.join(", ")}"
+        )
+        exit(1)
+      end
+    end
+
+    private def self.backups_list
+      config = SharedConfig.load
+      backup_dir = config.effective_backup_path
+      retention = config.backups.retention_days
+
+      unless Dir.exists?(backup_dir)
+        puts "No backups found."
+        puts "  Backup directory: #{backup_dir}"
+        return
+      end
+
+      # Collect date directories (YYYY-MM-DD pattern)
+      date_dirs = Dir.children(backup_dir)
+        .select { |d|
+          d.matches?(/^\d{4}-\d{2}-\d{2}$/) &&
+            Dir.exists?(backup_dir / d)
+        }
+        .sort
+        .reverse
+
+      if date_dirs.empty?
+        puts "No backups found."
+        puts "  Backup directory: #{backup_dir}"
+        return
+      end
+
+      puts(
+        "Backups (retention: " \
+        "#{retention} days)\n"
+      )
+
+      total_files = 0
+      total_size : Int64 = 0_i64
+
+      date_dirs.each do |date|
+        dir = backup_dir / date
+        files = Dir.children(dir)
+          .select { |f|
+            File.file?(dir / f)
+          }
+          .sort
+
+        next if files.empty?
+
+        puts "  #{date}/"
+        files.each do |f|
+          file_path = dir / f
+          size = File.size(file_path)
+          total_size += size
+          total_files += 1
+          puts(
+            "    #{f} " \
+            "(#{format_size(size)})"
+          )
+        end
+      end
+
+      puts(
+        "\n#{total_files} files, " \
+        "#{format_size(total_size)} total"
+      )
+    end
+
+    private def self.backups_prune
+      config = SharedConfig.load
+      backup_dir = config.effective_backup_path
+      retention = config.backups.retention_days
+
+      unless config.backups.enabled
+        puts "Backups are disabled."
+        return
+      end
+
+      # Call each tool's backup --prune-only
+      BACKUP_TOOLS.each do |name, bin|
+        next unless File.exists?(bin)
+
+        stderr_io = IO::Memory.new
+        status = Process.run(
+          bin.to_s,
+          args: ["backup", "--prune-only"],
+          output: Process::Redirect::Inherit,
+          error: stderr_io,
+        )
+
+        if status.success?
+          puts "  ✓ #{name}: pruned"
+        else
+          err = stderr_io.to_s.strip
+          STDERR.puts(
+            "  ✗ #{name}: prune failed"
+          )
+          STDERR.puts(
+            "    #{err}"
+          ) unless err.empty?
+        end
+      end
+
+      # Prune stale date directories that may still
+      # contain only app data .json files (not handled
+      # by sub-tool prune commands).
+      prune_stale_date_dirs(backup_dir, retention)
+
+      puts "\nPrune complete."
+    end
+
+    private def self.prune_stale_date_dirs(
+      backup_dir : Path,
+      retention_days : Int32,
+    )
+      return unless Dir.exists?(backup_dir)
+
+      cutoff = Time.local - retention_days.days
+
+      Dir.children(backup_dir).each do |entry|
+        next unless entry.matches?(
+                      /^\d{4}-\d{2}-\d{2}$/,
+                    )
+
+        dir_path = backup_dir / entry
+        next unless Dir.exists?(dir_path)
+
+        begin
+          date = Time.parse(
+            entry, "%Y-%m-%d", Time::Location::UTC
+          )
+          if date < cutoff
+            FileUtils.rm_rf(dir_path.to_s)
+          end
+        rescue Time::Format::Error
+          # Skip directories that look like dates but
+          # aren't valid
+        end
+      end
+    end
+
+    private def self.format_size(bytes : Int64) : String
+      if bytes < 1024
+        "#{bytes} B"
+      elsif bytes < 1024 * 1024
+        "%.1f KB" % (bytes / 1024.0)
+      else
+        "%.1f MB" % (bytes / (1024.0 * 1024.0))
+      end
     end
 
     # --- Update command ---

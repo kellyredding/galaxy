@@ -156,4 +156,50 @@ describe Galaxy::CLI do
       )
     end
   end
+
+  describe "BACKUP_TOOLS" do
+    it "contains all 5 sub-tool entries" do
+      Galaxy::BACKUP_TOOLS.size.should eq(5)
+    end
+
+    it "includes ledger, snapshots, artifacts, timeline, agents" do
+      names = Galaxy::BACKUP_TOOLS.map(&.[0])
+      names.should contain("ledger")
+      names.should contain("snapshots")
+      names.should contain("artifacts")
+      names.should contain("timeline")
+      names.should contain("agents")
+    end
+
+    it "has bin paths under GALAXY_DIR" do
+      Galaxy::BACKUP_TOOLS.each do |_, bin|
+        bin.to_s.should start_with(
+          Galaxy::GALAXY_DIR.to_s,
+        )
+      end
+    end
+  end
+
+  describe "APP_SUPPORT_DIR" do
+    it "respects env var override" do
+      # spec_helper doesn't set this, so it's the
+      # default. Just verify it's a Path.
+      Galaxy::APP_SUPPORT_DIR.should be_a(Path)
+    end
+  end
+
+  describe "APP_DATA_FILES" do
+    it "contains the 3 expected files" do
+      Galaxy::APP_DATA_FILES.size.should eq(3)
+      Galaxy::APP_DATA_FILES.should contain(
+        "sessions.json",
+      )
+      Galaxy::APP_DATA_FILES.should contain(
+        "settings.json",
+      )
+      Galaxy::APP_DATA_FILES.should contain(
+        "window-state.json",
+      )
+    end
+  end
 end
