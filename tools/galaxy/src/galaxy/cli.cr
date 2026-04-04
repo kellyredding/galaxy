@@ -18,6 +18,7 @@ module Galaxy
       dryrun = false
       resume_id : String? = nil
       print_prompt : String? = nil
+      session_id : String? = nil
 
       parser = OptionParser.new do |p|
         p.banner = build_banner
@@ -27,6 +28,7 @@ module Galaxy
 
         p.on("--vibe", "Launch persona in vibe mode") { vibe = true }
         p.on("--dry-run", "Show command without executing (delegates to claude-persona)") { dryrun = true }
+        p.on("--session-id ID", "Session ID for backups (default: 0)") { |id| session_id = id }
         p.on("-p PROMPT", "--print=PROMPT", "Print response and exit (delegates to claude-persona)") { |prompt| print_prompt = prompt }
         p.on("-r ID", "--resume=ID", "Resume a previous session") { |id| resume_id = id }
         p.on("-h", "--help", "Show this help") { show_help_flag = true }
@@ -87,7 +89,11 @@ module Galaxy
         handle_config_command(rest)
         return
       when "backups"
-        handle_backups_command(rest, dryrun: dryrun)
+        handle_backups_command(
+          rest,
+          dryrun: dryrun,
+          session_id: session_id,
+        )
         return
       end
 
@@ -471,6 +477,7 @@ module Galaxy
     private def self.handle_backups_command(
       args : Array(String),
       dryrun : Bool = false,
+      session_id : String? = nil,
     )
       if args.empty?
         show_backups_help
@@ -487,7 +494,12 @@ module Galaxy
         # --dry-run can come from top-level parser or
         # from subcommand args
         dry = dryrun || rest.includes?("--dry-run")
-        backups_create(rest, dry_run: dry)
+        sid = session_id || "0"
+        backups_create(
+          rest,
+          dry_run: dry,
+          session_id: sid,
+        )
       when "list"
         backups_list
       when "prune"
@@ -509,11 +521,12 @@ module Galaxy
       galaxy backups - Manage backups for all Galaxy tools and app data
 
       USAGE:
-        galaxy backups create            Back up everything
-        galaxy backups create --dry-run  Show what would be backed up
-        galaxy backups list              List all backups
-        galaxy backups prune             Prune old backups
-        galaxy backups help              Show this help
+        galaxy backups create                     Back up everything
+        galaxy backups create --session-id ID     Back up with a specific session ID
+        galaxy backups create --dry-run           Show what would be backed up
+        galaxy backups list                       List all backups
+        galaxy backups prune                      Prune old backups
+        galaxy backups help                       Show this help
 
       CONFIGURATION:
         Backup settings are in #{CONFIG_FILE}:
@@ -540,6 +553,7 @@ module Galaxy
     private def self.backups_create(
       args : Array(String),
       dry_run : Bool = false,
+      session_id : String = "0",
     )
       config = SharedConfig.load
       backup_dir = config.effective_backup_path
@@ -560,7 +574,7 @@ module Galaxy
         puts "Backup directory: #{date_dir}\n"
         puts "Tool backups:"
         BACKUP_TOOLS.each do |name, bin|
-          puts "  #{bin} backup --session-id 0"
+          puts "  #{bin} backup --session-id #{session_id}"
         end
         puts "\nApp data copies:"
         APP_DATA_FILES.each do |filename|
@@ -595,7 +609,7 @@ module Galaxy
         stderr_io = IO::Memory.new
         status = Process.run(
           bin.to_s,
-          args: ["backup", "--session-id", "0"],
+          args: ["backup", "--session-id", session_id],
           output: Process::Redirect::Inherit,
           error: stderr_io,
         )

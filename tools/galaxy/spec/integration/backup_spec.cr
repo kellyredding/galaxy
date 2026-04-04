@@ -198,6 +198,7 @@ describe "galaxy backups" do
         BackupTestHelper.run_backups(["help"])
       exit_code.should eq(0)
       stdout.should contain("galaxy backups")
+      stdout.should contain("--session-id")
       stdout.should contain("CONFIGURATION")
       stdout.should contain("DESCRIPTION")
     end
@@ -277,6 +278,80 @@ describe "galaxy backups" do
       stdout.should contain("✓ timeline")
       stdout.should contain("✓ agents")
       stdout.should contain("5/5 tools")
+    ensure
+      if stubs
+        BackupTestHelper.cleanup_logs(stubs)
+      end
+    end
+
+    it "defaults to session-id 0 when not specified" do
+      pending!("Binary not built") unless BackupTestHelper.binary_exists?
+
+      backup_dir = SPEC_GALAXY_DIR / "backups-sid-default"
+      Dir.mkdir_p(backup_dir)
+      BackupTestHelper.write_config(backup_dir)
+
+      stubs = BackupTestHelper.build_all_stubs
+      app_dir = SPEC_GALAXY_DIR / "app-support-sid-default"
+      BackupTestHelper.create_app_data(app_dir)
+
+      exit_code, _, _ =
+        BackupTestHelper.run_backups(
+          ["create"],
+          extra_env: BackupTestHelper.stub_env(stubs)
+            .merge({
+              "GALAXY_APP_SUPPORT_DIR" => app_dir.to_s,
+            }),
+        )
+      exit_code.should eq(0)
+
+      stubs.each do |name, paths|
+        log_path = paths[1]
+        lines = BackupTestHelper.read_log(log_path)
+        backup_lines = lines.select(&.starts_with?("backup ")
+        )
+        backup_lines.size.should eq(1)
+        backup_lines.first.should contain(
+          "--session-id 0",
+        )
+      end
+    ensure
+      if stubs
+        BackupTestHelper.cleanup_logs(stubs)
+      end
+    end
+
+    it "passes --session-id value to sub-tools" do
+      pending!("Binary not built") unless BackupTestHelper.binary_exists?
+
+      backup_dir = SPEC_GALAXY_DIR / "backups-sid-custom"
+      Dir.mkdir_p(backup_dir)
+      BackupTestHelper.write_config(backup_dir)
+
+      stubs = BackupTestHelper.build_all_stubs
+      app_dir = SPEC_GALAXY_DIR / "app-support-sid-custom"
+      BackupTestHelper.create_app_data(app_dir)
+
+      exit_code, _, _ =
+        BackupTestHelper.run_backups(
+          ["create", "--session-id", "42"],
+          extra_env: BackupTestHelper.stub_env(stubs)
+            .merge({
+              "GALAXY_APP_SUPPORT_DIR" => app_dir.to_s,
+            }),
+        )
+      exit_code.should eq(0)
+
+      stubs.each do |name, paths|
+        log_path = paths[1]
+        lines = BackupTestHelper.read_log(log_path)
+        backup_lines = lines.select(&.starts_with?("backup ")
+        )
+        backup_lines.size.should eq(1)
+        backup_lines.first.should contain(
+          "--session-id 42",
+        )
+      end
     ensure
       if stubs
         BackupTestHelper.cleanup_logs(stubs)
@@ -463,6 +538,68 @@ describe "galaxy backups" do
         stdout.should contain("galaxy-app-settings.json")
         stdout.should contain(
           "galaxy-app-window-state.json",
+        )
+      ensure
+        if stubs
+          BackupTestHelper.cleanup_logs(stubs)
+        end
+      end
+
+      it "shows session-id 0 by default in dry run" do
+        pending!("Binary not built") unless BackupTestHelper.binary_exists?
+
+        backup_dir = SPEC_GALAXY_DIR / "backups"
+        Dir.mkdir_p(backup_dir)
+        BackupTestHelper.write_config(backup_dir)
+
+        stubs = BackupTestHelper.build_all_stubs
+        app_dir = SPEC_GALAXY_DIR / "app-support-dry-sid0"
+        BackupTestHelper.create_app_data(app_dir)
+
+        exit_code, stdout, _ =
+          BackupTestHelper.run_backups(
+            ["create", "--dry-run"],
+            extra_env: BackupTestHelper.stub_env(stubs)
+              .merge({
+                "GALAXY_APP_SUPPORT_DIR" => app_dir.to_s,
+              }),
+          )
+        exit_code.should eq(0)
+        stdout.should contain(
+          "backup --session-id 0",
+        )
+      ensure
+        if stubs
+          BackupTestHelper.cleanup_logs(stubs)
+        end
+      end
+
+      it "shows custom session-id in dry run" do
+        pending!("Binary not built") unless BackupTestHelper.binary_exists?
+
+        backup_dir = SPEC_GALAXY_DIR / "backups"
+        Dir.mkdir_p(backup_dir)
+        BackupTestHelper.write_config(backup_dir)
+
+        stubs = BackupTestHelper.build_all_stubs
+        app_dir = SPEC_GALAXY_DIR / "app-support-dry-sid42"
+        BackupTestHelper.create_app_data(app_dir)
+
+        exit_code, stdout, _ =
+          BackupTestHelper.run_backups(
+            ["create", "--session-id", "42",
+             "--dry-run"],
+            extra_env: BackupTestHelper.stub_env(stubs)
+              .merge({
+                "GALAXY_APP_SUPPORT_DIR" => app_dir.to_s,
+              }),
+          )
+        exit_code.should eq(0)
+        stdout.should contain(
+          "backup --session-id 42",
+        )
+        stdout.should_not contain(
+          "backup --session-id 0",
         )
       ensure
         if stubs
