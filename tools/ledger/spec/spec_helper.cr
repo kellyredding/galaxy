@@ -227,21 +227,36 @@ def flush_wal
   end
 end
 
-# Flush WAL and verify a session is resolvable before
-# returning. Under concurrent eval fibers, a single
-# TRUNCATE checkpoint can race with other fibers'
-# writes, leaving the session invisible to subprocess
-# connections. Retries the checkpoint up to 3 times
-# with a brief sleep between attempts.
-def flush_wal_for(session_id : String, retries = 3)
+# Flush WAL and verify a session is visible to a new
+# process. The in-process connection can see WAL data
+# that a subprocess cannot — so verification must use
+# a subprocess (sqlite3) to prove the checkpoint landed.
+# Retries up to 5 times with 100ms sleeps to handle
+# concurrent fiber contention on the WAL.
+def flush_wal_for(session_id : String, retries = 5)
+  db_path = SPEC_DATABASE_PATH.to_s
+  query = "SELECT ledger_session_id " \
+          "FROM ledger_session_identifiers " \
+          "WHERE session_identifier = '#{session_id}'"
+
   retries.times do |i|
     GalaxyLedger::Database.open do |db|
       db.exec("PRAGMA wal_checkpoint(TRUNCATE)")
     end
-    resolved = GalaxyLedger::Database
-      .resolve_session_identifier(session_id)
-    return if resolved
-    sleep 50.milliseconds if i < retries - 1
+
+    # Verify via subprocess — proves a new process
+    # connection sees the data.
+    output = IO::Memory.new
+    status = Process.run(
+      "sqlite3",
+      [db_path, query],
+      output: output,
+      error: Process::Redirect::Close,
+    )
+    result = output.to_s.strip
+    return if status.success? && !result.empty?
+
+    sleep 100.milliseconds if i < retries - 1
   end
 end
 
