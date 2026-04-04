@@ -440,8 +440,8 @@ module GalaxyArtifacts
 
       backup_file = date_dir / "artifacts_#{session_id}.db"
 
-      # Skip if backup already exists (idempotent — same session starting twice)
-      return backup_file if File.exists?(backup_file)
+      # Remove stale backup file if it exists so VACUUM INTO can overwrite.
+      File.delete(backup_file) if File.exists?(backup_file)
 
       open do |db|
         db.exec("VACUUM INTO '#{backup_file}'")

@@ -44,21 +44,35 @@ describe GalaxyArtifacts::Database do
       end
     end
 
-    it "is idempotent — returns existing path if already backed up" do
+    it "overwrites existing backup when called twice with the same session ID" do
       backup_dir = Path.new(Dir.tempdir) / "galaxy-artifacts-backup-test-#{Random.rand(100000)}"
       begin
         GalaxyArtifacts::Database.save_artifact(
-          1_i64, title: "Idempotent", artifact_type: "text", mime_type: "text/plain",
+          1_i64, title: "Overwrite test", artifact_type: "text", mime_type: "text/plain",
           original_filename: "a.txt", stored_path: "", source_path: "/tmp/a.txt",
           file_size: 10_i64, content_hash: "h1",
         )
 
         r1 = GalaxyArtifacts::Database.backup(backup_dir, 1_i64)
-        r2 = GalaxyArtifacts::Database.backup(backup_dir, 1_i64)
-
         r1.should_not be_nil
+        first_mtime = File.info(r1.not_nil!).modification_time
+
+        # Add more data so the backup content changes
+        GalaxyArtifacts::Database.save_artifact(
+          1_i64, title: "Extra row", artifact_type: "text", mime_type: "text/plain",
+          original_filename: "b.txt", stored_path: "", source_path: "/tmp/b.txt",
+          file_size: 20_i64, content_hash: "h2",
+        )
+
+        # Small delay to ensure mtime differs
+        sleep 50.milliseconds
+
+        r2 = GalaxyArtifacts::Database.backup(backup_dir, 1_i64)
         r2.should_not be_nil
-        r1.not_nil!.to_s.should eq(r2.not_nil!.to_s)
+        r2.not_nil!.to_s.should eq(r1.not_nil!.to_s)
+
+        second_mtime = File.info(r2.not_nil!).modification_time
+        second_mtime.should be > first_mtime
       ensure
         FileUtils.rm_rf(backup_dir.to_s)
       end
