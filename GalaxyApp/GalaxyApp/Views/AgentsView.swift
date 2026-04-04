@@ -710,18 +710,12 @@ struct AgentRunningBadge: View {
             Text("\(session.runningAgentCount)")
                 .font(
                     .system(
-                        size: 10,
+                        size: 12,
                         weight: .bold,
                         design: .monospaced
                     )
                 )
-                .foregroundColor(.black.opacity(0.8))
-                .frame(minWidth: 12)
-                .padding(.horizontal, 2)
-                .padding(.vertical, 1)
-                .background(
-                    Capsule().fill(Color.green)
-                )
+                .foregroundColor(.green)
         }
     }
 }
