@@ -32,21 +32,24 @@ Dir.mkdir_p(SPEC_GALAXY_DIR / "bin")
 File.write(SPEC_TIMELINE_NOOP, "#!/bin/sh\nexit 0\n")
 File.chmod(SPEC_TIMELINE_NOOP, 0o755)
 
-# Disable backups in test config to prevent real backup operations.
-# This is also used by Spec.before_each to reset config between tests.
-# Must include all Config fields so Config.from_json succeeds (otherwise
-# it falls back to Config.new which has backups.enabled = true).
+# Tool-level config (no longer includes backup settings).
 SPEC_DEFAULT_CONFIG = {
   "_schema_version" => "0.0.0",
   "enabled"         => true,
   "auto_detect"     => true,
+}.to_json
+File.write(SPEC_CONFIG_DIR / "config.json", SPEC_DEFAULT_CONFIG)
+
+# Shared Galaxy config with backups disabled by default for test safety.
+SPEC_DEFAULT_SHARED_CONFIG = {
+  "_schema_version" => "0.0.1",
   "backups"         => {
     "enabled"        => false,
     "retention_days" => 3,
     "path"           => "",
   },
 }.to_json
-File.write(SPEC_CONFIG_DIR / "config.json", SPEC_DEFAULT_CONFIG)
+File.write(SPEC_GALAXY_DIR / "config.json", SPEC_DEFAULT_SHARED_CONFIG)
 
 # Skip CLI auto-run when loading module for specs
 ENV["GALAXY_ARTIFACTS_SKIP_CLI"] = "1"
@@ -127,8 +130,9 @@ Spec.before_each do
     # DB may not exist yet or table may not exist for early specs
   end
 
-  # Reset config file to defaults.
+  # Reset config files to defaults.
   File.write(SPEC_CONFIG_DIR / "config.json", SPEC_DEFAULT_CONFIG)
+  File.write(SPEC_GALAXY_DIR / "config.json", SPEC_DEFAULT_SHARED_CONFIG)
 
   # Clean up artifact storage directory
   artifacts_dir = SPEC_DATA_DIR / "artifacts"

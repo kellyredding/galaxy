@@ -772,19 +772,19 @@ module GalaxyArtifacts
         i += 1
       end
 
-      config = Config.load
+      shared_config = SharedBackupConfig.load
 
       if list_mode
-        backup_list(config)
+        backup_list(shared_config)
       elsif prune_only
-        backup_prune_only(config)
+        backup_prune_only(shared_config)
       else
-        backup_create_and_prune(config, session_id)
+        backup_create_and_prune(shared_config, session_id)
       end
     end
 
-    private def self.backup_list(config : Config)
-      backup_dir = config.effective_backup_path
+    private def self.backup_list(shared_config : SharedBackupConfig)
+      backup_dir = shared_config.effective_backup_path
 
       unless Dir.exists?(backup_dir)
         puts "No backups found."
@@ -814,7 +814,7 @@ module GalaxyArtifacts
 
       date_dirs.sort!.reverse!
 
-      puts "Backups in #{backup_dir} (retention: #{config.backups.retention_days} days)"
+      puts "Backups in #{backup_dir} (retention: #{shared_config.backups.retention_days} days)"
       puts ""
 
       total_count = 0
@@ -850,13 +850,13 @@ module GalaxyArtifacts
       puts "  Total: #{total_count} #{total_count == 1 ? "backup" : "backups"}, #{format_size(total_bytes)}"
     end
 
-    private def self.backup_create_and_prune(config : Config, session_id : Int64)
-      unless config.backups.enabled
-        puts "Backups are disabled. Enable with: galaxy-artifacts config set backups.enabled true"
+    private def self.backup_create_and_prune(shared_config : SharedBackupConfig, session_id : Int64)
+      unless shared_config.backups.enabled
+        puts "Backups are disabled. Enable with: galaxy config set backups.enabled true"
         return
       end
 
-      backup_dir = config.effective_backup_path
+      backup_dir = shared_config.effective_backup_path
 
       result = Database.backup(backup_dir, session_id)
       if result
@@ -866,15 +866,15 @@ module GalaxyArtifacts
         STDERR.puts "Backup failed."
       end
 
-      pruned = Database.prune_backups(backup_dir, config.backups.retention_days)
+      pruned = Database.prune_backups(backup_dir, shared_config.backups.retention_days)
       if pruned > 0
         puts "Pruned #{pruned} old backup #{pruned == 1 ? "directory" : "directories"}."
       end
     end
 
-    private def self.backup_prune_only(config : Config)
-      backup_dir = config.effective_backup_path
-      pruned = Database.prune_backups(backup_dir, config.backups.retention_days)
+    private def self.backup_prune_only(shared_config : SharedBackupConfig)
+      backup_dir = shared_config.effective_backup_path
+      pruned = Database.prune_backups(backup_dir, shared_config.backups.retention_days)
       if pruned > 0
         puts "Pruned #{pruned} old backup #{pruned == 1 ? "directory" : "directories"}."
       else
@@ -1183,9 +1183,11 @@ module GalaxyArtifacts
         --prune-only      Only prune old backups, don't create a new one
 
       CONFIGURATION:
-        backups.enabled          Enable/disable automatic backups (default: true)
-        backups.retention_days   Days of backups to keep (default: 3)
-        backups.path             Custom backup directory (default: ~/.claude/galaxy/data/backups/artifacts)
+        Backup settings are managed by the shared Galaxy config.
+        Use 'galaxy config' to view and 'galaxy config set' to change:
+          galaxy config set backups.enabled true
+          galaxy config set backups.retention_days 7
+          galaxy config set backups.path /path/to/backups
 
       DESCRIPTION:
         Creates point-in-time database backups using SQLite VACUUM INTO.
