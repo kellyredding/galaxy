@@ -11,43 +11,12 @@ module GalaxySnapshots
     property max_per_session : Int32
     property editor : String
 
-    @[JSON::Field(key: "backups")]
-    property backups : BackupsConfig
-
     def initialize(
       @schema_version = GalaxySnapshots::VERSION,
       @inline_char_cap = 15000,
       @max_per_session = 10,
       @editor = "",
-      @backups = BackupsConfig.new,
     )
-    end
-
-    class BackupsConfig
-      include JSON::Serializable
-
-      property enabled : Bool
-      property retention_days : Int32
-      property path : String
-
-      def initialize(
-        @enabled = true,
-        @retention_days = 3,
-        @path = "",
-      )
-      end
-
-      def backup_dir : Path
-        if path.empty?
-          GalaxySnapshots::DATA_DIR / "backups" / "snapshots"
-        else
-          Path.new(path)
-        end
-      end
-    end
-
-    def effective_backup_path : Path
-      backups.backup_dir
     end
 
     def self.load : Config

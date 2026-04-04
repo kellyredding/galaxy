@@ -34,22 +34,26 @@ File.write(
 )
 File.chmod(SPEC_TIMELINE_NOOP, 0o755)
 
-# Disable backups in test config to prevent real backup operations.
-# This is also used by Spec.before_each to reset config between tests.
-# Must include all Config fields so Config.from_json succeeds (otherwise
-# it falls back to Config.new which has backups.enabled = true).
+# Must include all Config fields so Config.from_json succeeds.
 SPEC_DEFAULT_CONFIG = {
   "_schema_version" => "0.0.0",
   "inline_char_cap" => 15000,
   "max_per_session" => 10,
   "editor"          => "",
+}.to_json
+File.write(SPEC_CONFIG_DIR / "config.json", SPEC_DEFAULT_CONFIG)
+
+# Disable backups in the shared Galaxy config to prevent real backup
+# operations during tests. The shared config lives at GALAXY_DIR/config.json.
+SPEC_DEFAULT_SHARED_CONFIG = {
+  "_schema_version" => "0.0.1",
   "backups"         => {
     "enabled"        => false,
     "retention_days" => 3,
     "path"           => "",
   },
 }.to_json
-File.write(SPEC_CONFIG_DIR / "config.json", SPEC_DEFAULT_CONFIG)
+File.write(SPEC_GALAXY_DIR / "config.json", SPEC_DEFAULT_SHARED_CONFIG)
 
 # Skip CLI auto-run when loading module for specs
 ENV["GALAXY_SNAPSHOTS_SKIP_CLI"] = "1"
@@ -136,8 +140,9 @@ Spec.before_each do
     # DB may not exist yet or table may not exist for early specs
   end
 
-  # Reset config file to defaults.
+  # Reset config files to defaults.
   File.write(SPEC_CONFIG_DIR / "config.json", SPEC_DEFAULT_CONFIG)
+  File.write(SPEC_GALAXY_DIR / "config.json", SPEC_DEFAULT_SHARED_CONFIG)
 end
 
 # Flush WAL to main DB so subprocess connections see recently committed data.
