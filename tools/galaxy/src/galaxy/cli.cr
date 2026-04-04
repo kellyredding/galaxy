@@ -663,7 +663,6 @@ module Galaxy
             Dir.exists?(backup_dir / d)
         }
         .sort
-        .reverse
 
       if date_dirs.empty?
         puts "No backups found."

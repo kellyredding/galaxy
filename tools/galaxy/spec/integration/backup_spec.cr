@@ -626,9 +626,9 @@ describe "galaxy backups" do
         BackupTestHelper.run_backups(["list"])
       exit_code.should eq(0)
 
-      # Newest first
-      stdout.index("2026-04-04").not_nil!.should be < (
-        stdout.index("2026-04-03").not_nil!
+      # Chronological order (oldest first)
+      stdout.index("2026-04-03").not_nil!.should be < (
+        stdout.index("2026-04-04").not_nil!
       )
     end
   end
