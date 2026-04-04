@@ -1,0 +1,208 @@
+# Bash completion for galaxy CLI
+# https://github.com/kellyredding/galaxy
+#
+# Installation:
+#   source /path/to/galaxy.bash
+#
+# Or copy to your bash-completion directory:
+#   cp galaxy.bash /etc/bash_completion.d/galaxy
+#   cp galaxy.bash /usr/local/etc/bash_completion.d/galaxy  # macOS with Homebrew
+#
+# If you use an alias, add completion for it too:
+#   alias vibe='galaxy'
+#   complete -o default -F _galaxy vibe
+
+_galaxy() {
+    local cur prev words cword
+    _init_completion || return
+
+    # Galaxy's own commands (always available)
+    local galaxy_commands="config backups update help version"
+
+    # Commands delegated to claude-persona
+    local persona_commands="generate list show rename remove mcp"
+
+    local mcp_commands="available list import import-all show remove"
+    local update_commands="preview force help"
+    local config_commands="set get reset path help"
+    local config_keys="backups.enabled backups.retention_days backups.path"
+    local backups_commands="create list prune help"
+
+    # Galaxy flags (subset of claude-persona flags that Galaxy parses)
+    local global_opts="--vibe --dry-run --print --resume --help --version -p -r -h -v"
+
+    # Persona-specific flags (after a persona name)
+    local persona_opts="--vibe --dry-run --resume --print -p -r"
+
+    # Check if claude-persona is installed
+    local has_cp=false
+    command -v claude-persona &>/dev/null && has_cp=true
+
+    # Get persona names dynamically (delegates to claude-persona)
+    _galaxy_personas() {
+        $has_cp || return
+        claude-persona list 2>/dev/null | grep -E '^  [a-zA-Z0-9_-]+ \(' | sed 's/^  //' | cut -d' ' -f1
+    }
+
+    # Get imported MCP config names dynamically
+    _galaxy_mcps() {
+        $has_cp || return
+        claude-persona mcp list 2>/dev/null | grep -E '^  [a-zA-Z0-9_-]+ \(' | sed 's/^  //' | cut -d' ' -f1
+    }
+
+    # Get available MCP names to import dynamically
+    _galaxy_mcps_available() {
+        $has_cp || return
+        claude-persona mcp available 2>/dev/null | grep -E '^  [a-zA-Z0-9_-]+ \(' | sed 's/^  //' | cut -d' ' -f1
+    }
+
+    # Check if a word is a known command (Galaxy or delegated)
+    _galaxy_is_command() {
+        local word="$1"
+        local all_commands="${galaxy_commands} ${persona_commands}"
+        [[ " ${all_commands} " == *" ${word} "* ]]
+    }
+
+    case "${cword}" in
+        1)
+            # First argument: commands, persona names, or global flags
+            if [[ "${cur}" == -* ]]; then
+                COMPREPLY=($(compgen -W "${global_opts}" -- "${cur}"))
+            else
+                if $has_cp; then
+                    local personas=$(_galaxy_personas)
+                    COMPREPLY=($(compgen -W "${galaxy_commands} ${persona_commands} ${personas}" -- "${cur}"))
+                else
+                    COMPREPLY=($(compgen -W "${galaxy_commands}" -- "${cur}"))
+                fi
+            fi
+            ;;
+        2)
+            case "${prev}" in
+                config)
+                    COMPREPLY=($(compgen -W "${config_commands}" -- "${cur}"))
+                    ;;
+                backups)
+                    COMPREPLY=($(compgen -W "${backups_commands}" -- "${cur}"))
+                    ;;
+                show|remove)
+                    local personas=$(_galaxy_personas)
+                    COMPREPLY=($(compgen -W "${personas}" -- "${cur}"))
+                    ;;
+                rename)
+                    local personas=$(_galaxy_personas)
+                    COMPREPLY=($(compgen -W "${personas}" -- "${cur}"))
+                    ;;
+                mcp)
+                    COMPREPLY=($(compgen -W "${mcp_commands}" -- "${cur}"))
+                    ;;
+                update)
+                    COMPREPLY=($(compgen -W "${update_commands}" -- "${cur}"))
+                    ;;
+                generate)
+                    if [[ "${cur}" == -* ]]; then
+                        COMPREPLY=($(compgen -W "--dry-run" -- "${cur}"))
+                    fi
+                    ;;
+                --resume|-r)
+                    # User types UUID — no completion
+                    COMPREPLY=()
+                    ;;
+                --print|-p)
+                    # User types prompt — no completion
+                    COMPREPLY=()
+                    ;;
+                list|help|version)
+                    if [[ "${cur}" == -* ]]; then
+                        COMPREPLY=($(compgen -W "${global_opts}" -- "${cur}"))
+                    fi
+                    ;;
+                *)
+                    # After a persona name — offer persona-specific flags
+                    if [[ "${cur}" == -* ]]; then
+                        COMPREPLY=($(compgen -W "${persona_opts}" -- "${cur}"))
+                    fi
+                    ;;
+            esac
+            ;;
+        3)
+            local cmd="${words[1]}"
+            local subcmd="${words[2]}"
+
+            case "${cmd}" in
+                config)
+                    case "${subcmd}" in
+                        set|get)
+                            # Offer config key names
+                            COMPREPLY=($(compgen -W "${config_keys}" -- "${cur}"))
+                            ;;
+                        *)
+                            if [[ "${cur}" == -* ]]; then
+                                COMPREPLY=($(compgen -W "${global_opts}" -- "${cur}"))
+                            fi
+                            ;;
+                    esac
+                    ;;
+                backups)
+                    case "${subcmd}" in
+                        create)
+                            if [[ "${cur}" == -* ]]; then
+                                COMPREPLY=($(compgen -W "--dry-run" -- "${cur}"))
+                            fi
+                            ;;
+                        *)
+                            if [[ "${cur}" == -* ]]; then
+                                COMPREPLY=($(compgen -W "${global_opts}" -- "${cur}"))
+                            fi
+                            ;;
+                    esac
+                    ;;
+                mcp)
+                    case "${subcmd}" in
+                        show|remove)
+                            local mcps=$(_galaxy_mcps)
+                            COMPREPLY=($(compgen -W "${mcps}" -- "${cur}"))
+                            ;;
+                        import)
+                            local mcps=$(_galaxy_mcps_available)
+                            COMPREPLY=($(compgen -W "${mcps}" -- "${cur}"))
+                            ;;
+                        *)
+                            if [[ "${cur}" == -* ]]; then
+                                COMPREPLY=($(compgen -W "${global_opts}" -- "${cur}"))
+                            fi
+                            ;;
+                    esac
+                    ;;
+                rename)
+                    # Second arg to rename is the new name — no completion
+                    COMPREPLY=()
+                    ;;
+                *)
+                    # After persona + flag (e.g., galaxy dev --resume <uuid>)
+                    if [[ "${prev}" == "--resume" || "${prev}" == "-r" ]]; then
+                        COMPREPLY=()
+                    elif [[ "${prev}" == "--print" || "${prev}" == "-p" ]]; then
+                        COMPREPLY=()
+                    elif [[ "${cur}" == -* ]]; then
+                        COMPREPLY=($(compgen -W "${persona_opts}" -- "${cur}"))
+                    fi
+                    ;;
+            esac
+            ;;
+        *)
+            if [[ "${prev}" == "--resume" || "${prev}" == "-r" ]]; then
+                COMPREPLY=()
+            elif [[ "${prev}" == "--print" || "${prev}" == "-p" ]]; then
+                COMPREPLY=()
+            elif [[ "${cur}" == -* ]]; then
+                COMPREPLY=($(compgen -W "${persona_opts}" -- "${cur}"))
+            fi
+            ;;
+    esac
+
+    return 0
+}
+
+# Register the completion function
+complete -o default -F _galaxy galaxy
