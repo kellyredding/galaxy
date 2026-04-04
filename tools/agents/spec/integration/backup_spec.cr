@@ -47,6 +47,49 @@ describe "CLI backup command", tags: "integration" do
       end
     end
 
+    it "overwrites backup when called twice with same session" do
+      backup_dir = Path.new(Dir.tempdir) /
+                   "galaxy-agents-backup-overwrite-#{
+  Random.rand(100000)
+}"
+      begin
+        shared_config = {
+          "_schema_version" => "0.0.1",
+          "backups"         => {
+            "enabled"        => true,
+            "retention_days" => 3,
+            "path"           => backup_dir.to_s,
+          },
+        }.to_json
+        File.write(
+          SPEC_GALAXY_DIR / "config.json",
+          shared_config,
+        )
+
+        run_binary([
+          "start", "--ledger-session-id", "1",
+          "--agent-id", "b2",
+          "--agent-type", "Explore",
+        ])
+
+        result1 = run_binary([
+          "backup", "--session-id", "1",
+        ])
+
+        result1[:status].should eq(0)
+        result1[:output].should contain("Backup created")
+
+        result2 = run_binary([
+          "backup", "--session-id", "1",
+        ])
+
+        result2[:status].should eq(0)
+        result2[:output].should contain("Backup created")
+      ensure
+        FileUtils.rm_rf(backup_dir.to_s)
+      end
+    end
+
     it "shows disabled message when backups disabled" do
       result = run_binary([
         "backup", "--session-id", "1",

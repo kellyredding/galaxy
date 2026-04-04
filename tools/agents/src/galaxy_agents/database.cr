@@ -481,7 +481,7 @@ module GalaxyAgents
       Dir.mkdir_p(date_dir) unless Dir.exists?(date_dir)
 
       backup_file = date_dir / "agents_#{session_id}.db"
-      return backup_file if File.exists?(backup_file)
+      File.delete(backup_file) if File.exists?(backup_file)
 
       open do |db|
         db.exec("VACUUM INTO '#{backup_file}'")

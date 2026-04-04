@@ -42,7 +42,7 @@ describe GalaxyAgents::Database do
       end
     end
 
-    it "is idempotent" do
+    it "overwrites when called twice with same session" do
       backup_dir = Path.new(Dir.tempdir) /
                    "galaxy-agents-backup-test-#{
   Random.rand(100000)
@@ -55,15 +55,20 @@ describe GalaxyAgents::Database do
         r1 = GalaxyAgents::Database.backup(
           backup_dir, 1_i64,
         )
+        r1.should_not be_nil
+        backup_path = r1.not_nil!
+        File.exists?(backup_path).should be_true
+        size1 = File.size(backup_path)
+
         r2 = GalaxyAgents::Database.backup(
           backup_dir, 1_i64,
         )
-
-        r1.should_not be_nil
         r2.should_not be_nil
-        r1.not_nil!.to_s.should eq(
-          r2.not_nil!.to_s,
+        r2.not_nil!.to_s.should eq(
+          backup_path.to_s,
         )
+        File.exists?(backup_path).should be_true
+        File.size(backup_path).should be > 0
       ensure
         FileUtils.rm_rf(backup_dir.to_s)
       end
