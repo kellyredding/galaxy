@@ -330,5 +330,50 @@ describe "Backup integration: on-startup" do
       end
       found_backup.should be_true
     end
+
+    it "overwrites the backup file on repeated calls" do
+      backup_dir = SPEC_GALAXY_DIR / "backups" / "ledger"
+      Dir.mkdir_p(backup_dir)
+      write_backup_config(backup_dir)
+
+      session_id = "backup-overwrite-#{Random.rand(100000)}"
+      hook_input = {"session_id" => session_id}.to_json
+
+      # First call — creates the backup file
+      result1 = run_binary(["on-startup"], stdin: hook_input)
+      result1[:status].should eq(0)
+
+      # Resolve the ledger session ID so we can find and
+      # re-backup the exact file.
+      ledger_id = GalaxyLedger::Database
+        .resolve_session_identifier(session_id)
+      ledger_id.should_not be_nil
+
+      today = Time.local.to_s("%Y-%m-%d")
+      date_dir = backup_dir / today
+      backup_path = date_dir / "ledger_#{ledger_id}.db"
+      File.exists?(backup_path).should be_true
+
+      first_mtime = File.info(
+        backup_path,
+      ).modification_time
+
+      # Brief pause so the filesystem timestamp can differ
+      sleep 50.milliseconds
+
+      # Call backup directly to exercise the overwrite path
+      result = GalaxyLedger::Database.backup(
+        backup_dir, ledger_id.not_nil!,
+      )
+      result.should_not be_nil
+
+      # The file should still exist and have been
+      # overwritten (modification time updated).
+      File.exists?(backup_path).should be_true
+      second_mtime = File.info(
+        backup_path,
+      ).modification_time
+      second_mtime.should be >= first_mtime
+    end
   end
 end

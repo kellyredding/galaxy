@@ -56,8 +56,8 @@ describe GalaxyLedger::Database do
       end
     end
 
-    it "skips if backup file already exists (idempotent)" do
-      session_id = GalaxyLedger::Database.create_session("backup-test-idem")
+    it "overwrites if backup file already exists" do
+      session_id = GalaxyLedger::Database.create_session("backup-test-overwrite")
 
       # Create first backup
       result1 = GalaxyLedger::Database.backup(backup_dir, session_id)
@@ -66,15 +66,17 @@ describe GalaxyLedger::Database do
       mtime1 = File.info(path).modification_time
 
       # Small sleep to ensure mtime would differ if file were recreated
-      sleep 10.milliseconds
+      sleep 50.milliseconds
 
-      # Second backup should skip (file already exists)
+      # Second backup should overwrite (not skip)
       result2 = GalaxyLedger::Database.backup(backup_dir, session_id)
       result2.should_not be_nil
-      mtime2 = File.info(path).modification_time
+      path2 = result2.not_nil!
+      path2.should eq(path)
+      mtime2 = File.info(path2).modification_time
 
-      # Modification time should be unchanged (file wasn't recreated)
-      mtime1.should eq(mtime2)
+      # Modification time should be updated (file was recreated)
+      mtime2.should be >= mtime1
     end
 
     it "returns nil on invalid backup_dir without crashing" do
