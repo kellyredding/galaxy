@@ -15,13 +15,6 @@ module GalaxyLedger
     # PID is not used for resolution here — on startup the PID is always
     # a new process, so any PID match would be stale.
     class OnStartup
-      SIBLING_BACKUP_TOOLS = {
-        SNAPSHOTS_BIN.to_s,
-        ARTIFACTS_BIN.to_s,
-        TIMELINE_BIN.to_s,
-        AGENTS_BIN.to_s,
-      }
-
       @session_identifier : String?
 
       def run
@@ -74,41 +67,21 @@ module GalaxyLedger
             end
           end
 
-          # Automatic database backup on fresh session start only.
-          # Resumes reuse the existing session — no backup needed.
+          # Delegate all backup orchestration to the Galaxy CLI.
           begin
-            shared = SharedBackupConfig.load
-            if shared.backups.enabled
-              backup_dir = shared.effective_backup_path
-              Database.backup(backup_dir, ledger_session_id)
-              Database.prune_backups(
-                backup_dir,
-                shared.backups.retention_days,
-              )
+            Process.run(
+              GALAXY_BIN.to_s,
+              ["backups", "create", "--session-id", ledger_session_id.to_s],
+              output: Process::Redirect::Close,
+              error: Process::Redirect::Pipe,
+            ) do |proc|
+              stderr = proc.error.gets_to_end
+              unless proc.wait.success?
+                STDERR.puts "[galaxy-ledger] Backup failed: #{stderr.strip}"
+              end
             end
           rescue ex
             STDERR.puts "[galaxy-ledger] Backup error: #{ex.message}"
-          end
-
-          # Back up sibling tool databases.
-          # Each tool's `backup` command loads its own config, creates
-          # the backup, and prunes old ones — same as the ledger block
-          # above but kept in-process in each tool's binary.
-          SIBLING_BACKUP_TOOLS.each do |tool|
-            begin
-              Process.run(
-                tool, ["backup", "--session-id", ledger_session_id.to_s],
-                output: Process::Redirect::Close,
-                error: Process::Redirect::Pipe,
-              ) do |proc|
-                stderr = proc.error.gets_to_end
-                unless proc.wait.success?
-                  STDERR.puts "[galaxy-ledger] #{tool} backup failed: #{stderr.strip}"
-                end
-              end
-            rescue ex
-              STDERR.puts "[galaxy-ledger] #{tool} backup error: #{ex.message}"
-            end
           end
         end
 

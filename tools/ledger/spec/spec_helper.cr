@@ -43,6 +43,11 @@ SPEC_ARTIFACTS_NOOP = SPEC_GALAXY_DIR / "bin" /
                       "galaxy-artifacts"
 ENV["GALAXY_ARTIFACTS_BIN"] = SPEC_ARTIFACTS_NOOP.to_s
 
+# Point galaxy binary to a no-op so backup delegation calls
+# don't hit the real galaxy CLI during tests.
+SPEC_GALAXY_NOOP = SPEC_GALAXY_DIR / "bin" / "galaxy"
+ENV["GALAXY_BIN"] = SPEC_GALAXY_NOOP.to_s
+
 # Ensure test directories exist
 Dir.mkdir_p(SPEC_CLAUDE_CONFIG_DIR)
 Dir.mkdir_p(SPEC_GALAXY_DIR)
@@ -57,6 +62,8 @@ File.write(SPEC_SNAPSHOTS_NOOP, "#!/bin/sh\nexit 0\n")
 File.chmod(SPEC_SNAPSHOTS_NOOP, 0o755)
 File.write(SPEC_ARTIFACTS_NOOP, "#!/bin/sh\nexit 0\n")
 File.chmod(SPEC_ARTIFACTS_NOOP, 0o755)
+File.write(SPEC_GALAXY_NOOP, "#!/bin/sh\nexit 0\n")
+File.chmod(SPEC_GALAXY_NOOP, 0o755)
 
 # Disable extraction in test config to prevent real Claude CLI calls.
 # Generated from Config.default to include all required fields so
@@ -128,6 +135,7 @@ def run_binary(
     "GALAXY_AGENTS_BIN"           => SPEC_AGENTS_NOOP.to_s,
     "GALAXY_SNAPSHOTS_BIN"        => SPEC_SNAPSHOTS_NOOP.to_s,
     "GALAXY_ARTIFACTS_BIN"        => SPEC_ARTIFACTS_NOOP.to_s,
+    "GALAXY_BIN"                  => SPEC_GALAXY_NOOP.to_s,
     "HOME"                        => ENV["HOME"],
     "PATH"                        => ENV["PATH"],
     # Clear CLAUDE_CLI_SESSION_ID so subprocesses don't inherit it from

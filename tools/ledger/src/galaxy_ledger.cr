@@ -68,6 +68,12 @@ module GalaxyLedger
       (GALAXY_DIR / "bin" / "galaxy-artifacts").to_s
     )
   )
+  GALAXY_BIN = Path.new(
+    ENV.fetch(
+      "GALAXY_BIN",
+      (GALAXY_DIR / "bin" / "galaxy").to_s
+    )
+  )
 end
 
 # Only run CLI when executed directly, not when required by specs
