@@ -3517,19 +3517,19 @@ module GalaxyLedger
         i += 1
       end
 
-      config = Config.load
+      shared = SharedBackupConfig.load
 
       if list_mode
-        backup_list(config)
+        backup_list(shared)
       elsif prune_only
-        backup_prune_only(config)
+        backup_prune_only(shared)
       else
-        backup_create_and_prune(config, session_id)
+        backup_create_and_prune(shared, session_id)
       end
     end
 
-    private def self.backup_list(config : Config)
-      backup_dir = config.effective_backup_path
+    private def self.backup_list(shared : SharedBackupConfig)
+      backup_dir = shared.effective_backup_path
 
       unless Dir.exists?(backup_dir)
         puts "No backups found."
@@ -3559,7 +3559,7 @@ module GalaxyLedger
 
       date_dirs.sort!.reverse!
 
-      puts "Backups in #{Hooks::Helpers.shorten_home_path(backup_dir.to_s)} (retention: #{config.backups.retention_days} days)"
+      puts "Backups in #{Hooks::Helpers.shorten_home_path(backup_dir.to_s)} (retention: #{shared.backups.retention_days} days)"
       puts ""
 
       total_count = 0
@@ -3595,13 +3595,13 @@ module GalaxyLedger
       puts "  Total: #{total_count} #{total_count == 1 ? "backup" : "backups"}, #{format_size(total_bytes)}"
     end
 
-    private def self.backup_create_and_prune(config : Config, session_id : Int64)
-      unless config.backups.enabled
-        puts "Backups are disabled. Enable with: galaxy-ledger config set backups.enabled true"
+    private def self.backup_create_and_prune(shared : SharedBackupConfig, session_id : Int64)
+      unless shared.backups.enabled
+        puts "Backups are disabled. Enable with: galaxy config set backups.enabled true"
         return
       end
 
-      backup_dir = config.effective_backup_path
+      backup_dir = shared.effective_backup_path
 
       result = Database.backup(backup_dir, session_id)
       if result
@@ -3611,15 +3611,15 @@ module GalaxyLedger
         STDERR.puts "Backup failed."
       end
 
-      pruned = Database.prune_backups(backup_dir, config.backups.retention_days)
+      pruned = Database.prune_backups(backup_dir, shared.backups.retention_days)
       if pruned > 0
         puts "Pruned #{pruned} old backup #{pruned == 1 ? "directory" : "directories"}."
       end
     end
 
-    private def self.backup_prune_only(config : Config)
-      backup_dir = config.effective_backup_path
-      pruned = Database.prune_backups(backup_dir, config.backups.retention_days)
+    private def self.backup_prune_only(shared : SharedBackupConfig)
+      backup_dir = shared.effective_backup_path
+      pruned = Database.prune_backups(backup_dir, shared.backups.retention_days)
       if pruned > 0
         puts "Pruned #{pruned} old backup #{pruned == 1 ? "directory" : "directories"}."
       else
@@ -3653,9 +3653,11 @@ module GalaxyLedger
         -h, --help        Show this help
 
       CONFIGURATION:
-        backups.enabled          Enable/disable automatic backups (default: true)
-        backups.retention_days   Days of backups to keep (default: 3)
-        backups.path             Custom backup directory (default: ~/.claude/galaxy/data/backups)
+        Backup settings are managed by the shared Galaxy config.
+        Use 'galaxy config' to view and 'galaxy config set' to change:
+          galaxy config set backups.enabled true
+          galaxy config set backups.retention_days 7
+          galaxy config set backups.path /path/to/backups
 
       DESCRIPTION:
         Creates point-in-time database backups using SQLite VACUUM INTO.
@@ -3671,7 +3673,7 @@ module GalaxyLedger
         galaxy-ledger backup                   # Create backup + prune
         galaxy-ledger backup --list            # See all backups
         galaxy-ledger backup --prune-only      # Clean up old backups
-        galaxy-ledger config set backups.retention_days 7
+        galaxy config set backups.retention_days 7
       HELP
     end
 

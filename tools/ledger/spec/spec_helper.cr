@@ -58,8 +58,7 @@ File.chmod(SPEC_SNAPSHOTS_NOOP, 0o755)
 File.write(SPEC_ARTIFACTS_NOOP, "#!/bin/sh\nexit 0\n")
 File.chmod(SPEC_ARTIFACTS_NOOP, 0o755)
 
-# Disable extraction and backups in test config to prevent real Claude
-# CLI calls and unnecessary VACUUM INTO operations.
+# Disable extraction in test config to prevent real Claude CLI calls.
 # Generated from Config.default to include all required fields so
 # subprocess Config.from_json never falls back to defaults.
 # This is also used by Spec.before_each to reset config between tests,
@@ -68,10 +67,22 @@ SPEC_DEFAULT_CONFIG = begin
   config = GalaxyLedger::Config.default
   config.extraction.on_stop = false
   config.extraction.on_guideline_read = false
-  config.backups.enabled = false
   config.to_pretty_json
 end
 File.write(SPEC_CONFIG_DIR / "config.json", SPEC_DEFAULT_CONFIG)
+
+# Disable backups in shared Galaxy config to prevent unnecessary
+# VACUUM INTO operations during tests. Tests that need backups
+# enabled should write their own shared config.
+SPEC_DEFAULT_SHARED_CONFIG = {
+  "_schema_version" => "0.0.1",
+  "backups"         => {
+    "enabled"        => false,
+    "retention_days" => 3,
+    "path"           => "",
+  },
+}.to_json
+File.write(SPEC_GALAXY_DIR / "config.json", SPEC_DEFAULT_SHARED_CONFIG)
 
 # Skip CLI auto-run when loading module for specs
 ENV["GALAXY_LEDGER_SKIP_CLI"] = "1"
@@ -191,6 +202,9 @@ Spec.before_each do
   # (e.g., backup integration, config migration) can leak state to
   # later tests that depend on Config.load behavior.
   File.write(SPEC_CONFIG_DIR / "config.json", SPEC_DEFAULT_CONFIG)
+
+  # Reset shared Galaxy config to defaults (backups disabled).
+  File.write(SPEC_GALAXY_DIR / "config.json", SPEC_DEFAULT_SHARED_CONFIG)
 end
 
 # Flush WAL to main DB so subprocess connections see

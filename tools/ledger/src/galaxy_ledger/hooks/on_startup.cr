@@ -77,11 +77,14 @@ module GalaxyLedger
           # Automatic database backup on fresh session start only.
           # Resumes reuse the existing session — no backup needed.
           begin
-            config = Config.load
-            if config.backups.enabled
-              backup_dir = config.effective_backup_path
+            shared = SharedBackupConfig.load
+            if shared.backups.enabled
+              backup_dir = shared.effective_backup_path
               Database.backup(backup_dir, ledger_session_id)
-              Database.prune_backups(backup_dir, config.backups.retention_days)
+              Database.prune_backups(
+                backup_dir,
+                shared.backups.retention_days,
+              )
             end
           rescue ex
             STDERR.puts "[galaxy-ledger] Backup error: #{ex.message}"

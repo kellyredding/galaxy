@@ -16,7 +16,6 @@ module GalaxyLedger
     property extraction : Extraction
     property storage : Storage
     property restoration : Restoration
-    property backups : Backups = Backups.new
 
     @[JSON::Field(key: "suggested_name")]
     property suggested_name : SuggestedNameConfig = SuggestedNameConfig.new
@@ -132,24 +131,6 @@ module GalaxyLedger
       end
     end
 
-    class Backups
-      include JSON::Serializable
-
-      property enabled : Bool
-
-      @[JSON::Field(key: "retention_days")]
-      property retention_days : Int32
-
-      property path : String
-
-      def initialize(
-        @enabled = true,
-        @retention_days = 3,
-        @path = "",
-      )
-      end
-    end
-
     class SuggestedNameConfig
       include JSON::Serializable
 
@@ -167,23 +148,12 @@ module GalaxyLedger
       @extraction = Extraction.new,
       @storage = Storage.new,
       @restoration = Restoration.new,
-      @backups = Backups.new,
       @suggested_name = SuggestedNameConfig.new,
     )
     end
 
     def self.default : Config
       Config.new
-    end
-
-    # Resolve the effective backup directory path.
-    # Uses the configured path if set, otherwise defaults to DATA_DIR/backups.
-    def effective_backup_path : Path
-      if backups.path.empty?
-        GalaxyLedger::DATA_DIR / "backups"
-      else
-        Path.new(backups.path)
-      end
     end
 
     def self.load : Config
@@ -246,8 +216,6 @@ module GalaxyLedger
         set_storage(parts[1]?, value)
       when "restoration"
         set_restoration(parts[1]?, parts[2]?, value)
-      when "backups"
-        set_backups(parts[1]?, value)
       when "suggested_name"
         set_suggested_name(parts[1]?, value)
       else
@@ -271,8 +239,6 @@ module GalaxyLedger
         get_storage(parts[1]?)
       when "restoration"
         get_restoration(parts[1]?, parts[2]?)
-      when "backups"
-        get_backups(parts[1]?)
       when "suggested_name"
         get_suggested_name(parts[1]?)
       else
@@ -469,35 +435,6 @@ module GalaxyLedger
         restoration.tier2_limits.medium_importance_decisions.to_s
       else
         raise "Unknown tier2_limits field: #{field}"
-      end
-    end
-
-    private def set_backups(field : String?, value : String)
-      raise "Missing backups field (e.g., backups.enabled)" unless field
-
-      case field
-      when "enabled"
-        backups.enabled = parse_bool(value)
-      when "retention_days"
-        int_value = value.to_i? || raise "Invalid value: #{value} (must be integer)"
-        raise "Value must be >= 1" if int_value < 1
-        backups.retention_days = int_value
-      when "path"
-        backups.path = value
-      else
-        raise "Unknown backups field: backups.#{field}"
-      end
-    end
-
-    private def get_backups(field : String?) : String
-      raise "Missing backups field (e.g., backups.enabled)" unless field
-
-      case field
-      when "enabled"        then backups.enabled.to_s
-      when "retention_days" then backups.retention_days.to_s
-      when "path"           then backups.path
-      else
-        raise "Unknown backups field: backups.#{field}"
       end
     end
 

@@ -72,18 +72,21 @@ private def restore_noop_stubs
   end
 end
 
-# Write a config with backups enabled. The backup_path
+# Write a shared Galaxy config with backups enabled. The backup_path
 # must be a real writable directory so the ledger's own
 # VACUUM INTO succeeds.
 private def write_backup_config(backup_dir : Path)
-  config = GalaxyLedger::Config.default
-  config.backups.enabled = true
-  config.backups.path = backup_dir.to_s
-  config.extraction.on_stop = false
-  config.extraction.on_guideline_read = false
+  shared_config = {
+    "_schema_version" => "0.0.1",
+    "backups"         => {
+      "enabled"        => true,
+      "retention_days" => 3,
+      "path"           => backup_dir.to_s,
+    },
+  }
   File.write(
-    SPEC_CONFIG_DIR / "config.json",
-    config.to_pretty_json,
+    SPEC_GALAXY_DIR / "config.json",
+    shared_config.to_json,
   )
 end
 

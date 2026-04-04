@@ -929,20 +929,16 @@ describe "CLI Integration" do
 
     before_each do
       FileUtils.rm_rf(backup_dir) if Dir.exists?(backup_dir)
-      # Ensure backups config points to the test backup dir
-      Dir.mkdir_p(SPEC_CONFIG_DIR)
-      config_data = {
-        "extraction" => {
-          "on_stop"           => false,
-          "on_guideline_read" => false,
-        },
-        "backups" => {
+      # Ensure shared Galaxy config has backups enabled pointing to test dir
+      shared_config = {
+        "_schema_version" => "0.0.1",
+        "backups"         => {
           "enabled"        => true,
           "retention_days" => 3,
           "path"           => backup_dir.to_s,
         },
       }
-      File.write(SPEC_CONFIG_DIR / "config.json", config_data.to_json)
+      File.write(SPEC_GALAXY_DIR / "config.json", shared_config.to_json)
     end
 
     it "shows help with --help" do
@@ -1001,31 +997,16 @@ describe "CLI Integration" do
     end
 
     it "reports disabled state" do
-      Dir.mkdir_p(SPEC_CONFIG_DIR)
-      config_data = {
-        "_schema_version" => GalaxyLedger::VERSION,
-        "version"         => GalaxyLedger::VERSION,
-        "thresholds"      => {"warning" => 70, "critical" => 85},
-        "warnings"        => {"at_warning_threshold" => true, "at_critical_threshold" => true},
-        "extraction"      => {"on_stop" => false, "on_guideline_read" => false},
-        "storage"         => {
-          "postgres_enabled"       => false,
-          "postgres_host_port"     => 5433,
-          "embeddings_enabled"     => false,
-          "openai_api_key_env_var" => "GALAXY_OPENAI_API_KEY",
-        },
-        "restoration" => {
-          "max_essential_tokens" => 2000,
-          "tier1_limits"         => {"high_importance_decisions" => 10},
-          "tier2_limits"         => {"learnings" => 5, "medium_importance_decisions" => 5},
-        },
-        "backups" => {
+      # Write shared Galaxy config with backups disabled
+      shared_config = {
+        "_schema_version" => "0.0.1",
+        "backups"         => {
           "enabled"        => false,
           "retention_days" => 3,
           "path"           => backup_dir.to_s,
         },
       }
-      File.write(SPEC_CONFIG_DIR / "config.json", config_data.to_json)
+      File.write(SPEC_GALAXY_DIR / "config.json", shared_config.to_json)
 
       result = run_binary(["backup"])
       result[:status].should eq(0)
