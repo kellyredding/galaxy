@@ -635,7 +635,7 @@ module GalaxyTimeline
         i += 1
       end
 
-      config = Config.load
+      config = SharedBackupConfig.load
 
       if list_mode
         backup_list(config)
@@ -646,7 +646,7 @@ module GalaxyTimeline
       end
     end
 
-    private def self.backup_list(config : Config)
+    private def self.backup_list(config : SharedBackupConfig)
       backup_dir = config.effective_backup_path
 
       unless Dir.exists?(backup_dir)
@@ -710,7 +710,7 @@ module GalaxyTimeline
       puts "  Total: #{total_count} #{total_count == 1 ? "backup" : "backups"}, #{format_size(total_bytes)}"
     end
 
-    private def self.backup_create_and_prune(config : Config, session_id : Int64)
+    private def self.backup_create_and_prune(config : SharedBackupConfig, session_id : Int64)
       unless config.backups.enabled
         puts "Backups are disabled."
         return
@@ -732,7 +732,7 @@ module GalaxyTimeline
       end
     end
 
-    private def self.backup_prune_only(config : Config)
+    private def self.backup_prune_only(config : SharedBackupConfig)
       backup_dir = config.effective_backup_path
       pruned = Database.prune_backups(backup_dir, config.backups.retention_days)
       if pruned > 0
@@ -994,6 +994,13 @@ module GalaxyTimeline
         --session-id ID   Session ID for backup filename
         --list            List all existing backups
         --prune-only      Only prune old backups
+
+      CONFIGURATION:
+        Backup settings are managed by the shared Galaxy config.
+        Use 'galaxy config' to view and 'galaxy config set' to change:
+          galaxy config set backups.enabled true
+          galaxy config set backups.retention_days 7
+          galaxy config set backups.path /path/to/backups
       HELP
     end
   end

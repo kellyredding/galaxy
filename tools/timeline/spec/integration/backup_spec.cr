@@ -14,11 +14,16 @@ describe "CLI backup command", tags: "integration" do
     it "creates a backup when backups are enabled" do
       backup_dir = Path.new(Dir.tempdir) / "galaxy-timeline-backup-cli-#{Random.rand(100000)}"
       begin
-        # Enable backups with custom path
-        config = GalaxyTimeline::Config.load
-        config.backups.enabled = true
-        config.backups.path = backup_dir.to_s
-        config.save
+        # Enable backups with custom path in shared Galaxy config
+        shared_config = {
+          "_schema_version" => "0.0.1",
+          "backups"         => {
+            "enabled"        => true,
+            "retention_days" => 3,
+            "path"           => backup_dir.to_s,
+          },
+        }.to_json
+        File.write(SPEC_GALAXY_DIR / "config.json", shared_config)
 
         # Record an event so the DB has data
         run_binary([
@@ -56,11 +61,16 @@ describe "CLI backup command", tags: "integration" do
         Dir.mkdir_p(old_dir)
         File.write(old_dir / "timeline_1.db", "fake backup")
 
-        # Configure custom backup path
-        config = GalaxyTimeline::Config.load
-        config.backups.path = backup_dir.to_s
-        config.backups.retention_days = 3
-        config.save
+        # Configure custom backup path in shared Galaxy config
+        shared_config = {
+          "_schema_version" => "0.0.1",
+          "backups"         => {
+            "enabled"        => true,
+            "retention_days" => 3,
+            "path"           => backup_dir.to_s,
+          },
+        }.to_json
+        File.write(SPEC_GALAXY_DIR / "config.json", shared_config)
 
         result = run_binary(["backup", "--prune-only"])
 
@@ -76,9 +86,15 @@ describe "CLI backup command", tags: "integration" do
       begin
         Dir.mkdir_p(backup_dir)
 
-        config = GalaxyTimeline::Config.load
-        config.backups.path = backup_dir.to_s
-        config.save
+        shared_config = {
+          "_schema_version" => "0.0.1",
+          "backups"         => {
+            "enabled"        => true,
+            "retention_days" => 3,
+            "path"           => backup_dir.to_s,
+          },
+        }.to_json
+        File.write(SPEC_GALAXY_DIR / "config.json", shared_config)
 
         result = run_binary(["backup", "--prune-only"])
 
@@ -91,11 +107,14 @@ describe "CLI backup command", tags: "integration" do
   end
 
   describe "help" do
-    it "shows backup help" do
+    it "shows backup help with galaxy config references" do
       result = run_binary(["backup", "--help"])
 
       result[:status].should eq(0)
       result[:output].should contain("backup")
+      result[:output].should contain("CONFIGURATION")
+      result[:output].should contain("galaxy config")
+      result[:output].should contain("galaxy config set")
     end
   end
 end

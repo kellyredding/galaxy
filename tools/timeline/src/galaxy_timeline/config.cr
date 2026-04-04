@@ -9,41 +9,10 @@ module GalaxyTimeline
 
     property enabled : Bool
 
-    @[JSON::Field(key: "backups")]
-    property backups : BackupsConfig
-
     def initialize(
       @schema_version = GalaxyTimeline::VERSION,
       @enabled = true,
-      @backups = BackupsConfig.new,
     )
-    end
-
-    class BackupsConfig
-      include JSON::Serializable
-
-      property enabled : Bool
-      property retention_days : Int32
-      property path : String
-
-      def initialize(
-        @enabled = true,
-        @retention_days = 3,
-        @path = "",
-      )
-      end
-
-      def backup_dir : Path
-        if path.empty?
-          GalaxyTimeline::DATA_DIR / "backups" / "timeline"
-        else
-          Path.new(path)
-        end
-      end
-    end
-
-    def effective_backup_path : Path
-      backups.backup_dir
     end
 
     def self.load : Config
