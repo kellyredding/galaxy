@@ -36,17 +36,25 @@ describe GalaxySnapshots::Database do
       end
     end
 
-    it "is idempotent — returns existing path if already backed up" do
+    it "overwrites existing backup when called twice with the same session ID" do
       backup_dir = Path.new(Dir.tempdir) / "galaxy-snapshots-backup-test-#{Random.rand(100000)}"
       begin
-        GalaxySnapshots::Database.save_snapshot(1_i64, "Idempotent", "content")
+        GalaxySnapshots::Database.save_snapshot(1_i64, "Overwrite", "content")
 
         r1 = GalaxySnapshots::Database.backup(backup_dir, 1_i64)
-        r2 = GalaxySnapshots::Database.backup(backup_dir, 1_i64)
-
         r1.should_not be_nil
+        first_mtime = File.info(r1.not_nil!).modification_time
+
+        # Add more data so the second backup differs
+        GalaxySnapshots::Database.save_snapshot(1_i64, "Overwrite 2", "more content")
+
+        r2 = GalaxySnapshots::Database.backup(backup_dir, 1_i64)
         r2.should_not be_nil
-        r1.not_nil!.to_s.should eq(r2.not_nil!.to_s)
+        r2.not_nil!.to_s.should eq(r1.not_nil!.to_s)
+
+        # The file should have been overwritten (size may differ with new data)
+        File.exists?(r2.not_nil!).should be_true
+        File.size(r2.not_nil!).should be > 0
       ensure
         FileUtils.rm_rf(backup_dir.to_s)
       end
