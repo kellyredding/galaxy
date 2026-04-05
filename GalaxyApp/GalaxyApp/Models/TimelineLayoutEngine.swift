@@ -618,23 +618,9 @@ enum TimelineLayoutEngine {
             activeHashes.insert(h)
         }
 
-        // Non-breakable, closed duration bars make all
-        // their hashes active. Session bars are breakable
-        // — they don't count. Open-ended bars (no end
-        // event) are excluded: an orphan start event
-        // shouldn't prevent breaks across the entire
-        // remaining timeline.
-        for dur in durations {
-            let isBreakable =
-                dur.resource == .session
-                || dur.resource == .turn
-                || dur.resource == .scrollback
-            if !isBreakable, let end = dur.endHash {
-                for h in dur.startHash...end {
-                    activeHashes.insert(h)
-                }
-            }
-        }
+        // All duration bars are breakable — they don't
+        // prevent breaks in inactive gaps. Only their
+        // start/end hashes are anchored (below).
 
         // Also mark start/end hashes of ALL durations as active
         // (even breakable ones) to anchor segments
