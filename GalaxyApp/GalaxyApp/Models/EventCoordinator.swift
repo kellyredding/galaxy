@@ -241,7 +241,9 @@ final class EventCoordinator {
         }
 
         // Agent-start event: increment running count
-        // and notify AgentsView.
+        // and notify AgentsView to refresh its list.
+        // Socket events own the count; the CLI fetch
+        // only refreshes the list (no count correction).
         if envelope.event == Self.agentStartEvent {
             if let appSessionId =
                 ledgerSessionIdCache[
@@ -268,7 +270,9 @@ final class EventCoordinator {
         }
 
         // Agent-end events: decrement running count
-        // and notify AgentsView.
+        // and notify AgentsView to refresh its list.
+        // Socket events own the count; the CLI fetch
+        // only refreshes the list (no count correction).
         if Self.agentEndEvents.contains(
             envelope.event
         ) {

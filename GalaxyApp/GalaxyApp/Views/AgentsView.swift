@@ -132,6 +132,12 @@ struct AgentsView: View {
         }
         .onChange(of: sessionManager.activeTab) {
             updateEscapeMonitor()
+            if sessionManager.activeTab == .agents,
+               session.id
+                   == sessionManager.activeSessionId
+            {
+                fetchAgents()
+            }
         }
         .onChange(of: sessionManager.activeSessionId) {
             updateEscapeMonitor()
@@ -636,17 +642,6 @@ struct AgentsView: View {
                         result.count - 1
                 }
 
-                // Correct running count from
-                // authoritative data
-                let running = result.filter(
-                    \.isRunning
-                ).count
-                if session.runningAgentCount
-                    != running
-                {
-                    session.runningAgentCount =
-                        running
-                }
             } catch {
                 guard !Task.isCancelled else {
                     return

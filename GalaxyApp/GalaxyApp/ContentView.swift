@@ -212,14 +212,14 @@ struct ContentView: View {
                         .withClearBehavior()
                     }
                 }
-                .overlay(alignment: .trailing) {
+                .overlay(alignment: .topTrailing) {
                     if tab == .agents,
                        let session = activeSession
                     {
                         AgentRunningBadge(
                             session: session
                         )
-                        .offset(x: 6)
+                        .offset(x: -2, y: -2)
                     }
                 }
             }
