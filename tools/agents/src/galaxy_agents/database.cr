@@ -314,28 +314,28 @@ module GalaxyAgents
     # List agents for a session ordered by started_at.
     def self.list_agents(
       ledger_session_id : Int64,
-      limit : Int32 = 50,
+      limit : Int32? = nil,
     ) : Array(Agent)
       agents = [] of Agent
       return agents if ledger_session_id <= 0
 
       begin
         open do |db|
+          sql = <<-SQL
+            SELECT id, ledger_session_id, agent_id,
+                   agent_type, status, description,
+                   started_at, completed_at,
+                   duration_ms, prompt, last_message,
+                   transcript_path, created_at,
+                   updated_at
+            FROM agents
+            WHERE ledger_session_id = ?
+            ORDER BY started_at ASC
+          SQL
+          sql += " LIMIT #{limit}" if limit
           db.query(
-            <<-SQL,
-              SELECT id, ledger_session_id, agent_id,
-                     agent_type, status, description,
-                     started_at, completed_at,
-                     duration_ms, prompt, last_message,
-                     transcript_path, created_at,
-                     updated_at
-              FROM agents
-              WHERE ledger_session_id = ?
-              ORDER BY started_at ASC
-              LIMIT ?
-            SQL
+            sql,
             ledger_session_id,
-            limit,
           ) do |rs|
             rs.each do
               agents << Agent.from_row(rs)

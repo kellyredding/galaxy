@@ -413,7 +413,7 @@ module GalaxyAgents
       pid_str : String? = nil
       session_id : String? = nil
       json_mode = false
-      limit = 50
+      limit : Int32? = nil
 
       i = 0
       while i < args.size
@@ -454,7 +454,7 @@ module GalaxyAgents
           i += 1
         when "--limit"
           if i + 1 < args.size
-            limit = args[i + 1].to_i? || 50
+            limit = args[i + 1].to_i?
             i += 2
           else
             STDERR.puts(
@@ -1343,7 +1343,7 @@ module GalaxyAgents
 
       OPTIONS:
         --json                   Output as JSON
-        --limit N                Max agents to return (default: 50)
+        --limit N                Max agents to return (default: all)
 
       DESCRIPTION:
         Lists all agents for the specified session with agent_id,

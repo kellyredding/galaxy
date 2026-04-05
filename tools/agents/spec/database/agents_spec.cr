@@ -383,6 +383,19 @@ describe GalaxyAgents::Database do
       agents.size.should eq(2)
     end
 
+    it "returns all agents when no limit given" do
+      60.times do |i|
+        GalaxyAgents::Database.start_agent(
+          1_i64, "a#{i}", "Explore",
+        )
+      end
+
+      agents = GalaxyAgents::Database.list_agents(
+        1_i64,
+      )
+      agents.size.should eq(60)
+    end
+
     it "returns empty for no agents" do
       agents = GalaxyAgents::Database.list_agents(
         999_i64,
