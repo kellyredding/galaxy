@@ -154,7 +154,7 @@ struct NewSessionView: View {
         }
         .padding(20)
         .frame(width: 460)
-        .defaultFocus($focusedField, .directory)
+        .defaultFocus($focusedField, .persona)
     }
 
     // MARK: - Actions
