@@ -58,6 +58,14 @@ struct TimelineView: View {
         = nil
     @State private var isAtBottom: Bool = true
 
+    // Viewport-windowed rendering state
+    @State private var vScrollOffset: CGFloat = 0
+    @State private var viewportHeight: CGFloat = 0
+    /// Buffer above and below the viewport in points.
+    /// Segments within this range are rendered; the
+    /// rest become lightweight spacers.
+    private let renderBuffer: CGFloat = 3000.0
+
     // Crosshair hover state (shared across segments)
     @State private var hoverSegmentId: UUID? = nil
     @State private var hoverRow: Int? = nil
@@ -286,7 +294,11 @@ struct TimelineView: View {
                             .background(
                                 VScrollAtBottomReader(
                                     isAtBottom:
-                                        $isAtBottom
+                                        $isAtBottom,
+                                    scrollOffset:
+                                        $vScrollOffset,
+                                    viewportHeight:
+                                        $viewportHeight
                                 )
                                 .frame(
                                     width: 0,
@@ -455,12 +467,69 @@ struct TimelineView: View {
         )
     }
 
+    // MARK: - Viewport Windowing
+
+    /// Height of one segment slot (header + body +
+    /// optional break). Used to compute cumulative
+    /// offsets for viewport visibility testing.
+    private func segmentSlotHeight(
+        _ segment: LayoutSegment
+    ) -> CGFloat {
+        let header = TimelineContentHeaderSpacer.height
+        let body = segment.height
+        let brk: CGFloat =
+            segment.breakAfter != nil
+            ? TimelineContentBreak.breakHeight : 0
+        return header + body + brk
+    }
+
+    /// Determine the range of segment indices that
+    /// fall within the visible viewport plus the
+    /// render buffer.
+    private func visibleSegmentRange(
+        layout: TimelineLayout
+    ) -> ClosedRange<Int> {
+        let count = layout.segments.count
+        guard count > 0 else { return 0...0 }
+
+        let top = vScrollOffset - renderBuffer
+        let bottom =
+            vScrollOffset + viewportHeight
+            + renderBuffer
+
+        var cumY: CGFloat = 0
+        var first: Int? = nil
+        var last: Int = count - 1
+
+        for i in 0..<count {
+            let slotH = segmentSlotHeight(
+                layout.segments[i]
+            )
+            let slotBottom = cumY + slotH
+
+            if first == nil, slotBottom > top {
+                first = i
+            }
+            if cumY > bottom {
+                last = max(0, i - 1)
+                break
+            }
+            cumY = slotBottom
+        }
+
+        let lo = first ?? 0
+        return lo...min(last, count - 1)
+    }
+
     // MARK: - Ruler Column
 
     @ViewBuilder
     private func rulerColumn(
         layout: TimelineLayout
     ) -> some View {
+        let visible = visibleSegmentRange(
+            layout: layout
+        )
         VStack(spacing: 0) {
             ForEach(
                 Array(
@@ -468,43 +537,52 @@ struct TimelineView: View {
                 ),
                 id: \.element.id
             ) { index, segment in
-                TimelineRulerHeader(
-                    date: dateForSegment(
-                        segment,
-                        origin: layout.originHash
-                    ),
-                    showDate:
-                        shouldShowDateHeader(
-                            layout: layout,
-                            segmentIndex: index
+                if visible.contains(index) {
+                    TimelineRulerHeader(
+                        date: dateForSegment(
+                            segment,
+                            origin: layout.originHash
                         ),
-                    segmentId: segment.id,
-                    isHighlighted:
-                        hoverSegmentId
-                            == segment.id
-                            && hoverRow == -1,
-                    hoverSegmentIdBinding:
-                        $hoverSegmentId,
-                    hoverRowBinding:
-                        $hoverRow
-                )
+                        showDate:
+                            shouldShowDateHeader(
+                                layout: layout,
+                                segmentIndex: index
+                            ),
+                        segmentId: segment.id,
+                        isHighlighted:
+                            hoverSegmentId
+                                == segment.id
+                                && hoverRow == -1,
+                        hoverSegmentIdBinding:
+                            $hoverSegmentId,
+                        hoverRowBinding:
+                            $hoverRow
+                    )
 
-                TimelineRulerSegment(
-                    segment: segment,
-                    originHash: layout.originHash,
-                    isHoveredSegment:
-                        hoverSegmentId
-                            == segment.id,
-                    hoverRow: hoverRow,
-                    hoverSegmentIdBinding:
-                        $hoverSegmentId,
-                    hoverRowBinding:
-                        $hoverRow
-                )
+                    TimelineRulerSegment(
+                        segment: segment,
+                        originHash: layout.originHash,
+                        isHoveredSegment:
+                            hoverSegmentId
+                                == segment.id,
+                        hoverRow: hoverRow,
+                        hoverSegmentIdBinding:
+                            $hoverSegmentId,
+                        hoverRowBinding:
+                            $hoverRow
+                    )
 
-                if layout.breakAfter(segment) != nil
-                {
-                    TimelineRulerBreakSpacer()
+                    if layout.breakAfter(segment)
+                        != nil
+                    {
+                        TimelineRulerBreakSpacer()
+                    }
+                } else {
+                    Color.clear.frame(
+                        height: segmentSlotHeight(
+                            segment
+                        )
+                    )
                 }
             }
         }
@@ -517,6 +595,9 @@ struct TimelineView: View {
         layout: TimelineLayout,
         width: CGFloat
     ) -> some View {
+        let visible = visibleSegmentRange(
+            layout: layout
+        )
         VStack(spacing: 0) {
             ForEach(
                 Array(
@@ -524,60 +605,68 @@ struct TimelineView: View {
                 ),
                 id: \.element.id
             ) { index, segment in
-                TimelineContentHeaderSpacer(
-                    continuationBars:
-                        segment.placedBars
-                            .filter {
-                                $0.continuesFromPrevious
-                            },
-                    activeLanes:
-                        layout.activeLanes,
-                    laneMaxSubColumns:
-                        layout.laneMaxSubColumns,
-                    hoverColX: hoverColX,
-                    isHighlighted:
-                        hoverSegmentId
-                            == segment.id
-                            && hoverRow == -1,
-                    segmentId: segment.id,
-                    hoverSegmentIdBinding:
-                        $hoverSegmentId,
-                    hoverRowBinding:
-                        $hoverRow,
-                    hoveredItemBinding:
-                        $hoveredItem,
-                    hoveredItemPointBinding:
-                        $hoveredItemPoint,
-                    highlightId: highlightId
-                )
+                if visible.contains(index) {
+                    TimelineContentHeaderSpacer(
+                        continuationBars:
+                            segment.placedBars
+                                .filter {
+                                    $0.continuesFromPrevious
+                                },
+                        activeLanes:
+                            layout.activeLanes,
+                        laneMaxSubColumns:
+                            layout.laneMaxSubColumns,
+                        hoverColX: hoverColX,
+                        isHighlighted:
+                            hoverSegmentId
+                                == segment.id
+                                && hoverRow == -1,
+                        segmentId: segment.id,
+                        hoverSegmentIdBinding:
+                            $hoverSegmentId,
+                        hoverRowBinding:
+                            $hoverRow,
+                        hoveredItemBinding:
+                            $hoveredItem,
+                        hoveredItemPointBinding:
+                            $hoveredItemPoint,
+                        highlightId: highlightId
+                    )
 
-                TimelineContentCanvas(
-                    segment: segment,
-                    activeLanes:
-                        layout.activeLanes,
-                    availableWidth: width,
-                    originHash:
-                        layout.originHash,
-                    laneMaxSubColumns:
-                        layout.laneMaxSubColumns,
-                    hoverSegmentId:
-                        $hoverSegmentId,
-                    hoverRow: $hoverRow,
-                    hoverColX: $hoverColX,
-                    hoveredItem:
-                        $hoveredItem,
-                    hoveredItemPoint:
-                        $hoveredItemPoint,
-                    highlightId: highlightId
-                )
+                    TimelineContentCanvas(
+                        segment: segment,
+                        activeLanes:
+                            layout.activeLanes,
+                        availableWidth: width,
+                        originHash:
+                            layout.originHash,
+                        laneMaxSubColumns:
+                            layout.laneMaxSubColumns,
+                        hoverSegmentId:
+                            $hoverSegmentId,
+                        hoverRow: $hoverRow,
+                        hoverColX: $hoverColX,
+                        hoveredItem:
+                            $hoveredItem,
+                        hoveredItemPoint:
+                            $hoveredItemPoint,
+                        highlightId: highlightId
+                    )
 
-                if let brk = layout.breakAfter(
-                    segment
-                ) {
-                    TimelineContentBreak(
-                        duration:
-                            brk.formattedDuration,
-                        hoverColX: hoverColX
+                    if let brk = layout.breakAfter(
+                        segment
+                    ) {
+                        TimelineContentBreak(
+                            duration:
+                                brk.formattedDuration,
+                            hoverColX: hoverColX
+                        )
+                    }
+                } else {
+                    Color.clear.frame(
+                        height: segmentSlotHeight(
+                            segment
+                        )
                     )
                 }
             }
@@ -761,6 +850,8 @@ struct TimelineView: View {
 /// pattern but reports a boolean instead of an offset.
 struct VScrollAtBottomReader: NSViewRepresentable {
     @Binding var isAtBottom: Bool
+    @Binding var scrollOffset: CGFloat
+    @Binding var viewportHeight: CGFloat
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -786,6 +877,10 @@ struct VScrollAtBottomReader: NSViewRepresentable {
                 + clip.bounds.height
             self.isAtBottom =
                 visibleMax >= docHeight - 20
+            self.scrollOffset =
+                clip.bounds.origin.y
+            self.viewportHeight =
+                clip.bounds.height
         }
         return view
     }
@@ -809,6 +904,10 @@ struct VScrollAtBottomReader: NSViewRepresentable {
                 + clip.bounds.height
             self.isAtBottom =
                 visibleMax >= docHeight - 20
+            self.scrollOffset =
+                clip.bounds.origin.y
+            self.viewportHeight =
+                clip.bounds.height
         }
     }
 
