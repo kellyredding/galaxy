@@ -121,6 +121,8 @@ Spec.before_each do
   begin
     db = DB.open("sqlite3://#{db_path}")
     db.exec("PRAGMA busy_timeout=5000")
+    db.exec("DELETE FROM artifact_annotations")
+    db.exec("DELETE FROM artifact_reviews")
     db.exec("DELETE FROM artifacts")
     # Flush WAL back to main DB to prevent unbounded WAL growth from
     # run_binary subprocess writes.

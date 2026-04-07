@@ -103,6 +103,51 @@ module GalaxyArtifacts
           WHERE source_path IS NOT NULL
         SQL
 
+        # Artifact annotations table
+        db.exec(<<-SQL)
+          CREATE TABLE IF NOT EXISTS artifact_annotations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            artifact_id INTEGER NOT NULL,
+            number INTEGER NOT NULL,
+            content TEXT NOT NULL,
+            anchor_data TEXT NOT NULL,
+            content_hash TEXT NOT NULL,
+            stale INTEGER NOT NULL DEFAULT 0,
+            artifact_review_id INTEGER
+              REFERENCES artifact_reviews(id) ON DELETE SET NULL,
+            UNIQUE(artifact_id, number),
+            FOREIGN KEY (artifact_id)
+              REFERENCES artifacts(id) ON DELETE CASCADE
+          )
+        SQL
+
+        db.exec(<<-SQL)
+          CREATE INDEX IF NOT EXISTS idx_artifact_annotations_artifact
+          ON artifact_annotations(artifact_id)
+        SQL
+
+        # Artifact reviews table
+        db.exec(<<-SQL)
+          CREATE TABLE IF NOT EXISTS artifact_reviews (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            artifact_id INTEGER NOT NULL,
+            number INTEGER NOT NULL,
+            reviewed_at TEXT,
+            UNIQUE(artifact_id, number),
+            FOREIGN KEY (artifact_id)
+              REFERENCES artifacts(id) ON DELETE CASCADE
+          )
+        SQL
+
+        db.exec(<<-SQL)
+          CREATE INDEX IF NOT EXISTS idx_artifact_reviews_artifact
+          ON artifact_reviews(artifact_id)
+        SQL
+
         # Stamp with current version
         Migrations.set_database_version(db, GalaxyArtifacts::VERSION)
       end
@@ -404,6 +449,482 @@ module GalaxyArtifacts
     end
 
     # ============================================================
+    # Annotation Operations
+    # ============================================================
+
+    # Save an artifact annotation. Number is auto-assigned as
+    # artifact-scoped sequential (1, 2, 3, ...). Stores the
+    # artifact's current content_hash for stale tracking.
+    # Returns the created annotation or nil on failure.
+    def self.save_annotation(
+      artifact_id : Int64,
+      content : String,
+      anchor_data : String,
+      content_hash : String,
+    ) : ArtifactAnnotation?
+      return nil if artifact_id <= 0
+
+      begin
+        open do |db|
+          db.exec(
+            <<-SQL,
+              INSERT INTO artifact_annotations (
+                artifact_id, number, content,
+                anchor_data, content_hash
+              )
+              VALUES (
+                ?,
+                (SELECT COALESCE(MAX(number), 0) + 1
+                 FROM artifact_annotations
+                 WHERE artifact_id = ?),
+                ?, ?, ?
+              )
+            SQL
+            artifact_id,
+            artifact_id,
+            content,
+            anchor_data,
+            content_hash,
+          )
+          # Retrieve the full annotation just created
+          db.query_one?(
+            <<-SQL
+              SELECT a.id, a.created_at, a.updated_at,
+                     a.artifact_id, a.number, a.content,
+                     a.anchor_data, a.content_hash, a.stale,
+                     a.artifact_review_id,
+                     r.number AS review_number,
+                     r.reviewed_at AS review_reviewed_at
+              FROM artifact_annotations a
+              LEFT JOIN artifact_reviews r
+                ON a.artifact_review_id = r.id
+              WHERE a.id = last_insert_rowid()
+            SQL
+          ) do |rs|
+            ArtifactAnnotation.from_row(rs)
+          end
+        end
+      rescue
+        nil
+      end
+    end
+
+    # List all annotations for an artifact, ordered by number.
+    def self.list_annotations(
+      artifact_id : Int64,
+    ) : Array(ArtifactAnnotation)
+      annotations = [] of ArtifactAnnotation
+      return annotations if artifact_id <= 0
+
+      begin
+        open do |db|
+          db.query(
+            <<-SQL,
+              SELECT a.id, a.created_at, a.updated_at,
+                     a.artifact_id, a.number, a.content,
+                     a.anchor_data, a.content_hash, a.stale,
+                     a.artifact_review_id,
+                     r.number AS review_number,
+                     r.reviewed_at AS review_reviewed_at
+              FROM artifact_annotations a
+              LEFT JOIN artifact_reviews r
+                ON a.artifact_review_id = r.id
+              WHERE a.artifact_id = ?
+              ORDER BY a.number ASC
+            SQL
+            artifact_id,
+          ) do |rs|
+            rs.each do
+              annotations << ArtifactAnnotation.from_row(rs)
+            end
+          end
+        end
+      rescue
+        # Return empty on error
+      end
+      annotations
+    end
+
+    # Get an annotation by artifact ID + number.
+    def self.get_annotation(
+      artifact_id : Int64,
+      number : Int32,
+    ) : ArtifactAnnotation?
+      return nil if artifact_id <= 0
+
+      begin
+        open do |db|
+          db.query_one?(
+            <<-SQL,
+              SELECT a.id, a.created_at, a.updated_at,
+                     a.artifact_id, a.number, a.content,
+                     a.anchor_data, a.content_hash, a.stale,
+                     a.artifact_review_id,
+                     r.number AS review_number,
+                     r.reviewed_at AS review_reviewed_at
+              FROM artifact_annotations a
+              LEFT JOIN artifact_reviews r
+                ON a.artifact_review_id = r.id
+              WHERE a.artifact_id = ? AND a.number = ?
+            SQL
+            artifact_id,
+            number,
+          ) do |rs|
+            ArtifactAnnotation.from_row(rs)
+          end
+        end
+      rescue
+        nil
+      end
+    end
+
+    # Update annotation content. Anchor data is immutable.
+    # Returns the updated annotation or nil if not found.
+    def self.update_annotation(
+      artifact_id : Int64,
+      number : Int32,
+      content : String,
+    ) : ArtifactAnnotation?
+      return nil if artifact_id <= 0
+
+      begin
+        open do |db|
+          result = db.exec(
+            <<-SQL,
+              UPDATE artifact_annotations
+              SET content = ?,
+                  updated_at = datetime('now')
+              WHERE artifact_id = ? AND number = ?
+            SQL
+            content,
+            artifact_id,
+            number,
+          )
+          return nil if result.rows_affected == 0
+
+          # Return the updated annotation
+          db.query_one?(
+            <<-SQL,
+              SELECT a.id, a.created_at, a.updated_at,
+                     a.artifact_id, a.number, a.content,
+                     a.anchor_data, a.content_hash, a.stale,
+                     a.artifact_review_id,
+                     r.number AS review_number,
+                     r.reviewed_at AS review_reviewed_at
+              FROM artifact_annotations a
+              LEFT JOIN artifact_reviews r
+                ON a.artifact_review_id = r.id
+              WHERE a.artifact_id = ? AND a.number = ?
+            SQL
+            artifact_id,
+            number,
+          ) do |rs|
+            ArtifactAnnotation.from_row(rs)
+          end
+        end
+      rescue
+        nil
+      end
+    end
+
+    # Delete an annotation by artifact ID + number.
+    # Returns true if deleted.
+    def self.delete_annotation(
+      artifact_id : Int64,
+      number : Int32,
+    ) : Bool
+      return false if artifact_id <= 0
+
+      begin
+        open do |db|
+          result = db.exec(
+            "DELETE FROM artifact_annotations " \
+            "WHERE artifact_id = ? AND number = ?",
+            artifact_id,
+            number,
+          )
+          result.rows_affected > 0
+        end
+      rescue
+        false
+      end
+    end
+
+    # Mark all non-stale annotations as stale for an artifact.
+    # Called when artifact content changes (VersionUpdate).
+    # Returns the number of annotations marked stale.
+    def self.mark_annotations_stale(
+      artifact_id : Int64,
+    ) : Int64
+      return 0_i64 if artifact_id <= 0
+
+      begin
+        open do |db|
+          result = db.exec(
+            <<-SQL,
+              UPDATE artifact_annotations
+              SET stale = 1,
+                  updated_at = datetime('now')
+              WHERE artifact_id = ? AND stale = 0
+            SQL
+            artifact_id,
+          )
+          result.rows_affected
+        end
+      rescue
+        0_i64
+      end
+    end
+
+    # Count annotations not assigned to any review.
+    def self.count_unreviewed_annotations(
+      artifact_id : Int64,
+    ) : Int32
+      return 0 if artifact_id <= 0
+
+      begin
+        open do |db|
+          db.scalar(
+            <<-SQL,
+              SELECT COUNT(*)
+              FROM artifact_annotations
+              WHERE artifact_id = ?
+                AND artifact_review_id IS NULL
+            SQL
+            artifact_id,
+          ).as(Int64).to_i
+        end
+      rescue
+        0
+      end
+    end
+
+    # ============================================================
+    # Review Operations
+    # ============================================================
+
+    # Create a review and assign all unreviewed annotations
+    # atomically. Returns {review, annotation_count} or nil
+    # if no unreviewed annotations exist.
+    def self.save_review(
+      artifact_id : Int64,
+    ) : {ArtifactReview, Int32}?
+      return nil if artifact_id <= 0
+
+      begin
+        open do |db|
+          db.exec("BEGIN IMMEDIATE")
+
+          count = db.scalar(
+            <<-SQL,
+              SELECT COUNT(*)
+              FROM artifact_annotations
+              WHERE artifact_id = ?
+                AND artifact_review_id IS NULL
+            SQL
+            artifact_id,
+          ).as(Int64).to_i
+
+          if count == 0
+            db.exec("ROLLBACK")
+            return nil
+          end
+
+          # Create the review with auto-assigned number
+          db.exec(
+            <<-SQL,
+              INSERT INTO artifact_reviews (
+                artifact_id, number
+              )
+              VALUES (
+                ?,
+                (SELECT COALESCE(MAX(number), 0) + 1
+                 FROM artifact_reviews
+                 WHERE artifact_id = ?)
+              )
+            SQL
+            artifact_id,
+            artifact_id,
+          )
+
+          review = db.query_one?(
+            <<-SQL
+              SELECT id, created_at, updated_at,
+                     artifact_id, number, reviewed_at
+              FROM artifact_reviews
+              WHERE id = last_insert_rowid()
+            SQL
+          ) do |rs|
+            ArtifactReview.from_row(rs)
+          end
+
+          unless review
+            db.exec("ROLLBACK")
+            return nil
+          end
+
+          # Assign all unreviewed annotations to this review
+          db.exec(
+            <<-SQL,
+              UPDATE artifact_annotations
+              SET artifact_review_id = ?,
+                  updated_at = datetime('now')
+              WHERE artifact_id = ?
+                AND artifact_review_id IS NULL
+            SQL
+            review.id,
+            artifact_id,
+          )
+
+          db.exec("COMMIT")
+          {review, count.to_i}
+        end
+      rescue
+        nil
+      end
+    end
+
+    # List reviews for an artifact. If pending_only is true,
+    # only returns reviews where reviewed_at IS NULL.
+    def self.list_reviews(
+      artifact_id : Int64,
+      pending_only : Bool = false,
+    ) : Array(ArtifactReview)
+      reviews = [] of ArtifactReview
+      return reviews if artifact_id <= 0
+
+      begin
+        open do |db|
+          where_clause = "WHERE artifact_id = ?"
+          if pending_only
+            where_clause += " AND reviewed_at IS NULL"
+          end
+
+          db.query(
+            <<-SQL,
+              SELECT id, created_at, updated_at,
+                     artifact_id, number, reviewed_at
+              FROM artifact_reviews
+              #{where_clause}
+              ORDER BY number ASC
+            SQL
+            artifact_id,
+          ) do |rs|
+            rs.each do
+              reviews << ArtifactReview.from_row(rs)
+            end
+          end
+        end
+      rescue
+        # Return empty on error
+      end
+      reviews
+    end
+
+    # Get a review by artifact ID + number.
+    def self.get_review(
+      artifact_id : Int64,
+      number : Int32,
+    ) : ArtifactReview?
+      return nil if artifact_id <= 0
+
+      begin
+        open do |db|
+          db.query_one?(
+            <<-SQL,
+              SELECT id, created_at, updated_at,
+                     artifact_id, number, reviewed_at
+              FROM artifact_reviews
+              WHERE artifact_id = ? AND number = ?
+            SQL
+            artifact_id,
+            number,
+          ) do |rs|
+            ArtifactReview.from_row(rs)
+          end
+        end
+      rescue
+        nil
+      end
+    end
+
+    # Mark a review as reviewed. Idempotent — calling again
+    # updates the timestamp. Returns updated review or nil.
+    def self.mark_review_reviewed(
+      artifact_id : Int64,
+      number : Int32,
+    ) : ArtifactReview?
+      return nil if artifact_id <= 0
+
+      begin
+        open do |db|
+          result = db.exec(
+            <<-SQL,
+              UPDATE artifact_reviews
+              SET reviewed_at = datetime('now'),
+                  updated_at = datetime('now')
+              WHERE artifact_id = ? AND number = ?
+            SQL
+            artifact_id,
+            number,
+          )
+          return nil if result.rows_affected == 0
+
+          db.query_one?(
+            <<-SQL,
+              SELECT id, created_at, updated_at,
+                     artifact_id, number, reviewed_at
+              FROM artifact_reviews
+              WHERE artifact_id = ? AND number = ?
+            SQL
+            artifact_id,
+            number,
+          ) do |rs|
+            ArtifactReview.from_row(rs)
+          end
+        end
+      rescue
+        nil
+      end
+    end
+
+    # List annotations assigned to a specific review.
+    def self.list_annotations_for_review(
+      review_id : Int64,
+    ) : Array(ArtifactAnnotation)
+      annotations = [] of ArtifactAnnotation
+      return annotations if review_id <= 0
+
+      begin
+        open do |db|
+          db.query(
+            <<-SQL,
+              SELECT a.id, a.created_at, a.updated_at,
+                     a.artifact_id, a.number, a.content,
+                     a.anchor_data, a.content_hash, a.stale,
+                     a.artifact_review_id,
+                     r.number AS review_number,
+                     r.reviewed_at AS review_reviewed_at
+              FROM artifact_annotations a
+              LEFT JOIN artifact_reviews r
+                ON a.artifact_review_id = r.id
+              WHERE a.artifact_review_id = ?
+              ORDER BY a.number ASC
+            SQL
+            review_id,
+          ) do |rs|
+            rs.each do
+              annotations << ArtifactAnnotation.from_row(rs)
+            end
+          end
+        end
+      rescue
+        # Return empty on error
+      end
+      annotations
+    end
+
+    # ============================================================
     # Backup Operations
     # ============================================================
 
@@ -558,6 +1079,75 @@ module GalaxyArtifacts
         @previous_content_hash = nil,
         @previous_file_size = nil,
       )
+      end
+    end
+
+    # An artifact annotation record from the database
+    struct ArtifactAnnotation
+      getter id : Int64
+      getter created_at : String
+      getter updated_at : String
+      getter artifact_id : Int64
+      getter number : Int32
+      getter content : String
+      getter anchor_data : String
+      getter content_hash : String
+      getter stale : Bool
+      getter artifact_review_id : Int64?
+      getter review_number : Int32?
+      getter review_reviewed_at : String?
+
+      def initialize(
+        @id, @created_at, @updated_at,
+        @artifact_id, @number, @content,
+        @anchor_data, @content_hash, @stale,
+        @artifact_review_id, @review_number,
+        @review_reviewed_at,
+      )
+      end
+
+      def self.from_row(rs) : ArtifactAnnotation
+        ArtifactAnnotation.new(
+          id: rs.read(Int64),
+          created_at: rs.read(String),
+          updated_at: rs.read(String),
+          artifact_id: rs.read(Int64),
+          number: rs.read(Int64).to_i,
+          content: rs.read(String),
+          anchor_data: rs.read(String),
+          content_hash: rs.read(String),
+          stale: rs.read(Int64) != 0,
+          artifact_review_id: rs.read(Int64?),
+          review_number: rs.read(Int64?).try(&.to_i),
+          review_reviewed_at: rs.read(String?),
+        )
+      end
+    end
+
+    # An artifact review record from the database
+    struct ArtifactReview
+      getter id : Int64
+      getter created_at : String
+      getter updated_at : String
+      getter artifact_id : Int64
+      getter number : Int32
+      getter reviewed_at : String?
+
+      def initialize(
+        @id, @created_at, @updated_at,
+        @artifact_id, @number, @reviewed_at,
+      )
+      end
+
+      def self.from_row(rs) : ArtifactReview
+        ArtifactReview.new(
+          id: rs.read(Int64),
+          created_at: rs.read(String),
+          updated_at: rs.read(String),
+          artifact_id: rs.read(Int64),
+          number: rs.read(Int64).to_i,
+          reviewed_at: rs.read(String?),
+        )
       end
     end
   end

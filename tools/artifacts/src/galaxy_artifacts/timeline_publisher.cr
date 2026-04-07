@@ -93,6 +93,134 @@ module GalaxyArtifacts
       )
     end
 
+    # Record an artifact.annotation:created event.
+    def self.annotation_created(
+      ledger_session_id : Int64,
+      artifact_id : Int64,
+      artifact_number : Int32,
+      artifact_title : String,
+      annotation_number : Int32,
+      content : String,
+    )
+      detail_data = JSON.build do |json|
+        json.object do
+          json.field "artifact_id", artifact_id
+          json.field "artifact_number",
+            artifact_number
+          json.field "artifact_title",
+            artifact_title
+          json.field "annotation_number",
+            annotation_number
+          json.field "content",
+            truncate(content, 200)
+        end
+      end
+
+      record_event(
+        ledger_session_id,
+        "artifact.annotation:created",
+        detail_data,
+      )
+    end
+
+    # Record an artifact.annotation:updated event.
+    def self.annotation_updated(
+      ledger_session_id : Int64,
+      artifact_id : Int64,
+      artifact_number : Int32,
+      artifact_title : String,
+      annotation_number : Int32,
+      content : String,
+    )
+      detail_data = JSON.build do |json|
+        json.object do
+          json.field "artifact_id", artifact_id
+          json.field "artifact_number",
+            artifact_number
+          json.field "artifact_title",
+            artifact_title
+          json.field "annotation_number",
+            annotation_number
+          json.field "content",
+            truncate(content, 200)
+        end
+      end
+
+      record_event(
+        ledger_session_id,
+        "artifact.annotation:updated",
+        detail_data,
+      )
+    end
+
+    # Record an artifact.annotation:deleted event.
+    def self.annotation_deleted(
+      ledger_session_id : Int64,
+      artifact_id : Int64,
+      artifact_number : Int32,
+      artifact_title : String,
+      annotation_number : Int32,
+      content : String? = nil,
+    )
+      detail_data = JSON.build do |json|
+        json.object do
+          json.field "artifact_id", artifact_id
+          json.field "artifact_number",
+            artifact_number
+          json.field "artifact_title",
+            artifact_title
+          json.field "annotation_number",
+            annotation_number
+          if c = content
+            json.field "content",
+              truncate(c, 200)
+          end
+        end
+      end
+
+      record_event(
+        ledger_session_id,
+        "artifact.annotation:deleted",
+        detail_data,
+      )
+    end
+
+    # Record an artifact.review:created event.
+    def self.review_created(
+      ledger_session_id : Int64,
+      artifact_id : Int64,
+      artifact_number : Int32,
+      artifact_title : String,
+      review_number : Int32,
+      annotation_count : Int32,
+    )
+      detail_data = JSON.build do |json|
+        json.object do
+          json.field "artifact_id", artifact_id
+          json.field "artifact_number",
+            artifact_number
+          json.field "artifact_title",
+            artifact_title
+          json.field "review_number", review_number
+          json.field "annotation_count",
+            annotation_count
+        end
+      end
+
+      record_event(
+        ledger_session_id,
+        "artifact.review:created",
+        detail_data,
+      )
+    end
+
+    private def self.truncate(
+      text : String, max : Int32,
+    ) : String
+      return text if text.size <= max
+      text[0, max - 1] + "\u2026"
+    end
+
     # Fire-and-forget: spawn galaxy-timeline record process.
     private def self.record_event(
       ledger_session_id : Int64,

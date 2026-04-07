@@ -48,6 +48,10 @@ module GalaxyArtifacts
         else
           handle_stats(rest)
         end
+      when "annotation"
+        handle_annotation_command(rest)
+      when "review"
+        handle_review_command(rest)
       when "backup"
         handle_backup_command(rest)
       when "install"
@@ -280,6 +284,22 @@ module GalaxyArtifacts
           previous_file_size: result.previous_file_size || 0_i64,
           previous_content_hash: result.previous_content_hash || "",
         )
+
+        # Mark annotations stale when content changes
+        artifact = Database.get_artifact_by_number(
+          ledger_session_id, number,
+        )
+        if artifact
+          stale_count = Database.mark_annotations_stale(
+            artifact.id,
+          )
+          if stale_count > 0
+            STDERR.puts(
+              "Note: #{stale_count} annotation(s) " \
+              "marked stale (content changed)",
+            )
+          end
+        end
       end
       # Enrichment — no timeline event (metadata-only, no
       # content change)
@@ -883,6 +903,1368 @@ module GalaxyArtifacts
     end
 
     # ============================================================
+    # annotation
+    # ============================================================
+
+    private def self.handle_annotation_command(
+      args : Array(String),
+    )
+      if args.empty? || args.first? == "-h" || args.first? == "--help"
+        show_annotation_help
+        return
+      end
+
+      subcommand = args[0]
+      rest = args[1..]? || [] of String
+
+      case subcommand
+      when "create"
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_annotation_create_help
+        else
+          annotation_create(rest)
+        end
+      when "list"
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_annotation_list_help
+        else
+          annotation_list(rest)
+        end
+      when "view"
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_annotation_view_help
+        else
+          annotation_view(rest)
+        end
+      when "update"
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_annotation_update_help
+        else
+          annotation_update(rest)
+        end
+      when "delete"
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_annotation_delete_help
+        else
+          annotation_delete(rest)
+        end
+      else
+        STDERR.puts(
+          "Error: Unknown annotation command " \
+          "'#{subcommand}'",
+        )
+        STDERR.puts(
+          "Run 'galaxy-artifacts annotation --help' " \
+          "for usage",
+        )
+        exit(1)
+      end
+    end
+
+    # Resolve --artifact-id to the DB primary key of the
+    # artifact. Supports direct ID or
+    # (--ledger-session-id + --artifact number).
+    private def self.resolve_artifact_id(
+      artifact_id_str : String?,
+      ledger_session_id_str : String?,
+      artifact_number : Int32?,
+    ) : Int64
+      if aid_str = artifact_id_str
+        id = aid_str.to_i64?
+        unless id
+          STDERR.puts(
+            "Error: --artifact-id must be a number",
+          )
+          exit(1)
+        end
+        return id
+      end
+
+      if sess_str = ledger_session_id_str
+        session_id = resolve_ledger_session_id_str(
+          sess_str,
+        )
+        unless artifact_number
+          STDERR.puts(
+            "Error: --artifact is required when " \
+            "using --ledger-session-id",
+          )
+          exit(1)
+        end
+        artifact = Database.get_artifact_by_number(
+          session_id, artifact_number,
+        )
+        unless artifact
+          STDERR.puts(
+            "Error: artifact ##{artifact_number} " \
+            "not found",
+          )
+          exit(1)
+        end
+        return artifact.id
+      end
+
+      STDERR.puts(
+        "Error: --artifact-id (or " \
+        "--ledger-session-id + --artifact) " \
+        "is required",
+      )
+      exit(1)
+    end
+
+    # Parse common annotation/review identifier flags.
+    # Returns {artifact_id_str, ledger_session_id_str,
+    # artifact_number, remaining_index}.
+    private def self.parse_artifact_id_args(
+      args : Array(String),
+      i : Int32,
+    ) : {String?, String?, Int32?, Int32}
+      artifact_id_str : String? = nil
+      ledger_session_id_str : String? = nil
+      artifact_number : Int32? = nil
+
+      arg = args[i]
+      case arg
+      when "--artifact-id"
+        if i + 1 < args.size
+          artifact_id_str = args[i + 1]
+          i += 2
+        else
+          STDERR.puts(
+            "Error: --artifact-id requires a value",
+          )
+          exit(1)
+        end
+      when "--ledger-session-id"
+        if i + 1 < args.size
+          ledger_session_id_str = args[i + 1]
+          i += 2
+        else
+          STDERR.puts(
+            "Error: --ledger-session-id " \
+            "requires a value",
+          )
+          exit(1)
+        end
+      when "--artifact"
+        if i + 1 < args.size
+          artifact_number = args[i + 1].to_i?
+          unless artifact_number
+            STDERR.puts(
+              "Error: --artifact must be a number",
+            )
+            exit(1)
+          end
+          i += 2
+        else
+          STDERR.puts(
+            "Error: --artifact requires a value",
+          )
+          exit(1)
+        end
+      end
+
+      {artifact_id_str, ledger_session_id_str,
+       artifact_number, i}
+    end
+
+    private def self.annotation_create(
+      args : Array(String),
+    )
+      artifact_id_str : String? = nil
+      ledger_session_id_str : String? = nil
+      artifact_number : Int32? = nil
+
+      i = 0
+      while i < args.size
+        arg = args[i]
+        case arg
+        when "--artifact-id"
+          if i + 1 < args.size
+            artifact_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --artifact-id requires a value",
+            )
+            exit(1)
+          end
+        when "--ledger-session-id"
+          if i + 1 < args.size
+            ledger_session_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --ledger-session-id " \
+              "requires a value",
+            )
+            exit(1)
+          end
+        when "--artifact"
+          if i + 1 < args.size
+            artifact_number = args[i + 1].to_i?
+            unless artifact_number
+              STDERR.puts(
+                "Error: --artifact must be a number",
+              )
+              exit(1)
+            end
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --artifact requires a value",
+            )
+            exit(1)
+          end
+        else
+          STDERR.puts "Error: Unknown option '#{arg}'"
+          STDERR.puts(
+            "Run 'galaxy-artifacts annotation " \
+            "create --help' for usage",
+          )
+          exit(1)
+        end
+      end
+
+      artifact_id = resolve_artifact_id(
+        artifact_id_str,
+        ledger_session_id_str,
+        artifact_number,
+      )
+
+      # Read JSON envelope from stdin
+      input = STDIN.gets_to_end
+      if input.strip.empty?
+        STDERR.puts(
+          "Error: no input provided on stdin " \
+          "(expected JSON with anchor_data and content)",
+        )
+        exit(1)
+      end
+
+      begin
+        envelope = JSON.parse(input.strip)
+      rescue
+        STDERR.puts "Error: invalid JSON on stdin"
+        exit(1)
+      end
+
+      anchor_data = envelope["anchor_data"]?
+      unless anchor_data
+        STDERR.puts(
+          "Error: missing 'anchor_data' in " \
+          "stdin JSON",
+        )
+        exit(1)
+      end
+
+      content = envelope["content"]?.try(&.as_s?)
+      unless content && !content.empty?
+        STDERR.puts(
+          "Error: missing or empty 'content' in " \
+          "stdin JSON",
+        )
+        exit(1)
+      end
+
+      # Look up artifact's current content_hash
+      artifact = resolve_artifact(artifact_id)
+      ann = Database.save_annotation(
+        artifact_id,
+        content,
+        anchor_data.to_json,
+        artifact.content_hash,
+      )
+
+      if ann
+        JSON.build(STDOUT, indent: "  ") do |json|
+          json.object do
+            json.field "annotation" do
+              annotation_to_json(json, ann)
+            end
+          end
+        end
+        puts ""
+
+        TimelinePublisher.annotation_created(
+          artifact.ledger_session_id,
+          artifact_id: artifact_id,
+          artifact_number: artifact.number,
+          artifact_title: artifact.title,
+          annotation_number: ann.number,
+          content: ann.content,
+        )
+      else
+        STDERR.puts "Error: failed to create annotation"
+        exit(1)
+      end
+    end
+
+    private def self.annotation_list(
+      args : Array(String),
+    )
+      artifact_id_str : String? = nil
+      ledger_session_id_str : String? = nil
+      artifact_number : Int32? = nil
+      json_output = false
+
+      i = 0
+      while i < args.size
+        arg = args[i]
+        case arg
+        when "--artifact-id"
+          if i + 1 < args.size
+            artifact_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --artifact-id requires a value",
+            )
+            exit(1)
+          end
+        when "--ledger-session-id"
+          if i + 1 < args.size
+            ledger_session_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --ledger-session-id " \
+              "requires a value",
+            )
+            exit(1)
+          end
+        when "--artifact"
+          if i + 1 < args.size
+            artifact_number = args[i + 1].to_i?
+            unless artifact_number
+              STDERR.puts(
+                "Error: --artifact must be a number",
+              )
+              exit(1)
+            end
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --artifact requires a value",
+            )
+            exit(1)
+          end
+        when "--json"
+          json_output = true
+          i += 1
+        else
+          STDERR.puts "Error: Unknown option '#{arg}'"
+          STDERR.puts(
+            "Run 'galaxy-artifacts annotation " \
+            "list --help' for usage",
+          )
+          exit(1)
+        end
+      end
+
+      artifact_id = resolve_artifact_id(
+        artifact_id_str,
+        ledger_session_id_str,
+        artifact_number,
+      )
+      annotations = Database.list_annotations(artifact_id)
+
+      if json_output
+        JSON.build(STDOUT, indent: "  ") do |json|
+          json.object do
+            json.field "annotations" do
+              json.array do
+                annotations.each do |ann|
+                  annotation_to_json(json, ann)
+                end
+              end
+            end
+          end
+        end
+        puts ""
+        return
+      end
+
+      if annotations.empty?
+        puts "No annotations for this artifact."
+        return
+      end
+
+      puts "Annotations (#{annotations.size} total):"
+      puts ""
+
+      annotations.each do |ann|
+        preview = ann.content.gsub('\n', ' ')
+        preview = preview.size > 50 ? "#{preview[0, 50]}..." : preview
+        stale = ann.stale ? " [stale]" : ""
+        timestamp = format_timestamp(ann.created_at)
+        puts(
+          "  ##{ann.number}  \"#{preview}\"" \
+          "#{stale}  #{timestamp}",
+        )
+      end
+    end
+
+    private def self.annotation_view(
+      args : Array(String),
+    )
+      artifact_id_str : String? = nil
+      ledger_session_id_str : String? = nil
+      artifact_number : Int32? = nil
+      number : Int32? = nil
+
+      i = 0
+      while i < args.size
+        arg = args[i]
+        case arg
+        when "--artifact-id"
+          if i + 1 < args.size
+            artifact_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --artifact-id requires a value",
+            )
+            exit(1)
+          end
+        when "--ledger-session-id"
+          if i + 1 < args.size
+            ledger_session_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --ledger-session-id " \
+              "requires a value",
+            )
+            exit(1)
+          end
+        when "--artifact"
+          if i + 1 < args.size
+            artifact_number = args[i + 1].to_i?
+            unless artifact_number
+              STDERR.puts(
+                "Error: --artifact must be a number",
+              )
+              exit(1)
+            end
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --artifact requires a value",
+            )
+            exit(1)
+          end
+        else
+          if n = arg.to_i?
+            number = n
+          else
+            STDERR.puts "Error: Unknown option '#{arg}'"
+            STDERR.puts(
+              "Run 'galaxy-artifacts annotation " \
+              "view --help' for usage",
+            )
+            exit(1)
+          end
+          i += 1
+        end
+      end
+
+      artifact_id = resolve_artifact_id(
+        artifact_id_str,
+        ledger_session_id_str,
+        artifact_number,
+      )
+
+      unless number
+        STDERR.puts "Error: annotation number is required"
+        STDERR.puts(
+          "Run 'galaxy-artifacts annotation " \
+          "view --help' for usage",
+        )
+        exit(1)
+      end
+
+      ann = Database.get_annotation(artifact_id, number)
+
+      unless ann
+        STDERR.puts(
+          "Error: annotation ##{number} not found",
+        )
+        exit(1)
+      end
+
+      JSON.build(STDOUT, indent: "  ") do |json|
+        json.object do
+          json.field "annotation" do
+            annotation_to_json(json, ann)
+          end
+        end
+      end
+      puts ""
+    end
+
+    private def self.annotation_update(
+      args : Array(String),
+    )
+      artifact_id_str : String? = nil
+      ledger_session_id_str : String? = nil
+      artifact_number : Int32? = nil
+      number : Int32? = nil
+
+      i = 0
+      while i < args.size
+        arg = args[i]
+        case arg
+        when "--artifact-id"
+          if i + 1 < args.size
+            artifact_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --artifact-id requires a value",
+            )
+            exit(1)
+          end
+        when "--ledger-session-id"
+          if i + 1 < args.size
+            ledger_session_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --ledger-session-id " \
+              "requires a value",
+            )
+            exit(1)
+          end
+        when "--artifact"
+          if i + 1 < args.size
+            artifact_number = args[i + 1].to_i?
+            unless artifact_number
+              STDERR.puts(
+                "Error: --artifact must be a number",
+              )
+              exit(1)
+            end
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --artifact requires a value",
+            )
+            exit(1)
+          end
+        else
+          if n = arg.to_i?
+            number = n
+          else
+            STDERR.puts "Error: Unknown option '#{arg}'"
+            STDERR.puts(
+              "Run 'galaxy-artifacts annotation " \
+              "update --help' for usage",
+            )
+            exit(1)
+          end
+          i += 1
+        end
+      end
+
+      artifact_id = resolve_artifact_id(
+        artifact_id_str,
+        ledger_session_id_str,
+        artifact_number,
+      )
+
+      unless number
+        STDERR.puts "Error: annotation number is required"
+        STDERR.puts(
+          "Run 'galaxy-artifacts annotation " \
+          "update --help' for usage",
+        )
+        exit(1)
+      end
+
+      # Read content from stdin (plain text, not JSON)
+      content = STDIN.gets_to_end
+      if content.strip.empty?
+        STDERR.puts(
+          "Error: no content provided on stdin",
+        )
+        exit(1)
+      end
+
+      ann = Database.update_annotation(
+        artifact_id,
+        number,
+        content.strip,
+      )
+
+      if ann
+        JSON.build(STDOUT, indent: "  ") do |json|
+          json.object do
+            json.field "annotation" do
+              annotation_to_json(json, ann)
+            end
+          end
+        end
+        puts ""
+
+        artifact = resolve_artifact(artifact_id)
+        TimelinePublisher.annotation_updated(
+          artifact.ledger_session_id,
+          artifact_id: artifact_id,
+          artifact_number: artifact.number,
+          artifact_title: artifact.title,
+          annotation_number: ann.number,
+          content: ann.content,
+        )
+      else
+        STDERR.puts(
+          "Error: annotation ##{number} not found",
+        )
+        exit(1)
+      end
+    end
+
+    private def self.annotation_delete(
+      args : Array(String),
+    )
+      artifact_id_str : String? = nil
+      ledger_session_id_str : String? = nil
+      artifact_number : Int32? = nil
+      number : Int32? = nil
+
+      i = 0
+      while i < args.size
+        arg = args[i]
+        case arg
+        when "--artifact-id"
+          if i + 1 < args.size
+            artifact_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --artifact-id requires a value",
+            )
+            exit(1)
+          end
+        when "--ledger-session-id"
+          if i + 1 < args.size
+            ledger_session_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --ledger-session-id " \
+              "requires a value",
+            )
+            exit(1)
+          end
+        when "--artifact"
+          if i + 1 < args.size
+            artifact_number = args[i + 1].to_i?
+            unless artifact_number
+              STDERR.puts(
+                "Error: --artifact must be a number",
+              )
+              exit(1)
+            end
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --artifact requires a value",
+            )
+            exit(1)
+          end
+        else
+          if n = arg.to_i?
+            number = n
+          else
+            STDERR.puts "Error: Unknown option '#{arg}'"
+            STDERR.puts(
+              "Run 'galaxy-artifacts annotation " \
+              "delete --help' for usage",
+            )
+            exit(1)
+          end
+          i += 1
+        end
+      end
+
+      artifact_id = resolve_artifact_id(
+        artifact_id_str,
+        ledger_session_id_str,
+        artifact_number,
+      )
+
+      unless number
+        STDERR.puts "Error: annotation number is required"
+        STDERR.puts(
+          "Run 'galaxy-artifacts annotation " \
+          "delete --help' for usage",
+        )
+        exit(1)
+      end
+
+      # Fetch before delete for timeline event content
+      ann = Database.get_annotation(artifact_id, number)
+      result = Database.delete_annotation(
+        artifact_id, number,
+      )
+
+      if result
+        puts "Annotation ##{number} deleted"
+
+        artifact = resolve_artifact(artifact_id)
+        TimelinePublisher.annotation_deleted(
+          artifact.ledger_session_id,
+          artifact_id: artifact_id,
+          artifact_number: artifact.number,
+          artifact_title: artifact.title,
+          annotation_number: number,
+          content: ann.try(&.content),
+        )
+      else
+        STDERR.puts(
+          "Error: annotation ##{number} not found",
+        )
+        exit(1)
+      end
+    end
+
+    # Serialize an ArtifactAnnotation to JSON fields
+    private def self.annotation_to_json(
+      json : JSON::Builder,
+      ann : Database::ArtifactAnnotation,
+    )
+      json.object do
+        json.field "id", ann.id
+        json.field "number", ann.number
+        json.field "artifact_id", ann.artifact_id
+        json.field "artifact_review_id",
+          ann.artifact_review_id
+        json.field "review_number", ann.review_number
+        json.field "review_reviewed_at",
+          ann.review_reviewed_at
+        json.field "content", ann.content
+        json.field "anchor_data" do
+          json.raw(ann.anchor_data)
+        end
+        json.field "content_hash", ann.content_hash
+        json.field "stale", ann.stale
+        json.field "created_at", ann.created_at
+        json.field "updated_at", ann.updated_at
+      end
+    end
+
+    # ============================================================
+    # review
+    # ============================================================
+
+    private def self.handle_review_command(
+      args : Array(String),
+    )
+      if args.empty? || args.first? == "-h" || args.first? == "--help"
+        show_review_help
+        return
+      end
+
+      subcommand = args[0]
+      rest = args[1..]? || [] of String
+
+      case subcommand
+      when "create"
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_review_create_help
+        else
+          review_create(rest)
+        end
+      when "list"
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_review_list_help
+        else
+          review_list(rest)
+        end
+      when "view"
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_review_view_help
+        else
+          review_view(rest)
+        end
+      when "mark-reviewed"
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_review_mark_reviewed_help
+        else
+          review_mark_reviewed(rest)
+        end
+      when "has-pending"
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_review_has_pending_help
+        else
+          review_has_pending(rest)
+        end
+      else
+        STDERR.puts(
+          "Error: Unknown review command " \
+          "'#{subcommand}'",
+        )
+        STDERR.puts(
+          "Run 'galaxy-artifacts review --help' " \
+          "for usage",
+        )
+        exit(1)
+      end
+    end
+
+    private def self.review_create(
+      args : Array(String),
+    )
+      artifact_id_str : String? = nil
+      ledger_session_id_str : String? = nil
+      artifact_number : Int32? = nil
+
+      i = 0
+      while i < args.size
+        arg = args[i]
+        case arg
+        when "--artifact-id"
+          if i + 1 < args.size
+            artifact_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --artifact-id requires a value",
+            )
+            exit(1)
+          end
+        when "--ledger-session-id"
+          if i + 1 < args.size
+            ledger_session_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --ledger-session-id " \
+              "requires a value",
+            )
+            exit(1)
+          end
+        when "--artifact"
+          if i + 1 < args.size
+            artifact_number = args[i + 1].to_i?
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --artifact requires a value",
+            )
+            exit(1)
+          end
+        else
+          i += 1
+        end
+      end
+
+      artifact_id = resolve_artifact_id(
+        artifact_id_str,
+        ledger_session_id_str,
+        artifact_number,
+      )
+
+      result = Database.save_review(artifact_id)
+
+      unless result
+        STDERR.puts(
+          "Error: no unreviewed annotations " \
+          "to submit",
+        )
+        exit(1)
+      end
+
+      review, annotation_count = result
+
+      artifact = resolve_artifact(artifact_id)
+      TimelinePublisher.review_created(
+        artifact.ledger_session_id,
+        artifact_id: artifact_id,
+        artifact_number: artifact.number,
+        artifact_title: artifact.title,
+        review_number: review.number,
+        annotation_count: annotation_count,
+      )
+
+      JSON.build(STDOUT) do |json|
+        json.object do
+          json.field "review" do
+            review_to_json(json, review)
+          end
+          json.field "annotation_count",
+            annotation_count
+        end
+      end
+      puts ""
+    end
+
+    private def self.review_list(
+      args : Array(String),
+    )
+      artifact_id_str : String? = nil
+      ledger_session_id_str : String? = nil
+      artifact_number : Int32? = nil
+      json_output = false
+      pending_only = false
+
+      i = 0
+      while i < args.size
+        arg = args[i]
+        case arg
+        when "--artifact-id"
+          if i + 1 < args.size
+            artifact_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --artifact-id requires a value",
+            )
+            exit(1)
+          end
+        when "--ledger-session-id"
+          if i + 1 < args.size
+            ledger_session_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --ledger-session-id " \
+              "requires a value",
+            )
+            exit(1)
+          end
+        when "--artifact"
+          if i + 1 < args.size
+            artifact_number = args[i + 1].to_i?
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --artifact requires a value",
+            )
+            exit(1)
+          end
+        when "--json"
+          json_output = true
+          i += 1
+        when "--pending"
+          pending_only = true
+          i += 1
+        else
+          i += 1
+        end
+      end
+
+      artifact_id = resolve_artifact_id(
+        artifact_id_str,
+        ledger_session_id_str,
+        artifact_number,
+      )
+
+      reviews = Database.list_reviews(
+        artifact_id,
+        pending_only: pending_only,
+      )
+
+      if json_output
+        JSON.build(STDOUT) do |json|
+          json.object do
+            json.field "reviews" do
+              json.array do
+                reviews.each do |review|
+                  json.object do
+                    json.field "number", review.number
+                    json.field "artifact_id",
+                      review.artifact_id
+                    json.field "created_at",
+                      review.created_at
+                    json.field "reviewed_at",
+                      review.reviewed_at
+                    json.field "annotation_count" do
+                      anns = Database \
+                        .list_annotations_for_review(
+                        review.id,
+                      )
+                      json.number anns.size
+                    end
+                  end
+                end
+              end
+            end
+          end
+        end
+        puts ""
+      else
+        if reviews.empty?
+          label = pending_only ? "pending reviews" : "reviews"
+          puts "No #{label}."
+        else
+          label = pending_only ? "Pending reviews" : "Reviews"
+          puts "#{label} (#{reviews.size} total):"
+          reviews.each do |review|
+            ann_count = Database \
+              .list_annotations_for_review(
+              review.id,
+            ).size
+            status = review.reviewed_at ? "reviewed" : "pending"
+            timestamp = format_timestamp(
+              review.created_at,
+            )
+            puts(
+              "  ##{review.number}  " \
+              "#{ann_count} annotation" \
+              "#{ann_count == 1 ? "" : "s"}  " \
+              "#{status}  #{timestamp}",
+            )
+          end
+        end
+      end
+    end
+
+    private def self.review_view(
+      args : Array(String),
+    )
+      artifact_id_str : String? = nil
+      ledger_session_id_str : String? = nil
+      artifact_number : Int32? = nil
+      review_number : Int32? = nil
+      json_output = false
+
+      i = 0
+      while i < args.size
+        arg = args[i]
+        case arg
+        when "--artifact-id"
+          if i + 1 < args.size
+            artifact_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --artifact-id requires a value",
+            )
+            exit(1)
+          end
+        when "--ledger-session-id"
+          if i + 1 < args.size
+            ledger_session_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --ledger-session-id " \
+              "requires a value",
+            )
+            exit(1)
+          end
+        when "--artifact"
+          if i + 1 < args.size
+            artifact_number = args[i + 1].to_i?
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --artifact requires a value",
+            )
+            exit(1)
+          end
+        when "--json"
+          json_output = true
+          i += 1
+        else
+          if n = arg.to_i?
+            review_number = n
+          end
+          i += 1
+        end
+      end
+
+      artifact_id = resolve_artifact_id(
+        artifact_id_str,
+        ledger_session_id_str,
+        artifact_number,
+      )
+
+      unless review_number
+        STDERR.puts "Error: review number is required"
+        STDERR.puts(
+          "Run 'galaxy-artifacts review " \
+          "view --help' for usage",
+        )
+        exit(1)
+      end
+
+      review = Database.get_review(
+        artifact_id, review_number,
+      )
+      unless review
+        STDERR.puts(
+          "Error: review ##{review_number} not found",
+        )
+        exit(1)
+      end
+
+      # Get artifact for context
+      artifact = resolve_artifact(artifact_id)
+      annotations = Database.list_annotations_for_review(
+        review.id,
+      )
+
+      if json_output
+        JSON.build(STDOUT) do |json|
+          json.object do
+            json.field "review" do
+              review_to_json(json, review)
+            end
+            json.field "artifact" do
+              json.object do
+                json.field "id", artifact.id
+                json.field "number", artifact.number
+                json.field "title", artifact.title
+                json.field "artifact_type",
+                  artifact.artifact_type
+                json.field "ledger_session_id",
+                  artifact.ledger_session_id
+                json.field "created_at",
+                  artifact.created_at
+              end
+            end
+            json.field "annotations" do
+              json.array do
+                annotations.each do |ann|
+                  annotation_to_json(json, ann)
+                end
+              end
+            end
+          end
+        end
+        puts ""
+      else
+        status = if ra = review.reviewed_at
+                   "reviewed #{format_timestamp(ra)}"
+                 else
+                   "pending"
+                 end
+        timestamp = format_timestamp(review.created_at)
+        puts "Review ##{review.number} (#{status})"
+        puts(
+          "  Artifact: ##{artifact.number} " \
+          "\u2014 #{artifact.title}",
+        )
+        puts "  Created: #{timestamp}"
+        puts "  Annotations (#{annotations.size}):"
+        annotations.each do |ann|
+          preview = ann.content.gsub('\n', ' ')
+          preview = preview[0, 60] + "..." if preview.size > 63
+          stale = ann.stale ? " [stale]" : ""
+          puts(
+            "    ##{ann.number}  " \
+            "\"#{preview}\"#{stale}",
+          )
+        end
+      end
+    end
+
+    private def self.review_mark_reviewed(
+      args : Array(String),
+    )
+      artifact_id_str : String? = nil
+      ledger_session_id_str : String? = nil
+      artifact_number : Int32? = nil
+      review_number : Int32? = nil
+
+      i = 0
+      while i < args.size
+        arg = args[i]
+        case arg
+        when "--artifact-id"
+          if i + 1 < args.size
+            artifact_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --artifact-id requires a value",
+            )
+            exit(1)
+          end
+        when "--ledger-session-id"
+          if i + 1 < args.size
+            ledger_session_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --ledger-session-id " \
+              "requires a value",
+            )
+            exit(1)
+          end
+        when "--artifact"
+          if i + 1 < args.size
+            artifact_number = args[i + 1].to_i?
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --artifact requires a value",
+            )
+            exit(1)
+          end
+        else
+          if n = arg.to_i?
+            review_number = n
+          end
+          i += 1
+        end
+      end
+
+      artifact_id = resolve_artifact_id(
+        artifact_id_str,
+        ledger_session_id_str,
+        artifact_number,
+      )
+
+      unless review_number
+        STDERR.puts "Error: review number is required"
+        STDERR.puts(
+          "Run 'galaxy-artifacts review " \
+          "mark-reviewed --help' for usage",
+        )
+        exit(1)
+      end
+
+      review = Database.mark_review_reviewed(
+        artifact_id,
+        review_number,
+      )
+
+      unless review
+        STDERR.puts(
+          "Error: review ##{review_number} not found",
+        )
+        exit(1)
+      end
+
+      JSON.build(STDOUT) do |json|
+        json.object do
+          json.field "review" do
+            review_to_json(json, review)
+          end
+        end
+      end
+      puts ""
+    end
+
+    private def self.review_has_pending(
+      args : Array(String),
+    )
+      artifact_id_str : String? = nil
+      ledger_session_id_str : String? = nil
+      artifact_number : Int32? = nil
+
+      i = 0
+      while i < args.size
+        arg = args[i]
+        case arg
+        when "--artifact-id"
+          if i + 1 < args.size
+            artifact_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --artifact-id requires a value",
+            )
+            exit(1)
+          end
+        when "--ledger-session-id"
+          if i + 1 < args.size
+            ledger_session_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --ledger-session-id " \
+              "requires a value",
+            )
+            exit(1)
+          end
+        when "--artifact"
+          if i + 1 < args.size
+            artifact_number = args[i + 1].to_i?
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --artifact requires a value",
+            )
+            exit(1)
+          end
+        else
+          i += 1
+        end
+      end
+
+      artifact_id = resolve_artifact_id(
+        artifact_id_str,
+        ledger_session_id_str,
+        artifact_number,
+      )
+
+      count = Database.count_unreviewed_annotations(
+        artifact_id,
+      )
+
+      JSON.build(STDOUT) do |json|
+        json.object do
+          json.field "artifact_id", artifact_id
+          json.field "has_pending", count > 0
+          json.field "count", count
+        end
+      end
+      puts ""
+    end
+
+    # Serialize an ArtifactReview to JSON fields
+    private def self.review_to_json(
+      json : JSON::Builder,
+      review : Database::ArtifactReview,
+    )
+      json.object do
+        json.field "id", review.id
+        json.field "number", review.number
+        json.field "artifact_id", review.artifact_id
+        json.field "created_at", review.created_at
+        json.field "updated_at", review.updated_at
+        json.field "reviewed_at", review.reviewed_at
+      end
+    end
+
+    # Resolve the artifact record from its DB primary key.
+    private def self.resolve_artifact(
+      artifact_id : Int64,
+    ) : Database::Artifact
+      # Query by primary key directly
+      begin
+        GalaxyArtifacts::Database.open do |db|
+          result = db.query_one?(
+            <<-SQL,
+              SELECT id, ledger_session_id, number,
+                     created_at, updated_at, title,
+                     artifact_type, mime_type,
+                     original_filename, stored_path,
+                     source_path, file_size,
+                     content_hash, description, metadata
+              FROM artifacts
+              WHERE id = ?
+            SQL
+            artifact_id,
+          ) do |rs|
+            Database::Artifact.from_row(rs)
+          end
+          if result
+            return result
+          end
+        end
+      rescue
+      end
+      STDERR.puts "Error: artifact not found"
+      exit(1)
+    end
+
+    # ============================================================
     # Session Resolution Helpers
     # ============================================================
 
@@ -1025,6 +2407,8 @@ module GalaxyArtifacts
         view        View a text artifact's content
         open        Open an artifact in native app
         delete      Delete an artifact
+        annotation  Manage artifact annotations
+        review      Manage annotation reviews
         stats       Get artifact count for a session (JSON)
         backup      Manage database backups
         install     Install skills
@@ -1165,6 +2549,239 @@ module GalaxyArtifacts
         Used for budget decisions and context handoff.
 
         Output: {"count": N}
+      HELP
+    end
+
+    private def self.show_annotation_help
+      puts <<-HELP
+      galaxy-artifacts annotation - Manage artifact annotations
+
+      USAGE:
+        galaxy-artifacts annotation <subcommand> [options]
+
+      SUBCOMMANDS:
+        create      Create an annotation (stdin JSON)
+        list        List annotations for an artifact
+        view        View a single annotation
+        update      Update annotation content (stdin text)
+        delete      Delete an annotation
+
+      IDENTIFIER (required for all subcommands, one of):
+        --artifact-id ID                   Direct artifact DB ID
+        --ledger-session-id ID --artifact N  Session ID + artifact number
+
+      Run 'galaxy-artifacts annotation <subcommand> --help' for details.
+      HELP
+    end
+
+    private def self.show_annotation_create_help
+      puts <<-HELP
+      galaxy-artifacts annotation create - Create an annotation
+
+      USAGE:
+        echo '{"anchor_data":{...},"content":"..."}' | \\
+          galaxy-artifacts annotation create --artifact-id ID
+
+      REQUIRED (one of):
+        --artifact-id ID                   Direct artifact DB ID
+        --ledger-session-id ID --artifact N  Session + artifact number
+
+      STDIN:
+        JSON envelope with two fields:
+          anchor_data  Object describing the annotation location
+          content      Annotation text content
+
+      DESCRIPTION:
+        Creates an annotation on an artifact. The artifact's current
+        content_hash is stored on the annotation for stale tracking.
+        Anchor data is stored as-is (supports line_range, row_range,
+        block_range, whole_file, and future anchor types).
+      HELP
+    end
+
+    private def self.show_annotation_list_help
+      puts <<-HELP
+      galaxy-artifacts annotation list - List annotations
+
+      USAGE:
+        galaxy-artifacts annotation list --artifact-id ID
+        galaxy-artifacts annotation list --ledger-session-id ID --artifact N
+
+      REQUIRED (one of):
+        --artifact-id ID                   Direct artifact DB ID
+        --ledger-session-id ID --artifact N  Session + artifact number
+
+      OPTIONS:
+        --json    Output as JSON
+
+      DESCRIPTION:
+        Lists all annotations for the specified artifact, ordered by number.
+      HELP
+    end
+
+    private def self.show_annotation_view_help
+      puts <<-HELP
+      galaxy-artifacts annotation view - View an annotation
+
+      USAGE:
+        galaxy-artifacts annotation view --artifact-id ID NUMBER
+
+      REQUIRED:
+        --artifact-id ID (or --ledger-session-id ID --artifact N)
+        NUMBER    Annotation number
+
+      DESCRIPTION:
+        Returns a single annotation as JSON.
+      HELP
+    end
+
+    private def self.show_annotation_update_help
+      puts <<-HELP
+      galaxy-artifacts annotation update - Update annotation content
+
+      USAGE:
+        echo 'new content' | \\
+          galaxy-artifacts annotation update --artifact-id ID NUMBER
+
+      REQUIRED:
+        --artifact-id ID (or --ledger-session-id ID --artifact N)
+        NUMBER    Annotation number
+
+      STDIN:
+        Plain text content (replaces existing content).
+        Anchor data is immutable and cannot be changed.
+
+      DESCRIPTION:
+        Updates the content of an existing annotation. Only content
+        can be changed — anchor_data, content_hash, and stale status
+        are preserved.
+      HELP
+    end
+
+    private def self.show_annotation_delete_help
+      puts <<-HELP
+      galaxy-artifacts annotation delete - Delete an annotation
+
+      USAGE:
+        galaxy-artifacts annotation delete --artifact-id ID NUMBER
+
+      REQUIRED:
+        --artifact-id ID (or --ledger-session-id ID --artifact N)
+        NUMBER    Annotation number
+
+      DESCRIPTION:
+        Permanently deletes an annotation.
+      HELP
+    end
+
+    private def self.show_review_help
+      puts <<-HELP
+      galaxy-artifacts review - Manage annotation reviews
+
+      USAGE:
+        galaxy-artifacts review <subcommand> [options]
+
+      SUBCOMMANDS:
+        create          Batch unreviewed annotations into a review
+        list            List reviews for an artifact
+        view            View a review with its annotations
+        mark-reviewed   Mark a review as reviewed
+        has-pending     Check for unreviewed annotations
+
+      IDENTIFIER (required for all subcommands, one of):
+        --artifact-id ID                   Direct artifact DB ID
+        --ledger-session-id ID --artifact N  Session + artifact number
+
+      Run 'galaxy-artifacts review <subcommand> --help' for details.
+      HELP
+    end
+
+    private def self.show_review_create_help
+      puts <<-HELP
+      galaxy-artifacts review create - Create a review
+
+      USAGE:
+        galaxy-artifacts review create --artifact-id ID
+
+      REQUIRED (one of):
+        --artifact-id ID                   Direct artifact DB ID
+        --ledger-session-id ID --artifact N  Session + artifact number
+
+      DESCRIPTION:
+        Atomically batches all unreviewed annotations into a new review.
+        Fails if no unreviewed annotations exist.
+      HELP
+    end
+
+    private def self.show_review_list_help
+      puts <<-HELP
+      galaxy-artifacts review list - List reviews
+
+      USAGE:
+        galaxy-artifacts review list --artifact-id ID
+
+      REQUIRED (one of):
+        --artifact-id ID                   Direct artifact DB ID
+        --ledger-session-id ID --artifact N  Session + artifact number
+
+      OPTIONS:
+        --json       Output as JSON
+        --pending    Only show reviews not yet marked as reviewed
+
+      DESCRIPTION:
+        Lists reviews for the specified artifact, ordered by number.
+      HELP
+    end
+
+    private def self.show_review_view_help
+      puts <<-HELP
+      galaxy-artifacts review view - View a review
+
+      USAGE:
+        galaxy-artifacts review view --artifact-id ID NUMBER
+
+      REQUIRED:
+        --artifact-id ID (or --ledger-session-id ID --artifact N)
+        NUMBER    Review number
+
+      OPTIONS:
+        --json    Output as JSON (includes artifact context and annotations)
+
+      DESCRIPTION:
+        Shows review details with its associated annotations.
+      HELP
+    end
+
+    private def self.show_review_mark_reviewed_help
+      puts <<-HELP
+      galaxy-artifacts review mark-reviewed - Mark as reviewed
+
+      USAGE:
+        galaxy-artifacts review mark-reviewed --artifact-id ID NUMBER
+
+      REQUIRED:
+        --artifact-id ID (or --ledger-session-id ID --artifact N)
+        NUMBER    Review number
+
+      DESCRIPTION:
+        Sets reviewed_at to the current timestamp. Idempotent — calling
+        again updates the timestamp.
+      HELP
+    end
+
+    private def self.show_review_has_pending_help
+      puts <<-HELP
+      galaxy-artifacts review has-pending - Check pending annotations
+
+      USAGE:
+        galaxy-artifacts review has-pending --artifact-id ID
+
+      REQUIRED (one of):
+        --artifact-id ID                   Direct artifact DB ID
+        --ledger-session-id ID --artifact N  Session + artifact number
+
+      DESCRIPTION:
+        Returns JSON: {"artifact_id": N, "has_pending": bool, "count": N}
       HELP
     end
 
