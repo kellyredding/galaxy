@@ -81,8 +81,8 @@ module GalaxyArtifacts
       end
     end
 
-    # Text-based artifact types that can be viewed inline
-    VIEWABLE_ARTIFACT_TYPES = Set{"markdown", "csv", "text", "mermaid", "data", "html"}
+    # Binary artifact types that cannot be viewed inline
+    BINARY_ARTIFACT_TYPES = Set{"pdf", "image", "binary"}
 
     # ============================================================
     # save
@@ -250,13 +250,6 @@ module GalaxyArtifacts
           Database.update_artifact_stored_path(ledger_session_id, number, stored)
         end
       end
-
-      # Publish event
-      EventPublisher.publish(
-        ledger_session_id,
-        "artifact.saved",
-        ref: number.to_s,
-      )
 
       # Publish timeline event (fire-and-forget)
       trigger = content_hash_arg ? "auto" : "manual"
@@ -484,7 +477,7 @@ module GalaxyArtifacts
         exit(1)
       end
 
-      unless VIEWABLE_ARTIFACT_TYPES.includes?(artifact.artifact_type)
+      if BINARY_ARTIFACT_TYPES.includes?(artifact.artifact_type)
         STDERR.puts "Error: artifact ##{number} is a #{artifact.artifact_type} file (binary) \u2014 use 'open' instead"
         exit(1)
       end
@@ -669,11 +662,6 @@ module GalaxyArtifacts
       )
 
       if result
-        EventPublisher.publish(
-          ledger_session_id,
-          "artifact.deleted",
-          ref: number.to_s,
-        )
         TimelinePublisher.artifact_deleted(
           ledger_session_id,
           number: number,
@@ -2487,9 +2475,9 @@ module GalaxyArtifacts
         NUMBER                   Artifact number (session-scoped)
 
       DESCRIPTION:
-        Outputs the content of a text-based artifact to stdout. Only works
-        for text-based types (markdown, csv, text, mermaid, data, html).
-        For binary artifacts (pdf, image), use 'open' instead.
+        Outputs the content of an artifact to stdout. Works for all
+        text-based types. Binary artifacts (pdf, image) are rejected
+        — use 'open' instead.
       HELP
     end
 

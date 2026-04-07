@@ -55,6 +55,14 @@ final class EventCoordinator {
         "timeline.agent:stopped",
         "timeline.agent:failed",
         "timeline.agent:abandoned",
+        // Artifact lifecycle (timeline → DB → socket)
+        "timeline.artifact:created",
+        "timeline.artifact:updated",
+        "timeline.artifact:deleted",
+        "timeline.artifact.annotation:created",
+        "timeline.artifact.annotation:updated",
+        "timeline.artifact.annotation:deleted",
+        "timeline.artifact.review:created",
     ]
 
     /// Turn-start event that triggers startTurn().

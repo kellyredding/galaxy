@@ -160,6 +160,11 @@ struct ContentView: View {
                     .allowsHitTesting(sessionManager.activeTab == .agents)
                     .zIndex(sessionManager.activeTab == .agents ? 1 : 0)
 
+                ArtifactsContainerView()
+                    .opacity(sessionManager.activeTab == .artifacts ? 1 : 0)
+                    .allowsHitTesting(sessionManager.activeTab == .artifacts)
+                    .zIndex(sessionManager.activeTab == .artifacts ? 1 : 0)
+
                 SnapshotsContainerView()
                     .opacity(sessionManager.activeTab == .snapshots ? 1 : 0)
                     .allowsHitTesting(sessionManager.activeTab == .snapshots)

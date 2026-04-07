@@ -119,6 +119,13 @@ struct SnapshotsView: View {
             if session.id != sessionManager.activeSessionId {
                 snapshots = nil
             }
+            // Re-fetch when switching back to this
+            // session while already on the snapshots tab
+            if session.id == sessionManager.activeSessionId,
+               sessionManager.activeTab == .snapshots,
+               openSnapshot == nil {
+                fetchSnapshotList()
+            }
         }
         .onChange(of: sessionManager.activeTab) {
             syncReaderOpenState()

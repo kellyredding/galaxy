@@ -122,6 +122,7 @@ struct MarkdownReaderView: NSViewRepresentable {
     let annotationHTMLMap: [Int32: String]
     @Binding var webViewRef: WKWebView?
     var onAnnotationMessage: ((AnnotationMessage) -> Void)?
+    var annotationsEnabled: Bool = true
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
@@ -146,9 +147,22 @@ struct MarkdownReaderView: NSViewRepresentable {
         guard context.coordinator.lastHTMLHash != htmlHash else { return }
 
         context.coordinator.lastHTMLHash = htmlHash
+        context.coordinator.annotationsEnabled =
+            self.annotationsEnabled
         context.coordinator.pendingAnnotations = self.annotations
         context.coordinator.pendingAnnotationHTMLMap = self.annotationHTMLMap
         context.coordinator.pendingSnapshotNumber = self.snapshotNumber
+
+        let readerName = self.snapshotNumber > 0
+            ? "snapshot-reader" : "artifact-reader"
+        let baseURL = URL(string: "galaxy://\(readerName)")
+
+        // When annotations are disabled, skip form-state
+        // save and load HTML directly.
+        guard annotationsEnabled else {
+            webView.loadHTMLString(html, baseURL: baseURL)
+            return
+        }
 
         // Save form state before reload (no-op on first load when
         // AnnotationManager doesn't exist yet). Load inside the
@@ -163,10 +177,7 @@ struct MarkdownReaderView: NSViewRepresentable {
             if let json = result as? String {
                 context.coordinator.savedFormState = json
             }
-            webView.loadHTMLString(
-                html,
-                baseURL: URL(string: "galaxy://snapshot-reader")
-            )
+            webView.loadHTMLString(html, baseURL: baseURL)
         }
     }
 
@@ -183,6 +194,7 @@ struct MarkdownReaderView: NSViewRepresentable {
     class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         var lastHTMLHash: Int = 0
         var onAnnotationMessage: ((AnnotationMessage) -> Void)?
+        var annotationsEnabled: Bool = true
 
         /// Annotation data queued for injection after page load.
         var pendingAnnotations: [SnapshotAnnotation]?
@@ -255,6 +267,15 @@ struct MarkdownReaderView: NSViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            // Skip annotation injection when disabled
+            // (artifact mode — Phase 3 will re-enable)
+            guard annotationsEnabled else {
+                pendingAnnotations = nil
+                pendingAnnotationHTMLMap = nil
+                pendingSnapshotNumber = nil
+                return
+            }
+
             // Inject annotation data after page load
             if let annotations = pendingAnnotations,
                let htmlMap = pendingAnnotationHTMLMap,

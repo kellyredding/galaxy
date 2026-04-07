@@ -113,6 +113,24 @@ let timelineEventRegistry: [String: EventRegistration] = [
     "artifact:created":    EventRegistration(resource: .artifact, mode: .point),
     "artifact:updated":    EventRegistration(resource: .artifact, mode: .point),
     "artifact:deleted":    EventRegistration(resource: .artifact, mode: .point),
+    "artifact:opened":     EventRegistration(resource: .artifact, mode: .durationStart),
+    "artifact:closed":     EventRegistration(resource: .artifact, mode: .durationEnd),
+    "artifact.annotation:created":
+        EventRegistration(
+            resource: .artifact, mode: .point
+        ),
+    "artifact.annotation:updated":
+        EventRegistration(
+            resource: .artifact, mode: .point
+        ),
+    "artifact.annotation:deleted":
+        EventRegistration(
+            resource: .artifact, mode: .point
+        ),
+    "artifact.review:created":
+        EventRegistration(
+            resource: .artifact, mode: .point
+        ),
     "agent:started":       EventRegistration(resource: .agent, mode: .durationStart),
     "agent:stopped":       EventRegistration(resource: .agent, mode: .durationEnd),
     "agent:failed":        EventRegistration(resource: .agent, mode: .durationEnd),
@@ -345,6 +363,16 @@ enum TimelineTooltipFormatter {
             return artifactUpdatedLines(dict)
         case "artifact:deleted":
             return artifactDeletedLines(dict)
+        case "artifact:opened":
+            return artifactOpenedLines(dict)
+        case "artifact:closed":
+            return artifactClosedLines(dict)
+        case "artifact.annotation:created",
+             "artifact.annotation:updated",
+             "artifact.annotation:deleted":
+            return artifactAnnotationLines(dict)
+        case "artifact.review:created":
+            return artifactReviewLines(dict)
         case "agent:started":
             return agentStartedLines(dict)
         case "agent:stopped":
@@ -909,6 +937,76 @@ enum TimelineTooltipFormatter {
         }
         if let type = d["artifact_type"] as? String {
             lines.append("type: \(type)")
+        }
+        return lines
+    }
+
+    private static func artifactOpenedLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        if let num = d["artifact_number"] as? Int {
+            lines.append("#\(num)")
+        }
+        if let title = d["title"] as? String {
+            let truncated = title.count > 40
+                ? String(title.prefix(37)) + "…"
+                : title
+            lines.append(truncated)
+        }
+        if let type
+            = d["artifact_type"] as? String
+        {
+            lines.append("type: \(type)")
+        }
+        if let trigger = d["trigger"] as? String {
+            lines.append("trigger: \(trigger)")
+        }
+        return lines
+    }
+
+    private static func artifactClosedLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        if let num = d["artifact_number"] as? Int {
+            lines.append("#\(num)")
+        }
+        if let title = d["title"] as? String {
+            let truncated = title.count > 40
+                ? String(title.prefix(37)) + "…"
+                : title
+            lines.append(truncated)
+        }
+        if let reason = d["reason"] as? String {
+            lines.append("reason: \(reason)")
+        }
+        return lines
+    }
+
+    private static func artifactAnnotationLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        if let num
+            = d["annotation_number"] as? Int
+        {
+            lines.append("annotation #\(num)")
+        }
+        return lines
+    }
+
+    private static func artifactReviewLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        if let count
+            = d["annotation_count"] as? Int
+        {
+            lines.append(
+                "\(count) annotation"
+                + "\(count == 1 ? "" : "s")"
+            )
         }
         return lines
     }

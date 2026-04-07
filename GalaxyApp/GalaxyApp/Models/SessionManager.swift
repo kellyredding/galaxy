@@ -76,6 +76,9 @@ class SessionManager: ObservableObject {
     /// Whether the snapshot reader is open (used by views that need to know).
     @Published var isSnapshotReaderOpen: Bool = false
 
+    /// Whether the artifact reader is open (used by views that need to know).
+    @Published var isArtifactReaderOpen: Bool = false
+
     /// Called when a session is removed from the session list.
     /// Used by EventCoordinator to clean up cached ledger_session_id mappings.
     var onSessionClosed: ((UUID) -> Void)?

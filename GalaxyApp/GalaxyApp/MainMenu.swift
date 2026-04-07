@@ -425,6 +425,7 @@ class MainMenu: NSObject, NSMenuDelegate {
         let hasListFocus: Bool = {
             switch sessionManager.activeTab {
             case .snapshots: return true
+            case .artifacts: return true
             case .agents: return true
             case .ledger: return [.files, .entries].contains(sessionManager.activeLedgerSubTab)
             case .terminal: return false
@@ -484,7 +485,8 @@ class MainMenu: NSObject, NSMenuDelegate {
         )
         activateItem.target = MenuActions.shared
         activateItem.keyEquivalentModifierMask = []
-        activateItem.isEnabled = sessionManager.activeTab == .snapshots && !sessionManager.isSnapshotReaderOpen
+        activateItem.isEnabled = (sessionManager.activeTab == .snapshots && !sessionManager.isSnapshotReaderOpen)
+            || (sessionManager.activeTab == .artifacts && !sessionManager.isArtifactReaderOpen)
         menu.addItem(activateItem)
 
         menu.addItem(.separator())
