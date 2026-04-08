@@ -573,6 +573,11 @@ enum ScrollbackBufferRenderer {
             outline: none;
             border-color: rgba(88, 166, 255, 0.6);
         }
+        body.file-drop-active .note-textarea,
+        body.file-drop-active .note-edit-textarea {
+            border-color: rgba(88, 166, 255, 0.8);
+            box-shadow: 0 0 0 1px rgba(88, 166, 255, 0.3);
+        }
         .note-textarea::placeholder {
             color: \(textColor);
             opacity: 1;
@@ -1449,6 +1454,58 @@ enum ScrollbackBufferRenderer {
             return false;
         }
     };
+
+    function handleFileDrop(paths) {
+        var ta = null;
+        var notes = ScrollbackManager.notes;
+
+        // Check create form textarea
+        if (notes.formElement
+            && notes.formElement.style.display
+                !== 'none') {
+            ta = notes.formElement
+                .querySelector('textarea');
+        }
+
+        // Check edit textarea
+        if (!ta && notes.editingId) {
+            ta = document.querySelector(
+                '.note-edit-textarea'
+            );
+        }
+
+        if (!ta) return;
+
+        // Build the text to insert
+        var text = paths.map(function(p) {
+            return '[' + p + ']';
+        }).join(' ');
+
+        // Insert at cursor position
+        var start = ta.selectionStart;
+        var end = ta.selectionEnd;
+        var before = ta.value.substring(0, start);
+        var after = ta.value.substring(end);
+
+        var prefix = '';
+        if (before.length > 0
+            && before[before.length - 1] !== '\\n') {
+            prefix = '\\n';
+        }
+        var suffix = '\\n';
+
+        ta.value = before + prefix + text
+            + suffix + after;
+
+        var newPos = start + prefix.length
+            + text.length + suffix.length;
+        ta.selectionStart = newPos;
+        ta.selectionEnd = newPos;
+
+        // Trigger auto-grow
+        ta.dispatchEvent(new Event('input'));
+        ta.focus();
+    }
     """
 
     // MARK: - HTML Escaping

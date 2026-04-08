@@ -25,7 +25,7 @@ struct ScrollbackNote: Identifiable {
 /// Uses a weak message handler proxy to avoid the retain cycle inherent in
 /// `WKUserContentController.add(_:name:)` which retains its handler strongly.
 class ScrollbackWebView: NSView {
-    let webView: WKWebView
+    let webView: ScrollbackDropWebView
 
     /// Called when the user presses Escape to dismiss the scrollback overlay.
     var onDismiss: (() -> Void)?
@@ -85,7 +85,7 @@ class ScrollbackWebView: NSView {
         let userContentController = WKUserContentController()
         config.userContentController = userContentController
 
-        self.webView = WKWebView(
+        self.webView = ScrollbackDropWebView(
             frame: NSRect(origin: .zero, size: frame.size),
             configuration: config
         )
@@ -361,6 +361,127 @@ extension ScrollbackWebView: WKNavigationDelegate {
         } else {
             decisionHandler(.allow)
         }
+    }
+}
+
+// MARK: - Weak Message Handler Proxy
+
+// MARK: - Drag-and-Drop WKWebView for Scrollback
+
+/// WKWebView subclass that accepts file drops and
+/// inserts bracketed paths into the active note
+/// textarea via JS.
+class ScrollbackDropWebView: WKWebView {
+    override var previousValidKeyView: NSView? { nil }
+    override var nextValidKeyView: NSView? { nil }
+
+    override init(
+        frame: CGRect,
+        configuration: WKWebViewConfiguration
+    ) {
+        super.init(
+            frame: frame,
+            configuration: configuration
+        )
+        registerForDraggedTypes([.fileURL])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError(
+            "init(coder:) has not been implemented"
+        )
+    }
+
+    override func draggingEntered(
+        _ sender: NSDraggingInfo
+    ) -> NSDragOperation {
+        guard sender.draggingPasteboard.canReadObject(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]
+        ) else { return [] }
+
+        evaluateJavaScript(
+            "document.body.classList"
+            + ".add('file-drop-active')"
+        )
+        return .copy
+    }
+
+    override func draggingUpdated(
+        _ sender: NSDraggingInfo
+    ) -> NSDragOperation {
+        guard sender.draggingPasteboard.canReadObject(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]
+        ) else { return [] }
+        return .copy
+    }
+
+    override func draggingExited(
+        _ sender: NSDraggingInfo?
+    ) {
+        evaluateJavaScript(
+            "document.body.classList"
+            + ".remove('file-drop-active')"
+        )
+    }
+
+    override func draggingEnded(
+        _ sender: NSDraggingInfo
+    ) {
+        evaluateJavaScript(
+            "document.body.classList"
+            + ".remove('file-drop-active')"
+        )
+    }
+
+    override func performDragOperation(
+        _ sender: NSDraggingInfo
+    ) -> Bool {
+        defer {
+            evaluateJavaScript(
+                "document.body.classList"
+                + ".remove('file-drop-active')"
+            )
+        }
+
+        guard let urls = sender.draggingPasteboard
+            .readObjects(
+                forClasses: [NSURL.self],
+                options: [
+                    .urlReadingFileURLsOnly: true,
+                ]
+            ) as? [URL], !urls.isEmpty
+        else { return false }
+
+        var seen = Set<String>()
+        var paths: [String] = []
+        for url in urls {
+            let p = url.standardized.path
+            if !seen.contains(p) {
+                seen.insert(p)
+                paths.append(p)
+            }
+        }
+
+        let jsArray = paths.map { path in
+            let escaped = path
+                .replacingOccurrences(
+                    of: "\\", with: "\\\\"
+                )
+                .replacingOccurrences(
+                    of: "'", with: "\\'"
+                )
+            return "'\(escaped)'"
+        }.joined(separator: ",")
+
+        evaluateJavaScript(
+            "if (typeof handleFileDrop"
+            + " !== 'undefined')"
+            + " { handleFileDrop([\(jsArray)]); }"
+        )
+        return true
     }
 }
 

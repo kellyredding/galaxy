@@ -22,6 +22,22 @@ class SilentFunctionKeyWebView: WKWebView {
     /// Current zoom level (1.0 = 100%)
     private var zoomLevel: CGFloat = 1.0
 
+    override init(
+        frame: CGRect,
+        configuration: WKWebViewConfiguration
+    ) {
+        super.init(
+            frame: frame,
+            configuration: configuration
+        )
+        registerForDraggedTypes([.fileURL])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
     override func performKeyEquivalent(
         with event: NSEvent
     ) -> Bool {
@@ -106,6 +122,101 @@ class SilentFunctionKeyWebView: WKWebView {
             document.body.style.width
                 = '\(100.0 / zoomLevel)%';
         """)
+    }
+
+    // MARK: - File Drag and Drop
+
+    override func draggingEntered(
+        _ sender: NSDraggingInfo
+    ) -> NSDragOperation {
+        guard sender.draggingPasteboard.canReadObject(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]
+        ) else { return [] }
+
+        evaluateJavaScript(
+            "document.body.classList"
+            + ".add('file-drop-active')"
+        )
+        return .copy
+    }
+
+    override func draggingUpdated(
+        _ sender: NSDraggingInfo
+    ) -> NSDragOperation {
+        guard sender.draggingPasteboard.canReadObject(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]
+        ) else { return [] }
+        return .copy
+    }
+
+    override func draggingExited(
+        _ sender: NSDraggingInfo?
+    ) {
+        evaluateJavaScript(
+            "document.body.classList"
+            + ".remove('file-drop-active')"
+        )
+    }
+
+    override func draggingEnded(
+        _ sender: NSDraggingInfo
+    ) {
+        evaluateJavaScript(
+            "document.body.classList"
+            + ".remove('file-drop-active')"
+        )
+    }
+
+    override func performDragOperation(
+        _ sender: NSDraggingInfo
+    ) -> Bool {
+        defer {
+            evaluateJavaScript(
+                "document.body.classList"
+                + ".remove('file-drop-active')"
+            )
+        }
+
+        guard let urls = sender.draggingPasteboard
+            .readObjects(
+                forClasses: [NSURL.self],
+                options: [
+                    .urlReadingFileURLsOnly: true,
+                ]
+            ) as? [URL], !urls.isEmpty
+        else { return false }
+
+        // Deduplicate by path
+        var seen = Set<String>()
+        var paths: [String] = []
+        for url in urls {
+            let p = url.standardized.path
+            if !seen.contains(p) {
+                seen.insert(p)
+                paths.append(p)
+            }
+        }
+
+        // Escape for JS string literal
+        let jsArray = paths.map { path in
+            let escaped = path
+                .replacingOccurrences(
+                    of: "\\", with: "\\\\"
+                )
+                .replacingOccurrences(
+                    of: "'", with: "\\'"
+                )
+            return "'\(escaped)'"
+        }.joined(separator: ",")
+
+        evaluateJavaScript(
+            "if (typeof handleFileDrop"
+            + " !== 'undefined')"
+            + " { handleFileDrop([\(jsArray)]); }"
+        )
+        return true
     }
 }
 
@@ -1698,6 +1809,53 @@ private func buildFullHTML(
             };
         }
     };
+
+    function handleFileDrop(paths) {
+        var ta = null;
+        if (AnnotationManager.formElement
+            && AnnotationManager.formElement
+                .style.display !== 'none') {
+            ta = AnnotationManager.formElement
+                .querySelector('textarea');
+        }
+        if (!ta
+            && AnnotationManager.editingNumber
+                !== null) {
+            ta = document.querySelector(
+                '.annotation-card[data-number="'
+                + AnnotationManager.editingNumber
+                + '"] .annotation-edit-textarea'
+            );
+        }
+        if (!ta) return;
+
+        var text = paths.map(function(p) {
+            return '[' + p + ']';
+        }).join(' ');
+
+        var start = ta.selectionStart;
+        var end = ta.selectionEnd;
+        var before = ta.value.substring(0, start);
+        var after = ta.value.substring(end);
+
+        var prefix = '';
+        if (before.length > 0
+            && before[before.length - 1] !== '\\n') {
+            prefix = '\\n';
+        }
+        var suffix = '\\n';
+
+        ta.value = before + prefix + text
+            + suffix + after;
+
+        var newPos = start + prefix.length
+            + text.length + suffix.length;
+        ta.selectionStart = newPos;
+        ta.selectionEnd = newPos;
+
+        ta.dispatchEvent(new Event('input'));
+        ta.focus();
+    }
     </script>
     <script>\(emojiDataJS)</script>
     <script>\(emojiAutocompleteJS)</script>

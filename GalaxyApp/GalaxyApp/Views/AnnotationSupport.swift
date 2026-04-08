@@ -54,6 +54,11 @@ let annotationCSS: String = """
         outline: none;
         border-color: rgba(88, 166, 255, 0.6);
     }
+    body.file-drop-active .annotation-textarea,
+    body.file-drop-active .annotation-edit-textarea {
+        border-color: rgba(88, 166, 255, 0.8);
+        box-shadow: 0 0 0 1px rgba(88, 166, 255, 0.3);
+    }
     .annotation-textarea::placeholder {
         color: var(--blockquote-fg);
         opacity: 0.6;
@@ -1721,6 +1726,61 @@ this.currentBlockIndex,
             };
         }
     };
+
+    function handleFileDrop(paths) {
+        // Find the active textarea — either the
+        // create form or an edit textarea
+        var ta = null;
+        if (AnnotationManager.formElement
+            && AnnotationManager.formElement
+                .style.display !== 'none') {
+            ta = AnnotationManager.formElement
+                .querySelector('textarea');
+        }
+        if (!ta
+            && AnnotationManager.editingNumber
+                !== null) {
+            ta = document.querySelector(
+                '.annotation-card[data-number="'
+                + AnnotationManager.editingNumber
+                + '"] .annotation-edit-textarea'
+            );
+        }
+        if (!ta) return;
+
+        // Build the text to insert
+        var text = paths.map(function(p) {
+            return '[' + p + ']';
+        }).join(' ');
+
+        // Insert at cursor position
+        var start = ta.selectionStart;
+        var end = ta.selectionEnd;
+        var before = ta.value.substring(0, start);
+        var after = ta.value.substring(end);
+
+        // Newline before if not at start of line,
+        // newline after
+        var prefix = '';
+        if (before.length > 0
+            && before[before.length - 1] !== '\\n') {
+            prefix = '\\n';
+        }
+        var suffix = '\\n';
+
+        ta.value = before + prefix + text
+            + suffix + after;
+
+        // Move cursor to after inserted text
+        var newPos = start + prefix.length
+            + text.length + suffix.length;
+        ta.selectionStart = newPos;
+        ta.selectionEnd = newPos;
+
+        // Trigger auto-grow
+        ta.dispatchEvent(new Event('input'));
+        ta.focus();
+    }
 """
 
 // MARK: - Emoji Data / Autocomplete JS
