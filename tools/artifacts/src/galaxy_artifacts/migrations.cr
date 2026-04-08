@@ -12,7 +12,67 @@ module GalaxyArtifacts
     # The initial schema is created in Database.create_schema (called for fresh
     # installs). Migrations run for upgrades from older versions.
     #
-    DATABASE_MIGRATIONS = {} of String => Proc(DB::Database, Nil)
+    DATABASE_MIGRATIONS = {
+      # 0.1.3: Add artifact_annotations and artifact_reviews
+      # tables. These were added to create_schema in 0.1.2
+      # but no migration was registered, so existing databases
+      # never got the tables.
+      "0.1.3" => ->(db : DB::Database) {
+        db.exec(<<-SQL)
+          CREATE TABLE IF NOT EXISTS artifact_annotations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL
+              DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL
+              DEFAULT (datetime('now')),
+            artifact_id INTEGER NOT NULL,
+            number INTEGER NOT NULL,
+            content TEXT NOT NULL,
+            anchor_data TEXT NOT NULL,
+            content_hash TEXT NOT NULL,
+            stale INTEGER NOT NULL DEFAULT 0,
+            artifact_review_id INTEGER
+              REFERENCES artifact_reviews(id)
+              ON DELETE SET NULL,
+            UNIQUE(artifact_id, number),
+            FOREIGN KEY (artifact_id)
+              REFERENCES artifacts(id)
+              ON DELETE CASCADE
+          )
+        SQL
+
+        db.exec(<<-SQL)
+          CREATE INDEX IF NOT EXISTS
+            idx_artifact_annotations_artifact
+          ON artifact_annotations(artifact_id)
+        SQL
+
+        db.exec(<<-SQL)
+          CREATE TABLE IF NOT EXISTS artifact_reviews (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL
+              DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL
+              DEFAULT (datetime('now')),
+            artifact_id INTEGER NOT NULL,
+            number INTEGER NOT NULL,
+            reviewed_at TEXT,
+            UNIQUE(artifact_id, number),
+            FOREIGN KEY (artifact_id)
+              REFERENCES artifacts(id)
+              ON DELETE CASCADE
+          )
+        SQL
+
+        db.exec(<<-SQL)
+          CREATE INDEX IF NOT EXISTS
+            idx_artifact_reviews_artifact
+          ON artifact_reviews(artifact_id)
+        SQL
+
+        nil
+      },
+    } of String => Proc(DB::Database, Nil)
 
     # ==========================================================================
     # VERSION UTILITIES
