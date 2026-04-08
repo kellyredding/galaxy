@@ -848,6 +848,47 @@ struct ArtifactsView: View {
                     )
                 }
             )
+        case "jsonl":
+            if isAgentTranscript(content) {
+                let label =
+                    "Artifact #\(artifact.number)"
+                ArtifactTranscriptView(
+                    content: content,
+                    isDark: colorScheme == .dark,
+                    annotations: openAnnotations,
+                    annotationHTMLMap:
+                        annotationHTMLMap,
+                    itemLabel: label,
+                    webViewRef: $webViewRef,
+                    onAnnotationMessage: { msg in
+                        handleAnnotationMessage(
+                            msg,
+                            artifact: artifact
+                        )
+                    }
+                )
+            } else {
+                // Non-transcript JSONL — render
+                // as syntax-highlighted source
+                let label =
+                    "Artifact #\(artifact.number)"
+                ArtifactSourceView(
+                    content: content,
+                    language: "json",
+                    isDark: colorScheme == .dark,
+                    annotations: openAnnotations,
+                    annotationHTMLMap:
+                        annotationHTMLMap,
+                    itemLabel: label,
+                    webViewRef: $webViewRef,
+                    onAnnotationMessage: { msg in
+                        handleAnnotationMessage(
+                            msg,
+                            artifact: artifact
+                        )
+                    }
+                )
+            }
         default:
             // Source code / plain text renderer
             let label = "Artifact #\(artifact.number)"
@@ -903,6 +944,41 @@ struct ArtifactsView: View {
             .pathExtension.lowercased()
         return ["png", "jpg", "jpeg", "gif",
                 "svg", "webp"].contains(ext)
+    }
+
+    /// Sniff the first line of JSONL content to
+    /// detect agent transcript structure. Agent
+    /// transcripts have an "agentId" field and a
+    /// "message" object with a "role" field.
+    private func isAgentTranscript(
+        _ content: String
+    ) -> Bool {
+        let firstLine: String
+        if let newline = content.firstIndex(
+            of: "\n"
+        ) {
+            firstLine = String(
+                content[
+                    content.startIndex..<newline
+                ]
+            )
+        } else {
+            firstLine = content
+        }
+        guard let data = firstLine.data(
+            using: .utf8
+        ),
+            let obj = try? JSONSerialization
+                .jsonObject(with: data)
+                as? [String: Any],
+            obj["agentId"] is String,
+            let message = obj["message"]
+                as? [String: Any],
+            message["role"] is String
+        else {
+            return false
+        }
+        return true
     }
 
     // MARK: - Data Lifecycle

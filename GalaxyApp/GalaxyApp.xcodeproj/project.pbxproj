@@ -94,6 +94,7 @@
 		AF1111110000000000000005 /* ArtifactMermaidView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF2222220000000000000005 /* ArtifactMermaidView.swift */; };
 		AF1111110000000000000006 /* ArtifactHTMLView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF2222220000000000000006 /* ArtifactHTMLView.swift */; };
 		AF1111110000000000000007 /* ArtifactImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF2222220000000000000007 /* ArtifactImageView.swift */; };
+		AF1111110000000000000009 /* ArtifactTranscriptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF2222220000000000000009 /* ArtifactTranscriptView.swift */; };
 		AF1111110000000000000008 /* AnnotationSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF2222220000000000000008 /* AnnotationSupport.swift */; };
 /* End PBXBuildFile section */
 
@@ -186,6 +187,7 @@
 		AF2222220000000000000005 /* ArtifactMermaidView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactMermaidView.swift; sourceTree = "<group>"; };
 		AF2222220000000000000006 /* ArtifactHTMLView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactHTMLView.swift; sourceTree = "<group>"; };
 		AF2222220000000000000007 /* ArtifactImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactImageView.swift; sourceTree = "<group>"; };
+		AF2222220000000000000009 /* ArtifactTranscriptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactTranscriptView.swift; sourceTree = "<group>"; };
 		AF2222220000000000000008 /* AnnotationSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnnotationSupport.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -284,6 +286,7 @@
 				AF2222220000000000000005 /* ArtifactMermaidView.swift */,
 				AF2222220000000000000006 /* ArtifactHTMLView.swift */,
 				AF2222220000000000000007 /* ArtifactImageView.swift */,
+				AF2222220000000000000009 /* ArtifactTranscriptView.swift */,
 				CC222222000000000000000F /* AgentsView.swift */,
 				2C599534AAFC2570BC5F292A /* StoppedSessionView.swift */,
 				DCE6073F39BD2A2E08FD007F /* TerminalView.swift */,
@@ -485,6 +488,7 @@
 				AF1111110000000000000005 /* ArtifactMermaidView.swift in Sources */,
 				AF1111110000000000000006 /* ArtifactHTMLView.swift in Sources */,
 				AF1111110000000000000007 /* ArtifactImageView.swift in Sources */,
+				AF1111110000000000000009 /* ArtifactTranscriptView.swift in Sources */,
 				AF1111110000000000000008 /* AnnotationSupport.swift in Sources */,
 				CC111111000000000000000F /* AgentsView.swift in Sources */,
 				55C2F61C9B63ACCE613CBC37 /* SettingsView.swift in Sources */,
