@@ -87,6 +87,50 @@ class TimelineQueryService {
         return response.events.first
     }
 
+    /// Fetch recent turn events for display in the Ledger's
+    /// Last Activity sub-tab. Returns both initiated and
+    /// end events so the caller can pair them by
+    /// durationIdentifier.
+    ///
+    /// Fetches the most recent `pairCount` completed turns
+    /// by querying end events first, then their matching
+    /// initiated events.
+    func fetchRecentTurnEvents(
+        ledgerSessionId: Int64,
+        pairCount: Int = 5
+    ) async throws -> [TimelineEvent] {
+        // Fetch end events (completed, failed, interrupted,
+        // abandoned) plus initiated, reversed, with enough
+        // headroom to cover pairCount complete pairs.
+        let eventTypes = [
+            "turn:completed",
+            "turn:failed",
+            "turn:interrupted",
+            "turn:abandoned",
+            "turn:initiated",
+        ].joined(separator: ",")
+
+        let data = try await runCLI(
+            args: [
+                "list", "--json",
+                "--ledger-session-id",
+                String(ledgerSessionId),
+                "--event-type", eventTypes,
+                "--reverse",
+                "--limit", String(pairCount * 3),
+            ]
+        )
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy =
+            .convertFromSnakeCase
+        decoder.dateDecodingStrategy =
+            .formatted(Self.dateFormatter)
+        let response = try decoder.decode(
+            TimelineEventsResponse.self, from: data
+        )
+        return response.events
+    }
+
     // MARK: - CLI Subprocess
 
     /// Spawn the galaxy-timeline binary and collect stdout.

@@ -12,25 +12,27 @@ struct LedgerIdentifiersView: View {
     private var fontSize: ChromeFontSize { ChromeFontSize(chromeFontSize) }
 
     var body: some View {
-        if isLoading && sessionDetail == nil {
-            HStack {
-                Spacer()
-                ProgressView()
-                    .scaleEffect(0.8)
-                    .padding()
-                Spacer()
+        ScrollView {
+            if isLoading && sessionDetail == nil {
+                HStack {
+                    Spacer()
+                    ProgressView()
+                        .scaleEffect(0.8)
+                        .padding()
+                    Spacer()
+                }
+            } else if let detail = sessionDetail {
+                HStack(alignment: .top, spacing: 40) {
+                    identifiersColumn(detail)
+                    pidsColumn(detail)
+                    Spacer(minLength: 0)
+                }
+            } else {
+                Text("No identifier data available.")
+                    .chromeFont(size: fontSize.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.vertical, 8)
             }
-        } else if let detail = sessionDetail {
-            HStack(alignment: .top, spacing: 40) {
-                identifiersColumn(detail)
-                pidsColumn(detail)
-                Spacer(minLength: 0)
-            }
-        } else {
-            Text("No identifier data available.")
-                .chromeFont(size: fontSize.caption)
-                .foregroundColor(.secondary)
-                .padding(.vertical, 8)
         }
     }
 

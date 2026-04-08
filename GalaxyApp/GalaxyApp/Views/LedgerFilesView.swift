@@ -1,12 +1,11 @@
 import SwiftUI
 
 /// Content-sized file listing for a ledger session.
-/// Uses VStack rows instead of Table so the outer ScrollView
-/// in LedgerView controls all scrolling.
+/// Owns its own vertical ScrollView so the metadata header
+/// and subtab picker stay fixed while the table scrolls.
 struct LedgerFilesView: View {
     let files: [LedgerFile]?
     let isLoading: Bool
-    let scrollProxy: ScrollViewProxy
 
     @EnvironmentObject var sessionManager: SessionManager
     @Environment(\.chromeFontSize) private var chromeFontSize
@@ -76,11 +75,6 @@ struct LedgerFilesView: View {
                 focusedIndex = nil
             }
         }
-        .onChange(of: focusedIndex) {
-            if let idx = focusedIndex, idx < sortedFiles.count {
-                scrollProxy.scrollTo(sortedFiles[idx].id)
-            }
-        }
     }
 
     // MARK: - Empty State
@@ -119,19 +113,54 @@ struct LedgerFilesView: View {
 
     private var filesTable: some View {
         GeometryReader { geo in
-            let flexWidth = max(Self.flexMin, geo.size.width - Self.fixedTotal)
-            let tableWidth = Self.fixedTotal + flexWidth
+            let flexWidth = max(
+                Self.flexMin,
+                geo.size.width - Self.fixedTotal
+            )
+            let tableWidth =
+                Self.fixedTotal + flexWidth
 
-            ScrollView(.horizontal, showsIndicators: true) {
-                VStack(alignment: .leading, spacing: 0) {
-                    headerRow(flexWidth: flexWidth)
+            ScrollViewReader { scrollProxy in
+                ScrollView {
+                    ScrollView(
+                        .horizontal,
+                        showsIndicators: true
+                    ) {
+                        VStack(
+                            alignment: .leading,
+                            spacing: 0
+                        ) {
+                            headerRow(
+                                flexWidth: flexWidth
+                            )
 
-                    ForEach(Array(sortedFiles.enumerated()), id: \.element.id) { index, file in
-                        fileRow(file, index: index, flexWidth: flexWidth)
-                            .id(file.id)
+                            ForEach(
+                                Array(
+                                    sortedFiles
+                                        .enumerated()
+                                ),
+                                id: \.element.id
+                            ) { index, file in
+                                fileRow(
+                                    file,
+                                    index: index,
+                                    flexWidth: flexWidth
+                                )
+                                .id(file.id)
+                            }
+                        }
+                        .frame(width: tableWidth)
                     }
                 }
-                .frame(width: tableWidth)
+                .onChange(of: focusedIndex) {
+                    if let idx = focusedIndex,
+                       idx < sortedFiles.count
+                    {
+                        scrollProxy.scrollTo(
+                            sortedFiles[idx].id
+                        )
+                    }
+                }
             }
         }
     }

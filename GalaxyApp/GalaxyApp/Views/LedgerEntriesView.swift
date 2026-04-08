@@ -2,8 +2,8 @@ import SwiftUI
 import Combine
 
 /// Content-sized entry listing with 300ms debounced search.
-/// Uses VStack rows instead of Table so the outer ScrollView
-/// in LedgerView controls all scrolling.
+/// Owns its own vertical ScrollView so the metadata header
+/// and subtab picker stay fixed while the table scrolls.
 struct LedgerEntriesView: View {
     let sessionId: UUID
     let entries: [LedgerEntry]?
@@ -12,7 +12,6 @@ struct LedgerEntriesView: View {
     @Binding var searchQuery: String
     let onSearch: (String) -> Void
     let onClearSearch: () -> Void
-    let scrollProxy: ScrollViewProxy
 
     @EnvironmentObject var sessionManager: SessionManager
     @Environment(\.chromeFontSize) private var chromeFontSize
@@ -71,7 +70,6 @@ struct LedgerEntriesView: View {
                 handleListNavAction(action)
             }
             .onChange(of: entries?.count) { handleEntriesCountChange() }
-            .onChange(of: focusedIndex) { handleFocusedIndexChange() }
             .onChange(of: sessionManager.activeTab) { focusSearchIfActive() }
             .onChange(of: sessionManager.activeSessionId) { focusSearchIfActive() }
             .onChange(of: sessionManager.activeLedgerSubTab) { focusSearchIfActive() }
@@ -82,12 +80,6 @@ struct LedgerEntriesView: View {
             focusedIndex = 0
         } else {
             focusedIndex = nil
-        }
-    }
-
-    private func handleFocusedIndexChange() {
-        if let idx = focusedIndex, idx < sortedEntries.count {
-            scrollProxy.scrollTo(sortedEntries[idx].id)
         }
     }
 
@@ -224,19 +216,54 @@ struct LedgerEntriesView: View {
 
     private var entriesContent: some View {
         GeometryReader { geo in
-            let flexWidth = max(Self.flexMin, geo.size.width - Self.fixedTotal)
-            let tableWidth = Self.fixedTotal + flexWidth
+            let flexWidth = max(
+                Self.flexMin,
+                geo.size.width - Self.fixedTotal
+            )
+            let tableWidth =
+                Self.fixedTotal + flexWidth
 
-            ScrollView(.horizontal, showsIndicators: true) {
-                VStack(alignment: .leading, spacing: 0) {
-                    headerRow(flexWidth: flexWidth)
+            ScrollViewReader { scrollProxy in
+                ScrollView {
+                    ScrollView(
+                        .horizontal,
+                        showsIndicators: true
+                    ) {
+                        VStack(
+                            alignment: .leading,
+                            spacing: 0
+                        ) {
+                            headerRow(
+                                flexWidth: flexWidth
+                            )
 
-                    ForEach(Array(sortedEntries.enumerated()), id: \.element.id) { index, entry in
-                        entryRow(entry, index: index, flexWidth: flexWidth)
-                            .id(entry.id)
+                            ForEach(
+                                Array(
+                                    sortedEntries
+                                        .enumerated()
+                                ),
+                                id: \.element.id
+                            ) { index, entry in
+                                entryRow(
+                                    entry,
+                                    index: index,
+                                    flexWidth: flexWidth
+                                )
+                                .id(entry.id)
+                            }
+                        }
+                        .frame(width: tableWidth)
                     }
                 }
-                .frame(width: tableWidth)
+                .onChange(of: focusedIndex) {
+                    if let idx = focusedIndex,
+                       idx < sortedEntries.count
+                    {
+                        scrollProxy.scrollTo(
+                            sortedEntries[idx].id
+                        )
+                    }
+                }
             }
         }
     }

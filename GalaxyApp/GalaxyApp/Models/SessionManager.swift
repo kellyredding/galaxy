@@ -53,7 +53,7 @@ class SessionManager: ObservableObject {
 
     // Active subtab within Ledger view — driven by the active session.
     // Not persisted — always starts on Last Activity at launch.
-    @Published var activeLedgerSubTab: LedgerSubTab = .lastActivity
+    @Published var activeLedgerSubTab: LedgerSubTab = .identifiers
 
     /// Snapshot number to auto-open when switching to snapshots tab.
     /// Set by EventCoordinator on snapshot.created, cleared by SnapshotsView after opening.
@@ -336,7 +336,7 @@ class SessionManager: ObservableObject {
         saveViewState()
         activeSessionId = session.id
         activeTab = .terminal
-        activeLedgerSubTab = .lastActivity
+        activeLedgerSubTab = .identifiers
         SessionPersistence.shared.markDirty()
 
         return session
@@ -1241,7 +1241,7 @@ class SessionManager: ObservableObject {
         saveViewState()
         activeSessionId = session.id
         activeTab = .terminal
-        activeLedgerSubTab = .lastActivity
+        activeLedgerSubTab = .identifiers
 
         SessionPersistence.shared.markDirty()
 

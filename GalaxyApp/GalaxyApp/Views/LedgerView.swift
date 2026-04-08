@@ -44,6 +44,9 @@ struct LedgerView: View {
     /// Session detail fetched for identifiers subtab
     @State private var sessionDetail: LedgerSessionDetail? = nil
 
+    /// Turn events fetched for the last activity subtab
+    @State private var turnEvents: [TimelineEvent]? = nil
+
     /// Whether a JIT fetch is in progress
     @State private var isLoading: Bool = false
 
@@ -52,6 +55,9 @@ struct LedgerView: View {
     @State private var filesFetchTask: Task<Void, Never>? = nil
     @State private var entriesFetchTask: Task<Void, Never>? = nil
     @State private var identifiersFetchTask: Task<Void, Never>? = nil
+
+    /// Fetch task for turn events
+    @State private var turnEventsFetchTask: Task<Void, Never>? = nil
 
     /// True when this session is the visible one in the outer ZStack.
     private var isActiveSession: Bool {
@@ -62,24 +68,19 @@ struct LedgerView: View {
         let _ = _triggerRedraw  // Force dependency on ledgerVersion
 
         GeometryReader { geo in
-            ScrollViewReader { scrollProxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        // Row 1: Three-column metadata header
-                        metadataHeader(availableWidth: geo.size.width - 40)
+            VStack(alignment: .leading, spacing: 16) {
+                // Row 1: Three-column metadata header
+                metadataHeader(availableWidth: geo.size.width - 40)
 
-                        // Subtab picker
-                        subtabPicker
+                // Subtab picker
+                subtabPicker
 
-                        // Subtab content
-                        subtabContent(scrollProxy: scrollProxy)
-                    }
-                    .frame(width: geo.size.width - 40, alignment: .leading)
-                    .padding(.horizontal, 20)
-                    .padding(.top, 12)
-                    .padding(.bottom, 20)
-                }
+                // Subtab content — each sub-tab owns its own ScrollView
+                subtabContent(availableWidth: geo.size.width - 40)
             }
+            .frame(width: geo.size.width - 40, alignment: .leading)
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
@@ -100,6 +101,7 @@ struct LedgerView: View {
                     entries = nil
                 }
                 sessionDetail = nil
+                turnEvents = nil
             }
         }
         .onChange(of: session.ledgerVersion) {
@@ -112,6 +114,7 @@ struct LedgerView: View {
                 files = nil
                 entries = nil
                 sessionDetail = nil
+                turnEvents = nil
                 return
             }
             refreshCurrentSubtab()
@@ -125,9 +128,11 @@ struct LedgerView: View {
             filesFetchTask?.cancel(); filesFetchTask = nil
             entriesFetchTask?.cancel(); entriesFetchTask = nil
             identifiersFetchTask?.cancel(); identifiersFetchTask = nil
+            turnEventsFetchTask?.cancel(); turnEventsFetchTask = nil
             files = nil
             entries = nil
             sessionDetail = nil
+            turnEvents = nil
         }
     }
 
@@ -266,17 +271,26 @@ struct LedgerView: View {
     // MARK: - Subtab Content (ZStack — all views stay alive)
 
     @ViewBuilder
-    private func subtabContent(scrollProxy: ScrollViewProxy) -> some View {
+    private func subtabContent(
+        availableWidth: CGFloat
+    ) -> some View {
         let active = sessionManager.activeLedgerSubTab
 
         ZStack(alignment: .topLeading) {
-            LedgerLastActivityView(session: session)
-                .opacity(active == .lastActivity ? 1 : 0)
-                .allowsHitTesting(active == .lastActivity)
+            LedgerLastActivityView(
+                session: session,
+                turnEvents: turnEvents,
+                isLoading: isLoading
+            )
+            .opacity(active == .lastActivity ? 1 : 0)
+            .allowsHitTesting(active == .lastActivity)
 
-            LedgerFilesView(files: files, isLoading: isLoading, scrollProxy: scrollProxy)
-                .opacity(active == .files ? 1 : 0)
-                .allowsHitTesting(active == .files)
+            LedgerFilesView(
+                files: files,
+                isLoading: isLoading
+            )
+            .opacity(active == .files ? 1 : 0)
+            .allowsHitTesting(active == .files)
 
             LedgerEntriesView(
                 sessionId: session.id,
@@ -284,12 +298,17 @@ struct LedgerView: View {
                 isLoading: isLoading,
                 ledgerSessionId: session.ledgerSessionId,
                 searchQuery: Binding(
-                    get: { session.ledgerEntriesSearchQuery },
-                    set: { session.ledgerEntriesSearchQuery = $0 }
+                    get: {
+                        session.ledgerEntriesSearchQuery
+                    },
+                    set: {
+                        session.ledgerEntriesSearchQuery = $0
+                    }
                 ),
-                onSearch: { query in searchEntries(query: query) },
-                onClearSearch: { fetchEntriesData() },
-                scrollProxy: scrollProxy
+                onSearch: { query in
+                    searchEntries(query: query)
+                },
+                onClearSearch: { fetchEntriesData() }
             )
             .opacity(active == .entries ? 1 : 0)
             .allowsHitTesting(active == .entries)
@@ -315,6 +334,7 @@ struct LedgerView: View {
         filesFetchTask?.cancel(); filesFetchTask = nil
         entriesFetchTask?.cancel(); entriesFetchTask = nil
         identifiersFetchTask?.cancel(); identifiersFetchTask = nil
+        turnEventsFetchTask?.cancel(); turnEventsFetchTask = nil
         isLoading = false
 
         // Nil data for non-active sub-tabs to free memory.
@@ -324,6 +344,7 @@ struct LedgerView: View {
         if active != .files { files = nil }
         if active != .entries { entries = nil }
         if active != .identifiers { sessionDetail = nil }
+        if active != .lastActivity { turnEvents = nil }
 
         fetchSubtabIfNeeded()
     }
@@ -333,7 +354,9 @@ struct LedgerView: View {
     /// Used by the ledgerVersion change handler and onAppear.
     private func refreshCurrentSubtab() {
         switch sessionManager.activeLedgerSubTab {
-        case .lastActivity, .suggestedName:
+        case .lastActivity:
+            fetchTurnEventsData()
+        case .suggestedName:
             break  // Driven by Session @Published properties
         case .files:
             fetchFilesData()
@@ -352,7 +375,9 @@ struct LedgerView: View {
     /// Re-applies the hoisted search query when entries need re-fetching.
     private func fetchSubtabIfNeeded() {
         switch sessionManager.activeLedgerSubTab {
-        case .lastActivity, .suggestedName:
+        case .lastActivity:
+            if turnEvents == nil { fetchTurnEventsData() }
+        case .suggestedName:
             break
         case .files:
             if files == nil { fetchFilesData() }
@@ -478,6 +503,42 @@ struct LedgerView: View {
                     isLoading = false
                 }
                 NSLog("LedgerView: searchEntries error: %@", error.localizedDescription)
+            }
+        }
+    }
+
+    private func fetchTurnEventsData() {
+        guard let lsid = session.ledgerSessionId
+        else { return }
+        isLoading = true
+        turnEventsFetchTask?.cancel()
+        turnEventsFetchTask = Task {
+            do {
+                let result =
+                    try await withFetchDeadline {
+                        try await TimelineQueryService
+                            .shared
+                            .fetchRecentTurnEvents(
+                                ledgerSessionId: lsid
+                            )
+                    }
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    turnEvents = result
+                    isLoading = false
+                }
+            } catch {
+                guard !Task.isCancelled
+                else { return }
+                await MainActor.run {
+                    turnEvents = []
+                    isLoading = false
+                }
+                NSLog(
+                    "LedgerView: fetchTurnEvents"
+                    + " error: %@",
+                    error.localizedDescription
+                )
             }
         }
     }

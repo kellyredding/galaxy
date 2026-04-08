@@ -112,8 +112,8 @@ class Session: Identifiable, ObservableObject {
     /// Last active main tab for this session. Defaults to terminal.
     var lastActiveTab: SessionTab = .terminal
 
-    /// Last active ledger subtab for this session. Defaults to last activity.
-    var lastActiveLedgerSubTab: LedgerSubTab = .lastActivity
+    /// Last active ledger subtab for this session. Defaults to identifiers.
+    var lastActiveLedgerSubTab: LedgerSubTab = .identifiers
 
     /// Current ledger entries search query. Hoisted from LedgerView
     /// so it survives conditional view teardown on session switch.

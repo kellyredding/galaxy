@@ -23,16 +23,18 @@ struct LedgerSuggestedNameView: View {
     var body: some View {
         let _ = session.ledgerVersion  // Force re-render on enrichment
 
-        if let state = stateData {
-            VStack(alignment: .leading, spacing: 16) {
-                nameSection(state)
-                stateSection(state)
+        ScrollView {
+            if let state = stateData {
+                VStack(alignment: .leading, spacing: 16) {
+                    nameSection(state)
+                    stateSection(state)
+                }
+            } else {
+                Text("No suggested name data")
+                    .chromeFont(size: fontSize.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.vertical, 8)
             }
-        } else {
-            Text("No suggested name data")
-                .chromeFont(size: fontSize.caption)
-                .foregroundColor(.secondary)
-                .padding(.vertical, 8)
         }
     }
 
