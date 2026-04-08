@@ -2,15 +2,7 @@ import SwiftUI
 import WebKit
 import Markdown
 
-// MARK: - Annotation Message Types
-
-/// Messages sent from the JS AnnotationManager to Swift via postMessage.
-enum AnnotationMessage {
-    case create(startLine: Int32, endLine: Int32, content: String)
-    case update(number: Int32, content: String)
-    case delete(number: Int32)
-    case confirmDragReplace(startIdx: Int, endIdx: Int)
-}
+// AnnotationMessage enum is in AnnotationSupport.swift
 
 // MARK: - Silent WKWebView
 
@@ -76,6 +68,18 @@ class SilentFunctionKeyWebView: WKWebView {
             return true
         }
 
+        // Cmd+S: pass through to menu system for
+        // scrollback entry. WKWebView's default
+        // performKeyEquivalent may consume this
+        // before the menu sees it.
+        if event.modifierFlags.contains(.command),
+           let chars = event
+               .charactersIgnoringModifiers,
+           chars == "s"
+        {
+            return false
+        }
+
         return super.performKeyEquivalent(
             with: event
         )
@@ -117,12 +121,17 @@ class SilentFunctionKeyWebView: WKWebView {
 struct MarkdownReaderView: NSViewRepresentable {
     let markdown: String
     let isDark: Bool
-    let snapshotNumber: Int32
     let annotations: [SnapshotAnnotation]
     let annotationHTMLMap: [Int32: String]
     @Binding var webViewRef: WKWebView?
     var onAnnotationMessage: ((AnnotationMessage) -> Void)?
     var annotationsEnabled: Bool = true
+    /// Display label for annotation form headers
+    /// (e.g. "Snapshot #3", "Artifact #19").
+    let itemLabel: String
+    /// Base URL name for internal routing
+    /// (e.g. "snapshot-reader", "artifact-reader").
+    var baseUrlName: String = "reader"
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
@@ -151,11 +160,11 @@ struct MarkdownReaderView: NSViewRepresentable {
             self.annotationsEnabled
         context.coordinator.pendingAnnotations = self.annotations
         context.coordinator.pendingAnnotationHTMLMap = self.annotationHTMLMap
-        context.coordinator.pendingSnapshotNumber = self.snapshotNumber
+        context.coordinator.pendingItemLabel = self.itemLabel
 
-        let readerName = self.snapshotNumber > 0
-            ? "snapshot-reader" : "artifact-reader"
-        let baseURL = URL(string: "galaxy://\(readerName)")
+        let baseURL = URL(
+            string: "galaxy://\(self.baseUrlName)"
+        )
 
         // When annotations are disabled, skip form-state
         // save and load HTML directly.
@@ -199,7 +208,7 @@ struct MarkdownReaderView: NSViewRepresentable {
         /// Annotation data queued for injection after page load.
         var pendingAnnotations: [SnapshotAnnotation]?
         var pendingAnnotationHTMLMap: [Int32: String]?
-        var pendingSnapshotNumber: Int32?
+        var pendingItemLabel: String?
 
         /// Form state saved before a theme-change reload.
         var savedFormState: String?
@@ -268,20 +277,20 @@ struct MarkdownReaderView: NSViewRepresentable {
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             // Skip annotation injection when disabled
-            // (artifact mode — Phase 3 will re-enable)
             guard annotationsEnabled else {
                 pendingAnnotations = nil
                 pendingAnnotationHTMLMap = nil
-                pendingSnapshotNumber = nil
+                pendingItemLabel = nil
                 return
             }
 
             // Inject annotation data after page load
             if let annotations = pendingAnnotations,
                let htmlMap = pendingAnnotationHTMLMap,
-               let snapNum = pendingSnapshotNumber {
+               let label = pendingItemLabel {
 
-                let annotationDicts: [[String: Any]] = annotations.map { a in
+                let annotationDicts: [[String: Any]]
+                    = annotations.map { a in
                     var dict: [String: Any] = [
                         "id": a.id,
                         "number": a.number,
@@ -289,33 +298,48 @@ struct MarkdownReaderView: NSViewRepresentable {
                         "end_line": a.endLine,
                         "content": a.content,
                         "created_at": a.createdAt,
-                        "updated_at": a.updatedAt
+                        "updated_at": a.updatedAt,
                     ]
                     if let rn = a.reviewNumber {
                         dict["review_number"] = rn
                     }
                     if let rra = a.reviewReviewedAt {
-                        dict["review_reviewed_at"] = rra
+                        dict["review_reviewed_at"]
+                            = rra
                     }
                     return dict
                 }
-                let htmlMapDict: [String: String] = Dictionary(
-                    uniqueKeysWithValues: htmlMap.map { (String($0.key), $0.value) }
-                )
+                let htmlMapDict: [String: String]
+                    = Dictionary(
+                        uniqueKeysWithValues:
+                            htmlMap.map {
+                                (String($0.key), $0.value)
+                            }
+                    )
                 let payload: [String: Any] = [
-                    "snapshotNumber": snapNum,
+                    "itemLabel": label,
                     "annotations": annotationDicts,
-                    "htmlMap": htmlMapDict
+                    "htmlMap": htmlMapDict,
                 ]
 
-                if let jsonData = try? JSONSerialization.data(withJSONObject: payload),
-                   let jsonString = String(data: jsonData, encoding: .utf8) {
-                    webView.evaluateJavaScript("AnnotationManager.initialize(\(jsonString))")
+                if let jsonData
+                    = try? JSONSerialization.data(
+                        withJSONObject: payload
+                    ),
+                   let jsonString = String(
+                       data: jsonData,
+                       encoding: .utf8
+                   )
+                {
+                    webView.evaluateJavaScript(
+                        "AnnotationManager.initialize("
+                        + "\(jsonString))"
+                    )
                 }
 
                 pendingAnnotations = nil
                 pendingAnnotationHTMLMap = nil
-                pendingSnapshotNumber = nil
+                pendingItemLabel = nil
             }
 
             // Restore form state after theme-change reload
@@ -353,19 +377,8 @@ func renderMarkdownToHTML(_ source: String, isDark: Bool) -> String {
     )
 }
 
-private let emojiDataJS: String = {
-    guard let url = Bundle.main.url(forResource: "emoji-data", withExtension: "js"),
-          let content = try? String(contentsOf: url, encoding: .utf8)
-    else { return "" }
-    return content
-}()
-
-private let emojiAutocompleteJS: String = {
-    guard let url = Bundle.main.url(forResource: "emoji-autocomplete", withExtension: "js"),
-          let content = try? String(contentsOf: url, encoding: .utf8)
-    else { return "" }
-    return content
-}()
+// emojiDataJS and emojiAutocompleteJS are in
+// AnnotationSupport.swift
 
 private let mermaidJS: String = {
     guard let url = Bundle.main.url(
@@ -816,14 +829,14 @@ private func buildFullHTML(
         expandedNumber: null,
         confirmingDeleteNumber: null,
         confirmDeleteTimer: null,
-        snapshotNumber: 0,
+        itemLabel: '',
         editIconSVG: '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>',
         deleteIconSVG: '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M5 6v14a1 1 0 001 1h12a1 1 0 001-1V6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>',
 
         // --- Initialization ---
 
         initialize(data) {
-            this.snapshotNumber = data.snapshotNumber || 0;
+            this.itemLabel = data.itemLabel || '';
             this.annotations = data.annotations || [];
             this.annotationHTMLMap = data.htmlMap || {};
 
@@ -988,6 +1001,7 @@ private func buildFullHTML(
                 }
                 if (e.key === 'Enter' && e.metaKey) {
                     e.preventDefault();
+                    console.log('[AnnotationManager] Cmd+Enter matched — calling submitCreate');
                     AnnotationManager.submitCreate();
                 }
             });
@@ -1087,7 +1101,7 @@ private func buildFullHTML(
                 : 'lines ' + range.startLine + '\\u2013' + range.endLine;
             var ref = this.formElement.querySelector('.annotation-form-ref');
             if (ref) {
-                ref.textContent = 'Snapshot #' + this.snapshotNumber + ': ' + lineRef;
+                ref.textContent = (this.itemLabel ? this.itemLabel + ': ' : '') + lineRef;
             }
         },
 
@@ -1413,6 +1427,7 @@ private func buildFullHTML(
                 }
                 if (e.key === 'Enter' && e.metaKey) {
                     e.preventDefault();
+                    console.log('[AnnotationManager] Cmd+Enter matched — calling submitUpdate');
                     AnnotationManager.submitUpdate(number);
                 }
             });

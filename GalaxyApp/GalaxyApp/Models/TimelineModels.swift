@@ -113,6 +113,7 @@ let timelineEventRegistry: [String: EventRegistration] = [
     "artifact:created":    EventRegistration(resource: .artifact, mode: .point),
     "artifact:updated":    EventRegistration(resource: .artifact, mode: .point),
     "artifact:deleted":    EventRegistration(resource: .artifact, mode: .point),
+    "artifact:reviewed":   EventRegistration(resource: .artifact, mode: .point),
     "artifact:opened":     EventRegistration(resource: .artifact, mode: .durationStart),
     "artifact:closed":     EventRegistration(resource: .artifact, mode: .durationEnd),
     "artifact.annotation:created":
@@ -286,6 +287,8 @@ enum TimelineTooltipFormatter {
             return "Artifact Updated"
         case "artifact:deleted":
             return "Artifact Deleted"
+        case "artifact:reviewed":
+            return "Artifact Reviewed"
         case "agent:started":
             return "Agent Started"
         case "agent:stopped":
@@ -367,6 +370,8 @@ enum TimelineTooltipFormatter {
             return artifactOpenedLines(dict)
         case "artifact:closed":
             return artifactClosedLines(dict)
+        case "artifact:reviewed":
+            return artifactReviewedLines(dict)
         case "artifact.annotation:created",
              "artifact.annotation:updated",
              "artifact.annotation:deleted":
@@ -980,6 +985,30 @@ enum TimelineTooltipFormatter {
         }
         if let reason = d["reason"] as? String {
             lines.append("reason: \(reason)")
+        }
+        return lines
+    }
+
+    private static func artifactReviewedLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        if let num = d["artifact_number"] as? Int {
+            lines.append("#\(num)")
+        }
+        if let title = d["title"] as? String {
+            let truncated = title.count > 40
+                ? String(title.prefix(37)) + "…"
+                : title
+            lines.append(truncated)
+        }
+        if let count
+            = d["annotation_count"] as? Int
+        {
+            lines.append(
+                "\(count) annotation"
+                + "\(count == 1 ? "" : "s")"
+            )
         }
         return lines
     }

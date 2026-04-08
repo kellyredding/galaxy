@@ -365,7 +365,7 @@ struct SnapshotsView: View {
         VStack(spacing: 0) {
             // Header bar
             HStack {
-                Button(action: { closeReader() }) {
+                Button(action: { handleBackButton() }) {
                     HStack(spacing: 4) {
                         Image(systemName: "chevron.left")
                         Text("Snapshots")
@@ -440,13 +440,18 @@ struct SnapshotsView: View {
             MarkdownReaderView(
                 markdown: snapshot.content,
                 isDark: colorScheme == .dark,
-                snapshotNumber: snapshot.number,
                 annotations: openAnnotations,
                 annotationHTMLMap: annotationHTMLMap,
                 webViewRef: $webViewRef,
                 onAnnotationMessage: { message in
-                    handleAnnotationMessage(message, snapshotId: snapshot.id)
-                }
+                    handleAnnotationMessage(
+                        message,
+                        snapshotId: snapshot.id
+                    )
+                },
+                itemLabel:
+                    "Snapshot #\(snapshot.number)",
+                baseUrlName: "snapshot-reader"
             )
         }
     }
@@ -531,6 +536,62 @@ struct SnapshotsView: View {
                     isLoadingContent = false
                 }
                 NSLog("SnapshotsView: fetchContent error: %@", error.localizedDescription)
+            }
+        }
+    }
+
+    /// Check for unsaved annotation state before
+    /// closing the reader.
+    private func handleBackButton() {
+        guard let wv = webViewRef else {
+            closeReader()
+            return
+        }
+        wv.evaluateJavaScript(
+            "typeof AnnotationManager !== 'undefined'"
+            + " ? AnnotationManager.getEscapeContext()"
+            + " : 'close'"
+        ) { result, _ in
+            guard let context = result as? String
+            else {
+                DispatchQueue.main.async {
+                    self.closeReader()
+                }
+                return
+            }
+            switch context {
+            case "formHasText":
+                guard let window = wv.window
+                else { return }
+                SheetAlert.confirm(
+                    in: window,
+                    message: "Discard annotation?",
+                    detail: "You have unsaved text "
+                        + "in the annotation form. "
+                        + "It will be lost if you "
+                        + "go back.",
+                    onConfirm: { [self] in
+                        self.closeReader()
+                    }
+                )
+            case "editing":
+                guard let window = wv.window
+                else { return }
+                SheetAlert.confirm(
+                    in: window,
+                    message: "Discard changes?",
+                    detail: "You have unsaved changes"
+                        + " to this annotation. They"
+                        + " will be lost if you go"
+                        + " back.",
+                    onConfirm: { [self] in
+                        self.closeReader()
+                    }
+                )
+            default:
+                DispatchQueue.main.async {
+                    self.closeReader()
+                }
             }
         }
     }
@@ -626,7 +687,6 @@ struct SnapshotsView: View {
 
     /// Install a local event monitor that catches Escape regardless of
     /// which AppKit responder (e.g. WKWebView) holds first responder.
-    /// Three-stage behavior: cancel edit -> clear form text -> close reader.
     private func installEscapeMonitor() {
         guard escapeMonitor == nil else { return }
         escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [self] event in
@@ -959,6 +1019,10 @@ struct SnapshotsView: View {
                 startIdx: startIdx,
                 endIdx: endIdx
             )
+        case .createRowRange, .createBlockRange,
+             .createWhole:
+            // Not applicable for snapshots
+            break
         }
     }
 

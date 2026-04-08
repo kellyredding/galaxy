@@ -3,20 +3,30 @@ import WebKit
 
 /// Renders image artifacts (PNG, JPG, GIF, SVG, WebP) in
 /// a WKWebView for consistent zoom support via
-/// SilentFunctionKeyWebView.
+/// SilentFunctionKeyWebView and annotation via the
+/// generalized AnnotationManager JS.
 struct ArtifactImageView: NSViewRepresentable {
     let filePath: String
     let isDark: Bool
+    let annotations: [ArtifactAnnotation]
+    let annotationHTMLMap: [Int32: String]
+    let itemLabel: String
+    var onAnnotationMessage:
+        ((AnnotationMessage) -> Void)?
     @Binding var webViewRef: WKWebView?
 
     func makeNSView(
         context: Context
     ) -> SilentFunctionKeyWebView {
         let config = WKWebViewConfiguration()
+        config.userContentController.add(
+            context.coordinator, name: "annotation"
+        )
         let webView = SilentFunctionKeyWebView(
             frame: .zero, configuration: config
         )
         webView.setValue(false, forKey: "drawsBackground")
+        webView.isInspectable = true
         webView.navigationDelegate =
             context.coordinator
 
@@ -25,6 +35,19 @@ struct ArtifactImageView: NSViewRepresentable {
             isDark
             ? NSColor.black.cgColor
             : NSColor.white.cgColor
+
+        let initJS = buildAnnotationInitJS(
+            anchorType: "whole",
+            blockSelector: "",
+            lineAttr: "",
+            refPrefix: "",
+            itemLabel: itemLabel,
+            annotations: annotations,
+            htmlMap: annotationHTMLMap
+        )
+        context.coordinator.pendingInitJS = initJS
+        context.coordinator.onAnnotationMessage =
+            onAnnotationMessage
 
         let html = buildImageHTML(
             filePath: filePath,
@@ -50,6 +73,9 @@ struct ArtifactImageView: NSViewRepresentable {
         _ webView: SilentFunctionKeyWebView,
         context: Context
     ) {
+        context.coordinator.onAnnotationMessage =
+            onAnnotationMessage
+
         if context.coordinator.lastIsDark != isDark {
             context.coordinator.lastIsDark = isDark
 
@@ -58,6 +84,17 @@ struct ArtifactImageView: NSViewRepresentable {
                 isDark
                 ? NSColor.black.cgColor
                 : NSColor.white.cgColor
+
+            let initJS = buildAnnotationInitJS(
+                anchorType: "whole",
+                blockSelector: "",
+                lineAttr: "",
+                refPrefix: "",
+                itemLabel: itemLabel,
+                annotations: annotations,
+                htmlMap: annotationHTMLMap
+            )
+            context.coordinator.pendingInitJS = initJS
 
             let html = buildImageHTML(
                 filePath: filePath,
@@ -74,31 +111,8 @@ struct ArtifactImageView: NSViewRepresentable {
         }
     }
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(isDark: isDark)
-    }
-
-    class Coordinator: NSObject,
-        WKNavigationDelegate
-    {
-        var lastIsDark: Bool
-
-        init(isDark: Bool) {
-            self.lastIsDark = isDark
-        }
-
-        func webView(
-            _ webView: WKWebView,
-            decidePolicyFor nav: WKNavigationAction,
-            decisionHandler: @escaping
-                (WKNavigationActionPolicy) -> Void
-        ) {
-            if nav.navigationType == .linkActivated {
-                decisionHandler(.cancel)
-            } else {
-                decisionHandler(.allow)
-            }
-        }
+    func makeCoordinator() -> AnnotationCoordinator {
+        AnnotationCoordinator(isDark: isDark)
     }
 }
 
@@ -153,17 +167,19 @@ private func buildImageHTML(
           content="width=device-width, initial-scale=1">
     <title>Galaxy Artifact Reader</title>
     <style>
+    :root {
+        \(annotationCSSVars(isDark: isDark))
+    }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body {
         background: \(bgColor);
-        height: 100%;
         -webkit-font-smoothing: antialiased;
     }
     .image-container {
         display: flex;
         justify-content: center;
         align-items: center;
-        min-height: 100vh;
+        min-height: 50vh;
         padding: 24px;
         background-image: linear-gradient(
             45deg, \(checkerColor) 25%, transparent 25%
@@ -193,12 +209,16 @@ private func buildImageHTML(
         max-width: 100%;
         max-height: 90vh;
     }
+    \(annotationCSS)
     </style>
     </head>
     <body>
     <div class="image-container">
     \(imageElement)
     </div>
+    <script>\(annotationManagerJS)</script>
+    <script>\(emojiDataJS)</script>
+    <script>\(emojiAutocompleteJS)</script>
     </body>
     </html>
     """

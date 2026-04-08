@@ -4,30 +4,58 @@ import WebKit
 /// Renders source code or plain text with line numbers and
 /// syntax highlighting in a WKWebView. Uses the same vendored
 /// highlight.js and theme CSS as MarkdownReaderView.
+/// Supports line_range annotations via the shared
+/// AnnotationManager JS.
 struct ArtifactSourceView: NSViewRepresentable {
     let content: String
     let language: String?
     let isDark: Bool
+    let annotations: [ArtifactAnnotation]
+    let annotationHTMLMap: [Int32: String]
+    let itemLabel: String
     @Binding var webViewRef: WKWebView?
+    var onAnnotationMessage:
+        ((AnnotationMessage) -> Void)?
 
     func makeNSView(
         context: Context
     ) -> SilentFunctionKeyWebView {
         let config = WKWebViewConfiguration()
+        config.userContentController.add(
+            context.coordinator, name: "annotation"
+        )
         let webView = SilentFunctionKeyWebView(
             frame: .zero, configuration: config
         )
-        webView.setValue(false, forKey: "drawsBackground")
+        webView.setValue(
+            false, forKey: "drawsBackground"
+        )
         webView.navigationDelegate =
             context.coordinator
 
-        // Transparent webview over opaque background
-        let container = webView
-        container.wantsLayer = true
-        container.layer?.backgroundColor =
+        webView.wantsLayer = true
+        webView.layer?.backgroundColor =
             isDark
             ? NSColor.black.cgColor
             : NSColor.white.cgColor
+
+        // Build init JS for after page load
+        let activeAnns = annotations.filter {
+            !$0.stale
+                && $0.anchorData.type == .lineRange
+        }
+        let initJS = buildAnnotationInitJS(
+            anchorType: "line_range",
+            blockSelector: ".code-line",
+            lineAttr: "data-line",
+            refPrefix: "Line",
+            itemLabel: itemLabel,
+            annotations: activeAnns,
+            htmlMap: annotationHTMLMap
+        )
+        context.coordinator.pendingInitJS = initJS
+        context.coordinator.onAnnotationMessage =
+            onAnnotationMessage
 
         let html = buildSourceHTML(
             content: content,
@@ -52,7 +80,6 @@ struct ArtifactSourceView: NSViewRepresentable {
         _ webView: SilentFunctionKeyWebView,
         context: Context
     ) {
-        // Theme change: reload with new HTML
         if context.coordinator.lastIsDark != isDark {
             context.coordinator.lastIsDark = isDark
 
@@ -62,48 +89,53 @@ struct ArtifactSourceView: NSViewRepresentable {
                 ? NSColor.black.cgColor
                 : NSColor.white.cgColor
 
-            let html = buildSourceHTML(
-                content: content,
-                language: language,
-                isDark: isDark
-            )
-            webView.loadHTMLString(
-            html,
-            baseURL: URL(
-                string: "galaxy://artifact-reader"
-            )
-        )
-        }
-    }
+            // Save form state before reload
+            webView.evaluateJavaScript(
+                "typeof AnnotationManager !== 'undefined'"
+                + " ? JSON.stringify("
+                + "AnnotationManager.getFormState())"
+                + " : null"
+            ) { result, _ in
+                let activeAnns = annotations.filter {
+                    !$0.stale
+                        && $0.anchorData.type
+                            == .lineRange
+                }
+                var initJS = buildAnnotationInitJS(
+                    anchorType: "line_range",
+                    blockSelector: ".code-line",
+                    lineAttr: "data-line",
+                    refPrefix: "Line",
+                    itemLabel: itemLabel,
+                    annotations: activeAnns,
+                    htmlMap: annotationHTMLMap
+                )
+                if let stateJSON = result as? String {
+                    initJS += "; AnnotationManager"
+                        + ".restoreFormState("
+                        + stateJSON + ")"
+                }
+                context.coordinator.pendingInitJS
+                    = initJS
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(isDark: isDark)
-    }
-
-    class Coordinator: NSObject,
-        WKNavigationDelegate
-    {
-        var lastIsDark: Bool
-
-        init(isDark: Bool) {
-            self.lastIsDark = isDark
-        }
-
-        // Allow the initial HTML load; block link
-        // navigation so galaxy:// baseURL doesn't
-        // trigger macOS URL scheme handling.
-        func webView(
-            _ webView: WKWebView,
-            decidePolicyFor nav: WKNavigationAction,
-            decisionHandler: @escaping
-                (WKNavigationActionPolicy) -> Void
-        ) {
-            if nav.navigationType == .linkActivated {
-                decisionHandler(.cancel)
-            } else {
-                decisionHandler(.allow)
+                let html = buildSourceHTML(
+                    content: content,
+                    language: language,
+                    isDark: isDark
+                )
+                webView.loadHTMLString(
+                    html,
+                    baseURL: URL(
+                        string:
+                            "galaxy://artifact-reader"
+                    )
+                )
             }
         }
+    }
+
+    func makeCoordinator() -> AnnotationCoordinator {
+        AnnotationCoordinator(isDark: isDark)
     }
 }
 
@@ -130,7 +162,6 @@ private func buildSourceHTML(
     let themeCSS = themeURL
         .flatMap { try? String(contentsOf: $0) } ?? ""
 
-    let themeClass = isDark ? "dark" : "light"
     let bgColor = isDark ? "#0d1117" : "#ffffff"
     let textColor = isDark ? "#e6edf3" : "#1f2328"
     let lineNumColor = isDark ? "#6e7681" : "#8b949e"
@@ -146,7 +177,8 @@ private func buildSourceHTML(
             .replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: ">", with: "&gt;")
         lineHTML +=
-            "<tr class=\"code-line\" data-line=\"\(lineNum)\">"
+            "<tr class=\"code-line\""
+            + " data-line=\"\(lineNum)\">"
             + "<td class=\"line-num\">\(lineNum)</td>"
             + "<td class=\"line-content\">"
             + "\(escapedLine.isEmpty ? " " : escapedLine)"
@@ -158,15 +190,20 @@ private func buildSourceHTML(
         ? "language-\(language!)"
         : "nohighlight"
 
+    let cssVars = annotationCSSVars(isDark: isDark)
+
     return """
     <!DOCTYPE html>
-    <html class="\(themeClass)">
+    <html>
     <head>
     <meta charset="utf-8">
     <meta name="viewport"
           content="width=device-width, initial-scale=1">
     <title>Galaxy Artifact Reader</title>
     <style>
+    :root {
+        \(cssVars)
+    }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body {
         background: \(bgColor);
@@ -218,6 +255,25 @@ private func buildSourceHTML(
     }
     /* Override hljs background — we handle it */
     .hljs { background: transparent !important; }
+    /* Annotation highlight adaption for table rows */
+    .code-line.annotation-highlight td {
+        background-color: rgba(88, 166, 255, 0.12);
+    }
+    .code-line.annotation-highlight .line-num {
+        border-left: 3px solid
+            rgba(88, 166, 255, 0.6);
+        padding-left: 5px !important;
+    }
+    .code-line.annotation-expanded-highlight td {
+        background-color:
+            var(--annotation-active-block-bg);
+    }
+    .code-line.annotation-expanded-highlight .line-num {
+        border-left: 3px solid
+            var(--annotation-active-block-border);
+        padding-left: 5px !important;
+    }
+    \(annotationCSS)
     \(themeCSS)
     </style>
     </head>
@@ -232,13 +288,17 @@ private func buildSourceHTML(
     <script>\(hjsContent)</script>
     <script>
     if (typeof hljs !== 'undefined') {
-        // Highlight each line-content cell individually
         document.querySelectorAll('.line-content')
             .forEach(function(el) {
                 hljs.highlightElement(el);
             });
     }
     </script>
+    <script>
+    \(annotationManagerJS)
+    </script>
+    <script>\(emojiDataJS)</script>
+    <script>\(emojiAutocompleteJS)</script>
     </body>
     </html>
     """

@@ -87,12 +87,14 @@
 		FF1111110000000000000004 /* TimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF2222220000000000000004 /* TimelineView.swift */; };
 		FF1111110000000000000005 /* TimelineCanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF2222220000000000000005 /* TimelineCanvasView.swift */; };
 		AF1111110000000000000001 /* ArtifactQueryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF2222220000000000000001 /* ArtifactQueryService.swift */; };
+		AF1111110000000000000099 /* AnchorData.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF2222220000000000000099 /* AnchorData.swift */; };
 		AF1111110000000000000002 /* ArtifactsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF2222220000000000000002 /* ArtifactsView.swift */; };
 		AF1111110000000000000003 /* ArtifactSourceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF2222220000000000000003 /* ArtifactSourceView.swift */; };
 		AF1111110000000000000004 /* ArtifactTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF2222220000000000000004 /* ArtifactTableView.swift */; };
 		AF1111110000000000000005 /* ArtifactMermaidView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF2222220000000000000005 /* ArtifactMermaidView.swift */; };
 		AF1111110000000000000006 /* ArtifactHTMLView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF2222220000000000000006 /* ArtifactHTMLView.swift */; };
 		AF1111110000000000000007 /* ArtifactImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF2222220000000000000007 /* ArtifactImageView.swift */; };
+		AF1111110000000000000008 /* AnnotationSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF2222220000000000000008 /* AnnotationSupport.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -177,12 +179,14 @@
 		FF2222220000000000000004 /* TimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineView.swift; sourceTree = "<group>"; };
 		FF2222220000000000000005 /* TimelineCanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineCanvasView.swift; sourceTree = "<group>"; };
 		AF2222220000000000000001 /* ArtifactQueryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactQueryService.swift; sourceTree = "<group>"; };
+		AF2222220000000000000099 /* AnchorData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnchorData.swift; sourceTree = "<group>"; };
 		AF2222220000000000000002 /* ArtifactsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactsView.swift; sourceTree = "<group>"; };
 		AF2222220000000000000003 /* ArtifactSourceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactSourceView.swift; sourceTree = "<group>"; };
 		AF2222220000000000000004 /* ArtifactTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactTableView.swift; sourceTree = "<group>"; };
 		AF2222220000000000000005 /* ArtifactMermaidView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactMermaidView.swift; sourceTree = "<group>"; };
 		AF2222220000000000000006 /* ArtifactHTMLView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactHTMLView.swift; sourceTree = "<group>"; };
 		AF2222220000000000000007 /* ArtifactImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactImageView.swift; sourceTree = "<group>"; };
+		AF2222220000000000000008 /* AnnotationSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnnotationSupport.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -211,6 +215,7 @@
 				BB2222220000000000000001 /* LedgerSubTab.swift */,
 				EE1111110000000000000001 /* NotificationService.swift */,
 				CC2222220000000000000002 /* SnapshotQueryService.swift */,
+				AF2222220000000000000099 /* AnchorData.swift */,
 				AF2222220000000000000001 /* ArtifactQueryService.swift */,
 				CC222222000000000000000D /* AgentsQueryService.swift */,
 				CC222222000000000000000E /* AgentRun.swift */,
@@ -244,6 +249,7 @@
 			isa = PBXGroup;
 			children = (
 				AA2222220000000000000007 /* AnnotationHTMLVisitor.swift */,
+				AF2222220000000000000008 /* AnnotationSupport.swift */,
 				AA2222220000000000000004 /* BellIndicatorBehavior.swift */,
 				A43C7742A36C8BAB7C4C6419 /* ChromeFontScaling.swift */,
 				CC222222000000000000000A /* CopyButton.swift */,
@@ -471,6 +477,7 @@
 				CC1111110000000000000004 /* SnapshotsView.swift in Sources */,
 				CC111111000000000000000D /* AgentsQueryService.swift in Sources */,
 				CC111111000000000000000E /* AgentRun.swift in Sources */,
+				AF1111110000000000000099 /* AnchorData.swift in Sources */,
 				AF1111110000000000000001 /* ArtifactQueryService.swift in Sources */,
 				AF1111110000000000000002 /* ArtifactsView.swift in Sources */,
 				AF1111110000000000000003 /* ArtifactSourceView.swift in Sources */,
@@ -478,6 +485,7 @@
 				AF1111110000000000000005 /* ArtifactMermaidView.swift in Sources */,
 				AF1111110000000000000006 /* ArtifactHTMLView.swift in Sources */,
 				AF1111110000000000000007 /* ArtifactImageView.swift in Sources */,
+				AF1111110000000000000008 /* AnnotationSupport.swift in Sources */,
 				CC111111000000000000000F /* AgentsView.swift in Sources */,
 				55C2F61C9B63ACCE613CBC37 /* SettingsView.swift in Sources */,
 				CC27D1B9C8318928AE6187FE /* SocketListener.swift in Sources */,

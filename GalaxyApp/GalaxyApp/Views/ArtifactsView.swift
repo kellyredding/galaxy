@@ -52,6 +52,16 @@ struct ArtifactsView: View {
     @State private var escapeMonitor: Any? = nil
     @State private var webViewRef: WKWebView? = nil
 
+    // Annotation state
+    @State private var openAnnotations:
+        [ArtifactAnnotation] = []
+    @State private var annotationHTMLMap:
+        [Int32: String] = [:]
+
+    // Review state
+    @State private var hasUnreviewedAnnotations:
+        Bool = false
+
     // Duration tracking for timeline events
     @State private var artifactDurationId: String? = nil
 
@@ -454,7 +464,9 @@ struct ArtifactsView: View {
         VStack(spacing: 0) {
             // Header bar
             HStack {
-                Button(action: { closeReader() }) {
+                Button(action: {
+                    handleBackButton()
+                }) {
                     HStack(spacing: 4) {
                         Image(
                             systemName: "chevron.left"
@@ -524,6 +536,35 @@ struct ArtifactsView: View {
 
                 Spacer()
 
+                // Review with Claude button
+                Button(action: {
+                    submitReview(
+                        artifact: artifact
+                    )
+                }) {
+                    Text("Review with Claude")
+                        .chromeFont(
+                            size: fontSize.caption2,
+                            weight: .medium
+                        )
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(
+                                cornerRadius: 6
+                            )
+                            .fill(Color.green)
+                        )
+                        .foregroundColor(.white)
+                }
+                .buttonStyle(.plain)
+                .opacity(
+                    hasUnreviewedAnnotations ? 1 : 0
+                )
+                .allowsHitTesting(
+                    hasUnreviewedAnnotations
+                )
+
                 if let content = openArtifactContent {
                     CopyButton(
                         text: content,
@@ -553,20 +594,43 @@ struct ArtifactsView: View {
                     maxHeight: .infinity
                 )
             } else if let content = openArtifactContent {
-                artifactContentView(
-                    artifact: artifact,
-                    content: content
-                )
+                VStack(spacing: 0) {
+                    artifactContentView(
+                        artifact: artifact,
+                        content: content
+                    )
+                    staleAnnotationsSection
+                }
             } else if let path = artifact.sourcePath,
                       isImageExtension(
                           artifact.originalFilename
                       )
             {
-                ArtifactImageView(
-                    filePath: path,
-                    isDark: colorScheme == .dark,
-                    webViewRef: $webViewRef
-                )
+                let label
+                    = "Artifact #\(artifact.number)"
+                let activeAnns
+                    = openAnnotations.filter {
+                        !$0.stale
+                    }
+                VStack(spacing: 0) {
+                    ArtifactImageView(
+                        filePath: path,
+                        isDark: colorScheme == .dark,
+                        annotations: activeAnns,
+                        annotationHTMLMap:
+                            annotationHTMLMap,
+                        itemLabel: label,
+                        onAnnotationMessage: {
+                            message in
+                            handleAnnotationMessage(
+                                message,
+                                artifact: artifact
+                            )
+                        },
+                        webViewRef: $webViewRef
+                    )
+                    staleAnnotationsSection
+                }
             } else {
                 VStack {
                     Spacer()
@@ -584,6 +648,113 @@ struct ArtifactsView: View {
             }
         }
     }
+
+    // MARK: - Stale Annotations
+
+    @ViewBuilder
+    private var staleAnnotationsSection: some View {
+        let staleAnns = openAnnotations.filter {
+            $0.stale
+        }
+        if !staleAnns.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                Rectangle()
+                    .fill(Color.primary.opacity(0.1))
+                    .frame(height: 1)
+                DisclosureGroup(
+                    "Stale Annotations"
+                    + " (\(staleAnns.count))"
+                ) {
+                    VStack(
+                        alignment: .leading,
+                        spacing: 8
+                    ) {
+                        ForEach(staleAnns) { ann in
+                            staleAnnotationCard(ann)
+                        }
+                    }
+                    .padding(.top, 4)
+                }
+                .chromeFont(
+                    size: fontSize.caption2,
+                    weight: .medium
+                )
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+            }
+            .background(
+                Color(.windowBackgroundColor)
+            )
+        }
+    }
+
+    private func staleAnnotationCard(
+        _ ann: ArtifactAnnotation
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(ann.content)
+                .chromeFont(size: fontSize.caption2)
+                .opacity(0.7)
+
+            if let captured = ann.anchorData
+                .capturedContent
+            {
+                Text(captured)
+                    .font(.system(
+                        size: fontSize.caption2 - 1,
+                        design: .monospaced
+                    ))
+                    .foregroundColor(.secondary)
+                    .padding(4)
+                    .background(
+                        Color.secondary.opacity(0.1)
+                    )
+                    .cornerRadius(4)
+                    .lineLimit(3)
+            }
+
+            Button("Dismiss") {
+                dismissStaleAnnotation(ann)
+            }
+            .chromeFont(size: fontSize.caption2)
+            .foregroundColor(.secondary)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func dismissStaleAnnotation(
+        _ ann: ArtifactAnnotation
+    ) {
+        guard let lsid = session.ledgerSessionId,
+              let artifact = openArtifact
+        else { return }
+        Task {
+            do {
+                try await ArtifactQueryService.shared
+                    .deleteAnnotation(
+                        ledgerSessionId: lsid,
+                        artifactNumber: artifact.number,
+                        number: ann.number
+                    )
+                await MainActor.run {
+                    openAnnotations.removeAll {
+                        $0.number == ann.number
+                    }
+                    annotationHTMLMap.removeValue(
+                        forKey: ann.number
+                    )
+                }
+            } catch {
+                NSLog(
+                    "ArtifactsView: dismiss stale "
+                    + "annotation error: %@",
+                    error.localizedDescription
+                )
+            }
+        }
+    }
+
+    // MARK: - Whole Annotations (Mermaid/Image)
 
     // MARK: - Content Dispatch
 
@@ -603,41 +774,97 @@ struct ArtifactsView: View {
 
         switch ext {
         case "md", "markdown":
+            let activeAnns = openAnnotations.filter {
+                !$0.stale
+            }
+            let snapshotAnns: [SnapshotAnnotation]
+                = activeAnns.compactMap {
+                    snapshotAnnotationFrom($0)
+                }
             MarkdownReaderView(
                 markdown: content,
                 isDark: colorScheme == .dark,
-                snapshotNumber: 0,
-                annotations: [],
-                annotationHTMLMap: [:],
+                annotations: snapshotAnns,
+                annotationHTMLMap: annotationHTMLMap,
                 webViewRef: $webViewRef,
-                onAnnotationMessage: { _ in },
-                annotationsEnabled: false
+                onAnnotationMessage: { message in
+                    handleAnnotationMessage(
+                        message,
+                        artifact: artifact
+                    )
+                },
+                itemLabel:
+                    "Artifact #\(artifact.number)",
+                baseUrlName: "artifact-reader"
             )
         case "csv", "tsv":
+            let label = "Artifact #\(artifact.number)"
             ArtifactTableView(
                 content: content,
                 isDark: colorScheme == .dark,
-                webViewRef: $webViewRef
+                annotations: openAnnotations,
+                annotationHTMLMap: annotationHTMLMap,
+                itemLabel: label,
+                webViewRef: $webViewRef,
+                onAnnotationMessage: { message in
+                    handleAnnotationMessage(
+                        message,
+                        artifact: artifact
+                    )
+                }
             )
         case "mmd", "mermaid":
+            let label = "Artifact #\(artifact.number)"
+            let activeAnns = openAnnotations.filter {
+                !$0.stale
+            }
             ArtifactMermaidView(
                 content: content,
                 isDark: colorScheme == .dark,
+                annotations: activeAnns,
+                annotationHTMLMap: annotationHTMLMap,
+                itemLabel: label,
+                onAnnotationMessage: { message in
+                    handleAnnotationMessage(
+                        message,
+                        artifact: artifact
+                    )
+                },
                 webViewRef: $webViewRef
             )
         case "html", "htm":
+            let label = "Artifact #\(artifact.number)"
             ArtifactHTMLView(
                 content: content,
                 isDark: colorScheme == .dark,
-                webViewRef: $webViewRef
+                annotations: openAnnotations,
+                annotationHTMLMap: annotationHTMLMap,
+                itemLabel: label,
+                webViewRef: $webViewRef,
+                onAnnotationMessage: { message in
+                    handleAnnotationMessage(
+                        message,
+                        artifact: artifact
+                    )
+                }
             )
         default:
             // Source code / plain text renderer
+            let label = "Artifact #\(artifact.number)"
             ArtifactSourceView(
                 content: content,
                 language: languageForExtension(ext),
                 isDark: colorScheme == .dark,
-                webViewRef: $webViewRef
+                annotations: openAnnotations,
+                annotationHTMLMap: annotationHTMLMap,
+                itemLabel: label,
+                webViewRef: $webViewRef,
+                onAnnotationMessage: { message in
+                    handleAnnotationMessage(
+                        message,
+                        artifact: artifact
+                    )
+                }
             )
         }
     }
@@ -770,27 +997,69 @@ struct ArtifactsView: View {
         if imageExtensions.contains(ext),
            let path = artifact.sourcePath
         {
-            openArtifact = artifact
-            openArtifactContent = nil
-            isLoadingContent = false
+            isLoadingContent = true
+            fetchTask = Task {
+                let annotations: [ArtifactAnnotation]
+                do {
+                    annotations = try await
+                        ArtifactQueryService.shared
+                        .fetchAnnotations(
+                            ledgerSessionId: lsid,
+                            artifactNumber:
+                                artifact.number
+                        )
+                } catch {
+                    annotations = []
+                }
 
-            let durationId =
-                "artifact--\(UUID().uuidString)"
-            artifactDurationId = durationId
-            TimelineService.record(
-                ledgerSessionId: lsid,
-                eventType: "artifact:opened",
-                source:
-                    "galaxy-app/views/artifacts",
-                durationIdentifier: durationId,
-                detailData: [
-                    "artifact_number":
-                        artifact.number,
-                    "title": artifact.title,
-                    "artifact_type":
-                        artifact.artifactType,
-                ]
-            )
+                var htmlMap: [Int32: String] = [:]
+                for ann in annotations {
+                    htmlMap[ann.number]
+                        = renderAnnotationHTML(
+                            ann.content
+                        )
+                }
+
+                guard !Task.isCancelled
+                else { return }
+
+                await MainActor.run {
+                    openArtifact = artifact
+                    openArtifactContent = nil
+                    openAnnotations = annotations
+                    annotationHTMLMap = htmlMap
+                    isLoadingContent = false
+                    hasUnreviewedAnnotations
+                        = annotations.contains {
+                            $0.artifactReviewId
+                                == nil && !$0.stale
+                        }
+
+                    let durationId =
+                        "artifact--"
+                        + "\(UUID().uuidString)"
+                    artifactDurationId = durationId
+                    TimelineService.record(
+                        ledgerSessionId: lsid,
+                        eventType:
+                            "artifact:opened",
+                        source:
+                            "galaxy-app/views"
+                            + "/artifacts",
+                        durationIdentifier:
+                            durationId,
+                        detailData: [
+                            "artifact_number":
+                                artifact.number,
+                            "title":
+                                artifact.title,
+                            "artifact_type":
+                                artifact
+                                .artifactType,
+                        ]
+                    )
+                }
+            }
             return
         }
 
@@ -805,10 +1074,36 @@ struct ArtifactsView: View {
                         artifact: artifact
                     )
                 guard !Task.isCancelled else { return }
+                // Fetch annotations
+                let annotations = try await
+                    ArtifactQueryService.shared
+                    .fetchAnnotations(
+                        ledgerSessionId: lsid,
+                        artifactNumber:
+                            artifact.number
+                    )
+
+                var htmlMap: [Int32: String] = [:]
+                for ann in annotations {
+                    htmlMap[ann.number]
+                        = renderAnnotationHTML(
+                            ann.content
+                        )
+                }
+
+                guard !Task.isCancelled else { return }
+
                 await MainActor.run {
                     openArtifact = artifact
                     openArtifactContent = content
+                    openAnnotations = annotations
+                    annotationHTMLMap = htmlMap
                     isLoadingContent = false
+                    hasUnreviewedAnnotations
+                        = annotations.contains {
+                            $0.artifactReviewId == nil
+                                && !$0.stale
+                        }
 
                     // Fire artifact:opened
                     // duration event
@@ -953,6 +1248,64 @@ struct ArtifactsView: View {
         }
     }
 
+    /// Check for unsaved annotation state before
+    /// closing the reader. Mirrors the escape-key
+    /// logic for consistency.
+    private func handleBackButton() {
+        // Check WKWebView annotation forms
+        guard let wv = webViewRef else {
+            closeReader()
+            return
+        }
+        wv.evaluateJavaScript(
+            "typeof AnnotationManager !== 'undefined'"
+            + " ? AnnotationManager.getEscapeContext()"
+            + " : 'close'"
+        ) { result, _ in
+            guard let context = result as? String
+            else {
+                DispatchQueue.main.async {
+                    self.closeReader()
+                }
+                return
+            }
+            switch context {
+            case "formHasText":
+                guard let window = wv.window
+                else { return }
+                SheetAlert.confirm(
+                    in: window,
+                    message: "Discard annotation?",
+                    detail: "You have unsaved text "
+                        + "in the annotation form. "
+                        + "It will be lost if you "
+                        + "go back.",
+                    onConfirm: { [self] in
+                        self.closeReader()
+                    }
+                )
+            case "editing":
+                guard let window = wv.window
+                else { return }
+                SheetAlert.confirm(
+                    in: window,
+                    message: "Discard changes?",
+                    detail: "You have unsaved changes"
+                        + " to this annotation. They"
+                        + " will be lost if you go"
+                        + " back.",
+                    onConfirm: { [self] in
+                        self.closeReader()
+                    }
+                )
+            default:
+                DispatchQueue.main.async {
+                    self.closeReader()
+                }
+            }
+        }
+    }
+
     private func closeReader(
         reason: String = "dismissed"
     ) {
@@ -986,6 +1339,9 @@ struct ArtifactsView: View {
         webViewRef = nil
         openArtifact = nil
         openArtifactContent = nil
+        openAnnotations = []
+        annotationHTMLMap = [:]
+        hasUnreviewedAnnotations = false
 
         if let number = closingNumber {
             focusedIndex = sortedArtifacts
@@ -993,6 +1349,780 @@ struct ArtifactsView: View {
                     $0.number == number
                 })
         }
+    }
+
+    // MARK: - Annotation Bridge
+
+    /// Convert an ArtifactAnnotation to a
+    /// SnapshotAnnotation for MarkdownReaderView.
+    /// Only works for line_range annotations.
+    private func snapshotAnnotationFrom(
+        _ ann: ArtifactAnnotation
+    ) -> SnapshotAnnotation? {
+        guard ann.anchorData.type == .lineRange,
+              let startLine = ann.anchorData.startLine,
+              let endLine = ann.anchorData.endLine
+        else { return nil }
+        return SnapshotAnnotation(
+            id: ann.id,
+            createdAt: ann.createdAt,
+            updatedAt: ann.updatedAt,
+            snapshotId: ann.artifactId,
+            number: ann.number,
+            startLine: startLine,
+            endLine: endLine,
+            content: ann.content,
+            snapshotReviewId: ann.artifactReviewId,
+            reviewNumber: ann.reviewNumber,
+            reviewReviewedAt: ann.reviewReviewedAt
+        )
+    }
+
+    // MARK: - Annotation Messages
+
+    private func handleAnnotationMessage(
+        _ message: AnnotationMessage,
+        artifact: ArtifactSummary
+    ) {
+        guard let lsid = session.ledgerSessionId
+        else { return }
+
+        switch message {
+        case .create(
+            let startLine, let endLine,
+            let content
+        ):
+            let lines = (openArtifactContent ?? "")
+                .components(separatedBy: "\n")
+            let start = max(Int(startLine) - 1, 0)
+            let end = min(
+                Int(endLine), lines.count
+            )
+            let lineContent = lines[start..<end]
+                .joined(separator: "\n")
+            let anchorData: [String: Any] = [
+                "type": "line_range",
+                "start_line": startLine,
+                "end_line": endLine,
+                "line_content": lineContent,
+            ]
+            createAnnotation(
+                lsid: lsid,
+                artifact: artifact,
+                anchorData: anchorData,
+                content: content
+            )
+
+        case .createRowRange(
+            let startRow, let endRow,
+            let content
+        ):
+            let csvLines = (openArtifactContent ?? "")
+                .components(separatedBy: "\n")
+            // Row 1 = first data row (after header)
+            let start = Int(startRow)
+            let end = min(
+                Int(endRow), csvLines.count - 1
+            )
+            let rowContent: String
+            if start >= 1 && end < csvLines.count {
+                rowContent = csvLines[start...end]
+                    .joined(separator: "\n")
+            } else {
+                rowContent = ""
+            }
+            let anchorData: [String: Any] = [
+                "type": "row_range",
+                "start_row": startRow,
+                "end_row": endRow,
+                "row_content": rowContent,
+            ]
+            createAnnotation(
+                lsid: lsid,
+                artifact: artifact,
+                anchorData: anchorData,
+                content: content
+            )
+
+        case .createBlockRange(
+            let startBlock, let endBlock,
+            let blockContent, let content
+        ):
+            var anchorData: [String: Any] = [
+                "type": "block_range",
+                "start_block": startBlock,
+                "end_block": endBlock,
+            ]
+            if let bc = blockContent, !bc.isEmpty {
+                anchorData["block_content"] = bc
+            }
+            createAnnotation(
+                lsid: lsid,
+                artifact: artifact,
+                anchorData: anchorData,
+                content: content
+            )
+
+        case .createWhole(let content):
+            var anchorData: [String: Any] = [
+                "type": "whole",
+            ]
+            if let path = artifact.sourcePath {
+                anchorData["artifact_path"] = path
+            }
+            createAnnotation(
+                lsid: lsid,
+                artifact: artifact,
+                anchorData: anchorData,
+                content: content
+            )
+
+        case .update(let number, let content):
+            updateAnnotation(
+                lsid: lsid,
+                artifact: artifact,
+                number: number,
+                content: content
+            )
+
+        case .delete(let number):
+            Task {
+                do {
+                    try await
+                        ArtifactQueryService.shared
+                        .deleteAnnotation(
+                            ledgerSessionId: lsid,
+                            artifactNumber:
+                                artifact.number,
+                            number: number
+                        )
+                    await MainActor.run {
+                        openAnnotations.removeAll {
+                            $0.number == number
+                        }
+                        annotationHTMLMap.removeValue(
+                            forKey: number
+                        )
+                        webViewRef?.evaluateJavaScript(
+                            "AnnotationManager"
+                            + ".annotationDeleted"
+                            + "(\(number))"
+                        )
+                        hasUnreviewedAnnotations
+                            = openAnnotations.contains {
+                                $0.artifactReviewId
+                                    == nil && !$0.stale
+                            }
+                    }
+                } catch {
+                    NSLog(
+                        "ArtifactsView: delete "
+                        + "annotation error: %@",
+                        error.localizedDescription
+                    )
+                }
+            }
+
+        case .confirmDragReplace(
+            let startIdx, let endIdx
+        ):
+            showDragReplaceAnnotationAlert(
+                startIdx: startIdx,
+                endIdx: endIdx
+            )
+        }
+    }
+
+    /// Serialize an annotation + rendered HTML to a
+    /// JSON string for JS injection. Works for both
+    /// snapshot-bridged and artifact annotations.
+    private func buildAnnotationPayload(
+        annotation: SnapshotAnnotation,
+        renderedHTML: String
+    ) -> String {
+        var annDict: [String: Any] = [
+            "id": annotation.id,
+            "number": annotation.number,
+            "start_line": annotation.startLine,
+            "end_line": annotation.endLine,
+            "content": annotation.content,
+            "created_at": annotation.createdAt,
+            "updated_at": annotation.updatedAt,
+        ]
+        if let rn = annotation.reviewNumber {
+            annDict["review_number"] = rn
+        }
+        if let rra = annotation.reviewReviewedAt {
+            annDict["review_reviewed_at"] = rra
+        }
+        let dict: [String: Any] = [
+            "annotation": annDict,
+            "renderedHTML": renderedHTML,
+        ]
+        guard let data = try? JSONSerialization
+            .data(withJSONObject: dict),
+              let json = String(
+                  data: data, encoding: .utf8
+              )
+        else { return "{}" }
+        return json
+    }
+
+    /// Build a JS-injectable annotation payload for
+    /// any anchor type (line_range, row_range,
+    /// block_range).
+    private func buildGenericAnnotationPayload(
+        ann: ArtifactAnnotation,
+        renderedHTML: String
+    ) -> String {
+        var annDict: [String: Any] = [
+            "id": ann.id,
+            "number": ann.number,
+            "content": ann.content,
+            "created_at": ann.createdAt,
+            "updated_at": ann.updatedAt,
+        ]
+        // Set position keys based on anchor type
+        switch ann.anchorData.type {
+        case .lineRange:
+            if let sl = ann.anchorData.startLine {
+                annDict["start_line"] = sl
+            }
+            if let el = ann.anchorData.endLine {
+                annDict["end_line"] = el
+            }
+        case .rowRange:
+            if let sr = ann.anchorData.startRow {
+                annDict["start_row"] = sr
+            }
+            if let er = ann.anchorData.endRow {
+                annDict["end_row"] = er
+            }
+        case .blockRange:
+            if let sb = ann.anchorData.startBlock {
+                annDict["start_block"] = sb
+            }
+            if let eb = ann.anchorData.endBlock {
+                annDict["end_block"] = eb
+            }
+        case .whole:
+            break
+        }
+        if let rn = ann.reviewNumber {
+            annDict["review_number"] = rn
+        }
+        if let rra = ann.reviewReviewedAt {
+            annDict["review_reviewed_at"] = rra
+        }
+        let dict: [String: Any] = [
+            "annotation": annDict,
+            "renderedHTML": renderedHTML,
+        ]
+        guard let data = try? JSONSerialization
+            .data(withJSONObject: dict),
+              let json = String(
+                  data: data, encoding: .utf8
+              )
+        else { return "{}" }
+        return json
+    }
+
+    // MARK: - Annotation CRUD Helpers
+
+    /// Create an annotation via CLI and update JS.
+    private func createAnnotation(
+        lsid: Int64,
+        artifact: ArtifactSummary,
+        anchorData: [String: Any],
+        content: String
+    ) {
+        Task {
+            do {
+                let ann = try await
+                    ArtifactQueryService.shared
+                    .createAnnotation(
+                        ledgerSessionId: lsid,
+                        artifactNumber:
+                            artifact.number,
+                        anchorData: anchorData,
+                        content: content
+                    )
+                let html = renderAnnotationHTML(
+                    ann.content
+                )
+                await MainActor.run {
+                    openAnnotations.append(ann)
+                    annotationHTMLMap[
+                        ann.number
+                    ] = html
+                    hasUnreviewedAnnotations = true
+                }
+                // For markdown artifacts, use
+                // snapshot bridge; for others use
+                // generic payload
+                let payload: String
+                if let snapAnn
+                    = snapshotAnnotationFrom(ann)
+                {
+                    payload = buildAnnotationPayload(
+                        annotation: snapAnn,
+                        renderedHTML: html
+                    )
+                } else {
+                    payload
+                        = buildGenericAnnotationPayload(
+                            ann: ann,
+                            renderedHTML: html
+                        )
+                }
+                await MainActor.run {
+                    webViewRef?.evaluateJavaScript(
+                        "AnnotationManager"
+                        + ".annotationCreated"
+                        + "(\(payload))"
+                    )
+                }
+            } catch {
+                NSLog(
+                    "ArtifactsView: create "
+                    + "annotation error: %@",
+                    error.localizedDescription
+                )
+            }
+        }
+    }
+
+    /// Update an annotation via CLI and update JS.
+    private func updateAnnotation(
+        lsid: Int64,
+        artifact: ArtifactSummary,
+        number: Int32,
+        content: String
+    ) {
+        Task {
+            do {
+                let ann = try await
+                    ArtifactQueryService.shared
+                    .updateAnnotation(
+                        ledgerSessionId: lsid,
+                        artifactNumber:
+                            artifact.number,
+                        number: number,
+                        content: content
+                    )
+                let html = renderAnnotationHTML(
+                    ann.content
+                )
+                await MainActor.run {
+                    if let idx = openAnnotations
+                        .firstIndex(where: {
+                            $0.number == number
+                        })
+                    {
+                        openAnnotations[idx] = ann
+                    }
+                    annotationHTMLMap[
+                        ann.number
+                    ] = html
+                }
+                let payload: String
+                if let snapAnn
+                    = snapshotAnnotationFrom(ann)
+                {
+                    payload = buildAnnotationPayload(
+                        annotation: snapAnn,
+                        renderedHTML: html
+                    )
+                } else {
+                    payload
+                        = buildGenericAnnotationPayload(
+                            ann: ann,
+                            renderedHTML: html
+                        )
+                }
+                await MainActor.run {
+                    webViewRef?.evaluateJavaScript(
+                        "AnnotationManager"
+                        + ".annotationUpdated"
+                        + "(\(payload))"
+                    )
+                }
+            } catch {
+                NSLog(
+                    "ArtifactsView: update "
+                    + "annotation error: %@",
+                    error.localizedDescription
+                )
+            }
+        }
+    }
+
+    // MARK: - Alert Helpers
+
+    private func showDragReplaceAnnotationAlert(
+        startIdx: Int,
+        endIdx: Int
+    ) {
+        guard let window = webViewRef?.window
+        else { return }
+
+        SheetAlert.confirm(
+            in: window,
+            message: "Discard annotation?",
+            detail: "You have unsaved text in the "
+                + "annotation form. It will be lost "
+                + "if you start a new annotation.",
+            onConfirm: { [self] in
+                self.webViewRef?.evaluateJavaScript(
+                    "AnnotationManager"
+                    + ".showFormForSelection("
+                    + "\(startIdx), \(endIdx))"
+                )
+            },
+            onCancel: { [self] in
+                self.webViewRef?.evaluateJavaScript(
+                    "AnnotationManager.focusForm()"
+                )
+            }
+        )
+    }
+
+    // MARK: - Review Actions
+
+    private func submitReview(
+        artifact: ArtifactSummary
+    ) {
+        hasUnreviewedAnnotations = false
+        guard let lsid = session.ledgerSessionId
+        else { return }
+
+        Task {
+            let needsResume = await MainActor.run {
+                session.hasExited
+            }
+
+            if needsResume {
+                let dirExists = await MainActor.run {
+                    FileManager.default.fileExists(
+                        atPath:
+                            session.workingDirectory
+                    )
+                }
+                guard dirExists else {
+                    NSLog(
+                        "ArtifactsView: submitReview "
+                        + "aborted — working directory "
+                        + "gone"
+                    )
+                    await MainActor.run {
+                        hasUnreviewedAnnotations = true
+                    }
+                    return
+                }
+
+                let message = buildReviewMessage(
+                    ledgerSessionId: lsid,
+                    artifactNumber: artifact.number
+                )
+
+                await MainActor.run {
+                    session.afterNextIdle {
+                        [weak session] in
+                        DispatchQueue.main.asyncAfter(
+                            deadline: .now() + 3.0
+                        ) {
+                            Task { [weak session] in
+                                guard let session
+                                    = session
+                                else { return }
+                                do {
+                                    let _ = try await
+                                        ArtifactQueryService
+                                        .shared
+                                        .createReview(
+                                            ledgerSessionId:
+                                                lsid,
+                                            artifactNumber:
+                                                artifact
+                                                .number
+                                        )
+                                    await MainActor.run {
+                                        self
+                                            .recordArtifactReviewedEvent(
+                                                ledgerSessionId:
+                                                    lsid,
+                                                artifact:
+                                                    artifact
+                                            )
+                                    }
+                                    await MainActor.run {
+                                        session
+                                            .sendCommand(
+                                                message
+                                            )
+                                    }
+                                    await self
+                                        .refreshAnnotationsAfterReview(
+                                            artifact:
+                                                artifact
+                                        )
+                                } catch {
+                                    await MainActor.run {
+                                        self
+                                            .hasUnreviewedAnnotations
+                                            = true
+                                    }
+                                    NSLog(
+                                        "ArtifactsView:"
+                                        + " submitReview"
+                                        + " error: %@",
+                                        error
+                                            .localizedDescription
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    sessionManager.resumeSession(
+                        sessionId: session.id
+                    )
+                }
+            } else {
+                do {
+                    let _ = try await
+                        ArtifactQueryService.shared
+                        .createReview(
+                            ledgerSessionId: lsid,
+                            artifactNumber:
+                                artifact.number
+                        )
+
+                    await MainActor.run {
+                        recordArtifactReviewedEvent(
+                            ledgerSessionId: lsid,
+                            artifact: artifact
+                        )
+                    }
+
+                    let message = buildReviewMessage(
+                        ledgerSessionId: lsid,
+                        artifactNumber: artifact.number
+                    )
+
+                    await MainActor.run {
+                        sessionManager.activeTab
+                            = .terminal
+                        session.sendCommand(message)
+                    }
+
+                    await refreshAnnotationsAfterReview(
+                        artifact: artifact
+                    )
+                } catch {
+                    await MainActor.run {
+                        hasUnreviewedAnnotations = true
+                    }
+                    NSLog(
+                        "ArtifactsView: submitReview "
+                        + "error: %@",
+                        error.localizedDescription
+                    )
+                }
+            }
+        }
+    }
+
+    private func refreshAnnotationsAfterReview(
+        artifact: ArtifactSummary
+    ) async {
+        guard let lsid = session.ledgerSessionId
+        else { return }
+        do {
+            let annotations = try await
+                ArtifactQueryService.shared
+                .fetchAnnotations(
+                    ledgerSessionId: lsid,
+                    artifactNumber: artifact.number
+                )
+
+            var htmlMap: [Int32: String] = [:]
+            for ann in annotations {
+                htmlMap[ann.number]
+                    = renderAnnotationHTML(ann.content)
+            }
+
+            await MainActor.run {
+                guard openArtifact?.number
+                    == artifact.number
+                else { return }
+
+                openAnnotations = annotations
+                annotationHTMLMap = htmlMap
+                hasUnreviewedAnnotations
+                    = annotations.contains {
+                        $0.artifactReviewId == nil
+                            && !$0.stale
+                    }
+
+                // Push updated annotations to JS
+                // (skip for whole-type renderers
+                // which use SwiftUI cards)
+                let activeAnns = annotations.filter {
+                    !$0.stale
+                        && $0.anchorData.type != .whole
+                }
+                let annDicts: [[String: Any]]
+                    = activeAnns.map { a in
+                        var dict: [String: Any] = [
+                            "id": a.id,
+                            "number": a.number,
+                            "content": a.content,
+                            "created_at": a.createdAt,
+                            "updated_at": a.updatedAt,
+                        ]
+                        switch a.anchorData.type {
+                        case .lineRange:
+                            if let sl = a.anchorData
+                                .startLine {
+                                dict["start_line"] = sl
+                            }
+                            if let el = a.anchorData
+                                .endLine {
+                                dict["end_line"] = el
+                            }
+                        case .rowRange:
+                            if let sr = a.anchorData
+                                .startRow {
+                                dict["start_row"] = sr
+                            }
+                            if let er = a.anchorData
+                                .endRow {
+                                dict["end_row"] = er
+                            }
+                        case .blockRange:
+                            if let sb = a.anchorData
+                                .startBlock {
+                                dict["start_block"]
+                                    = sb
+                            }
+                            if let eb = a.anchorData
+                                .endBlock {
+                                dict["end_block"] = eb
+                            }
+                        case .whole:
+                            break
+                        }
+                        if let rn = a.reviewNumber {
+                            dict["review_number"] = rn
+                        }
+                        if let rra
+                            = a.reviewReviewedAt
+                        {
+                            dict["review_reviewed_at"]
+                                = rra
+                        }
+                        return dict
+                    }
+                if !annDicts.isEmpty,
+                   let data = try? JSONSerialization
+                    .data(
+                        withJSONObject: annDicts
+                    ),
+                   let json = String(
+                       data: data, encoding: .utf8
+                   )
+                {
+                    webViewRef?.evaluateJavaScript(
+                        "AnnotationManager"
+                        + ".refreshAnnotationData"
+                        + "(\(json))"
+                    )
+                }
+            }
+        } catch {
+            NSLog(
+                "ArtifactsView: refresh annotations "
+                + "error: %@",
+                error.localizedDescription
+            )
+        }
+    }
+
+    private func buildReviewMessage(
+        ledgerSessionId: Int64,
+        artifactNumber: Int32
+    ) -> String {
+        let sid = ledgerSessionId
+        let an = artifactNumber
+        return "I've submitted artifact annotations "
+            + "for your review."
+            + " List pending reviews with"
+            + " `galaxy-artifacts review list --json"
+            + " --pending --ledger-session-id \(sid)"
+            + " --artifact \(an)`,"
+            + " view each with"
+            + " `galaxy-artifacts review view --json"
+            + " --ledger-session-id \(sid)"
+            + " --artifact \(an) REVIEW_NUMBER`,"
+            + " mark each reviewed with"
+            + " `galaxy-artifacts review mark-reviewed"
+            + " --ledger-session-id \(sid)"
+            + " --artifact \(an) REVIEW_NUMBER`,"
+            + " then respond to each annotation in "
+            + "the conversation."
+    }
+
+    private func recordArtifactReviewedEvent(
+        ledgerSessionId: Int64,
+        artifact: ArtifactSummary
+    ) {
+        let activeAnns = openAnnotations.filter {
+            !$0.stale
+        }
+        let expandedAnnotations: [[String: Any]]
+            = activeAnns.map { ann in
+                var entry: [String: Any] = [
+                    "number": ann.number,
+                    "annotation": ann.content,
+                    "anchor_type":
+                        ann.anchorData.type.rawValue,
+                ]
+                if let lc = ann.anchorData.lineContent {
+                    entry["line_content"] = lc
+                }
+                if let rc = ann.anchorData.rowContent {
+                    entry["row_content"] = rc
+                }
+                if let bc = ann.anchorData.blockContent {
+                    entry["block_content"] = bc
+                }
+                if let ap = ann.anchorData.artifactPath {
+                    entry["artifact_path"] = ap
+                }
+                if let sl = ann.anchorData.startLine {
+                    entry["start_line"] = sl
+                }
+                if let el = ann.anchorData.endLine {
+                    entry["end_line"] = el
+                }
+                return entry
+            }
+
+        let detailData: [String: Any] = [
+            "artifact_number": artifact.number,
+            "title": artifact.title,
+            "artifact_type": artifact.artifactType,
+            "annotation_count": activeAnns.count,
+            "annotations": expandedAnnotations,
+        ]
+
+        TimelineService.recordViaStdin(
+            ledgerSessionId: ledgerSessionId,
+            eventType: "artifact:reviewed",
+            source: "galaxy-app/views/artifacts",
+            detailData: detailData
+        )
     }
 
     // MARK: - Active View State Sync
@@ -1052,13 +2182,103 @@ struct ArtifactsView: View {
                     else {
                         return event
                     }
-                    DispatchQueue.main.async {
-                        closeReader()
+
+                    webViewRef?.evaluateJavaScript(
+                        "typeof AnnotationManager "
+                        + "!== 'undefined' ? "
+                        + "AnnotationManager"
+                        + ".getEscapeContext() "
+                        + ": 'close'"
+                    ) { result, _ in
+                        guard let context
+                            = result as? String
+                        else {
+                            DispatchQueue.main.async {
+                                closeReader()
+                            }
+                            return
+                        }
+                        switch context {
+                        case "emojiPopup":
+                            self.webViewRef?
+                                .evaluateJavaScript(
+                                    """
+                                    (function() {
+                                        var ta = document.querySelector('.annotation-textarea:focus') ||
+                                                 document.querySelector('.annotation-edit-textarea:focus');
+                                        if (ta && typeof EmojiAutocomplete !== 'undefined') {
+                                            EmojiAutocomplete.dismiss(ta);
+                                        }
+                                    })()
+                                    """
+                                )
+                        case "editing":
+                            self
+                                .showDiscardEditAlert()
+                        case "expanded":
+                            self.webViewRef?
+                                .evaluateJavaScript(
+                                    "AnnotationManager"
+                                    + ".collapseExpanded"
+                                    + "()"
+                                )
+                        case "formHasText":
+                            self
+                                .showDiscardFormAlert()
+                        case "formVisible":
+                            self.webViewRef?
+                                .evaluateJavaScript(
+                                    "AnnotationManager"
+                                    + ".dismissForm()"
+                                )
+                        case "__consumed__":
+                            break
+                        default:
+                            DispatchQueue.main.async {
+                                closeReader()
+                            }
+                        }
                     }
                     return nil
                 }
                 return event
             }
+    }
+
+    private func showDiscardFormAlert() {
+        guard let window = webViewRef?.window
+        else { return }
+
+        SheetAlert.confirm(
+            in: window,
+            message: "Discard annotation?",
+            detail: "You have unsaved text in the "
+                + "annotation form. It will be lost "
+                + "if you dismiss.",
+            onConfirm: { [self] in
+                self.webViewRef?.evaluateJavaScript(
+                    "AnnotationManager.dismissForm()"
+                )
+            }
+        )
+    }
+
+    private func showDiscardEditAlert() {
+        guard let window = webViewRef?.window
+        else { return }
+
+        SheetAlert.confirm(
+            in: window,
+            message: "Discard changes?",
+            detail: "You have unsaved changes to "
+                + "this annotation. They will be "
+                + "lost if you cancel editing.",
+            onConfirm: { [self] in
+                self.webViewRef?.evaluateJavaScript(
+                    "AnnotationManager.cancelEdit()"
+                )
+            }
+        )
     }
 
     private func removeEscapeMonitor() {

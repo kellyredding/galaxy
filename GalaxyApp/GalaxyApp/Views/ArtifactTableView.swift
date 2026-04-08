@@ -2,21 +2,31 @@ import SwiftUI
 import WebKit
 
 /// Renders CSV content as a styled HTML table in a WKWebView.
-/// Uses the same SilentFunctionKeyWebView and navigation
-/// delegate pattern as ArtifactSourceView.
+/// Supports row_range annotations via the shared
+/// AnnotationManager JS.
 struct ArtifactTableView: NSViewRepresentable {
     let content: String
     let isDark: Bool
+    let annotations: [ArtifactAnnotation]
+    let annotationHTMLMap: [Int32: String]
+    let itemLabel: String
     @Binding var webViewRef: WKWebView?
+    var onAnnotationMessage:
+        ((AnnotationMessage) -> Void)?
 
     func makeNSView(
         context: Context
     ) -> SilentFunctionKeyWebView {
         let config = WKWebViewConfiguration()
+        config.userContentController.add(
+            context.coordinator, name: "annotation"
+        )
         let webView = SilentFunctionKeyWebView(
             frame: .zero, configuration: config
         )
-        webView.setValue(false, forKey: "drawsBackground")
+        webView.setValue(
+            false, forKey: "drawsBackground"
+        )
         webView.navigationDelegate =
             context.coordinator
 
@@ -25,6 +35,23 @@ struct ArtifactTableView: NSViewRepresentable {
             isDark
             ? NSColor.black.cgColor
             : NSColor.white.cgColor
+
+        let activeAnns = annotations.filter {
+            !$0.stale
+                && $0.anchorData.type == .rowRange
+        }
+        let initJS = buildAnnotationInitJS(
+            anchorType: "row_range",
+            blockSelector: "tr[data-row]",
+            lineAttr: "data-row",
+            refPrefix: "Row",
+            itemLabel: itemLabel,
+            annotations: activeAnns,
+            htmlMap: annotationHTMLMap
+        )
+        context.coordinator.pendingInitJS = initJS
+        context.coordinator.onAnnotationMessage =
+            onAnnotationMessage
 
         let html = buildTableHTML(
             content: content,
@@ -57,44 +84,51 @@ struct ArtifactTableView: NSViewRepresentable {
                 ? NSColor.black.cgColor
                 : NSColor.white.cgColor
 
-            let html = buildTableHTML(
-                content: content,
-                isDark: isDark
-            )
-            webView.loadHTMLString(
-                html,
-                baseURL: URL(
-                    string: "galaxy://artifact-reader"
+            webView.evaluateJavaScript(
+                "typeof AnnotationManager !== 'undefined'"
+                + " ? JSON.stringify("
+                + "AnnotationManager.getFormState())"
+                + " : null"
+            ) { result, _ in
+                let activeAnns = annotations.filter {
+                    !$0.stale
+                        && $0.anchorData.type
+                            == .rowRange
+                }
+                var initJS = buildAnnotationInitJS(
+                    anchorType: "row_range",
+                    blockSelector: "tr[data-row]",
+                    lineAttr: "data-row",
+                    refPrefix: "Row",
+                    itemLabel: itemLabel,
+                    annotations: activeAnns,
+                    htmlMap: annotationHTMLMap
                 )
-            )
-        }
-    }
+                if let stateJSON = result as? String {
+                    initJS += "; AnnotationManager"
+                        + ".restoreFormState("
+                        + stateJSON + ")"
+                }
+                context.coordinator.pendingInitJS
+                    = initJS
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(isDark: isDark)
-    }
-
-    class Coordinator: NSObject,
-        WKNavigationDelegate
-    {
-        var lastIsDark: Bool
-
-        init(isDark: Bool) {
-            self.lastIsDark = isDark
-        }
-
-        func webView(
-            _ webView: WKWebView,
-            decidePolicyFor nav: WKNavigationAction,
-            decisionHandler: @escaping
-                (WKNavigationActionPolicy) -> Void
-        ) {
-            if nav.navigationType == .linkActivated {
-                decisionHandler(.cancel)
-            } else {
-                decisionHandler(.allow)
+                let html = buildTableHTML(
+                    content: content,
+                    isDark: isDark
+                )
+                webView.loadHTMLString(
+                    html,
+                    baseURL: URL(
+                        string:
+                            "galaxy://artifact-reader"
+                    )
+                )
             }
         }
+    }
+
+    func makeCoordinator() -> AnnotationCoordinator {
+        AnnotationCoordinator(isDark: isDark)
     }
 }
 
@@ -119,7 +153,7 @@ private func buildTableHTML(
     let headerRow = rows[0]
     let dataRows = Array(rows.dropFirst())
 
-    var headerHTML = "<tr>"
+    var headerHTML = "<tr data-row=\"0\">"
     for cell in headerRow {
         let escaped = escapeHTML(cell)
         headerHTML += "<th>\(escaped)</th>"
@@ -127,14 +161,17 @@ private func buildTableHTML(
     headerHTML += "</tr>"
 
     var bodyHTML = ""
-    for row in dataRows {
-        bodyHTML += "<tr>"
+    for (i, row) in dataRows.enumerated() {
+        let rowNum = i + 1
+        bodyHTML += "<tr data-row=\"\(rowNum)\">"
         for cell in row {
             let escaped = escapeHTML(cell)
             bodyHTML += "<td>\(escaped)</td>"
         }
         bodyHTML += "</tr>"
     }
+
+    let cssVars = annotationCSSVars(isDark: isDark)
 
     return """
     <!DOCTYPE html>
@@ -145,6 +182,9 @@ private func buildTableHTML(
           content="width=device-width, initial-scale=1">
     <title>Galaxy Artifact Reader</title>
     <style>
+    :root {
+        \(cssVars)
+    }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body {
         background: \(bgColor);
@@ -183,6 +223,18 @@ private func buildTableHTML(
     tr:nth-child(odd) {
         background: \(stripeBg);
     }
+    /* Annotation highlight for table rows */
+    tr.annotation-highlight td {
+        background-color: rgba(88, 166, 255, 0.12);
+        border-left-color: rgba(88, 166, 255, 0.6);
+    }
+    tr.annotation-expanded-highlight td {
+        background-color:
+            var(--annotation-active-block-bg);
+        border-left-color:
+            var(--annotation-active-block-border);
+    }
+    \(annotationCSS)
     </style>
     </head>
     <body>
@@ -192,6 +244,11 @@ private func buildTableHTML(
     <tbody>\(bodyHTML)</tbody>
     </table>
     </div>
+    <script>
+    \(annotationManagerJS)
+    </script>
+    <script>\(emojiDataJS)</script>
+    <script>\(emojiAutocompleteJS)</script>
     </body>
     </html>
     """

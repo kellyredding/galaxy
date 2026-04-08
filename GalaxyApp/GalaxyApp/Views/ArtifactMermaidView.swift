@@ -3,20 +3,30 @@ import WebKit
 
 /// Renders standalone .mmd/.mermaid files using the
 /// vendored mermaid.js. Supports zoom via the shared
-/// SilentFunctionKeyWebView.
+/// SilentFunctionKeyWebView and annotation via the
+/// generalized AnnotationManager JS.
 struct ArtifactMermaidView: NSViewRepresentable {
     let content: String
     let isDark: Bool
+    let annotations: [ArtifactAnnotation]
+    let annotationHTMLMap: [Int32: String]
+    let itemLabel: String
+    var onAnnotationMessage:
+        ((AnnotationMessage) -> Void)?
     @Binding var webViewRef: WKWebView?
 
     func makeNSView(
         context: Context
     ) -> SilentFunctionKeyWebView {
         let config = WKWebViewConfiguration()
+        config.userContentController.add(
+            context.coordinator, name: "annotation"
+        )
         let webView = SilentFunctionKeyWebView(
             frame: .zero, configuration: config
         )
         webView.setValue(false, forKey: "drawsBackground")
+        webView.isInspectable = true
         webView.navigationDelegate =
             context.coordinator
 
@@ -25,6 +35,19 @@ struct ArtifactMermaidView: NSViewRepresentable {
             isDark
             ? NSColor.black.cgColor
             : NSColor.white.cgColor
+
+        let initJS = buildAnnotationInitJS(
+            anchorType: "whole",
+            blockSelector: "",
+            lineAttr: "",
+            refPrefix: "",
+            itemLabel: itemLabel,
+            annotations: annotations,
+            htmlMap: annotationHTMLMap
+        )
+        context.coordinator.pendingInitJS = initJS
+        context.coordinator.onAnnotationMessage =
+            onAnnotationMessage
 
         let html = buildMermaidHTML(
             content: content,
@@ -48,6 +71,9 @@ struct ArtifactMermaidView: NSViewRepresentable {
         _ webView: SilentFunctionKeyWebView,
         context: Context
     ) {
+        context.coordinator.onAnnotationMessage =
+            onAnnotationMessage
+
         if context.coordinator.lastIsDark != isDark {
             context.coordinator.lastIsDark = isDark
 
@@ -56,6 +82,17 @@ struct ArtifactMermaidView: NSViewRepresentable {
                 isDark
                 ? NSColor.black.cgColor
                 : NSColor.white.cgColor
+
+            let initJS = buildAnnotationInitJS(
+                anchorType: "whole",
+                blockSelector: "",
+                lineAttr: "",
+                refPrefix: "",
+                itemLabel: itemLabel,
+                annotations: annotations,
+                htmlMap: annotationHTMLMap
+            )
+            context.coordinator.pendingInitJS = initJS
 
             let html = buildMermaidHTML(
                 content: content,
@@ -70,31 +107,8 @@ struct ArtifactMermaidView: NSViewRepresentable {
         }
     }
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(isDark: isDark)
-    }
-
-    class Coordinator: NSObject,
-        WKNavigationDelegate
-    {
-        var lastIsDark: Bool
-
-        init(isDark: Bool) {
-            self.lastIsDark = isDark
-        }
-
-        func webView(
-            _ webView: WKWebView,
-            decidePolicyFor nav: WKNavigationAction,
-            decisionHandler: @escaping
-                (WKNavigationActionPolicy) -> Void
-        ) {
-            if nav.navigationType == .linkActivated {
-                decisionHandler(.cancel)
-            } else {
-                decisionHandler(.allow)
-            }
-        }
+    func makeCoordinator() -> AnnotationCoordinator {
+        AnnotationCoordinator(isDark: isDark)
     }
 }
 
@@ -136,6 +150,9 @@ private func buildMermaidHTML(
           content="width=device-width, initial-scale=1">
     <title>Galaxy Artifact Reader</title>
     <style>
+    :root {
+        \(annotationCSSVars(isDark: isDark))
+    }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body {
         background: \(bgColor);
@@ -157,6 +174,7 @@ private func buildMermaidHTML(
         width: 100%;
         height: auto;
     }
+    \(annotationCSS)
     </style>
     </head>
     <body>
@@ -174,6 +192,9 @@ private func buildMermaidHTML(
         mermaid.run();
     }
     </script>
+    <script>\(annotationManagerJS)</script>
+    <script>\(emojiDataJS)</script>
+    <script>\(emojiAutocompleteJS)</script>
     </body>
     </html>
     """
