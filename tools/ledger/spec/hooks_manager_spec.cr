@@ -19,6 +19,7 @@ describe GalaxyLedger::HooksManager do
       hooks.has_key?("Stop").should be_true
       hooks.has_key?("SessionStart").should be_true
       hooks.has_key?("SessionEnd").should be_true
+      hooks.has_key?("PermissionRequest").should be_true
       # PreCompact hook is not used (direct DB writes)
       hooks.has_key?("PreCompact").should be_false
     end

@@ -96,6 +96,8 @@ module GalaxyLedger
         handle_on_subagent_start_command(rest)
       when "on-subagent-stop"
         handle_on_subagent_stop_command(rest)
+      when "on-permission-request"
+        handle_on_permission_request_command(rest)
       when "install"
         handle_install_command(rest)
       when "uninstall"
@@ -1654,6 +1656,41 @@ module GalaxyLedger
 
       OUTPUT (stdout):
         No output (async hook, non-blocking).
+      HELP
+    end
+
+    private def self.handle_on_permission_request_command(
+      args : Array(String),
+    )
+      if args.first? == "-h" || args.first? == "--help"
+        show_on_permission_request_help
+        return
+      end
+      handler = Hooks::OnPermissionRequest.new
+      handler.run
+    end
+
+    private def self.show_on_permission_request_help
+      puts <<-HELP
+      galaxy-ledger on-permission-request - Handle PermissionRequest hook
+
+      USAGE:
+        galaxy-ledger on-permission-request
+
+      DESCRIPTION:
+        Called by Claude Code's PermissionRequest hook when the
+        user is prompted for permission approval. Resolves the
+        session and publishes a permission_request event to
+        Galaxy.app via the Unix domain socket.
+
+      INPUT (stdin):
+        JSON object with hook data:
+        {
+          "session_id": "abc123"
+        }
+
+      OUTPUT (stdout):
+        No output.
       HELP
     end
 

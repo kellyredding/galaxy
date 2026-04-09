@@ -88,6 +88,17 @@ module GalaxyLedger
           ],
         },
       ],
+      "PermissionRequest" => [
+        {
+          "hooks" => [
+            {
+              "type"    => "command",
+              "command" => "~/.claude/galaxy/bin/galaxy-ledger on-permission-request",
+              "timeout" => 10,
+            },
+          ],
+        },
+      ],
       "SessionStart" => [
         {
           "matcher" => "startup",
