@@ -117,8 +117,7 @@ module GalaxyLedger
             cost_usd REAL DEFAULT 0.0,
             lines_added INTEGER DEFAULT 0,
             lines_removed INTEGER DEFAULT 0,
-            context TEXT NOT NULL DEFAULT '{}',
-            last_interaction TEXT
+            context TEXT NOT NULL DEFAULT '{}'
           )
         SQL
 

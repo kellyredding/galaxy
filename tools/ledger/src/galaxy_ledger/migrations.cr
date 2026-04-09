@@ -682,6 +682,19 @@ module GalaxyLedger
           end
         end
       },
+      "0.5.1" => ->(db : DB::Database) {
+        # Drop the vestigial last_interaction column.
+        # No code reads or writes it since 0.5.0 removed the
+        # exchange/summary pipeline.
+        begin
+          db.exec(
+            "ALTER TABLE ledger_sessions " \
+            "DROP COLUMN last_interaction"
+          )
+        rescue
+          # Column already gone — ignore
+        end
+      },
     }
 
     # ==========================================================================
