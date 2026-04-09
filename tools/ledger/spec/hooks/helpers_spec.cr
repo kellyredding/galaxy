@@ -297,7 +297,6 @@ def make_session_record(
     lines_added: 0_i64,
     lines_removed: 0_i64,
     context: context_json,
-    last_interaction: nil,
   )
 end
 

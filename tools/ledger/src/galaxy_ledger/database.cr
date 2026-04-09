@@ -1017,24 +1017,6 @@ module GalaxyLedger
       end
     end
 
-    # Update the last_interaction JSON for a session
-    def self.update_session_last_interaction(ledger_session_id : Int64, json : String) : Bool
-      return false if ledger_session_id <= 0
-
-      begin
-        open do |db|
-          db.exec(
-            "UPDATE ledger_sessions SET last_interaction = ?, updated_at = datetime('now') WHERE id = ?",
-            json,
-            ledger_session_id,
-          )
-          true
-        end
-      rescue
-        false
-      end
-    end
-
     # Atomically stamp last_stop_cwd into the session's context JSON.
     # Uses json_set in SQL — no read-modify-write, safe against concurrent
     # writes from the status line (which uses the same json_set pattern for
@@ -1126,7 +1108,7 @@ module GalaxyLedger
               SELECT id, suggested_name, suggested_name_data, current_session_identifier, current_claude_pid, started_at, updated_at, cwd, project_dir,
                      git_branch, model_id, model_display_name, claude_version,
                      context_percentage, tokens_used, tokens_max, cost_usd,
-                     lines_added, lines_removed, context, last_interaction
+                     lines_added, lines_removed, context
               FROM ledger_sessions
               WHERE id = ?
             SQL
@@ -1160,7 +1142,7 @@ module GalaxyLedger
               SELECT id, suggested_name, suggested_name_data, current_session_identifier, current_claude_pid, started_at, updated_at, cwd, project_dir,
                      git_branch, model_id, model_display_name, claude_version,
                      context_percentage, tokens_used, tokens_max, cost_usd,
-                     lines_added, lines_removed, context, last_interaction
+                     lines_added, lines_removed, context
               FROM ledger_sessions
               ORDER BY updated_at DESC
               LIMIT ?
@@ -2087,14 +2069,13 @@ module GalaxyLedger
       getter lines_added : Int64
       getter lines_removed : Int64
       getter context : String
-      getter last_interaction : String?
 
       def initialize(
         @id, @suggested_name, @suggested_name_data, @current_session_identifier, @current_claude_pid, @started_at, @updated_at,
         @cwd, @project_dir, @git_branch,
         @model_id, @model_display_name, @claude_version,
         @context_percentage, @tokens_used, @tokens_max, @cost_usd,
-        @lines_added, @lines_removed, @context, @last_interaction,
+        @lines_added, @lines_removed, @context,
       )
       end
 
@@ -2120,7 +2101,6 @@ module GalaxyLedger
           lines_added: rs.read(Int64),
           lines_removed: rs.read(Int64),
           context: rs.read(String),
-          last_interaction: rs.read(String?),
         )
       end
     end

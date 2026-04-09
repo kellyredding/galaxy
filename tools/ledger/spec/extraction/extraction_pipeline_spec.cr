@@ -141,14 +141,8 @@ describe "Extraction Pipeline" do
       result.empty?.should be_true
     end
 
-    it "parses learning extractions with summary" do
+    it "parses learning extractions" do
       GalaxyLedger::Extraction::ClaudeCLI.test_response = {
-        "summary" => {
-          "user_request"       => "How does authentication work?",
-          "assistant_response" => "Explained the JWT-based auth flow",
-          "files_modified"     => [] of String,
-          "key_actions"        => ["Analyzed auth middleware", "Traced token flow"],
-        },
         "extractions" => [
           {
             "type"       => "learning",
@@ -169,21 +163,10 @@ describe "Extraction Pipeline" do
       )
       result.extractions.size.should eq(2)
       result.extractions.all? { |e| e.entry_type == "learning" }.should be_true
-
-      summary = result.summary
-      summary.should_not be_nil
-      summary.not_nil!.user_request.should eq("How does authentication work?")
-      summary.not_nil!.key_actions.size.should eq(2)
     end
 
     it "parses decision extractions" do
       GalaxyLedger::Extraction::ClaudeCLI.test_response = {
-        "summary" => {
-          "user_request"       => "Should we use Redis or Memcached?",
-          "assistant_response" => "Chose Redis for its data structure support",
-          "files_modified"     => ["config/cache.yml"],
-          "key_actions"        => ["Evaluated both options", "Configured Redis"],
-        },
         "extractions" => [
           {
             "type"       => "decision",
@@ -200,17 +183,10 @@ describe "Extraction Pipeline" do
       result.extractions.size.should eq(1)
       result.extractions[0].entry_type.should eq("decision")
       result.extractions[0].importance.should eq("high")
-      result.summary.not_nil!.files_modified.should eq(["config/cache.yml"])
     end
 
     it "parses discovery extractions" do
       GalaxyLedger::Extraction::ClaudeCLI.test_response = {
-        "summary" => {
-          "user_request"       => "Why is the build failing?",
-          "assistant_response" => "Found deprecated API usage causing build failure",
-          "files_modified"     => [] of String,
-          "key_actions"        => ["Investigated build logs"],
-        },
         "extractions" => [
           {
             "type"       => "discovery",
@@ -228,52 +204,14 @@ describe "Extraction Pipeline" do
       result.extractions[0].entry_type.should eq("discovery")
     end
 
-    it "handles response with no extractions but valid summary" do
+    it "handles response with no extractions" do
       GalaxyLedger::Extraction::ClaudeCLI.test_response = {
-        "summary" => {
-          "user_request"       => "What is 2+2?",
-          "assistant_response" => "Answered that 2+2 is 4",
-          "files_modified"     => [] of String,
-          "key_actions"        => [] of String,
-        },
         "extractions" => [] of String,
       }.to_json
 
       result = GalaxyLedger::Extraction.extract_assistant_learnings("What is 2+2?", "4")
       result.extractions.size.should eq(0)
-      result.summary.should_not be_nil
-    end
-
-    it "handles response with missing summary" do
-      GalaxyLedger::Extraction::ClaudeCLI.test_response = {
-        "extractions" => [
-          {
-            "type"       => "learning",
-            "content"    => "Something learned",
-            "importance" => "medium",
-          },
-        ],
-      }.to_json
-
-      result = GalaxyLedger::Extraction.extract_assistant_learnings("question", "answer")
-      result.extractions.size.should eq(1)
-      result.summary.should be_nil
-    end
-
-    it "ignores session_title in JSON (no longer parsed)" do
-      GalaxyLedger::Extraction::ClaudeCLI.test_response = {
-        "session_title" => "Galaxy Ledger Session Title",
-        "summary"       => {
-          "user_request"       => "Add session titles",
-          "assistant_response" => "Added session title extraction",
-          "files_modified"     => ["extraction.cr"],
-          "key_actions"        => ["Updated prompt"],
-        },
-        "extractions" => [] of String,
-      }.to_json
-
-      result = GalaxyLedger::Extraction.extract_assistant_learnings("Add session titles", "Done")
-      result.summary.should_not be_nil
+      result.empty?.should be_true
     end
   end
 
@@ -392,38 +330,14 @@ describe "Extraction Pipeline" do
       result.extractions.size.should eq(1)
     end
 
-    it "handles summary with empty user_request and assistant_response" do
+    it "ignores unexpected JSON keys gracefully" do
       GalaxyLedger::Extraction::ClaudeCLI.test_response = {
-        "summary" => {
-          "user_request"       => "",
-          "assistant_response" => "",
-          "files_modified"     => [] of String,
-          "key_actions"        => [] of String,
-        },
+        "summary"     => {"user_request" => "ignored"},
         "extractions" => [] of String,
       }.to_json
 
       result = GalaxyLedger::Extraction.extract_assistant_learnings("q", "a")
-      # Empty summary strings → summary should be nil
-      result.summary.should be_nil
-    end
-
-    it "parses summary files_modified and key_actions arrays" do
-      GalaxyLedger::Extraction::ClaudeCLI.test_response = {
-        "summary" => {
-          "user_request"       => "Fix the bug",
-          "assistant_response" => "Fixed the null pointer in auth.rb",
-          "files_modified"     => ["app/models/user.rb", "spec/models/user_spec.rb"],
-          "key_actions"        => ["Added nil guard", "Updated spec"],
-        },
-        "extractions" => [] of String,
-      }.to_json
-
-      result = GalaxyLedger::Extraction.extract_assistant_learnings("Fix the bug", "Fixed it")
-      summary = result.summary.not_nil!
-      summary.files_modified.size.should eq(2)
-      summary.files_modified.should contain("app/models/user.rb")
-      summary.key_actions.size.should eq(2)
+      result.extractions.size.should eq(0)
     end
   end
 
@@ -540,12 +454,6 @@ describe "Extraction Pipeline" do
     it "propagates usage to Result via extract_assistant_learnings" do
       GalaxyLedger::Extraction::ClaudeCLI.test_run_result = GalaxyLedger::Extraction::ClaudeCLI::RunResult.new(
         result: {
-          "summary" => {
-            "user_request"       => "Test",
-            "assistant_response" => "Done",
-            "files_modified"     => [] of String,
-            "key_actions"        => [] of String,
-          },
           "extractions" => [] of String,
         }.to_json,
         cost_usd: 0.25,

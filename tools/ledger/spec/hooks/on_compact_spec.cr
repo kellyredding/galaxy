@@ -7,12 +7,6 @@ describe "OnCompact GALAXY_SKIP_HOOKS" do
     test_session_id = "skip-hooks-compact-#{Random.rand(10000)}"
 
     ledger_session_id = GalaxyLedger::Database.create_session(test_session_id)
-    exchange = GalaxyLedger::Exchange::LastExchange.new(
-      user_message: "Test message",
-      full_content: "Test response",
-      assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
-    )
-    GalaxyLedger::Database.update_session_last_interaction(ledger_session_id, exchange.to_pretty_json)
 
     hook_input = {
       "session_id" => test_session_id,
@@ -160,12 +154,7 @@ describe "OnCompact cwd and git_branch in additionalContext" do
     ledger_session_id = GalaxyLedger::Database.create_session(test_session_id)
     GalaxyLedger::Database.update_session(ledger_session_id, cwd: "#{Path.home}/projects/my-app")
 
-    exchange = GalaxyLedger::Exchange::LastExchange.new(
-      user_message: "Test",
-      full_content: "Response",
-      assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
-    )
-    GalaxyLedger::Database.update_session_last_interaction(ledger_session_id, exchange.to_pretty_json)
+    GalaxyLedger::Database.upsert_session_file(ledger_session_id, "/tmp/test.cr", :read)
 
     hook_input = {"session_id" => test_session_id, "source" => "compact"}.to_json
 
@@ -180,12 +169,7 @@ describe "OnCompact cwd and git_branch in additionalContext" do
     ledger_session_id = GalaxyLedger::Database.create_session(test_session_id)
     GalaxyLedger::Database.update_session(ledger_session_id, git_branch: "kr/feature-branch")
 
-    exchange = GalaxyLedger::Exchange::LastExchange.new(
-      user_message: "Test",
-      full_content: "Response",
-      assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
-    )
-    GalaxyLedger::Database.update_session_last_interaction(ledger_session_id, exchange.to_pretty_json)
+    GalaxyLedger::Database.upsert_session_file(ledger_session_id, "/tmp/test.cr", :read)
 
     hook_input = {"session_id" => test_session_id, "source" => "compact"}.to_json
 
@@ -199,12 +183,7 @@ describe "OnCompact cwd and git_branch in additionalContext" do
     test_session_id = "compact-no-cwd-#{Random.rand(10000)}"
     ledger_session_id = GalaxyLedger::Database.create_session(test_session_id)
 
-    exchange = GalaxyLedger::Exchange::LastExchange.new(
-      user_message: "Test",
-      full_content: "Response",
-      assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
-    )
-    GalaxyLedger::Database.update_session_last_interaction(ledger_session_id, exchange.to_pretty_json)
+    GalaxyLedger::Database.upsert_session_file(ledger_session_id, "/tmp/test.cr", :read)
 
     hook_input = {"session_id" => test_session_id, "source" => "compact"}.to_json
 

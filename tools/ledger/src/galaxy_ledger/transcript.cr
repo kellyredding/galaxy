@@ -144,29 +144,6 @@ module GalaxyLedger
       exchanges
     end
 
-    # Convert extracted exchange to LastExchange format for storage
-    def self.to_last_exchange(extracted : ExtractedExchange) : Exchange::LastExchange
-      # Combine all assistant messages into full_content
-      full_content = extracted.assistant_entries.map(&.content).join("\n\n")
-
-      # Convert to AssistantMessage format
-      assistant_messages = extracted.assistant_entries.map do |entry|
-        Exchange::AssistantMessage.new(
-          content: entry.content,
-          timestamp: entry.timestamp,
-          tool_uses: entry.tool_uses
-        )
-      end
-
-      Exchange::LastExchange.new(
-        user_message: extracted.user_message,
-        user_timestamp: extracted.user_timestamp,
-        full_content: full_content,
-        assistant_messages: assistant_messages,
-        summary: nil # Generated via Claude CLI extraction
-      )
-    end
-
     # Extract tool uses from a transcript entry
     # Simplified extraction — returns empty for now
     private def self.extract_tool_uses(entry : TranscriptEntry) : Array(String)

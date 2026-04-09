@@ -52,7 +52,6 @@ final class EnrichmentService {
         let linesRemoved: Int?
         let startedAt: String?
         let updatedAt: String?
-        let lastInteraction: String?
         let suggestedName: String?
         let suggestedNameData: String?
 
@@ -76,7 +75,6 @@ final class EnrichmentService {
             case linesRemoved = "lines_removed"
             case startedAt = "started_at"
             case updatedAt = "updated_at"
-            case lastInteraction = "last_interaction"
             case suggestedName = "suggested_name"
             case suggestedNameData = "suggested_name_data"
         }

@@ -2,7 +2,7 @@ require "json"
 require "./extraction/*"
 
 module GalaxyLedger
-  # Handles Claude CLI one-shot calls to extract learnings, directions, and summaries
+  # Handles Claude CLI one-shot calls to extract learnings and directions
   module Extraction
     # Hard-coded model for all extraction one-shots (Sonnet).
     # Ensures deterministic extraction quality regardless of user's default model.
@@ -15,9 +15,6 @@ module GalaxyLedger
       # Extracted entries (learnings, decisions, directions, etc.)
       property extractions : Array(ExtractedEntry)
 
-      # Summary of the exchange (only for assistant response extraction)
-      property summary : Exchange::ExchangeSummary?
-
       # One-shot cost in USD from the Claude CLI call
       property cost_usd : Float64
 
@@ -26,14 +23,13 @@ module GalaxyLedger
 
       def initialize(
         @extractions : Array(ExtractedEntry) = [] of ExtractedEntry,
-        @summary : Exchange::ExchangeSummary? = nil,
         @cost_usd : Float64 = 0.0,
         @total_tokens : Int64 = 0_i64,
       )
       end
 
       def empty? : Bool
-        extractions.empty? && summary.nil?
+        extractions.empty?
       end
     end
 
@@ -129,7 +125,6 @@ module GalaxyLedger
     end
 
     # Extract learnings from an assistant response
-    # Also generates a summary for the exchange
     def self.extract_assistant_learnings(
       user_message : String,
       assistant_content : String,
@@ -148,7 +143,7 @@ module GalaxyLedger
 
       return Result.new if run_result[:result].nil?
 
-      result = parse_extraction_result(run_result[:result].not_nil!, include_summary: true)
+      result = parse_extraction_result(run_result[:result].not_nil!)
       apply_usage(result, run_result)
       result
     end
@@ -165,7 +160,6 @@ module GalaxyLedger
     # Parse the JSON output from Claude CLI
     private def self.parse_extraction_result(
       output : String,
-      include_summary : Bool = false,
       source_file : String? = nil,
     ) : Result
       begin
@@ -216,60 +210,7 @@ module GalaxyLedger
           end
         end
 
-        # Parse summary if included
-        summary : Exchange::ExchangeSummary? = nil
-        if include_summary
-          if summary_json = json["summary"]?
-            user_request = summary_json["user_request"]?.try(&.as_s?) || ""
-            assistant_response = summary_json["assistant_response"]?.try(&.as_s?) || ""
-
-            files_modified = [] of String
-            if files_array = summary_json["files_modified"]?.try(&.as_a?)
-              files_modified = files_array.compact_map(&.as_s?)
-            end
-
-            key_actions = [] of String
-            if actions_array = summary_json["key_actions"]?.try(&.as_a?)
-              key_actions = actions_array.compact_map(&.as_s?)
-            end
-
-            decisions : Array(Exchange::ExchangeDecision)? = nil
-            if decisions_array = summary_json["decisions"]?.try(&.as_a?)
-              parsed_decisions = decisions_array.compact_map do |d|
-                next nil unless d.as_h?
-                choice = d["choice"]?.try(&.as_s?) || ""
-                rationale = d["rationale"]?.try(&.as_s?) || ""
-                next nil if choice.empty? && rationale.empty?
-                alternatives = d["alternatives"]?.try(&.as_s?)
-                Exchange::ExchangeDecision.new(
-                  choice: choice,
-                  rationale: rationale,
-                  alternatives: alternatives,
-                )
-              end
-              decisions = parsed_decisions unless parsed_decisions.empty?
-            end
-
-            learnings : Array(String)? = nil
-            if learnings_array = summary_json["learnings"]?.try(&.as_a?)
-              parsed_learnings = learnings_array.compact_map(&.as_s?).reject(&.empty?)
-              learnings = parsed_learnings unless parsed_learnings.empty?
-            end
-
-            unless user_request.empty? && assistant_response.empty?
-              summary = Exchange::ExchangeSummary.new(
-                user_request: user_request,
-                assistant_response: assistant_response,
-                files_modified: files_modified,
-                key_actions: key_actions,
-                decisions: decisions,
-                learnings: learnings,
-              )
-            end
-          end
-        end
-
-        Result.new(extractions: extractions, summary: summary)
+        Result.new(extractions: extractions)
       rescue ex
         STDERR.puts "[galaxy-ledger] Extraction parse error: #{ex.message}"
         Result.new

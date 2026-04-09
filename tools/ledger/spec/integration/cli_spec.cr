@@ -891,18 +891,6 @@ describe "CLI Integration" do
       ])
       result[:status].should eq(0)
 
-      # Verify last_interaction was captured with non-empty content
-      session = GalaxyLedger::Database.get_session(session_id)
-      session.should_not be_nil
-      if s = session
-        s.last_interaction.should_not be_nil, "Expected last_interaction to be set"
-        li = JSON.parse(s.last_interaction.not_nil!)
-        li.as_a.should_not be_empty, "Expected last_interaction to be a non-empty array"
-        exchange = li.as_a.last
-        exchange["user_message"].as_s.should eq("Help me add dark mode")
-        exchange["full_content"].as_s.should_not be_empty, "Expected full_content to be non-empty"
-      end
-
       File.delete(transcript_file.path) if File.exists?(transcript_file.path)
     end
 

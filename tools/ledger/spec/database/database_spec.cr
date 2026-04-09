@@ -1533,25 +1533,6 @@ describe GalaxyLedger::Database do
     end
   end
 
-  describe ".update_session_last_interaction" do
-    it "stores JSON string as last_interaction" do
-      ledger_session_id = GalaxyLedger::Database.create_session("sess-li-1")
-
-      json = %({"type":"tool_use","tool":"Read","timestamp":1234567890})
-      result = GalaxyLedger::Database.update_session_last_interaction(ledger_session_id, json)
-      result.should be_true
-
-      session = GalaxyLedger::Database.get_session("sess-li-1")
-      session.should_not be_nil
-      session.not_nil!.last_interaction.should eq(json)
-    end
-
-    it "returns false for empty session_identifier" do
-      result = GalaxyLedger::Database.update_session_last_interaction(0_i64, "{}")
-      result.should be_false
-    end
-  end
-
   # ============================================================
   # Session File Operations
   # ============================================================

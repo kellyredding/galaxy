@@ -198,9 +198,6 @@ class Session: Identifiable, ObservableObject {
     /// ISO timestamp of last ledger update
     var ledgerUpdatedAt: String?
 
-    /// ISO timestamp of last user interaction
-    var ledgerLastInteraction: String?
-
     /// Raw JSON string of suggested name state data (attempts, quality,
     /// finalized, status, exchange_count, last_attempt_at). Parsed inline
     /// by LedgerSuggestedNameView. Not persisted — re-fetched on relaunch.

@@ -2021,10 +2021,8 @@ module GalaxyLedger
     end
 
     # Read transcript file with exponential backoff, waiting for a complete
-    # exchange (user message + assistant response). Captures the last 3
-    # exchanges and writes them as a JSON array to last_interaction.
-    # Preserves summaries from previously-extracted exchanges by matching
-    # on user_message content.
+    # exchange (user message + assistant response). Returns the last
+    # user_message and assistant_content strings.
     private def self.read_transcript_with_backoff(
       transcript_path : String,
       ledger_session_id : Int64,
@@ -2043,86 +2041,18 @@ module GalaxyLedger
 
         entries = Transcript.parse(transcript_path)
 
-        recent = Transcript.extract_recent_exchanges(entries, limit: 3)
+        recent = Transcript.extract_recent_exchanges(entries, limit: 1)
         next if recent.empty?
 
         last = recent.last
         user_message = last.user_message
-        last_exchange = Transcript.to_last_exchange(last)
-        assistant_content = last_exchange.full_content
+        assistant_content = last.assistant_entries
+          .map(&.content).join("\n\n")
 
-        if !assistant_content.strip.empty?
-          exchanges = build_exchanges_with_preserved_summaries(
-            recent: recent,
-            ledger_session_id: ledger_session_id,
-          )
-          json = exchanges.to_pretty_json
-          Database.update_session_last_interaction(ledger_session_id, json)
-          return {user_message, assistant_content}
-        end
-      end
-
-      # Even with incomplete data, write what we have to last_interaction
-      unless user_message.strip.empty?
-        entries = Transcript.parse(transcript_path)
-        recent = Transcript.extract_recent_exchanges(entries, limit: 3)
-        unless recent.empty?
-          exchanges = build_exchanges_with_preserved_summaries(
-            recent: recent,
-            ledger_session_id: ledger_session_id,
-          )
-          json = exchanges.to_pretty_json
-          Database.update_session_last_interaction(ledger_session_id, json)
-
-          # Update return variables from the fresh parse so the caller
-          # sees the actual data we just wrote, not stale loop values.
-          last = recent.last
-          user_message = last.user_message
-          assistant_content = Transcript.to_last_exchange(last).full_content
-        end
+        break unless assistant_content.strip.empty?
       end
 
       {user_message, assistant_content}
-    end
-
-    # Convert extracted exchanges to LastExchange objects, carrying forward
-    # any existing summaries from the DB by matching on user_message.
-    private def self.build_exchanges_with_preserved_summaries(
-      recent : Array(Transcript::ExtractedExchange),
-      ledger_session_id : Int64,
-    ) : Array(Exchange::LastExchange)
-      # Load existing exchanges from DB for summary preservation
-      existing = begin
-        session_record = Database.get_session_by_id(ledger_session_id)
-        li_json = session_record.try(&.last_interaction)
-        Exchange::LastExchange.from_json_flexible(li_json)
-      rescue
-        [] of Exchange::LastExchange
-      end
-
-      # Build a lookup of existing summaries by user_message
-      summary_by_message = {} of String => Exchange::ExchangeSummary
-      existing.each do |ex|
-        if s = ex.summary
-          summary_by_message[ex.user_message] = s
-        end
-      end
-
-      # Convert extracted exchanges, carrying forward matched summaries
-      recent.map do |extracted|
-        exchange = Transcript.to_last_exchange(extracted)
-        if preserved = summary_by_message[exchange.user_message]?
-          Exchange::LastExchange.new(
-            user_message: exchange.user_message,
-            full_content: exchange.full_content,
-            assistant_messages: exchange.assistant_messages,
-            user_timestamp: exchange.user_timestamp,
-            summary: preserved,
-          )
-        else
-          exchange
-        end
-      end
     end
 
     # Read user_message and assistant_content from an input file (legacy/testing path)
@@ -2155,32 +2085,6 @@ module GalaxyLedger
           inserted = Database.insert_many(ledger_session_id, entries)
           if inserted > 0
             STDERR.puts "[galaxy-ledger] Extracted #{inserted} learnings for session ##{ledger_session_id}"
-          end
-        end
-
-        # Update last interaction with summary if we got one.
-        # Patches the summary onto the last element of the exchanges array.
-        if summary = result.summary
-          session_record = Database.get_session_by_id(ledger_session_id)
-          if session_record && (li_json = session_record.last_interaction)
-            begin
-              exchanges = Exchange::LastExchange.from_json_flexible(li_json)
-              unless exchanges.empty?
-                last = exchanges.last
-                updated = Exchange::LastExchange.new(
-                  user_message: last.user_message,
-                  full_content: last.full_content,
-                  assistant_messages: last.assistant_messages,
-                  user_timestamp: last.user_timestamp,
-                  summary: summary,
-                )
-                exchanges[exchanges.size - 1] = updated
-                Database.update_session_last_interaction(ledger_session_id, exchanges.to_pretty_json)
-                STDERR.puts "[galaxy-ledger] Updated last interaction with summary"
-              end
-            rescue
-              # Ignore parse errors on last_interaction
-            end
           end
         end
 
@@ -3040,7 +2944,6 @@ module GalaxyLedger
                   builder.field("lines_removed", record.lines_removed)
                   builder.field("started_at", record.started_at)
                   builder.field("updated_at", record.updated_at)
-                  builder.field("last_interaction", record.last_interaction)
                 end
               end
             end

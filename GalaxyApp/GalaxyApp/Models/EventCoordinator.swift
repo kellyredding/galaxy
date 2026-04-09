@@ -593,7 +593,6 @@ final class EventCoordinator {
                     appSession.ledgerLinesRemoved = sessionData.linesRemoved
                     appSession.ledgerStartedAt = sessionData.startedAt
                     appSession.ledgerUpdatedAt = sessionData.updatedAt
-                    appSession.ledgerLastInteraction = sessionData.lastInteraction
                     appSession.ledgerSuggestedNameData = sessionData.suggestedNameData
 
                     // Keep claudeSessionId current with the ledger's

@@ -6,14 +6,8 @@ describe "OnClear GALAXY_SKIP_HOOKS" do
 
     test_session_id = "skip-hooks-test-#{Random.rand(10000)}"
 
-    # Ensure session record exists and write last interaction to DB
+    # Ensure session record exists
     ledger_session_id = GalaxyLedger::Database.create_session(test_session_id)
-    exchange = GalaxyLedger::Exchange::LastExchange.new(
-      user_message: "Test message",
-      full_content: "Test response",
-      assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
-    )
-    GalaxyLedger::Database.update_session_last_interaction(ledger_session_id, exchange.to_pretty_json)
 
     hook_input = {
       "session_id" => test_session_id,
@@ -141,13 +135,6 @@ describe "OnClear systemMessage" do
   end
 
   it "omits exchange snippet from system message" do
-    exchange = GalaxyLedger::Exchange::LastExchange.new(
-      user_message: "Fix the auth bug in login flow",
-      full_content: "I fixed the auth bug.",
-      assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
-    )
-    GalaxyLedger::Database.update_session_last_interaction(ledger_session_id, exchange.to_pretty_json)
-
     hook_input = {
       "session_id" => test_session_id,
       "source"     => "clear",
@@ -219,13 +206,6 @@ describe "OnClear additionalContext" do
   end
 
   it "uses --pid in command examples" do
-    exchange = GalaxyLedger::Exchange::LastExchange.new(
-      user_message: "Test",
-      full_content: "Response",
-      assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
-    )
-    GalaxyLedger::Database.update_session_last_interaction(ledger_session_id, exchange.to_pretty_json)
-
     hook_input = {
       "session_id" => test_session_id,
       "source"     => "clear",
@@ -383,12 +363,7 @@ describe "OnClear cwd and git_branch in additionalContext" do
     GalaxyLedger::Database.update_session(ledger_session_id, cwd: "#{Path.home}/projects/my-app")
 
     # Add data so we get full context (not empty)
-    exchange = GalaxyLedger::Exchange::LastExchange.new(
-      user_message: "Test",
-      full_content: "Response",
-      assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
-    )
-    GalaxyLedger::Database.update_session_last_interaction(ledger_session_id, exchange.to_pretty_json)
+    GalaxyLedger::Database.upsert_session_file(ledger_session_id, "/tmp/test.cr", :read)
 
     hook_input = {"session_id" => test_session_id, "source" => "clear"}.to_json
 
@@ -410,12 +385,7 @@ describe "OnClear cwd and git_branch in additionalContext" do
     GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
 
     # Add data so we get full context (not empty)
-    exchange = GalaxyLedger::Exchange::LastExchange.new(
-      user_message: "Test",
-      full_content: "Response",
-      assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
-    )
-    GalaxyLedger::Database.update_session_last_interaction(ledger_session_id, exchange.to_pretty_json)
+    GalaxyLedger::Database.upsert_session_file(ledger_session_id, "/tmp/test.cr", :read)
 
     hook_input = {"session_id" => test_session_id, "source" => "clear"}.to_json
 
@@ -433,12 +403,7 @@ describe "OnClear cwd and git_branch in additionalContext" do
     ledger_session_id = GalaxyLedger::Database.create_session(test_session_id)
     GalaxyLedger::Database.update_session(ledger_session_id, git_branch: "kr/feature-branch")
 
-    exchange = GalaxyLedger::Exchange::LastExchange.new(
-      user_message: "Test",
-      full_content: "Response",
-      assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
-    )
-    GalaxyLedger::Database.update_session_last_interaction(ledger_session_id, exchange.to_pretty_json)
+    GalaxyLedger::Database.upsert_session_file(ledger_session_id, "/tmp/test.cr", :read)
 
     hook_input = {"session_id" => test_session_id, "source" => "clear"}.to_json
 
@@ -452,12 +417,7 @@ describe "OnClear cwd and git_branch in additionalContext" do
     test_session_id = "clear-no-cwd-#{Random.rand(10000)}"
     ledger_session_id = GalaxyLedger::Database.create_session(test_session_id)
 
-    exchange = GalaxyLedger::Exchange::LastExchange.new(
-      user_message: "Test",
-      full_content: "Response",
-      assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
-    )
-    GalaxyLedger::Database.update_session_last_interaction(ledger_session_id, exchange.to_pretty_json)
+    GalaxyLedger::Database.upsert_session_file(ledger_session_id, "/tmp/test.cr", :read)
 
     hook_input = {"session_id" => test_session_id, "source" => "clear"}.to_json
 
@@ -477,12 +437,7 @@ describe "OnClear cwd and git_branch in additionalContext" do
       git_branch: "main",
     )
 
-    exchange = GalaxyLedger::Exchange::LastExchange.new(
-      user_message: "Test",
-      full_content: "Response",
-      assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
-    )
-    GalaxyLedger::Database.update_session_last_interaction(ledger_session_id, exchange.to_pretty_json)
+    GalaxyLedger::Database.upsert_session_file(ledger_session_id, "/tmp/test.cr", :read)
 
     hook_input = {"session_id" => test_session_id, "source" => "clear"}.to_json
 
@@ -568,12 +523,7 @@ describe "OnClear cwd reset timing regression" do
       JSON.parse(s3.context)["previous_cwd"].as_s.should eq("#{Path.home}/projects/galaxy")
 
       # Step 4: Handoff runs — should use previous_cwd, not cwd
-      exchange = GalaxyLedger::Exchange::LastExchange.new(
-        user_message: "Working on galaxy",
-        full_content: "Implemented feature",
-        assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
-      )
-      GalaxyLedger::Database.update_session_last_interaction(ledger_session_id, exchange.to_pretty_json)
+      GalaxyLedger::Database.upsert_session_file(ledger_session_id, "/tmp/test.cr", :read)
 
       hook_input = {"session_id" => session_id, "source" => "clear"}.to_json
       result = run_binary(["on-clear"], stdin: hook_input)
@@ -596,12 +546,7 @@ describe "OnClear cwd reset timing regression" do
 
     begin
       # No status line updates — no previous_cwd in context JSON
-      exchange = GalaxyLedger::Exchange::LastExchange.new(
-        user_message: "Test",
-        full_content: "Response",
-        assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
-      )
-      GalaxyLedger::Database.update_session_last_interaction(ledger_session_id, exchange.to_pretty_json)
+      GalaxyLedger::Database.upsert_session_file(ledger_session_id, "/tmp/test.cr", :read)
 
       hook_input = {"session_id" => session_id, "source" => "clear"}.to_json
       result = run_binary(["on-clear"], stdin: hook_input)
@@ -641,12 +586,7 @@ describe "OnClear last_stop_cwd handoff preference" do
       GalaxyLedger::Database.stamp_stop_cwd(ledger_session_id, "#{Path.home}/projects/galaxy-poc")
 
       # Add data so handoff renders full context
-      exchange = GalaxyLedger::Exchange::LastExchange.new(
-        user_message: "Working on galaxy-poc",
-        full_content: "Implemented feature",
-        assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
-      )
-      GalaxyLedger::Database.update_session_last_interaction(ledger_session_id, exchange.to_pretty_json)
+      GalaxyLedger::Database.upsert_session_file(ledger_session_id, "/tmp/test.cr", :read)
 
       hook_input = {"session_id" => session_id, "source" => "clear"}.to_json
       result = run_binary(["on-clear"], stdin: hook_input)
@@ -676,12 +616,7 @@ describe "OnClear last_stop_cwd handoff preference" do
       )
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
 
-      exchange = GalaxyLedger::Exchange::LastExchange.new(
-        user_message: "Test",
-        full_content: "Response",
-        assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
-      )
-      GalaxyLedger::Database.update_session_last_interaction(ledger_session_id, exchange.to_pretty_json)
+      GalaxyLedger::Database.upsert_session_file(ledger_session_id, "/tmp/test.cr", :read)
 
       hook_input = {"session_id" => session_id, "source" => "clear"}.to_json
       result = run_binary(["on-clear"], stdin: hook_input)
@@ -739,12 +674,7 @@ describe "OnClear last_stop_cwd handoff preference" do
       ctx["last_stop_cwd"].as_s.should eq("#{Path.home}/projects/galaxy-poc")
 
       # Step 6: Handoff runs
-      exchange = GalaxyLedger::Exchange::LastExchange.new(
-        user_message: "Working in galaxy-poc",
-        full_content: "Implemented feature",
-        assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
-      )
-      GalaxyLedger::Database.update_session_last_interaction(ledger_session_id, exchange.to_pretty_json)
+      GalaxyLedger::Database.upsert_session_file(ledger_session_id, "/tmp/test.cr", :read)
 
       hook_input = {"session_id" => session_id, "source" => "clear"}.to_json
       result = run_binary(["on-clear"], stdin: hook_input)
@@ -801,12 +731,7 @@ describe "OnClear last_stop_cwd handoff preference" do
       # Without last_stop_cwd, if previous_cwd had drifted to galaxy,
       # handoff would report the wrong directory.
 
-      exchange = GalaxyLedger::Exchange::LastExchange.new(
-        user_message: "Test",
-        full_content: "Response",
-        assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage
-      )
-      GalaxyLedger::Database.update_session_last_interaction(ledger_session_id, exchange.to_pretty_json)
+      GalaxyLedger::Database.upsert_session_file(ledger_session_id, "/tmp/test.cr", :read)
 
       hook_input = {"session_id" => session_id, "source" => "clear"}.to_json
       result = run_binary(["on-clear"], stdin: hook_input)
@@ -815,48 +740,6 @@ describe "OnClear last_stop_cwd handoff preference" do
       output = JSON.parse(result[:output])
       handoff_ctx = output["hookSpecificOutput"]["additionalContext"].as_s
       handoff_ctx.should contain("**Working directory**: `~/projects/galaxy-poc`")
-    ensure
-      GalaxyLedger::Database.delete_session(session_id)
-    end
-  end
-end
-
-describe "OnClear no longer embeds exchanges" do
-  # Extraction await was removed — turn events are now read by the
-  # agent via the timeline CLI after the handoff, not embedded
-  # inline by the hook.
-
-  it "does not include exchange content in handoff" do
-    session_id = "clear-no-exchanges-#{Random.rand(100000)}"
-    ledger_session_id = GalaxyLedger::Database.create_session(
-      session_id, claude_pid: Process.pid.to_i64)
-
-    begin
-      # Write exchange data to last_interaction
-      exchange = GalaxyLedger::Exchange::LastExchange.new(
-        user_message: "Test without embedding",
-        full_content: "Response content here",
-        assistant_messages: [] of GalaxyLedger::Exchange::AssistantMessage,
-      )
-      json = [exchange].to_pretty_json
-      GalaxyLedger::Database.update_session_last_interaction(
-        ledger_session_id, json,
-      )
-
-      hook_input = {
-        "session_id" => session_id,
-        "source"     => "clear",
-      }.to_json
-
-      result = run_binary(["on-clear"], stdin: hook_input)
-      result[:status].should eq(0)
-
-      output = JSON.parse(result[:output])
-      ctx = output["hookSpecificOutput"]["additionalContext"].as_s
-      # Exchange content should NOT be embedded in handoff
-      ctx.should_not contain("Test without embedding")
-      ctx.should_not contain("Recent Activity")
-      ctx.should_not contain("Last Interaction")
     ensure
       GalaxyLedger::Database.delete_session(session_id)
     end

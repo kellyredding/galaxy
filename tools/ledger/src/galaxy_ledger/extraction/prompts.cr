@@ -69,37 +69,8 @@ module GalaxyLedger
         - **medium**: Meaningful choice but localized impact
         - **low**: Minor implementation detail
 
-        ## Summary guidelines:
-        - assistant_response: 2-4 sentences. What was accomplished AND
-          the approach taken. Include reasoning, not just outcomes.
-        - decisions: For each meaningful choice made, capture what was
-          chosen, why, and what alternatives were considered (if any).
-          Only include non-trivial decisions — skip obvious choices.
-        - learnings: Insights about how the codebase works, gotchas
-          encountered, or technical facts that would help a future
-          agent working in the same area.
-        - Don't include diffs, full code blocks, or large artifacts.
-        - For multi-step exchanges, capture the final outcome and the
-          key intermediate decisions.
-
         ## Output format (JSON only, no markdown):
         {
-          "summary": {
-            "user_request": "What the user asked for",
-            "assistant_response": "2-4 sentences: what was accomplished and the approach/reasoning",
-            "files_modified": ["only files that were edited/written, not read"],
-            "key_actions": ["significant action 1", "significant action 2"],
-            "decisions": [
-              {
-                "choice": "What was chosen",
-                "rationale": "Why this approach",
-                "alternatives": "What else was considered (optional, omit if none)"
-              }
-            ],
-            "learnings": [
-              "Insight about codebase or technical fact discovered"
-            ]
-          },
           "extractions": [
             {
               "type": "learning|discovery|decision",
@@ -109,7 +80,7 @@ module GalaxyLedger
           ]
         }
 
-        Return empty arrays for decisions/learnings/extractions if nothing significant. Quality over quantity.
+        Return empty extractions array if nothing significant. Quality over quantity.
         Output ONLY valid JSON, no explanation or markdown.
 
         User message (for context):

@@ -24,10 +24,6 @@ describe "OnStop GALAXY_SKIP_HOOKS" do
     result = run_binary(["on-stop"], stdin: hook_input)
     result[:status].should eq(0)
 
-    # Last interaction should NOT be written to DB (early return)
-    session_record = GalaxyLedger::Database.get_session(test_session_id)
-    session_record.try(&.last_interaction).should be_nil
-
     # Clean up
     File.delete(transcript_file.path)
     GalaxyLedger::Database.delete_session(test_session_id)
@@ -76,13 +72,6 @@ describe "OnStop last exchange capture" do
     result = run_binary(["on-stop"], stdin: hook_input)
     result[:status].should eq(0)
 
-    # last_interaction is NOT set synchronously — capture is now in the async subprocess.
-    # The stop hook just spawns the subprocess and returns immediately.
-    session_record = GalaxyLedger::Database.get_session(test_session_id)
-    session_record.should_not be_nil
-    # Note: last_interaction may or may not be nil depending on timing of the
-    # spawned subprocess, but the stop hook itself does not write it.
-
     # Clean up
     File.delete(transcript_file.path)
   end
@@ -103,10 +92,6 @@ describe "OnStop last exchange capture" do
     result = run_binary(["on-stop"], stdin: hook_input)
     result[:status].should eq(0)
 
-    # Last interaction should NOT be written to DB (early return)
-    session_record = GalaxyLedger::Database.get_session(test_session_id)
-    session_record.try(&.last_interaction).should be_nil
-
     # Clean up
     File.delete(transcript_file.path)
   end
@@ -121,9 +106,6 @@ describe "OnStop last exchange capture" do
     result = run_binary(["on-stop"], stdin: hook_input)
     result[:status].should eq(0) # Should not crash
 
-    # No last interaction written to DB (no valid transcript)
-    session_record = GalaxyLedger::Database.get_session(test_session_id)
-    session_record.try(&.last_interaction).should be_nil
   end
 
   it "handles empty stdin gracefully" do

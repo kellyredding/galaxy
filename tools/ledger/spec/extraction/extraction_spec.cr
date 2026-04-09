@@ -140,15 +140,6 @@ describe GalaxyLedger::Extraction do
         result.empty?.should be_false
       end
 
-      it "returns false when has summary" do
-        summary = GalaxyLedger::Exchange::ExchangeSummary.new(
-          user_request: "Test",
-          assistant_response: "Response"
-        )
-        result = GalaxyLedger::Extraction::Result.new(summary: summary)
-        result.empty?.should be_false
-      end
-
       it "returns true when has only usage data (usage alone is not content)" do
         result = GalaxyLedger::Extraction::Result.new(cost_usd: 5.0, total_tokens: 10000_i64)
         result.empty?.should be_true
@@ -206,7 +197,6 @@ describe GalaxyLedger::Extraction do
         prompt.should contain(user_msg)
         prompt.should contain("learning")
         prompt.should contain("decision")
-        prompt.should contain("summary")
       end
 
       it "does not include session_title in the output format" do

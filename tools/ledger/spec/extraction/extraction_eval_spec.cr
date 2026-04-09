@@ -77,19 +77,7 @@ def eval_assistant_learnings(fixtures_path : Path) : EvalResult
       )
     end
 
-    if result.summary.nil?
-      return EvalResult.new(
-        name: "assistant_learnings",
-        passed: false,
-        message: "Expected a summary, got nil",
-        duration: Time.monotonic - start,
-      )
-    end
-
     STDERR.puts "\n  [assistant:decision_with_rationale]"
-    if summary = result.summary
-      STDERR.puts "    Summary: #{summary.assistant_response[0, 80]}..."
-    end
     result.extractions.each do |e|
       STDERR.puts "    - #{e.entry_type} (#{e.importance}): #{e.content[0, 60]}..."
     end
@@ -97,7 +85,7 @@ def eval_assistant_learnings(fixtures_path : Path) : EvalResult
     EvalResult.new(
       name: "assistant_learnings",
       passed: true,
-      message: "#{result.extractions.size} extractions + summary",
+      message: "#{result.extractions.size} extractions",
       duration: Time.monotonic - start,
     )
   rescue ex
@@ -211,15 +199,6 @@ def eval_extract_assistant_transcript_path : EvalResult
       )
     end
 
-    # Verify last_interaction was written (extraction still produces summaries)
-    if session.last_interaction.nil?
-      return EvalResult.new(
-        name: "cli_extract_transcript",
-        passed: false,
-        message: "Last interaction was nil after extraction",
-        duration: Time.monotonic - start,
-      )
-    end
     STDERR.puts "\n  [extract-assistant --transcript-path] Extraction completed"
 
     EvalResult.new(

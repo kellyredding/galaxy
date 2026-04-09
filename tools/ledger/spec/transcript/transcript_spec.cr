@@ -195,45 +195,6 @@ describe GalaxyLedger::Transcript do
     end
   end
 
-  describe ".to_last_exchange" do
-    it "converts ExtractedExchange to LastExchange format" do
-      extracted = GalaxyLedger::Transcript::ExtractedExchange.new(
-        user_message: "Test question",
-        user_timestamp: "2026-02-01T10:00:00Z",
-        assistant_entries: [
-          GalaxyLedger::Transcript::AssistantEntry.new(
-            content: "First part",
-            timestamp: "2026-02-01T10:01:00Z",
-            tool_uses: ["Edit: file.rb"]
-          ),
-          GalaxyLedger::Transcript::AssistantEntry.new(
-            content: "Second part",
-            timestamp: "2026-02-01T10:02:00Z"
-          ),
-        ]
-      )
-
-      last_exchange = GalaxyLedger::Transcript.to_last_exchange(extracted)
-      last_exchange.user_message.should eq("Test question")
-      last_exchange.user_timestamp.should eq("2026-02-01T10:00:00Z")
-      last_exchange.full_content.should eq("First part\n\nSecond part")
-      last_exchange.assistant_messages.size.should eq(2)
-      last_exchange.summary.should be_nil # Summary generated via Claude CLI extraction
-    end
-
-    it "handles empty assistant entries" do
-      extracted = GalaxyLedger::Transcript::ExtractedExchange.new(
-        user_message: "Question with no response",
-        assistant_entries: [] of GalaxyLedger::Transcript::AssistantEntry
-      )
-
-      last_exchange = GalaxyLedger::Transcript.to_last_exchange(extracted)
-      last_exchange.user_message.should eq("Question with no response")
-      last_exchange.full_content.should eq("")
-      last_exchange.assistant_messages.should be_empty
-    end
-  end
-
   describe "ExtractedExchange" do
     it "reports has_assistant_response? correctly" do
       with_response = GalaxyLedger::Transcript::ExtractedExchange.new(
