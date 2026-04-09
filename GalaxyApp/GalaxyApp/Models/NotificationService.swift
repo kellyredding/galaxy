@@ -206,6 +206,29 @@ final class NotificationService: NSObject,
         UNUserNotificationCenter.current().add(request)
     }
 
+    /// Send a "Permission Request" notification.
+    func notifyPermissionRequest(
+        sessionId: UUID,
+        displayName: String
+    ) {
+        let content = UNMutableNotificationContent()
+        content.title = displayName
+        content.body = "Waiting for permission approval"
+        content.sound = .default
+        content.userInfo = [
+            "sessionId": sessionId.uuidString,
+            "tab": "terminal",
+        ]
+
+        let request = UNNotificationRequest(
+            identifier:
+                "permission-request-\(sessionId.uuidString)",
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request)
+    }
+
     // MARK: - UNUserNotificationCenterDelegate
 
     /// Handle notification click — deep link to the session and tab.

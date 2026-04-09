@@ -40,10 +40,9 @@ enum ThemePreference: String, Codable, CaseIterable {
     }
 }
 
-/// Bell notification preference
-enum BellPreference: String, Codable, CaseIterable {
+/// Sound preference for terminal bell and permission request
+enum SoundPreference: String, Codable, CaseIterable {
     case system = "system"
-    case visualBell = "visualBell"
     case none = "none"
     // macOS system sounds
     case basso = "Basso"
@@ -64,7 +63,6 @@ enum BellPreference: String, Codable, CaseIterable {
     var displayName: String {
         switch self {
         case .system: return "System Beep"
-        case .visualBell: return "Visual Bell"
         case .none: return "None"
         default: return rawValue
         }
@@ -72,12 +70,34 @@ enum BellPreference: String, Codable, CaseIterable {
 
     var isSound: Bool {
         switch self {
-        case .system, .visualBell, .none:
+        case .system, .none:
             return false
         default:
             return true
         }
     }
+}
+
+/// Legacy bell preference — kept only for migration from
+/// older settings files that used the single-enum approach.
+private enum LegacyBellPreference: String, Codable {
+    case system = "system"
+    case visualBell = "visualBell"
+    case none = "none"
+    case basso = "Basso"
+    case blow = "Blow"
+    case bottle = "Bottle"
+    case frog = "Frog"
+    case funk = "Funk"
+    case glass = "Glass"
+    case hero = "Hero"
+    case morse = "Morse"
+    case ping = "Ping"
+    case pop = "Pop"
+    case purr = "Purr"
+    case sosumi = "Sosumi"
+    case submarine = "Submarine"
+    case tink = "Tink"
 }
 
 /// Git status display style for sidebar session rows
@@ -101,7 +121,9 @@ struct AppSettings: Codable {
     var sidebarWidth: CGFloat = 220.0  // Width of sessions panel
     var isSidebarVisible: Bool = true  // Sidebar expanded/collapsed state
     var themePreference: ThemePreference = .system
-    var bellPreference: BellPreference = .system
+    var bellSound: SoundPreference = .system
+    var bellVisualFlash: Bool = false
+    var permissionRequestSound: SoundPreference = .none
     var showUnreadIndicator: Bool = true
     var showDockBadge: Bool = false
 
@@ -136,6 +158,7 @@ struct AppSettings: Codable {
     var notifyAutoClearOccurred: Bool = false
     var notifySnapshotCreated: Bool = false
     var notifyTerminalBell: Bool = false
+    var notifyPermissionRequest: Bool = false
 
     // Sidebar width constraints
     static let sidebarWidthRange: ClosedRange<CGFloat> = 150...500
@@ -192,7 +215,43 @@ struct AppSettings: Codable {
         sidebarWidth = try container.decodeIfPresent(CGFloat.self, forKey: .sidebarWidth) ?? 220.0
         isSidebarVisible = try container.decodeIfPresent(Bool.self, forKey: .isSidebarVisible) ?? true
         themePreference = try container.decodeIfPresent(ThemePreference.self, forKey: .themePreference) ?? .system
-        bellPreference = try container.decodeIfPresent(BellPreference.self, forKey: .bellPreference) ?? .system
+        // Bell sound + visual flash: try new keys first, migrate
+        // from legacy bellPreference if present.
+        if let sound = try container.decodeIfPresent(
+            SoundPreference.self, forKey: .bellSound
+        ) {
+            bellSound = sound
+        } else {
+            // Migrate from old single-enum bellPreference
+            let oldKey = CodingKeys(stringValue: "bellPreference")!
+            if let old = try container.decodeIfPresent(
+                LegacyBellPreference.self, forKey: oldKey
+            ) {
+                switch old {
+                case .visualBell:
+                    bellSound = .none
+                    bellVisualFlash = true
+                case .none:
+                    bellSound = .none
+                default:
+                    bellSound = SoundPreference(
+                        rawValue: old.rawValue
+                    ) ?? .system
+                }
+                NSLog(
+                    "SettingsManager: Migrated legacy"
+                    + " bellPreference '%@'",
+                    old.rawValue
+                )
+            }
+        }
+        bellVisualFlash = try container.decodeIfPresent(
+            Bool.self, forKey: .bellVisualFlash
+        ) ?? bellVisualFlash
+        permissionRequestSound = try container.decodeIfPresent(
+            SoundPreference.self,
+            forKey: .permissionRequestSound
+        ) ?? .none
         showUnreadIndicator = try container.decodeIfPresent(Bool.self, forKey: .showUnreadIndicator) ?? true
         showDockBadge = try container.decodeIfPresent(Bool.self, forKey: .showDockBadge) ?? false
         terminalFontFamily = try container.decodeIfPresent(String.self, forKey: .terminalFontFamily) ?? "SF Mono"
@@ -223,6 +282,9 @@ struct AppSettings: Codable {
             Bool.self, forKey: .notifySnapshotCreated) ?? false
         notifyTerminalBell = try container.decodeIfPresent(
             Bool.self, forKey: .notifyTerminalBell) ?? false
+        notifyPermissionRequest = try container.decodeIfPresent(
+            Bool.self, forKey: .notifyPermissionRequest
+        ) ?? false
         restoreColNameWidth = try container.decodeIfPresent(
             CGFloat.self, forKey: .restoreColNameWidth) ?? 250
         restoreColPersonaWidth = try container.decodeIfPresent(
@@ -368,25 +430,30 @@ class SettingsManager: ObservableObject {
         }
     }
 
-    /// Handle terminal bell based on user preference
-    func handleBell() {
-        let preference = settings.bellPreference
-
+    /// Play a sound based on the given preference.
+    /// Reusable for terminal bell, permission request, etc.
+    func playSound(_ preference: SoundPreference) {
         switch preference {
         case .system:
             NSSound.beep()
-        case .visualBell, .none:
-            // Handled elsewhere or disabled
+        case .none:
             break
         default:
-            // Play custom sound
-            let soundPath = "/System/Library/Sounds/\(preference.rawValue).aiff"
+            // Play named macOS system sound
+            let soundPath = "/System/Library/Sounds/"
+                + "\(preference.rawValue).aiff"
             let url = URL(fileURLWithPath: soundPath)
             do {
-                audioPlayer = try AVAudioPlayer(contentsOf: url)
+                audioPlayer = try AVAudioPlayer(
+                    contentsOf: url
+                )
                 audioPlayer?.play()
             } catch {
-                NSLog("SettingsManager: Failed to play sound: %@", error.localizedDescription)
+                NSLog(
+                    "SettingsManager: Failed to play"
+                    + " sound: %@",
+                    error.localizedDescription
+                )
                 NSSound.beep()  // Fallback
             }
         }

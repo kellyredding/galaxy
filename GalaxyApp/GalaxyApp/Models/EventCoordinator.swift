@@ -367,6 +367,48 @@ final class EventCoordinator {
             }
         }
 
+        // Permission request: play sound + optional notification
+        if envelope.event == "permission_request" {
+            DispatchQueue.main.async { [weak self] in
+                guard let sm = self?.sessionManager
+                else { return }
+                let settings =
+                    SettingsManager.shared.settings
+
+                // Play sound (always, regardless of focus)
+                SettingsManager.shared.playSound(
+                    settings.permissionRequestSound
+                )
+
+                // Notification (focus-gated)
+                let appSessionId =
+                    self?.ledgerSessionIdCache[
+                        envelope.ledgerSessionId
+                    ]
+                if settings.notifyPermissionRequest,
+                   let appSessionId,
+                   let session = sm.sessions.first(
+                       where: { $0.id == appSessionId }
+                   )
+                {
+                    let isViewing =
+                        appSessionId
+                            == sm.activeSessionId
+                        && sm.activeTab == .terminal
+                        && sm.isWindowFocused
+                    if !isViewing {
+                        NotificationService.shared
+                            .notifyPermissionRequest(
+                                sessionId: appSessionId,
+                                displayName:
+                                    session.displayName
+                            )
+                    }
+                }
+            }
+            return
+        }
+
         // Check if we handle this event type
         guard Self.knownEvents.contains(envelope.event) else { return }
 

@@ -253,13 +253,14 @@ class SessionManager: ObservableObject {
             DispatchQueue.main.async {
                 let settings = SettingsManager.shared.settings
 
-                switch settings.bellPreference {
-                case .visualBell:
+                // Play sound (always, regardless of focus)
+                SettingsManager.shared.playSound(
+                    settings.bellSound
+                )
+
+                // Visual flash (always, regardless of focus)
+                if settings.bellVisualFlash {
                     self.triggerVisualBell(for: session)
-                case .none:
-                    break
-                default:
-                    SettingsManager.shared.handleBell()
                 }
 
                 // Terminal bell notification
@@ -547,13 +548,14 @@ class SessionManager: ObservableObject {
             DispatchQueue.main.async {
                 let settings = SettingsManager.shared.settings
 
-                switch settings.bellPreference {
-                case .visualBell:
+                // Play sound (always, regardless of focus)
+                SettingsManager.shared.playSound(
+                    settings.bellSound
+                )
+
+                // Visual flash (always, regardless of focus)
+                if settings.bellVisualFlash {
                     self.triggerVisualBell(for: session)
-                case .none:
-                    break
-                default:
-                    SettingsManager.shared.handleBell()
                 }
 
                 // Terminal bell notification

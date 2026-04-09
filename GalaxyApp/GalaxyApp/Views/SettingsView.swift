@@ -460,41 +460,52 @@ struct NotificationsSettingsTab: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            // Section 1: Alerts (existing controls, unchanged)
-            SettingsCard(title: "Alerts") {
+            // Section 1: Terminal bell alerts
+            SettingsCard(title: "Terminal bell") {
                 VStack(alignment: .leading, spacing: 12) {
-                    SettingsRow(label: "Terminal bell") {
+                    SettingsRow(label: "Sound") {
                         HStack(spacing: 8) {
                             Picker(
                                 "",
-                                selection: $settingsManager.settings
-                                    .bellPreference
+                                selection:
+                                    $settingsManager.settings
+                                    .bellSound
                             ) {
-                                Text(BellPreference.system.displayName)
-                                    .tag(BellPreference.system)
-                                Text(BellPreference.visualBell.displayName)
-                                    .tag(BellPreference.visualBell)
-                                Text(BellPreference.none.displayName)
-                                    .tag(BellPreference.none)
+                                Text(
+                                    SoundPreference.system
+                                        .displayName
+                                )
+                                .tag(SoundPreference.system)
+                                Text(
+                                    SoundPreference.none
+                                        .displayName
+                                )
+                                .tag(SoundPreference.none)
 
                                 Divider()
 
                                 ForEach(
-                                    BellPreference.allCases
+                                    SoundPreference.allCases
                                         .filter { $0.isSound },
                                     id: \.self
                                 ) { pref in
-                                    Text(pref.displayName).tag(pref)
+                                    Text(pref.displayName)
+                                        .tag(pref)
                                 }
                             }
                             .labelsHidden()
                             .frame(width: 130)
 
                             Button(action: {
-                                settingsManager.handleBell()
+                                settingsManager.playSound(
+                                    settingsManager.settings
+                                        .bellSound
+                                )
                             }) {
-                                Image(systemName: "play.fill")
-                                    .font(.system(size: 10))
+                                Image(
+                                    systemName: "play.fill"
+                                )
+                                .font(.system(size: 10))
                             }
                             .buttonStyle(.bordered)
                             .controlSize(.small)
@@ -502,6 +513,79 @@ struct NotificationsSettingsTab: View {
                         }
                     }
 
+                    HStack {
+                        Toggle(
+                            "Visual flash",
+                            isOn: $settingsManager.settings
+                                .bellVisualFlash
+                        )
+                        .toggleStyle(.checkbox)
+                        Spacer()
+                    }
+                }
+            }
+
+            // Section 2: Permission request alerts
+            SettingsCard(title: "Permission request") {
+                VStack(alignment: .leading, spacing: 12) {
+                    SettingsRow(label: "Sound") {
+                        HStack(spacing: 8) {
+                            Picker(
+                                "",
+                                selection:
+                                    $settingsManager.settings
+                                    .permissionRequestSound
+                            ) {
+                                Text(
+                                    SoundPreference.none
+                                        .displayName
+                                )
+                                .tag(SoundPreference.none)
+                                Text(
+                                    SoundPreference.system
+                                        .displayName
+                                )
+                                .tag(SoundPreference.system)
+
+                                Divider()
+
+                                ForEach(
+                                    SoundPreference.allCases
+                                        .filter { $0.isSound },
+                                    id: \.self
+                                ) { pref in
+                                    Text(pref.displayName)
+                                        .tag(pref)
+                                }
+                            }
+                            .labelsHidden()
+                            .frame(width: 130)
+
+                            Button(action: {
+                                settingsManager.playSound(
+                                    settingsManager.settings
+                                        .permissionRequestSound
+                                )
+                            }) {
+                                Image(
+                                    systemName: "play.fill"
+                                )
+                                .font(.system(size: 10))
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .help(
+                                "Preview permission request"
+                                + " sound"
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Section 3: Indicators
+            SettingsCard(title: "Indicators") {
+                VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Toggle(
                             "Show unread indicator",
@@ -512,42 +596,54 @@ struct NotificationsSettingsTab: View {
                         Spacer()
                     }
 
-                    // Dock badge toggle with authorization status
+                    // Dock badge toggle with authorization
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
                             Toggle(
                                 "Show dock badge",
-                                isOn: $settingsManager.settings
+                                isOn:
+                                    $settingsManager.settings
                                     .showDockBadge
                             )
                             .toggleStyle(.checkbox)
                             .onChange(
-                                of: settingsManager.settings.showDockBadge
+                                of: settingsManager.settings
+                                    .showDockBadge
                             ) { _, enabled in
                                 if enabled {
                                     Task {
-                                        let granted = await settingsManager
+                                        let granted =
+                                            await settingsManager
                                             .requestNotificationAuthorization()
                                         authStatus = granted
-                                            ? .authorized : .denied
+                                            ? .authorized
+                                            : .denied
                                         SessionManager.shared
                                             .updateDockBadge()
                                     }
                                 } else {
-                                    NSApp.dockTile.badgeLabel = nil
+                                    NSApp.dockTile
+                                        .badgeLabel = nil
                                 }
                             }
                             Spacer()
                         }
 
-                        if settingsManager.settings.showDockBadge
+                        if settingsManager.settings
+                            .showDockBadge
                             && authStatus == .denied
                         {
                             HStack(spacing: 4) {
-                                Text("Badge disabled in system settings.")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.secondary)
-                                Button("Open Notification Settings") {
+                                Text(
+                                    "Badge disabled in"
+                                    + " system settings."
+                                )
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                                Button(
+                                    "Open Notification"
+                                    + " Settings"
+                                ) {
                                     settingsManager
                                         .openNotificationSettings()
                                 }
@@ -560,7 +656,7 @@ struct NotificationsSettingsTab: View {
                 }
             }
 
-            // Section 2: Session (new notification controls)
+            // Section 4: Session notifications
             SettingsCard(title: "Session") {
                 VStack(alignment: .leading, spacing: 12) {
                     // Terminal Bell
@@ -574,6 +670,23 @@ struct NotificationsSettingsTab: View {
                         .onChange(
                             of: settingsManager.settings
                                 .notifyTerminalBell
+                        ) { _, enabled in
+                            if enabled { requestAuth() }
+                        }
+                        Spacer()
+                    }
+
+                    // Permission Request
+                    HStack {
+                        Toggle(
+                            "Permission request",
+                            isOn: $settingsManager.settings
+                                .notifyPermissionRequest
+                        )
+                        .toggleStyle(.checkbox)
+                        .onChange(
+                            of: settingsManager.settings
+                                .notifyPermissionRequest
                         ) { _, enabled in
                             if enabled { requestAuth() }
                         }
@@ -762,6 +875,7 @@ struct NotificationsSettingsTab: View {
             || s.notifyAutoClearOccurred
             || s.notifySnapshotCreated
             || s.notifyTerminalBell
+            || s.notifyPermissionRequest
     }
 
     private func requestAuth() {
