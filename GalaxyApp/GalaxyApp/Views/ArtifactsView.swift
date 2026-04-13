@@ -62,6 +62,10 @@ struct ArtifactsView: View {
     @State private var hasUnreviewedAnnotations:
         Bool = false
 
+    // Refresh state
+    @State private var isRefreshing = false
+    @State private var imageRefreshToken: Int = 0
+
     // Duration tracking for timeline events
     @State private var artifactDurationId: String? = nil
 
@@ -190,6 +194,15 @@ struct ArtifactsView: View {
         ) { _ in
             if openArtifact != nil {
                 closeReader(reason: "app-quit")
+            }
+        }
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: .refreshArtifact
+            )
+        ) { _ in
+            if openArtifact != nil {
+                refreshCurrentArtifact()
             }
         }
         .onDisappear {
@@ -497,6 +510,39 @@ struct ArtifactsView: View {
                     isBackHovered ? .primary : .secondary
                 )
 
+                Button(action: {
+                    refreshCurrentArtifact()
+                }) {
+                    Image(
+                        systemName: "arrow.clockwise"
+                    )
+                    .chromeFont(size: fontSize.iconSmall)
+                    .foregroundColor(
+                        isRefreshing
+                            ? .secondary.opacity(0.5)
+                            : .secondary
+                    )
+                    .rotationEffect(
+                        .degrees(
+                            isRefreshing ? 360 : 0
+                        )
+                    )
+                    .animation(
+                        isRefreshing
+                            ? .linear(duration: 0.8)
+                              .repeatForever(
+                                  autoreverses: false
+                              )
+                            : .default,
+                        value: isRefreshing
+                    )
+                }
+                .buttonStyle(.plain)
+                .help(
+                    "Refresh from source file"
+                )
+                .disabled(isRefreshing)
+
                 Spacer()
 
                 // Metadata
@@ -629,6 +675,7 @@ struct ArtifactsView: View {
                         },
                         webViewRef: $webViewRef
                     )
+                    .id(imageRefreshToken)
                     staleAnnotationsSection
                 }
             } else {
@@ -1012,6 +1059,132 @@ struct ArtifactsView: View {
                     + "error: %@",
                     error.localizedDescription
                 )
+            }
+        }
+    }
+
+    private func refreshCurrentArtifact() {
+        guard let artifact = openArtifact,
+              let lsid = session.ledgerSessionId,
+              !isRefreshing
+        else { return }
+
+        isRefreshing = true
+
+        fetchTask?.cancel()
+        ArtifactQueryService.shared.cancelAll()
+        fetchTask = Task {
+            // Step 1: Call refresh to re-sync
+            // source → stored
+            do {
+                _ = try await
+                    ArtifactQueryService.shared
+                    .refreshArtifact(
+                        ledgerSessionId: lsid,
+                        artifactNumber:
+                            artifact.number
+                    )
+            } catch {
+                // Refresh failed — still try to
+                // re-read existing stored content
+            }
+
+            // Step 2: Re-read content + annotations
+            // (same flow as initial open)
+            let ext = (
+                artifact.originalFilename
+                    as NSString
+            ).pathExtension.lowercased()
+
+            let imageExtensions: Set<String> = [
+                "png", "jpg", "jpeg", "gif",
+                "svg", "webp",
+            ]
+
+            if imageExtensions.contains(ext) {
+                // Images: re-fetch annotations and
+                // bump token to force view reload
+                let annotations: [ArtifactAnnotation]
+                do {
+                    annotations = try await
+                        ArtifactQueryService.shared
+                        .fetchAnnotations(
+                            ledgerSessionId: lsid,
+                            artifactNumber:
+                                artifact.number
+                        )
+                } catch {
+                    annotations = []
+                }
+
+                var htmlMap: [Int32: String] = [:]
+                for ann in annotations {
+                    htmlMap[ann.number]
+                        = renderAnnotationHTML(
+                            ann.content
+                        )
+                }
+
+                guard !Task.isCancelled
+                else { return }
+
+                await MainActor.run {
+                    openAnnotations = annotations
+                    annotationHTMLMap = htmlMap
+                    hasUnreviewedAnnotations
+                        = annotations.contains {
+                            $0.artifactReviewId
+                                == nil && !$0.stale
+                        }
+                    imageRefreshToken += 1
+                    isRefreshing = false
+                }
+            } else {
+                // Text: re-read content + annotations
+                do {
+                    let content = try await
+                        readArtifactContent(
+                            ledgerSessionId: lsid,
+                            artifact: artifact
+                        )
+                    guard !Task.isCancelled
+                    else { return }
+
+                    let annotations = try await
+                        ArtifactQueryService.shared
+                        .fetchAnnotations(
+                            ledgerSessionId: lsid,
+                            artifactNumber:
+                                artifact.number
+                        )
+
+                    var htmlMap: [Int32: String] = [:]
+                    for ann in annotations {
+                        htmlMap[ann.number]
+                            = renderAnnotationHTML(
+                                ann.content
+                            )
+                    }
+
+                    guard !Task.isCancelled
+                    else { return }
+
+                    await MainActor.run {
+                        openArtifactContent = content
+                        openAnnotations = annotations
+                        annotationHTMLMap = htmlMap
+                        hasUnreviewedAnnotations
+                            = annotations.contains {
+                                $0.artifactReviewId
+                                    == nil && !$0.stale
+                            }
+                        isRefreshing = false
+                    }
+                } catch {
+                    await MainActor.run {
+                        isRefreshing = false
+                    }
+                }
             }
         }
     }

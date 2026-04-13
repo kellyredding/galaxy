@@ -39,6 +39,17 @@ class MainMenu: NSObject, NSMenuDelegate {
                 self.buildFileMenu(menu)
             }
             .store(in: &cancellables)
+
+        // Artifact reader or tab changed — rebuild File menu
+        // so ⌘R switches between Refresh artifact and Resume session
+        sessionManager.$isArtifactReaderOpen
+            .merge(with: sessionManager.$activeTab.map { _ in false })
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self, let menu = self.fileMenu else { return }
+                self.buildFileMenu(menu)
+            }
+            .store(in: &cancellables)
     }
 
     /// Creates and returns the main menu bar
@@ -163,6 +174,23 @@ class MainMenu: NSObject, NSMenuDelegate {
         let activeSession = sessionManager.activeSession
         let hasSessions = !sessionManager.sessions.isEmpty
 
+        // Refresh artifact (⌘R) — takes precedence over
+        // Resume when artifact reader is open on Artifacts tab
+        let artifactReaderActive =
+            sessionManager.activeTab == .artifacts
+            && sessionManager.isArtifactReaderOpen
+        if artifactReaderActive {
+            let refreshItem = NSMenuItem(
+                title: "Refresh artifact",
+                action: #selector(
+                    MenuActions.refreshArtifact(_:)
+                ),
+                keyEquivalent: "r"
+            )
+            refreshItem.target = MenuActions.shared
+            menu.addItem(refreshItem)
+        }
+
         if let session = activeSession {
             if !session.hasExited {
                 // Session is running: Stop session (⌘W)
@@ -183,13 +211,17 @@ class MainMenu: NSObject, NSMenuDelegate {
                 dismissItem.target = MenuActions.shared
                 menu.addItem(dismissItem)
 
-                let resumeItem = NSMenuItem(
-                    title: "Resume session",
-                    action: #selector(MenuActions.resumeSession(_:)),
-                    keyEquivalent: "r"
-                )
-                resumeItem.target = MenuActions.shared
-                menu.addItem(resumeItem)
+                if !artifactReaderActive {
+                    let resumeItem = NSMenuItem(
+                        title: "Resume session",
+                        action: #selector(
+                            MenuActions.resumeSession(_:)
+                        ),
+                        keyEquivalent: "r"
+                    )
+                    resumeItem.target = MenuActions.shared
+                    menu.addItem(resumeItem)
+                }
             }
         } else if hasSessions {
             // Has sessions but none active
@@ -633,6 +665,12 @@ class MenuActions: NSObject {
         SessionManager.shared.resumeSession(sessionId: activeId)
     }
 
+    @objc func refreshArtifact(_ sender: Any?) {
+        NotificationCenter.default.post(
+            name: .refreshArtifact, object: nil
+        )
+    }
+
     @objc func enterScrollback(_ sender: Any?) {
         NotificationCenter.default.post(name: .enterScrollback, object: nil)
     }
@@ -746,4 +784,5 @@ extension Notification.Name {
     static let restoreSessionNavigateUp = Notification.Name("restoreSessionNavigateUp")
     static let restoreSessionNavigateDown = Notification.Name("restoreSessionNavigateDown")
     static let restoreSessionConfirm = Notification.Name("restoreSessionConfirm")
+    static let refreshArtifact = Notification.Name("refreshArtifact")
 }

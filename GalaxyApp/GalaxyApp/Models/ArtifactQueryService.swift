@@ -70,6 +70,29 @@ class ArtifactQueryService {
         return response.annotations
     }
 
+    /// Refresh an artifact by re-syncing from its
+    /// source file. Returns JSON with refresh status.
+    /// Uses runIndependent so it doesn't cancel
+    /// in-flight fetch operations.
+    func refreshArtifact(
+        ledgerSessionId: Int64,
+        artifactNumber: Int32
+    ) async throws -> ArtifactRefreshResult {
+        let data = try await runIndependent(
+            args: ["refresh",
+                   "--ledger-session-id",
+                   String(ledgerSessionId),
+                   String(artifactNumber)]
+        )
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy
+            = .convertFromSnakeCase
+        return try decoder.decode(
+            ArtifactRefreshResult.self,
+            from: data
+        )
+    }
+
     /// Create an annotation. Content + anchor data piped
     /// via stdin as JSON envelope.
     func createAnnotation(
@@ -437,4 +460,12 @@ struct ArtifactHasPendingResult: Codable {
     let artifactId: Int64
     let hasPending: Bool
     let count: Int32
+}
+
+/// Result from refreshing an artifact from source.
+struct ArtifactRefreshResult: Codable {
+    let number: Int32
+    let resaved: Bool
+    let hasSource: Bool
+    let sourceExists: Bool
 }
