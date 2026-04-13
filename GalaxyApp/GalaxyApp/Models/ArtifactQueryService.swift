@@ -74,15 +74,29 @@ class ArtifactQueryService {
     /// source file. Returns JSON with refresh status.
     /// Uses runIndependent so it doesn't cancel
     /// in-flight fetch operations.
+    ///
+    /// When `skipEvent` is true, passes --skip-event
+    /// to suppress the socket event. Used by the
+    /// in-app refresh button (which handles its own
+    /// UI reload). External callers omit this so
+    /// Galaxy.app navigates via the socket event.
     func refreshArtifact(
         ledgerSessionId: Int64,
-        artifactNumber: Int32
+        artifactNumber: Int32,
+        skipEvent: Bool = false
     ) async throws -> ArtifactRefreshResult {
+        var args = [
+            "refresh",
+            "--ledger-session-id",
+            String(ledgerSessionId),
+        ]
+        if skipEvent {
+            args.append("--skip-event")
+        }
+        args.append(String(artifactNumber))
+
         let data = try await runIndependent(
-            args: ["refresh",
-                   "--ledger-session-id",
-                   String(ledgerSessionId),
-                   String(artifactNumber)]
+            args: args
         )
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy

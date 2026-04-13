@@ -33,6 +33,7 @@ final class EventCoordinator {
         // Refresh signals (direct socket, no DB)
         "session.metrics",
         "ledger.entry",
+        "artifact.refresh",
         // Lifecycle events (timeline → DB → socket)
         "timeline.session:started",
         "timeline.session:resumed",
@@ -463,6 +464,40 @@ final class EventCoordinator {
                     }
                 }
             }
+        }
+
+        // Artifact refresh: switch session + tab and
+        // queue auto-open. Unlike snapshot:created
+        // (conservative — active session only), refresh
+        // is an explicit user action so we switch to the
+        // correct session even if it's not active.
+        if envelope.event == "artifact.refresh",
+           let number = envelope.detailValue(
+               "artifact_number", as: Int64.self
+           )
+        {
+            let artNumber = Int32(number)
+            DispatchQueue.main.async { [weak self] in
+                guard let sm = self?.sessionManager
+                else { return }
+                guard let appSessionId =
+                    self?.ledgerSessionIdCache[
+                        envelope.ledgerSessionId
+                    ]
+                else { return }
+
+                if appSessionId
+                    != sm.activeSessionId
+                {
+                    sm.switchTo(
+                        sessionId: appSessionId
+                    )
+                }
+                sm.activeTab = .artifacts
+                sm.pendingArtifactRefresh
+                    = artNumber
+            }
+            return
         }
 
         // Annotation/review events: notify SessionManager

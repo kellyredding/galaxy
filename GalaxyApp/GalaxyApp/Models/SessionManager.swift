@@ -79,6 +79,10 @@ class SessionManager: ObservableObject {
     /// Whether the artifact reader is open (used by views that need to know).
     @Published var isArtifactReaderOpen: Bool = false
 
+    /// Artifact number to auto-open/refresh when switching to artifacts tab.
+    /// Set by EventCoordinator on artifact.refresh, cleared by ArtifactsView after opening.
+    @Published var pendingArtifactRefresh: Int32? = nil
+
     /// Called when a session is removed from the session list.
     /// Used by EventCoordinator to clean up cached ledger_session_id mappings.
     var onSessionClosed: ((UUID) -> Void)?

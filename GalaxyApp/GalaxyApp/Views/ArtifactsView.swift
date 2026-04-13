@@ -205,6 +205,14 @@ struct ArtifactsView: View {
                 refreshCurrentArtifact()
             }
         }
+        .onChange(
+            of: sessionManager.pendingArtifactRefresh
+        ) {
+            guard session.id
+                == sessionManager.activeSessionId
+            else { return }
+            handlePendingArtifactRefresh()
+        }
         .onDisappear {
             if openArtifact != nil {
                 closeReader(reason: "session-removed")
@@ -1063,6 +1071,12 @@ struct ArtifactsView: View {
         }
     }
 
+    /// In-app refresh: call CLI with --skip-event,
+    /// then re-read content + annotations in place.
+    /// The reader stays open — no tab switch, no
+    /// close/reopen jank. The --skip-event flag
+    /// suppresses the socket event since we handle
+    /// the UI reload directly here.
     private func refreshCurrentArtifact() {
         guard let artifact = openArtifact,
               let lsid = session.ledgerSessionId,
@@ -1074,15 +1088,16 @@ struct ArtifactsView: View {
         fetchTask?.cancel()
         ArtifactQueryService.shared.cancelAll()
         fetchTask = Task {
-            // Step 1: Call refresh to re-sync
-            // source → stored
+            // Step 1: Call refresh with --skip-event
+            // to re-sync source → stored
             do {
                 _ = try await
                     ArtifactQueryService.shared
                     .refreshArtifact(
                         ledgerSessionId: lsid,
                         artifactNumber:
-                            artifact.number
+                            artifact.number,
+                        skipEvent: true
                     )
             } catch {
                 // Refresh failed — still try to
@@ -1184,6 +1199,65 @@ struct ArtifactsView: View {
                     await MainActor.run {
                         isRefreshing = false
                     }
+                }
+            }
+        }
+    }
+
+    /// Handle a pending artifact refresh from
+    /// EventCoordinator (socket event round-trip).
+    /// Fetches the fresh artifact list, then opens
+    /// the artifact reader — which triggers the
+    /// full content + annotation load flow.
+    private func handlePendingArtifactRefresh() {
+        guard let number =
+            sessionManager.pendingArtifactRefresh
+        else { return }
+        sessionManager.pendingArtifactRefresh = nil
+
+        guard let lsid = session.ledgerSessionId
+        else { return }
+
+        // Close any currently-open artifact so its
+        // duration event fires and state is cleaned up.
+        if openArtifact != nil {
+            closeReader(reason: "auto-refresh")
+        }
+
+        // Fetch fresh list, then open the artifact
+        fetchTask?.cancel()
+        ArtifactQueryService.shared.cancelAll()
+        isLoading = true
+        fetchTask = Task {
+            do {
+                let list = try await
+                    ArtifactQueryService.shared
+                    .fetchArtifacts(
+                        ledgerSessionId: lsid
+                    )
+                guard !Task.isCancelled
+                else { return }
+
+                guard let artifact = list.first(
+                    where: { $0.number == number }
+                ) else {
+                    await MainActor.run {
+                        artifacts = list
+                        isLoading = false
+                    }
+                    return
+                }
+
+                await MainActor.run {
+                    artifacts = list
+                    isLoading = false
+                    openArtifactReader(
+                        artifact: artifact
+                    )
+                }
+            } catch {
+                await MainActor.run {
+                    isLoading = false
                 }
             }
         }
