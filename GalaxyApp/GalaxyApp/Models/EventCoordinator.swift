@@ -33,7 +33,7 @@ final class EventCoordinator {
         // Refresh signals (direct socket, no DB)
         "session.metrics",
         "ledger.entry",
-        "artifact.refresh",
+        "artifact.show",
         // Lifecycle events (timeline → DB → socket)
         "timeline.session:started",
         "timeline.session:resumed",
@@ -466,12 +466,12 @@ final class EventCoordinator {
             }
         }
 
-        // Artifact refresh: switch session + tab and
+        // Artifact show: switch session + tab and
         // queue auto-open. Unlike snapshot:created
-        // (conservative — active session only), refresh
-        // is an explicit user action so we switch to the
-        // correct session even if it's not active.
-        if envelope.event == "artifact.refresh",
+        // (conservative — active session only), show
+        // is an explicit user action so we switch to
+        // the correct session even if it's not active.
+        if envelope.event == "artifact.show",
            let number = envelope.detailValue(
                "artifact_number", as: Int64.self
            )
@@ -494,7 +494,7 @@ final class EventCoordinator {
                     )
                 }
                 sm.activeTab = .artifacts
-                sm.pendingArtifactRefresh
+                sm.pendingArtifactShow
                     = artNumber
             }
             return

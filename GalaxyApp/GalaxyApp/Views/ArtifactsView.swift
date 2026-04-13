@@ -206,12 +206,12 @@ struct ArtifactsView: View {
             }
         }
         .onChange(
-            of: sessionManager.pendingArtifactRefresh
+            of: sessionManager.pendingArtifactShow
         ) {
             guard session.id
                 == sessionManager.activeSessionId
             else { return }
-            handlePendingArtifactRefresh()
+            handlePendingArtifactShow()
         }
         .onDisappear {
             if openArtifact != nil {
@@ -1204,16 +1204,17 @@ struct ArtifactsView: View {
         }
     }
 
-    /// Handle a pending artifact refresh from
-    /// EventCoordinator (socket event round-trip).
-    /// Fetches the fresh artifact list, then opens
-    /// the artifact reader — which triggers the
-    /// full content + annotation load flow.
-    private func handlePendingArtifactRefresh() {
+    /// Handle a pending artifact show from
+    /// EventCoordinator (socket event). Fetches the
+    /// artifact list, then opens the artifact reader
+    /// — which triggers the full content + annotation
+    /// load flow. Falls back to macOS open for types
+    /// without an inline reader.
+    private func handlePendingArtifactShow() {
         guard let number =
-            sessionManager.pendingArtifactRefresh
+            sessionManager.pendingArtifactShow
         else { return }
-        sessionManager.pendingArtifactRefresh = nil
+        sessionManager.pendingArtifactShow = nil
 
         guard let lsid = session.ledgerSessionId
         else { return }
