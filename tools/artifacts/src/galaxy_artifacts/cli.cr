@@ -507,6 +507,7 @@ module GalaxyArtifacts
       pid_str : String? = nil
       ledger_session_id_str : String? = nil
       number : Int32? = nil
+      skip_event = false
 
       i = 0
       while i < args.size
@@ -531,6 +532,9 @@ module GalaxyArtifacts
             )
             exit(1)
           end
+        when "--skip-event"
+          skip_event = true
+          i += 1
         else
           if n = arg.to_i?
             number = n
@@ -653,6 +657,26 @@ module GalaxyArtifacts
         end
       end
       puts ""
+
+      # Publish socket event so Galaxy.app can auto-open
+      # the artifact reader. Fire-and-forget — works
+      # whether or not Galaxy.app is running. Skipped
+      # when --skip-event is set (in-app callers that
+      # handle their own UI reload).
+      unless skip_event
+        detail = JSON.build do |json|
+          json.object do
+            json.field(
+              "artifact_number", artifact.number,
+            )
+          end
+        end
+        EventPublisher.publish(
+          ledger_session_id,
+          event: "artifact.refresh",
+          detail_data: detail,
+        )
+      end
     end
 
     # ============================================================
@@ -2653,10 +2677,16 @@ module GalaxyArtifacts
       USAGE:
         galaxy-artifacts refresh --ledger-session-id ID NUMBER
         galaxy-artifacts refresh --pid PID NUMBER
+        galaxy-artifacts refresh --skip-event --pid PID NUMBER
 
       Re-reads the source file and updates the stored copy if
       the content has changed. Outputs JSON result. If no
       source_path exists, outputs status without re-saving.
+
+      By default, publishes an artifact.refresh socket event
+      to Galaxy.app so it can auto-open the artifact reader.
+      Use --skip-event when the caller handles its own UI
+      reload (e.g. Galaxy.app's in-app refresh button).
 
       REQUIRED:
         NUMBER                  Artifact number
@@ -2664,6 +2694,9 @@ module GalaxyArtifacts
       REQUIRED (one of):
         --pid PID               Claude Code process ID
         --ledger-session-id ID  Direct ledger session ID
+
+      OPTIONAL:
+        --skip-event            Skip socket event publish
       HELP
     end
 

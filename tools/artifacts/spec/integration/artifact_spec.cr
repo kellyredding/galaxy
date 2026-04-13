@@ -292,6 +292,166 @@ describe "CLI artifact commands", tags: "integration" do
       result[:status].should_not eq(0)
       result[:error].should contain("not found")
     end
+
+    it "accepts --skip-event flag" do
+      source = create_test_file(
+        "refresh-skip.csv", "data",
+      )
+
+      run_binary([
+        "save", "--ledger-session-id", "1",
+        "--source-path", source,
+        "--title", "Skip event test",
+        "--artifact-type", "csv",
+        "--mime-type", "text/csv",
+      ])
+
+      result = run_binary([
+        "refresh", "--ledger-session-id", "1",
+        "--skip-event", "1",
+      ])
+
+      result[:status].should eq(0)
+      parsed = JSON.parse(result[:output])
+      parsed["number"].as_i.should eq(1)
+      parsed["resaved"].as_bool.should be_true
+    end
+
+    it "skips socket event with --skip-event" do
+      source = create_test_file(
+        "refresh-no-sock.csv", "data",
+      )
+
+      run_binary([
+        "save", "--ledger-session-id", "1",
+        "--source-path", source,
+        "--title", "No socket test",
+        "--artifact-type", "csv",
+        "--mime-type", "text/csv",
+      ])
+
+      # Set up a socket listener to verify no
+      # event arrives when --skip-event is used
+      sock_path = SPEC_GALAXY_DIR / "galaxy.sock"
+      received = Channel(String?).new(1)
+
+      server = UNIXServer.new(sock_path.to_s)
+      spawn do
+        begin
+          client = server.accept
+          line = client.gets
+          received.send(line)
+          client.close
+        rescue
+          received.send(nil)
+        end
+      end
+
+      begin
+        sleep 10.milliseconds
+
+        result = run_binary([
+          "refresh", "--ledger-session-id", "1",
+          "--skip-event", "1",
+        ])
+        result[:status].should eq(0)
+
+        # Give a brief window for any stray event
+        sleep 50.milliseconds
+
+        # Close the server — if nothing connected,
+        # the accept fiber will error and send nil
+        server.close
+
+        select
+        when line = received.receive
+          # nil means no connection was made (good)
+          # non-nil means an event was sent (bad)
+          line.should be_nil
+        when timeout(200.milliseconds)
+          # Timeout means no connection — expected
+        end
+      ensure
+        server.close rescue nil
+        File.delete(sock_path.to_s) \
+          if File.exists?(sock_path.to_s)
+      end
+    end
+
+    it "publishes socket event without --skip-event" do
+      source = create_test_file(
+        "refresh-with-sock.csv", "data",
+      )
+
+      run_binary([
+        "save", "--ledger-session-id", "1",
+        "--source-path", source,
+        "--title", "Socket test",
+        "--artifact-type", "csv",
+        "--mime-type", "text/csv",
+      ])
+
+      # Set up a socket listener to capture the event
+      sock_path = SPEC_GALAXY_DIR / "galaxy.sock"
+      received = Channel(String?).new(1)
+
+      server = UNIXServer.new(sock_path.to_s)
+      spawn do
+        begin
+          client = server.accept
+          line = client.gets
+          received.send(line)
+          client.close
+        rescue
+          received.send(nil)
+        end
+      end
+
+      begin
+        sleep 10.milliseconds
+
+        # Also need a no-op ledger binary that
+        # returns session identifiers JSON
+        ledger_bin = SPEC_GALAXY_DIR / "bin" /
+                     "galaxy-ledger"
+        File.write(
+          ledger_bin,
+          "#!/bin/sh\n" \
+          "echo '{\"session_identifiers\":[]}'\n",
+        )
+        File.chmod(ledger_bin, 0o755)
+
+        result = run_binary(
+          [
+            "refresh", "--ledger-session-id", "1",
+            "1",
+          ],
+          extra_env: {
+            "GALAXY_LEDGER_BIN" => ledger_bin.to_s,
+          },
+        )
+        result[:status].should eq(0)
+
+        select
+        when line = received.receive
+          line.should_not be_nil
+          if json_line = line
+            parsed = JSON.parse(json_line)
+            parsed["event"].as_s
+              .should eq("artifact.refresh")
+            detail = parsed["detail_data"]
+            detail["artifact_number"].as_i
+              .should eq(1)
+          end
+        when timeout(2.seconds)
+          fail "Timed out waiting for socket event"
+        end
+      ensure
+        server.close rescue nil
+        File.delete(sock_path.to_s) \
+          if File.exists?(sock_path.to_s)
+      end
+    end
   end
 
   describe "delete" do
