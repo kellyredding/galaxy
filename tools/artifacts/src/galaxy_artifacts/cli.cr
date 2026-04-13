@@ -30,6 +30,12 @@ module GalaxyArtifacts
         else
           handle_view(rest)
         end
+      when "refresh"
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_refresh_help
+        else
+          handle_refresh(rest)
+        end
       when "open"
         if rest.includes?("-h") || rest.includes?("--help")
           show_open_help
@@ -489,6 +495,164 @@ module GalaxyArtifacts
       end
 
       puts File.read(stored_path)
+    end
+
+    # ============================================================
+    # refresh
+    # ============================================================
+
+    private def self.handle_refresh(
+      args : Array(String),
+    )
+      pid_str : String? = nil
+      ledger_session_id_str : String? = nil
+      number : Int32? = nil
+
+      i = 0
+      while i < args.size
+        arg = args[i]
+        case arg
+        when "--pid"
+          if i + 1 < args.size
+            pid_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --pid requires a value"
+            exit(1)
+          end
+        when "--ledger-session-id"
+          if i + 1 < args.size
+            ledger_session_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --ledger-session-id " \
+              "requires a value",
+            )
+            exit(1)
+          end
+        else
+          if n = arg.to_i?
+            number = n
+          else
+            STDERR.puts "Error: Unknown option '#{arg}'"
+            STDERR.puts(
+              "Run 'galaxy-artifacts refresh " \
+              "--help' for usage",
+            )
+            exit(1)
+          end
+          i += 1
+        end
+      end
+
+      # Resolve ledger_session_id
+      ledger_session_id : Int64? = nil
+      if lsid_str = ledger_session_id_str
+        ledger_session_id =
+          resolve_ledger_session_id_str(lsid_str)
+      elsif ps = pid_str
+        ledger_session_id =
+          resolve_pid_to_ledger_session_id(ps)
+      end
+
+      unless ledger_session_id
+        STDERR.puts(
+          "Error: --pid or --ledger-session-id " \
+          "is required",
+        )
+        STDERR.puts(
+          "Run 'galaxy-artifacts refresh " \
+          "--help' for usage",
+        )
+        exit(1)
+      end
+
+      unless number
+        STDERR.puts "Error: artifact number is required"
+        STDERR.puts(
+          "Run 'galaxy-artifacts refresh " \
+          "--help' for usage",
+        )
+        exit(1)
+      end
+
+      artifact = Database.get_artifact_by_number(
+        ledger_session_id, number,
+      )
+
+      unless artifact
+        STDERR.puts "Error: artifact ##{number} not found"
+        exit(1)
+      end
+
+      # Re-save from source_path if available and file
+      # still exists. This triggers the existing dedup
+      # logic: Enrichment if unchanged, VersionUpdate
+      # if content changed (which re-copies the file
+      # and marks annotations stale).
+      resaved = false
+      if source = artifact.source_path
+        if File.exists?(source)
+          hash = ArtifactStorage.file_hash(source)
+          fsize = ArtifactStorage.file_size(source)
+
+          result = Database.save_artifact(
+            ledger_session_id,
+            title: artifact.title,
+            artifact_type: artifact.artifact_type,
+            mime_type: artifact.mime_type,
+            original_filename: artifact.original_filename,
+            stored_path: "",
+            source_path: source,
+            file_size: fsize,
+            content_hash: hash,
+          )
+
+          unless result.action.failed?
+            unless result.action.enrichment?
+              stored = ArtifactStorage.store(
+                ledger_session_id,
+                number,
+                source,
+                artifact.original_filename,
+              )
+              if stored
+                Database.update_artifact_stored_path(
+                  ledger_session_id, number, stored,
+                )
+              end
+            end
+
+            if result.action.version_update?
+              updated = Database.get_artifact_by_number(
+                ledger_session_id, number,
+              )
+              if updated
+                Database.mark_annotations_stale(updated.id)
+              end
+            end
+
+            resaved = true
+          end
+        end
+      end
+
+      # Output JSON result for the Swift caller
+      JSON.build(STDOUT) do |json|
+        json.object do
+          json.field "number", artifact.number
+          json.field "resaved", resaved
+          json.field "has_source", !artifact.source_path.nil?
+          json.field(
+            "source_exists",
+            artifact.source_path.try { |p|
+              File.exists?(p)
+            } || false,
+          )
+        end
+      end
+      puts ""
     end
 
     # ============================================================
@@ -2393,6 +2557,7 @@ module GalaxyArtifacts
         save        Register an artifact from a file path
         list        List artifacts for a session
         view        View a text artifact's content
+        refresh     Re-sync artifact from source file
         open        Open an artifact in native app
         delete      Delete an artifact
         annotation  Manage artifact annotations
@@ -2478,6 +2643,27 @@ module GalaxyArtifacts
         Outputs the content of an artifact to stdout. Works for all
         text-based types. Binary artifacts (pdf, image) are rejected
         — use 'open' instead.
+      HELP
+    end
+
+    private def self.show_refresh_help
+      puts <<-HELP
+      galaxy-artifacts refresh - Re-sync artifact from source
+
+      USAGE:
+        galaxy-artifacts refresh --ledger-session-id ID NUMBER
+        galaxy-artifacts refresh --pid PID NUMBER
+
+      Re-reads the source file and updates the stored copy if
+      the content has changed. Outputs JSON result. If no
+      source_path exists, outputs status without re-saving.
+
+      REQUIRED:
+        NUMBER                  Artifact number
+
+      REQUIRED (one of):
+        --pid PID               Claude Code process ID
+        --ledger-session-id ID  Direct ledger session ID
       HELP
     end
 

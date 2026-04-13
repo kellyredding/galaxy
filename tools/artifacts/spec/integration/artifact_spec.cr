@@ -184,6 +184,116 @@ describe "CLI artifact commands", tags: "integration" do
     end
   end
 
+  describe "refresh" do
+    it "refreshes an artifact with unchanged content" do
+      source = create_test_file("refresh-same.csv", "data")
+
+      run_binary([
+        "save", "--ledger-session-id", "1",
+        "--source-path", source, "--title", "Refresh test",
+        "--artifact-type", "csv", "--mime-type", "text/csv",
+      ])
+
+      result = run_binary([
+        "refresh", "--ledger-session-id", "1", "1",
+      ])
+
+      result[:status].should eq(0)
+      parsed = JSON.parse(result[:output])
+      parsed["number"].as_i.should eq(1)
+      parsed["resaved"].as_bool.should be_true
+      parsed["has_source"].as_bool.should be_true
+      parsed["source_exists"].as_bool.should be_true
+    end
+
+    it "refreshes with changed content" do
+      source = create_test_file(
+        "refresh-change.csv", "original",
+      )
+
+      run_binary([
+        "save", "--ledger-session-id", "1",
+        "--source-path", source, "--title", "Change test",
+        "--artifact-type", "csv", "--mime-type", "text/csv",
+      ])
+
+      # Modify the source file
+      File.write(source, "updated content")
+
+      result = run_binary([
+        "refresh", "--ledger-session-id", "1", "1",
+      ])
+
+      result[:status].should eq(0)
+      parsed = JSON.parse(result[:output])
+      parsed["resaved"].as_bool.should be_true
+
+      # Verify stored content was updated
+      view_result = run_binary([
+        "view", "--ledger-session-id", "1", "1",
+      ])
+      view_result[:output].should contain("updated content")
+    end
+
+    it "handles artifact with no source_path" do
+      source = create_test_file("no-src.csv", "data")
+      run_binary([
+        "save", "--ledger-session-id", "1",
+        "--source-path", source, "--title", "No src",
+        "--artifact-type", "csv", "--mime-type", "text/csv",
+      ])
+      # Clear source_path in DB to simulate null
+      GalaxyArtifacts::Database.open do |db|
+        db.exec(
+          "UPDATE artifacts SET source_path = NULL " \
+          "WHERE ledger_session_id = 1 AND number = 1",
+        )
+      end
+
+      result = run_binary([
+        "refresh", "--ledger-session-id", "1", "1",
+      ])
+
+      result[:status].should eq(0)
+      parsed = JSON.parse(result[:output])
+      parsed["resaved"].as_bool.should be_false
+      parsed["has_source"].as_bool.should be_false
+    end
+
+    it "handles deleted source file" do
+      source = create_test_file(
+        "refresh-gone.csv", "data",
+      )
+
+      run_binary([
+        "save", "--ledger-session-id", "1",
+        "--source-path", source, "--title", "Gone test",
+        "--artifact-type", "csv", "--mime-type", "text/csv",
+      ])
+
+      File.delete(source)
+
+      result = run_binary([
+        "refresh", "--ledger-session-id", "1", "1",
+      ])
+
+      result[:status].should eq(0)
+      parsed = JSON.parse(result[:output])
+      parsed["resaved"].as_bool.should be_false
+      parsed["has_source"].as_bool.should be_true
+      parsed["source_exists"].as_bool.should be_false
+    end
+
+    it "errors when artifact not found" do
+      result = run_binary([
+        "refresh", "--ledger-session-id", "1", "99",
+      ])
+
+      result[:status].should_not eq(0)
+      result[:error].should contain("not found")
+    end
+  end
+
   describe "delete" do
     it "deletes an artifact" do
       source = create_test_file("delete-test.csv", "delete me")
