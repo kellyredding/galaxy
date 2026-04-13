@@ -5,7 +5,7 @@ describe GalaxyArtifacts::EventPublisher do
     it "builds valid JSON with all required fields" do
       json = GalaxyArtifacts::EventPublisher
         .build_envelope(
-          event: "artifact.refresh",
+          event: "artifact.show",
           ledger_session_id: 42_i64,
           session_identifiers: [
             "abc-123", "def-456",
@@ -15,7 +15,7 @@ describe GalaxyArtifacts::EventPublisher do
       parsed = JSON.parse(json)
       parsed["v"].as_i.should eq(1)
       parsed["event"].as_s.should eq(
-        "artifact.refresh",
+        "artifact.show",
       )
       parsed["ledger_session_id"].as_i64.should eq(42)
       parsed["session_identifiers"].as_a
@@ -28,7 +28,7 @@ describe GalaxyArtifacts::EventPublisher do
     it "includes ref when provided" do
       json = GalaxyArtifacts::EventPublisher
         .build_envelope(
-          event: "artifact.refresh",
+          event: "artifact.show",
           ledger_session_id: 42_i64,
           session_identifiers: ["abc-123"],
           ref: "3",
@@ -41,7 +41,7 @@ describe GalaxyArtifacts::EventPublisher do
     it "omits ref when not provided" do
       json = GalaxyArtifacts::EventPublisher
         .build_envelope(
-          event: "artifact.refresh",
+          event: "artifact.show",
           ledger_session_id: 42_i64,
           session_identifiers: ["abc-123"],
         )
@@ -54,7 +54,7 @@ describe GalaxyArtifacts::EventPublisher do
       dd = %({"artifact_number":3})
       json = GalaxyArtifacts::EventPublisher
         .build_envelope(
-          event: "artifact.refresh",
+          event: "artifact.show",
           ledger_session_id: 42_i64,
           session_identifiers: ["abc-123"],
           detail_data: dd,
@@ -68,7 +68,7 @@ describe GalaxyArtifacts::EventPublisher do
     it "omits detail_data when not provided" do
       json = GalaxyArtifacts::EventPublisher
         .build_envelope(
-          event: "artifact.refresh",
+          event: "artifact.show",
           ledger_session_id: 42_i64,
           session_identifiers: ["abc-123"],
         )
@@ -80,7 +80,7 @@ describe GalaxyArtifacts::EventPublisher do
     it "handles empty session_identifiers array" do
       json = GalaxyArtifacts::EventPublisher
         .build_envelope(
-          event: "artifact.refresh",
+          event: "artifact.show",
           ledger_session_id: 42_i64,
           session_identifiers: [] of String,
         )
@@ -94,7 +94,7 @@ describe GalaxyArtifacts::EventPublisher do
       before = Time.utc.to_unix
       json = GalaxyArtifacts::EventPublisher
         .build_envelope(
-          event: "artifact.refresh",
+          event: "artifact.show",
           ledger_session_id: 1_i64,
           session_identifiers: [] of String,
         )
@@ -157,7 +157,7 @@ describe GalaxyArtifacts::EventPublisher do
 
         result = GalaxyArtifacts::EventPublisher
           .send_to_socket(
-            envelope: %({"v":1,"event":"artifact.refresh","ledger_session_id":42}),
+            envelope: %({"v":1,"event":"artifact.show","ledger_session_id":42}),
             socket_path: socket_path,
           )
         result.should be_true
@@ -166,7 +166,7 @@ describe GalaxyArtifacts::EventPublisher do
         parsed = JSON.parse(line)
         parsed["v"].as_i.should eq(1)
         parsed["event"].as_s.should eq(
-          "artifact.refresh",
+          "artifact.show",
         )
         parsed["ledger_session_id"].as_i64
           .should eq(42)

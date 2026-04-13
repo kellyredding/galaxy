@@ -36,6 +36,12 @@ module GalaxyArtifacts
         else
           handle_refresh(rest)
         end
+      when "show"
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_show_help
+        else
+          handle_show(rest)
+        end
       when "open"
         if rest.includes?("-h") || rest.includes?("--help")
           show_open_help
@@ -673,10 +679,129 @@ module GalaxyArtifacts
         end
         EventPublisher.publish(
           ledger_session_id,
-          event: "artifact.refresh",
+          event: "artifact.show",
           detail_data: detail,
         )
       end
+    end
+
+    # ============================================================
+    # show
+    # ============================================================
+
+    private def self.handle_show(
+      args : Array(String),
+    )
+      pid_str : String? = nil
+      ledger_session_id_str : String? = nil
+      number : Int32? = nil
+
+      i = 0
+      while i < args.size
+        arg = args[i]
+        case arg
+        when "--pid"
+          if i + 1 < args.size
+            pid_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --pid requires a value",
+            )
+            exit(1)
+          end
+        when "--ledger-session-id"
+          if i + 1 < args.size
+            ledger_session_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --ledger-session-id " \
+              "requires a value",
+            )
+            exit(1)
+          end
+        else
+          if n = arg.to_i?
+            number = n
+          else
+            STDERR.puts(
+              "Error: Unknown option '#{arg}'",
+            )
+            STDERR.puts(
+              "Run 'galaxy-artifacts show " \
+              "--help' for usage",
+            )
+            exit(1)
+          end
+          i += 1
+        end
+      end
+
+      # Resolve ledger_session_id
+      ledger_session_id : Int64? = nil
+      if lsid_str = ledger_session_id_str
+        ledger_session_id =
+          resolve_ledger_session_id_str(lsid_str)
+      elsif ps = pid_str
+        ledger_session_id =
+          resolve_pid_to_ledger_session_id(ps)
+      end
+
+      unless ledger_session_id
+        STDERR.puts(
+          "Error: --pid or --ledger-session-id " \
+          "is required",
+        )
+        STDERR.puts(
+          "Run 'galaxy-artifacts show " \
+          "--help' for usage",
+        )
+        exit(1)
+      end
+
+      unless number
+        STDERR.puts(
+          "Error: artifact number is required",
+        )
+        STDERR.puts(
+          "Run 'galaxy-artifacts show " \
+          "--help' for usage",
+        )
+        exit(1)
+      end
+
+      artifact = Database.get_artifact_by_number(
+        ledger_session_id, number,
+      )
+
+      unless artifact
+        STDERR.puts(
+          "Error: artifact ##{number} not found",
+        )
+        exit(1)
+      end
+
+      # Publish socket event so Galaxy.app opens
+      # the artifact in its reader (or falls back
+      # to macOS open for unsupported types).
+      detail = JSON.build do |json|
+        json.object do
+          json.field(
+            "artifact_number", artifact.number,
+          )
+        end
+      end
+      EventPublisher.publish(
+        ledger_session_id,
+        event: "artifact.show",
+        detail_data: detail,
+      )
+
+      puts(
+        "Showing artifact ##{number}" \
+        " (\"#{artifact.title}\")",
+      )
     end
 
     # ============================================================
@@ -2582,6 +2707,7 @@ module GalaxyArtifacts
         list        List artifacts for a session
         view        View a text artifact's content
         refresh     Re-sync artifact from source file
+        show        Show an artifact in Galaxy.app
         open        Open an artifact in native app
         delete      Delete an artifact
         annotation  Manage artifact annotations
@@ -2697,6 +2823,29 @@ module GalaxyArtifacts
 
       OPTIONAL:
         --skip-event            Skip socket event publish
+      HELP
+    end
+
+    private def self.show_show_help
+      puts <<-HELP
+      galaxy-artifacts show - Show an artifact in Galaxy.app
+
+      USAGE:
+        galaxy-artifacts show --ledger-session-id ID NUMBER
+        galaxy-artifacts show --pid PID NUMBER
+
+      Publishes an artifact.show socket event to Galaxy.app,
+      which navigates to the artifact's session, switches to
+      the Artifacts tab, and opens the artifact in its reader.
+      If Galaxy.app doesn't have a reader for the artifact
+      type, it falls back to the macOS default application.
+
+      REQUIRED:
+        NUMBER                  Artifact number
+
+      REQUIRED (one of):
+        --pid PID               Claude Code process ID
+        --ledger-session-id ID  Direct ledger session ID
       HELP
     end
 

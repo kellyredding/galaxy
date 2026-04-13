@@ -438,7 +438,7 @@ describe "CLI artifact commands", tags: "integration" do
           if json_line = line
             parsed = JSON.parse(json_line)
             parsed["event"].as_s
-              .should eq("artifact.refresh")
+              .should eq("artifact.show")
             detail = parsed["detail_data"]
             detail["artifact_number"].as_i
               .should eq(1)
@@ -451,6 +451,113 @@ describe "CLI artifact commands", tags: "integration" do
         File.delete(sock_path.to_s) \
           if File.exists?(sock_path.to_s)
       end
+    end
+  end
+
+  describe "show" do
+    it "publishes artifact.show socket event" do
+      source = create_test_file(
+        "show-test.csv", "data",
+      )
+
+      run_binary([
+        "save", "--ledger-session-id", "1",
+        "--source-path", source,
+        "--title", "Show test",
+        "--artifact-type", "csv",
+        "--mime-type", "text/csv",
+      ])
+
+      # Set up a socket listener to capture the event
+      sock_path = SPEC_GALAXY_DIR / "galaxy.sock"
+      received = Channel(String?).new(1)
+
+      server = UNIXServer.new(sock_path.to_s)
+      spawn do
+        begin
+          client = server.accept
+          line = client.gets
+          received.send(line)
+          client.close
+        rescue
+          received.send(nil)
+        end
+      end
+
+      begin
+        sleep 10.milliseconds
+
+        ledger_bin = SPEC_GALAXY_DIR / "bin" /
+                     "galaxy-ledger"
+        File.write(
+          ledger_bin,
+          "#!/bin/sh\n" \
+          "echo '{\"session_identifiers\":[]}'\n",
+        )
+        File.chmod(ledger_bin, 0o755)
+
+        result = run_binary(
+          [
+            "show", "--ledger-session-id", "1",
+            "1",
+          ],
+          extra_env: {
+            "GALAXY_LEDGER_BIN" => ledger_bin.to_s,
+          },
+        )
+        result[:status].should eq(0)
+        result[:output].should contain(
+          "Showing artifact #1",
+        )
+
+        select
+        when line = received.receive
+          line.should_not be_nil
+          if json_line = line
+            parsed = JSON.parse(json_line)
+            parsed["event"].as_s
+              .should eq("artifact.show")
+            detail = parsed["detail_data"]
+            detail["artifact_number"].as_i
+              .should eq(1)
+          end
+        when timeout(2.seconds)
+          fail "Timed out waiting for socket event"
+        end
+      ensure
+        server.close rescue nil
+        File.delete(sock_path.to_s) \
+          if File.exists?(sock_path.to_s)
+      end
+    end
+
+    it "errors when artifact not found" do
+      result = run_binary([
+        "show", "--ledger-session-id", "1", "99",
+      ])
+
+      result[:status].should_not eq(0)
+      result[:error].should contain("not found")
+    end
+
+    it "errors when no session identifier provided" do
+      result = run_binary(["show", "1"])
+
+      result[:status].should_not eq(0)
+      result[:error].should contain(
+        "--pid or --ledger-session-id is required",
+      )
+    end
+
+    it "errors when artifact number missing" do
+      result = run_binary([
+        "show", "--ledger-session-id", "1",
+      ])
+
+      result[:status].should_not eq(0)
+      result[:error].should contain(
+        "artifact number is required",
+      )
     end
   end
 
