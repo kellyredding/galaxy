@@ -12,62 +12,41 @@ module GalaxyArtifacts
     ---
     name: galaxy:artifact
     description: >-
-      This skill should be used when the user asks about produced documents,
-      wants to see artifacts from the session, asks to "show me that report",
-      "open the CSV", "what have we generated", "list artifacts", or wants
-      to manage session-produced files.
+      This skill should be used when the user mentions artifacts
+      in any way — creating, saving, opening, showing, viewing,
+      refreshing, listing, or referencing session artifacts. Trigger
+      phrases include "save this as an artifact", "create an
+      artifact", "open artifact", "show me that report", "refresh
+      the artifact", "list artifacts", "what artifacts do we have",
+      "pull up that CSV", or any reference to session-produced files.
     ---
 
-    Manage and retrieve session artifacts. Artifacts are documents,
-    data exports, diagrams, images, and other files produced during a
-    session. They are automatically captured when created via the
-    Write tool, or manually registered when created via Bash.
+    Manage session artifacts — documents, data exports, diagrams,
+    images, and other files produced during a session. Artifacts
+    are automatically captured when created via the Write tool,
+    or manually registered when created via Bash.
 
-    ## When This Skill Triggers
+    ## Terminology
 
-    Use when the user asks about produced documents or files:
-    - "Show me that report from earlier"
-    - "What artifacts do we have?"
-    - "Open the CSV we generated"
-    - "List everything we've produced this session"
-    - "Can you pull up that diagram?"
+    When the user says "open", "show", "view", or "pull up" an
+    artifact, they mean **show it in Galaxy.app**. Always use the
+    `show` subcommand for this — never the `open` subcommand.
 
-    ## Listing Artifacts
+    ## Showing Artifacts
 
-    Show all artifacts in the current session:
-
-    ```bash
-    galaxy-artifacts list --pid $LEDGER_PID
-    ```
-
-    Present the results as a clean table to the user with number,
-    type, title, and size. If no artifacts exist, let the user know.
-
-    ## Viewing Artifacts (Text-Based)
-
-    For text-based artifacts (markdown, csv, text, mermaid, data),
-    output content to stdout:
+    Show an artifact in Galaxy.app's reader. This is the primary
+    way users interact with artifacts. Galaxy.app handles all
+    renderable types (markdown, source, CSV, HTML, images, etc.)
+    and falls back to the macOS default app for unsupported types.
 
     ```bash
-    galaxy-artifacts view --pid $LEDGER_PID N
+    galaxy-artifacts show --pid $LEDGER_PID N
     ```
 
-    Good for when the user wants to reference content inline or when
-    you need to read artifact content to answer a question about it.
+    Use this whenever the user says "open", "show", "view",
+    "pull up", or "show me" an artifact.
 
-    ## Opening Artifacts (Any Type)
-
-    Opens in the appropriate native application (Preview for PDFs/
-    images, default browser for HTML, configured editor for text):
-
-    ```bash
-    galaxy-artifacts open --pid $LEDGER_PID N
-    ```
-
-    Use this when the user says "open it" or "show me" and the
-    artifact is binary (PDF, image) or they'd prefer a GUI view.
-
-    ## Manual Save (Bash-Created Files Only)
+    ## Creating Artifacts
 
     Files created via the Write tool are captured automatically —
     do NOT manually save those. Only use manual save for files
@@ -81,9 +60,53 @@ module GalaxyArtifacts
       --description "Context about what this artifact contains"
     ```
 
-    The source file is copied to artifact storage. The original is
-    left in place. If the same source path was already saved in
-    this session, the existing artifact is updated (not duplicated).
+    **Always show after creating.** Parse the artifact number
+    from the save output (e.g., "Artifact #3 saved"), then:
+
+    ```bash
+    galaxy-artifacts show --pid $LEDGER_PID N
+    ```
+
+    The source file is copied to artifact storage. The original
+    is left in place. If the same source path was already saved
+    in this session, the existing artifact is updated (not
+    duplicated).
+
+    ## Refreshing Artifacts
+
+    Re-sync an artifact from its original source file and show
+    it in Galaxy.app. Use when the source file has been modified
+    and the stored copy is stale:
+
+    ```bash
+    galaxy-artifacts refresh --pid $LEDGER_PID N
+    ```
+
+    This re-reads the source, updates the stored copy if content
+    changed, and publishes a socket event so Galaxy.app opens
+    the refreshed artifact automatically.
+
+    ## Listing Artifacts
+
+    Show all artifacts in the current session:
+
+    ```bash
+    galaxy-artifacts list --pid $LEDGER_PID
+    ```
+
+    Present the results as a clean table to the user with number,
+    type, title, and size. If no artifacts exist, let the user
+    know.
+
+    ## Reading Artifact Content (Agent Use)
+
+    Read text content into your context so you can answer
+    questions about it. This is for agent use — not for
+    presenting to the user (use `show` for that):
+
+    ```bash
+    galaxy-artifacts view --pid $LEDGER_PID N
+    ```
 
     ## Deleting Artifacts
 
@@ -94,21 +117,23 @@ module GalaxyArtifacts
     ## Referencing Artifacts
 
     When discussing prior work, reference artifacts by number:
-    "Per artifact #2 (User Data Export), the revenue figures show..."
+    "Per artifact #2 (User Data Export), the revenue figures
+    show..."
 
-    If artifact content isn't in your context, use `view` to load
-    it before responding.
+    If artifact content isn't in your context, use `view` to
+    load it before responding.
 
     ## Important Notes
 
     - Artifacts are session-scoped — persist across /clear and
       /compact within the same session
-    - Stored on filesystem with metadata in the artifacts database
+    - Stored on filesystem with metadata in the artifacts
+      database
     - Original file always left in place — storage is a copy
-    - Binary artifacts (PDF, images) can only be opened, not viewed
-      inline — use `open` for those
-    - Auto-captured artifacts get a generated title from filename;
-      manually saved artifacts should have descriptive titles
+    - Auto-captured artifacts get a generated title from
+      filename; manually saved artifacts should have
+      descriptive titles
+    - Creating an artifact always implies showing it afterward
     SKILL
 
     ARTIFACTS_SKILLS = {
