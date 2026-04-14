@@ -637,6 +637,28 @@ private func buildFullHTML(
         margin-left: -11px;
     }
 
+    /* Table row annotation support */
+    tr.md-block.annotation-highlight td,
+    tr.md-block.annotation-highlight th {
+        background-color: rgba(88, 166, 255, 0.12);
+    }
+    tr.md-block.annotation-highlight td:first-child,
+    tr.md-block.annotation-highlight th:first-child {
+        border-left: 3px solid
+            rgba(88, 166, 255, 0.6);
+    }
+    tr.md-block.annotation-expanded-highlight td,
+    tr.md-block.annotation-expanded-highlight th {
+        background-color: rgba(210, 153, 34, 0.10);
+    }
+    tr.md-block.annotation-expanded-highlight
+        td:first-child,
+    tr.md-block.annotation-expanded-highlight
+        th:first-child {
+        border-left: 3px solid
+            rgba(210, 153, 34, 0.6);
+    }
+
     .mermaid {
         text-align: center;
         margin-bottom: 16px;
@@ -2022,9 +2044,24 @@ struct LineAnchoredHTMLVisitor: MarkupVisitor {
             + "\(linesDivs)</pre>\n"
     }
 
-    func visitBlockQuote(_ blockQuote: BlockQuote) -> String {
+    func visitBlockQuote(
+        _ blockQuote: BlockQuote
+    ) -> String {
+        // Children (paragraphs, lists, etc.) are
+        // already wrapped as their own md-blocks by
+        // their respective visit methods. The outer
+        // <blockquote> provides visual styling but
+        // is NOT an md-block — the children inside
+        // are the selectable annotation units.
         let inner = visitChildren(blockQuote)
-        return wrapBlock("blockquote", markup: blockQuote, inner: inner)
+        let start =
+            blockQuote.range?.lowerBound.line ?? 0
+        let end =
+            blockQuote.range?.upperBound.line ?? 0
+        return "<blockquote"
+            + " data-line-start=\"\(start)\""
+            + " data-line-end=\"\(end)\">"
+            + "\(inner)</blockquote>\n"
     }
 
     func visitOrderedList(_ orderedList: OrderedList) -> String {
@@ -2053,26 +2090,35 @@ struct LineAnchoredHTMLVisitor: MarkupVisitor {
         return wrapBlock("div", markup: html, inner: html.rawHTML)
     }
 
-    mutating func visitTable(_ table: Markdown.Table) -> String {
+    mutating func visitTable(
+        _ table: Markdown.Table
+    ) -> String {
         insideTable = true
 
+        // Each row becomes its own md-block so it
+        // can be individually annotated. The outer
+        // <table> wrapper provides visual styling
+        // but is NOT an md-block.
         var html = "<table>\n"
 
-        // Header row with line attributes
+        // Header row as its own md-block <tr>
         let headAttrs = lineAttrsString(table.head)
         html += "<thead><tr\(headAttrs)>"
         for cell in table.head.cells {
-            html += "<th>\(visitChildren(cell))</th>"
+            html += "<th>"
+                + "\(visitChildren(cell))</th>"
         }
         html += "</tr></thead>\n"
 
-        // Body rows with line attributes
+        // Body rows — each as its own md-block <tr>
         html += "<tbody>\n"
         for row in table.body.rows {
             let rowAttrs = lineAttrsString(row)
             html += "<tr\(rowAttrs)>"
             for cell in row.cells {
-                html += "<td>\(visitChildren(cell))</td>"
+                html += "<td>"
+                    + "\(visitChildren(cell))"
+                    + "</td>"
             }
             html += "</tr>\n"
         }
@@ -2081,7 +2127,17 @@ struct LineAnchoredHTMLVisitor: MarkupVisitor {
 
         insideTable = false
 
-        return wrapBlock("div", markup: table, inner: html)
+        // Outer div is NOT an md-block — the
+        // individual <tr> rows inside are the
+        // selectable annotation units.
+        let start =
+            table.range?.lowerBound.line ?? 0
+        let end =
+            table.range?.upperBound.line ?? 0
+        return "<div class=\"table-wrapper\""
+            + " data-line-start=\"\(start)\""
+            + " data-line-end=\"\(end)\">"
+            + "\(html)</div>\n"
     }
 
     // MARK: - Inline Elements
