@@ -386,6 +386,7 @@ class SessionManager: ObservableObject {
         guard !session.hasExited else { return }
 
         let isBusy = session.isInTurn
+        let agentCount = session.runningAgentCount
 
         let proceed: () -> Void = { [weak self] in
             self?.stopSession(sessionId: sessionId)
@@ -423,6 +424,14 @@ class SessionManager: ObservableObject {
                         "Claude's current response "
                             + "will be interrupted."
                     )
+                } else if agentCount > 0 {
+                    showConfirm(
+                        "Stop session with running "
+                            + "agents?",
+                        "\(agentCount) background "
+                            + "agent(s) will be "
+                            + "terminated."
+                    )
                 } else {
                     proceed()
                 }
@@ -433,6 +442,14 @@ class SessionManager: ObservableObject {
                     + "is responding?",
                 "Claude's current response "
                     + "will be interrupted."
+            )
+        } else if agentCount > 0 {
+            showConfirm(
+                "Stop session with running "
+                    + "agents?",
+                "\(agentCount) background "
+                    + "agent(s) will be "
+                    + "terminated."
             )
         } else {
             proceed()
