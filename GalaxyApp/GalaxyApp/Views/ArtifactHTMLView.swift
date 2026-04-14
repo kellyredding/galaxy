@@ -208,6 +208,135 @@ private let blockIndexDOMWalkJS: String = """
 
 // MARK: - HTML Wrapping
 
+// MARK: - Theme-Aware Base Stylesheet
+
+/// Provides sensible dark/light defaults for common
+/// HTML elements so artifacts don't need to be
+/// theme-aware. Uses CSS vars from annotationCSSVars
+/// plus additional vars for borders, links, and HRs.
+/// Injected AFTER artifact styles so cascade order
+/// wins for equal-specificity selectors.
+private func htmlBaseCSS(isDark: Bool) -> String {
+    let blockquoteBorder = isDark
+        ? "#555" : "#ddd"
+    let tableBorder = isDark
+        ? "#444" : "#ddd"
+    let linkColor = isDark
+        ? "#58a6ff" : "#0969da"
+    let hrColor = isDark
+        ? "#444" : "#d0d7de"
+
+    return """
+    /* Galaxy theme-aware base styles */
+    :root {
+        --blockquote-border: \(blockquoteBorder);
+        --table-border: \(tableBorder);
+        --link-color: \(linkColor);
+        --hr-color: \(hrColor);
+    }
+    html, body {
+        background: var(--bg);
+        color: var(--fg);
+        font-family: -apple-system, BlinkMacSystemFont,
+            "Segoe UI", Helvetica, Arial, sans-serif;
+        font-size: 14px;
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+    }
+    h1, h2, h3, h4, h5, h6 {
+        margin-top: 24px;
+        margin-bottom: 16px;
+        font-weight: 600;
+        line-height: 1.25;
+        color: var(--fg);
+    }
+    h1 {
+        font-size: 2em;
+        padding-bottom: 0.3em;
+        border-bottom: 1px solid var(--hr-color);
+    }
+    h2 {
+        font-size: 1.5em;
+        padding-bottom: 0.3em;
+        border-bottom: 1px solid var(--hr-color);
+    }
+    h3 { font-size: 1.25em; }
+    h4 { font-size: 1em; }
+    h5 { font-size: 0.875em; }
+    h6 {
+        font-size: 0.85em;
+        color: var(--blockquote-fg);
+    }
+    p { margin-top: 0; margin-bottom: 16px; }
+    a {
+        color: var(--link-color);
+        text-decoration: none;
+    }
+    a:hover { text-decoration: underline; }
+    code {
+        font-family: "SF Mono", "Menlo", "Monaco",
+            "Courier New", monospace;
+        font-size: 85%;
+        background: var(--code-bg);
+        border-radius: 6px;
+        padding: 0.2em 0.4em;
+    }
+    pre {
+        background: var(--code-bg);
+        border: 1px solid var(--code-border);
+        border-radius: 6px;
+        padding: 16px;
+        overflow-x: auto;
+        margin-top: 0;
+        margin-bottom: 16px;
+        line-height: 1.45;
+    }
+    pre code {
+        background: none;
+        padding: 0;
+        font-size: 85%;
+        border-radius: 0;
+    }
+    blockquote {
+        margin: 0 0 16px 0;
+        padding: 0 1em;
+        color: var(--blockquote-fg);
+        border-left: 0.25em solid
+            var(--blockquote-border);
+    }
+    ul, ol {
+        margin-top: 0;
+        margin-bottom: 16px;
+        padding-left: 2em;
+    }
+    li + li { margin-top: 0.25em; }
+    table {
+        border-spacing: 0;
+        border-collapse: collapse;
+        margin-top: 0;
+        margin-bottom: 16px;
+        width: auto;
+    }
+    th, td {
+        padding: 6px 13px;
+        border: 1px solid var(--table-border);
+    }
+    th {
+        font-weight: 600;
+        background: var(--table-header-bg);
+    }
+    hr {
+        height: 0.25em;
+        padding: 0;
+        margin: 24px 0;
+        background-color: var(--hr-color);
+        border: 0;
+        border-radius: 2px;
+    }
+    img { max-width: 100%; height: auto; }
+    """
+}
+
 /// If the HTML already has a full document structure,
 /// inject our annotation infrastructure. Otherwise,
 /// wrap it in a minimal themed shell.
@@ -230,9 +359,11 @@ private func wrapHTML(
         // </head>, and scripts before </body>
         var html = content
 
+        let baseCSS = htmlBaseCSS(isDark: isDark)
         let styleBlock = """
         <style>
         :root { \(cssVars) }
+        \(baseCSS)
         /* Code block line-level annotation support */
         .code-block-wrapper {
             margin: 0;
@@ -338,6 +469,7 @@ private func wrapHTML(
     }
 
     // Otherwise wrap in a themed shell
+    let baseCSS = htmlBaseCSS(isDark: isDark)
     return """
     <!DOCTYPE html>
     <html>
@@ -350,21 +482,8 @@ private func wrapHTML(
     :root {
         \(cssVars)
     }
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body {
-        background: \(bgColor);
-        color: \(textColor);
-        font-family: -apple-system, BlinkMacSystemFont,
-            'SF Pro Text', 'Helvetica Neue', sans-serif;
-        font-size: 14px;
-        line-height: 1.5;
-        -webkit-font-smoothing: antialiased;
-    }
-    .html-container {
-        padding: 16px;
-    }
-    img { max-width: 100%; height: auto; }
-    a { color: \(isDark ? "#58a6ff" : "#0969da"); }
+    \(baseCSS)
+    body { padding: 16px 24px; margin: 0; }
     /* Code block line-level annotation support */
     .code-block-wrapper {
         margin: 0;
@@ -443,9 +562,7 @@ private func wrapHTML(
     </style>
     </head>
     <body>
-    <div class="html-container">
     \(content)
-    </div>
     <script>
     \(annotationManagerJS)
     </script>
