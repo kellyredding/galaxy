@@ -189,6 +189,11 @@ struct CollapsedSessionRow: View {
 
             // Status dot
             SessionStatusDot(session: session)
+                .overlay(alignment: .topTrailing) {
+                    AgentCountSuperscript(
+                        count: session.runningAgentCount
+                    )
+                }
         }
         .frame(width: 32, height: rowHeight)
         .background(

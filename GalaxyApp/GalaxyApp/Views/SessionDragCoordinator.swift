@@ -1,13 +1,28 @@
 import Foundation
 import SwiftUI
 
+/// High-frequency drag preview position, observed only by the preview overlay.
+/// Separated from SessionDragCoordinator so that per-frame Y offset updates
+/// don't trigger re-evaluation of the entire sidebar body and all session rows.
+class DragPreviewPosition: ObservableObject {
+    @Published var offsetY: CGFloat = 0
+}
+
 /// Manages drag state for session reordering in the sidebar.
 /// Tracks the dragged session, calculates swap thresholds, and triggers array swaps.
+///
+/// Low-frequency @Published properties live here (isDragging, draggedSessionId,
+/// currentArrayIndex) — they change at drag start/end and on row swaps.
+/// The high-frequency offsetY lives in DragPreviewPosition so only the
+/// preview overlay re-renders on every mouse frame.
 class SessionDragCoordinator: ObservableObject {
     @Published var isDragging: Bool = false
     @Published var draggedSessionId: UUID?
-    @Published var dragOffsetY: CGFloat = 0          // Preview Y offset from original position
     @Published var currentArrayIndex: Int = 0        // Current position in array (updates as swaps happen)
+
+    /// High-frequency preview position — not @Published here to avoid
+    /// triggering sidebar-wide re-renders on every mouse frame.
+    let previewPosition = DragPreviewPosition()
 
     var dragStartY: CGFloat = 0                      // Screen Y at drag start
     var dragStartIndex: Int = 0                      // Original array index
@@ -43,7 +58,7 @@ class SessionDragCoordinator: ObservableObject {
         dragStartY = startY
         dragStartIndex = index
         currentArrayIndex = index
-        dragOffsetY = 0
+        previewPosition.offsetY = 0
         autoScrollDirection = 0
     }
 
@@ -98,7 +113,7 @@ class SessionDragCoordinator: ObservableObject {
         let minOffset = -CGFloat(dragStartIndex) * rowHeight  // Would put preview at top (index 0)
         let maxOffset = CGFloat(totalSessionCount - 1 - dragStartIndex) * rowHeight  // Would put preview at bottom
 
-        dragOffsetY = max(minOffset, min(maxOffset, mouseDelta))
+        previewPosition.offsetY = max(minOffset, min(maxOffset, mouseDelta))
 
         // Check for auto-scroll based on mouse position relative to sidebar bounds
         updateAutoScroll(mouseScreenY: currentY)
@@ -170,13 +185,13 @@ class SessionDragCoordinator: ObservableObject {
         } else {
             dragStartY += rowHeight
         }
-        // Note: Normal mouseDragged → updateDrag() calls will handle recalculating dragOffsetY
+        // Note: Normal mouseDragged → updateDrag() calls will handle recalculating previewPosition.offsetY
     }
 
     func endDrag() {
         isDragging = false
         draggedSessionId = nil
-        dragOffsetY = 0
+        previewPosition.offsetY = 0
         currentArrayIndex = 0
         dragStartIndex = 0
         dragStartY = 0

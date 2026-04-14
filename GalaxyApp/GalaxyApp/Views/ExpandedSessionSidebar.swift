@@ -59,40 +59,26 @@ struct ExpandedSessionSidebar: View {
                         }
                         .environmentObject(dragCoordinator)  // Inject for SessionRowDragHandle
 
-                        // Drag preview - inside scroll content, positioned with offset
-                        // APPROACH 2: Position based on dragStartIndex (fixed) + mouse offset
-                        // This decouples preview position from array swaps for smooth dragging
+                        // Drag preview — isolated into its own view so the
+                        // high-frequency offsetY updates only re-render
+                        // the preview, not the entire sidebar.
                         if dragCoordinator.isDragging,
                            let draggedId = dragCoordinator.draggedSessionId,
                            let session = sessionManager.sessions.first(where: { $0.id == draggedId }) {
 
-                            // Use currentArrayIndex for rowIndex display, but position based on dragStartIndex
-                            let displayIndex = dragCoordinator.currentArrayIndex
-
-                            SessionRow(
+                            DragPreviewOverlay(
                                 session: session,
                                 isSelected: session.id == sessionManager.activeSessionId,
                                 isWindowFocused: sessionManager.isWindowFocused,
                                 isOnTerminalTab: sessionManager.activeTab == .terminal,
-                                onStop: {},
-                                onClose: {},
-                                isPlaceholder: false,
-                                rowIndex: displayIndex,
-                                showDragHandle: true,
-                                isDragging: true,
+                                displayIndex: dragCoordinator.currentArrayIndex,
+                                dragStartIndex: dragCoordinator.dragStartIndex,
+                                rowHeight: rowHeight,
                                 statusInfo: statusLineService.statusInfo[session.id],
-                                sidebarWidth: sidebarWidth
+                                sidebarWidth: sidebarWidth,
+                                previewPosition: dragCoordinator.previewPosition
                             )
-                            .environmentObject(dragCoordinator)  // Inject for SessionRowDragHandle
-                            .background(Color(NSColor.windowBackgroundColor))
-                            .overlay(
-                                Rectangle()
-                                    .stroke(Color.secondary.opacity(0.5), lineWidth: 1)
-                            )
-                            // Position preview at: startPosition + mouseOffset (independent of swaps)
-                            .offset(y: CGFloat(dragCoordinator.dragStartIndex) * rowHeight + dragCoordinator.dragOffsetY)
-                            .zIndex(1000)  // Above all other content
-                            .allowsHitTesting(false)
+                            .environmentObject(dragCoordinator)
                         }
                     }
                 }
@@ -142,5 +128,53 @@ struct ExpandedSessionSidebar: View {
                 statusLineService.refreshSessions(sessionManager.sessions)
             }
         }
+    }
+}
+
+// MARK: - Drag Preview Overlay
+
+/// Floating preview row shown during drag-to-reorder.
+/// Observes DragPreviewPosition (high-frequency offsetY) independently
+/// so per-frame mouse updates only re-render this single view —
+/// not the entire sidebar body and all session rows.
+struct DragPreviewOverlay: View {
+    @ObservedObject var session: Session
+    let isSelected: Bool
+    let isWindowFocused: Bool
+    let isOnTerminalTab: Bool
+    let displayIndex: Int
+    let dragStartIndex: Int
+    let rowHeight: CGFloat
+    let statusInfo: StatusLineService.SessionStatusInfo?
+    let sidebarWidth: CGFloat
+
+    @ObservedObject var previewPosition: DragPreviewPosition
+
+    var body: some View {
+        SessionRow(
+            session: session,
+            isSelected: isSelected,
+            isWindowFocused: isWindowFocused,
+            isOnTerminalTab: isOnTerminalTab,
+            onStop: {},
+            onClose: {},
+            isPlaceholder: false,
+            rowIndex: displayIndex,
+            showDragHandle: true,
+            isDragging: true,
+            statusInfo: statusInfo,
+            sidebarWidth: sidebarWidth
+        )
+        .background(Color(NSColor.windowBackgroundColor))
+        .overlay(
+            Rectangle()
+                .stroke(Color.secondary.opacity(0.5), lineWidth: 1)
+        )
+        .offset(
+            y: CGFloat(dragStartIndex) * rowHeight
+                + previewPosition.offsetY
+        )
+        .zIndex(1000)
+        .allowsHitTesting(false)
     }
 }

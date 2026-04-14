@@ -150,6 +150,11 @@ struct SessionRow: View {
 
             // Status indicator (pulses opacity when session is busy)
             SessionStatusDot(session: session)
+                .overlay(alignment: .topTrailing) {
+                    AgentCountSuperscript(
+                        count: session.runningAgentCount
+                    )
+                }
 
             // Session info with bell indicator overlay
             ZStack(alignment: .topLeading) {

@@ -27,20 +27,6 @@ struct SessionStatusDot: View {
             )
             .frame(width: 8, height: 8)
             .opacity(isPulsePhase ? 0.3 : 1.0)
-            .overlay(alignment: .topTrailing) {
-                if session.runningAgentCount > 0 {
-                    Text("\(session.runningAgentCount)")
-                        .font(
-                            .system(
-                                size: 12,
-                                weight: .bold,
-                                design: .monospaced
-                            )
-                        )
-                        .foregroundColor(.green)
-                        .offset(x: 6, y: -12)
-                }
-            }
             .onChange(of: session.isInTurn) { _, newValue in
                 if newValue {
                     withAnimation(
@@ -62,6 +48,28 @@ struct SessionStatusDot: View {
             return .secondary
         } else {
             return .green
+        }
+    }
+}
+
+/// Lightweight superscript showing the running agent count.
+/// Accepts a plain Int so it doesn't carry an @ObservedObject —
+/// the parent view is responsible for observing session state.
+struct AgentCountSuperscript: View {
+    let count: Int
+
+    var body: some View {
+        if count > 0 {
+            Text("\(count)")
+                .font(
+                    .system(
+                        size: 12,
+                        weight: .bold,
+                        design: .monospaced
+                    )
+                )
+                .foregroundColor(.green)
+                .offset(x: 6, y: -12)
         }
     }
 }
