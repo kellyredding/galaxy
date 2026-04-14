@@ -607,6 +607,36 @@ private func buildFullHTML(
         font-size: 85%;
         border-radius: 0;
     }
+
+    /* Code block line-level annotation support */
+    .code-line {
+        margin: 0;
+        padding: 0;
+        line-height: 1.45;
+    }
+    .code-line code {
+        display: inline;
+        background: none;
+        padding: 0;
+        border-radius: 0;
+        font-size: 85%;
+        white-space: pre;
+    }
+    .code-line.annotation-highlight {
+        background-color: rgba(88, 166, 255, 0.12);
+        border-left: 3px solid
+            rgba(88, 166, 255, 0.6);
+        padding-left: 8px;
+        margin-left: -11px;
+    }
+    .code-line.annotation-expanded-highlight {
+        background-color: rgba(210, 153, 34, 0.10);
+        border-left: 3px solid
+            rgba(210, 153, 34, 0.6);
+        padding-left: 8px;
+        margin-left: -11px;
+    }
+
     .mermaid {
         text-align: center;
         margin-bottom: 16px;
@@ -1921,6 +1951,7 @@ struct LineAnchoredHTMLVisitor: MarkupVisitor {
 
     func visitCodeBlock(_ codeBlock: CodeBlock) -> String {
         // Mermaid code blocks render as diagrams
+        // (not line-annotatable)
         if codeBlock.language?.lowercased()
             == "mermaid"
         {
@@ -1933,15 +1964,62 @@ struct LineAnchoredHTMLVisitor: MarkupVisitor {
             )
         }
 
-        let escaped = escapeHTML(codeBlock.code)
         let langAttr: String
-        if let lang = codeBlock.language, !lang.isEmpty {
-            langAttr = " class=\"language-\(escapeHTML(lang))\""
+        if let lang = codeBlock.language,
+           !lang.isEmpty
+        {
+            langAttr = " class=\"language-"
+                + "\(escapeHTML(lang))\""
         } else {
             langAttr = ""
         }
-        let inner = "<pre><code\(langAttr)>\(escaped)</code></pre>"
-        return wrapBlock("div", markup: codeBlock, inner: inner)
+
+        // Content lines start after the opening
+        // fence (```). Each line becomes its own
+        // md-block so it can be individually
+        // selected and annotated.
+        let fenceStart =
+            codeBlock.range?.lowerBound.line ?? 0
+        let contentStartLine = fenceStart + 1
+
+        var lines = codeBlock.code.split(
+            separator: "\n",
+            omittingEmptySubsequences: false
+        )
+        // Drop trailing empty line from fence
+        // parsing
+        if let last = lines.last, last.isEmpty {
+            lines = lines.dropLast()
+        }
+
+        var linesDivs = ""
+        for (idx, line) in lines.enumerated() {
+            let lineNum = contentStartLine + idx
+            let raw = String(line)
+            // Empty lines need &nbsp; so the div
+            // maintains its line height instead of
+            // collapsing to zero.
+            let content = raw.isEmpty
+                ? "&nbsp;"
+                : escapeHTML(raw)
+            linesDivs += "<div class=\"md-block"
+                + " code-line\""
+                + " data-line-start=\"\(lineNum)\""
+                + " data-line-end=\"\(lineNum)\">"
+                + "<code\(langAttr)>\(content)"
+                + "</code></div>"
+        }
+
+        // Outer <pre> provides visual code block
+        // styling but is NOT an md-block — the
+        // individual code-line divs inside are
+        // the selectable annotation units.
+        let fenceEnd =
+            codeBlock.range?.upperBound.line ?? 0
+        return "<pre class=\"code-block-wrapper\""
+            + " data-line-start=\"\(fenceStart)\""
+            + " data-line-end=\"\(fenceEnd)\">"
+            + "\(linesDivs)</pre>\n"
     }
 
     func visitBlockQuote(_ blockQuote: BlockQuote) -> String {
