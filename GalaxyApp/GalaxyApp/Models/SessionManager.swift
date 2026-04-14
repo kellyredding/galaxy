@@ -379,80 +379,142 @@ class SessionManager: ObservableObject {
         NSLog("SessionManager: Session marked as exited, keeping in sidebar")
     }
 
+    // MARK: - Stop Warning Reasons
+
+    /// Reasons a session might need confirmation before stopping.
+    /// Priority order: unsavedScrollback > inTurn > runningAgents.
+    enum StopWarningReason {
+        case unsavedScrollback
+        case inTurn
+        case runningAgents(count: Int)
+
+        var message: String {
+            switch self {
+            case .unsavedScrollback:
+                return "Stop session with unsaved "
+                    + "scrollback notes?"
+            case .inTurn:
+                return "Stop session while Claude "
+                    + "is responding?"
+            case .runningAgents:
+                return "Stop session with running "
+                    + "agents?"
+            }
+        }
+
+        var detail: String {
+            switch self {
+            case .unsavedScrollback:
+                return "Unsaved notes will be lost "
+                    + "when the session stops."
+            case .inTurn:
+                return "Claude's current response "
+                    + "will be interrupted."
+            case .runningAgents(let count):
+                return "\(count) background "
+                    + "agent(s) will be "
+                    + "terminated."
+            }
+        }
+    }
+
+    /// Check if a session needs confirmation before stopping.
+    /// Calls back with the highest-priority reason, or nil
+    /// if safe to stop without confirmation.
+    func stopWarningReason(
+        for session: Session,
+        completion: @escaping (StopWarningReason?) -> Void
+    ) {
+        guard !session.hasExited else {
+            completion(nil)
+            return
+        }
+
+        let isBusy = session.isInTurn
+        let agentCount = session.runningAgentCount
+
+        if let checker = session.checkScrollbackUnsavedWork {
+            checker { hasWork in
+                if hasWork {
+                    completion(.unsavedScrollback)
+                } else if isBusy {
+                    completion(.inTurn)
+                } else if agentCount > 0 {
+                    completion(
+                        .runningAgents(count: agentCount)
+                    )
+                } else {
+                    completion(nil)
+                }
+            }
+        } else if isBusy {
+            completion(.inTurn)
+        } else if agentCount > 0 {
+            completion(.runningAgents(count: agentCount))
+        } else {
+            completion(nil)
+        }
+    }
+
+    /// Check all live sessions for stop warnings. Calls back
+    /// with a list of sessions that need confirmation.
+    func quitWarnings(
+        completion: @escaping (
+            [(Session, StopWarningReason)]
+        ) -> Void
+    ) {
+        let liveSessions = sessions.filter {
+            !$0.hasExited
+        }
+        guard !liveSessions.isEmpty else {
+            completion([])
+            return
+        }
+
+        let group = DispatchGroup()
+        var warnings: [(Session, StopWarningReason)] = []
+        let lock = NSLock()
+
+        for session in liveSessions {
+            group.enter()
+            stopWarningReason(for: session) { reason in
+                if let reason = reason {
+                    lock.lock()
+                    warnings.append((session, reason))
+                    lock.unlock()
+                }
+                group.leave()
+            }
+        }
+
+        group.notify(queue: .main) {
+            completion(warnings)
+        }
+    }
+
     func confirmAndStopSession(sessionId: UUID) {
         guard let session = sessions.first(
             where: { $0.id == sessionId }
         ) else { return }
-        guard !session.hasExited else { return }
-
-        let isBusy = session.isInTurn
-        let agentCount = session.runningAgentCount
 
         let proceed: () -> Void = { [weak self] in
             self?.stopSession(sessionId: sessionId)
         }
 
-        let showConfirm = {
-            (message: String, detail: String) in
+        stopWarningReason(for: session) { reason in
+            guard let reason = reason else {
+                proceed()
+                return
+            }
             guard let window = NSApp.keyWindow
             else { return }
             SheetAlert.confirm(
                 in: window,
-                message: message,
-                detail: detail,
+                message: reason.message,
+                detail: reason.detail,
                 confirm: "Stop",
                 onConfirm: proceed
             )
-        }
-
-        // Check scrollback unsaved work (async JS query).
-        // Scrollback message takes priority over busy since
-        // it's more specific — stopping also kills the turn.
-        if let checker = session.checkScrollbackUnsavedWork {
-            checker { hasWork in
-                if hasWork {
-                    showConfirm(
-                        "Stop session with unsaved "
-                            + "scrollback notes?",
-                        "Unsaved notes will be lost "
-                            + "when the session stops."
-                    )
-                } else if isBusy {
-                    showConfirm(
-                        "Stop session while Claude "
-                            + "is responding?",
-                        "Claude's current response "
-                            + "will be interrupted."
-                    )
-                } else if agentCount > 0 {
-                    showConfirm(
-                        "Stop session with running "
-                            + "agents?",
-                        "\(agentCount) background "
-                            + "agent(s) will be "
-                            + "terminated."
-                    )
-                } else {
-                    proceed()
-                }
-            }
-        } else if isBusy {
-            showConfirm(
-                "Stop session while Claude "
-                    + "is responding?",
-                "Claude's current response "
-                    + "will be interrupted."
-            )
-        } else if agentCount > 0 {
-            showConfirm(
-                "Stop session with running "
-                    + "agents?",
-                "\(agentCount) background "
-                    + "agent(s) will be "
-                    + "terminated."
-            )
-        } else {
-            proceed()
         }
     }
 

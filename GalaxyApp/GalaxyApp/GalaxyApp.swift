@@ -129,6 +129,70 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSLog("AppDelegate: Application launched")
     }
 
+    func applicationShouldTerminate(
+        _ sender: NSApplication
+    ) -> NSApplication.TerminateReply {
+        let sm = SessionManager.shared
+
+        sm.quitWarnings { warnings in
+            guard !warnings.isEmpty else {
+                sender.reply(
+                    toApplicationShouldTerminate: true
+                )
+                return
+            }
+
+            let message = "Quit with active sessions?"
+            let details = warnings.map {
+                session, reason in
+                let reasonText: String
+                switch reason {
+                case .unsavedScrollback:
+                    reasonText =
+                        "has unsaved scrollback notes"
+                case .inTurn:
+                    reasonText =
+                        "Claude is responding"
+                case .runningAgents(let count):
+                    reasonText =
+                        "\(count) agent(s) running"
+                }
+                return "• \(session.displayName): "
+                    + reasonText
+            }.joined(separator: "\n")
+
+            guard let window =
+                NSApp.keyWindow ?? NSApp.mainWindow
+            else {
+                sender.reply(
+                    toApplicationShouldTerminate: true
+                )
+                return
+            }
+
+            SheetAlert.confirm(
+                in: window,
+                message: message,
+                detail: details,
+                confirm: "Quit",
+                onConfirm: {
+                    sender.reply(
+                        toApplicationShouldTerminate:
+                            true
+                    )
+                },
+                onCancel: {
+                    sender.reply(
+                        toApplicationShouldTerminate:
+                            false
+                    )
+                }
+            )
+        }
+
+        return .terminateLater
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         NSLog("AppDelegate: Application will terminate")
         NSApp.dockTile.badgeLabel = nil
