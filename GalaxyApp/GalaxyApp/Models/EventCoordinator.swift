@@ -466,11 +466,11 @@ final class EventCoordinator {
             }
         }
 
-        // Artifact show: switch session + tab and
-        // queue auto-open. Unlike snapshot:created
-        // (conservative — active session only), show
-        // is an explicit user action so we switch to
-        // the correct session even if it's not active.
+        // Artifact show: switch tab and queue auto-open,
+        // but only for the active session. Matches the
+        // conservative approach of snapshot:created —
+        // don't yank the user away from a different
+        // session they're viewing.
         if envelope.event == "artifact.show",
            let number = envelope.detailValue(
                "artifact_number", as: Int64.self
@@ -480,22 +480,18 @@ final class EventCoordinator {
             DispatchQueue.main.async { [weak self] in
                 guard let sm = self?.sessionManager
                 else { return }
-                guard let appSessionId =
+                let appSessionId =
                     self?.ledgerSessionIdCache[
                         envelope.ledgerSessionId
                     ]
-                else { return }
 
-                if appSessionId
-                    != sm.activeSessionId
+                if let appSessionId,
+                   appSessionId == sm.activeSessionId
                 {
-                    sm.switchTo(
-                        sessionId: appSessionId
-                    )
+                    sm.activeTab = .artifacts
+                    sm.pendingArtifactShow
+                        = artNumber
                 }
-                sm.activeTab = .artifacts
-                sm.pendingArtifactShow
-                    = artNumber
             }
             return
         }
