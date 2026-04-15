@@ -164,11 +164,100 @@ module GalaxyLedger
     Keep this fast and minimal.
     SKILL
 
+    TIMELINE_MARKER_SKILL = <<-'SKILL'
+    ---
+    name: galaxy:timeline-marker
+    description: >-
+      Add a timeline marker to the current session. Use
+      proactively when transitioning between work phases,
+      starting iterations, or entering sub-phases. Also use
+      when the user asks to "add a marker", "mark this
+      phase", "mark this point", or similar. Examples:
+      "Implementation Phase", "Review Iteration 2",
+      "Pitch Phase — Round 2", "Security Audit".
+    ---
+
+    Add a point-in-time marker to the session timeline.
+    Markers are visual break points that label phases,
+    iterations, and transitions in the session's work.
+
+    ## When to Add Markers
+
+    Add markers **proactively** when you detect:
+    - **Phase transitions**: moving from planning to
+      implementation, from implementation to review, etc.
+    - **Iteration boundaries**: starting a second pass,
+      re-running a review cycle, retrying after failure
+    - **Sub-phase entry**: starting a security review
+      within an implementation phase, switching to spec
+      writing within a feature build
+    - **Significant context shifts**: switching to a
+      different feature area, pivoting approach
+
+    Also add markers when the user explicitly requests one.
+
+    ## How to Add a Marker
+
+    Run via Bash (replace `$LEDGER_PID` with the Ledger PID
+    from your session context):
+
+    ```bash
+    galaxy-timeline marker "TITLE" --pid $LEDGER_PID
+    ```
+
+    The title should be succinct but independently
+    identifiable — someone scanning the timeline should
+    understand what phase or moment it represents without
+    additional context.
+
+    ### Good Titles
+    - "Implementation Phase"
+    - "Review Iteration 2"
+    - "Pitch Phase — Round 2"
+    - "Security Audit"
+    - "Spec Writing"
+    - "Plan Revisions"
+
+    ### Bad Titles
+    - "Starting" (too vague)
+    - "Now we're going to review the code" (too verbose)
+    - "Phase 2" (not independently identifiable)
+
+    ## Options
+
+    Override the source to indicate what placed the marker:
+
+    ```bash
+    galaxy-timeline marker "Title" \
+      --pid $LEDGER_PID \
+      --source "my-workflow/phase-name"
+    ```
+
+    JSON output for programmatic use:
+
+    ```bash
+    galaxy-timeline marker "Title" \
+      --pid $LEDGER_PID --json
+    ```
+
+    ## Important Notes
+
+    - Markers are point-in-time events — they have no
+      duration
+    - They render as full-width visual breaks in the
+      timeline (similar to inactivity breaks)
+    - Do not add redundant markers — if the previous
+      marker already labels the current phase, skip it
+    - Do not announce marker creation to the user unless
+      they explicitly asked for one
+    SKILL
+
     # All ledger-managed skills: name => SKILL.md content
     LEDGER_SKILLS = {
-      "handoff"       => HANDOFF_SKILL,
-      "spend"         => SPEND_SKILL,
-      "galaxy:resume" => RESUME_SKILL,
+      "handoff"                => HANDOFF_SKILL,
+      "spend"                  => SPEND_SKILL,
+      "galaxy:resume"          => RESUME_SKILL,
+      "galaxy:timeline-marker" => TIMELINE_MARKER_SKILL,
     }
 
     # Old skill names to clean up on install (renamed or removed)
