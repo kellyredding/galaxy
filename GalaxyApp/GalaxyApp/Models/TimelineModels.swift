@@ -60,6 +60,7 @@ enum RenderingMode {
     case point
     case durationStart
     case durationEnd
+    case marker
 }
 
 /// Maps an event type string to its resource lane and rendering mode.
@@ -142,6 +143,10 @@ let timelineEventRegistry: [String: EventRegistration] = [
     "turn:interrupted":    EventRegistration(resource: .turn, mode: .durationEnd),
     "turn:abandoned":      EventRegistration(resource: .turn, mode: .durationEnd),
     "turn:continued":      EventRegistration(resource: .turn, mode: .point),
+    "timeline:marker":
+        EventRegistration(
+            resource: .session, mode: .marker
+        ),
 ]
 
 // MARK: - Layout Output Types
@@ -209,14 +214,29 @@ struct LayoutSegment: Identifiable {
     let height: CGFloat
     let placedDots: [PlacedDot]
     let placedBars: [PlacedBar]
+    let placedMarkers: [PlacedMarker]
     /// Break that follows this segment (nil for the last segment).
     let breakAfter: LayoutBreak?
 }
 
-/// A collapsed inactivity gap between segments.
+/// A collapsed inactivity gap or marker divider between
+/// segments. When `markerTitle` is non-nil this is a
+/// marker break — the title line replaces the duration
+/// label and no duration bars render at this point.
 struct LayoutBreak {
     let duration: TimeInterval
     let formattedDuration: String
+    let markerTitle: String?
+
+    init(
+        duration: TimeInterval,
+        formattedDuration: String,
+        markerTitle: String? = nil
+    ) {
+        self.duration = duration
+        self.formattedDuration = formattedDuration
+        self.markerTitle = markerTitle
+    }
 }
 
 /// A calendar-day boundary in the timeline, used for
@@ -362,6 +382,18 @@ struct PlacedBar {
     let continuesIntoNext: Bool
 }
 
+/// A positioned marker event (full-width line) ready
+/// to render. Not lane-specific — spans all columns.
+/// Title text width is pre-computed during layout so
+/// the canvas only strokes paths and draws resolved
+/// text — no measurement per frame.
+struct PlacedMarker {
+    let event: TimelineEvent
+    let title: String
+    let titleWidth: CGFloat
+    let hashIndex: Int  // relative to segment
+}
+
 // MARK: - Hover Hit-Testing
 
 /// Identifies the timeline item currently under the
@@ -463,6 +495,8 @@ enum TimelineTooltipFormatter {
             return "Turn Abandoned"
         case "turn:continued":
             return "Turn Continued"
+        case "timeline:marker":
+            return "Marker"
         default: return eventType
         }
     }
@@ -552,6 +586,8 @@ enum TimelineTooltipFormatter {
             return turnAbandonedLines(dict)
         case "turn:continued":
             return turnContinuedLines(dict)
+        case "timeline:marker":
+            return markerLines(dict)
         default:
             return []
         }
@@ -1312,6 +1348,20 @@ enum TimelineTooltipFormatter {
                 agentId.prefix(8)
             )
             lines.append(short)
+        }
+        return lines
+    }
+
+    // MARK: - Marker Formatters
+
+    private static func markerLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        if let title = d["title"] as? String {
+            lines.append(
+                truncate(title, to: 80)
+            )
         }
         return lines
     }

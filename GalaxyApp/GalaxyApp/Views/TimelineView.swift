@@ -531,8 +531,13 @@ struct TimelineView: View {
         let header = TimelineContentHeaderSpacer.height
         let body = segment.height
         let brk: CGFloat =
-            segment.breakAfter != nil
-            ? TimelineContentBreak.breakHeight : 0
+            if let b = segment.breakAfter {
+                b.markerTitle != nil
+                    ? TimelineContentBreak.markerBreakHeight
+                    : TimelineContentBreak.breakHeight
+            } else {
+                0
+            }
         return header + body + brk
     }
 
@@ -629,10 +634,13 @@ struct TimelineView: View {
                             $hoverRow
                     )
 
-                    if layout.breakAfter(segment)
-                        != nil
-                    {
-                        TimelineRulerBreakSpacer()
+                    if let brk = layout.breakAfter(
+                        segment
+                    ) {
+                        TimelineRulerBreakSpacer(
+                            isMarker:
+                                brk.markerTitle != nil
+                        )
                     }
                 } else {
                     Color.clear.frame(
@@ -717,6 +725,8 @@ struct TimelineView: View {
                         TimelineContentBreak(
                             duration:
                                 brk.formattedDuration,
+                            markerTitle:
+                                brk.markerTitle,
                             hoverColX: hoverColX
                         )
                     }

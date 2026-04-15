@@ -286,6 +286,8 @@ struct TimelineContentCanvas: View {
         }
     }
 
+    // MARK: - Dimming
+
     /// Whether dimming is active (something is hovered).
     private var isDimming: Bool {
         highlightId != nil
@@ -729,6 +731,7 @@ struct TimelineContentHeaderSpacer: View {
 /// Dashed line with duration label between content segments.
 struct TimelineContentBreak: View {
     let duration: String
+    var markerTitle: String? = nil
     var hoverColX: CGFloat? = nil
     @Environment(\.chromeFontSize)
     private var chromeFontSize
@@ -740,39 +743,73 @@ struct TimelineContentBreak: View {
     private let subColPitch: CGFloat = 25.0
 
     static let breakHeight: CGFloat = 16.0
+    static let markerBreakHeight: CGFloat = 32.0
 
     var body: some View {
+        if let title = markerTitle {
+            markerBreakBody(title: title)
+        } else {
+            inactivityBreakBody
+        }
+    }
+
+    // MARK: - Inactivity Break
+
+    private var inactivityBreakBody: some View {
         HStack(spacing: 8) {
-            dashedLine
+            dashedLine(
+                color: .secondary.opacity(0.4)
+            )
             Text(duration)
                 .chromeFont(size: fontSize.caption2)
                 .foregroundColor(.secondary)
                 .lineLimit(1)
-            dashedLine
+            dashedLine(
+                color: .secondary.opacity(0.4)
+            )
         }
         .padding(.horizontal, 12)
         .frame(height: Self.breakHeight)
-        // Column highlight background (disabled)
-        // .background {
-        //     if let colX = hoverColX {
-        //         Canvas { context, size in
-        //             context.fill(
-        //                 Path(CGRect(
-        //                     x: colX, y: 0,
-        //                     width: subColPitch,
-        //                     height: size.height
-        //                 )),
-        //                 with: .color(
-        //                     Color.primary
-        //                         .opacity(0.06)
-        //                 )
-        //             )
-        //         }
-        //     }
-        // }
     }
 
-    private var dashedLine: some View {
+    // MARK: - Marker Break
+
+    private func markerBreakBody(
+        title: String
+    ) -> some View {
+        HStack(spacing: 8) {
+            dashedLine(color: .primary)
+            Text(title)
+                .font(.system(
+                    size: 10.0,
+                    weight: .bold,
+                    design: .monospaced
+                ))
+                .foregroundColor(
+                    Color(NSColor.windowBackgroundColor)
+                )
+                .lineLimit(1)
+                .fixedSize(
+                    horizontal: true,
+                    vertical: false
+                )
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(
+                    Capsule()
+                        .fill(Color.primary)
+                )
+            dashedLine(color: .primary)
+        }
+        .padding(.horizontal, 12)
+        .frame(height: Self.markerBreakHeight)
+    }
+
+    // MARK: - Shared
+
+    private func dashedLine(
+        color: Color
+    ) -> some View {
         GeometryReader { geo in
             Path { path in
                 path.move(
@@ -790,10 +827,10 @@ struct TimelineContentBreak: View {
             }
             .stroke(
                 style: StrokeStyle(
-                    lineWidth: 1, dash: [4, 4]
+                    lineWidth: 1, dash: [4, 3]
                 )
             )
-            .foregroundColor(.secondary.opacity(0.4))
+            .foregroundColor(color)
         }
     }
 }
@@ -1132,6 +1169,7 @@ struct TimelineRulerSegment: View {
             }
         }
     }
+
 }
 
 // MARK: - Ruler Segment Header
@@ -1279,29 +1317,58 @@ struct TimelineRulerHeader: View {
 /// Draws the rail edge line through the break gap
 /// so the ruler column line stays continuous.
 struct TimelineRulerBreakSpacer: View {
+    var isMarker: Bool = false
     private let railWidth: CGFloat = 76.0
 
     var body: some View {
         Canvas { context, size in
             let railEdgeX = railWidth - 1.0
-            var path = Path()
-            path.move(
+            // Vertical rail edge line
+            var railPath = Path()
+            railPath.move(
                 to: CGPoint(x: railEdgeX, y: 0)
             )
-            path.addLine(
+            railPath.addLine(
                 to: CGPoint(
                     x: railEdgeX, y: size.height
                 )
             )
             context.stroke(
-                path,
+                railPath,
                 with: .color(
                     .secondary.opacity(0.25)
                 ),
                 lineWidth: 1
             )
+            // Marker: draw dashed line across ruler
+            if isMarker {
+                let centerY = size.height / 2.0
+                var markerPath = Path()
+                markerPath.move(
+                    to: CGPoint(
+                        x: 0, y: centerY
+                    )
+                )
+                markerPath.addLine(
+                    to: CGPoint(
+                        x: size.width, y: centerY
+                    )
+                )
+                context.stroke(
+                    markerPath,
+                    with: .color(.primary),
+                    style: StrokeStyle(
+                        lineWidth: 1,
+                        dash: [4, 3]
+                    )
+                )
+            }
         }
-        .frame(height: TimelineContentBreak.breakHeight)
+        .frame(
+            height: isMarker
+                ? TimelineContentBreak.markerBreakHeight
+                : TimelineContentBreak.breakHeight
+        )
     }
 }
 

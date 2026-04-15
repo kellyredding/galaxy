@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 /// Pure function: [TimelineEvent] -> TimelineLayout.
@@ -60,12 +61,30 @@ enum TimelineLayoutEngine {
             pointsByHash[h, default: []].append((event, reg))
         }
 
+        // 6b. Build hash -> events mapping for marker
+        // events (separate from dots, but their hashes
+        // still count as "active" for break detection)
+        var markersByHash: [Int: [(
+            TimelineEvent, EventRegistration
+        )]] = [:]
+        for (event, reg) in sorted
+            where reg.mode == .marker
+        {
+            let h = hashIndex(
+                for: snapToHash(event.occurredAt),
+                origin: originHash
+            )
+            markersByHash[h, default: []]
+                .append((event, reg))
+        }
+
         // 7. Detect breaks
         let segments = detectBreaks(
             totalHashes: totalHashes,
             originHash: originHash,
             durations: durations,
             pointsByHash: pointsByHash,
+            markersByHash: markersByHash,
             activeLanes: activeLanes
         )
 
@@ -74,6 +93,7 @@ enum TimelineLayoutEngine {
             segments: segments,
             durations: durations,
             pointsByHash: pointsByHash,
+            markersByHash: markersByHash,
             originHash: originHash,
             totalHashes: totalHashes
         )
@@ -199,6 +219,26 @@ enum TimelineLayoutEngine {
                         laneIndex: laneIndex,
                         localHash: localHash
                     ))
+                }
+            }
+
+            // Collect markers for this segment (no
+            // lane packing — they span full width)
+            var markerEntries: [(
+                TimelineEvent, Int
+            )] = []  // (event, localHash)
+            let mStart = segmentInfo.startHash
+            let mEnd = segmentInfo.endHash
+            for hashIdx in mStart...mEnd {
+                guard let markers =
+                    timeAxis.markersByHash[hashIdx]
+                else { continue }
+                let localHash =
+                    hashIdx - segmentInfo.startHash
+                for (event, _) in markers {
+                    markerEntries.append(
+                        (event, localHash)
+                    )
                 }
             }
 
@@ -376,6 +416,23 @@ enum TimelineLayoutEngine {
                     )
                 }
 
+            let placedMarkers: [PlacedMarker] =
+                markerEntries
+                    .map { event, localHash in
+                        let title =
+                            extractMarkerTitle(
+                                from: event.detailData
+                            )
+                        let width =
+                            measureMarkerTitle(title)
+                        return PlacedMarker(
+                            event: event,
+                            title: title,
+                            titleWidth: width,
+                            hashIndex: localHash
+                        )
+                    }
+
             layoutSegments.append(LayoutSegment(
                 startHash: segmentInfo.startHash,
                 endHash: segmentInfo.endHash,
@@ -383,6 +440,7 @@ enum TimelineLayoutEngine {
                 height: segmentHeight,
                 placedDots: placedDots,
                 placedBars: placedBars,
+                placedMarkers: placedMarkers,
                 breakAfter: segmentInfo.breakAfter
             ))
 
@@ -429,6 +487,7 @@ enum TimelineLayoutEngine {
                             bar.continuesIntoNext
                     )
                 },
+                placedMarkers: seg.placedMarkers,
                 breakAfter: seg.breakAfter
             )
         }
@@ -470,7 +529,7 @@ enum TimelineLayoutEngine {
             case .durationEnd:
                 endGroups[key, default: []]
                     .append((event, reg))
-            case .point:
+            case .point, .marker:
                 break
             }
         }
@@ -606,6 +665,7 @@ enum TimelineLayoutEngine {
         originHash: Date,
         durations: [DurationPair],
         pointsByHash: [Int: [(TimelineEvent, EventRegistration)]],
+        markersByHash: [Int: [(TimelineEvent, EventRegistration)]],
         activeLanes: [TimelineResource]
     ) -> [SegmentInfo] {
         guard totalHashes > 0 else { return [] }
@@ -615,6 +675,12 @@ enum TimelineLayoutEngine {
 
         // Point events make their hash active
         for h in pointsByHash.keys {
+            activeHashes.insert(h)
+        }
+
+        // Marker events also make their hash active
+        // (ends inactivity gaps)
+        for h in markersByHash.keys {
             activeHashes.insert(h)
         }
 
@@ -644,6 +710,7 @@ enum TimelineLayoutEngine {
         }
 
         let sortedActive = activeHashes.sorted()
+        let markerHashes = Set(markersByHash.keys)
         var segments: [SegmentInfo] = []
         var segStart = sortedActive.first!
 
@@ -653,14 +720,18 @@ enum TimelineLayoutEngine {
             let gap = next - current - 1
 
             if gap >= breakThreshold {
-                // Insert break
-                let gapSeconds = Double(gap) * hashGranularity
+                // Insert inactivity break
+                let gapSeconds =
+                    Double(gap) * hashGranularity
                 segments.append(SegmentInfo(
                     startHash: segStart,
                     endHash: current,
                     breakAfter: LayoutBreak(
                         duration: gapSeconds,
-                        formattedDuration: formatBreakDuration(gapSeconds)
+                        formattedDuration:
+                            formatBreakDuration(
+                                gapSeconds
+                            )
                     )
                 ))
                 segStart = next
@@ -674,7 +745,91 @@ enum TimelineLayoutEngine {
             breakAfter: nil
         ))
 
-        return segments
+        // Post-process: split segments at marker
+        // boundaries. The marker hash is excluded from
+        // all segments — it becomes a marker break
+        // between the segment before and after. Duration
+        // bars split with continuation caps at the
+        // marker, just like inactivity breaks.
+        guard !markerHashes.isEmpty else {
+            return segments
+        }
+        var result: [SegmentInfo] = []
+        for seg in segments {
+            let markers = markerHashes
+                .filter {
+                    $0 >= seg.startHash
+                        && $0 <= seg.endHash
+                }
+                .sorted()
+            if markers.isEmpty {
+                result.append(seg)
+                continue
+            }
+            var cursor = seg.startHash
+            for mh in markers {
+                let title = extractMarkerTitle(
+                    from: markersByHash[mh]?
+                        .first?.0.detailData
+                )
+                // Segment before this marker
+                if mh > cursor {
+                    result.append(SegmentInfo(
+                        startHash: cursor,
+                        endHash: mh - 1,
+                        breakAfter: LayoutBreak(
+                            duration: 0,
+                            formattedDuration: "",
+                            markerTitle: title
+                        )
+                    ))
+                } else if let prev = result.last {
+                    // Marker is at segment start —
+                    // attach to previous segment's
+                    // break. Replace the existing
+                    // breakAfter with the marker
+                    // break.
+                    result[result.count - 1] =
+                        SegmentInfo(
+                            startHash: prev.startHash,
+                            endHash: prev.endHash,
+                            breakAfter: LayoutBreak(
+                                duration:
+                                    prev.breakAfter?
+                                    .duration ?? 0,
+                                formattedDuration:
+                                    prev.breakAfter?
+                                    .formattedDuration
+                                    ?? "",
+                                markerTitle: title
+                            )
+                        )
+                }
+                cursor = mh + 1
+            }
+            // Remaining hashes after last marker
+            if cursor <= seg.endHash {
+                result.append(SegmentInfo(
+                    startHash: cursor,
+                    endHash: seg.endHash,
+                    breakAfter: seg.breakAfter
+                ))
+            } else {
+                // Marker was at or past segment end
+                // — preserve the original breakAfter
+                // on the last result segment if it
+                // doesn't already have one.
+                if seg.breakAfter != nil,
+                    let last = result.last,
+                    last.breakAfter?.markerTitle != nil
+                {
+                    // Already has marker break —
+                    // the original breakAfter (e.g.
+                    // inactivity) is superseded.
+                }
+            }
+        }
+        return result
     }
 
     // MARK: - Hash Arithmetic
@@ -731,6 +886,61 @@ enum TimelineLayoutEngine {
         let seconds = Double(globalHash) * hashGranularity
         return originHash.addingTimeInterval(seconds)
     }
+
+    // MARK: - Marker Helpers
+
+    /// Maximum display characters for marker titles.
+    /// Titles longer than this are truncated with "…".
+    /// Keeps pre-computed text width stable regardless
+    /// of canvas width — the trailing dash line adapts
+    /// to fill remaining space at any window size.
+    private static let markerTitleMaxChars = 80
+
+    /// Extract title from marker detail_data JSON.
+    /// Truncates to `markerTitleMaxChars` with ellipsis
+    /// so the pre-computed width is bounded.
+    private static func extractMarkerTitle(
+        from detailData: String?
+    ) -> String {
+        guard let data = detailData,
+            let jsonData = data.data(using: .utf8),
+            let dict = try? JSONSerialization
+                .jsonObject(with: jsonData)
+                as? [String: Any],
+            let title = dict["title"] as? String
+        else { return "Marker" }
+        if title.count > markerTitleMaxChars {
+            return String(
+                title.prefix(
+                    markerTitleMaxChars - 1
+                )
+            ) + "…"
+        }
+        return title
+    }
+
+    /// Font used for marker title rendering. Defined
+    /// once so layout measurement and canvas drawing
+    /// use the same metrics.
+    static let markerTitleFont: NSFont =
+        NSFont.monospacedSystemFont(
+            ofSize: 10.0, weight: .bold
+        )
+
+    /// Pre-compute marker title text width using
+    /// NSAttributedString so the canvas only does
+    /// path strokes and resolved text draws — no
+    /// measurement per frame.
+    private static func measureMarkerTitle(
+        _ title: String
+    ) -> CGFloat {
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: markerTitleFont,
+        ]
+        let size = (title as NSString)
+            .size(withAttributes: attrs)
+        return ceil(size.width)
+    }
 }
 
 // MARK: - Internal Types
@@ -758,6 +968,7 @@ struct TimeAxisResult {
     let segments: [SegmentInfo]
     let durations: [DurationPair]
     let pointsByHash: [Int: [(TimelineEvent, EventRegistration)]]
+    let markersByHash: [Int: [(TimelineEvent, EventRegistration)]]
     let originHash: Date
     let totalHashes: Int
 }
