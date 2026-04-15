@@ -133,13 +133,19 @@ struct TimelineView: View {
                 session.id
                     == sessionManager.activeSessionId
             {
-                fetchTimelineEvents()
+                // Resume polling; fetch only if
+                // we have no data yet.
+                if layout == nil {
+                    fetchTimelineEvents()
+                } else {
+                    startPolling()
+                }
             }
             if sessionManager.activeTab != .timeline,
                 session.id
                     == sessionManager.activeSessionId
             {
-                nilAllState()
+                pauseState()
             }
         }
         .onChange(of: sessionManager.activeSessionId) {
@@ -147,7 +153,11 @@ struct TimelineView: View {
                 == sessionManager.activeSessionId,
                 sessionManager.activeTab == .timeline
             {
-                fetchTimelineEvents()
+                if layout == nil {
+                    fetchTimelineEvents()
+                } else {
+                    startPolling()
+                }
             } else if session.id
                 != sessionManager.activeSessionId
             {
@@ -246,59 +256,52 @@ struct TimelineView: View {
                             showsIndicators: true
                         ) {
                             VStack(spacing: 0) {
-                                ZStack(
+                                HStack(
                                     alignment:
-                                        .topLeading
+                                        .top,
+                                    spacing: 0
                                 ) {
-                                    HStack(
+                                    rulerColumn(
+                                        layout:
+                                            layout
+                                    )
+                                    .frame(
+                                        width:
+                                            rulerWidth,
                                         alignment:
-                                            .top,
-                                        spacing: 0
+                                            .leading
+                                    )
+                                    .zIndex(1)
+
+                                    ScrollView(
+                                        .horizontal,
+                                        showsIndicators:
+                                            true
                                     ) {
-                                        rulerColumn(
+                                        contentColumn(
                                             layout:
-                                                layout
+                                                layout,
+                                            width:
+                                                contentScrollWidth
                                         )
                                         .frame(
                                             width:
-                                                rulerWidth,
-                                            alignment:
-                                                .leading
+                                                contentScrollWidth
                                         )
-                                        .zIndex(1)
-
-                                        ScrollView(
-                                            .horizontal,
-                                            showsIndicators:
-                                                true
-                                        ) {
-                                            contentColumn(
-                                                layout:
-                                                    layout,
-                                                width:
-                                                    contentScrollWidth
+                                        .background(
+                                            HScrollOffsetReader(
+                                                offset:
+                                                    $hScrollOffset
                                             )
                                             .frame(
                                                 width:
-                                                    contentScrollWidth
+                                                    0,
+                                                height:
+                                                    0
                                             )
-                                            .background(
-                                                HScrollOffsetReader(
-                                                    offset:
-                                                        $hScrollOffset
-                                                )
-                                                .frame(
-                                                    width:
-                                                        0,
-                                                    height:
-                                                        0
-                                                )
-                                            )
-                                        }
+                                        )
                                     }
-
                                 }
-
                             }
                             .background(
                                 VScrollAtBottomReader(
@@ -316,10 +319,6 @@ struct TimelineView: View {
                                     height: 0
                                 )
                             )
-                        }
-                        .onAppear {
-                            programmaticScrollY =
-                                .infinity
                         }
                     }
 
@@ -981,6 +980,16 @@ struct TimelineView: View {
         refreshTask = nil
     }
 
+    /// Light pause: stop polling and clear transient
+    /// hover state but keep data alive so the view
+    /// tree (and scroll position) is preserved.
+    private func pauseState() {
+        stopPolling()
+        hoveredItem = nil
+        hoveredItemPoint = nil
+        viewportMousePoint = nil
+    }
+
     private func nilAllState() {
         stopPolling()
         events = nil
@@ -1067,11 +1076,18 @@ struct VScrollAtBottomReader: NSViewRepresentable {
                 nsView.enclosingScrollView
             else { return }
             let clip = scrollView.contentView
+            let docHeight =
+                scrollView.documentView?
+                .frame.height ?? 0
+
+            // Content not laid out yet — leave the
+            // request pending so the next
+            // updateNSView (triggered by layout
+            // completing) retries automatically.
+            if docHeight < 1 { return }
+
             let maxY = max(
-                0,
-                (scrollView.documentView?
-                    .frame.height ?? 0)
-                    - clip.bounds.height
+                0, docHeight - clip.bounds.height
             )
             let clampedY = min(targetY, maxY)
 
@@ -1099,11 +1115,12 @@ struct VScrollAtBottomReader: NSViewRepresentable {
 
     class AtBottomTrackingNSView: NSView {
         weak var coordinator: Coordinator?
-        private var observation: Any?
+        private var boundsObs: Any?
+        private var frameObs: Any?
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
-            if window != nil, observation == nil {
+            if window != nil, boundsObs == nil {
                 setupObservation()
             }
         }
@@ -1120,10 +1137,12 @@ struct VScrollAtBottomReader: NSViewRepresentable {
             scrollView.scrollerStyle = .legacy
             scrollView.hasVerticalScroller = true
 
+            // Observe clip view bounds changes
+            // (user scrolling, programmatic scroll)
             scrollView.contentView
                 .postsBoundsChangedNotifications =
                 true
-            observation =
+            boundsObs =
                 NotificationCenter.default
                 .addObserver(
                     forName: NSView
@@ -1135,10 +1154,38 @@ struct VScrollAtBottomReader: NSViewRepresentable {
                     self?.coordinator?
                         .updateBinding?()
                 }
+
+            // Observe document view frame changes
+            // (content laid out, height grows from
+            // 0). This triggers updateNSView so
+            // pending scroll requests are retried
+            // once content is available.
+            if let docView =
+                scrollView.documentView
+            {
+                docView
+                    .postsFrameChangedNotifications =
+                    true
+                frameObs =
+                    NotificationCenter.default
+                    .addObserver(
+                        forName: NSView
+                            .frameDidChangeNotification,
+                        object: docView,
+                        queue: .main
+                    ) { [weak self] _ in
+                        self?.coordinator?
+                            .updateBinding?()
+                    }
+            }
         }
 
         deinit {
-            if let obs = observation {
+            if let obs = boundsObs {
+                NotificationCenter.default
+                    .removeObserver(obs)
+            }
+            if let obs = frameObs {
                 NotificationCenter.default
                     .removeObserver(obs)
             }
