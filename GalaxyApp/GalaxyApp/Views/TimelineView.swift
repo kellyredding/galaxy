@@ -49,8 +49,6 @@ struct TimelineView: View {
     @State private var isLoading: Bool = false
     @State private var fetchTask: Task<Void, Never>? =
         nil
-    @State private var scrollToBottomTrigger: UUID =
-        UUID()
     @State private var hScrollOffset: CGFloat = 0
 
     // Live refresh state
@@ -61,6 +59,12 @@ struct TimelineView: View {
     // Viewport-windowed rendering state
     @State private var vScrollOffset: CGFloat = 0
     @State private var viewportHeight: CGFloat = 0
+    /// Programmatic scroll target (Y offset).
+    /// Set by marker chip clicks to bypass
+    /// ScrollViewReader identity issues with
+    /// viewport windowing.
+    @State private var programmaticScrollY:
+        CGFloat? = nil
     /// Buffer above and below the viewport in points.
     /// Segments within this range are rendered; the
     /// rest become lightweight spacers.
@@ -226,7 +230,6 @@ struct TimelineView: View {
                 contentViewport, natWidth
             )
 
-            ScrollViewReader { proxy in
             ZStack(alignment: .topLeading) {
                 // Main scroll area: spacer for
                 // header + chip bar + outer vertical
@@ -243,57 +246,59 @@ struct TimelineView: View {
                             showsIndicators: true
                         ) {
                             VStack(spacing: 0) {
-                                HStack(
-                                    alignment: .top,
-                                    spacing: 0
+                                ZStack(
+                                    alignment:
+                                        .topLeading
                                 ) {
-                                    rulerColumn(
-                                        layout:
-                                            layout
-                                    )
-                                    .frame(
-                                        width:
-                                            rulerWidth,
+                                    HStack(
                                         alignment:
-                                            .leading
-                                    )
-                                    .zIndex(1)
-
-                                    ScrollView(
-                                        .horizontal,
-                                        showsIndicators:
-                                            true
+                                            .top,
+                                        spacing: 0
                                     ) {
-                                        contentColumn(
+                                        rulerColumn(
                                             layout:
-                                                layout,
-                                            width:
-                                                contentScrollWidth
+                                                layout
                                         )
                                         .frame(
                                             width:
-                                                contentScrollWidth
+                                                rulerWidth,
+                                            alignment:
+                                                .leading
                                         )
-                                        .background(
-                                            HScrollOffsetReader(
-                                                offset:
-                                                    $hScrollOffset
+                                        .zIndex(1)
+
+                                        ScrollView(
+                                            .horizontal,
+                                            showsIndicators:
+                                                true
+                                        ) {
+                                            contentColumn(
+                                                layout:
+                                                    layout,
+                                                width:
+                                                    contentScrollWidth
                                             )
                                             .frame(
                                                 width:
-                                                    0,
-                                                height:
-                                                    0
+                                                    contentScrollWidth
                                             )
-                                        )
+                                            .background(
+                                                HScrollOffsetReader(
+                                                    offset:
+                                                        $hScrollOffset
+                                                )
+                                                .frame(
+                                                    width:
+                                                        0,
+                                                    height:
+                                                        0
+                                                )
+                                            )
+                                        }
                                     }
+
                                 }
 
-                                Color.clear
-                                    .frame(height: 1)
-                                    .id(
-                                        "timeline-bottom"
-                                    )
                             }
                             .background(
                                 VScrollAtBottomReader(
@@ -302,7 +307,9 @@ struct TimelineView: View {
                                     scrollOffset:
                                         $vScrollOffset,
                                     viewportHeight:
-                                        $viewportHeight
+                                        $viewportHeight,
+                                    scrollToY:
+                                        $programmaticScrollY
                                 )
                                 .frame(
                                     width: 0,
@@ -311,20 +318,8 @@ struct TimelineView: View {
                             )
                         }
                         .onAppear {
-                            proxy.scrollTo(
-                                "timeline-bottom",
-                                anchor:
-                                    .bottomLeading
-                            )
-                        }
-                        .onChange(
-                            of: scrollToBottomTrigger
-                        ) {
-                            proxy.scrollTo(
-                                "timeline-bottom",
-                                anchor:
-                                    .bottomLeading
-                            )
+                            programmaticScrollY =
+                                .infinity
                         }
                     }
 
@@ -375,33 +370,58 @@ struct TimelineView: View {
                 }
                 .zIndex(2)
 
-                // Day-shortcut chip bar (frozen)
+                // Chip bars (frozen)
                 VStack(spacing: 0) {
                     Color.clear.frame(
                         height: headerHeight
                     )
-                    TimelineDayChipBar(
-                        transitions:
-                            layout.dayTransitions(),
-                        onNow: {
-                            withAnimation {
-                                proxy.scrollTo(
-                                    "timeline-bottom",
-                                    anchor:
-                                        .bottomLeading
-                                )
+                    VStack(spacing: 0) {
+                        TimelineDayChipBar(
+                            transitions:
+                                layout
+                                    .dayTransitions(),
+                            onNow: {
+                                // Use CGFloat.infinity
+                                // — the NSScrollView
+                                // handler clamps to the
+                                // actual max offset.
+                                programmaticScrollY =
+                                    .infinity
+                            },
+                            onSelect: { dt in
+                                programmaticScrollY =
+                                    dayScrollY(
+                                        layout: layout,
+                                        day: dt
+                                    )
                             }
-                        },
-                        onSelect: { dt in
-                            withAnimation {
-                                proxy.scrollTo(
-                                    "timeline-day-"
-                                        + "\(dt.id)",
-                                    anchor: .top
+                        )
+
+                        let markers =
+                            layout
+                                .markerTransitions()
+                        if !markers.isEmpty {
+                            Rectangle()
+                                .fill(
+                                    Color.primary
+                                        .opacity(0.06)
                                 )
-                            }
+                                .frame(height: 1)
+                            TimelineMarkerChipBar(
+                                markers: markers,
+                                onSelect: { mt in
+                                    let targetY =
+                                        markerScrollY(
+                                            layout:
+                                                layout,
+                                            marker: mt
+                                        )
+                                    programmaticScrollY =
+                                        targetY
+                                }
+                            )
                         }
-                    )
+                    }
                     .background(
                         Color(
                             .textBackgroundColor
@@ -419,6 +439,21 @@ struct TimelineView: View {
                             )
                             .frame(height: 1)
                     }
+                    .background(
+                        GeometryReader { g in
+                            Color.clear
+                                .onAppear {
+                                    chipBarHeight =
+                                        g.size.height
+                                }
+                                .onChange(
+                                    of: g.size.height
+                                ) { newH in
+                                    chipBarHeight =
+                                        newH
+                                }
+                        }
+                    )
 
                     Spacer()
                 }
@@ -462,7 +497,6 @@ struct TimelineView: View {
                     viewportMousePoint = nil
                 }
             }
-            }  // ScrollViewReader
         }  // GeometryReader
     }
 
@@ -588,9 +622,6 @@ struct TimelineView: View {
         let visible = visibleSegmentRange(
             layout: layout
         )
-        let dayIds = dayTransitionSegmentIds(
-            layout: layout
-        )
         VStack(spacing: 0) {
             ForEach(
                 Array(
@@ -619,7 +650,6 @@ struct TimelineView: View {
                         hoverRowBinding:
                             $hoverRow
                     )
-                    .id(dayIds[index])
 
                     TimelineRulerSegment(
                         segment: segment,
@@ -648,7 +678,6 @@ struct TimelineView: View {
                             segment
                         )
                     )
-                    .id(dayIds[index])
                 }
             }
         }
@@ -779,23 +808,58 @@ struct TimelineView: View {
         )
     }
 
-    // MARK: - Day Shortcuts
+    // MARK: - Programmatic Scroll Offsets
 
-    /// Map segment indices to optional scroll-anchor
-    /// IDs. Only day-boundary segments get an ID.
-    private func dayTransitionSegmentIds(
-        layout: TimelineLayout
-    ) -> [Int: String] {
-        var map: [Int: String] = [:]
-        for dt in layout.dayTransitions() {
-            map[dt.segmentIndex] =
-                "timeline-day-\(dt.id)"
+    /// Compute the cumulative Y offset for a marker's
+    /// target segment. Returns the sum of all segment
+    /// slot heights before the target index.
+    /// Scroll target for a marker chip. Positions the
+    /// viewport so the marker pill itself is at the
+    /// top. The cumulative Y up to the target segment
+    /// lands just AFTER the break, so we subtract the
+    /// marker break height to show the pill.
+    /// Scroll target for a day chip. Positions the
+    /// viewport so the day's ruler header is at the
+    /// top — cumulative height of all segments before
+    /// the day's first segment.
+    private func dayScrollY(
+        layout: TimelineLayout,
+        day dt: DayTransition
+    ) -> CGFloat {
+        var cumY: CGFloat = 0
+        for i in 0..<min(
+            dt.segmentIndex, layout.segments.count
+        ) {
+            cumY += segmentSlotHeight(
+                layout.segments[i]
+            )
         }
-        return map
+        return cumY
     }
 
-    /// Height of the frozen chip bar.
-    private let chipBarHeight: CGFloat = 30.0
+    private func markerScrollY(
+        layout: TimelineLayout,
+        marker mt: MarkerTransition
+    ) -> CGFloat {
+        let target = mt.segmentIndex + 1
+        var cumY: CGFloat = 0
+        for i in 0..<min(
+            target, layout.segments.count
+        ) {
+            cumY += segmentSlotHeight(
+                layout.segments[i]
+            )
+        }
+        return max(
+            0,
+            cumY
+                - TimelineContentBreak
+                    .markerBreakHeight
+        )
+    }
+
+    /// Measured height of the frozen chip bar area.
+    @State private var chipBarHeight: CGFloat = 30.0
 
     // MARK: - Data Fetching
 
@@ -835,8 +899,8 @@ struct TimelineView: View {
                         self.layout = nil
                     }
                     self.isLoading = false
-                    self.scrollToBottomTrigger =
-                        UUID()
+                    self.programmaticScrollY =
+                        .infinity
                     startPolling()
                 }
             } catch {
@@ -887,8 +951,8 @@ struct TimelineView: View {
                         self.layout = nil
                     }
                     if self.isAtBottom {
-                        self.scrollToBottomTrigger =
-                            UUID()
+                        self.programmaticScrollY =
+                            .infinity
                     }
                 }
             } catch {
@@ -938,6 +1002,7 @@ struct VScrollAtBottomReader: NSViewRepresentable {
     @Binding var isAtBottom: Bool
     @Binding var scrollOffset: CGFloat
     @Binding var viewportHeight: CGFloat
+    @Binding var scrollToY: CGFloat?
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -994,6 +1059,37 @@ struct VScrollAtBottomReader: NSViewRepresentable {
                 clip.bounds.origin.y
             self.viewportHeight =
                 clip.bounds.height
+        }
+
+        // Handle programmatic scroll requests
+        if let targetY = scrollToY {
+            guard let scrollView =
+                nsView.enclosingScrollView
+            else { return }
+            let clip = scrollView.contentView
+            let maxY = max(
+                0,
+                (scrollView.documentView?
+                    .frame.height ?? 0)
+                    - clip.bounds.height
+            )
+            let clampedY = min(targetY, maxY)
+
+            NSAnimationContext.runAnimationGroup {
+                ctx in
+                ctx.duration = 0.3
+                ctx.timingFunction =
+                    CAMediaTimingFunction(
+                        name: .easeInEaseOut
+                    )
+                clip.animator().setBoundsOrigin(
+                    NSPoint(x: 0, y: clampedY)
+                )
+            }
+
+            DispatchQueue.main.async {
+                self.scrollToY = nil
+            }
         }
     }
 

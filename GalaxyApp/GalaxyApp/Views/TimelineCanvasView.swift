@@ -1682,11 +1682,124 @@ struct TimelineItemTooltip: View {
     }
 }
 
+// MARK: - Flow Layout
+
+/// A custom Layout that arranges children in a
+/// horizontal flow, wrapping to the next line when
+/// the available width is exceeded.
+struct FlowLayout: Layout {
+    var hSpacing: CGFloat = 6
+    var vSpacing: CGFloat = 4
+
+    func sizeThatFits(
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) -> CGSize {
+        let rows = computeRows(
+            subviews: subviews,
+            width: proposal.width ?? .infinity
+        )
+        guard !rows.isEmpty else {
+            return .zero
+        }
+        let totalHeight = rows.reduce(
+            CGFloat(0)
+        ) { acc, row in
+            acc + row.height
+        }
+            + CGFloat(rows.count - 1) * vSpacing
+        return CGSize(
+            width: proposal.width ?? .infinity,
+            height: totalHeight
+        )
+    }
+
+    func placeSubviews(
+        in bounds: CGRect,
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) {
+        let rows = computeRows(
+            subviews: subviews,
+            width: bounds.width
+        )
+        var y = bounds.minY
+        var subviewIndex = 0
+        for row in rows {
+            var x = bounds.minX
+            for _ in 0..<row.count {
+                let size = subviews[subviewIndex]
+                    .sizeThatFits(.unspecified)
+                subviews[subviewIndex].place(
+                    at: CGPoint(x: x, y: y),
+                    proposal: ProposedViewSize(
+                        size
+                    )
+                )
+                x += size.width + hSpacing
+                subviewIndex += 1
+            }
+            y += row.height + vSpacing
+        }
+    }
+
+    private struct RowInfo {
+        let count: Int
+        let height: CGFloat
+    }
+
+    private func computeRows(
+        subviews: Subviews,
+        width: CGFloat
+    ) -> [RowInfo] {
+        var rows: [RowInfo] = []
+        var currentWidth: CGFloat = 0
+        var currentHeight: CGFloat = 0
+        var currentCount = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(
+                .unspecified
+            )
+            let needed = currentCount > 0
+                ? size.width + hSpacing
+                : size.width
+            if currentCount > 0
+                && currentWidth + needed > width
+            {
+                rows.append(RowInfo(
+                    count: currentCount,
+                    height: currentHeight
+                ))
+                currentWidth = size.width
+                currentHeight = size.height
+                currentCount = 1
+            } else {
+                currentWidth += needed
+                currentHeight = max(
+                    currentHeight, size.height
+                )
+                currentCount += 1
+            }
+        }
+        if currentCount > 0 {
+            rows.append(RowInfo(
+                count: currentCount,
+                height: currentHeight
+            ))
+        }
+        return rows
+    }
+}
+
 // MARK: - Day Chip Bar
 
-/// Horizontal bar of day-shortcut chips. "Now" is
+/// Flowing bar of day-shortcut chips. "Now" is
 /// always leftmost, then day transitions from most
-/// recent to oldest (left to right).
+/// recent to oldest (left to right). Wraps to
+/// additional lines when chips overflow.
 struct TimelineDayChipBar: View {
     let transitions: [DayTransition]
     let onNow: () -> Void
@@ -1700,7 +1813,7 @@ struct TimelineDayChipBar: View {
     }
 
     var body: some View {
-        HStack(spacing: 6) {
+        FlowLayout(hSpacing: 6, vSpacing: 4) {
             // "Now" chip — always present, scrolls
             // to the bottom of the timeline
             chipButton("Now") { onNow() }
@@ -1716,8 +1829,57 @@ struct TimelineDayChipBar: View {
                     onSelect(dt)
                 }
             }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+    }
 
-            Spacer(minLength: 0)
+    private func chipButton(
+        _ label: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(label)
+                .chromeFont(
+                    size: fontSize.caption2
+                )
+                .foregroundColor(.primary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(
+                    Capsule().fill(
+                        Color.primary
+                            .opacity(0.10)
+                    )
+                )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Marker Chip Bar
+
+/// Flowing bar of marker-shortcut chips. Wraps to
+/// additional lines when chips overflow. Only shown
+/// when markers exist in the timeline.
+struct TimelineMarkerChipBar: View {
+    let markers: [MarkerTransition]
+    let onSelect: (MarkerTransition) -> Void
+
+    @Environment(\.chromeFontSize)
+    private var chromeFontSize
+
+    private var fontSize: ChromeFontSize {
+        ChromeFontSize(chromeFontSize)
+    }
+
+    var body: some View {
+        FlowLayout(hSpacing: 6, vSpacing: 4) {
+            ForEach(markers.reversed()) { mt in
+                chipButton(mt.title) {
+                    onSelect(mt)
+                }
+            }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)

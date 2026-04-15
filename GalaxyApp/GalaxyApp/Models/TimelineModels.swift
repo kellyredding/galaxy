@@ -203,6 +203,27 @@ struct TimelineLayout {
         }
         return result
     }
+
+    /// Marker transitions present in this layout.
+    /// Each entry represents a segment whose
+    /// `breakAfter` has a non-nil `markerTitle`.
+    /// Ordered chronologically (earliest first);
+    /// the view reverses for display.
+    func markerTransitions() -> [MarkerTransition] {
+        var result: [MarkerTransition] = []
+        for (index, segment) in segments.enumerated() {
+            if let brk = segment.breakAfter,
+                let title = brk.markerTitle
+            {
+                result.append(MarkerTransition(
+                    id: "marker-\(index)",
+                    title: title,
+                    segmentIndex: index
+                ))
+            }
+        }
+        return result
+    }
 }
 
 /// A contiguous segment of active time between inactivity breaks.
@@ -245,6 +266,15 @@ struct DayTransition: Identifiable {
     let id: String          // "YYYY-MM-dd" for dedup
     let date: Date          // midnight of the day
     let segmentIndex: Int   // first segment on this day
+}
+
+/// A marker break in the timeline, used for
+/// marker-shortcut chip navigation.
+struct MarkerTransition: Identifiable {
+    let id: String          // stable anchor key
+    let title: String       // marker display title
+    let segmentIndex: Int   // segment whose breakAfter
+                            // holds this marker
 }
 
 /// Formats day-chip labels with recency-aware tiers:
