@@ -614,7 +614,8 @@ private func buildFullHTML(
         padding: 0;
         line-height: 1.45;
     }
-    .code-line code {
+    .code-line code,
+    .code-line code.hljs {
         display: inline;
         background: none;
         padding: 0;
