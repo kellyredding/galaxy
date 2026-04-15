@@ -160,6 +160,44 @@ struct TimelineLayout {
     func breakAfter(_ segment: LayoutSegment) -> LayoutBreak? {
         return segment.breakAfter
     }
+
+    /// Day transitions present in this layout. Each
+    /// entry represents the first segment that falls on
+    /// a new calendar day. Ordered chronologically
+    /// (earliest first); the view reverses for display.
+    func dayTransitions() -> [DayTransition] {
+        let calendar = Calendar.current
+        var result: [DayTransition] = []
+        var lastDay: DateComponents? = nil
+
+        for (index, segment) in segments.enumerated() {
+            let seconds = Double(segment.startHash)
+                * TimelineLayoutEngine.hashGranularity
+            let segDate = originHash
+                .addingTimeInterval(seconds)
+            let dayComps = calendar.dateComponents(
+                [.year, .month, .day], from: segDate
+            )
+            if dayComps != lastDay {
+                let midnight = calendar.startOfDay(
+                    for: segDate
+                )
+                let key = String(
+                    format: "%04d-%02d-%02d",
+                    dayComps.year ?? 0,
+                    dayComps.month ?? 0,
+                    dayComps.day ?? 0
+                )
+                result.append(DayTransition(
+                    id: key,
+                    date: midnight,
+                    segmentIndex: index
+                ))
+                lastDay = dayComps
+            }
+        }
+        return result
+    }
 }
 
 /// A contiguous segment of active time between inactivity breaks.
@@ -179,6 +217,122 @@ struct LayoutSegment: Identifiable {
 struct LayoutBreak {
     let duration: TimeInterval
     let formattedDuration: String
+}
+
+/// A calendar-day boundary in the timeline, used for
+/// day-shortcut chip navigation.
+struct DayTransition: Identifiable {
+    let id: String          // "YYYY-MM-dd" for dedup
+    let date: Date          // midnight of the day
+    let segmentIndex: Int   // first segment on this day
+}
+
+/// Formats day-chip labels with recency-aware tiers:
+///   Today / Yesterday / weekday-only (this week) /
+///   weekday + ordinal day (this month) /
+///   abbreviated month + day (older) /
+///   month + day + short year (previous year).
+enum DayChipFormatter {
+    static func label(
+        for date: Date,
+        relativeTo now: Date = Date()
+    ) -> String {
+        let calendar = Calendar.current
+
+        if calendar.isDateInToday(date) {
+            return "Today"
+        }
+        if calendar.isDateInYesterday(date) {
+            return "Yesterday"
+        }
+
+        let daysAgo = calendar.dateComponents(
+            [.day], from: date, to: now
+        ).day ?? Int.max
+
+        // This week: weekday name only (≤5 days ago
+        // so the weekday is unambiguous)
+        if daysAgo <= 5 {
+            return weekdayFormatter.string(
+                from: date
+            )
+        }
+
+        let nowComps = calendar.dateComponents(
+            [.year, .month], from: now
+        )
+        let dateComps = calendar.dateComponents(
+            [.year, .month, .day], from: date
+        )
+
+        // Previous year: "Dec 30 '25"
+        if dateComps.year != nowComps.year {
+            let base = monthDayFormatter.string(
+                from: date
+            )
+            let shortYear = String(
+                format: "'%02d",
+                (dateComps.year ?? 0) % 100
+            )
+            return "\(base) \(shortYear)"
+        }
+
+        // Same month: "Mon 7th"
+        if dateComps.month == nowComps.month {
+            let wd = shortWeekdayFormatter.string(
+                from: date
+            )
+            let day = dateComps.day ?? 0
+            return "\(wd) \(day)\(ordinalSuffix(day))"
+        }
+
+        // Older (different month, same year): "Mar 28"
+        return monthDayFormatter.string(from: date)
+    }
+
+    // MARK: - Formatters
+
+    private static let weekdayFormatter:
+        DateFormatter =
+    {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "EEEE"  // "Monday"
+        fmt.timeZone = .current
+        return fmt
+    }()
+
+    private static let shortWeekdayFormatter:
+        DateFormatter =
+    {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "EEE"  // "Mon"
+        fmt.timeZone = .current
+        return fmt
+    }()
+
+    private static let monthDayFormatter:
+        DateFormatter =
+    {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "MMM d"  // "Mar 28"
+        fmt.timeZone = .current
+        return fmt
+    }()
+
+    private static func ordinalSuffix(
+        _ day: Int
+    ) -> String {
+        switch day {
+        case 11, 12, 13: return "th"
+        default:
+            switch day % 10 {
+            case 1: return "st"
+            case 2: return "nd"
+            case 3: return "rd"
+            default: return "th"
+            }
+        }
+    }
 }
 
 /// A positioned point event (dot) ready to render.

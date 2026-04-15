@@ -226,15 +226,19 @@ struct TimelineView: View {
                 contentViewport, natWidth
             )
 
+            ScrollViewReader { proxy in
             ZStack(alignment: .topLeading) {
                 // Main scroll area: spacer for
-                // header + outer vertical scroll
+                // header + chip bar + outer vertical
+                // scroll
                 VStack(spacing: 0) {
                     Color.clear
-                        .frame(height: headerHeight)
+                        .frame(
+                            height: headerHeight
+                                + chipBarHeight
+                        )
 
-                    ScrollViewReader { proxy in
-                        ScrollView(
+                    ScrollView(
                             .vertical,
                             showsIndicators: true
                         ) {
@@ -323,7 +327,6 @@ struct TimelineView: View {
                             )
                         }
                     }
-                }
 
                 // Frozen header row
                 HStack(spacing: 0) {
@@ -372,6 +375,55 @@ struct TimelineView: View {
                 }
                 .zIndex(2)
 
+                // Day-shortcut chip bar (frozen)
+                VStack(spacing: 0) {
+                    Color.clear.frame(
+                        height: headerHeight
+                    )
+                    TimelineDayChipBar(
+                        transitions:
+                            layout.dayTransitions(),
+                        onNow: {
+                            withAnimation {
+                                proxy.scrollTo(
+                                    "timeline-bottom",
+                                    anchor:
+                                        .bottomLeading
+                                )
+                            }
+                        },
+                        onSelect: { dt in
+                            withAnimation {
+                                proxy.scrollTo(
+                                    "timeline-day-"
+                                        + "\(dt.id)",
+                                    anchor: .top
+                                )
+                            }
+                        }
+                    )
+                    .background(
+                        Color(
+                            .textBackgroundColor
+                        )
+                    )
+                    .overlay(
+                        alignment: .bottom
+                    ) {
+                        Rectangle()
+                            .fill(
+                                Color.primary
+                                    .opacity(
+                                        0.08
+                                    )
+                            )
+                            .frame(height: 1)
+                    }
+
+                    Spacer()
+                }
+                .zIndex(2.5)
+
                 // Item tooltip overlay — positioned
                 // from the top-leading corner so
                 // leading edge placement is exact.
@@ -399,7 +451,7 @@ struct TimelineView: View {
                     .zIndex(3)
                 }
 
-            }
+            }  // ZStack
             .onContinuousHover { phase in
                 switch phase {
                 case .active(let pt):
@@ -410,7 +462,8 @@ struct TimelineView: View {
                     viewportMousePoint = nil
                 }
             }
-        }
+            }  // ScrollViewReader
+        }  // GeometryReader
     }
 
     // MARK: - Tooltip Positioning
@@ -530,6 +583,9 @@ struct TimelineView: View {
         let visible = visibleSegmentRange(
             layout: layout
         )
+        let dayIds = dayTransitionSegmentIds(
+            layout: layout
+        )
         VStack(spacing: 0) {
             ForEach(
                 Array(
@@ -558,6 +614,7 @@ struct TimelineView: View {
                         hoverRowBinding:
                             $hoverRow
                     )
+                    .id(dayIds[index])
 
                     TimelineRulerSegment(
                         segment: segment,
@@ -583,6 +640,7 @@ struct TimelineView: View {
                             segment
                         )
                     )
+                    .id(dayIds[index])
                 }
             }
         }
@@ -710,6 +768,24 @@ struct TimelineView: View {
             prevEndDate, inSameDayAs: thisStartDate
         )
     }
+
+    // MARK: - Day Shortcuts
+
+    /// Map segment indices to optional scroll-anchor
+    /// IDs. Only day-boundary segments get an ID.
+    private func dayTransitionSegmentIds(
+        layout: TimelineLayout
+    ) -> [Int: String] {
+        var map: [Int: String] = [:]
+        for dt in layout.dayTransitions() {
+            map[dt.segmentIndex] =
+                "timeline-day-\(dt.id)"
+        }
+        return map
+    }
+
+    /// Height of the frozen chip bar.
+    private let chipBarHeight: CGFloat = 30.0
 
     // MARK: - Data Fetching
 

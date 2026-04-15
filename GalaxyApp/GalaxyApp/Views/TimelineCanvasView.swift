@@ -1614,3 +1614,67 @@ struct TimelineItemTooltip: View {
         return lines
     }
 }
+
+// MARK: - Day Chip Bar
+
+/// Horizontal bar of day-shortcut chips. "Now" is
+/// always leftmost, then day transitions from most
+/// recent to oldest (left to right).
+struct TimelineDayChipBar: View {
+    let transitions: [DayTransition]
+    let onNow: () -> Void
+    let onSelect: (DayTransition) -> Void
+
+    @Environment(\.chromeFontSize)
+    private var chromeFontSize
+
+    private var fontSize: ChromeFontSize {
+        ChromeFontSize(chromeFontSize)
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            // "Now" chip — always present, scrolls
+            // to the bottom of the timeline
+            chipButton("Now") { onNow() }
+
+            // Day transition chips — most recent
+            // first (reversed from chronological)
+            ForEach(transitions.reversed()) { dt in
+                chipButton(
+                    DayChipFormatter.label(
+                        for: dt.date
+                    )
+                ) {
+                    onSelect(dt)
+                }
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+    }
+
+    private func chipButton(
+        _ label: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(label)
+                .chromeFont(
+                    size: fontSize.caption2
+                )
+                .foregroundColor(.primary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(
+                    Capsule().fill(
+                        Color.primary
+                            .opacity(0.10)
+                    )
+                )
+        }
+        .buttonStyle(.plain)
+    }
+}
