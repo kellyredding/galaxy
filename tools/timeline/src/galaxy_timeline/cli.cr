@@ -18,6 +18,12 @@ module GalaxyTimeline
         else
           handle_record(rest)
         end
+      when "marker"
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_marker_help
+        else
+          handle_marker(rest)
+        end
       when "list"
         if rest.includes?("-h") || rest.includes?("--help")
           show_list_help
@@ -206,6 +212,122 @@ module GalaxyTimeline
         end
       else
         STDERR.puts "Error: failed to record event"
+        exit(1)
+      end
+    end
+
+    # ========================================================
+    # marker
+    # ========================================================
+
+    private def self.handle_marker(args : Array(String))
+      pid_str : String? = nil
+      ledger_session_id_str : String? = nil
+      source : String? = nil
+      title : String? = nil
+      json_mode = false
+
+      i = 0
+      while i < args.size
+        arg = args[i]
+        case arg
+        when "--pid"
+          if i + 1 < args.size
+            pid_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --pid requires a value"
+            exit(1)
+          end
+        when "--ledger-session-id"
+          if i + 1 < args.size
+            ledger_session_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --ledger-session-id " \
+              "requires a value",
+            )
+            exit(1)
+          end
+        when "--source"
+          if i + 1 < args.size
+            source = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --source requires a value"
+            exit(1)
+          end
+        when "--json"
+          json_mode = true
+          i += 1
+        else
+          if arg.starts_with?("-")
+            STDERR.puts "Error: Unknown option '#{arg}'"
+            STDERR.puts(
+              "Run 'galaxy-timeline marker --help' " \
+              "for usage",
+            )
+            exit(1)
+          end
+          title = arg
+          i += 1
+        end
+      end
+
+      # Resolve ledger_session_id
+      ledger_session_id : Int64? = nil
+      if lsid_str = ledger_session_id_str
+        ledger_session_id =
+          resolve_ledger_session_id_str(lsid_str)
+      elsif ps = pid_str
+        ledger_session_id =
+          resolve_pid_to_ledger_session_id(ps)
+      end
+
+      unless ledger_session_id
+        STDERR.puts(
+          "Error: --pid or --ledger-session-id " \
+          "is required",
+        )
+        exit(1)
+      end
+
+      unless title && !title.empty?
+        STDERR.puts "Error: TITLE is required"
+        STDERR.puts(
+          "Run 'galaxy-timeline marker --help' " \
+          "for usage",
+        )
+        exit(1)
+      end
+
+      event_type = "timeline:marker"
+      effective_source =
+        source || "galaxy-timeline/marker"
+      detail_data = ({title: title}).to_json
+
+      id = Database.record_event(
+        ledger_session_id,
+        event_type: event_type,
+        source: effective_source,
+        detail_data: detail_data,
+      )
+
+      if id > 0
+        EventPublisher.publish(
+          ledger_session_id,
+          "timeline.#{event_type}",
+          ref: id.to_s,
+          detail_data: detail_data,
+        )
+        if json_mode
+          puts ({id: id}).to_json
+        else
+          puts "Marker ##{id} recorded: #{title}"
+        end
+      else
+        STDERR.puts "Error: failed to record marker"
         exit(1)
       end
     end
@@ -856,6 +978,7 @@ module GalaxyTimeline
 
       COMMANDS:
         record    Record a new timeline event
+        marker    Add a timeline marker
         list      List events for a session
         show      Show event details by ID
         update    Update detail_data on an event
@@ -894,6 +1017,29 @@ module GalaxyTimeline
         --duration-identifier ID
                                 Identifier for pairing
                                 duration events (start/end)
+        --json                  Output event ID as JSON
+                                (e.g. {"id":1})
+      HELP
+    end
+
+    private def self.show_marker_help
+      puts <<-HELP
+      galaxy-timeline marker - Add a timeline marker
+
+      USAGE:
+        galaxy-timeline marker TITLE [options]
+
+      REQUIRED:
+        TITLE                   Marker title (positional,
+                                use quotes for multi-word)
+
+      REQUIRED (one of):
+        --pid PID               Claude Code process ID
+        --ledger-session-id ID  Direct ledger session ID
+
+      OPTIONS:
+        --source SOURCE         Override default source
+                                (default: galaxy-timeline/marker)
         --json                  Output event ID as JSON
                                 (e.g. {"id":1})
       HELP

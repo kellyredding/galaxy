@@ -410,6 +410,161 @@ describe "CLI event commands", tags: "integration" do
     end
   end
 
+  describe "marker" do
+    it "records a marker event with a title" do
+      result = run_binary([
+        "marker", "Implementation Phase",
+        "--ledger-session-id", "1",
+      ])
+
+      result[:status].should eq(0)
+      result[:output].should contain("Marker")
+      result[:output].should contain("recorded")
+      result[:output].should contain(
+        "Implementation Phase",
+      )
+    end
+
+    it "stores title in detail_data as JSON" do
+      result = run_binary([
+        "marker", "Review Iteration 2",
+        "--ledger-session-id", "1",
+        "--json",
+      ])
+
+      result[:status].should eq(0)
+      event_id =
+        JSON.parse(result[:output])["id"].as_i.to_s
+
+      show_result = run_binary([
+        "show", event_id, "--json",
+      ])
+      parsed = JSON.parse(show_result[:output])
+      parsed["event_type"].as_s.should eq(
+        "timeline:marker",
+      )
+      parsed["source"].as_s.should eq(
+        "galaxy-timeline/marker",
+      )
+      detail = JSON.parse(parsed["detail_data"].as_s)
+      detail["title"].as_s.should eq(
+        "Review Iteration 2",
+      )
+    end
+
+    it "outputs event ID as JSON with --json flag" do
+      result = run_binary([
+        "marker", "Phase Start",
+        "--ledger-session-id", "1",
+        "--json",
+      ])
+
+      result[:status].should eq(0)
+      parsed = JSON.parse(result[:output])
+      parsed["id"].as_i.should be > 0
+    end
+
+    it "accepts --source override" do
+      result = run_binary([
+        "marker", "Security Audit",
+        "--ledger-session-id", "1",
+        "--source", "my-workflow/review",
+        "--json",
+      ])
+
+      result[:status].should eq(0)
+      event_id =
+        JSON.parse(result[:output])["id"].as_i.to_s
+
+      show_result = run_binary([
+        "show", event_id, "--json",
+      ])
+      parsed = JSON.parse(show_result[:output])
+      parsed["source"].as_s.should eq(
+        "my-workflow/review",
+      )
+    end
+
+    it "errors when title is missing" do
+      result = run_binary([
+        "marker",
+        "--ledger-session-id", "1",
+      ])
+
+      result[:status].should_not eq(0)
+      result[:error].should contain("TITLE is required")
+    end
+
+    it "errors when no session identifier provided" do
+      result = run_binary([
+        "marker", "Some Phase",
+      ])
+
+      result[:status].should_not eq(0)
+      result[:error].should contain(
+        "--pid or --ledger-session-id is required",
+      )
+    end
+
+    it "errors with invalid ledger-session-id" do
+      result = run_binary([
+        "marker", "Phase",
+        "--ledger-session-id", "not-a-number",
+      ])
+
+      result[:status].should_not eq(0)
+      result[:error].should contain("invalid")
+    end
+
+    it "uses default source when --source not provided" do
+      result = run_binary([
+        "marker", "Default Source Test",
+        "--ledger-session-id", "1",
+        "--json",
+      ])
+
+      result[:status].should eq(0)
+      event_id =
+        JSON.parse(result[:output])["id"].as_i.to_s
+
+      show_result = run_binary([
+        "show", event_id, "--json",
+      ])
+      parsed = JSON.parse(show_result[:output])
+      parsed["source"].as_s.should eq(
+        "galaxy-timeline/marker",
+      )
+    end
+
+    it "appears in event list filtered by type" do
+      run_binary([
+        "marker", "Phase A",
+        "--ledger-session-id", "1",
+      ])
+      run_binary([
+        "record",
+        "--ledger-session-id", "1",
+        "--event-type", "turn:completed",
+        "--source", "test",
+      ])
+
+      result = run_binary([
+        "list",
+        "--ledger-session-id", "1",
+        "--event-type", "timeline:marker",
+        "--json",
+      ])
+
+      result[:status].should eq(0)
+      events =
+        JSON.parse(result[:output])["events"].as_a
+      events.size.should eq(1)
+      events[0]["event_type"].as_s.should eq(
+        "timeline:marker",
+      )
+    end
+  end
+
   describe "list" do
     it "lists events in human-readable format" do
       run_binary([
