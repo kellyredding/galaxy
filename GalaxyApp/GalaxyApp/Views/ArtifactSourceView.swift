@@ -214,13 +214,10 @@ private func buildSourceHTML(
         font-size: 13px;
         line-height: 1.45;
         -webkit-font-smoothing: antialiased;
-        overflow: hidden;
-        height: 100%;
     }
     .source-container {
         width: 100%;
-        height: 100%;
-        overflow: auto;
+        overflow-x: auto;
     }
     table.source-table {
         border-collapse: collapse;
