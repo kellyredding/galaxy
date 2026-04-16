@@ -1586,9 +1586,6 @@ data.annotation.number]
         annotationUpdated(data) {
             this.submitting = false;
 
-            var scrollY = window.pageYOffset
-                || document.documentElement.scrollTop;
-
             var idx = this.annotations.findIndex(
                 function(a) {
                     return a.number
@@ -1600,16 +1597,49 @@ data.annotation.number]
             this.annotationHTMLMap[\
 data.annotation.number]
                 = data.renderedHTML;
-            this.editingNumber = null;
 
             if (this.anchorType === 'whole') {
+                this.editingNumber = null;
                 this.renderWholeAnnotations();
                 return;
             }
 
-            this.renderAllAnnotations();
+            // Surgical in-place update: swap the edited
+            // card's textarea for a fresh content div.
+            // A full renderAllAnnotations() would rip the
+            // focused textarea out of the DOM while
+            // collapsing every spacer to height 0 — the
+            // combination clamps scroll to the top. Only
+            // one card's content actually changed, so a
+            // targeted DOM swap plus a position sync is
+            // enough and leaves scroll untouched.
+            var card = document.querySelector(
+                '.annotation-card[data-number="'
+                + data.annotation.number + '"]'
+            );
+            if (card) {
+                var ta = card.querySelector(\
+'.annotation-edit-textarea');
+                if (ta) {
+                    if (typeof EmojiAutocomplete \
+!== 'undefined') {
+                        EmojiAutocomplete.detach(ta);
+                    }
+                    ta.blur();
+                    var contentDiv
+                        = document.createElement('div');
+                    contentDiv.className
+                        = 'annotation-card-content';
+                    contentDiv.innerHTML
+                        = data.renderedHTML;
+                    ta.replaceWith(contentDiv);
+                }
+                card.removeAttribute(\
+'data-original-html');
+            }
+            this.editingNumber = null;
 
-            window.scrollTo(0, scrollY);
+            this.syncAllPositions();
         },
 
         annotationDeleted(number) {
