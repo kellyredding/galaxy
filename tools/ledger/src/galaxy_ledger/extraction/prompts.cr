@@ -17,7 +17,7 @@ module GalaxyLedger
         - Brainstorming or exploration without decisions
         - Acknowledgments ("yes", "ok", "continue", "sounds good", "that looks good")
         - One-time instructions for the current task only (e.g., "add a comment here" is one-time; "always add comments for complex logic" is durable)
-        - Conventions implied by standard practice UNLESS the user explicitly states them as a directive (e.g., "always use trailing commas" IS a direction even though trailing commas are a known convention — the user is explicitly requiring it)
+        - Conventions implied by standard practice UNLESS the user explicitly states them as a directive — explicit "always/never" phrasing is ALWAYS a direction regardless of whether the underlying convention is well-known (e.g., "always use trailing commas" IS a direction even though trailing commas are a known convention)
 
         ## Importance levels:
         - **high**: Security requirements, architectural constraints, explicit "always/never" rules
@@ -52,7 +52,7 @@ module GalaxyLedger
         - **Decisions**: Choices made between alternatives, with the rationale
 
         ## Do NOT extract:
-        - Standard programming knowledge any professional developer knows
+        - Standard programming knowledge any professional developer knows (general concepts, common patterns) — BUT always extract when the response states a specific choice between named alternatives with project-specific rationale
         - Temporary states ("I'm reading the file now", "Let me check...")
         - Speculative options that weren't chosen
         - Framework conventions documented in official guides

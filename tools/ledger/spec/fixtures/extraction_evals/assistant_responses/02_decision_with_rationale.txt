@@ -1,12 +1,3 @@
-I've implemented JWT authentication for the API. I chose JWT over session-based authentication because:
+I've implemented JWT authentication for the API instead of extending the existing cookie-based session system in ApplicationController. The SessionManager service was tightly coupled to the Rails session store, so reusing it would have required a significant refactor.
 
-1. The API is stateless and needs to scale horizontally
-2. Mobile clients will be consuming this API
-3. We need to support token refresh for long-lived sessions
-
-I set the token expiry to 15 minutes with a separate refresh token that lasts 7 days. The refresh token is stored in an httpOnly cookie for security.
-
-Files modified:
-- app/controllers/api/auth_controller.rb
-- app/models/user.rb
-- config/initializers/jwt.rb
+I chose a 15-minute access token with a 7-day refresh token stored in an httpOnly cookie. The refresh token is persisted in the user_refresh_tokens table so we can revoke individual devices. I considered using Redis for token storage but the existing PostgreSQL setup with the TokenRotation concern handles the load fine for our scale.
