@@ -1999,8 +1999,9 @@ enum AnnotationMessage {
 
 // MARK: - Annotation Init JS Builder
 
-/// Build the AnnotationManager.initialize() call JS
-/// for injection after page load.
+/// Core builder — takes annotation dictionaries directly
+/// so different domain types (artifact, snapshot) can feed
+/// into the same JS module via small adapter overloads.
 func buildAnnotationInitJS(
     anchorType: String,
     blockSelector: String,
@@ -2008,67 +2009,9 @@ func buildAnnotationInitJS(
     endLineAttr: String? = nil,
     refPrefix: String,
     itemLabel: String,
-    annotations: [ArtifactAnnotation],
+    annotationDicts: [[String: Any]],
     htmlMap: [Int32: String]
 ) -> String {
-    let startKey: String
-    let endKey: String
-    switch anchorType {
-    case "row_range":
-        startKey = "start_row"
-        endKey = "end_row"
-    case "block_range":
-        startKey = "start_block"
-        endKey = "end_block"
-    default:
-        startKey = "start_line"
-        endKey = "end_line"
-    }
-
-    let annotationDicts: [[String: Any]]
-        = annotations.map { a in
-            var dict: [String: Any] = [
-                "id": a.id,
-                "number": a.number,
-                "content": a.content,
-                "created_at": a.createdAt,
-                "updated_at": a.updatedAt,
-            ]
-            // Set position keys based on anchor type
-            switch a.anchorData.type {
-            case .lineRange:
-                if let sl = a.anchorData.startLine {
-                    dict["start_line"] = sl
-                }
-                if let el = a.anchorData.endLine {
-                    dict["end_line"] = el
-                }
-            case .rowRange:
-                if let sr = a.anchorData.startRow {
-                    dict["start_row"] = sr
-                }
-                if let er = a.anchorData.endRow {
-                    dict["end_row"] = er
-                }
-            case .blockRange:
-                if let sb = a.anchorData.startBlock {
-                    dict["start_block"] = sb
-                }
-                if let eb = a.anchorData.endBlock {
-                    dict["end_block"] = eb
-                }
-            case .whole:
-                break
-            }
-            if let rn = a.reviewNumber {
-                dict["review_number"] = rn
-            }
-            if let rra = a.reviewReviewedAt {
-                dict["review_reviewed_at"] = rra
-            }
-            return dict
-        }
-
     let htmlMapDict: [String: String] = {
         var d: [String: String] = [:]
         for (k, v) in htmlMap {
@@ -2097,4 +2040,115 @@ func buildAnnotationInitJS(
     else { return "" }
 
     return "AnnotationManager.initialize(\(json))"
+}
+
+/// Overload for `[ArtifactAnnotation]` — maps anchor-type
+/// variants (line_range / row_range / block_range / whole)
+/// into the flat dict shape the JS expects.
+func buildAnnotationInitJS(
+    anchorType: String,
+    blockSelector: String,
+    lineAttr: String,
+    endLineAttr: String? = nil,
+    refPrefix: String,
+    itemLabel: String,
+    annotations: [ArtifactAnnotation],
+    htmlMap: [Int32: String]
+) -> String {
+    let dicts: [[String: Any]] = annotations.map { a in
+        var dict: [String: Any] = [
+            "id": a.id,
+            "number": a.number,
+            "content": a.content,
+            "created_at": a.createdAt,
+            "updated_at": a.updatedAt,
+        ]
+        switch a.anchorData.type {
+        case .lineRange:
+            if let sl = a.anchorData.startLine {
+                dict["start_line"] = sl
+            }
+            if let el = a.anchorData.endLine {
+                dict["end_line"] = el
+            }
+        case .rowRange:
+            if let sr = a.anchorData.startRow {
+                dict["start_row"] = sr
+            }
+            if let er = a.anchorData.endRow {
+                dict["end_row"] = er
+            }
+        case .blockRange:
+            if let sb = a.anchorData.startBlock {
+                dict["start_block"] = sb
+            }
+            if let eb = a.anchorData.endBlock {
+                dict["end_block"] = eb
+            }
+        case .whole:
+            break
+        }
+        if let rn = a.reviewNumber {
+            dict["review_number"] = rn
+        }
+        if let rra = a.reviewReviewedAt {
+            dict["review_reviewed_at"] = rra
+        }
+        return dict
+    }
+
+    return buildAnnotationInitJS(
+        anchorType: anchorType,
+        blockSelector: blockSelector,
+        lineAttr: lineAttr,
+        endLineAttr: endLineAttr,
+        refPrefix: refPrefix,
+        itemLabel: itemLabel,
+        annotationDicts: dicts,
+        htmlMap: htmlMap
+    )
+}
+
+/// Overload for `[SnapshotAnnotation]` — snapshots only
+/// support `line_range` anchors, so the dict shape is
+/// simpler than the artifact variant.
+func buildAnnotationInitJS(
+    anchorType: String,
+    blockSelector: String,
+    lineAttr: String,
+    endLineAttr: String? = nil,
+    refPrefix: String,
+    itemLabel: String,
+    annotations: [SnapshotAnnotation],
+    htmlMap: [Int32: String]
+) -> String {
+    let dicts: [[String: Any]] = annotations.map { a in
+        var dict: [String: Any] = [
+            "id": a.id,
+            "number": a.number,
+            "start_line": a.startLine,
+            "end_line": a.endLine,
+            "content": a.content,
+            "created_at": a.createdAt,
+            "updated_at": a.updatedAt,
+        ]
+        if let rn = a.reviewNumber {
+            dict["review_number"] = rn
+        }
+        if let rra = a.reviewReviewedAt {
+            dict["review_reviewed_at"] = rra
+        }
+        return dict
+    }
+
+    return buildAnnotationInitJS(
+        anchorType: anchorType,
+        blockSelector: blockSelector,
+        lineAttr: lineAttr,
+        endLineAttr: endLineAttr,
+        refPrefix: refPrefix,
+        itemLabel: itemLabel,
+        annotationDicts: dicts,
+        htmlMap: htmlMap
+    )
 }
