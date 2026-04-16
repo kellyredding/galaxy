@@ -131,6 +131,9 @@ class ScrollbackWebView: NSView {
         else { return }
 
         switch action {
+        case "log":
+            let msg = (body["message"] as? String) ?? ""
+            GalaxyLog.js("scrollback", msg)
         case "dismiss":
             onDismiss?()
         case "ready":

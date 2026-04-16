@@ -366,6 +366,9 @@ let annotationManagerJS: String = """
         expandedNumber: null,
         confirmingDeleteNumber: null,
         confirmDeleteTimer: null,
+        confirmArmedAt: null,
+        submitting: false,
+        deleting: false,
         // Config
         anchorType: 'line_range',
         blockSelector: '.md-block',
@@ -1395,10 +1398,14 @@ number);
         },
 
         submitCreate() {
+            if (this.submitting) return;
+
             var ta = this.formElement.querySelector(\
 'textarea');
             var content = ta ? ta.value.trim() : '';
             if (!content) return;
+
+            this.submitting = true;
 
             if (this.anchorType === 'whole') {
                 window.webkit.messageHandlers.annotation\
@@ -1447,6 +1454,8 @@ this.highlightStart, this.highlightEnd);
         },
 
         submitUpdate(number) {
+            if (this.submitting) return;
+
             var card = document.querySelector(
                 '.annotation-card[data-number="'
                 + number + '"]'
@@ -1458,6 +1467,8 @@ this.highlightStart, this.highlightEnd);
             var content = ta.value.trim();
             if (!content) return;
 
+            this.submitting = true;
+
             window.webkit.messageHandlers.annotation\
 .postMessage({
                 action: 'update',
@@ -1467,7 +1478,33 @@ this.highlightStart, this.highlightEnd);
         },
 
         handleDeleteClick(number) {
+            var now = Date.now();
+            AnnotationManager.postLog(
+                '[anno] handleDeleteClick n=' + number
+                + ' deleting=' + this.deleting
+                + ' confirming=' + this.confirmingDeleteNumber
+                + ' armedAt=' + this.confirmArmedAt
+                + ' elapsed=' + (this.confirmArmedAt
+                    ? (now - this.confirmArmedAt) : 'n/a')
+            );
+            if (this.deleting) return;
             if (this.confirmingDeleteNumber === number) {
+                // Reject clicks too close to arming — this
+                // catches the second click of a double-click
+                // regardless of whether btn.disabled worked.
+                var elapsed = now - this.confirmArmedAt;
+                if (elapsed < 500) {
+                    AnnotationManager.postLog(
+                        '[anno] REJECTED confirm click, '
+                        + 'elapsed=' + elapsed + 'ms'
+                    );
+                    return;
+                }
+                AnnotationManager.postLog(
+                    '[anno] ACCEPTED confirm, '
+                    + 'elapsed=' + elapsed + 'ms'
+                );
+                this.deleting = true;
                 this.clearDeleteConfirmation();
                 this.requestDelete(number);
             } else {
@@ -1478,6 +1515,11 @@ this.highlightStart, this.highlightEnd);
         showDeleteConfirmation(number) {
             this.clearDeleteConfirmation();
             this.confirmingDeleteNumber = number;
+            this.confirmArmedAt = Date.now();
+            AnnotationManager.postLog(
+                '[anno] armed confirm for n=' + number
+                + ' at ' + this.confirmArmedAt
+            );
 
             var btn = document.querySelector(
                 '.annotation-card[data-number="'
@@ -1500,6 +1542,7 @@ function() {
                 clearTimeout(this.confirmDeleteTimer);
                 this.confirmDeleteTimer = null;
             }
+            this.confirmArmedAt = null;
             var number = this.confirmingDeleteNumber;
             if (number === null) return;
             this.confirmingDeleteNumber = null;
@@ -1522,7 +1565,19 @@ function() {
             });
         },
 
+        postLog(msg) {
+            try {
+                window.webkit.messageHandlers.annotation\
+.postMessage({
+                    action: 'log',
+                    message: String(msg)
+                });
+            } catch (e) {}
+        },
+
         annotationCreated(data) {
+            this.submitting = false;
+
             var scrollY = window.pageYOffset
                 || document.documentElement.scrollTop;
 
@@ -1559,6 +1614,8 @@ data.annotation.number]
         },
 
         annotationUpdated(data) {
+            this.submitting = false;
+
             var scrollY = window.pageYOffset
                 || document.documentElement.scrollTop;
 
@@ -1586,6 +1643,8 @@ data.annotation.number]
         },
 
         annotationDeleted(number) {
+            this.deleting = false;
+
             var scrollY = window.pageYOffset
                 || document.documentElement.scrollTop;
 

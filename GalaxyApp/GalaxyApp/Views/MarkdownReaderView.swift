@@ -335,6 +335,9 @@ struct MarkdownReaderView: NSViewRepresentable {
                   let action = body["action"] as? String else { return }
 
             switch action {
+            case "log":
+                let msg = (body["message"] as? String) ?? ""
+                GalaxyLog.js("annotation", msg)
             case "create":
                 guard let startLine = body["startLine"] as? Int,
                       let endLine = body["endLine"] as? Int,
@@ -993,6 +996,9 @@ private func buildFullHTML(
         expandedNumber: null,
         confirmingDeleteNumber: null,
         confirmDeleteTimer: null,
+        confirmArmedAt: null,
+        submitting: false,
+        deleting: false,
         itemLabel: '',
         editIconSVG: '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>',
         deleteIconSVG: '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M5 6v14a1 1 0 001 1h12a1 1 0 001-1V6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>',
@@ -1629,10 +1635,12 @@ private func buildFullHTML(
         // --- Communication with Swift ---
 
         submitCreate() {
+            if (this.submitting) return;
             var ta = this.formElement.querySelector('textarea');
             var content = ta ? ta.value.trim() : '';
             if (!content) return;
 
+            this.submitting = true;
             var range = this.getLineRange(this.highlightStart, this.highlightEnd);
             window.webkit.messageHandlers.annotation.postMessage({
                 action: 'create',
@@ -1643,6 +1651,7 @@ private func buildFullHTML(
         },
 
         submitUpdate(number) {
+            if (this.submitting) return;
             var card = document.querySelector(
                 '.annotation-card[data-number="' + number + '"]'
             );
@@ -1652,6 +1661,7 @@ private func buildFullHTML(
             var content = ta.value.trim();
             if (!content) return;
 
+            this.submitting = true;
             window.webkit.messageHandlers.annotation.postMessage({
                 action: 'update',
                 number: number,
@@ -1660,8 +1670,30 @@ private func buildFullHTML(
         },
 
         handleDeleteClick(number) {
+            var now = Date.now();
+            AnnotationManager.postLog(
+                '[anno-md] handleDeleteClick n=' + number
+                + ' deleting=' + this.deleting
+                + ' confirming=' + this.confirmingDeleteNumber
+                + ' armedAt=' + this.confirmArmedAt
+                + ' elapsed=' + (this.confirmArmedAt
+                    ? (now - this.confirmArmedAt) : 'n/a')
+            );
+            if (this.deleting) return;
             if (this.confirmingDeleteNumber === number) {
-                // Second click — confirmed
+                var elapsed = now - this.confirmArmedAt;
+                if (elapsed < 500) {
+                    AnnotationManager.postLog(
+                        '[anno-md] REJECTED confirm click, '
+                        + 'elapsed=' + elapsed + 'ms'
+                    );
+                    return;
+                }
+                AnnotationManager.postLog(
+                    '[anno-md] ACCEPTED confirm, elapsed='
+                    + elapsed + 'ms'
+                );
+                this.deleting = true;
                 this.clearDeleteConfirmation();
                 this.requestDelete(number);
             } else {
@@ -1672,6 +1704,11 @@ private func buildFullHTML(
         showDeleteConfirmation(number) {
             this.clearDeleteConfirmation();
             this.confirmingDeleteNumber = number;
+            this.confirmArmedAt = Date.now();
+            AnnotationManager.postLog(
+                '[anno-md] armed confirm n=' + number
+                + ' at ' + this.confirmArmedAt
+            );
 
             var btn = document.querySelector(
                 '.annotation-card[data-number="' + number + '"] .annotation-btn-delete'
@@ -1691,6 +1728,7 @@ private func buildFullHTML(
                 clearTimeout(this.confirmDeleteTimer);
                 this.confirmDeleteTimer = null;
             }
+            this.confirmArmedAt = null;
             var number = this.confirmingDeleteNumber;
             if (number === null) return;
             this.confirmingDeleteNumber = null;
@@ -1710,9 +1748,19 @@ private func buildFullHTML(
             });
         },
 
+        postLog(msg) {
+            try {
+                window.webkit.messageHandlers.annotation.postMessage({
+                    action: 'log',
+                    message: String(msg)
+                });
+            } catch (e) {}
+        },
+
         // --- Callbacks from Swift ---
 
         annotationCreated(data) {
+            this.submitting = false;
             var scrollY = window.pageYOffset || document.documentElement.scrollTop;
 
             this.annotations.push(data.annotation);
@@ -1738,6 +1786,7 @@ private func buildFullHTML(
         },
 
         annotationUpdated(data) {
+            this.submitting = false;
             var scrollY = window.pageYOffset || document.documentElement.scrollTop;
 
             var idx = this.annotations.findIndex(
@@ -1752,6 +1801,7 @@ private func buildFullHTML(
         },
 
         annotationDeleted(number) {
+            this.deleting = false;
             var scrollY = window.pageYOffset || document.documentElement.scrollTop;
 
             if (this.expandedNumber === number) {

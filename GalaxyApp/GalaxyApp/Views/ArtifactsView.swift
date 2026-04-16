@@ -57,6 +57,8 @@ struct ArtifactsView: View {
         [ArtifactAnnotation] = []
     @State private var annotationHTMLMap:
         [Int32: String] = [:]
+    @State private var dismissingStaleNumber:
+        Int32? = nil
 
     // Review state
     @State private var hasUnreviewedAnnotations:
@@ -773,6 +775,9 @@ struct ArtifactsView: View {
             }
             .chromeFont(size: fontSize.caption2)
             .foregroundColor(.secondary)
+            .disabled(
+                dismissingStaleNumber == ann.number
+            )
         }
         .padding(.vertical, 4)
     }
@@ -780,9 +785,12 @@ struct ArtifactsView: View {
     private func dismissStaleAnnotation(
         _ ann: ArtifactAnnotation
     ) {
+        guard dismissingStaleNumber == nil
+        else { return }
         guard let lsid = session.ledgerSessionId,
               let artifact = openArtifact
         else { return }
+        dismissingStaleNumber = ann.number
         Task {
             do {
                 try await ArtifactQueryService.shared
@@ -798,6 +806,7 @@ struct ArtifactsView: View {
                     annotationHTMLMap.removeValue(
                         forKey: ann.number
                     )
+                    dismissingStaleNumber = nil
                 }
             } catch {
                 NSLog(
@@ -805,6 +814,9 @@ struct ArtifactsView: View {
                     + "annotation error: %@",
                     error.localizedDescription
                 )
+                await MainActor.run {
+                    dismissingStaleNumber = nil
+                }
             }
         }
     }

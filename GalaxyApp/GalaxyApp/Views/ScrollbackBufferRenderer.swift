@@ -820,6 +820,9 @@ enum ScrollbackBufferRenderer {
         expandedId: null,
         confirmingDeleteId: null,
         confirmDeleteTimer: null,
+        confirmArmedAt: null,
+        submitting: false,
+        deleting: false,
         highlightedLines: [],
         formStartLine: null,
         formEndLine: null,
@@ -1030,9 +1033,13 @@ enum ScrollbackBufferRenderer {
         },
 
         submitNote() {
+            if (this.submitting) return;
+
             const ta = this.formElement.querySelector('textarea');
             const content = ta.value.trim();
             if (!content) return;
+
+            this.submitting = true;
 
             // Extract line content from DOM
             let lineContent = '';
@@ -1063,6 +1070,8 @@ enum ScrollbackBufferRenderer {
         // --- Card Management ---
 
         noteCreated(note) {
+            this.submitting = false;
+
             // Assign number if not present
             if (!note.number) {
                 note.number = this.nextNumber;
@@ -1078,6 +1087,8 @@ enum ScrollbackBufferRenderer {
         },
 
         noteUpdated(note) {
+            this.submitting = false;
+
             const idx = this.items.findIndex(n => n.id === note.id);
             if (idx >= 0) {
                 this.items[idx].content = note.content;
@@ -1094,6 +1105,8 @@ enum ScrollbackBufferRenderer {
         },
 
         noteDeleted(id) {
+            this.deleting = false;
+
             this.items = this.items.filter(n => n.id !== id);
 
             // Remove card
@@ -1301,8 +1314,12 @@ enum ScrollbackBufferRenderer {
         },
 
         saveEdit(noteId, newContent) {
+            if (this.submitting) return;
+
             const trimmed = newContent.trim();
             if (!trimmed) return;
+
+            this.submitting = true;
 
             window.webkit.messageHandlers.scrollback.postMessage({
                 action: 'updateNote',
@@ -1332,11 +1349,37 @@ enum ScrollbackBufferRenderer {
         // --- Delete ---
 
         handleDelete(noteId) {
+            const now = Date.now();
+            ScrollbackManager.notes.postLog(
+                '[note] handleDelete id=' + noteId
+                + ' deleting=' + this.deleting
+                + ' confirming=' + this.confirmingDeleteId
+                + ' armedAt=' + this.confirmArmedAt
+                + ' elapsed=' + (this.confirmArmedAt
+                    ? (now - this.confirmArmedAt) : 'n/a')
+            );
+            if (this.deleting) return;
             if (this.confirmingDeleteId === noteId) {
-                // Second click — confirm delete
+                // Reject clicks too close to arming — this
+                // catches the second click of a double-click
+                // regardless of whether btn.disabled worked.
+                const elapsed = now - this.confirmArmedAt;
+                if (elapsed < 500) {
+                    ScrollbackManager.notes.postLog(
+                        '[note] REJECTED confirm click, '
+                        + 'elapsed=' + elapsed + 'ms'
+                    );
+                    return;
+                }
+                ScrollbackManager.notes.postLog(
+                    '[note] ACCEPTED confirm, '
+                    + 'elapsed=' + elapsed + 'ms'
+                );
+                this.deleting = true;
                 clearTimeout(this.confirmDeleteTimer);
                 this.confirmingDeleteId = null;
                 this.confirmDeleteTimer = null;
+                this.confirmArmedAt = null;
 
                 window.webkit.messageHandlers.scrollback.postMessage({
                     action: 'deleteNote',
@@ -1346,9 +1389,15 @@ enum ScrollbackBufferRenderer {
             }
 
             // First click — show confirmation
-            this.confirmingDeleteId = noteId;
             const card = document.querySelector('[data-note-id=\"' + noteId + '\"]');
             if (!card) return;
+
+            this.confirmingDeleteId = noteId;
+            this.confirmArmedAt = now;
+            ScrollbackManager.notes.postLog(
+                '[note] armed confirm for id=' + noteId
+                + ' at ' + now
+            );
 
             const btn = card.querySelector('.note-btn-delete');
             btn.classList.add('confirming');
@@ -1360,6 +1409,7 @@ enum ScrollbackBufferRenderer {
                 btn.innerHTML = self.deleteIconSVG;
                 self.confirmingDeleteId = null;
                 self.confirmDeleteTimer = null;
+                self.confirmArmedAt = null;
             }, 5000);
         },
 
@@ -1416,6 +1466,15 @@ enum ScrollbackBufferRenderer {
         },
 
         // --- Utilities ---
+
+        postLog(msg) {
+            try {
+                window.webkit.messageHandlers.scrollback.postMessage({
+                    action: 'log',
+                    message: String(msg)
+                });
+            } catch (e) {}
+        },
 
         escapeHTML(str) {
             const div = document.createElement('div');
