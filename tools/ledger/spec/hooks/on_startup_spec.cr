@@ -173,7 +173,7 @@ describe "OnStartup additionalContext" do
     output = JSON.parse(result[:output])
     ctx = output["hookSpecificOutput"]["additionalContext"].as_s
     ctx.should contain("### Artifact Awareness")
-    ctx.should contain("artifact save --pid")
+    ctx.should contain("galaxy-artifacts save --pid")
     ctx.should contain("--source-path")
     ctx.should contain("Do this automatically")
     ctx.should contain("Do not mention artifact capture")

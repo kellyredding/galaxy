@@ -216,7 +216,7 @@ module GalaxyLedger
         lines << "python scripts generating files, curl downloads of documents),"
         lines << "register them silently:"
         lines << ""
-        lines << "    galaxy-ledger artifact save --pid #{claude_pid} \\\\"
+        lines << "    galaxy-artifacts save --pid #{claude_pid} \\\\"
         lines << "      --title \"Descriptive title\" \\\\"
         lines << "      --source-path /path/to/created/file \\\\"
         lines << "      --description \"Brief context about what this contains\""
