@@ -27,6 +27,8 @@ let annotationCSS: String = """
         border: 1px solid rgba(88, 166, 255, 0.4);
         border-radius: 6px;
         background: var(--code-bg);
+        font-family: -apple-system, sans-serif;
+        font-size: 13px;
         box-sizing: border-box;
     }
     .annotation-form-header {
@@ -72,6 +74,7 @@ let annotationCSS: String = """
         border: 1px solid var(--code-border);
         border-radius: 6px;
         background: var(--code-bg);
+        font-family: -apple-system, sans-serif;
         font-size: 13px;
         box-sizing: border-box;
     }
