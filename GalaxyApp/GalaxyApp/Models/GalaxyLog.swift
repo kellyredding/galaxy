@@ -34,10 +34,6 @@ enum GalaxyLog {
         write("[Galaxy/circuit] \(message)")
     }
 
-    static func js(_ channel: String, _ message: String) {
-        write("[Galaxy/js/\(channel)] \(message)")
-    }
-
     private static func write(_ message: String) {
         let timestamp = dateFormatter.string(from: Date())
         let line = "[\(timestamp)] \(message)\n"

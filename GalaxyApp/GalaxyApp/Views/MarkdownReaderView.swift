@@ -335,9 +335,6 @@ struct MarkdownReaderView: NSViewRepresentable {
                   let action = body["action"] as? String else { return }
 
             switch action {
-            case "log":
-                let msg = (body["message"] as? String) ?? ""
-                GalaxyLog.js("annotation", msg)
             case "create":
                 guard let startLine = body["startLine"] as? Int,
                       let endLine = body["endLine"] as? Int,
@@ -1171,7 +1168,6 @@ private func buildFullHTML(
                 }
                 if (e.key === 'Enter' && e.metaKey) {
                     e.preventDefault();
-                    console.log('[AnnotationManager] Cmd+Enter matched — calling submitCreate');
                     AnnotationManager.submitCreate();
                 }
             });
@@ -1597,7 +1593,6 @@ private func buildFullHTML(
                 }
                 if (e.key === 'Enter' && e.metaKey) {
                     e.preventDefault();
-                    console.log('[AnnotationManager] Cmd+Enter matched — calling submitUpdate');
                     AnnotationManager.submitUpdate(number);
                 }
             });
@@ -1670,29 +1665,13 @@ private func buildFullHTML(
         },
 
         handleDeleteClick(number) {
-            var now = Date.now();
-            AnnotationManager.postLog(
-                '[anno-md] handleDeleteClick n=' + number
-                + ' deleting=' + this.deleting
-                + ' confirming=' + this.confirmingDeleteNumber
-                + ' armedAt=' + this.confirmArmedAt
-                + ' elapsed=' + (this.confirmArmedAt
-                    ? (now - this.confirmArmedAt) : 'n/a')
-            );
             if (this.deleting) return;
             if (this.confirmingDeleteNumber === number) {
-                var elapsed = now - this.confirmArmedAt;
-                if (elapsed < 500) {
-                    AnnotationManager.postLog(
-                        '[anno-md] REJECTED confirm click, '
-                        + 'elapsed=' + elapsed + 'ms'
-                    );
-                    return;
-                }
-                AnnotationManager.postLog(
-                    '[anno-md] ACCEPTED confirm, elapsed='
-                    + elapsed + 'ms'
-                );
+                // Reject clicks too close to arming — this
+                // catches the second click of a double-click
+                // regardless of whether btn.disabled worked.
+                var elapsed = Date.now() - this.confirmArmedAt;
+                if (elapsed < 500) return;
                 this.deleting = true;
                 this.clearDeleteConfirmation();
                 this.requestDelete(number);
@@ -1705,10 +1684,6 @@ private func buildFullHTML(
             this.clearDeleteConfirmation();
             this.confirmingDeleteNumber = number;
             this.confirmArmedAt = Date.now();
-            AnnotationManager.postLog(
-                '[anno-md] armed confirm n=' + number
-                + ' at ' + this.confirmArmedAt
-            );
 
             var btn = document.querySelector(
                 '.annotation-card[data-number="' + number + '"] .annotation-btn-delete'
@@ -1746,15 +1721,6 @@ private func buildFullHTML(
                 action: 'delete',
                 number: number
             });
-        },
-
-        postLog(msg) {
-            try {
-                window.webkit.messageHandlers.annotation.postMessage({
-                    action: 'log',
-                    message: String(msg)
-                });
-            } catch (e) {}
         },
 
         // --- Callbacks from Swift ---

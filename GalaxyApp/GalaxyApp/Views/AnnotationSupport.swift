@@ -1478,32 +1478,13 @@ this.highlightStart, this.highlightEnd);
         },
 
         handleDeleteClick(number) {
-            var now = Date.now();
-            AnnotationManager.postLog(
-                '[anno] handleDeleteClick n=' + number
-                + ' deleting=' + this.deleting
-                + ' confirming=' + this.confirmingDeleteNumber
-                + ' armedAt=' + this.confirmArmedAt
-                + ' elapsed=' + (this.confirmArmedAt
-                    ? (now - this.confirmArmedAt) : 'n/a')
-            );
             if (this.deleting) return;
             if (this.confirmingDeleteNumber === number) {
                 // Reject clicks too close to arming — this
                 // catches the second click of a double-click
                 // regardless of whether btn.disabled worked.
-                var elapsed = now - this.confirmArmedAt;
-                if (elapsed < 500) {
-                    AnnotationManager.postLog(
-                        '[anno] REJECTED confirm click, '
-                        + 'elapsed=' + elapsed + 'ms'
-                    );
-                    return;
-                }
-                AnnotationManager.postLog(
-                    '[anno] ACCEPTED confirm, '
-                    + 'elapsed=' + elapsed + 'ms'
-                );
+                var elapsed = Date.now() - this.confirmArmedAt;
+                if (elapsed < 500) return;
                 this.deleting = true;
                 this.clearDeleteConfirmation();
                 this.requestDelete(number);
@@ -1516,10 +1497,6 @@ this.highlightStart, this.highlightEnd);
             this.clearDeleteConfirmation();
             this.confirmingDeleteNumber = number;
             this.confirmArmedAt = Date.now();
-            AnnotationManager.postLog(
-                '[anno] armed confirm for n=' + number
-                + ' at ' + this.confirmArmedAt
-            );
 
             var btn = document.querySelector(
                 '.annotation-card[data-number="'
@@ -1563,16 +1540,6 @@ function() {
                 action: 'delete',
                 number: number
             });
-        },
-
-        postLog(msg) {
-            try {
-                window.webkit.messageHandlers.annotation\
-.postMessage({
-                    action: 'log',
-                    message: String(msg)
-                });
-            } catch (e) {}
         },
 
         annotationCreated(data) {

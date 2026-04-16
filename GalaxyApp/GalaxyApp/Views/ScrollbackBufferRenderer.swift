@@ -1349,32 +1349,13 @@ enum ScrollbackBufferRenderer {
         // --- Delete ---
 
         handleDelete(noteId) {
-            const now = Date.now();
-            ScrollbackManager.notes.postLog(
-                '[note] handleDelete id=' + noteId
-                + ' deleting=' + this.deleting
-                + ' confirming=' + this.confirmingDeleteId
-                + ' armedAt=' + this.confirmArmedAt
-                + ' elapsed=' + (this.confirmArmedAt
-                    ? (now - this.confirmArmedAt) : 'n/a')
-            );
             if (this.deleting) return;
             if (this.confirmingDeleteId === noteId) {
                 // Reject clicks too close to arming — this
                 // catches the second click of a double-click
                 // regardless of whether btn.disabled worked.
-                const elapsed = now - this.confirmArmedAt;
-                if (elapsed < 500) {
-                    ScrollbackManager.notes.postLog(
-                        '[note] REJECTED confirm click, '
-                        + 'elapsed=' + elapsed + 'ms'
-                    );
-                    return;
-                }
-                ScrollbackManager.notes.postLog(
-                    '[note] ACCEPTED confirm, '
-                    + 'elapsed=' + elapsed + 'ms'
-                );
+                const elapsed = Date.now() - this.confirmArmedAt;
+                if (elapsed < 500) return;
                 this.deleting = true;
                 clearTimeout(this.confirmDeleteTimer);
                 this.confirmingDeleteId = null;
@@ -1393,11 +1374,7 @@ enum ScrollbackBufferRenderer {
             if (!card) return;
 
             this.confirmingDeleteId = noteId;
-            this.confirmArmedAt = now;
-            ScrollbackManager.notes.postLog(
-                '[note] armed confirm for id=' + noteId
-                + ' at ' + now
-            );
+            this.confirmArmedAt = Date.now();
 
             const btn = card.querySelector('.note-btn-delete');
             btn.classList.add('confirming');
@@ -1465,16 +1442,6 @@ enum ScrollbackBufferRenderer {
             });
         },
 
-        // --- Utilities ---
-
-        postLog(msg) {
-            try {
-                window.webkit.messageHandlers.scrollback.postMessage({
-                    action: 'log',
-                    message: String(msg)
-                });
-            } catch (e) {}
-        },
 
         escapeHTML(str) {
             const div = document.createElement('div');
