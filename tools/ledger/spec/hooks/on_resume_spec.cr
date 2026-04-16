@@ -486,45 +486,118 @@ describe "OnResume orphan cleanup" do
     GalaxyLedger::Database.resolve_claude_pid(spec_runner_pid).should eq(original_ledger_id)
   end
 
-  it "cascade-deletes orphan entries and files" do
-    original_id = "resume-orphan-cascade-orig-#{Random.rand(10000)}"
-    original_ledger_id = GalaxyLedger::Database.create_session(original_id)
+  it "preserves a session with accumulated entries (guardrail)" do
+    # An OnStartup-created orphan never has entries — entries come
+    # from Stop/UserPromptSubmit/PostToolUse hooks running during real
+    # work. A session with entries whose PID happens to match ours is
+    # almost certainly a real long-running session whose PID got
+    # recycled by the OS, not an orphan. The guardrail must refuse
+    # to CASCADE-delete it.
+    resolved_id = "resume-guardrail-entries-resolved-#{Random.rand(10000)}"
+    resolved_ledger_id = GalaxyLedger::Database.create_session(resolved_id)
 
-    # Add data to original
-    original_entry = GalaxyLedger::Entry.new(
-      entry_type: "learning",
-      content: "Original data survives",
-      importance: "medium"
-    )
-    GalaxyLedger::Database.insert(original_ledger_id, original_entry)
-    GalaxyLedger::Database.upsert_session_file(original_ledger_id, "/original/file.cr", :read)
-
-    # Create orphan with entries and files
-    orphan_id = "resume-orphan-cascade-orphan-#{Random.rand(10000)}"
+    stale_id = "resume-guardrail-entries-stale-#{Random.rand(10000)}"
     spec_runner_pid = Process.pid.to_i64
-    orphan_ledger_id = GalaxyLedger::Database.create_session(orphan_id, claude_pid: spec_runner_pid)
+    stale_ledger_id = GalaxyLedger::Database.create_session(stale_id, claude_pid: spec_runner_pid)
 
-    orphan_entry = GalaxyLedger::Entry.new(
+    stale_entry = GalaxyLedger::Entry.new(
       entry_type: "learning",
-      content: "Orphan data gets deleted",
-      importance: "medium"
+      content: "Real session's data must survive",
+      importance: "medium",
     )
-    GalaxyLedger::Database.insert(orphan_ledger_id, orphan_entry)
-    GalaxyLedger::Database.upsert_session_file(orphan_ledger_id, "/orphan/file.cr", :write)
+    GalaxyLedger::Database.insert(stale_ledger_id, stale_entry)
+    GalaxyLedger::Database.upsert_session_file(stale_ledger_id, "/real/file.cr", :read)
 
-    # Resume: resolves to original via stdin
-    hook_input = {"session_id" => original_id}.to_json
+    hook_input = {"session_id" => resolved_id}.to_json
 
     result = run_binary(["on-resume"], stdin: hook_input)
     result[:status].should eq(0)
 
-    # Orphan's entries and files should be gone (CASCADE)
-    GalaxyLedger::Database.count_by_session(orphan_ledger_id).should eq(0)
-    GalaxyLedger::Database.session_files(orphan_ledger_id).should be_empty
+    # The "stale" session must be untouched — row still present,
+    # entries and files preserved.
+    GalaxyLedger::Database.get_session_by_id(stale_ledger_id).should_not be_nil
+    GalaxyLedger::Database.count_by_session(stale_ledger_id).should eq(1)
+    GalaxyLedger::Database.session_files(stale_ledger_id).size.should eq(1)
 
-    # Original's entries and files should be untouched
-    GalaxyLedger::Database.count_by_session(original_ledger_id).should eq(1)
-    GalaxyLedger::Database.session_files(original_ledger_id).size.should eq(1)
+    # The recycled PID should now point at the resolved session
+    # (register_claude_pid updates the row in place on line 52 of
+    # on_resume.cr).
+    GalaxyLedger::Database.resolve_claude_pid(spec_runner_pid).should eq(resolved_ledger_id)
+  end
+
+  it "preserves a session older than the fresh-orphan window (guardrail)" do
+    resolved_id = "resume-guardrail-age-resolved-#{Random.rand(10000)}"
+    resolved_ledger_id = GalaxyLedger::Database.create_session(resolved_id)
+
+    stale_id = "resume-guardrail-age-stale-#{Random.rand(10000)}"
+    spec_runner_pid = Process.pid.to_i64
+    stale_ledger_id = GalaxyLedger::Database.create_session(stale_id, claude_pid: spec_runner_pid)
+
+    # Backdate started_at by an hour — well outside the
+    # FRESH_ORPHAN_MAX_AGE_SECONDS (300s) window.
+    GalaxyLedger::Database.open do |db|
+      db.exec(
+        "UPDATE ledger_sessions SET started_at = datetime('now', '-1 hour') WHERE id = ?",
+        stale_ledger_id,
+      )
+    end
+
+    hook_input = {"session_id" => resolved_id}.to_json
+
+    result = run_binary(["on-resume"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    GalaxyLedger::Database.get_session_by_id(stale_ledger_id).should_not be_nil
+    GalaxyLedger::Database.resolve_claude_pid(spec_runner_pid).should eq(resolved_ledger_id)
+  end
+
+  it "preserves a session with multiple PID registrations (guardrail)" do
+    # OnStartup registers exactly one PID per orphan. Finding >1 PID
+    # attached means the candidate is a real session that has seen
+    # multiple processes over its lifetime.
+    resolved_id = "resume-guardrail-pids-resolved-#{Random.rand(10000)}"
+    resolved_ledger_id = GalaxyLedger::Database.create_session(resolved_id)
+
+    stale_id = "resume-guardrail-pids-stale-#{Random.rand(10000)}"
+    spec_runner_pid = Process.pid.to_i64
+    stale_ledger_id = GalaxyLedger::Database.create_session(stale_id, claude_pid: spec_runner_pid)
+
+    # Add a second PID to the "stale" session — simulates a real
+    # session that saw multiple claude processes over time.
+    GalaxyLedger::Database.register_claude_pid(stale_ledger_id, spec_runner_pid + 1_i64)
+
+    hook_input = {"session_id" => resolved_id}.to_json
+
+    result = run_binary(["on-resume"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    GalaxyLedger::Database.get_session_by_id(stale_ledger_id).should_not be_nil
+    # The non-recycled PID stays attached to the stale session.
+    GalaxyLedger::Database
+      .resolve_claude_pid(spec_runner_pid + 1_i64)
+      .should eq(stale_ledger_id)
+    # The recycled PID moves to the resolved session.
+    GalaxyLedger::Database.resolve_claude_pid(spec_runner_pid).should eq(resolved_ledger_id)
+  end
+
+  it "preserves a session with tracked files (guardrail)" do
+    resolved_id = "resume-guardrail-files-resolved-#{Random.rand(10000)}"
+    resolved_ledger_id = GalaxyLedger::Database.create_session(resolved_id)
+
+    stale_id = "resume-guardrail-files-stale-#{Random.rand(10000)}"
+    spec_runner_pid = Process.pid.to_i64
+    stale_ledger_id = GalaxyLedger::Database.create_session(stale_id, claude_pid: spec_runner_pid)
+
+    GalaxyLedger::Database.upsert_session_file(stale_ledger_id, "/real/work.cr", :edited)
+
+    hook_input = {"session_id" => resolved_id}.to_json
+
+    result = run_binary(["on-resume"], stdin: hook_input)
+    result[:status].should eq(0)
+
+    GalaxyLedger::Database.get_session_by_id(stale_ledger_id).should_not be_nil
+    GalaxyLedger::Database.session_files(stale_ledger_id).size.should eq(1)
+    GalaxyLedger::Database.resolve_claude_pid(spec_runner_pid).should eq(resolved_ledger_id)
   end
 
   it "no-ops when PID already points to resolved session" do

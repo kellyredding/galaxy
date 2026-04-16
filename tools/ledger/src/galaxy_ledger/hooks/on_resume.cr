@@ -6,14 +6,15 @@ module GalaxyLedger
     #
     # Resolves the original session via env var (preferred) or stdin
     # session_id. PID is NOT used for resolution — on resume the PID is
-    # always a new process, and OnStartup may have already claimed it
-    # for an orphan session.
+    # always a new process, and OnStartup may have claimed it for an
+    # orphan when env_session_id was missing at startup time.
     #
-    # After resolving, cleans up any orphan session created by OnStartup
-    # (which fires before OnResume on --resume). If PID points to a
-    # different session than the one we resolved, that's the orphan —
-    # all its mappings are saved, the orphan is deleted, and mappings
-    # are re-registered against the real session.
+    # After resolving, conditionally cleans up any orphan session
+    # created by OnStartup. The cleanup is strictly guardrailed: only
+    # sessions that look freshly created and empty are merged. A PID
+    # pointing at an older session is treated as OS PID recycling and
+    # the old session is left intact — register_claude_pid updates the
+    # stale PID row in place. See cleanup_startup_orphan for details.
     #
     # Unlike clear/compact, the agent already has conversation history
     # restored by Claude Code on resume. So we inject awareness context
@@ -41,10 +42,10 @@ module GalaxyLedger
 
         return output_empty unless ledger_session_id && ledger_session_id > 0
 
-        # Orphan cleanup: OnStartup may have created an orphan session and
-        # registered our PID against it. If PID points to a different session
-        # than the one we just resolved, that's the orphan — delete it and
-        # consolidate all its mappings.
+        # Orphan cleanup: if OnStartup created a fresh orphan for this
+        # PID, merge it into the resolved session. Guardrailed — sessions
+        # with accumulated data are preserved (OS PID recycling, not an
+        # orphan). See cleanup_startup_orphan for the safety criteria.
         cleanup_startup_orphan(claude_pid, ledger_session_id)
 
         # Register the new PID and hook session_id against the resolved session.
@@ -169,33 +170,83 @@ module GalaxyLedger
 
       # Clean up orphan session created by OnStartup on --resume.
       #
-      # OnStartup fires before OnResume and may create an orphan session
-      # with our PID. If the PID currently maps to a different session
-      # than the one we resolved, that's the orphan.
+      # OnStartup can create an orphan session when env_session_id is
+      # missing on --resume (fresh-start fallback path creates a new
+      # session before OnResume resolves the real one). If the PID now
+      # maps to a different session than the one we resolved, that's
+      # the candidate orphan.
       #
-      # Defensive: saves ALL identifier and PID mappings from the orphan
-      # before CASCADE-deleting it, then re-registers them against the
-      # resolved session so nothing is lost.
+      # GUARDRAIL: a "different session" mapping can also mean the OS
+      # recycled a PID that was last registered weeks ago to a real
+      # long-running session. We MUST NOT CASCADE-delete those. Only
+      # proceed if the candidate looks like a freshly-created, empty
+      # orphan (recent started_at, zero entries/files, minimal PIDs and
+      # identifiers). Otherwise leave it alone — register_claude_pid on
+      # the caller will UPDATE the stale PID row in place, preserving
+      # the real session's data.
       private def cleanup_startup_orphan(claude_pid : Int64, resolved_session_id : Int64)
         # Check what session the PID currently points to.
         pid_session_id = Database.resolve_claude_pid(claude_pid)
         return unless pid_session_id
         return if pid_session_id == resolved_session_id
 
-        # PID points to a different session — that's the orphan.
-        # Save all mappings before CASCADE delete wipes them.
+        # Guardrail: only touch sessions that look like OnStartup orphans.
+        # Anything else is a legitimate session with a stale PID row.
+        unless looks_like_fresh_orphan?(pid_session_id)
+          STDERR.puts "[galaxy-ledger] on_resume: skipping orphan " \
+                      "cleanup for session #{pid_session_id} " \
+                      "(has accumulated data — likely stale PID " \
+                      "recycled by the OS, not a fresh orphan)"
+          return
+        end
+
+        # Candidate is a fresh OnStartup orphan. Save all mappings
+        # before CASCADE delete wipes them, then re-register against
+        # the resolved session.
         orphan_identifiers = Database.session_identifiers(pid_session_id)
         orphan_pids = Database.session_pids(pid_session_id)
 
         Database.delete_session(pid_session_id)
 
-        # Re-register all orphan mappings against the resolved session.
         orphan_identifiers.each do |sid|
           Database.register_session_identifier(resolved_session_id, sid) unless sid.empty?
         end
         orphan_pids.each do |pid|
           Database.register_claude_pid(resolved_session_id, pid) if pid > 0
         end
+      end
+
+      # A session qualifies as an OnStartup-created orphan only if it
+      # was created moments ago and holds nothing beyond the PID +
+      # identifier rows OnStartup itself registers. Any deviation
+      # (entries, session files, age, extra PIDs/identifiers) means
+      # the row belongs to a real session we must preserve.
+      FRESH_ORPHAN_MAX_AGE_SECONDS = 300
+
+      private def looks_like_fresh_orphan?(candidate_session_id : Int64) : Bool
+        session = Database.get_session_by_id(candidate_session_id)
+        return false unless session
+
+        started_at = session.started_at
+        return false unless started_at
+        begin
+          created = Time.parse(
+            started_at,
+            "%Y-%m-%d %H:%M:%S",
+            Time::Location::UTC,
+          )
+          age = (Time.utc - created).total_seconds
+          return false if age > FRESH_ORPHAN_MAX_AGE_SECONDS
+        rescue
+          return false
+        end
+
+        return false if Database.count_by_session(candidate_session_id) > 0
+        return false unless Database.session_files(candidate_session_id).empty?
+        return false if Database.session_pids(candidate_session_id).size > 1
+        return false if Database.session_identifiers(candidate_session_id).size > 2
+
+        true
       end
 
       private def build_resume_context(
