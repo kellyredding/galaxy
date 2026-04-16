@@ -1645,9 +1645,6 @@ data.annotation.number]
         annotationDeleted(number) {
             this.deleting = false;
 
-            var scrollY = window.pageYOffset
-                || document.documentElement.scrollTop;
-
             if (this.expandedNumber === number) {
                 this.collapseExpanded();
             }
@@ -1663,9 +1660,32 @@ data.annotation.number]
                 return;
             }
 
-            this.renderAllAnnotations();
+            // Surgical removal: drop just the deleted
+            // card and its spacer. A full
+            // renderAllAnnotations() would momentarily
+            // collapse every spacer to height 0 — on
+            // shorter documents that makes the body
+            // drop below the viewport and the browser
+            // clamps scrollY (to the top on HTML view,
+            // partway up on source view). Only one
+            // card's footprint is actually going away,
+            // so remove just that one and let the rest
+            // sit tight.
+            var entry = this.cardSpacers[number];
+            if (entry) {
+                if (this.resizeObserver && entry.card) {
+                    this.resizeObserver.unobserve(\
+entry.card);
+                }
+                if (entry.card && entry.card.parentNode) {
+                    entry.card.remove();
+                }
+                this.removeSpacer(entry.spacer,
+                    entry.spacerRow);
+                delete this.cardSpacers[number];
+            }
 
-            window.scrollTo(0, scrollY);
+            this.syncAllPositions();
         },
 
         isFormVisible() {
