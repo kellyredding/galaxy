@@ -1276,13 +1276,13 @@ struct SnapshotsView: View {
         let sn = snapshotNumber
         return "I've submitted snapshot annotations for your review."
             + " List pending reviews with"
-            + " `galaxy-ledger snapshot review list --json --pending"
+            + " `galaxy-snapshots review list --json --pending"
             + " --ledger-session-id \(sid) --snapshot \(sn)`,"
             + " view each with"
-            + " `galaxy-ledger snapshot review view --json"
+            + " `galaxy-snapshots review view --json"
             + " --ledger-session-id \(sid) --snapshot \(sn) REVIEW_NUMBER`,"
             + " mark each reviewed with"
-            + " `galaxy-ledger snapshot review mark-reviewed"
+            + " `galaxy-snapshots review mark-reviewed"
             + " --ledger-session-id \(sid) --snapshot \(sn) REVIEW_NUMBER`,"
             + " then respond to each annotation in the conversation."
     }
