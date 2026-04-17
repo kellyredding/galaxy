@@ -12,6 +12,7 @@
 | [artifacts](tools/artifacts/) | Session artifact management for Claude Code | Active |
 | [timeline](tools/timeline/) | Session timeline event recording for Claude Code | Active |
 | [agents](tools/agents/) | Subagent lifecycle tracking for Claude Code | Active |
+| [diff](tools/diff/) | Structured diff capture for code review in Galaxy.app | Active |
 
 ## Quick Install
 
@@ -27,6 +28,7 @@ make snapshots-install
 make artifacts-install
 make timeline-install
 make agents-install
+make diff-install
 ```
 
 Or build individual tools:
@@ -82,6 +84,12 @@ Subagent lifecycle tracking for Claude Code. Records when agents start, stop, fa
 
 See [tools/agents/](tools/agents/) for detailed documentation.
 
+### diff
+
+Structured diff capture for code review in Galaxy.app. Parses `git diff` output, reads full before/after file contents, and emits `.gdiff` JSON to stdout. Pipe into `galaxy-artifacts save` to produce an annotatable diff artifact with syntax highlighting, hunk overlay, and line-level annotations.
+
+See [tools/diff/](tools/diff/) for detailed documentation.
+
 ## Development
 
 Each tool is self-contained in its own directory under `tools/`. Tools may be written in different languages, but currently all are written in [Crystal](https://crystal-lang.org/).
@@ -116,7 +124,8 @@ galaxy/
     ├── snapshots/            # Session snapshot management
     ├── artifacts/            # Session artifact management
     ├── timeline/             # Session timeline events
-    └── agents/               # Subagent lifecycle tracking
+    ├── agents/               # Subagent lifecycle tracking
+    └── diff/                 # Structured diff capture
 ```
 
 ## License

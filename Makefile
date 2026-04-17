@@ -1,6 +1,6 @@
-.PHONY: all clean statusline-build statusline-test statusline-check statusline-install statusline-clean ledger-build ledger-test ledger-check ledger-install ledger-clean snapshots-build snapshots-dev snapshots-test snapshots-check snapshots-install snapshots-clean artifacts-build artifacts-dev artifacts-test artifacts-check artifacts-install artifacts-clean timeline-build timeline-dev timeline-test timeline-check timeline-install timeline-clean agents-build agents-dev agents-test agents-check agents-install agents-clean app-build app-clean
+.PHONY: all clean statusline-build statusline-test statusline-check statusline-install statusline-clean ledger-build ledger-test ledger-check ledger-install ledger-clean snapshots-build snapshots-dev snapshots-test snapshots-check snapshots-install snapshots-clean artifacts-build artifacts-dev artifacts-test artifacts-check artifacts-install artifacts-clean timeline-build timeline-dev timeline-test timeline-check timeline-install timeline-clean agents-build agents-dev agents-test agents-check agents-install agents-clean diff-build diff-dev diff-test diff-check diff-install diff-clean app-build app-clean
 
-all: statusline-build ledger-build snapshots-build artifacts-build timeline-build agents-build
+all: statusline-build ledger-build snapshots-build artifacts-build timeline-build agents-build diff-build
 
 # Statusline tool
 statusline-build:
@@ -116,6 +116,25 @@ agents-install:
 agents-clean:
 	$(MAKE) -C tools/agents clean
 
+# Diff tool
+diff-build:
+	$(MAKE) -C tools/diff build
+
+diff-dev:
+	$(MAKE) -C tools/diff dev
+
+diff-test:
+	$(MAKE) -C tools/diff test
+
+diff-check:
+	$(MAKE) -C tools/diff check
+
+diff-install:
+	$(MAKE) -C tools/diff install
+
+diff-clean:
+	$(MAKE) -C tools/diff clean
+
 # Galaxy.app (SwiftUI Mac app)
 # Always uses -derivedDataPath to avoid polluting ~/Library/Developer/Xcode/DerivedData
 APP_DERIVED_DATA = GalaxyApp/build
@@ -130,4 +149,4 @@ app-clean:
 	xcodebuild -project GalaxyApp/GalaxyApp.xcodeproj -scheme GalaxyApp -derivedDataPath $(APP_DERIVED_DATA) clean
 	rm -rf $(APP_DERIVED_DATA)
 
-clean: statusline-clean ledger-clean snapshots-clean artifacts-clean timeline-clean agents-clean app-clean
+clean: statusline-clean ledger-clean snapshots-clean artifacts-clean timeline-clean agents-clean diff-clean app-clean

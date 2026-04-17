@@ -1,0 +1,13 @@
+name: galaxy-diff
+version: 0.1.0
+
+authors:
+  - Kelly Redding <kelly@kellyredding.com>
+
+targets:
+  galaxy-diff:
+    main: src/galaxy_diff.cr
+
+license: MIT
+
+crystal: ">= 1.0.0"
