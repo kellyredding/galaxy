@@ -1075,6 +1075,7 @@ struct SnapshotsView: View {
         hasUnreviewedAnnotations = false  // Immediate, prevents double-click
         guard let lsid = session.ledgerSessionId else { return }
         guard let snapshotNumber = openSnapshot?.number else { return }
+        closeReader(reason: "reviewed")
 
         Task {
             let needsResume = await MainActor.run { session.hasExited }

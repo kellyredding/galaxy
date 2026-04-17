@@ -2131,6 +2131,7 @@ struct ArtifactsView: View {
         hasUnreviewedAnnotations = false
         guard let lsid = session.ledgerSessionId
         else { return }
+        closeReader(reason: "reviewed")
 
         Task {
             let needsResume = await MainActor.run {
