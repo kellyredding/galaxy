@@ -798,6 +798,276 @@ describe "CLI event commands", tags: "integration" do
       result[:status].should_not eq(0)
       result[:error].should contain("--limit requires a value")
     end
+
+    it "filters by --duration-identifier" do
+      run_binary([
+        "record", "--ledger-session-id", "1",
+        "--event-type", "turn:initiated",
+        "--source", "test",
+        "--duration-identifier", "turn--abc-1",
+      ])
+      run_binary([
+        "record", "--ledger-session-id", "1",
+        "--event-type", "turn:completed",
+        "--source", "test",
+        "--duration-identifier", "turn--abc-1",
+      ])
+      run_binary([
+        "record", "--ledger-session-id", "1",
+        "--event-type", "turn:initiated",
+        "--source", "test",
+        "--duration-identifier", "turn--abc-2",
+      ])
+
+      result = run_binary([
+        "list", "--ledger-session-id", "1",
+        "--duration-identifier", "turn--abc-1",
+        "--json",
+      ])
+
+      result[:status].should eq(0)
+      events = JSON.parse(
+        result[:output],
+      )["events"].as_a
+      events.size.should eq(2)
+      events.map { |e|
+        e["duration_identifier"].as_s
+      }.uniq.should eq(["turn--abc-1"])
+    end
+
+    it "filters by --since with full timestamp" do
+      run_binary([
+        "record", "--ledger-session-id", "1",
+        "--event-type", "turn:completed",
+        "--source", "test",
+        "--occurred-at", "2026-01-15 09:59:59",
+      ])
+      run_binary([
+        "record", "--ledger-session-id", "1",
+        "--event-type", "turn:completed",
+        "--source", "test",
+        "--occurred-at", "2026-01-15 10:00:00",
+      ])
+      run_binary([
+        "record", "--ledger-session-id", "1",
+        "--event-type", "turn:completed",
+        "--source", "test",
+        "--occurred-at", "2026-01-15 11:00:00",
+      ])
+
+      result = run_binary([
+        "list", "--ledger-session-id", "1",
+        "--since", "2026-01-15 10:00:00",
+        "--json",
+      ])
+
+      result[:status].should eq(0)
+      events = JSON.parse(
+        result[:output],
+      )["events"].as_a
+      events.size.should eq(2)
+      events[0]["occurred_at"].as_s.should eq(
+        "2026-01-15 10:00:00",
+      )
+    end
+
+    it "expands --since date-only form to start of day" do
+      run_binary([
+        "record", "--ledger-session-id", "1",
+        "--event-type", "turn:completed",
+        "--source", "test",
+        "--occurred-at", "2026-01-14 23:59:59",
+      ])
+      run_binary([
+        "record", "--ledger-session-id", "1",
+        "--event-type", "turn:completed",
+        "--source", "test",
+        "--occurred-at", "2026-01-15 00:00:00",
+      ])
+      run_binary([
+        "record", "--ledger-session-id", "1",
+        "--event-type", "turn:completed",
+        "--source", "test",
+        "--occurred-at", "2026-01-15 12:00:00",
+      ])
+
+      result = run_binary([
+        "list", "--ledger-session-id", "1",
+        "--since", "2026-01-15",
+        "--json",
+      ])
+
+      result[:status].should eq(0)
+      events = JSON.parse(
+        result[:output],
+      )["events"].as_a
+      events.size.should eq(2)
+    end
+
+    it "filters by --until with full timestamp" do
+      run_binary([
+        "record", "--ledger-session-id", "1",
+        "--event-type", "turn:completed",
+        "--source", "test",
+        "--occurred-at", "2026-01-15 09:00:00",
+      ])
+      run_binary([
+        "record", "--ledger-session-id", "1",
+        "--event-type", "turn:completed",
+        "--source", "test",
+        "--occurred-at", "2026-01-15 10:00:00",
+      ])
+      run_binary([
+        "record", "--ledger-session-id", "1",
+        "--event-type", "turn:completed",
+        "--source", "test",
+        "--occurred-at", "2026-01-15 10:00:01",
+      ])
+
+      result = run_binary([
+        "list", "--ledger-session-id", "1",
+        "--until", "2026-01-15 10:00:00",
+        "--json",
+      ])
+
+      result[:status].should eq(0)
+      events = JSON.parse(
+        result[:output],
+      )["events"].as_a
+      events.size.should eq(2)
+    end
+
+    it "expands --until date-only form to end of day" do
+      run_binary([
+        "record", "--ledger-session-id", "1",
+        "--event-type", "turn:completed",
+        "--source", "test",
+        "--occurred-at", "2026-01-15 12:00:00",
+      ])
+      run_binary([
+        "record", "--ledger-session-id", "1",
+        "--event-type", "turn:completed",
+        "--source", "test",
+        "--occurred-at", "2026-01-15 23:59:59",
+      ])
+      run_binary([
+        "record", "--ledger-session-id", "1",
+        "--event-type", "turn:completed",
+        "--source", "test",
+        "--occurred-at", "2026-01-16 00:00:00",
+      ])
+
+      result = run_binary([
+        "list", "--ledger-session-id", "1",
+        "--until", "2026-01-15",
+        "--json",
+      ])
+
+      result[:status].should eq(0)
+      events = JSON.parse(
+        result[:output],
+      )["events"].as_a
+      events.size.should eq(2)
+    end
+
+    it "filters by --since and --until as a range" do
+      run_binary([
+        "record", "--ledger-session-id", "1",
+        "--event-type", "turn:completed",
+        "--source", "test",
+        "--occurred-at", "2026-01-14 12:00:00",
+      ])
+      run_binary([
+        "record", "--ledger-session-id", "1",
+        "--event-type", "turn:completed",
+        "--source", "test",
+        "--occurred-at", "2026-01-15 12:00:00",
+      ])
+      run_binary([
+        "record", "--ledger-session-id", "1",
+        "--event-type", "turn:completed",
+        "--source", "test",
+        "--occurred-at", "2026-01-16 12:00:00",
+      ])
+
+      result = run_binary([
+        "list", "--ledger-session-id", "1",
+        "--since", "2026-01-15",
+        "--until", "2026-01-15",
+        "--json",
+      ])
+
+      result[:status].should eq(0)
+      events = JSON.parse(
+        result[:output],
+      )["events"].as_a
+      events.size.should eq(1)
+      events[0]["occurred_at"].as_s.should eq(
+        "2026-01-15 12:00:00",
+      )
+    end
+
+    it "errors on invalid --since format" do
+      result = run_binary([
+        "list", "--ledger-session-id", "1",
+        "--since", "not-a-date",
+      ])
+
+      result[:status].should_not eq(0)
+      result[:error].should contain(
+        "invalid --since value",
+      )
+      result[:error].should contain("YYYY-MM-DD")
+    end
+
+    it "errors on invalid --until format" do
+      result = run_binary([
+        "list", "--ledger-session-id", "1",
+        "--until", "2026/04/17",
+      ])
+
+      result[:status].should_not eq(0)
+      result[:error].should contain(
+        "invalid --until value",
+      )
+      result[:error].should contain("YYYY-MM-DD")
+    end
+
+    it "errors when --duration-identifier has no value" do
+      result = run_binary([
+        "list", "--ledger-session-id", "1",
+        "--duration-identifier",
+      ])
+
+      result[:status].should_not eq(0)
+      result[:error].should contain(
+        "--duration-identifier requires a value",
+      )
+    end
+
+    it "errors when --since has no value" do
+      result = run_binary([
+        "list", "--ledger-session-id", "1",
+        "--since",
+      ])
+
+      result[:status].should_not eq(0)
+      result[:error].should contain(
+        "--since requires a value",
+      )
+    end
+
+    it "errors when --until has no value" do
+      result = run_binary([
+        "list", "--ledger-session-id", "1",
+        "--until",
+      ])
+
+      result[:status].should_not eq(0)
+      result[:error].should contain(
+        "--until requires a value",
+      )
+    end
   end
 
   describe "show" do

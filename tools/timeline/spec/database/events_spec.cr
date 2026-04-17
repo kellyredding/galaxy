@@ -387,6 +387,178 @@ describe GalaxyTimeline::Database do
       events[0].event_type.should eq("turn:failed")
       events[1].event_type.should eq("turn:completed")
     end
+
+    it "filters by duration_identifier" do
+      GalaxyTimeline::Database.record_event(
+        1_i64,
+        event_type: "turn:initiated",
+        source: "test",
+        duration_identifier: "turn--abc-1",
+      )
+      GalaxyTimeline::Database.record_event(
+        1_i64,
+        event_type: "turn:completed",
+        source: "test",
+        duration_identifier: "turn--abc-1",
+      )
+      GalaxyTimeline::Database.record_event(
+        1_i64,
+        event_type: "turn:initiated",
+        source: "test",
+        duration_identifier: "turn--abc-2",
+      )
+
+      events = GalaxyTimeline::Database.list_events(
+        1_i64,
+        duration_identifier: "turn--abc-1",
+      )
+      events.size.should eq(2)
+      events.map(&.event_type).should eq([
+        "turn:initiated", "turn:completed",
+      ])
+    end
+
+    it "filters by since_time (inclusive lower bound)" do
+      GalaxyTimeline::Database.record_event(
+        1_i64,
+        event_type: "turn:completed",
+        source: "test",
+        occurred_at: "2026-01-15 09:59:59",
+      )
+      GalaxyTimeline::Database.record_event(
+        1_i64,
+        event_type: "turn:completed",
+        source: "test",
+        occurred_at: "2026-01-15 10:00:00",
+      )
+      GalaxyTimeline::Database.record_event(
+        1_i64,
+        event_type: "turn:completed",
+        source: "test",
+        occurred_at: "2026-01-15 11:00:00",
+      )
+
+      events = GalaxyTimeline::Database.list_events(
+        1_i64,
+        since_time: "2026-01-15 10:00:00",
+      )
+      events.size.should eq(2)
+      events[0].occurred_at.should eq(
+        "2026-01-15 10:00:00",
+      )
+      events[1].occurred_at.should eq(
+        "2026-01-15 11:00:00",
+      )
+    end
+
+    it "filters by until_time (inclusive upper bound)" do
+      GalaxyTimeline::Database.record_event(
+        1_i64,
+        event_type: "turn:completed",
+        source: "test",
+        occurred_at: "2026-01-15 09:00:00",
+      )
+      GalaxyTimeline::Database.record_event(
+        1_i64,
+        event_type: "turn:completed",
+        source: "test",
+        occurred_at: "2026-01-15 10:00:00",
+      )
+      GalaxyTimeline::Database.record_event(
+        1_i64,
+        event_type: "turn:completed",
+        source: "test",
+        occurred_at: "2026-01-15 10:00:01",
+      )
+
+      events = GalaxyTimeline::Database.list_events(
+        1_i64,
+        until_time: "2026-01-15 10:00:00",
+      )
+      events.size.should eq(2)
+      events[0].occurred_at.should eq(
+        "2026-01-15 09:00:00",
+      )
+      events[1].occurred_at.should eq(
+        "2026-01-15 10:00:00",
+      )
+    end
+
+    it "filters by since_time + until_time range" do
+      GalaxyTimeline::Database.record_event(
+        1_i64,
+        event_type: "turn:completed",
+        source: "test",
+        occurred_at: "2026-01-15 09:00:00",
+      )
+      GalaxyTimeline::Database.record_event(
+        1_i64,
+        event_type: "turn:completed",
+        source: "test",
+        occurred_at: "2026-01-15 10:00:00",
+      )
+      GalaxyTimeline::Database.record_event(
+        1_i64,
+        event_type: "turn:completed",
+        source: "test",
+        occurred_at: "2026-01-15 10:30:00",
+      )
+      GalaxyTimeline::Database.record_event(
+        1_i64,
+        event_type: "turn:completed",
+        source: "test",
+        occurred_at: "2026-01-15 11:00:00",
+      )
+
+      events = GalaxyTimeline::Database.list_events(
+        1_i64,
+        since_time: "2026-01-15 10:00:00",
+        until_time: "2026-01-15 10:30:00",
+      )
+      events.size.should eq(2)
+      events[0].occurred_at.should eq(
+        "2026-01-15 10:00:00",
+      )
+      events[1].occurred_at.should eq(
+        "2026-01-15 10:30:00",
+      )
+    end
+
+    it "combines duration_identifier with event_type, " \
+       "reverse, and limit" do
+      GalaxyTimeline::Database.record_event(
+        1_i64,
+        event_type: "turn:initiated",
+        source: "test",
+        occurred_at: "2026-01-15 10:00:00",
+        duration_identifier: "turn--xyz",
+      )
+      GalaxyTimeline::Database.record_event(
+        1_i64,
+        event_type: "turn:completed",
+        source: "test",
+        occurred_at: "2026-01-15 10:00:05",
+        duration_identifier: "turn--xyz",
+      )
+      GalaxyTimeline::Database.record_event(
+        1_i64,
+        event_type: "turn:completed",
+        source: "test",
+        occurred_at: "2026-01-15 10:00:10",
+        duration_identifier: "turn--other",
+      )
+
+      events = GalaxyTimeline::Database.list_events(
+        1_i64,
+        event_type: "turn:completed",
+        duration_identifier: "turn--xyz",
+        reverse: true,
+        limit: 10,
+      )
+      events.size.should eq(1)
+      events[0].event_type.should eq("turn:completed")
+      events[0].duration_identifier.should eq("turn--xyz")
+    end
   end
 
   describe ".get_event" do

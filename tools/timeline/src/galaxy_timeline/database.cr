@@ -191,6 +191,11 @@ module GalaxyTimeline
     # - event_type: single type string (backward compat)
     # - event_types: array of type strings (IN query)
     # - If both provided, event_types takes precedence
+    # - duration_identifier: exact-match on the pairing key
+    #   that links turn:initiated and turn:completed events
+    # - since_time: inclusive lower bound on occurred_at
+    #   (YYYY-MM-DD HH:MM:SS format, compared lexically)
+    # - until_time: inclusive upper bound on occurred_at
     #
     # Ordering:
     # - reverse: true returns most recent first (DESC)
@@ -198,6 +203,9 @@ module GalaxyTimeline
       ledger_session_id : Int64,
       event_type : String? = nil,
       event_types : Array(String)? = nil,
+      duration_identifier : String? = nil,
+      since_time : String? = nil,
+      until_time : String? = nil,
       limit : Int32 = 5000,
       reverse : Bool = false,
     ) : Array(Event)
@@ -225,6 +233,18 @@ module GalaxyTimeline
               s << " AND event_type = ?"
             end
 
+            if duration_identifier
+              s << " AND duration_identifier = ?"
+            end
+
+            if since_time
+              s << " AND occurred_at >= ?"
+            end
+
+            if until_time
+              s << " AND occurred_at <= ?"
+            end
+
             s << " ORDER BY occurred_at " << order
             s << " LIMIT ?"
           end
@@ -239,6 +259,18 @@ module GalaxyTimeline
             end
           elsif et = event_type
             args << et
+          end
+
+          if di = duration_identifier
+            args << di
+          end
+
+          if st = since_time
+            args << st
+          end
+
+          if ut = until_time
+            args << ut
           end
 
           args << limit

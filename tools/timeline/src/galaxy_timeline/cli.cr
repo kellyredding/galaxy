@@ -341,6 +341,9 @@ module GalaxyTimeline
       session_id : String? = nil
       ledger_session_id_str : String? = nil
       event_type_filter : String? = nil
+      duration_identifier : String? = nil
+      since_time : String? = nil
+      until_time : String? = nil
       limit_str : String? = nil
       reverse = false
       json_mode = false
@@ -379,6 +382,41 @@ module GalaxyTimeline
             i += 2
           else
             STDERR.puts "Error: --event-type requires a value"
+            exit(1)
+          end
+        when "--duration-identifier"
+          if i + 1 < args.size
+            duration_identifier = args[i + 1]
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --duration-identifier " \
+              "requires a value",
+            )
+            exit(1)
+          end
+        when "--since"
+          if i + 1 < args.size
+            since_time = normalize_timestamp(
+              args[i + 1],
+              flag: "--since",
+              upper: false,
+            )
+            i += 2
+          else
+            STDERR.puts "Error: --since requires a value"
+            exit(1)
+          end
+        when "--until"
+          if i + 1 < args.size
+            until_time = normalize_timestamp(
+              args[i + 1],
+              flag: "--until",
+              upper: true,
+            )
+            i += 2
+          else
+            STDERR.puts "Error: --until requires a value"
             exit(1)
           end
         when "--limit"
@@ -438,6 +476,9 @@ module GalaxyTimeline
                  Database.list_events(
                    ledger_session_id,
                    event_types: ets,
+                   duration_identifier: duration_identifier,
+                   since_time: since_time,
+                   until_time: until_time,
                    limit: limit,
                    reverse: reverse,
                  )
@@ -445,6 +486,9 @@ module GalaxyTimeline
                  Database.list_events(
                    ledger_session_id,
                    event_type: single_type,
+                   duration_identifier: duration_identifier,
+                   since_time: since_time,
+                   until_time: until_time,
                    limit: limit,
                    reverse: reverse,
                  )
@@ -942,6 +986,62 @@ module GalaxyTimeline
     # Formatting Helpers
     # ========================================================
 
+    # Validate and normalize a --since/--until timestamp.
+    # Accepts three forms (SQLite-TEXT compatible):
+    #   YYYY-MM-DD                 (10 chars)
+    #   YYYY-MM-DD HH:MM           (16 chars)
+    #   YYYY-MM-DD HH:MM:SS        (19 chars)
+    # Prefix forms are expanded to full timestamps so SQLite
+    # lexicographic comparison matches user intent:
+    #   --since 2026-04-17   → 2026-04-17 00:00:00
+    #   --until 2026-04-17   → 2026-04-17 23:59:59
+    # On invalid input, prints a friendly error and exits.
+    private def self.normalize_timestamp(
+      value : String,
+      flag : String,
+      upper : Bool,
+    ) : String
+      normalized =
+        case value.size
+        when 10
+          upper ? "#{value} 23:59:59" : "#{value} 00:00:00"
+        when 16
+          upper ? "#{value}:59" : "#{value}:00"
+        when 19
+          value
+        else
+          print_timestamp_error(flag, value)
+          exit(1)
+        end
+
+      begin
+        Time.parse_utc(normalized, "%Y-%m-%d %H:%M:%S")
+      rescue
+        print_timestamp_error(flag, value)
+        exit(1)
+      end
+
+      normalized
+    end
+
+    private def self.print_timestamp_error(
+      flag : String,
+      value : String,
+    )
+      STDERR.puts(
+        "Error: invalid #{flag} value '#{value}'",
+      )
+      STDERR.puts(
+        "  Expected: YYYY-MM-DD, " \
+        "YYYY-MM-DD HH:MM, or " \
+        "YYYY-MM-DD HH:MM:SS",
+      )
+      STDERR.puts "  Examples:"
+      STDERR.puts "    #{flag} 2026-04-17"
+      STDERR.puts "    #{flag} \"2026-04-17 12:30\""
+      STDERR.puts "    #{flag} \"2026-04-17 12:30:45\""
+    end
+
     private def self.format_timestamp(utc_str : String) : String
       begin
         utc_time = Time.parse_utc(utc_str, "%Y-%m-%d %H:%M:%S")
@@ -1061,6 +1161,21 @@ module GalaxyTimeline
         --event-type TYPE  Filter by event type (comma-
                            separated for multiple, e.g.
                            turn:completed,turn:failed)
+        --duration-identifier ID
+                           Exact-match filter on the
+                           pairing key that links
+                           turn:initiated / turn:completed
+        --since TIMESTAMP  Inclusive lower bound on
+                           occurred_at. Accepts:
+                           YYYY-MM-DD,
+                           YYYY-MM-DD HH:MM,
+                           YYYY-MM-DD HH:MM:SS.
+                           Prefix forms expand to the start
+                           of that day/minute.
+        --until TIMESTAMP  Inclusive upper bound on
+                           occurred_at (same formats).
+                           Prefix forms expand to the end
+                           of that day/minute.
         --limit N          Maximum events to return
                            (default: 5000)
         --reverse          Most recent first (DESC)
