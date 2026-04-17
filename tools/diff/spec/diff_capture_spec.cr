@@ -105,6 +105,74 @@ describe GalaxyDiff::DiffCapture do
     end
   end
 
+  it "captures an untracked file as added when diffing working tree" do
+    with_temp_repo do |repo|
+      File.write(File.join(repo, "seed.rb"), "seed\n")
+      git_commit(repo, "init")
+
+      File.write(
+        File.join(repo, "fresh.rb"),
+        "line one\nline two\n",
+      )
+      # Intentionally NOT staged — git diff would miss
+      # this, but capture should synthesize an added
+      # entry for it.
+
+      doc = GalaxyDiff::DiffCapture.capture(
+        from_ref: "HEAD", to_ref: nil, repo_path: repo,
+      )
+
+      f = doc.files.find { |ff| ff.path == "fresh.rb" }
+      f.should_not be_nil
+      f = f.not_nil!
+      f.status.should eq("added")
+      f.before.should be_nil
+      f.after.should eq("line one\nline two\n")
+      f.language.should eq("ruby")
+      f.hunks.size.should eq(1)
+      f.hunks[0].lines.size.should eq(2)
+      f.hunks[0].lines.all?(&.type.add?).should be_true
+    end
+  end
+
+  it "skips untracked files when diffing against an explicit ref" do
+    with_temp_repo do |repo|
+      File.write(File.join(repo, "seed.rb"), "seed\n")
+      git_commit(repo, "init")
+
+      File.write(File.join(repo, "fresh.rb"), "x\n")
+
+      doc = GalaxyDiff::DiffCapture.capture(
+        from_ref: "HEAD", to_ref: "HEAD", repo_path: repo,
+      )
+
+      doc.files.find { |ff| ff.path == "fresh.rb" }
+        .should be_nil
+    end
+  end
+
+  it "honors .gitignore when listing untracked files" do
+    with_temp_repo do |repo|
+      File.write(File.join(repo, ".gitignore"), "*.log\n")
+      File.write(File.join(repo, "seed.rb"), "seed\n")
+      Process.run(
+        "git", ["add", "-A"], chdir: repo)
+      git_commit(repo, "init")
+
+      File.write(File.join(repo, "noisy.log"), "ignored\n")
+      File.write(File.join(repo, "real.rb"), "kept\n")
+
+      doc = GalaxyDiff::DiffCapture.capture(
+        from_ref: "HEAD", to_ref: nil, repo_path: repo,
+      )
+
+      doc.files.find { |f| f.path == "noisy.log" }
+        .should be_nil
+      doc.files.find { |f| f.path == "real.rb" }
+        .should_not be_nil
+    end
+  end
+
   it "captures between two commits" do
     with_temp_repo do |repo|
       File.write(File.join(repo, "f.rb"), "v1\n")

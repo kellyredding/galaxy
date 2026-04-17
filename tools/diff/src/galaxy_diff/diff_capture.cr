@@ -46,12 +46,13 @@ module GalaxyDiff
 
       parsed_files = DiffParser.parse(raw_diff)
 
-      files = parsed_files.map do |pf|
+      files = [] of GdiffFile
+      parsed_files.each do |pf|
         before = read_before(dir, pf, from_ref)
         after = read_after(dir, pf, to_ref)
         language = language_for_path(pf.path)
 
-        GdiffFile.new(
+        files << GdiffFile.new(
           path: pf.path,
           old_path: pf.old_path,
           status: pf.status,
@@ -60,6 +61,20 @@ module GalaxyDiff
           after: after,
           hunks: pf.hunks,
         )
+      end
+
+      # Untracked files don't show up in `git diff`,
+      # but when capturing against the working tree they
+      # conceptually belong in the "after" set as
+      # newly-added files. Synthesize an `added` entry
+      # for each so the reader renders them alongside
+      # tracked changes.
+      if to_ref.nil?
+        list_untracked(dir).each do |rel|
+          content = read_working_file(dir, rel)
+          next if content.nil?
+          files << build_untracked_file(rel, content)
+        end
       end
 
       branch = resolve_branch(dir)
@@ -160,6 +175,66 @@ module GalaxyDiff
       File.read(full_path)
     rescue
       nil
+    end
+
+    # List paths that git knows about as untracked
+    # (respecting `.gitignore` via --exclude-standard).
+    # Returns relative paths from the repo root.
+    private def list_untracked(
+      dir : String,
+    ) : Array(String)
+      output, status = run_git_with_status(
+        dir,
+        ["ls-files", "--others", "--exclude-standard"],
+      )
+      return [] of String unless status.success?
+      output.split('\n').reject(&.empty?)
+    end
+
+    # Build a synthetic `GdiffFile` for an untracked
+    # file. We treat it as a fully-added file: `before`
+    # is nil, `after` is the working-tree content, and
+    # we synthesize a single hunk where every line is
+    # an "add" so per-file stats (insertion count,
+    # renderer overlay) behave identically to a git-
+    # reported added file.
+    private def build_untracked_file(
+      rel : String, content : String,
+    ) : GdiffFile
+      raw = content.split('\n')
+      # Drop trailing empty element if content ended
+      # with "\n" — Unix convention, not a real line.
+      if !raw.empty? && raw.last.empty? &&
+         content.ends_with?('\n')
+        raw.pop
+      end
+
+      lines = raw.map_with_index do |text, idx|
+        GdiffLine.new(
+          type: GdiffLineType::Add,
+          old_no: nil,
+          new_no: idx + 1,
+          content: text,
+        )
+      end
+
+      hunk = GdiffHunk.new(
+        old_start: 0,
+        old_count: 0,
+        new_start: lines.empty? ? 0 : 1,
+        new_count: lines.size,
+      )
+      hunk.lines = lines
+
+      GdiffFile.new(
+        path: rel,
+        old_path: nil,
+        status: "added",
+        language: language_for_path(rel),
+        before: nil,
+        after: content,
+        hunks: [hunk],
+      )
     end
 
     private def resolve_branch(dir : String) : String
