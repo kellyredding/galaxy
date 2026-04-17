@@ -72,6 +72,26 @@ module GalaxyArtifacts
     in this session, the existing artifact is updated (not
     duplicated).
 
+    ## Creating Artifacts from Stdin
+
+    For content that doesn't live on disk (e.g., diffs,
+    generated reports, piped output), stream directly from
+    stdin without a source file. The `--filename` flag is
+    required — its extension determines which reader
+    Galaxy.app uses to render the artifact.
+
+    ```bash
+    some-command | galaxy-artifacts save --pid $LEDGER_PID \
+      --filename "descriptive-name.ext" \
+      --title "Descriptive Title" \
+      --artifact-type type \
+      --description "Context about what this contains"
+    ```
+
+    No source file is created or maintained, and no dedup
+    applies — each invocation creates a new artifact. Always
+    show after creating.
+
     ## Refreshing Artifacts
 
     Re-sync an artifact from its original source file and show

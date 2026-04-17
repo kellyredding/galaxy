@@ -105,6 +105,7 @@ module GalaxyArtifacts
       ledger_session_id_str : String? = nil
       title : String? = nil
       source_path : String? = nil
+      filename : String? = nil
       description : String? = nil
       artifact_type : String? = nil
       mime_type : String? = nil
@@ -145,6 +146,14 @@ module GalaxyArtifacts
             i += 2
           else
             STDERR.puts "Error: --source-path requires a value"
+            exit(1)
+          end
+        when "--filename"
+          if i + 1 < args.size
+            filename = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --filename requires a value"
             exit(1)
           end
         when "--description"
@@ -208,10 +217,18 @@ module GalaxyArtifacts
         exit(1)
       end
 
+      # Dispatch: source-path (file on disk, dedup applies) vs
+      # stdin streaming (--filename required, no dedup).
       unless source_path
-        STDERR.puts "Error: --source-path is required"
-        STDERR.puts "Run 'galaxy-artifacts save --help' for usage"
-        exit(1)
+        handle_save_from_stdin(
+          ledger_session_id: ledger_session_id,
+          filename: filename,
+          title: title,
+          description: description,
+          artifact_type: artifact_type,
+          mime_type: mime_type,
+        )
+        return
       end
 
       unless File.exists?(source_path)
@@ -311,6 +328,99 @@ module GalaxyArtifacts
 
       action_label = result.action.insert? ? "saved" : "updated"
       puts "Artifact ##{number} #{action_label} (title: \"#{artifact_title}\", type: #{effective_artifact_type}, size: #{format_file_size(fsize)})"
+    end
+
+    # Save an artifact from stdin. No source file, no dedup —
+    # always creates a fresh artifact. Content streams in 64 KB
+    # chunks with hash and size computed in a single pass.
+    private def self.handle_save_from_stdin(
+      ledger_session_id : Int64,
+      filename : String?,
+      title : String?,
+      description : String?,
+      artifact_type : String?,
+      mime_type : String?,
+    )
+      unless filename
+        STDERR.puts(
+          "Error: --filename is required when " \
+          "--source-path is not provided",
+        )
+        STDERR.puts "Run 'galaxy-artifacts save --help' for usage"
+        exit(1)
+      end
+
+      original_filename = filename
+      artifact_title = title ||
+                       ArtifactStorage.title_from_filename(original_filename)
+      effective_artifact_type = artifact_type || "text"
+      effective_mime_type = mime_type || "application/octet-stream"
+
+      # Reserve the upcoming artifact number so we can construct
+      # the stored_path before streaming content to disk.
+      reserved_number = Database.reserve_next_number(ledger_session_id)
+      unless reserved_number
+        STDERR.puts "Error: failed to reserve artifact number"
+        exit(1)
+      end
+
+      # Stream stdin directly into artifact storage. Hash and
+      # size are computed on the fly — no in-memory buffering.
+      stream_result = ArtifactStorage.stream_stdin(
+        ledger_session_id,
+        reserved_number,
+        original_filename,
+      )
+      unless stream_result
+        STDERR.puts(
+          "Error: failed to stream content to storage " \
+          "(empty stdin or write error)",
+        )
+        exit(1)
+      end
+
+      path = stream_result[:path]
+      hash = stream_result[:hash]
+      fsize = stream_result[:size]
+
+      # Insert the DB record. source_path: nil bypasses dedup —
+      # save_artifact always inserts when source_path is nil.
+      result = Database.save_artifact(
+        ledger_session_id,
+        title: artifact_title,
+        artifact_type: effective_artifact_type,
+        mime_type: effective_mime_type,
+        original_filename: original_filename,
+        stored_path: path,
+        source_path: nil,
+        file_size: fsize,
+        content_hash: hash,
+        description: description,
+      )
+
+      if result.action.failed?
+        # Clean up the orphan file so a retry can reuse the
+        # number without colliding on disk.
+        File.delete(path) if File.exists?(path)
+        STDERR.puts "Error: failed to save artifact"
+        exit(1)
+      end
+
+      number = result.number
+
+      # Publish timeline event (fire-and-forget).
+      TimelinePublisher.artifact_created(
+        ledger_session_id,
+        number: number,
+        title: artifact_title,
+        artifact_type: effective_artifact_type,
+        source_path: nil,
+        file_size: fsize,
+        content_hash: hash,
+        trigger: "manual",
+      )
+
+      puts "Artifact ##{number} saved (title: \"#{artifact_title}\", type: #{effective_artifact_type}, size: #{format_file_size(fsize)})"
     end
 
     # ============================================================
@@ -2727,29 +2837,42 @@ module GalaxyArtifacts
       galaxy-artifacts save - Register an artifact
 
       USAGE:
+        # From a file on disk (dedup applies):
         galaxy-artifacts save --pid PID --source-path PATH [options]
         galaxy-artifacts save --ledger-session-id ID --source-path PATH [options]
 
-      REQUIRED:
-        --source-path PATH    Path to the file to store as an artifact
+        # From stdin (no source file, no dedup):
+        some-command | galaxy-artifacts save --pid PID --filename NAME [options]
 
       REQUIRED (one of):
         --pid PID               Claude Code process ID
         --ledger-session-id ID  Direct ledger session ID
 
+      SOURCE (one of):
+        --source-path PATH      File on disk to copy into artifact storage
+        --filename NAME         Filename for stdin content (required when
+                                --source-path is not provided; extension
+                                determines reader type in Galaxy.app)
+
       OPTIONS:
         --title TITLE           Descriptive title (default: derived from filename)
-        --description TEXT       Context about what this artifact contains
+        --description TEXT      Context about what this artifact contains
         --artifact-type TYPE    Artifact type (default: "text")
         --mime-type MIME        MIME type (default: "application/octet-stream")
-        --content-hash HASH     SHA256 hash (default: computed from file)
-        --file-size BYTES       File size in bytes (default: computed from file)
+        --content-hash HASH     SHA256 hash (default: computed; source-path only)
+        --file-size BYTES       File size in bytes (default: computed; source-path only)
 
       DESCRIPTION:
-        Copies the source file to artifact storage and creates a session-scoped
-        artifact record. The original file is left in place. If the same source
-        path was already saved in this session, the existing artifact is updated
-        (enrichment or version update depending on content hash).
+        With --source-path: copies the file to artifact storage and creates
+        a session-scoped artifact record. The original file is left in place.
+        If the same source path was already saved in this session, the
+        existing artifact is updated (enrichment if content unchanged,
+        version update if content changed).
+
+        With --filename (stdin mode): streams stdin directly into artifact
+        storage in 64 KB chunks. No source file is created or maintained,
+        and no dedup applies — each invocation creates a new artifact. Use
+        for ephemeral content like diffs or piped output.
       HELP
     end
 

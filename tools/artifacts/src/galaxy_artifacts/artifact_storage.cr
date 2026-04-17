@@ -59,6 +59,50 @@ module GalaxyArtifacts
       nil
     end
 
+    # Stream STDIN directly to artifact storage. Computes
+    # SHA256 hash and byte count in a single pass using 64 KB
+    # chunks — constant memory usage regardless of input size.
+    #
+    # Used by the save-from-stdin flow where content is piped
+    # in (e.g., from `galaxy-diff capture`). Returns
+    # {path, hash, size} on success, nil on failure or when
+    # stdin is empty (empty file is deleted).
+    def stream_stdin(
+      ledger_session_id : Int64,
+      number : Int32,
+      original_filename : String,
+    ) : NamedTuple(path: String, hash: String, size: Int64)?
+      session_dir = ARTIFACTS_DIR / ledger_session_id.to_s
+      Dir.mkdir_p(session_dir) unless Dir.exists?(session_dir)
+
+      padded = number.to_s.rjust(3, '0')
+      slug = slugify(original_filename)
+      stored_filename = "#{padded}_#{slug}"
+      stored_path = (session_dir / stored_filename).to_s
+
+      digest = Digest::SHA256.new
+      size = 0_i64
+      buffer = Bytes.new(65_536)
+
+      File.open(stored_path, "w") do |file|
+        while (bytes_read = STDIN.read(buffer)) > 0
+          chunk = buffer[0, bytes_read]
+          file.write(chunk)
+          digest.update(chunk)
+          size += bytes_read
+        end
+      end
+
+      if size == 0
+        File.delete(stored_path) if File.exists?(stored_path)
+        return nil
+      end
+
+      {path: stored_path, hash: digest.hexfinal.to_s, size: size}
+    rescue
+      nil
+    end
+
     # Compute SHA256 hash of file content for deduplication.
     def file_hash(path : String) : String
       Digest::SHA256.hexdigest(File.read(path))

@@ -34,11 +34,16 @@ describe "CLI artifact commands", tags: "integration" do
       result[:output].should contain("quarterly report")
     end
 
-    it "errors when source-path is missing" do
+    it "errors when neither source-path nor filename is given" do
+      # Without --source-path, save falls through to stdin mode
+      # which requires --filename for the artifact to dispatch
+      # to the right Galaxy.app reader.
       result = run_binary(["save", "--ledger-session-id", "1"])
 
       result[:status].should_not eq(0)
-      result[:error].should contain("--source-path is required")
+      result[:error].should contain(
+        "--filename is required when --source-path is not provided",
+      )
     end
 
     it "errors when file does not exist" do

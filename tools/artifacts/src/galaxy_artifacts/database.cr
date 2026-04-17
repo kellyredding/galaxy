@@ -430,6 +430,37 @@ module GalaxyArtifacts
       end
     end
 
+    # Reserve the next sequential artifact number for a session.
+    # Used by the stdin streaming flow where we need the number
+    # before content is written (to construct stored_path).
+    #
+    # Note: this is a read-only peek — no row is inserted. The
+    # subsequent save_artifact INSERT uses the same SELECT
+    # MAX(number)+1 expression, so in a single-process flow the
+    # reserved number matches the number assigned at INSERT.
+    # Returns the reserved number, or nil on failure.
+    def self.reserve_next_number(
+      ledger_session_id : Int64,
+    ) : Int32?
+      return nil if ledger_session_id <= 0
+
+      begin
+        open do |db|
+          db.query_one?(
+            <<-SQL,
+              SELECT COALESCE(MAX(number), 0) + 1
+              FROM artifacts
+              WHERE ledger_session_id = ?
+            SQL
+            ledger_session_id,
+            as: Int64,
+          ).try(&.to_i)
+        end
+      rescue
+        nil
+      end
+    end
+
     # Update the stored_path for an artifact after file storage.
     def self.update_artifact_stored_path(
       ledger_session_id : Int64,
