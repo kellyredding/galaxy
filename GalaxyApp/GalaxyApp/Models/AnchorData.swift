@@ -74,5 +74,6 @@ enum AnchorType: String, Codable {
     case lineRange = "line_range"
     case rowRange = "row_range"
     case blockRange = "block_range"
+    case diffRange = "diff_range"
     case whole = "whole"
 }

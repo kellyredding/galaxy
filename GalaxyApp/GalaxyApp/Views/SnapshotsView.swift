@@ -1019,8 +1019,8 @@ struct SnapshotsView: View {
                 startIdx: startIdx,
                 endIdx: endIdx
             )
-        case .createRowRange, .createBlockRange,
-             .createWhole:
+        case .createDiffRange, .createRowRange,
+             .createBlockRange, .createWhole:
             // Not applicable for snapshots
             break
         }

@@ -1451,6 +1451,55 @@ this.highlightStart, this.highlightEnd);
                 default:
                     msg.startLine = range.startLine;
                     msg.endLine = range.endLine;
+                    // For diff artifacts: scan the
+                    // selected rows and attach a
+                    // structured anchor payload. This
+                    // lets the Swift side build a
+                    // `diff_range` anchor_data with
+                    // per-row file/line/kind/content
+                    // so a reviewing agent can make
+                    // sense of the annotation without
+                    // re-parsing the .gdiff. Non-diff
+                    // views don't emit `data-kind`, so
+                    // `rows` stays empty and we fall
+                    // through the existing `.create`
+                    // path.
+                    var rows = [];
+                    for (var li = range.startLine;
+                         li <= range.endLine; li++) {
+                        var tr = document\
+.querySelector('[data-line="' + li + '"]');
+                        if (!tr) continue;
+                        var kind = tr.getAttribute(
+                            'data-kind');
+                        if (!kind) continue;
+                        var ce = tr.querySelector(
+                            '.line-content');
+                        var text = ce ?
+                            ce.textContent : '';
+                        var oa = tr.getAttribute(
+                            'data-old-line');
+                        var na = tr.getAttribute(
+                            'data-new-line');
+                        rows.push({
+                            data_line: li,
+                            file_path: tr.getAttribute(
+                                'data-file-path'),
+                            file_status: tr\
+.getAttribute('data-file-status'),
+                            kind: kind,
+                            old_line: oa == null
+                                ? null
+                                : parseInt(oa, 10),
+                            new_line: na == null
+                                ? null
+                                : parseInt(na, 10),
+                            content: text
+                        });
+                    }
+                    if (rows.length > 0) {
+                        msg.rows = rows;
+                    }
             }
             window.webkit.messageHandlers.annotation\
 .postMessage(msg);
@@ -1957,11 +2006,29 @@ class AnnotationCoordinator: NSObject,
                       let endLine = body["endLine"]
                     as? Int
                 else { return }
-                onAnnotationMessage?(.create(
-                    startLine: Int32(startLine),
-                    endLine: Int32(endLine),
-                    content: content
-                ))
+                // If the JS collected per-row anchor
+                // data (diff views only — see
+                // AnnotationManager.submitCreate),
+                // route to the richer case.
+                if let rows = body["rows"]
+                    as? [[String: Any]],
+                   !rows.isEmpty
+                {
+                    onAnnotationMessage?(
+                        .createDiffRange(
+                            startLine: Int32(startLine),
+                            endLine: Int32(endLine),
+                            rows: rows,
+                            content: content
+                        )
+                    )
+                } else {
+                    onAnnotationMessage?(.create(
+                        startLine: Int32(startLine),
+                        endLine: Int32(endLine),
+                        content: content
+                    ))
+                }
             }
         case "update":
             guard let number = body["number"] as? Int,
@@ -2031,6 +2098,21 @@ enum AnnotationMessage {
     case create(
         startLine: Int32,
         endLine: Int32,
+        content: String
+    )
+    /// Like `.create`, but with a per-row payload
+    /// captured from a diff view's rendered DOM. Each
+    /// row carries `file_path`, `file_status`, `kind`
+    /// (`add`/`delete`/`context`/`file-header`/
+    /// `hunk-sep`/`binary`), optional `old_line` /
+    /// `new_line`, and the row's code content. Used
+    /// to build a structured `diff_range` anchor_data
+    /// so reviewing agents can make sense of the
+    /// selection without re-parsing the .gdiff.
+    case createDiffRange(
+        startLine: Int32,
+        endLine: Int32,
+        rows: [[String: Any]],
         content: String
     )
     case createRowRange(
@@ -2117,7 +2199,7 @@ func buildAnnotationInitJS(
             "updated_at": a.updatedAt,
         ]
         switch a.anchorData.type {
-        case .lineRange:
+        case .lineRange, .diffRange:
             if let sl = a.anchorData.startLine {
                 dict["start_line"] = sl
             }

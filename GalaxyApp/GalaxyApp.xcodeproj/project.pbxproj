@@ -96,6 +96,7 @@
 		AF1111110000000000000007 /* ArtifactImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF2222220000000000000007 /* ArtifactImageView.swift */; };
 		AF1111110000000000000009 /* ArtifactTranscriptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF2222220000000000000009 /* ArtifactTranscriptView.swift */; };
 		AF1111110000000000000008 /* AnnotationSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF2222220000000000000008 /* AnnotationSupport.swift */; };
+		AF111111000000000000000A /* ArtifactDiffView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF222222000000000000000A /* ArtifactDiffView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -189,6 +190,7 @@
 		AF2222220000000000000007 /* ArtifactImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactImageView.swift; sourceTree = "<group>"; };
 		AF2222220000000000000009 /* ArtifactTranscriptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactTranscriptView.swift; sourceTree = "<group>"; };
 		AF2222220000000000000008 /* AnnotationSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnnotationSupport.swift; sourceTree = "<group>"; };
+		AF222222000000000000000A /* ArtifactDiffView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactDiffView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -286,6 +288,7 @@
 				AF2222220000000000000005 /* ArtifactMermaidView.swift */,
 				AF2222220000000000000006 /* ArtifactHTMLView.swift */,
 				AF2222220000000000000007 /* ArtifactImageView.swift */,
+				AF222222000000000000000A /* ArtifactDiffView.swift */,
 				AF2222220000000000000009 /* ArtifactTranscriptView.swift */,
 				CC222222000000000000000F /* AgentsView.swift */,
 				2C599534AAFC2570BC5F292A /* StoppedSessionView.swift */,
@@ -488,6 +491,7 @@
 				AF1111110000000000000005 /* ArtifactMermaidView.swift in Sources */,
 				AF1111110000000000000006 /* ArtifactHTMLView.swift in Sources */,
 				AF1111110000000000000007 /* ArtifactImageView.swift in Sources */,
+				AF111111000000000000000A /* ArtifactDiffView.swift in Sources */,
 				AF1111110000000000000009 /* ArtifactTranscriptView.swift in Sources */,
 				AF1111110000000000000008 /* AnnotationSupport.swift in Sources */,
 				CC111111000000000000000F /* AgentsView.swift in Sources */,

@@ -956,6 +956,22 @@ struct ArtifactsView: View {
                     }
                 )
             }
+        case "gdiff":
+            let label = "Artifact #\(artifact.number)"
+            ArtifactDiffView(
+                content: content,
+                isDark: colorScheme == .dark,
+                annotations: openAnnotations,
+                annotationHTMLMap: annotationHTMLMap,
+                itemLabel: label,
+                webViewRef: $webViewRef,
+                onAnnotationMessage: { message in
+                    handleAnnotationMessage(
+                        message,
+                        artifact: artifact
+                    )
+                }
+            )
         default:
             // Source code / plain text renderer
             let label = "Artifact #\(artifact.number)"
@@ -1302,6 +1318,7 @@ struct ArtifactsView: View {
             "dockerignore", "editorconfig",
             "png", "jpg", "jpeg", "gif", "svg",
             "webp",
+            "gdiff",
         ]
 
         let imageExtensions: Set<String> = [
@@ -1317,6 +1334,8 @@ struct ArtifactsView: View {
             sizeLimit = 26_214_400  // 25MB
         } else if ext == "mmd" || ext == "mermaid" {
             sizeLimit = 102_400     // 100KB
+        } else if ext == "gdiff" {
+            sizeLimit = 5_000_000   // 5MB
         } else {
             sizeLimit = 2_000_000   // 2MB
         }
@@ -1724,18 +1743,81 @@ struct ArtifactsView: View {
         else { return }
 
         switch message {
+        case .createDiffRange(
+            let startLine, let endLine,
+            let rows, let content
+        ):
+            // Build a structured `diff_range` anchor so
+            // reviewing agents see which file + which
+            // old/new line + which kind (add / delete /
+            // context) the user selected, along with
+            // the row's code content. Also synthesize
+            // a marker-prefixed `line_content` string
+            // so existing annotation-display code that
+            // reads `line_content` still shows
+            // something meaningful.
+            var summaryParts: [String] = []
+            for row in rows {
+                let kind = row["kind"] as? String ?? ""
+                let text = row["content"]
+                    as? String ?? ""
+                let prefix: String
+                switch kind {
+                case "add": prefix = "+ "
+                case "delete": prefix = "- "
+                case "context": prefix = "  "
+                default: continue
+                }
+                summaryParts.append(prefix + text)
+            }
+            let lineContent =
+                summaryParts.joined(separator: "\n")
+            let anchorData: [String: Any] = [
+                "type": "diff_range",
+                "start_line": startLine,
+                "end_line": endLine,
+                "line_content": lineContent,
+                "rows": rows,
+            ]
+            createAnnotation(
+                lsid: lsid,
+                artifact: artifact,
+                anchorData: anchorData,
+                content: content
+            )
+
         case .create(
             let startLine, let endLine,
             let content
         ):
+            // The line-range captured by the JS comes
+            // from the rendered DOM's `data-line`
+            // counter. For source / markdown artifacts
+            // that counter tracks real lines in
+            // `openArtifactContent`, so we can slice it
+            // to recover `line_content`. For .gdiff
+            // artifacts the counter is a rendered-row
+            // index (file headers, hunk separators,
+            // +/-/context rows all consume slots) and
+            // does NOT map to newlines in the raw JSON
+            // blob — slicing can easily produce
+            // start > end and crash Swift's array
+            // subscript. Guard conservatively so both
+            // cases stop at empty content rather than
+            // abort.
             let lines = (openArtifactContent ?? "")
                 .components(separatedBy: "\n")
             let start = max(Int(startLine) - 1, 0)
             let end = min(
                 Int(endLine), lines.count
             )
-            let lineContent = lines[start..<end]
-                .joined(separator: "\n")
+            let lineContent: String
+            if start < end {
+                lineContent = lines[start..<end]
+                    .joined(separator: "\n")
+            } else {
+                lineContent = ""
+            }
             let anchorData: [String: Any] = [
                 "type": "line_range",
                 "start_line": startLine,
@@ -1918,9 +2000,12 @@ struct ArtifactsView: View {
             "created_at": ann.createdAt,
             "updated_at": ann.updatedAt,
         ]
-        // Set position keys based on anchor type
+        // Set position keys based on anchor type.
+        // `.diffRange` uses the same data-line keyed
+        // lookup as `.lineRange` in the JS layer, so it
+        // emits identical position keys.
         switch ann.anchorData.type {
-        case .lineRange:
+        case .lineRange, .diffRange:
             if let sl = ann.anchorData.startLine {
                 annDict["start_line"] = sl
             }
@@ -2319,7 +2404,7 @@ struct ArtifactsView: View {
                             "updated_at": a.updatedAt,
                         ]
                         switch a.anchorData.type {
-                        case .lineRange:
+                        case .lineRange, .diffRange:
                             if let sl = a.anchorData
                                 .startLine {
                                 dict["start_line"] = sl
