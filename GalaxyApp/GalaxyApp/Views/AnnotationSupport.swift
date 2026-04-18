@@ -989,6 +989,33 @@ this.expandedNumber);
             }
         },
 
+        // Re-query the DOM for anchorable rows and
+        // re-render all annotation cards against the
+        // updated block set. Called after the diff
+        // reader dynamically inserts rows — e.g. when
+        // the user expands an unchanged-region gap —
+        // so annotations anchored to the newly-revealed
+        // data-line values can finally find their
+        // target rows.
+        rescanBlocks() {
+            if (this.anchorType === 'whole') return;
+            var allBlocks = document.querySelectorAll(
+                this.blockSelector
+            );
+            if (this.blockSelector === '.md-block') {
+                this.blocks = Array.from(allBlocks)\
+.filter(
+                    function(el) {
+                        return !el.querySelector(\
+'.md-block');
+                    }
+                );
+            } else {
+                this.blocks = Array.from(allBlocks);
+            }
+            this.renderAllAnnotations();
+        },
+
         findBlockIndexForEndLine(endLine) {
             var attr = this.endLineAttr || this.lineAttr;
             for (var i = this.blocks.length - 1;

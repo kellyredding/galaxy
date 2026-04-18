@@ -303,6 +303,11 @@ private func buildDiffHTML(
     // lines across all file cards. Each card's header
     // consumes one data-line slot, enabling file-level
     // annotations "for free".
+    //
+    // Note: collapsed gaps (see `renderWithHunkOverlay`)
+    // still *reserve* data-line slots for the hidden
+    // rows, so when the user expands a gap the newly
+    // inserted rows get predictable, non-colliding IDs.
     var lineCounter = 0
     var cardsHTML = ""
 
@@ -312,18 +317,25 @@ private func buildDiffHTML(
         )
     }
 
-    for file in doc.files {
+    for (fileIndex, file) in doc.files.enumerated() {
         lineCounter += 1
         let headerLine = lineCounter
 
         let result = renderFileCard(
             file: file,
+            fileIndex: fileIndex,
             startingLine: lineCounter + 1,
             headerLine: headerLine
         )
         cardsHTML += result.html
         lineCounter = result.nextLine
     }
+
+    // Serialize per-file "after" line arrays for
+    // client-side gap expansion. JS reads from
+    // `window.GALAXY_AFTERLINES[fileIndex]` when a user
+    // clicks an unchanged-region expand affordance.
+    let afterLinesJS = buildAfterLinesJS(files: doc.files)
 
     // Summary header at top of document
     let metadataHTML =
@@ -571,6 +583,75 @@ private func buildDiffHTML(
             sans-serif;
         font-style: italic;
     }
+    /* Unchanged-region collapse — spacer row replacing
+       long runs of context lines between hunks. Three
+       affordances: expand-up (reveals N lines at the
+       top), expand-all (reveals the whole gap), and
+       expand-down (reveals N lines at the bottom). */
+    .unchanged-gap td.gap-spacer {
+        padding: 4px 12px !important;
+        background: \(gutterBg) !important;
+        border-top: 1px solid \(borderColor);
+        border-bottom: 1px solid \(borderColor);
+        font-family: -apple-system, system-ui,
+            sans-serif;
+        font-size: 11px;
+        color: \(mutedFg);
+        white-space: normal;
+    }
+    .gap-spacer-inner {
+        display: flex;
+        align-items: stretch;
+        gap: 12px;
+        width: 100%;
+    }
+    /* Arrow column — vertical stack for `gap-stacked`
+       (two buttons, taller row); single button for
+       `gap-combined` (shorter row). Row height is
+       driven by this column's content. */
+    .gap-expand-group {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        flex: 0 0 auto;
+    }
+    .gap-expand {
+        background: transparent;
+        border: 0;
+        padding: 3px 10px;
+        margin: 0;
+        color: \(mutedFg);
+        font-family: inherit;
+        font-size: 11px;
+        cursor: pointer;
+        border-radius: 4px;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        line-height: 1.4;
+        white-space: nowrap;
+    }
+    .gap-expand:hover {
+        background: rgba(127, 127, 127, 0.14);
+        color: \(textColor);
+    }
+    /* Center the "show all" button in whatever space
+       remains after the arrow column. Sized to its
+       text, not flex-stretched. */
+    .gap-all-wrap {
+        flex: 1 1 auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .gap-expand-all {
+        flex: 0 0 auto;
+        font-style: italic;
+    }
+    .gap-arrow {
+        font-weight: 700;
+        font-size: 13px;
+    }
     /* hljs background suppression */
     .hljs { background: transparent !important; }
     /* Annotation highlight adaption for table rows */
@@ -597,6 +678,7 @@ private func buildDiffHTML(
     </style>
     </head>
     <body>
+    <script>\(afterLinesJS)</script>
     \(metadataHTML)
     \(cardsHTML)
     <script>\(hjsContent)</script>
@@ -627,6 +709,9 @@ private func buildDiffHTML(
     }
     </script>
     <script>
+    \(gapExpansionJS)
+    </script>
+    <script>
     \(annotationManagerJS)
     </script>
     <script>\(emojiDataJS)</script>
@@ -645,9 +730,14 @@ private struct FileCardResult {
 
 /// Render a single file card: header + body.
 /// Returns the assembled HTML plus the next
-/// available global line number.
+/// available global line number. `fileIndex` is
+/// the position of this file in
+/// `GdiffDocument.files`; it's embedded in gap
+/// spacer rows so JS can look up the file's
+/// `after` contents on expansion.
 private func renderFileCard(
     file: GdiffFile,
+    fileIndex: Int,
     startingLine: Int,
     headerLine: Int
 ) -> FileCardResult {
@@ -708,6 +798,7 @@ private func renderFileCard(
     // Body — file content with diff overlay
     let bodyResult = renderFileBody(
         file: file,
+        fileIndex: fileIndex,
         startingLine: startingLine,
         fileAttrs: fileAttrs
     )
@@ -725,8 +816,14 @@ private func renderFileCard(
 /// files, the "before" content. Hunk data drives
 /// which lines get shaded green/red, and adjacent
 /// delete/add pairs get character-level highlighting.
+///
+/// `fileIndex` is the file's position in the parent
+/// document; used by modified-file rendering to tag
+/// gap spacer rows so JS can resolve `after` content
+/// on expansion.
 private func renderFileBody(
     file: GdiffFile,
+    fileIndex: Int,
     startingLine: Int,
     fileAttrs: String
 ) -> FileCardResult {
@@ -780,6 +877,8 @@ private func renderFileBody(
     return renderWithHunkOverlay(
         source: source,
         hunks: file.hunks,
+        fileIndex: fileIndex,
+        language: file.language ?? "plaintext",
         startingLine: startingLine,
         fileAttrs: fileAttrs
     )
@@ -842,20 +941,27 @@ private func renderAllLinesAs(
 ///   recorded positions and shade red
 /// - Adjacent delete+add pairs get char-level
 ///   highlighting
+/// - Long runs of untouched lines between hunks
+///   collapse to a spacer with expand affordances;
+///   see `emitGapRegion`.
 private func renderWithHunkOverlay(
     source: String,
     hunks: [GdiffHunk],
+    fileIndex: Int,
+    language: String,
     startingLine: Int,
     fileAttrs: String
 ) -> FileCardResult {
     // We walk the "after" file top-to-bottom, emitting
-    // untouched regions as context rows and splicing
-    // hunk lines in at their recorded positions.
-    // cursorBefore / cursorAfter track the next old /
-    // new line numbers to render.
+    // untouched regions as context rows (or a collapsed
+    // spacer for long regions) and splicing hunk lines
+    // in at their recorded positions. cursorBefore /
+    // cursorAfter track the next old / new line numbers
+    // to render.
     let afterLines = splitLines(source)
     var html = ""
     var lineNo = startingLine
+    var gapCounter = 0
 
     let sortedHunks = hunks.sorted {
         $0.newStart < $1.newStart
@@ -863,25 +969,32 @@ private func renderWithHunkOverlay(
 
     var cursorBefore = 1
     var cursorAfter = 1
-    for hunk in sortedHunks {
-        // Emit untouched "after" lines up to the
-        // hunk's start. In untouched regions the
-        // before/after cursors advance in lockstep.
-        while cursorAfter < hunk.newStart,
-              cursorAfter <= afterLines.count
-        {
-            let text = afterLines[cursorAfter - 1]
-            html += renderContextRow(
-                oldNo: cursorBefore,
-                newNo: cursorAfter,
-                dataLine: lineNo,
-                content: text,
-                fileAttrs: fileAttrs
-            )
-            cursorBefore += 1
-            cursorAfter += 1
-            lineNo += 1
-        }
+    for (hunkIndex, hunk) in sortedHunks.enumerated() {
+        // Emit the gap of untouched "after" lines up
+        // to the hunk's start. Short gaps render in
+        // full; long gaps collapse to a spacer row.
+        // The first hunk's pre-gap is the SOF gap
+        // (if non-empty); subsequent pre-gaps are
+        // middle gaps.
+        let position: GapPosition =
+            hunkIndex == 0 ? .sof : .middle
+        let gapResult = emitGapRegion(
+            afterLines: afterLines,
+            cursorBefore: cursorBefore,
+            cursorAfter: cursorAfter,
+            gapEnd: hunk.newStart - 1,
+            fileIndex: fileIndex,
+            gapIndex: gapCounter,
+            position: position,
+            language: language,
+            startingLineNo: lineNo,
+            fileAttrs: fileAttrs
+        )
+        html += gapResult.html
+        lineNo = gapResult.nextLineNo
+        cursorBefore = gapResult.nextCursorBefore
+        cursorAfter = gapResult.nextCursorAfter
+        gapCounter += 1
 
         // Re-sync cursors to the hunk's declared
         // start positions in case of drift.
@@ -965,26 +1078,347 @@ private func renderWithHunkOverlay(
         }
     }
 
-    // Emit any trailing untouched "after" lines —
-    // before/after advance in lockstep again.
-    while cursorAfter <= afterLines.count {
-        let text = afterLines[cursorAfter - 1]
-        html += renderContextRow(
-            oldNo: cursorBefore,
-            newNo: cursorAfter,
-            dataLine: lineNo,
-            content: text,
-            fileAttrs: fileAttrs
-        )
-        cursorBefore += 1
-        cursorAfter += 1
-        lineNo += 1
-    }
+    // Emit any trailing untouched "after" lines.
+    // Short tails render in full; long tails collapse
+    // to a spacer with the `.eof` position variant
+    // (one button `↓ Show lines below`).
+    let tailResult = emitGapRegion(
+        afterLines: afterLines,
+        cursorBefore: cursorBefore,
+        cursorAfter: cursorAfter,
+        gapEnd: afterLines.count,
+        fileIndex: fileIndex,
+        gapIndex: gapCounter,
+        position: .eof,
+        language: language,
+        startingLineNo: lineNo,
+        fileAttrs: fileAttrs
+    )
+    html += tailResult.html
+    lineNo = tailResult.nextLineNo
 
     return FileCardResult(
         html: html,
         nextLine: lineNo - 1
     )
+}
+
+// MARK: - Unchanged-Region Collapsing
+
+/// Gaps with at most this many lines render in full —
+/// below this size, showing a spacer costs more visual
+/// noise than the scroll it saves.
+private let gapCollapseThreshold = 10
+
+/// Each expand-up / expand-down click reveals this many
+/// lines. Also serves as the stacked-vs-combined
+/// threshold: gaps larger than this render stacked (two
+/// directional buttons), gaps at or below render a
+/// single combined/directional button that reveals all.
+/// Kept in sync with `GAP_EXPAND_STEP` in the inline JS.
+private let gapExpandStep = 30
+
+/// Position of a gap within a file's body. Drives which
+/// button variants the spacer emits:
+/// - `.sof` (before the first hunk) — one button, `↑
+///   Show lines above`, reveals bottom-of-gap (the
+///   lines just before the first hunk).
+/// - `.middle` (between two hunks) — two buttons in
+///   stacked mode, one combined button in small mode.
+/// - `.eof` (after the last hunk) — one button, `↓
+///   Show lines below`, reveals top-of-gap (the lines
+///   just after the last hunk).
+///
+/// The arrow/label inversion (top button = `↓ below`,
+/// bottom button = `↑ above`) follows the reference-line
+/// semantic: each button's label describes where the
+/// revealed lines sit relative to the adjacent visible
+/// hunk, not relative to the spacer itself.
+private enum GapPosition {
+    case sof
+    case middle
+    case eof
+
+    var htmlValue: String {
+        switch self {
+        case .sof: return "sof"
+        case .middle: return "middle"
+        case .eof: return "eof"
+        }
+    }
+
+    var rowClass: String {
+        switch self {
+        case .sof: return "gap-sof"
+        case .middle: return "gap-middle"
+        case .eof: return "gap-eof"
+        }
+    }
+}
+
+private struct GapEmissionResult {
+    let html: String
+    let nextLineNo: Int
+    let nextCursorBefore: Int
+    let nextCursorAfter: Int
+}
+
+/// Emit the region of untouched "after" lines from
+/// `cursorAfter` through `gapEnd` (inclusive, 1-based).
+/// Small gaps (≤ `gapCollapseThreshold`) render as
+/// normal context rows. Larger gaps emit a single
+/// spacer row — the `data-line` slots for the hidden
+/// rows are *reserved* by advancing `lineNo`, so when
+/// the user expands the gap the revealed rows get
+/// predictable, non-colliding IDs that stable-anchor
+/// any annotations attached to them.
+private func emitGapRegion(
+    afterLines: [String],
+    cursorBefore: Int,
+    cursorAfter: Int,
+    gapEnd: Int,
+    fileIndex: Int,
+    gapIndex: Int,
+    position: GapPosition,
+    language: String,
+    startingLineNo: Int,
+    fileAttrs: String
+) -> GapEmissionResult {
+    let gapStart = cursorAfter
+    let gapSize = gapEnd - gapStart + 1
+
+    if gapSize <= 0 {
+        return GapEmissionResult(
+            html: "",
+            nextLineNo: startingLineNo,
+            nextCursorBefore: cursorBefore,
+            nextCursorAfter: cursorAfter
+        )
+    }
+
+    // Small gap: render fully, no spacer.
+    if gapSize <= gapCollapseThreshold {
+        var html = ""
+        var lineNo = startingLineNo
+        var cb = cursorBefore
+        var ca = cursorAfter
+        while ca <= gapEnd, ca <= afterLines.count {
+            let text = afterLines[ca - 1]
+            html += renderContextRow(
+                oldNo: cb,
+                newNo: ca,
+                dataLine: lineNo,
+                content: text,
+                fileAttrs: fileAttrs
+            )
+            cb += 1
+            ca += 1
+            lineNo += 1
+        }
+        return GapEmissionResult(
+            html: html,
+            nextLineNo: lineNo,
+            nextCursorBefore: cb,
+            nextCursorAfter: ca
+        )
+    }
+
+    // Large gap: emit a spacer and reserve the data-line
+    // slots the hidden rows would have consumed.
+    let gapId = "f\(fileIndex)g\(gapIndex)"
+    let spacerHTML = renderGapSpacer(
+        gapId: gapId,
+        fileIndex: fileIndex,
+        language: language,
+        afterStart: gapStart,
+        afterEnd: gapEnd,
+        beforeStart: cursorBefore,
+        dataLineStart: startingLineNo,
+        totalSize: gapSize,
+        position: position,
+        fileAttrs: fileAttrs
+    )
+
+    return GapEmissionResult(
+        html: spacerHTML,
+        nextLineNo: startingLineNo + gapSize,
+        nextCursorBefore: cursorBefore + gapSize,
+        nextCursorAfter: cursorAfter + gapSize
+    )
+}
+
+/// Build the HTML for a collapsed-gap spacer row.
+///
+/// Branches on (position, size):
+/// - SOF: one button `↑ Show lines above` — behavior
+///   reveals bottom-of-gap (lines just before the
+///   first hunk). Class `gap-expand-bottom` → maps to
+///   `direction='down'` in JS.
+/// - EOF: one button `↓ Show lines below` — behavior
+///   reveals top-of-gap (lines just after the last
+///   hunk). Class `gap-expand-top` → `direction='up'`.
+/// - Middle stacked (size > step): two buttons. Top
+///   is `↓ Show lines below` (reveals top-of-gap);
+///   bottom is `↑ Show lines above` (reveals bottom-
+///   of-gap). Labels describe revealed lines relative
+///   to the adjacent hunk, not the spacer.
+/// - Middle combined (size ≤ step): one `↕ Show N
+///   lines` button reveals everything.
+/// - Small SOF/EOF (size ≤ step): single directional
+///   button matching the SOF/EOF arrow, with count
+///   in the label.
+///
+/// The center "show all N unchanged lines" button
+/// renders in every variant and fully reveals on
+/// click.
+///
+/// All metadata the JS expansion handler needs lives
+/// on `<tr>` data attributes, including
+/// `data-gap-position` so JS re-emission preserves
+/// the position branch.
+private func renderGapSpacer(
+    gapId: String,
+    fileIndex: Int,
+    language: String,
+    afterStart: Int,
+    afterEnd: Int,
+    beforeStart: Int,
+    dataLineStart: Int,
+    totalSize: Int,
+    position: GapPosition,
+    fileAttrs: String
+) -> String {
+    let isStacked = totalSize > gapExpandStep
+    let sizeClass = isStacked ? "gap-stacked" : "gap-combined"
+    let rowClass = "unchanged-gap \(position.rowClass) "
+        + sizeClass
+    let allLabel = "\u{2026} show all \(totalSize) "
+        + "unchanged lines \u{2026}"
+
+    var arrowButtons = "<div class=\"gap-expand-group\">"
+    switch position {
+    case .sof:
+        // Only the "above" button. Class
+        // `gap-expand-bottom` → reveals bottom-of-gap
+        // (lines closest to the first hunk). Count
+        // included on small-gap variant so the user
+        // sees exactly how much they'd reveal.
+        let label = isStacked
+            ? "Show lines above"
+            : "Show \(totalSize) lines"
+        arrowButtons +=
+            "<button type=\"button\""
+            + " class=\"gap-expand gap-expand-bottom\">"
+            + "<span class=\"gap-arrow\">\u{2191}</span>"
+            + "<span class=\"gap-btn-label\">"
+            + label + "</span></button>"
+    case .eof:
+        // Only the "below" button. Class
+        // `gap-expand-top` → reveals top-of-gap (lines
+        // closest to the last hunk).
+        let label = isStacked
+            ? "Show lines below"
+            : "Show \(totalSize) lines"
+        arrowButtons +=
+            "<button type=\"button\""
+            + " class=\"gap-expand gap-expand-top\">"
+            + "<span class=\"gap-arrow\">\u{2193}</span>"
+            + "<span class=\"gap-btn-label\">"
+            + label + "</span></button>"
+    case .middle:
+        if isStacked {
+            // Top button: ↓ Show lines below, reveals
+            // top-of-gap (its reference is the prev
+            // hunk above, lines appear below that
+            // reference).
+            arrowButtons +=
+                "<button type=\"button\""
+                + " class=\"gap-expand gap-expand-top\">"
+                + "<span class=\"gap-arrow\">"
+                + "\u{2193}</span>"
+                + "<span class=\"gap-btn-label\">"
+                + "Show lines below"
+                + "</span></button>"
+            // Bottom button: ↑ Show lines above,
+            // reveals bottom-of-gap (reference is the
+            // next hunk below; lines appear above
+            // that reference).
+            arrowButtons +=
+                "<button type=\"button\""
+                + " class=\"gap-expand"
+                + " gap-expand-bottom\">"
+                + "<span class=\"gap-arrow\">"
+                + "\u{2191}</span>"
+                + "<span class=\"gap-btn-label\">"
+                + "Show lines above"
+                + "</span></button>"
+        } else {
+            arrowButtons +=
+                "<button type=\"button\""
+                + " class=\"gap-expand"
+                + " gap-expand-combined\">"
+                + "<span class=\"gap-arrow\">"
+                + "\u{2195}</span>"
+                + "<span class=\"gap-btn-label\">"
+                + "Show \(totalSize) lines"
+                + "</span></button>"
+        }
+    }
+    arrowButtons += "</div>"
+
+    return
+        "<tr class=\"\(rowClass)\""
+        + " data-kind=\"gap\""
+        + " data-gap-id=\"\(gapId)\""
+        + " data-gap-position=\"\(position.htmlValue)\""
+        + " data-file-index=\"\(fileIndex)\""
+        + " data-gap-lang=\"\(htmlEscape(language))\""
+        + " data-gap-after-start=\"\(afterStart)\""
+        + " data-gap-after-end=\"\(afterEnd)\""
+        + " data-gap-before-start=\"\(beforeStart)\""
+        + " data-gap-data-line-start=\"\(dataLineStart)\""
+        + " data-top-revealed=\"0\""
+        + " data-bottom-revealed=\"0\""
+        + fileAttrs
+        + ">"
+        + "<td colspan=\"4\" class=\"gap-spacer\">"
+        + "<div class=\"gap-spacer-inner\">"
+        + arrowButtons
+        + "<div class=\"gap-all-wrap\">"
+        + "<button type=\"button\""
+        + " class=\"gap-expand gap-expand-all\">"
+        + "<span class=\"gap-hidden-count\">"
+        + allLabel + "</span>"
+        + "</button>"
+        + "</div></div></td></tr>"
+}
+
+/// Serialize per-file `after` line arrays for injection
+/// into the WebView. The JS expansion handler pulls
+/// revealed-line content from `window.GALAXY_AFTERLINES
+/// [fileIndex]`. Files with no `after` content (binary,
+/// deleted) become empty arrays — their cards don't have
+/// collapsible gaps anyway.
+private func buildAfterLinesJS(
+    files: [GdiffFile]
+) -> String {
+    let arrays: [[String]] = files.map { file in
+        splitLines(file.after ?? "")
+    }
+    guard let data = try? JSONSerialization.data(
+        withJSONObject: arrays,
+        options: []
+    ), let json = String(
+        data: data, encoding: .utf8
+    ) else {
+        return "window.GALAXY_AFTERLINES = [];"
+    }
+    // Guard against </script> sequences inside source
+    // content breaking out of the script tag.
+    let safe = json.replacingOccurrences(
+        of: "</", with: "<\\/"
+    )
+    return "window.GALAXY_AFTERLINES = \(safe);"
 }
 
 // MARK: - Row Rendering Helpers
@@ -1370,6 +1804,380 @@ private func htmlEscape(_ s: String) -> String {
             of: "'", with: "&#39;"
         )
 }
+
+// MARK: - Gap-expansion JS
+
+/// Injected into every diff reader document. Handles
+/// click events on `.gap-expand` buttons inside
+/// `.unchanged-gap` spacer rows, using event
+/// delegation on document. Reads gap bounds and
+/// current reveal state from the spacer's data
+/// attributes; pulls line content from
+/// `window.GALAXY_AFTERLINES[fileIndex]`. New rows
+/// re-anchor via the reserved `data-line` slots
+/// assigned at initial Swift render.
+///
+/// GAP_EXPAND_STEP / GAP_THRESHOLD are kept in sync
+/// with the Swift-side `gapExpandStep` /
+/// `gapCollapseThreshold` constants above.
+private let gapExpansionJS: String = """
+(function() {
+    var GAP_EXPAND_STEP = 30;
+    var GAP_THRESHOLD = 10;
+
+    function htmlEscape(s) {
+        return String(s)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function renderContextRow(p) {
+        var body = htmlEscape(p.content);
+        if (body.length === 0) body = ' ';
+        // Tag gap-revealed rows with `data-gap-id` so
+        // subsequent expand clicks can find and clean
+        // up previously-revealed siblings (they live
+        // in the DOM as normal `.code-line` rows and
+        // would otherwise get duplicated by the next
+        // re-emission).
+        var gapAttr = p.gapId
+            ? ' data-gap-id="' + p.gapId + '"'
+            : '';
+        return '<tr class="code-line"' +
+            ' data-line="' + p.dataLine + '"' +
+            gapAttr +
+            ' data-file-path="' +
+                htmlEscape(p.filePath) + '"' +
+            ' data-file-status="' +
+                htmlEscape(p.fileStatus) + '"' +
+            ' data-kind="context"' +
+            ' data-old-line="' + p.oldNo + '"' +
+            ' data-new-line="' + p.newNo + '">' +
+            '<td class="line-old-num">' +
+                p.oldNo + '</td>' +
+            '<td class="line-new-num">' +
+                p.newNo + '</td>' +
+            '<td class="line-marker"></td>' +
+            '<td class="line-content">' +
+                body + '</td>' +
+            '</tr>';
+    }
+
+    function renderGapSpacer(p) {
+        var isStacked = p.hiddenCount > GAP_EXPAND_STEP;
+        var position = p.position || 'middle';
+        var sizeClass = isStacked
+            ? 'gap-stacked' : 'gap-combined';
+        var positionClass = 'gap-' + position;
+        var rowClass =
+            'unchanged-gap ' + positionClass +
+            ' ' + sizeClass;
+        var allLabel = '… show all ' + p.hiddenCount +
+            ' unchanged lines …';
+
+        var arrowButtons =
+            '<div class="gap-expand-group">';
+        if (position === 'sof') {
+            // Only the `↑ Show lines above` button,
+            // class `gap-expand-bottom` → reveals
+            // bottom-of-gap (closest to first hunk).
+            var sofLabel = isStacked
+                ? 'Show lines above'
+                : 'Show ' + p.hiddenCount + ' lines';
+            arrowButtons +=
+                '<button type="button"' +
+                ' class="gap-expand' +
+                ' gap-expand-bottom">' +
+                '<span class="gap-arrow">↑</span>' +
+                '<span class="gap-btn-label">' +
+                sofLabel + '</span></button>';
+        } else if (position === 'eof') {
+            // Only the `↓ Show lines below` button,
+            // class `gap-expand-top` → reveals
+            // top-of-gap (closest to last hunk).
+            var eofLabel = isStacked
+                ? 'Show lines below'
+                : 'Show ' + p.hiddenCount + ' lines';
+            arrowButtons +=
+                '<button type="button"' +
+                ' class="gap-expand gap-expand-top">' +
+                '<span class="gap-arrow">↓</span>' +
+                '<span class="gap-btn-label">' +
+                eofLabel + '</span></button>';
+        } else if (isStacked) {
+            // Middle stacked. Top = ↓ Show lines
+            // below (reveals top-of-gap); bottom = ↑
+            // Show lines above (reveals bottom-of-
+            // gap). Labels describe revealed rows
+            // relative to the adjacent hunk.
+            arrowButtons +=
+                '<button type="button"' +
+                ' class="gap-expand gap-expand-top">' +
+                '<span class="gap-arrow">↓</span>' +
+                '<span class="gap-btn-label">' +
+                'Show lines below' +
+                '</span></button>' +
+                '<button type="button"' +
+                ' class="gap-expand' +
+                ' gap-expand-bottom">' +
+                '<span class="gap-arrow">↑</span>' +
+                '<span class="gap-btn-label">' +
+                'Show lines above' +
+                '</span></button>';
+        } else {
+            // Middle combined.
+            arrowButtons +=
+                '<button type="button"' +
+                ' class="gap-expand' +
+                ' gap-expand-combined">' +
+                '<span class="gap-arrow">↕</span>' +
+                '<span class="gap-btn-label">' +
+                'Show ' + p.hiddenCount + ' lines' +
+                '</span></button>';
+        }
+        arrowButtons += '</div>';
+
+        return '<tr class="' + rowClass + '"' +
+            ' data-kind="gap"' +
+            ' data-gap-id="' + p.gapId + '"' +
+            ' data-gap-position="' + position + '"' +
+            ' data-file-index="' + p.fileIndex + '"' +
+            ' data-gap-lang="' +
+                htmlEscape(p.lang) + '"' +
+            ' data-gap-after-start="' +
+                p.afterStart + '"' +
+            ' data-gap-after-end="' +
+                p.afterEnd + '"' +
+            ' data-gap-before-start="' +
+                p.beforeStart + '"' +
+            ' data-gap-data-line-start="' +
+                p.dataLineStart + '"' +
+            ' data-top-revealed="' +
+                p.topRevealed + '"' +
+            ' data-bottom-revealed="' +
+                p.bottomRevealed + '"' +
+            ' data-file-path="' +
+                htmlEscape(p.filePath) + '"' +
+            ' data-file-status="' +
+                htmlEscape(p.fileStatus) + '">' +
+            '<td colspan="4" class="gap-spacer">' +
+            '<div class="gap-spacer-inner">' +
+            arrowButtons +
+            '<div class="gap-all-wrap">' +
+            '<button type="button"' +
+            ' class="gap-expand gap-expand-all">' +
+            '<span class="gap-hidden-count">' +
+                allLabel + '</span>' +
+            '</button>' +
+            '</div></div></td></tr>';
+    }
+
+    function expandGap(spacer, direction) {
+        var afterStart =
+            parseInt(spacer.dataset.gapAfterStart, 10);
+        var afterEnd =
+            parseInt(spacer.dataset.gapAfterEnd, 10);
+        var beforeStart =
+            parseInt(spacer.dataset.gapBeforeStart, 10);
+        var dataLineStart = parseInt(
+            spacer.dataset.gapDataLineStart, 10);
+        var fileIndex =
+            parseInt(spacer.dataset.fileIndex, 10);
+        var filePath = spacer.dataset.filePath || '';
+        var fileStatus =
+            spacer.dataset.fileStatus || '';
+        var lang = spacer.dataset.gapLang || 'plaintext';
+        var gapId = spacer.dataset.gapId || '';
+        var position =
+            spacer.dataset.gapPosition || 'middle';
+        var totalSize = afterEnd - afterStart + 1;
+
+        var topRevealed = parseInt(
+            spacer.dataset.topRevealed, 10) || 0;
+        var bottomRevealed = parseInt(
+            spacer.dataset.bottomRevealed, 10) || 0;
+
+        var afterLines =
+            (window.GALAXY_AFTERLINES || [])[fileIndex]
+            || [];
+
+        if (direction === 'all') {
+            topRevealed = totalSize;
+            bottomRevealed = 0;
+        } else if (direction === 'up') {
+            topRevealed = Math.min(
+                topRevealed + GAP_EXPAND_STEP,
+                totalSize - bottomRevealed
+            );
+        } else if (direction === 'down') {
+            bottomRevealed = Math.min(
+                bottomRevealed + GAP_EXPAND_STEP,
+                totalSize - topRevealed
+            );
+        } else {
+            return;
+        }
+
+        // Auto-reveal the remainder if what's left is
+        // below the initial collapse threshold —
+        // avoids tiny residual spacers.
+        var stillHidden =
+            totalSize - topRevealed - bottomRevealed;
+        if (stillHidden > 0 &&
+            stillHidden <= GAP_THRESHOLD) {
+            topRevealed = totalSize;
+            bottomRevealed = 0;
+        }
+
+        var finalHidden =
+            totalSize - topRevealed - bottomRevealed;
+
+        var fragment = '';
+        var i;
+        // Top-revealed rows
+        for (i = 0; i < topRevealed; i++) {
+            fragment += renderContextRow({
+                oldNo: beforeStart + i,
+                newNo: afterStart + i,
+                dataLine: dataLineStart + i,
+                content:
+                    afterLines[afterStart - 1 + i]
+                    || '',
+                filePath: filePath,
+                fileStatus: fileStatus,
+                gapId: gapId
+            });
+        }
+        // New (smaller) spacer if still collapsed.
+        // Preserve the gap's position (sof/middle/
+        // eof) so re-emission shows the correct
+        // button variant.
+        if (finalHidden > 0) {
+            fragment += renderGapSpacer({
+                gapId: gapId,
+                fileIndex: fileIndex,
+                lang: lang,
+                filePath: filePath,
+                fileStatus: fileStatus,
+                afterStart: afterStart,
+                afterEnd: afterEnd,
+                beforeStart: beforeStart,
+                dataLineStart: dataLineStart,
+                topRevealed: topRevealed,
+                bottomRevealed: bottomRevealed,
+                hiddenCount: finalHidden,
+                position: position
+            });
+        }
+        // Bottom-revealed rows
+        var bottomStart = totalSize - bottomRevealed;
+        for (i = 0; i < bottomRevealed; i++) {
+            var offset = bottomStart + i;
+            fragment += renderContextRow({
+                oldNo: beforeStart + offset,
+                newNo: afterStart + offset,
+                dataLine: dataLineStart + offset,
+                content:
+                    afterLines[afterStart - 1 + offset]
+                    || '',
+                filePath: filePath,
+                fileStatus: fileStatus,
+                gapId: gapId
+            });
+        }
+
+        // Find every row currently attached to this
+        // gap — the clicked spacer plus any context
+        // rows revealed by prior clicks. Without this
+        // cleanup, earlier clicks' revealed rows
+        // linger in the DOM and duplicate lines on
+        // the next re-emission.
+        var tbody = spacer.parentNode;
+        var gapNodes = Array.prototype.slice.call(
+            tbody.querySelectorAll(
+                '[data-gap-id="' + gapId + '"]'));
+        if (gapNodes.length === 0) {
+            gapNodes = [spacer];
+        }
+        // Insertion anchor — the first sibling after
+        // the last gap node. `null` is fine and means
+        // "append to tbody".
+        var insertBefore =
+            gapNodes[gapNodes.length - 1].nextSibling;
+
+        // Parse fragment into detached rows
+        var temp = document.createElement('tbody');
+        temp.innerHTML = fragment;
+        var newRows = Array.prototype.slice.call(
+            temp.children);
+
+        // Remove all old gap rows, then insert fresh
+        // fragment at the anchor position
+        gapNodes.forEach(function(n) {
+            tbody.removeChild(n);
+        });
+        newRows.forEach(function(row) {
+            tbody.insertBefore(row, insertBefore);
+        });
+
+        // Reapply syntax highlighting to new context
+        // rows (skip the possibly-re-emitted spacer)
+        if (typeof hljs !== 'undefined' &&
+            lang && lang !== 'plaintext') {
+            newRows.forEach(function(row) {
+                if (row.dataset.kind !== 'context') {
+                    return;
+                }
+                var el = row.querySelector(
+                    '.line-content');
+                if (!el) return;
+                el.classList.add('language-' + lang);
+                hljs.highlightElement(el);
+            });
+        }
+
+        // Re-anchor annotations whose target rows were
+        // inside this gap. AnnotationManager snapshots
+        // `.code-line` rows at init time; without a
+        // rescan the newly-revealed rows aren't in its
+        // block set and any annotations pointing at
+        // them can't reposition.
+        if (typeof AnnotationManager !== 'undefined' &&
+            typeof AnnotationManager.rescanBlocks
+                === 'function') {
+            AnnotationManager.rescanBlocks();
+        }
+    }
+
+    document.addEventListener('click', function(e) {
+        var btn = e.target.closest('.gap-expand');
+        if (!btn) return;
+        var spacer = btn.closest('.unchanged-gap');
+        if (!spacer) return;
+        // Class → direction mapping. Class refers to
+        // WHICH END of the gap is revealed, not the
+        // visible arrow glyph — the label/arrow on the
+        // button is inverted from the behavior.
+        var direction = null;
+        if (btn.classList.contains('gap-expand-top')) {
+            direction = 'up';
+        } else if (btn.classList.contains(
+            'gap-expand-bottom')) {
+            direction = 'down';
+        } else if (btn.classList.contains(
+            'gap-expand-all') ||
+            btn.classList.contains(
+                'gap-expand-combined')) {
+            direction = 'all';
+        }
+        if (!direction) return;
+        expandGap(spacer, direction);
+    });
+})();
+"""
 
 // MARK: - Empty / Error States
 
