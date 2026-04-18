@@ -322,11 +322,12 @@ module GalaxyLedger
 
         lines << "When you need to recall something from this session:"
         lines << ""
-        lines << "1. **Query the ledger**: `galaxy-ledger search --query \"QUERY\" --pid #{claude_pid}`"
-        lines << "2. **Check recent code changes**: `git diff` and `git log --oneline -20`"
-        lines << "3. **Check session files**: `galaxy-ledger list-files --pid #{claude_pid}`"
-        lines << "   to see every file read, edited, written, or searched this session"
-        lines << "4. **Fall back to normal exploration** \u2014 Grep, Glob, Read as usual"
+        lines << "1. **List session files**: `galaxy-ledger list-files --pid #{claude_pid}`"
+        lines << "2. **Check code state**: `git diff` and `git log --oneline -20`"
+        lines << "3. **Session recall**: invoke the `galaxy:recall` skill for"
+        lines << "   tiered recipes \u2014 ledger FTS, paired turn dialogue,"
+        lines << "   time-range windows, surrounding-context queries, keyword scans"
+        lines << "4. **Normal exploration**: Grep, Glob, Read as usual"
 
         lines.join("\n")
       end

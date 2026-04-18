@@ -128,10 +128,10 @@ describe "OnResume additionalContext" do
     result = run_binary(["on-resume"], stdin: hook_input)
     output = JSON.parse(result[:output])
     ctx = output["hookSpecificOutput"]["additionalContext"].as_s
-    ctx.should contain("Query the ledger")
-    ctx.should contain("galaxy-ledger search")
-    ctx.should contain("--pid")
     ctx.should contain("galaxy-ledger list-files")
+    ctx.should contain("--pid")
+    ctx.should contain("galaxy:recall")
+    ctx.should contain("Normal exploration")
   end
 
   it "includes resumed session note when data exists" do

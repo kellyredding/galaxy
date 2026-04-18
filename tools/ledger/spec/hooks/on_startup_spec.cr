@@ -124,11 +124,10 @@ describe "OnStartup additionalContext" do
     result = run_binary(["on-startup"], stdin: hook_input)
     output = JSON.parse(result[:output])
     ctx = output["hookSpecificOutput"]["additionalContext"].as_s
-    ctx.should contain("Query the ledger")
-    ctx.should contain("galaxy-ledger search")
     ctx.should contain("galaxy-ledger list-files")
     ctx.should contain("git diff")
-    ctx.should contain("Fall back to normal exploration")
+    ctx.should contain("galaxy:recall")
+    ctx.should contain("Normal exploration")
   end
 
   it "includes working directory from Dir.current" do

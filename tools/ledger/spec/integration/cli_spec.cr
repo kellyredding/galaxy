@@ -192,7 +192,7 @@ describe "CLI Integration" do
       output = JSON.parse(result[:output])
       context = output["hookSpecificOutput"]["additionalContext"].as_s
       context.should contain("persistent context ledger")
-      context.should contain("galaxy-ledger search")
+      context.should contain("galaxy:recall")
     end
   end
 

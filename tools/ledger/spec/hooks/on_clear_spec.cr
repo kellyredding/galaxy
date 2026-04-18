@@ -254,10 +254,9 @@ describe "OnClear additionalContext" do
     ctx.should contain("git diff")
     ctx.should contain("Review the session file manifest")
     ctx.should contain("If you hit something unfamiliar")
-    ctx.should contain("Query the ledger")
-    ctx.should contain("galaxy-ledger search")
     ctx.should contain("galaxy-ledger list-files")
-    ctx.should contain("Fall back to normal exploration")
+    ctx.should contain("galaxy:recall")
+    ctx.should contain("Normal exploration")
   end
 
   it "includes guideline re-read directives with file paths" do

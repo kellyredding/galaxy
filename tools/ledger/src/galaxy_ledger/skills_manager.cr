@@ -252,12 +252,132 @@ module GalaxyLedger
       they explicitly asked for one
     SKILL
 
+    RECALL_SKILL = <<-'SKILL'
+    ---
+    name: galaxy:recall
+    description: >-
+      Recall something from earlier in the current session —
+      prior decisions, user directions, what was said about a
+      topic, or context missing from your current conversation.
+      Uses tiered strategies — curated ledger FTS, structured
+      timeline queries, then keyword scan fallback. Invoke
+      proactively when the user asks "what did we decide about
+      X", "when did I tell you Y", "what did you find about Z",
+      or similar recall queries; also invoke when you realize
+      you need context from earlier in the session that isn't
+      in your current messages.
+    ---
+
+    Recall context from the current session using Galaxy's ledger
+    and timeline stores. Escalate through tiers — cheapest and
+    most curated first, fall back only when the previous tier is
+    dry.
+
+    Substitute the Ledger PID from the SessionStart context
+    (shown as `**Ledger PID**: N`) for `PID` in every command
+    below. If you've lost it, recover with
+    `galaxy-ledger sessions --json`.
+
+    ## Tier 1 — Curated ledger (always start here)
+
+    The ledger captures decisions, learnings, and extracted
+    entries at each turn boundary. It's the fastest,
+    lowest-noise source. Try this first for any recall task.
+
+    ```bash
+    # Full-text search across curated ledger entries
+    galaxy-ledger search --query "KEYWORD" --pid PID
+
+    # Every file read/edited/written/searched this session
+    galaxy-ledger list-files --pid PID
+    ```
+
+    Prefix matching works: `--query "snap"` matches "snapshot".
+
+    Stop here if you find what you need.
+
+    ## Tier 2 — Timeline structured queries
+
+    The timeline captures every turn, hook, and tool call as a
+    raw event. Use it when you know the shape of what you want
+    (paired turn, time window, specific event type) but not the
+    exact words.
+
+    **Anchor on user messages:**
+
+    ```bash
+    # Reverse-chron scan of user-typed messages
+    galaxy-timeline list --pid PID \
+      --event-type turn:initiated --reverse --json
+    ```
+
+    Low verbosity — just the user's asks. Note the
+    `duration_identifier` on any message that looks relevant.
+
+    **Drill into a paired turn:**
+
+    ```bash
+    # Fetch both sides of a turn by its pairing key
+    galaxy-timeline list --pid PID \
+      --duration-identifier "turn--0c27e585-..." --json
+    ```
+
+    Returns the `turn:initiated` + `turn:completed` (or
+    `turn:failed`, `turn:interrupted`, `turn:abandoned`) pair
+    in one call.
+
+    **Scope to a time window:**
+
+    ```bash
+    # Inclusive bounds — combine with --event-type to narrow
+    galaxy-timeline list --pid PID \
+      --since "2026-04-17 15:00:00" \
+      --until "2026-04-17 16:00:00" --json
+
+    # --since / --until accept date prefixes for whole-day bounds
+    galaxy-timeline list --pid PID --since 2026-04-17 --json
+    ```
+
+    Useful for surrounding-context queries: all events
+    adjacent to a turn of interest.
+
+    **Common idiom:** anchor on user messages → note the
+    `duration_identifier` of a relevant one → drill in for the
+    paired response.
+
+    Stop here if you find what you need.
+
+    ## Tier 3 — Keyword scan fallback
+
+    Escalate here only when **both** Tier 1 (ledger FTS) and
+    Tier 2 (structured timeline queries) are dry, and you
+    still need to find prose inside turn events.
+
+    ```bash
+    galaxy-timeline list --pid PID \
+      --event-type turn:initiated,turn:completed --reverse --json \
+      | jq -c '.events[]' \
+      | grep -i "KEYWORD"
+    ```
+
+    Each event becomes one JSON line; `grep` catches matches
+    regardless of which JSON field the text lives in. Some
+    false positives come from JSON key names (e.g. searching
+    for `duration_identifier` matches every row because it's
+    a field name) — if noise is high, split the scan to
+    `turn:initiated` or `turn:completed` alone.
+
+    When a match lands, parse its `duration_identifier` and
+    drill back into Tier 2 for the full pair.
+    SKILL
+
     # All ledger-managed skills: name => SKILL.md content
     LEDGER_SKILLS = {
       "handoff"                => HANDOFF_SKILL,
       "spend"                  => SPEND_SKILL,
       "galaxy:resume"          => RESUME_SKILL,
       "galaxy:timeline-marker" => TIMELINE_MARKER_SKILL,
+      "galaxy:recall"          => RECALL_SKILL,
     }
 
     # Old skill names to clean up on install (renamed or removed)
