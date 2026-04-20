@@ -69,6 +69,7 @@ module Galaxy
     "sessions.json",
     "settings.json",
     "window-state.json",
+    "viewed-artifact-files.json",
   }
 
   # URL scheme for communicating with Galaxy.app

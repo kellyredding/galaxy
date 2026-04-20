@@ -189,8 +189,8 @@ describe Galaxy::CLI do
   end
 
   describe "APP_DATA_FILES" do
-    it "contains the 3 expected files" do
-      Galaxy::APP_DATA_FILES.size.should eq(3)
+    it "contains the 4 expected files" do
+      Galaxy::APP_DATA_FILES.size.should eq(4)
       Galaxy::APP_DATA_FILES.should contain(
         "sessions.json",
       )
@@ -199,6 +199,9 @@ describe Galaxy::CLI do
       )
       Galaxy::APP_DATA_FILES.should contain(
         "window-state.json",
+      )
+      Galaxy::APP_DATA_FILES.should contain(
+        "viewed-artifact-files.json",
       )
     end
   end
