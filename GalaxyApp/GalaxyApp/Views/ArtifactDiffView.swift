@@ -546,13 +546,14 @@ private func buildDiffHTML(
     .file-body {
         width: 100%;
     }
-    /* File-card collapse toggle — GitHub-style
-       chevron button that toggles the card body.
-       Positioned as the first child of .file-header;
-       the parent's `gap: 8px` handles spacing to the
-       file path. `line-height: 0` prevents the SVG
-       from contributing extra vertical whitespace. */
-    .file-collapse-toggle {
+    /* Shared button styling for the file-header's
+       icon buttons — the collapse chevron and the
+       copy-path button live inside .file-header with
+       the parent's `gap: 8px` handling spacing.
+       `line-height: 0` prevents the SVG from
+       contributing extra vertical whitespace. */
+    .file-collapse-toggle,
+    .file-copy-path {
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -569,13 +570,22 @@ private func buildDiffHTML(
         font: inherit;
     }
     .file-collapse-toggle:hover,
-    .file-collapse-toggle:focus-visible {
+    .file-collapse-toggle:focus-visible,
+    .file-copy-path:hover,
+    .file-copy-path:focus-visible {
         background: \(hoverBg);
         color: \(textColor);
         outline: none;
     }
     .file-collapse-toggle .chevron {
         transition: transform 0.12s ease-in-out;
+    }
+    /* Brief green flash on successful copy, paired
+       with the check icon swap + "Copied!" tooltip.
+       Decays back to the default muted color when
+       .copied is removed. */
+    .file-copy-path.copied {
+        color: \(greenFg);
     }
     /* Rotate chevron-down → chevron-right when the
        card is collapsed. (-90deg rotates the tip from
@@ -1007,6 +1017,34 @@ private func renderFileCard(
             "<span class=\"file-path\">"
             + htmlEscape(file.path) + "</span>"
     }
+    // Copy-file-path button — reads the card's
+    // data-file-path on click and writes to clipboard.
+    // For renamed files this copies the NEW path, not
+    // the old one (same as GitHub).
+    html +=
+        "<button type=\"button\""
+        + " class=\"file-copy-path\""
+        + " data-tooltip=\"Copy file path to clipboard\""
+        + " aria-label=\"Copy file path to clipboard\">"
+        + "<svg class=\"copy-icon\" width=\"12\""
+        + " height=\"12\" viewBox=\"0 0 16 16\""
+        + " aria-hidden=\"true\">"
+        + "<path fill=\"currentColor\""
+        + " d=\"M0 6.75C0 5.784.784 5 1.75 5h1.5a.75"
+        + ".75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7"
+        + ".5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 ."
+        + "25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1"
+        + ".75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 "
+        + "14.25Z\"/>"
+        + "<path fill=\"currentColor\""
+        + " d=\"M5 1.75C5 .784 5.784 0 6.75 0h7.5C15"
+        + ".216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 "
+        + "1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1"
+        + ".75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.11"
+        + "2.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a"
+        + ".25.25 0 0 0-.25-.25Z\"/>"
+        + "</svg>"
+        + "</button>"
     html +=
         "<span class=\"status-badge "
         + statusClass + "\">"
@@ -2474,8 +2512,13 @@ private let fileCollapseJS: String = """
         hoverBtn = null;
     }
 
+    // Tooltip matches any element with a data-tooltip
+    // attribute — currently the collapse chevron and
+    // the copy-path button, but any future header
+    // affordance gets the same pill for free by
+    // stamping the attribute.
     document.addEventListener('mouseover', function(e) {
-        var btn = e.target.closest('.file-collapse-toggle');
+        var btn = e.target.closest('[data-tooltip]');
         if (!btn || btn === hoverBtn) return;
         hoverBtn = btn;
         showTooltip(btn);
@@ -2483,7 +2526,7 @@ private let fileCollapseJS: String = """
 
     document.addEventListener('mouseout', function(e) {
         if (!hoverBtn) return;
-        var btn = e.target.closest('.file-collapse-toggle');
+        var btn = e.target.closest('[data-tooltip]');
         if (btn !== hoverBtn) return;
         // Still inside the same button? Ignore.
         var related = e.relatedTarget;
@@ -2613,6 +2656,110 @@ private let fileCollapseJS: String = """
         // do is now inside applyCollapsedState().
         if (hoverBtn === btn) {
             positionTooltip(btn);
+        }
+    });
+
+    // Copy-file-path handler — reads the card's
+    // data-file-path, writes to the clipboard, and
+    // flashes visual feedback (check icon + "Copied!"
+    // tooltip for 1.5s). Icon swap done via SVG
+    // innerHTML replacement so we don't pay the cost
+    // of maintaining both glyphs in the DOM
+    // permanently. Reverts to the original copy icon
+    // + tooltip text after the timeout.
+    var COPY_ICON_SVG =
+        '<svg class="copy-icon" width="12"'
+        + ' height="12" viewBox="0 0 16 16"'
+        + ' aria-hidden="true">'
+        + '<path fill="currentColor"'
+        + ' d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75'
+        + '.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7'
+        + '.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .'
+        + '25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1'
+        + '.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 '
+        + '14.25Z"/>'
+        + '<path fill="currentColor"'
+        + ' d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15'
+        + '.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 '
+        + '1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1'
+        + '.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.11'
+        + '2.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a'
+        + '.25.25 0 0 0-.25-.25Z"/>'
+        + '</svg>';
+    var CHECK_ICON_SVG =
+        '<svg class="copy-icon" width="12"'
+        + ' height="12" viewBox="0 0 16 16"'
+        + ' aria-hidden="true">'
+        + '<path fill="currentColor"'
+        + ' d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25'
+        + ' 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751'
+        + '.751 0 0 1 .018-1.042.751.751 0 0 1 1.04'
+        + '2-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1'
+        + '.06 0Z"/>'
+        + '</svg>';
+    var COPY_DEFAULT_TOOLTIP = 'Copy file path to clipboard';
+
+    function showCopiedFeedback(btn) {
+        btn.classList.add('copied');
+        btn.innerHTML = CHECK_ICON_SVG;
+        btn.setAttribute('data-tooltip', 'Copied!');
+        btn.setAttribute('aria-label', 'Copied!');
+        if (hoverBtn === btn) positionTooltip(btn);
+
+        if (btn._copyResetTimer) {
+            clearTimeout(btn._copyResetTimer);
+        }
+        btn._copyResetTimer = setTimeout(function() {
+            btn.classList.remove('copied');
+            btn.innerHTML = COPY_ICON_SVG;
+            btn.setAttribute('data-tooltip',
+                COPY_DEFAULT_TOOLTIP);
+            btn.setAttribute('aria-label',
+                COPY_DEFAULT_TOOLTIP);
+            if (hoverBtn === btn) positionTooltip(btn);
+            btn._copyResetTimer = null;
+        }, 1500);
+    }
+
+    function copyTextLegacy(text) {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.top = '-1000px';
+        ta.style.left = '-1000px';
+        document.body.appendChild(ta);
+        ta.select();
+        var ok = false;
+        try { ok = document.execCommand('copy'); }
+        catch (err) { ok = false; }
+        document.body.removeChild(ta);
+        return ok;
+    }
+
+    document.addEventListener('click', function(e) {
+        var btn = e.target.closest('.file-copy-path');
+        if (!btn) return;
+        var card = btn.closest('.file-card');
+        if (!card) return;
+        var path = card.getAttribute('data-file-path');
+        if (!path) return;
+
+        // Try modern clipboard API first; fall back to
+        // execCommand for environments where it's
+        // unavailable. Visual feedback fires on success
+        // from either path.
+        if (navigator.clipboard
+            && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(path).then(
+                function() { showCopiedFeedback(btn); },
+                function() {
+                    if (copyTextLegacy(path)) {
+                        showCopiedFeedback(btn);
+                    }
+                }
+            );
+        } else if (copyTextLegacy(path)) {
+            showCopiedFeedback(btn);
         }
     });
 })();
