@@ -12,10 +12,20 @@ struct GdiffDocument: Codable {
     let files: [GdiffFile]
 }
 
+/// Metadata on a `.gdiff` capture.
+///
+/// `refFrom` and `refTo` are 40-char commit SHAs when
+/// the capture could resolve them, otherwise fallbacks
+/// (original input like "main", or "working-tree" for
+/// an uncommitted tree). `repo` is `owner/repo` for a
+/// GitHub origin remote, empty string otherwise. The
+/// reader treats "both refs match the SHA regex AND
+/// repo is non-empty" as the signal for offering an
+/// Open-on-GitHub link — no separate flag, the data
+/// itself encodes linkability.
 struct GdiffMetadata: Codable {
     let refFrom: String
     let refTo: String
-    let branch: String
     let repo: String
     let createdAt: String
     let summary: String
@@ -23,7 +33,7 @@ struct GdiffMetadata: Codable {
     enum CodingKeys: String, CodingKey {
         case refFrom = "ref_from"
         case refTo = "ref_to"
-        case branch, repo
+        case repo
         case createdAt = "created_at"
         case summary
     }
@@ -362,22 +372,27 @@ private func buildDiffHTML(
     // clicks an unchanged-region expand affordance.
     let afterLinesJS = buildAfterLinesJS(files: doc.files)
 
-    // Summary header at top of document
+    // Summary header at top of document.
+    //
+    // SHAs get truncated to 7 chars for display, which
+    // is long enough to be unambiguous in every
+    // repository I'd ever look at; non-SHA refs (the
+    // "working-tree" marker, unresolvable inputs) pass
+    // through as-is. The ref pair is always plain
+    // text. When both refs are SHAs and repo is
+    // non-empty, a separate "View on GitHub" link with
+    // the GitHub mark is pushed to the right edge of
+    // the header. Otherwise that slot is empty.
     let metadataHTML =
         "<div class=\"diff-summary\">"
-        + "<span class=\"diff-summary-branch\">"
-        + htmlEscape(doc.metadata.branch)
-        + "</span>"
-        + "<span class=\"diff-summary-sep\">&middot;</span>"
         + "<span class=\"diff-summary-refs\">"
-        + htmlEscape(doc.metadata.refFrom)
-        + " → "
-        + htmlEscape(doc.metadata.refTo)
+        + renderRefPair(doc.metadata)
         + "</span>"
         + "<span class=\"diff-summary-sep\">&middot;</span>"
         + "<span class=\"diff-summary-stats\">"
         + htmlEscape(doc.metadata.summary)
         + "</span>"
+        + renderGitHubLink(doc.metadata)
         + "</div>"
 
     let cssVars = annotationCSSVars(isDark: isDark)
@@ -423,13 +438,36 @@ private func buildDiffHTML(
         color: \(mutedFg);
         flex-wrap: wrap;
     }
-    .diff-summary-branch {
-        font-family: ui-monospace, monospace;
-        font-weight: 600;
-        color: \(textColor);
-    }
     .diff-summary-refs {
         font-family: ui-monospace, monospace;
+    }
+    /* "View on GitHub" affordance — pushed to the
+       right edge of the header via margin-left:auto
+       (the summary flexbox flows left-to-right, so
+       auto-margin consumes the remaining space).
+       Underline only on hover keeps the header calm
+       when idle. `target="_blank" rel="noopener"` on
+       the anchor itself lets the WKNavigationDelegate
+       in AnnotationSupport route the click through
+       NSWorkspace.open rather than navigating the
+       WKWebView. */
+    .diff-summary-link {
+        margin-left: auto;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: \(blueFg);
+        text-decoration: none;
+    }
+    .diff-summary-link:hover {
+        text-decoration: underline;
+    }
+    .diff-summary-gh-mark {
+        /* Nudge the mark down a hair so its optical
+           center aligns with the x-height of the
+           adjacent text (the glyph's visual weight
+           sits below geometric center). */
+        transform: translateY(0.5px);
     }
     .diff-summary-sep {
         opacity: 0.5;
@@ -2163,6 +2201,111 @@ private func myersBacktrace<T: Equatable>(
     }
 
     return ops.reversed()
+}
+
+// MARK: - Header Ref Rendering
+
+/// Renders the `refFrom → refTo` text for the summary
+/// header — always plain (not a link). SHAs truncate
+/// to 7 chars; non-SHA refs (the "working-tree"
+/// marker, unresolvable inputs) pass through as-is.
+private func renderRefPair(
+    _ metadata: GdiffMetadata
+) -> String {
+    htmlEscape(displayRef(metadata.refFrom))
+        + " → "
+        + htmlEscape(displayRef(metadata.refTo))
+}
+
+/// Renders the "View on GitHub" affordance (GitHub
+/// mark SVG + text) when the capture has enough
+/// metadata to build a compare URL: repo non-empty,
+/// both refs SHA-shape. Returns empty string when any
+/// gate fails (working-tree captures, unresolvable
+/// refs, non-GitHub remotes) — the caller interpolates
+/// unconditionally and the empty string leaves the
+/// header's right slot blank.
+private func renderGitHubLink(
+    _ metadata: GdiffMetadata
+) -> String {
+    guard !metadata.repo.isEmpty,
+          isSHA(metadata.refFrom),
+          isSHA(metadata.refTo)
+    else {
+        return ""
+    }
+
+    let url = "https://github.com/"
+        + metadata.repo
+        + "/compare/"
+        + metadata.refFrom
+        + "..."
+        + metadata.refTo
+
+    return "<a class=\"diff-summary-link\" href=\""
+        + htmlEscape(url)
+        + "\" target=\"_blank\" rel=\"noopener\">"
+        + githubMarkSVG()
+        + "<span>View on GitHub</span>"
+        + "</a>"
+}
+
+/// Inline GitHub mark (Octicons `mark-github`,
+/// 16×16). `fill="currentColor"` so the glyph picks
+/// up the link's text color automatically and tracks
+/// light/dark mode without a separate theme variant.
+///
+/// The path is concatenated segment-by-segment rather
+/// than using a multiline literal with escape-newline
+/// continuations — the latter is sensitive to leading
+/// indentation stripping and one stray space would
+/// corrupt the SVG path's compact `-`-separated
+/// number syntax.
+private func githubMarkSVG() -> String {
+    let path = ""
+        + "M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53"
+        + " 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01"
+        + "-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94"
+        + "-.09-.23-.48-.94-.82-1.13-.28-.15-.68"
+        + "-.52-.01-.53.63-.01 1.08.58 1.23.82.72"
+        + " 1.21 1.87.87 2.33.66.07-.52.28-.87.51"
+        + "-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87"
+        + ".31-1.59.82-2.15-.08-.2-.36-1.02.08"
+        + "-2.12 0 0 .67-.21 2.2.82.64-.18 1.32"
+        + "-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04"
+        + " 2.2-.82 2.2-.82.44 1.1.16 1.92.08"
+        + " 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87"
+        + " 3.75-3.65 3.95.29.25.54.73.54 1.48 0"
+        + " 1.07-.01 1.93-.01 2.2 0 .21.15.46.55"
+        + ".38A8.013 8.013 0 0016 8c0-4.42-3.58-8"
+        + "-8-8z"
+
+    return "<svg class=\"diff-summary-gh-mark\""
+        + " viewBox=\"0 0 16 16\" width=\"14\""
+        + " height=\"14\" fill=\"currentColor\""
+        + " aria-hidden=\"true\">"
+        + "<path d=\"\(path)\"/></svg>"
+}
+
+/// Short display form for a ref: SHAs truncate to 7
+/// chars, everything else passes through (so
+/// "working-tree" and fallback branch names render as
+/// themselves).
+private func displayRef(_ ref: String) -> String {
+    isSHA(ref) ? String(ref.prefix(7)) : ref
+}
+
+/// Matches a full-length Git commit SHA — exactly 40
+/// lowercase hex chars. Tight on purpose: any other
+/// string (branch names, "working-tree", partial
+/// SHAs) returns false, which is what gates the
+/// compare-link affordance.
+private func isSHA(_ s: String) -> Bool {
+    guard s.count == 40 else { return false }
+    return s.allSatisfy {
+        ($0 >= "0" && $0 <= "9")
+            || ($0 >= "a" && $0 <= "f")
+    }
 }
 
 // MARK: - Utility
