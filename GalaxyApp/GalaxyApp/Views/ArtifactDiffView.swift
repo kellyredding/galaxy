@@ -438,7 +438,14 @@ private func buildDiffHTML(
     .file-path {
         font-weight: 600;
         font-family: ui-monospace, monospace;
-        word-break: break-all;
+        /* `overflow-wrap: break-word` lets long
+           paths break mid-path only when they would
+           actually overflow, without making the
+           element's min-content 1 character the way
+           `word-break: break-all` does — which was
+           collapsing the file-header flex container
+           on some cards. */
+        overflow-wrap: break-word;
     }
     .file-old-path {
         font-family: ui-monospace, monospace;
@@ -478,17 +485,29 @@ private func buildDiffHTML(
     }
     .file-body {
         width: 100%;
-        overflow-x: auto;
     }
+    /* Auto table layout — the browser sizes each
+       column from content. `width: 100%` constrains
+       the overall table to the card; `pre-wrap`
+       below lets cells wrap at word boundaries when
+       their content exceeds the remaining width. No
+       `table-layout: fixed` — it breaks cells that
+       don't get the `.hljs` class (crystal, etc.)
+       whose intrinsic-content column sizing differs
+       from cells that do. */
     table.diff-table {
         border-collapse: collapse;
-        width: max-content;
-        min-width: 100%;
+        width: 100%;
+        tab-size: 4;
+        -moz-tab-size: 4;
     }
     .code-line td {
         padding: 0;
         vertical-align: top;
-        white-space: pre;
+        /* `pre-wrap` preserves leading whitespace /
+           indentation while allowing wrapping at
+           word boundaries. */
+        white-space: pre-wrap;
     }
     /* Three gutter columns: old line number, new line
        number, and a +/-/space marker. Shared column
@@ -503,14 +522,14 @@ private func buildDiffHTML(
         -webkit-user-select: none;
     }
     .line-old-num {
-        width: 3.5em;
-        min-width: 3.5em;
-        max-width: 3.5em;
+        width: 5em;
+        min-width: 5em;
+        max-width: 5em;
     }
     .line-new-num {
-        width: 3.5em;
-        min-width: 3.5em;
-        max-width: 3.5em;
+        width: 5em;
+        min-width: 5em;
+        max-width: 5em;
         border-right: 1px solid \(borderColor);
     }
     .line-marker {
