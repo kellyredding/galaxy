@@ -96,6 +96,89 @@ module GalaxyArtifacts
     # Binary artifact types that cannot be viewed inline
     BINARY_ARTIFACT_TYPES = Set{"pdf", "image", "binary"}
 
+    # Extension → artifact type mapping. Mirrors
+    # Galaxy.app's extension-based reader dispatch in
+    # ArtifactsView.swift so the type column labels the
+    # reader the user will get when opening the artifact.
+    # Keep this in sync with that switch — any new reader
+    # added there should land here too.
+    def self.artifact_type_from_extension(
+      filename : String,
+    ) : String
+      ext = File.extname(filename).lchop('.').downcase
+      case ext
+      when "md", "markdown" then "markdown"
+      when "html", "htm"    then "html"
+      when "csv", "tsv"     then "table"
+      when "mmd", "mermaid" then "mermaid"
+      when "jsonl", "json"  then "json"
+      when "yaml", "yml", "toml",
+           "ini", "conf" then "config"
+      when "gdiff" then "diff"
+      when "png", "jpg", "jpeg",
+           "gif", "svg", "webp" then "image"
+      when "pdf" then "pdf"
+      when "txt" then "text"
+      else            "code"
+      end
+    end
+
+    # Read the first line of a file, bounded to 64 KB
+    # to guard against pathological no-newline files.
+    # Returns empty string on failure — callers treat
+    # that as a non-match for sniffing purposes.
+    def self.extract_first_line(
+      path : String,
+    ) : String
+      return "" unless File.exists?(path)
+      File.open(path, "r") do |f|
+        line = f.gets(65536, chomp: true)
+        line || ""
+      end
+    rescue
+      ""
+    end
+
+    # Sniff a JSONL file's first line for the agent
+    # transcript shape — an object with a `String`
+    # "agentId" plus a nested "message" object whose
+    # "role" is also a String. Matches the structural
+    # check Galaxy.app's ArtifactsView#isAgentTranscript
+    # performs at render time so the CLI's label agrees
+    # with the reader the user will actually see.
+    def self.is_agent_transcript_file?(
+      path : String,
+    ) : Bool
+      first_line = extract_first_line(path)
+      return false if first_line.empty?
+      obj = JSON.parse(first_line)
+      return false unless obj.as_h?
+      return false unless obj["agentId"]?.try(&.as_s?)
+      message = obj["message"]?
+      return false unless message && message.as_h?
+      return false unless message["role"]?.try(&.as_s?)
+      true
+    rescue
+      false
+    end
+
+    # Pick the default artifact type for a file. Pure
+    # extension lookup for the common cases; JSONL gets
+    # promoted to "transcript" only when a first-line
+    # content sniff matches the agent-transcript shape.
+    def self.default_artifact_type(
+      filename : String,
+      content_path : String,
+    ) : String
+      base = artifact_type_from_extension(filename)
+      if base == "json" &&
+         filename.downcase.ends_with?(".jsonl") &&
+         is_agent_transcript_file?(content_path)
+        return "transcript"
+      end
+      base
+    end
+
     # ============================================================
     # save
     # ============================================================
@@ -239,8 +322,15 @@ module GalaxyArtifacts
       original_filename = File.basename(source_path)
       artifact_title = title || ArtifactStorage.title_from_filename(original_filename)
 
-      # Use provided type/mime or defaults
-      effective_artifact_type = artifact_type || "text"
+      # Use provided type/mime or defaults. Explicit
+      # --artifact-type wins; otherwise infer from the
+      # filename extension, with JSONL content-sniff
+      # for agent transcripts (sniffs the source file
+      # directly — copy hasn't happened yet).
+      effective_artifact_type = artifact_type ||
+                                default_artifact_type(
+                                  original_filename, source_path,
+                                )
       effective_mime_type = mime_type || "application/octet-stream"
 
       # Compute hash and size from file if not provided
@@ -353,8 +443,11 @@ module GalaxyArtifacts
       original_filename = filename
       artifact_title = title ||
                        ArtifactStorage.title_from_filename(original_filename)
-      effective_artifact_type = artifact_type || "text"
       effective_mime_type = mime_type || "application/octet-stream"
+      # Type default is deferred until after the stream
+      # completes — the JSONL transcript sniff needs
+      # the first line on disk to inspect. See the
+      # assignment just below stream_stdin.
 
       # Reserve the upcoming artifact number so we can construct
       # the stored_path before streaming content to disk.
@@ -382,6 +475,12 @@ module GalaxyArtifacts
       path = stream_result[:path]
       hash = stream_result[:hash]
       fsize = stream_result[:size]
+
+      # Default the artifact type now that the written
+      # file is available for JSONL agent-transcript
+      # sniffing. Explicit --artifact-type still wins.
+      effective_artifact_type = artifact_type ||
+                                default_artifact_type(original_filename, path)
 
       # Insert the DB record. source_path: nil bypasses dedup —
       # save_artifact always inserts when source_path is nil.
@@ -2857,7 +2956,11 @@ module GalaxyArtifacts
       OPTIONS:
         --title TITLE           Descriptive title (default: derived from filename)
         --description TEXT      Context about what this artifact contains
-        --artifact-type TYPE    Artifact type (default: "text")
+        --artifact-type TYPE    Artifact type (default: inferred from
+                                filename extension — markdown/html/table/
+                                mermaid/json/transcript/config/diff/image/
+                                pdf/text/code; see artifact_type_from_extension
+                                for the full mapping)
         --mime-type MIME        MIME type (default: "application/octet-stream")
         --content-hash HASH     SHA256 hash (default: computed; source-path only)
         --file-size BYTES       File size in bytes (default: computed; source-path only)

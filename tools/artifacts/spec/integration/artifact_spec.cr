@@ -87,6 +87,140 @@ describe "CLI artifact commands", tags: "integration" do
     end
   end
 
+  describe "save type inference" do
+    # Source-path mode — verifies the default reaches
+    # the DB and the "type: X" line in stdout. Spot-
+    # checks a few representative extensions; unit
+    # specs in artifact_type_inference_spec.cr cover
+    # the full mapping table.
+
+    it "infers markdown for .md in source-path mode" do
+      source = create_test_file(
+        "notes.md", "# Hello\n",
+      )
+      result = run_binary([
+        "save",
+        "--ledger-session-id", "1",
+        "--source-path", source,
+      ])
+      result[:status].should eq(0)
+      result[:output].should contain("type: markdown")
+    end
+
+    it "infers diff for .gdiff in source-path mode" do
+      source = create_test_file(
+        "changes.gdiff", "{\"files\":[]}",
+      )
+      result = run_binary([
+        "save",
+        "--ledger-session-id", "1",
+        "--source-path", source,
+      ])
+      result[:status].should eq(0)
+      result[:output].should contain("type: diff")
+    end
+
+    it "infers code for unknown extensions in source-path mode" do
+      source = create_test_file(
+        "impl.rb", "class Foo; end\n",
+      )
+      result = run_binary([
+        "save",
+        "--ledger-session-id", "1",
+        "--source-path", source,
+      ])
+      result[:status].should eq(0)
+      result[:output].should contain("type: code")
+    end
+
+    it "infers json for .json in stdin mode" do
+      result = run_binary(
+        [
+          "save",
+          "--ledger-session-id", "1",
+          "--filename", "settings.json",
+        ],
+        stdin: %({"key":"value"}),
+      )
+      result[:status].should eq(0)
+      result[:output].should contain("type: json")
+    end
+
+    it "infers json for non-transcript .jsonl in stdin mode" do
+      result = run_binary(
+        [
+          "save",
+          "--ledger-session-id", "1",
+          "--filename", "lines.jsonl",
+        ],
+        stdin: %({"a":1}\n{"b":2}\n),
+      )
+      result[:status].should eq(0)
+      result[:output].should contain("type: json")
+    end
+
+    it "promotes .jsonl to transcript when first line matches" do
+      transcript = %({"agentId":"a1",) +
+                   %("message":{"role":"user",) +
+                   %("content":"hi"}}\n) +
+                   %({"agentId":"a1",) +
+                   %("message":{"role":"assistant",) +
+                   %("content":"hello"}}\n)
+      result = run_binary(
+        [
+          "save",
+          "--ledger-session-id", "1",
+          "--filename", "agent-abc123.jsonl",
+        ],
+        stdin: transcript,
+      )
+      result[:status].should eq(0)
+      result[:output].should contain("type: transcript")
+    end
+
+    it "infers config for .yaml in source-path mode" do
+      source = create_test_file(
+        "ci.yaml", "name: build\n",
+      )
+      result = run_binary([
+        "save",
+        "--ledger-session-id", "1",
+        "--source-path", source,
+      ])
+      result[:status].should eq(0)
+      result[:output].should contain("type: config")
+    end
+
+    it "infers text for .txt in stdin mode" do
+      result = run_binary(
+        [
+          "save",
+          "--ledger-session-id", "1",
+          "--filename", "notes.txt",
+        ],
+        stdin: "plain prose here",
+      )
+      result[:status].should eq(0)
+      result[:output].should contain("type: text")
+    end
+
+    it "honors explicit --artifact-type over inference" do
+      # A .md file should normally infer `markdown`
+      # — an explicit override wins.
+      source = create_test_file(
+        "overridden.md", "# hi\n",
+      )
+      result = run_binary([
+        "save",
+        "--ledger-session-id", "1",
+        "--source-path", source,
+        "--artifact-type", "code",
+      ])
+      result[:status].should eq(0)
+      result[:output].should contain("type: code")
+    end
+  end
+
   describe "list" do
     it "lists artifacts in human-readable format" do
       source1 = create_test_file("list-a.csv", "data a")
