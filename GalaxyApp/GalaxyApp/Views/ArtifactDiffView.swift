@@ -1872,12 +1872,12 @@ private func pairDeleteAddLines(
 // MARK: - Character-Level Diff
 
 /// Computes character-level highlights for a
-/// delete/add line pair using a simple LCS-based
-/// character diff. Returns (delHTML, addHTML) with
+/// delete/add line pair using Myers' O(ND) diff.
+/// Returns (delHTML, addHTML) with
 /// <span class="char-del"> / <span class="char-add">
 /// wrapping changed runs. Falls back to `nil, nil`
-/// if the diff is degenerate (identical or wholly
-/// different).
+/// if the diff is degenerate (identical, one side
+/// empty) or runs past its wall-clock deadline.
 private func characterLevelDiff(
     delLine: String,
     addLine: String
@@ -1892,21 +1892,24 @@ private func characterLevelDiff(
         return (nil, nil)
     }
 
-    // Very long lines: skip char-diff to avoid
-    // quadratic-time blowup. The full-line shading
-    // still shows the change.
-    if delLine.count > 500
-        || addLine.count > 500
-    {
-        return (nil, nil)
-    }
-
     let delChars = Array(delLine)
     let addChars = Array(addLine)
 
-    // Compute LCS-based diff ops. Classic O(N*M)
-    // table — fine for lines up to ~500 chars.
-    let ops = lcsDiff(delChars, addChars)
+    // Compute diff ops with Myers' O((N+M)·D)
+    // algorithm — scales with edit distance rather
+    // than total length, so small edits in long lines
+    // stay fast regardless of length. For the rare
+    // pathological case (two long, unrelated strings
+    // where D ≈ N+M), the 50ms deadline bails with a
+    // nil return and we fall back to row-only
+    // highlighting. This replaced a previous
+    // arbitrary 500-char cap.
+    let deadline = CFAbsoluteTimeGetCurrent() + 0.050
+    guard let ops = myersDiff(
+        delChars, addChars, deadline: deadline
+    ) else {
+        return (nil, nil)
+    }
 
     var delHTML = ""
     var addHTML = ""
@@ -1953,13 +1956,32 @@ private enum DiffOp {
     case insert(Character)
 }
 
-/// Classic dynamic-programming LCS followed by a
-/// backtrace to produce a delete/insert/equal op
-/// stream.
-private func lcsDiff(
+/// Myers' O(ND) difference algorithm. Returns a
+/// forward-order stream of `.equal` / `.delete` /
+/// `.insert` ops that transform `a` into `b`.
+///
+/// Time is O((N+M)·D) where D is the edit distance —
+/// "output-sensitive" — so a small edit in a long
+/// line is fast regardless of length. Memory is
+/// O(D·(N+M)) for the backtrace snapshots; the linear-
+/// space refinement isn't needed at typical diff-line
+/// sizes. See: Eugene W. Myers, "An O(ND) Difference
+/// Algorithm and Its Variations", Algorithmica
+/// (1986) 1:251-266.
+///
+/// `deadline` is a soft wall-clock cap, consulted
+/// once per `d` iteration. For adversarial inputs
+/// where D approaches N+M the algorithm degenerates
+/// toward quadratic cost; returning nil on deadline
+/// lets the caller fall back to row-only highlighting
+/// rather than blocking the render. In practice the
+/// deadline almost never trips — typical modified
+/// lines have tiny edit distances.
+private func myersDiff(
     _ a: [Character],
-    _ b: [Character]
-) -> [DiffOp] {
+    _ b: [Character],
+    deadline: CFAbsoluteTime
+) -> [DiffOp]? {
     let n = a.count
     let m = b.count
     if n == 0 {
@@ -1969,48 +1991,129 @@ private func lcsDiff(
         return a.map { .delete($0) }
     }
 
-    // LCS length table
-    var dp = Array(
-        repeating: Array(repeating: 0, count: m + 1),
-        count: n + 1
+    let maxD = n + m
+    // V[k] = furthest-reaching x on diagonal k
+    // (where k = x - y). Offset by maxD so negative
+    // diagonals index into the array safely.
+    var v = Array(
+        repeating: 0, count: 2 * maxD + 1
     )
-    for i in 1...n {
-        for j in 1...m {
-            if a[i - 1] == b[j - 1] {
-                dp[i][j] = dp[i - 1][j - 1] + 1
+    // Snapshot of V at each d — consulted during
+    // backtrace to follow the edit path in reverse.
+    var trace: [[Int]] = []
+
+    for d in 0...maxD {
+        // Deadline is checked once per d (not per k)
+        // — coarse enough to be cheap, fine enough
+        // that a runaway can't run for more than one
+        // full diagonal sweep past the deadline.
+        if CFAbsoluteTimeGetCurrent() > deadline {
+            return nil
+        }
+
+        trace.append(v)
+        var k = -d
+        while k <= d {
+            var x: Int
+            // Choose whether to extend the path from
+            // the diagonal above (insert, moving
+            // down) or below (delete, moving right).
+            // The boundary conditions force the only
+            // legal move when k is at ±d.
+            if k == -d ||
+                (k != d &&
+                 v[k - 1 + maxD] < v[k + 1 + maxD])
+            {
+                x = v[k + 1 + maxD]
             } else {
-                dp[i][j] = max(
-                    dp[i - 1][j], dp[i][j - 1]
+                x = v[k - 1 + maxD] + 1
+            }
+            var y = x - k
+            // Extend along the "snake" — consecutive
+            // equal characters cost nothing.
+            while x < n && y < m && a[x] == b[y] {
+                x += 1
+                y += 1
+            }
+            v[k + maxD] = x
+            if x >= n && y >= m {
+                return myersBacktrace(
+                    a: a, b: b, trace: trace
                 )
+            }
+            k += 2
+        }
+    }
+
+    // Unreachable for valid inputs — every string
+    // pair has D ≤ N+M so the loop above always
+    // finds the end within that bound.
+    return nil
+}
+
+/// Walks the V snapshots produced by `myersDiff` in
+/// reverse to recover the edit script. Emits ops
+/// from end to start, then reverses the result so the
+/// caller consumes them in forward order.
+private func myersBacktrace(
+    a: [Character],
+    b: [Character],
+    trace: [[Int]]
+) -> [DiffOp] {
+    let n = a.count
+    let m = b.count
+    let maxD = n + m
+    var ops: [DiffOp] = []
+    var x = n
+    var y = m
+
+    for d in stride(
+        from: trace.count - 1,
+        through: 0,
+        by: -1
+    ) {
+        let v = trace[d]
+        let k = x - y
+        // Which neighbor diagonal did we come from?
+        // Mirrors the forward-move decision — same
+        // rule must choose the same edge, or the
+        // reconstructed path won't line up with the
+        // one myersDiff took.
+        let prevK: Int
+        if k == -d ||
+            (k != d &&
+             v[k - 1 + maxD] < v[k + 1 + maxD])
+        {
+            prevK = k + 1
+        } else {
+            prevK = k - 1
+        }
+        let prevX = v[prevK + maxD]
+        let prevY = prevX - prevK
+
+        // Walk back along the snake, emitting equals
+        // for every step.
+        while x > prevX && y > prevY {
+            ops.append(.equal(a[x - 1]))
+            x -= 1
+            y -= 1
+        }
+
+        // d == 0 means we're back at the origin —
+        // no edit op to emit.
+        if d > 0 {
+            if x == prevX {
+                // Came from diagonal above → insert
+                ops.append(.insert(b[y - 1]))
+                y -= 1
+            } else {
+                // Came from diagonal below → delete
+                ops.append(.delete(a[x - 1]))
+                x -= 1
             }
         }
     }
 
-    // Backtrace
-    var ops: [DiffOp] = []
-    var i = n
-    var j = m
-    while i > 0 && j > 0 {
-        if a[i - 1] == b[j - 1] {
-            ops.append(.equal(a[i - 1]))
-            i -= 1
-            j -= 1
-        } else if dp[i - 1][j] >= dp[i][j - 1] {
-            ops.append(.delete(a[i - 1]))
-            i -= 1
-        } else {
-            ops.append(.insert(b[j - 1]))
-            j -= 1
-        }
-    }
-    while i > 0 {
-        ops.append(.delete(a[i - 1]))
-        i -= 1
-    }
-    while j > 0 {
-        ops.append(.insert(b[j - 1]))
-        j -= 1
-    }
     return ops.reversed()
 }
 
