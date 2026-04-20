@@ -902,8 +902,19 @@ return;
         updateFormReference() {
             var range = this.getLineRange(\
 this.highlightStart, this.highlightEnd);
+            // In a diff reader the selected rows carry
+            // file/old/new line attributes; prefer the
+            // structured `path:line` label over the
+            // generic "line N" (global data-line) one.
+            var fileRef = this.computeDiffRangeFileRef(
+                range.startLine, range.endLine);
+            var formatted = this.formatDiffFileRef(
+                fileRef);
             var ref;
-            if (range.startLine === range.endLine) {
+            if (formatted) {
+                ref = formatted;
+            } else if (range.startLine
+                === range.endLine) {
                 ref = this.refPrefix.toLowerCase()
                     + ' ' + range.startLine;
             } else {
@@ -941,6 +952,97 @@ this.endLineAttr)
                 startLine: startLine,
                 endLine: endLine
             };
+        },
+
+        // Scan rendered .code-line rows inside the
+        // global data-line range and lift the file
+        // reference (path + per-file line range + which
+        // side the numbers reference). Used for both
+        // the form preview label while typing and the
+        // message payload on submit so the anchor_data
+        // stored on disk carries this structured ref.
+        //
+        // Returns null keys when the selection has no
+        // file/line context (header-only range in a
+        // non-diff view, or a selection that hit rows
+        // without data-file-path).
+        //
+        // Rule for side: prefer the new-side number if
+        // any row in the range has one (add / context /
+        // renamed rows all do). Fall back to old-side
+        // only when the entire selection is on delete
+        // rows. Mixed ranges still show new-side only —
+        // keeps the display unambiguous.
+        computeDiffRangeFileRef(startLine, endLine) {
+            var filePath = null;
+            var newNums = [];
+            var oldNums = [];
+            for (var li = startLine; li <= endLine;
+                 li++) {
+                var tr = document.querySelector(
+                    '[data-line="' + li + '"]');
+                if (!tr) continue;
+                var fp = tr.getAttribute(
+                    'data-file-path');
+                if (!filePath && fp) filePath = fp;
+                var na = tr.getAttribute(
+                    'data-new-line');
+                if (na != null && na !== '') {
+                    newNums.push(parseInt(na, 10));
+                }
+                var oa = tr.getAttribute(
+                    'data-old-line');
+                if (oa != null && oa !== '') {
+                    oldNums.push(parseInt(oa, 10));
+                }
+            }
+            var nums, side;
+            if (newNums.length > 0) {
+                nums = newNums; side = 'new';
+            } else if (oldNums.length > 0) {
+                nums = oldNums; side = 'old';
+            } else {
+                return {
+                    file_path: filePath,
+                    file_start_line: null,
+                    file_end_line: null,
+                    file_line_side: null
+                };
+            }
+            var min = nums[0], max = nums[0];
+            for (var j = 1; j < nums.length; j++) {
+                if (nums[j] < min) min = nums[j];
+                if (nums[j] > max) max = nums[j];
+            }
+            return {
+                file_path: filePath,
+                file_start_line: min,
+                file_end_line: max,
+                file_line_side: side
+            };
+        },
+
+        // Render a fileRef object into a display string
+        // like "tools/diff/foo.cr:146" or
+        // "tools/diff/foo.cr:140\\u2013146" for ranges.
+        // Returns null when the ref has no path — caller
+        // falls back to the generic "line N" label.
+        formatDiffFileRef(fileRef) {
+            if (!fileRef || !fileRef.file_path) {
+                return null;
+            }
+            if (fileRef.file_start_line == null) {
+                return fileRef.file_path;
+            }
+            if (fileRef.file_start_line
+                === fileRef.file_end_line) {
+                return fileRef.file_path + ':'
+                    + fileRef.file_start_line;
+            }
+            return fileRef.file_path + ':'
+                + fileRef.file_start_line
+                + '\\u2013'
+                + fileRef.file_end_line;
         },
 
         renderAllAnnotations() {
@@ -1052,7 +1154,27 @@ endVal);
 
             var startVal = annotation[startKey];
             var lineRef;
-            if (startVal === endVal) {
+            // Prefer the structured file reference when
+            // the annotation was captured with it
+            // (diff_range annotations on .gdiff
+            // artifacts after this change). Older
+            // annotations — including diff_range ones
+            // saved before this field was added — lack
+            // `file_path` and fall through to the
+            // legacy "line N" label keyed off the
+            // global data-line counter.
+            var fileFormatted = this.formatDiffFileRef({
+                file_path: annotation.file_path,
+                file_start_line:
+                    annotation.file_start_line,
+                file_end_line:
+                    annotation.file_end_line,
+                file_line_side:
+                    annotation.file_line_side
+            });
+            if (fileFormatted) {
+                lineRef = fileFormatted;
+            } else if (startVal === endVal) {
                 lineRef = this.refPrefix.toLowerCase()
                     + ' ' + startVal;
             } else {
@@ -1093,6 +1215,60 @@ annotation.review_reviewed_at);
                 + (isExpanded ? ' expanded' : '');
             card.setAttribute('data-number',
                 annotation.number);
+            // Stamp the file path on the card so the
+            // file-collapse handler can find + hide
+            // annotations anchored inside a given file
+            // without re-reading the annotation record.
+            //
+            // Prefer the annotation's explicit
+            // file_path (captured at save time for
+            // diff_range annotations created after this
+            // change). Fall back to the target block's
+            // data-file-path so legacy annotations
+            // (diff_range records saved before the
+            // file_path field existed, plus any future
+            // anchor type whose target row exposes the
+            // attribute) participate in file-collapse
+            // just the same. Only diff rows carry
+            // data-file-path — in non-diff views the
+            // attribute is absent and we simply don't
+            // stamp anything.
+            var cardFilePath = annotation.file_path;
+            if (!cardFilePath && block) {
+                cardFilePath = block.getAttribute(
+                    'data-file-path');
+            }
+            if (cardFilePath) {
+                card.setAttribute('data-file-path',
+                    cardFilePath);
+                // If the owning file-card is currently
+                // collapsed, apply file-hidden at
+                // creation so this freshly-inserted
+                // card doesn't pop into view. Needed
+                // because rescanBlocks (triggered by
+                // gap-expand in any other file) wipes
+                // and re-creates every card — without
+                // this check, collapsed files would
+                // leak their annotations whenever a
+                // rescan happened elsewhere. Iterating
+                // .file-card.collapsed avoids the CSS
+                // attribute-selector escaping trap for
+                // paths containing special chars.
+                var collapsedCards = document
+                    .querySelectorAll(
+                        '.file-card.collapsed');
+                for (var ci = 0;
+                     ci < collapsedCards.length; ci++) {
+                    if (collapsedCards[ci]
+                        .getAttribute(
+                            'data-file-path')
+                        === cardFilePath) {
+                        card.classList.add(
+                            'file-hidden');
+                        break;
+                    }
+                }
+            }
             card.innerHTML =
                 '<div class=\
 "annotation-card-header">' +
@@ -1318,14 +1494,33 @@ endVal);
             var scrollY = window.pageYOffset
                 || document.documentElement.scrollTop;
 
+            // Two-pass: sync all spacer heights first,
+            // then read rects and position cards.
+            //
+            // A single-pass loop that interleaves writes
+            // and reads has an iteration-order bug. When
+            // entry A is processed before entry B but
+            // A's spacer sits BELOW B's in the document,
+            // setting B's spacer height grows the page
+            // and pushes A's spacer down — but A's card
+            // top was already locked to the old rect,
+            // stranding A's card above its spacer and
+            // leaving an empty band below. Numerically
+            // ordered `cardSpacers` keys don't track
+            // document order, so the reversal happens
+            // whenever a higher-numbered annotation
+            // sits later in the document than a
+            // lower-numbered one — exactly the initial
+            // render case that showed the bug.
+            //
+            // Splitting the two writes lets all the
+            // spacer-height reflows settle first; the
+            // rect reads in the second pass then see
+            // stable positions for every spacer.
             if (this.formSpacer && this.formElement) {
                 this.formSpacer.style.height
                     = this.formElement.offsetHeight
                     + 'px';
-                var rect = this.formSpacer\
-.getBoundingClientRect();
-                this.formElement.style.top
-                    = (rect.top + scrollY) + 'px';
             }
             for (var num in this.cardSpacers) {
                 var entry = this.cardSpacers[num];
@@ -1333,9 +1528,21 @@ endVal);
                     entry.spacer.style.height
                         = entry.card.offsetHeight
                         + 'px';
-                    var rect = entry.spacer\
+                }
+            }
+
+            if (this.formSpacer && this.formElement) {
+                var fr = this.formSpacer\
 .getBoundingClientRect();
-                    entry.card.style.top
+                this.formElement.style.top
+                    = (fr.top + scrollY) + 'px';
+            }
+            for (var num2 in this.cardSpacers) {
+                var entry2 = this.cardSpacers[num2];
+                if (entry2.spacer && entry2.card) {
+                    var rect = entry2.spacer\
+.getBoundingClientRect();
+                    entry2.card.style.top
                         = (rect.top + scrollY) + 'px';
                 }
             }
@@ -1526,6 +1733,35 @@ this.highlightStart, this.highlightEnd);
                     }
                     if (rows.length > 0) {
                         msg.rows = rows;
+                        // Also lift the structured file
+                        // reference so Swift can store
+                        // it at top level of anchor_data
+                        // — drives the "path:line"
+                        // display label and the
+                        // file-collapse hide/show logic.
+                        var fileRef = this\
+.computeDiffRangeFileRef(
+                            range.startLine,
+                            range.endLine
+                        );
+                        if (fileRef.file_path) {
+                            msg.filePath =
+                                fileRef.file_path;
+                        }
+                        if (fileRef.file_start_line
+                            != null) {
+                            msg.fileStartLine =
+                                fileRef.file_start_line;
+                        }
+                        if (fileRef.file_end_line
+                            != null) {
+                            msg.fileEndLine =
+                                fileRef.file_end_line;
+                        }
+                        if (fileRef.file_line_side) {
+                            msg.fileLineSide =
+                                fileRef.file_line_side;
+                        }
                     }
             }
             window.webkit.messageHandlers.annotation\
@@ -2041,11 +2277,23 @@ class AnnotationCoordinator: NSObject,
                     as? [[String: Any]],
                    !rows.isEmpty
                 {
+                    let fp = body["filePath"]
+                        as? String
+                    let fs = (body["fileStartLine"]
+                        as? Int).map { Int32($0) }
+                    let fe = (body["fileEndLine"]
+                        as? Int).map { Int32($0) }
+                    let fls = body["fileLineSide"]
+                        as? String
                     onAnnotationMessage?(
                         .createDiffRange(
                             startLine: Int32(startLine),
                             endLine: Int32(endLine),
                             rows: rows,
+                            filePath: fp,
+                            fileStartLine: fs,
+                            fileEndLine: fe,
+                            fileLineSide: fls,
                             content: content
                         )
                     )
@@ -2136,10 +2384,23 @@ enum AnnotationMessage {
     /// to build a structured `diff_range` anchor_data
     /// so reviewing agents can make sense of the
     /// selection without re-parsing the .gdiff.
+    ///
+    /// `filePath` / `fileStartLine` / `fileEndLine` /
+    /// `fileLineSide` lift the per-file reference out
+    /// of `rows[]` so the display label and collapse
+    /// logic can read them at the top level without
+    /// re-scanning per-row entries. Optional — a
+    /// header-only selection leaves the line numbers
+    /// nil, and pre-change annotations lack them
+    /// entirely.
     case createDiffRange(
         startLine: Int32,
         endLine: Int32,
         rows: [[String: Any]],
+        filePath: String?,
+        fileStartLine: Int32?,
+        fileEndLine: Int32?,
+        fileLineSide: String?,
         content: String
     )
     case createRowRange(
@@ -2226,12 +2487,38 @@ func buildAnnotationInitJS(
             "updated_at": a.updatedAt,
         ]
         switch a.anchorData.type {
-        case .lineRange, .diffRange:
+        case .lineRange:
             if let sl = a.anchorData.startLine {
                 dict["start_line"] = sl
             }
             if let el = a.anchorData.endLine {
                 dict["end_line"] = el
+            }
+        case .diffRange:
+            // Keep the global data-line values —
+            // DOM anchoring still uses them — and
+            // also emit the per-file reference so
+            // the JS renderer can show a friendlier
+            // label (`path/to/file.rb:N`) and the
+            // file-collapse handler can match cards
+            // by path.
+            if let sl = a.anchorData.startLine {
+                dict["start_line"] = sl
+            }
+            if let el = a.anchorData.endLine {
+                dict["end_line"] = el
+            }
+            if let fp = a.anchorData.filePath {
+                dict["file_path"] = fp
+            }
+            if let fs = a.anchorData.fileStartLine {
+                dict["file_start_line"] = fs
+            }
+            if let fe = a.anchorData.fileEndLine {
+                dict["file_end_line"] = fe
+            }
+            if let fls = a.anchorData.fileLineSide {
+                dict["file_line_side"] = fls
             }
         case .rowRange:
             if let sr = a.anchorData.startRow {

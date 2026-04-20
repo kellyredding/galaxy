@@ -24,6 +24,21 @@ struct AnchorData: Codable {
     // whole fields
     let artifactPath: String?
 
+    // diff_range extras — structured file + per-file line
+    // info captured alongside the global `start_line` /
+    // `end_line` data-line counter. Optional for
+    // backward compatibility with annotations captured
+    // before these fields existed (those fall back to
+    // the global-line display in the JS renderer).
+    let filePath: String?
+    let fileStartLine: Int32?
+    let fileEndLine: Int32?
+    /// "new" when the range lands on add/context/modified
+    /// rows (the line number references the file's new
+    /// side); "old" when the range is entirely on delete
+    /// rows (line number references the old side).
+    let fileLineSide: String?
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(
             keyedBy: CodingKeys.self
@@ -60,6 +75,18 @@ struct AnchorData: Codable {
         )
         artifactPath = try container.decodeIfPresent(
             String.self, forKey: .artifactPath
+        )
+        filePath = try container.decodeIfPresent(
+            String.self, forKey: .filePath
+        )
+        fileStartLine = try container.decodeIfPresent(
+            Int32.self, forKey: .fileStartLine
+        )
+        fileEndLine = try container.decodeIfPresent(
+            Int32.self, forKey: .fileEndLine
+        )
+        fileLineSide = try container.decodeIfPresent(
+            String.self, forKey: .fileLineSide
         )
     }
 

@@ -577,6 +577,15 @@ private func buildDiffHTML(
     .file-card.collapsed .file-header {
         border-bottom: none;
     }
+    /* Annotation cards live on document.body (outside
+       any file-card, so they escape the card's
+       overflow clip). When their file is collapsed,
+       they need to be hidden explicitly — the in-tbody
+       spacer row is already handled by the collapse
+       selector above, but the floating card isn't. */
+    .annotation-card.file-hidden {
+        display: none !important;
+    }
     /* Auto table layout — the browser sizes each
        column from content. `width: 100%` constrains
        the overall table to the card; `pre-wrap`
@@ -861,7 +870,15 @@ private func renderFileCard(
     let lang = file.language ?? "plaintext"
 
     // Header row — annotatable, maps to headerLine
-    var html = "<div class=\"file-card\">"
+    let fp = htmlEscape(file.path)
+    let fs = htmlEscape(file.status)
+    // File-card carries its own `data-file-path` so
+    // the collapse handler can match annotation cards
+    // (also stamped with `data-file-path`) and hide
+    // them together with the body rows.
+    var html =
+        "<div class=\"file-card\""
+        + " data-file-path=\"\(fp)\">"
     html +=
         "<table class=\"diff-table\">"
         + "<tbody data-lang=\"\(lang)\">"
@@ -870,8 +887,6 @@ private func renderFileCard(
     // capture a structured anchor when the user saves
     // an annotation — see `diff_range` in
     // ArtifactsView.handleAnnotationMessage.
-    let fp = htmlEscape(file.path)
-    let fs = htmlEscape(file.status)
     let fileAttrs =
         " data-file-path=\"\(fp)\""
         + " data-file-status=\"\(fs)\""
@@ -2415,14 +2430,48 @@ private let fileCollapseJS: String = """
             positionTooltip(btn);
         }
 
-        // Rescan annotation anchors so cards anchored
-        // to rows we just hid (or re-revealed) get
-        // repositioned against the current layout —
-        // same hook gap-expand uses.
+        // Hide/show annotation cards anchored in this
+        // file. Annotation cards live on document.body
+        // (outside the file-card's overflow clip), so
+        // the CSS collapse selector can't reach them —
+        // toggle `.file-hidden` by matching
+        // data-file-path. Iterating all cards and
+        // string-comparing the attribute avoids the
+        // CSS-attribute-value escaping headache that
+        // selector-based matching would introduce for
+        // paths containing special chars.
+        var filePath = card.getAttribute('data-file-path');
+        if (filePath) {
+            var annCards = document.querySelectorAll(
+                '.annotation-card');
+            for (var i = 0; i < annCards.length; i++) {
+                if (annCards[i].getAttribute(
+                    'data-file-path') === filePath) {
+                    annCards[i].classList.toggle(
+                        'file-hidden', collapsed);
+                }
+            }
+        }
+
+        // Reposition annotation cards — the file
+        // card's height just changed (body hidden or
+        // revealed), so every spacer below this file
+        // sits at a new Y and its card needs to follow.
+        // Use syncAllPositions, NOT rescanBlocks:
+        // rescan wipes and recreates every card from
+        // scratch, which (a) loses the `.file-hidden`
+        // tags we just applied and (b) creates fresh
+        // spacers inside the now-collapsed tbody whose
+        // `display:none` ancestor makes getBoundingClientRect
+        // return zero, stranding cards at document top.
+        // No blocks were added or removed — only CSS
+        // visibility toggled — so the cached block set
+        // is still valid and a positional re-sync is
+        // all we need.
         if (typeof AnnotationManager !== 'undefined' &&
-            typeof AnnotationManager.rescanBlocks
+            typeof AnnotationManager.syncAllPositions
                 === 'function') {
-            AnnotationManager.rescanBlocks();
+            AnnotationManager.syncAllPositions();
         }
     });
 })();

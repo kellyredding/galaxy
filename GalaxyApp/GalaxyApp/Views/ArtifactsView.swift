@@ -1744,8 +1744,10 @@ struct ArtifactsView: View {
 
         switch message {
         case .createDiffRange(
-            let startLine, let endLine,
-            let rows, let content
+            let startLine, let endLine, let rows,
+            let filePath, let fileStartLine,
+            let fileEndLine, let fileLineSide,
+            let content
         ):
             // Build a structured `diff_range` anchor so
             // reviewing agents see which file + which
@@ -1756,6 +1758,14 @@ struct ArtifactsView: View {
             // so existing annotation-display code that
             // reads `line_content` still shows
             // something meaningful.
+            //
+            // `file_path` + `file_start_line` /
+            // `file_end_line` / `file_line_side` are
+            // lifted out of `rows[]` so the reader's
+            // display label can show
+            // `path/to/file.rb:N` instead of the
+            // meaningless global data-line counter.
+            // JS computes them at capture time.
             var summaryParts: [String] = []
             for row in rows {
                 let kind = row["kind"] as? String ?? ""
@@ -1772,13 +1782,25 @@ struct ArtifactsView: View {
             }
             let lineContent =
                 summaryParts.joined(separator: "\n")
-            let anchorData: [String: Any] = [
+            var anchorData: [String: Any] = [
                 "type": "diff_range",
                 "start_line": startLine,
                 "end_line": endLine,
                 "line_content": lineContent,
                 "rows": rows,
             ]
+            if let fp = filePath {
+                anchorData["file_path"] = fp
+            }
+            if let fs = fileStartLine {
+                anchorData["file_start_line"] = fs
+            }
+            if let fe = fileEndLine {
+                anchorData["file_end_line"] = fe
+            }
+            if let fls = fileLineSide {
+                anchorData["file_line_side"] = fls
+            }
             createAnnotation(
                 lsid: lsid,
                 artifact: artifact,
@@ -2003,14 +2025,40 @@ struct ArtifactsView: View {
         // Set position keys based on anchor type.
         // `.diffRange` uses the same data-line keyed
         // lookup as `.lineRange` in the JS layer, so it
-        // emits identical position keys.
+        // emits identical position keys — plus the
+        // per-file reference fields so the fresh card
+        // immediately renders with its file-aware
+        // label (and gets stamped with data-file-path
+        // for the collapse handler). Must stay in
+        // lockstep with `buildAnnotationInitJS`'s
+        // .diffRange branch — both paths feed the same
+        // JS renderer.
         switch ann.anchorData.type {
-        case .lineRange, .diffRange:
+        case .lineRange:
             if let sl = ann.anchorData.startLine {
                 annDict["start_line"] = sl
             }
             if let el = ann.anchorData.endLine {
                 annDict["end_line"] = el
+            }
+        case .diffRange:
+            if let sl = ann.anchorData.startLine {
+                annDict["start_line"] = sl
+            }
+            if let el = ann.anchorData.endLine {
+                annDict["end_line"] = el
+            }
+            if let fp = ann.anchorData.filePath {
+                annDict["file_path"] = fp
+            }
+            if let fs = ann.anchorData.fileStartLine {
+                annDict["file_start_line"] = fs
+            }
+            if let fe = ann.anchorData.fileEndLine {
+                annDict["file_end_line"] = fe
+            }
+            if let fls = ann.anchorData.fileLineSide {
+                annDict["file_line_side"] = fls
             }
         case .rowRange:
             if let sr = ann.anchorData.startRow {
