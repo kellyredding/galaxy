@@ -1,6 +1,6 @@
-.PHONY: all clean statusline-build statusline-test statusline-check statusline-install statusline-clean ledger-build ledger-test ledger-check ledger-install ledger-clean snapshots-build snapshots-dev snapshots-test snapshots-check snapshots-install snapshots-clean artifacts-build artifacts-dev artifacts-test artifacts-check artifacts-install artifacts-clean timeline-build timeline-dev timeline-test timeline-check timeline-install timeline-clean agents-build agents-dev agents-test agents-check agents-install agents-clean diff-build diff-dev diff-test diff-check diff-install diff-clean app-build app-clean
+.PHONY: all clean statusline-build statusline-test statusline-check statusline-install statusline-clean ledger-build ledger-test ledger-check ledger-install ledger-clean snapshots-build snapshots-dev snapshots-test snapshots-check snapshots-install snapshots-clean artifacts-build artifacts-dev artifacts-test artifacts-check artifacts-install artifacts-clean timeline-build timeline-dev timeline-test timeline-check timeline-install timeline-clean agents-build agents-dev agents-test agents-check agents-install agents-clean diff-build diff-dev diff-test diff-check diff-install diff-clean galaxy-build galaxy-dev galaxy-test galaxy-check galaxy-install galaxy-clean app-build app-clean
 
-all: statusline-build ledger-build snapshots-build artifacts-build timeline-build agents-build diff-build
+all: statusline-build ledger-build snapshots-build artifacts-build timeline-build agents-build diff-build galaxy-build
 
 # Statusline tool
 statusline-build:
@@ -135,6 +135,25 @@ diff-install:
 diff-clean:
 	$(MAKE) -C tools/diff clean
 
+# Galaxy orchestrator CLI
+galaxy-build:
+	$(MAKE) -C tools/galaxy build
+
+galaxy-dev:
+	$(MAKE) -C tools/galaxy dev
+
+galaxy-test:
+	$(MAKE) -C tools/galaxy test
+
+galaxy-check:
+	$(MAKE) -C tools/galaxy check
+
+galaxy-install:
+	$(MAKE) -C tools/galaxy install
+
+galaxy-clean:
+	$(MAKE) -C tools/galaxy clean
+
 # Galaxy.app (SwiftUI Mac app)
 # Always uses -derivedDataPath to avoid polluting ~/Library/Developer/Xcode/DerivedData
 APP_DERIVED_DATA = GalaxyApp/build
@@ -149,4 +168,4 @@ app-clean:
 	xcodebuild -project GalaxyApp/GalaxyApp.xcodeproj -scheme GalaxyApp -derivedDataPath $(APP_DERIVED_DATA) clean
 	rm -rf $(APP_DERIVED_DATA)
 
-clean: statusline-clean ledger-clean snapshots-clean artifacts-clean timeline-clean agents-clean diff-clean app-clean
+clean: statusline-clean ledger-clean snapshots-clean artifacts-clean timeline-clean agents-clean diff-clean galaxy-clean app-clean
