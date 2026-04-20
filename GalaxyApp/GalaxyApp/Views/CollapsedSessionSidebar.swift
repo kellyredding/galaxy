@@ -1,27 +1,46 @@
 import SwiftUI
 import AppKit
 
-// MARK: - View Frame Reporter
+// MARK: - Row Frame Anchor
 
-/// Invisible NSViewRepresentable that reports its frame in screen coordinates.
-/// More reliable than GeometryReader in LazyVStack — the NSView always knows
-/// its position via the AppKit view hierarchy.
-struct FrameReporter: NSViewRepresentable {
-    let onFrame: (NSRect) -> Void
+/// Holds a weak reference to an invisible NSView and computes its
+/// screen frame on demand. Used to position floating tooltip panels
+/// relative to a SwiftUI row.
+///
+/// The earlier push-based `FrameReporter` stored the frame in
+/// SwiftUI `@State`, updated from `updateNSView`. That callback
+/// only fires on SwiftUI state changes — AppKit layout changes
+/// during live window resize do not trigger it, so the stored
+/// frame went stale and tooltips rendered at the row's previous
+/// on-screen position until some unrelated re-render (status line
+/// tick, agent count change, etc.) happened to refresh it.
+///
+/// Querying the NSView's frame at hover time reads the live AppKit
+/// layout directly, eliminating that staleness window.
+final class RowFrameAnchor {
+    weak var view: NSView?
+
+    func currentScreenFrame() -> NSRect? {
+        guard let view, let window = view.window else { return nil }
+        let frameInWindow = view.convert(view.bounds, to: nil)
+        return window.convertToScreen(frameInWindow)
+    }
+}
+
+/// Invisible NSViewRepresentable that wires its NSView into a
+/// `RowFrameAnchor` so callers can query the frame on demand.
+struct FrameAnchorView: NSViewRepresentable {
+    let anchor: RowFrameAnchor
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
         view.translatesAutoresizingMaskIntoConstraints = false
+        anchor.view = view
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async {
-            guard let window = nsView.window else { return }
-            let frameInWindow = nsView.convert(nsView.bounds, to: nil)
-            let screenFrame = window.convertToScreen(frameInWindow)
-            onFrame(screenFrame)
-        }
+        anchor.view = nsView
     }
 }
 
@@ -35,6 +54,7 @@ class TooltipPanel {
 
     private var panel: NSPanel?
     private var hostingView: NSHostingView<AnyView>?
+    private var windowObservers: [NSObjectProtocol] = []
 
     func show<Content: View>(
         content: Content,
@@ -99,12 +119,39 @@ class TooltipPanel {
 
         self.panel = panel
         self.hostingView = hosting
+
+        // The tooltip origin is computed once from the row's screen
+        // frame and never follows window geometry changes. Hide it when
+        // the user drags to resize (willStartLiveResize) or move
+        // (didMove) the window so it doesn't strand at stale coords;
+        // native tooltips behave the same way.
+        let center = NotificationCenter.default
+        let names: [Notification.Name] = [
+            NSWindow.willStartLiveResizeNotification,
+            NSWindow.didMoveNotification,
+        ]
+        for name in names {
+            let token = center.addObserver(
+                forName: name,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                self?.hide()
+            }
+            windowObservers.append(token)
+        }
     }
 
     func hide() {
         panel?.orderOut(nil)
         panel = nil
         hostingView = nil
+
+        let center = NotificationCenter.default
+        for token in windowObservers {
+            center.removeObserver(token)
+        }
+        windowObservers.removeAll()
     }
 }
 
@@ -163,7 +210,7 @@ struct CollapsedSessionRow: View {
     let sidebarPosition: SidebarPosition
 
     @Environment(\.chromeFontSize) private var chromeFontSize
-    @State private var rowScreenFrame: NSRect = .zero
+    @State private var frameAnchor = RowFrameAnchor()
 
     /// Match expanded SessionRow height
     private var rowHeight: CGFloat {
@@ -196,11 +243,7 @@ struct CollapsedSessionRow: View {
                 }
         }
         .frame(width: 32, height: rowHeight)
-        .background(
-            FrameReporter { frame in
-                rowScreenFrame = frame
-            }
-        )
+        .background(FrameAnchorView(anchor: frameAnchor))
         .overlay(alignment: .topTrailing) {
             if session.hasUnreadResponse {
                 UnreadIndicator()
@@ -233,7 +276,10 @@ struct CollapsedSessionRow: View {
     }
 
     private func showTooltip() {
-        guard let window = NSApp.mainWindow ?? NSApp.keyWindow else { return }
+        guard
+            let window = NSApp.mainWindow ?? NSApp.keyWindow,
+            let rowScreenFrame = frameAnchor.currentScreenFrame()
+        else { return }
 
         let tooltipContent = CollapsedRowTooltip(
             session: session,
