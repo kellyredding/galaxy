@@ -1869,15 +1869,22 @@ private func pairDeleteAddLines(
     return result
 }
 
-// MARK: - Character-Level Diff
+// MARK: - Inline Diff
 
-/// Computes character-level highlights for a
-/// delete/add line pair using Myers' O(ND) diff.
+/// Computes word-level highlights for a delete/add
+/// line pair using Myers' O(ND) diff over tokens.
 /// Returns (delHTML, addHTML) with
 /// <span class="char-del"> / <span class="char-add">
 /// wrapping changed runs. Falls back to `nil, nil`
 /// if the diff is degenerate (identical, one side
 /// empty) or runs past its wall-clock deadline.
+///
+/// Tokenizing before diffing produces word-scale
+/// output spans rather than the per-character
+/// "speckle" a char-level Myers alone would emit —
+/// so a rename like `user_id → account_id` renders
+/// as one del span + one add span instead of
+/// several scattered single-char fragments.
 private func characterLevelDiff(
     delLine: String,
     addLine: String
@@ -1892,21 +1899,19 @@ private func characterLevelDiff(
         return (nil, nil)
     }
 
-    let delChars = Array(delLine)
-    let addChars = Array(addLine)
+    let delTokens = tokenize(delLine)
+    let addTokens = tokenize(addLine)
 
     // Compute diff ops with Myers' O((N+M)·D)
-    // algorithm — scales with edit distance rather
-    // than total length, so small edits in long lines
-    // stay fast regardless of length. For the rare
-    // pathological case (two long, unrelated strings
-    // where D ≈ N+M), the 50ms deadline bails with a
-    // nil return and we fall back to row-only
-    // highlighting. This replaced a previous
-    // arbitrary 500-char cap.
+    // algorithm over tokens (word runs, whitespace
+    // runs, single punctuation chars). Fewer symbols
+    // than char-level → the 50ms deadline almost
+    // never trips in practice, and the output is
+    // word-granular by construction so we don't need
+    // a post-pass to avoid char-level "speckle".
     let deadline = CFAbsoluteTimeGetCurrent() + 0.050
     guard let ops = myersDiff(
-        delChars, addChars, deadline: deadline
+        delTokens, addTokens, deadline: deadline
     ) else {
         return (nil, nil)
     }
@@ -1918,7 +1923,7 @@ private func characterLevelDiff(
 
     for op in ops {
         switch op {
-        case .equal(let ch):
+        case .equal(let tok):
             if delSpanOpen {
                 delHTML += "</span>"
                 delSpanOpen = false
@@ -1927,21 +1932,21 @@ private func characterLevelDiff(
                 addHTML += "</span>"
                 addSpanOpen = false
             }
-            let escaped = htmlEscape(String(ch))
+            let escaped = htmlEscape(String(tok))
             delHTML += escaped
             addHTML += escaped
-        case .delete(let ch):
+        case .delete(let tok):
             if !delSpanOpen {
                 delHTML += "<span class=\"char-del\">"
                 delSpanOpen = true
             }
-            delHTML += htmlEscape(String(ch))
-        case .insert(let ch):
+            delHTML += htmlEscape(String(tok))
+        case .insert(let tok):
             if !addSpanOpen {
                 addHTML += "<span class=\"char-add\">"
                 addSpanOpen = true
             }
-            addHTML += htmlEscape(String(ch))
+            addHTML += htmlEscape(String(tok))
         }
     }
     if delSpanOpen { delHTML += "</span>" }
@@ -1950,24 +1955,66 @@ private func characterLevelDiff(
     return (delHTML, addHTML)
 }
 
-private enum DiffOp {
-    case equal(Character)
-    case delete(Character)
-    case insert(Character)
+/// Splits a line into tokens for word-level diffing.
+/// Word chars (letters, digits, `_`) collapse into
+/// runs, whitespace collapses into runs, and every
+/// other char is its own token. Matches the
+/// "words + whitespace + single punct" scheme used
+/// by `wdiff` and diff-match-patch's token mode.
+private func tokenize(_ s: String) -> [Substring] {
+    var tokens: [Substring] = []
+    var i = s.startIndex
+    while i < s.endIndex {
+        let start = i
+        let ch = s[i]
+        if ch.isLetter || ch.isNumber || ch == "_" {
+            // Word run
+            while i < s.endIndex {
+                let c = s[i]
+                guard c.isLetter || c.isNumber
+                    || c == "_"
+                else { break }
+                i = s.index(after: i)
+            }
+        } else if ch.isWhitespace {
+            // Whitespace run
+            while i < s.endIndex,
+                  s[i].isWhitespace
+            {
+                i = s.index(after: i)
+            }
+        } else {
+            // Single non-word, non-whitespace char
+            i = s.index(after: i)
+        }
+        tokens.append(s[start..<i])
+    }
+    return tokens
+}
+
+private enum DiffOp<Element> {
+    case equal(Element)
+    case delete(Element)
+    case insert(Element)
 }
 
 /// Myers' O(ND) difference algorithm. Returns a
 /// forward-order stream of `.equal` / `.delete` /
 /// `.insert` ops that transform `a` into `b`.
 ///
+/// Generic over `Element: Equatable` so the same
+/// algorithm serves both char- and token-level
+/// diffs — the caller chooses the granularity by
+/// picking the element type.
+///
 /// Time is O((N+M)·D) where D is the edit distance —
 /// "output-sensitive" — so a small edit in a long
-/// line is fast regardless of length. Memory is
-/// O(D·(N+M)) for the backtrace snapshots; the linear-
-/// space refinement isn't needed at typical diff-line
-/// sizes. See: Eugene W. Myers, "An O(ND) Difference
-/// Algorithm and Its Variations", Algorithmica
-/// (1986) 1:251-266.
+/// sequence is fast regardless of length. Memory is
+/// O(D·(N+M)) for the backtrace snapshots; the
+/// linear-space refinement isn't needed at typical
+/// diff-line sizes. See: Eugene W. Myers, "An O(ND)
+/// Difference Algorithm and Its Variations",
+/// Algorithmica (1986) 1:251-266.
 ///
 /// `deadline` is a soft wall-clock cap, consulted
 /// once per `d` iteration. For adversarial inputs
@@ -1976,12 +2023,13 @@ private enum DiffOp {
 /// lets the caller fall back to row-only highlighting
 /// rather than blocking the render. In practice the
 /// deadline almost never trips — typical modified
-/// lines have tiny edit distances.
-private func myersDiff(
-    _ a: [Character],
-    _ b: [Character],
+/// lines have tiny edit distances, especially at
+/// token granularity.
+private func myersDiff<T: Equatable>(
+    _ a: [T],
+    _ b: [T],
     deadline: CFAbsoluteTime
-) -> [DiffOp]? {
+) -> [DiffOp<T>]? {
     let n = a.count
     let m = b.count
     if n == 0 {
@@ -2055,15 +2103,15 @@ private func myersDiff(
 /// reverse to recover the edit script. Emits ops
 /// from end to start, then reverses the result so the
 /// caller consumes them in forward order.
-private func myersBacktrace(
-    a: [Character],
-    b: [Character],
+private func myersBacktrace<T: Equatable>(
+    a: [T],
+    b: [T],
     trace: [[Int]]
-) -> [DiffOp] {
+) -> [DiffOp<T>] {
     let n = a.count
     let m = b.count
     let maxD = n + m
-    var ops: [DiffOp] = []
+    var ops: [DiffOp<T>] = []
     var x = n
     var y = m
 
