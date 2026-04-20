@@ -266,6 +266,19 @@ private func buildDiffHTML(
     let borderColor = isDark ? "#30363d" : "#d0d7de"
     let headerBg = isDark ? "#161b22" : "#f6f8fa"
     let mutedFg = isDark ? "#8b949e" : "#656d76"
+    // Subtle lift on the collapse-toggle button hover;
+    // semi-transparent mid-gray reads against both the
+    // light and dark header backgrounds without needing
+    // theme-specific tuning beyond the alpha.
+    let hoverBg = isDark
+        ? "rgba(177,186,196,0.12)"
+        : "rgba(208,215,222,0.32)"
+    // GitHub-style tooltip pill — both themes use a dark
+    // pill so it stands out against either card header.
+    // Dark theme uses a slightly lighter bg so the pill
+    // reads against the near-black card, not into it.
+    let tooltipBg = isDark ? "#272c33" : "#24292f"
+    let tooltipFg = isDark ? "#f0f6fc" : "#ffffff"
 
     // Diff color palette — GitHub-inspired.
     // Light-mode pairs line bg with a ~2× darker char
@@ -485,6 +498,84 @@ private func buildDiffHTML(
     }
     .file-body {
         width: 100%;
+    }
+    /* File-card collapse toggle — GitHub-style
+       chevron button that toggles the card body.
+       Positioned as the first child of .file-header;
+       the parent's `gap: 8px` handles spacing to the
+       file path. `line-height: 0` prevents the SVG
+       from contributing extra vertical whitespace. */
+    .file-collapse-toggle {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 20px;
+        height: 20px;
+        border: none;
+        background: transparent;
+        color: \(mutedFg);
+        cursor: pointer;
+        padding: 0;
+        border-radius: 4px;
+        flex-shrink: 0;
+        line-height: 0;
+        font: inherit;
+    }
+    .file-collapse-toggle:hover,
+    .file-collapse-toggle:focus-visible {
+        background: \(hoverBg);
+        color: \(textColor);
+        outline: none;
+    }
+    .file-collapse-toggle .chevron {
+        transition: transform 0.12s ease-in-out;
+    }
+    /* Rotate chevron-down → chevron-right when the
+       card is collapsed. (-90deg rotates the tip from
+       the 6 o'clock position to 3 o'clock.) */
+    .file-card.collapsed
+        .file-collapse-toggle .chevron {
+        transform: rotate(-90deg);
+    }
+    /* GitHub-style tooltip pill. Rendered as a single
+       element appended to <body> (not a pseudo-element
+       on the button) so it escapes the file-card's
+       `overflow: hidden` — which would otherwise clip
+       it on the left edge for cards whose toggle sits
+       at the start, and clip it entirely below
+       collapsed cards (no body room beneath). JS
+       positions it via getBoundingClientRect on hover. */
+    .file-tooltip {
+        position: fixed;
+        top: 0;
+        left: 0;
+        background: \(tooltipBg);
+        color: \(tooltipFg);
+        padding: 4px 8px;
+        border-radius: 6px;
+        font-size: 11px;
+        font-family: -apple-system, system-ui,
+            sans-serif;
+        font-weight: 500;
+        white-space: nowrap;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.1s ease-in-out;
+        z-index: 1000;
+    }
+    .file-tooltip.visible { opacity: 1; }
+    /* Collapse the card body — hides code-line rows
+       and gap-spacer rows in one selector. Gap-expand
+       DOM state is preserved under display:none, so
+       re-expanding the card restores any previously
+       revealed lines. */
+    .file-card.collapsed tbody > tr:not(.header-line) {
+        display: none;
+    }
+    /* Drop the header's bottom border when collapsed
+       so the card reads as a single compact bar. */
+    .file-card.collapsed .file-header {
+        border-bottom: none;
     }
     /* Auto table layout — the browser sizes each
        column from content. `width: 100%` constrains
@@ -731,6 +822,9 @@ private func buildDiffHTML(
     \(gapExpansionJS)
     </script>
     <script>
+    \(fileCollapseJS)
+    </script>
+    <script>
     \(annotationManagerJS)
     </script>
     <script>\(emojiDataJS)</script>
@@ -789,6 +883,22 @@ private func renderFileCard(
         + " data-kind=\"file-header\">"
         + "<td colspan=\"4\" class=\"line-content\">"
         + "<div class=\"file-header\">"
+        + "<button type=\"button\""
+        + " class=\"file-collapse-toggle\""
+        + " data-tooltip=\"Collapse file\""
+        + " aria-label=\"Collapse file\""
+        + " aria-expanded=\"true\">"
+        + "<svg class=\"chevron\" width=\"12\""
+        + " height=\"12\" viewBox=\"0 0 16 16\""
+        + " aria-hidden=\"true\">"
+        + "<path fill=\"currentColor\""
+        + " d=\"M12.78 5.22a.749.749 0 0 1 0"
+        + " 1.06l-4.25 4.25a.749.749 0 0 1-1.06"
+        + " 0L3.22 6.28a.749.749 0 1 1 1.06-1.06L8"
+        + " 8.939l3.72-3.719a.749.749 0 0 1 1.06"
+        + " 0Z\"/>"
+        + "</svg>"
+        + "</button>"
     if file.status == "renamed",
        let oldPath = file.oldPath,
        !oldPath.isEmpty
@@ -2194,6 +2304,126 @@ private let gapExpansionJS: String = """
         }
         if (!direction) return;
         expandGap(spacer, direction);
+    });
+})();
+"""
+
+// MARK: - File Collapse Script
+
+/// Click handler + hover tooltip for the per-file
+/// collapse toggle.
+///
+/// State model: a single DOM class on `.file-card`.
+/// Nothing persisted to Swift or JS memory — reader
+/// close/reopen resets everything to expanded, same
+/// as the gap-expand state model.
+///
+/// Tooltip: a singleton `<div class="file-tooltip">`
+/// attached to `<body>` and positioned via fixed
+/// coords on hover. Living outside the file-card is
+/// mandatory because `.file-card { overflow: hidden }`
+/// (needed to clip the inner table's square corners
+/// against the card's 6px border-radius) would clip
+/// any in-card tooltip on the left edge and entirely
+/// below collapsed cards.
+private let fileCollapseJS: String = """
+(function() {
+    var tooltipEl = null;
+    var hoverBtn = null;
+
+    function ensureTooltip() {
+        if (tooltipEl) return tooltipEl;
+        tooltipEl = document.createElement('div');
+        tooltipEl.className = 'file-tooltip';
+        document.body.appendChild(tooltipEl);
+        return tooltipEl;
+    }
+
+    function positionTooltip(btn) {
+        var tip = ensureTooltip();
+        var label = btn.getAttribute('data-tooltip') || '';
+        tip.textContent = label;
+        // Force layout so we can measure the tooltip
+        // before clamping horizontally.
+        var btnRect = btn.getBoundingClientRect();
+        var tipRect = tip.getBoundingClientRect();
+        var left = btnRect.left + btnRect.width / 2
+            - tipRect.width / 2;
+        var margin = 4;
+        var maxLeft = window.innerWidth - tipRect.width
+            - margin;
+        if (left < margin) left = margin;
+        if (left > maxLeft) left = maxLeft;
+        var top = btnRect.bottom + 4;
+        tip.style.left = left + 'px';
+        tip.style.top = top + 'px';
+    }
+
+    function showTooltip(btn) {
+        var tip = ensureTooltip();
+        positionTooltip(btn);
+        tip.classList.add('visible');
+    }
+
+    function hideTooltip() {
+        if (tooltipEl) tooltipEl.classList.remove('visible');
+        hoverBtn = null;
+    }
+
+    document.addEventListener('mouseover', function(e) {
+        var btn = e.target.closest('.file-collapse-toggle');
+        if (!btn || btn === hoverBtn) return;
+        hoverBtn = btn;
+        showTooltip(btn);
+    });
+
+    document.addEventListener('mouseout', function(e) {
+        if (!hoverBtn) return;
+        var btn = e.target.closest('.file-collapse-toggle');
+        if (btn !== hoverBtn) return;
+        // Still inside the same button? Ignore.
+        var related = e.relatedTarget;
+        if (related && hoverBtn.contains(related)) return;
+        hideTooltip();
+    });
+
+    // Dismiss the tooltip if the page scrolls — the
+    // pill is position:fixed so it would otherwise
+    // detach from the button.
+    window.addEventListener('scroll', hideTooltip, true);
+
+    document.addEventListener('click', function(e) {
+        var btn = e.target.closest('.file-collapse-toggle');
+        if (!btn) return;
+        var card = btn.closest('.file-card');
+        if (!card) return;
+
+        var collapsed = !card.classList.contains('collapsed');
+        card.classList.toggle('collapsed', collapsed);
+
+        var label = collapsed ? 'Expand file' : 'Collapse file';
+        btn.setAttribute('data-tooltip', label);
+        btn.setAttribute('aria-label', label);
+        btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+
+        // If the tooltip is currently visible for this
+        // button, refresh its text + position inline —
+        // the mouse is still over the button but the
+        // label (and possibly the button's Y after the
+        // card's height changed) just changed.
+        if (hoverBtn === btn) {
+            positionTooltip(btn);
+        }
+
+        // Rescan annotation anchors so cards anchored
+        // to rows we just hid (or re-revealed) get
+        // repositioned against the current layout —
+        // same hook gap-expand uses.
+        if (typeof AnnotationManager !== 'undefined' &&
+            typeof AnnotationManager.rescanBlocks
+                === 'function') {
+            AnnotationManager.rescanBlocks();
+        }
     });
 })();
 """
