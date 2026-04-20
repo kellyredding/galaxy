@@ -94,6 +94,12 @@ struct ArtifactDiffView: NSViewRepresentable {
     let annotations: [ArtifactAnnotation]
     let annotationHTMLMap: [Int32: String]
     let itemLabel: String
+    /// File paths (relative, as they appear in the
+    /// diff) that should pre-render with the Viewed
+    /// checkbox checked and the file-card collapsed.
+    /// Sourced from `ViewedFilesPersistence` keyed by
+    /// ledger-session + artifact number.
+    let viewedFilePaths: Set<String>
     @Binding var webViewRef: WKWebView?
     var onAnnotationMessage:
         ((AnnotationMessage) -> Void)?
@@ -141,7 +147,8 @@ struct ArtifactDiffView: NSViewRepresentable {
 
         let html = buildDiffHTML(
             content: content,
-            isDark: isDark
+            isDark: isDark,
+            viewedFilePaths: viewedFilePaths
         )
         webView.loadHTMLString(
             html,
@@ -203,7 +210,8 @@ struct ArtifactDiffView: NSViewRepresentable {
 
                 let html = buildDiffHTML(
                     content: content,
-                    isDark: isDark
+                    isDark: isDark,
+                    viewedFilePaths: viewedFilePaths
                 )
                 webView.loadHTMLString(
                     html,
@@ -229,7 +237,8 @@ struct ArtifactDiffView: NSViewRepresentable {
 /// overlaid with hunk add/delete shading.
 private func buildDiffHTML(
     content: String,
-    isDark: Bool
+    isDark: Bool,
+    viewedFilePaths: Set<String>
 ) -> String {
     // Parse the .gdiff JSON
     guard let data = content.data(using: .utf8),
@@ -338,7 +347,10 @@ private func buildDiffHTML(
             file: file,
             fileIndex: fileIndex,
             startingLine: lineCounter + 1,
-            headerLine: headerLine
+            headerLine: headerLine,
+            isViewed: viewedFilePaths.contains(
+                file.path
+            )
         )
         cardsHTML += result.html
         lineCounter = result.nextLine
@@ -487,6 +499,28 @@ private func buildDiffHTML(
     }
     .file-stats .stat-add { color: \(greenFg); }
     .file-stats .stat-del { color: \(redFg); }
+    /* Viewed checkbox — GitHub-style affordance next
+       to the file stats. Clicking it toggles the
+       file-card's `.collapsed` class (same mechanism
+       the chevron uses) and posts a setViewed message
+       to Swift for per-session persistence. */
+    .file-viewed {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 12px;
+        color: \(mutedFg);
+        cursor: pointer;
+        user-select: none;
+        -webkit-user-select: none;
+        padding: 2px 6px;
+        border-radius: 4px;
+    }
+    .file-viewed:hover { background: \(hoverBg); }
+    .file-viewed input[type="checkbox"] {
+        cursor: pointer;
+        margin: 0;
+    }
     .status-badge {
         display: inline-block;
         padding: 1px 6px;
@@ -889,7 +923,8 @@ private func renderFileCard(
     file: GdiffFile,
     fileIndex: Int,
     startingLine: Int,
-    headerLine: Int
+    headerLine: Int,
+    isViewed: Bool
 ) -> FileCardResult {
     let (statusClass, statusLabel) = statusBadge(
         for: file.status
@@ -904,8 +939,15 @@ private func renderFileCard(
     // the collapse handler can match annotation cards
     // (also stamped with `data-file-path`) and hide
     // them together with the body rows.
+    //
+    // Pre-collapse via `.collapsed` when the file is
+    // persisted as viewed — the same class the chevron
+    // toggles at runtime, so the body hides and the
+    // chevron rotates without any extra JS on load.
+    let cardClasses = isViewed
+        ? "file-card collapsed" : "file-card"
     var html =
-        "<div class=\"file-card\""
+        "<div class=\"\(cardClasses)\""
         + " data-file-path=\"\(fp)\">"
     html +=
         "<table class=\"diff-table\">"
@@ -919,6 +961,15 @@ private func renderFileCard(
         " data-file-path=\"\(fp)\""
         + " data-file-status=\"\(fs)\""
 
+    // Chevron + Viewed checkbox share the `.collapsed`
+    // class as the single source of truth. When
+    // `isViewed`, render chevron with the collapsed
+    // label/aria and the checkbox pre-checked.
+    let chevronTooltip = isViewed
+        ? "Expand file" : "Collapse file"
+    let chevronExpanded = isViewed ? "false" : "true"
+    let viewedChecked = isViewed ? " checked" : ""
+
     html +=
         "<tr class=\"code-line header-line\""
         + " data-line=\"\(headerLine)\""
@@ -928,9 +979,9 @@ private func renderFileCard(
         + "<div class=\"file-header\">"
         + "<button type=\"button\""
         + " class=\"file-collapse-toggle\""
-        + " data-tooltip=\"Collapse file\""
-        + " aria-label=\"Collapse file\""
-        + " aria-expanded=\"true\">"
+        + " data-tooltip=\"\(chevronTooltip)\""
+        + " aria-label=\"\(chevronTooltip)\""
+        + " aria-expanded=\"\(chevronExpanded)\">"
         + "<svg class=\"chevron\" width=\"12\""
         + " height=\"12\" viewBox=\"0 0 16 16\""
         + " aria-hidden=\"true\">"
@@ -965,6 +1016,16 @@ private func renderFileCard(
         + "<span class=\"stat-add\">+\(adds)</span>"
         + " <span class=\"stat-del\">-\(dels)</span>"
         + "</span>"
+    // Viewed checkbox — right-aligned after the file
+    // stats. Clicking it toggles `.collapsed` on the
+    // file-card (same mechanism the chevron uses) and
+    // posts a `setViewed` message so Swift persists
+    // the state per session + artifact.
+    html +=
+        "<label class=\"file-viewed\">"
+        + "<input type=\"checkbox\""
+        + "\(viewedChecked)> Viewed"
+        + "</label>"
     html += "</div></td></tr>"
 
     // Body — file content with diff overlay
@@ -2435,40 +2496,28 @@ private let fileCollapseJS: String = """
     // detach from the button.
     window.addEventListener('scroll', hideTooltip, true);
 
-    document.addEventListener('click', function(e) {
-        var btn = e.target.closest('.file-collapse-toggle');
-        if (!btn) return;
-        var card = btn.closest('.file-card');
-        if (!card) return;
-
-        var collapsed = !card.classList.contains('collapsed');
+    // Shared helper used by both the chevron click
+    // path and the Viewed checkbox change path. Sets
+    // the file-card's collapsed state, updates the
+    // chevron's label + aria, repositions annotations,
+    // and optionally hides annotation cards anchored
+    // to this file.
+    function applyCollapsedState(card, collapsed) {
         card.classList.toggle('collapsed', collapsed);
 
-        var label = collapsed ? 'Expand file' : 'Collapse file';
-        btn.setAttribute('data-tooltip', label);
-        btn.setAttribute('aria-label', label);
-        btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-
-        // If the tooltip is currently visible for this
-        // button, refresh its text + position inline —
-        // the mouse is still over the button but the
-        // label (and possibly the button's Y after the
-        // card's height changed) just changed.
-        if (hoverBtn === btn) {
-            positionTooltip(btn);
+        var btn = card.querySelector(
+            '.file-collapse-toggle');
+        if (btn) {
+            var label = collapsed
+                ? 'Expand file' : 'Collapse file';
+            btn.setAttribute('data-tooltip', label);
+            btn.setAttribute('aria-label', label);
+            btn.setAttribute('aria-expanded',
+                collapsed ? 'false' : 'true');
         }
 
-        // Hide/show annotation cards anchored in this
-        // file. Annotation cards live on document.body
-        // (outside the file-card's overflow clip), so
-        // the CSS collapse selector can't reach them —
-        // toggle `.file-hidden` by matching
-        // data-file-path. Iterating all cards and
-        // string-comparing the attribute avoids the
-        // CSS-attribute-value escaping headache that
-        // selector-based matching would introduce for
-        // paths containing special chars.
-        var filePath = card.getAttribute('data-file-path');
+        var filePath = card.getAttribute(
+            'data-file-path');
         if (filePath) {
             var annCards = document.querySelectorAll(
                 '.annotation-card');
@@ -2481,25 +2530,89 @@ private let fileCollapseJS: String = """
             }
         }
 
-        // Reposition annotation cards — the file
-        // card's height just changed (body hidden or
-        // revealed), so every spacer below this file
-        // sits at a new Y and its card needs to follow.
-        // Use syncAllPositions, NOT rescanBlocks:
-        // rescan wipes and recreates every card from
-        // scratch, which (a) loses the `.file-hidden`
-        // tags we just applied and (b) creates fresh
-        // spacers inside the now-collapsed tbody whose
-        // `display:none` ancestor makes getBoundingClientRect
-        // return zero, stranding cards at document top.
-        // No blocks were added or removed — only CSS
-        // visibility toggled — so the cached block set
-        // is still valid and a positional re-sync is
-        // all we need.
         if (typeof AnnotationManager !== 'undefined' &&
             typeof AnnotationManager.syncAllPositions
                 === 'function') {
             AnnotationManager.syncAllPositions();
+        }
+    }
+
+    // Viewed checkbox change — mirror the DOM state
+    // into collapsed-ness and notify Swift for
+    // persistence. Check collapses; uncheck expands.
+    //
+    // If the user checks Viewed while scrolled deep
+    // in the file (sticky header is pinned at viewport
+    // top), collapsing normally yanks the body out
+    // from under them and drops the collapsed header
+    // far above the viewport — they end up looking at
+    // the next file with no visual tie to what they
+    // just marked. Snap scroll to the card's top in
+    // document coords so the collapsed header takes
+    // the viewport-top slot its sticky pin occupied,
+    // matching the "I'm done, next file please" intent
+    // of the Viewed action. Chevron collapse doesn't
+    // do this because it's a general show/hide
+    // affordance without that semantic commitment.
+    document.addEventListener('change', function(e) {
+        var cb = e.target.closest(
+            '.file-viewed input[type="checkbox"]');
+        if (!cb) return;
+        var card = cb.closest('.file-card');
+        if (!card) return;
+        var isViewed = cb.checked;
+
+        var scrollAnchor = null;
+        if (isViewed) {
+            var rect = card.getBoundingClientRect();
+            // Sticky is active when the card straddles
+            // viewport top — its natural top is above 0
+            // (user scrolled past it) while its bottom
+            // is still below 0 (card hasn't fully
+            // scrolled off).
+            if (rect.top < 0 && rect.bottom > 0) {
+                scrollAnchor = rect.top
+                    + window.scrollY;
+            }
+        }
+
+        applyCollapsedState(card, isViewed);
+
+        if (scrollAnchor !== null) {
+            window.scrollTo(
+                window.scrollX, scrollAnchor);
+        }
+
+        var filePath = card.getAttribute(
+            'data-file-path');
+        if (filePath && window.webkit
+            && window.webkit.messageHandlers
+            && window.webkit.messageHandlers.annotation) {
+            window.webkit.messageHandlers.annotation
+                .postMessage({
+                    action: 'setViewed',
+                    filePath: filePath,
+                    isViewed: isViewed
+                });
+        }
+    });
+
+    document.addEventListener('click', function(e) {
+        var btn = e.target.closest('.file-collapse-toggle');
+        if (!btn) return;
+        var card = btn.closest('.file-card');
+        if (!card) return;
+
+        var collapsed = !card.classList.contains('collapsed');
+        applyCollapsedState(card, collapsed);
+
+        // Refresh the hover tooltip inline — the mouse
+        // is still on the button but its label and Y
+        // coord (after the card's height change) just
+        // updated. Everything else the click used to
+        // do is now inside applyCollapsedState().
+        if (hoverBtn === btn) {
+            positionTooltip(btn);
         }
     });
 })();

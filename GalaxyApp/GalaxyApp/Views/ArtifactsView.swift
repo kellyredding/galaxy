@@ -958,12 +958,31 @@ struct ArtifactsView: View {
             }
         case "gdiff":
             let label = "Artifact #\(artifact.number)"
+            // Pre-render the diff with any viewed files
+            // already checked + collapsed. Persistence
+            // is keyed by (ledger session, artifact
+            // number) — when lsid isn't available yet
+            // (rare early-startup race) the `.map`
+            // falls through to the empty-set default.
+            // Written as an expression rather than an
+            // `if let` because ViewBuilder doesn't
+            // accept statement-form optional binding.
+            let viewed: Set<String> =
+                session.ledgerSessionId.map { lsid in
+                    ViewedFilesPersistence.shared
+                        .viewed(
+                            lsid: lsid,
+                            artifactNumber:
+                                artifact.number
+                        )
+                } ?? []
             ArtifactDiffView(
                 content: content,
                 isDark: colorScheme == .dark,
                 annotations: openAnnotations,
                 annotationHTMLMap: annotationHTMLMap,
                 itemLabel: label,
+                viewedFilePaths: viewed,
                 webViewRef: $webViewRef,
                 onAnnotationMessage: { message in
                     handleAnnotationMessage(
@@ -1969,6 +1988,23 @@ struct ArtifactsView: View {
             showDragReplaceAnnotationAlert(
                 startIdx: startIdx,
                 endIdx: endIdx
+            )
+
+        case .setViewed(
+            let filePath, let isViewed
+        ):
+            // Viewed state is app-local UI progress,
+            // not annotation data — route straight to
+            // the persistence singleton. The JS
+            // already updated the DOM (check state +
+            // collapse class) optimistically; Swift's
+            // job is just to persist for the next
+            // open.
+            ViewedFilesPersistence.shared.setViewed(
+                lsid: lsid,
+                artifactNumber: artifact.number,
+                filePath: filePath,
+                isViewed: isViewed
             )
         }
     }

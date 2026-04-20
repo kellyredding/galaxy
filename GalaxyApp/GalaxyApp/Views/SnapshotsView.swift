@@ -1020,8 +1020,13 @@ struct SnapshotsView: View {
                 endIdx: endIdx
             )
         case .createDiffRange, .createRowRange,
-             .createBlockRange, .createWhole:
-            // Not applicable for snapshots
+             .createBlockRange, .createWhole,
+             .setViewed:
+            // Not applicable for snapshots — only the
+            // diff reader emits these. `.setViewed`
+            // is routed to ViewedFilesPersistence from
+            // ArtifactsView; snapshots have no file
+            // cards, so nothing to persist here.
             break
         }
     }

@@ -32,6 +32,7 @@
 		EE3333330000000000000002 /* ScrollbackWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE4444440000000000000002 /* ScrollbackWebView.swift */; };
 		88B1D264363994AD24AC8CC6 /* SessionDragCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA80B868DED26B32D6DEB65D /* SessionDragCoordinator.swift */; };
 		89EE54398E22AEA37B416F21 /* WindowStatePersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 899A0FEF2AD224B0D5701B42 /* WindowStatePersistence.swift */; };
+		8BAD00010001C4D5E6F70011 /* ViewedFilesPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BAD00020002C4D5E6F70011 /* ViewedFilesPersistence.swift */; };
 		951191037547FFAFD104A99F /* StoppedSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C599534AAFC2570BC5F292A /* StoppedSessionView.swift */; };
 		9570B4EFEC53463C1B6A01E5 /* ChromeFontScaling.swift in Sources */ = {isa = PBXBuildFile; fileRef = A43C7742A36C8BAB7C4C6419 /* ChromeFontScaling.swift */; };
 		95B87341788CFD115DCAC557 /* GalaxyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFBB4BD044AC373BB324C7F7 /* GalaxyApp.swift */; };
@@ -116,6 +117,7 @@
 		73B3B51B18B326C9BFD98925 /* ExpandedSessionSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpandedSessionSidebar.swift; sourceTree = "<group>"; };
 		8930E8F0C6702946D87082BD /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		899A0FEF2AD224B0D5701B42 /* WindowStatePersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowStatePersistence.swift; sourceTree = "<group>"; };
+		8BAD00020002C4D5E6F70011 /* ViewedFilesPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewedFilesPersistence.swift; sourceTree = "<group>"; };
 		8CC9D0AFA07CC0E764CBDAE3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		8DE2A15976B77FC2E24FB3B7 /* SwiftTerm */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SwiftTerm; path = Vendor/SwiftTerm; sourceTree = SOURCE_ROOT; };
 		922A89B10E14E165A50C1F4F /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -237,6 +239,7 @@
 				FF2222220000000000000002 /* TimelineQueryService.swift */,
 				TT2222220000000000000001 /* TimelineService.swift */,
 				899A0FEF2AD224B0D5701B42 /* WindowStatePersistence.swift */,
+				8BAD00020002C4D5E6F70011 /* ViewedFilesPersistence.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -509,6 +512,7 @@
 				AA1111110000000000000003 /* UnreadIndicator.swift in Sources */,
 				B1E71F47DE9403A1808277EC /* WatermarkBackground.swift in Sources */,
 				89EE54398E22AEA37B416F21 /* WindowStatePersistence.swift in Sources */,
+				8BAD00010001C4D5E6F70011 /* ViewedFilesPersistence.swift in Sources */,
 				830B36A8A4CD211AC3DF03F3 /* main.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

@@ -2329,6 +2329,16 @@ class AnnotationCoordinator: NSObject,
                 startIdx: startIdx,
                 endIdx: endIdx
             ))
+        case "setViewed":
+            guard let filePath = body["filePath"]
+                as? String,
+                  let isViewed = body["isViewed"]
+                    as? Bool
+            else { return }
+            onAnnotationMessage?(.setViewed(
+                filePath: filePath,
+                isViewed: isViewed
+            ))
         default:
             break
         }
@@ -2418,6 +2428,15 @@ enum AnnotationMessage {
     case update(number: Int32, content: String)
     case delete(number: Int32)
     case confirmDragReplace(startIdx: Int, endIdx: Int)
+    /// Diff reader's Viewed checkbox was toggled for a
+    /// file. Emitted alongside annotation messages on
+    /// the same `annotation` message channel to avoid
+    /// wiring a second WebKit handler for a single
+    /// boolean. Not an annotation; the enum just
+    /// carries it because this is the channel that
+    /// already exists between the reader DOM and the
+    /// app.
+    case setViewed(filePath: String, isViewed: Bool)
 }
 
 // MARK: - Annotation Init JS Builder
