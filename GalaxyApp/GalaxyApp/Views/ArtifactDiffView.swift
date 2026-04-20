@@ -434,7 +434,20 @@ private func buildDiffHTML(
         margin-bottom: 16px;
         border: 1px solid \(borderColor);
         border-radius: 6px;
-        overflow: hidden;
+        /* `overflow: clip` clips the inner table's
+           square corners against the 6px border-radius
+           just like `overflow: hidden` would, but
+           (unlike hidden) does NOT establish a scroll
+           container. That matters because
+           `position: sticky` on descendants walks up
+           to the nearest scroll container to decide
+           where to sticky — hidden would trap the
+           sticky header inside the non-scrolling card
+           and make it a no-op. `clip` keeps the
+           viewport as the sticky container so the
+           header pins to the top of the page while
+           the card body scrolls behind it. */
+        overflow: clip;
     }
     .file-header {
         display: flex;
@@ -651,6 +664,21 @@ private func buildDiffHTML(
        Header uses a single colspan=4 cell. */
     .code-line.header-line td {
         padding: 0 !important;
+    }
+    /* Sticky file-card header — pins the file path /
+       status / collapse chevron to the top of the
+       viewport while the body of the card scrolls
+       behind. The `:not(.collapsed)` guard keeps it
+       inert for collapsed cards, where the header is
+       the entire card and stickying it would just
+       waste a stacking slot. z-index 20 keeps the
+       header above annotation cards (z-index 10) so
+       scrolling past a pinned annotation can't cover
+       the file chrome. */
+    .file-card:not(.collapsed) tr.header-line {
+        position: sticky;
+        top: 0;
+        z-index: 20;
     }
     /* Diff overlay — shade every column of add/del
        rows so the colored band spans the full row.
