@@ -1,5 +1,7 @@
 require "./spec_helper"
 
+SHA40_RE = /\A[0-9a-f]{40}\z/
+
 describe GalaxyDiff::DiffCapture do
   it "captures a modified file with before/after content" do
     with_temp_repo do |repo|
@@ -14,8 +16,9 @@ describe GalaxyDiff::DiffCapture do
       )
 
       doc.version.should eq(1)
-      doc.metadata.branch.should eq("main")
-      doc.metadata.ref_from.should eq("HEAD")
+      # ref_from "HEAD" resolves to the commit's SHA
+      # (durable snapshot over the mutable HEAD ref).
+      doc.metadata.ref_from.should match(SHA40_RE)
       doc.metadata.ref_to.should eq("working-tree")
       doc.files.size.should eq(1)
 
@@ -221,6 +224,188 @@ describe GalaxyDiff::DiffCapture do
       doc.metadata.summary.should eq(
         "0 files changed, 0 insertions, 0 deletions",
       )
+    end
+  end
+
+  describe "ref resolution" do
+    it "resolves both refs to SHAs for a commit-to-commit diff" do
+      with_temp_repo do |repo|
+        File.write(File.join(repo, "f.rb"), "v1\n")
+        git_commit(repo, "c1")
+        File.write(File.join(repo, "f.rb"), "v2\n")
+        git_commit(repo, "c2")
+
+        doc = GalaxyDiff::DiffCapture.capture(
+          from_ref: "HEAD~1", to_ref: "HEAD",
+          repo_path: repo,
+        )
+
+        doc.metadata.ref_from.should match(SHA40_RE)
+        doc.metadata.ref_to.should match(SHA40_RE)
+        # Distinct commits → distinct SHAs.
+        doc.metadata.ref_from.should_not eq(
+          doc.metadata.ref_to,
+        )
+      end
+    end
+
+    it "resolves branch names to their tip commit SHA" do
+      with_temp_repo do |repo|
+        File.write(File.join(repo, "f.rb"), "v1\n")
+        git_commit(repo, "init")
+
+        doc = GalaxyDiff::DiffCapture.capture(
+          from_ref: "main", to_ref: nil, repo_path: repo,
+        )
+
+        doc.metadata.ref_from.should match(SHA40_RE)
+      end
+    end
+
+    it "stores 'working-tree' for nil to_ref even if from_ref resolves" do
+      with_temp_repo do |repo|
+        File.write(File.join(repo, "f.rb"), "v1\n")
+        git_commit(repo, "init")
+        File.write(File.join(repo, "f.rb"), "v2\n")
+
+        doc = GalaxyDiff::DiffCapture.capture(
+          from_ref: "HEAD", to_ref: nil, repo_path: repo,
+        )
+
+        doc.metadata.ref_from.should match(SHA40_RE)
+        doc.metadata.ref_to.should eq("working-tree")
+      end
+    end
+
+    it "stores 'staged' as-is for the index pseudo-ref (not SHA-shape)" do
+      with_temp_repo do |repo|
+        File.write(File.join(repo, "f.rb"), "v1\n")
+        git_commit(repo, "init")
+        File.write(File.join(repo, "f.rb"), "v2\n")
+        Process.run("git", ["add", "-A"], chdir: repo)
+
+        doc = GalaxyDiff::DiffCapture.capture(
+          from_ref: "HEAD", to_ref: "staged",
+          repo_path: repo,
+        )
+
+        # "staged" isn't resolvable to a single commit;
+        # falls back to the input string. The reader's
+        # SHA-shape check will correctly suppress the
+        # remote-link affordance for this capture.
+        doc.metadata.ref_to.should eq("staged")
+      end
+    end
+
+    it "falls back to the input string when a ref doesn't resolve" do
+      with_temp_repo do |repo|
+        File.write(File.join(repo, "f.rb"), "v1\n")
+        git_commit(repo, "init")
+
+        doc = GalaxyDiff::DiffCapture.capture(
+          from_ref: "NONEXISTENT_REF",
+          to_ref: nil, repo_path: repo,
+        )
+
+        doc.metadata.ref_from.should eq("NONEXISTENT_REF")
+      end
+    end
+  end
+
+  describe "repo origin parsing" do
+    it "parses an SSH GitHub remote into owner/repo" do
+      with_temp_repo do |repo|
+        File.write(File.join(repo, "f.rb"), "v1\n")
+        git_commit(repo, "init")
+        Process.run(
+          "git",
+          ["remote", "add", "origin",
+           "git@github.com:kellyredding/galaxy.git"],
+          chdir: repo,
+        )
+
+        doc = GalaxyDiff::DiffCapture.capture(
+          from_ref: "HEAD", to_ref: nil, repo_path: repo,
+        )
+
+        doc.metadata.repo.should eq(
+          "kellyredding/galaxy",
+        )
+      end
+    end
+
+    it "parses an HTTPS GitHub remote into owner/repo" do
+      with_temp_repo do |repo|
+        File.write(File.join(repo, "f.rb"), "v1\n")
+        git_commit(repo, "init")
+        Process.run(
+          "git",
+          ["remote", "add", "origin",
+           "https://github.com/kellyredding/galaxy.git"],
+          chdir: repo,
+        )
+
+        doc = GalaxyDiff::DiffCapture.capture(
+          from_ref: "HEAD", to_ref: nil, repo_path: repo,
+        )
+
+        doc.metadata.repo.should eq(
+          "kellyredding/galaxy",
+        )
+      end
+    end
+
+    it "handles HTTPS GitHub remotes without a .git suffix" do
+      with_temp_repo do |repo|
+        File.write(File.join(repo, "f.rb"), "v1\n")
+        git_commit(repo, "init")
+        Process.run(
+          "git",
+          ["remote", "add", "origin",
+           "https://github.com/kellyredding/galaxy"],
+          chdir: repo,
+        )
+
+        doc = GalaxyDiff::DiffCapture.capture(
+          from_ref: "HEAD", to_ref: nil, repo_path: repo,
+        )
+
+        doc.metadata.repo.should eq(
+          "kellyredding/galaxy",
+        )
+      end
+    end
+
+    it "returns '' when origin is a non-GitHub remote" do
+      with_temp_repo do |repo|
+        File.write(File.join(repo, "f.rb"), "v1\n")
+        git_commit(repo, "init")
+        Process.run(
+          "git",
+          ["remote", "add", "origin",
+           "git@gitlab.com:kellyredding/galaxy.git"],
+          chdir: repo,
+        )
+
+        doc = GalaxyDiff::DiffCapture.capture(
+          from_ref: "HEAD", to_ref: nil, repo_path: repo,
+        )
+
+        doc.metadata.repo.should eq("")
+      end
+    end
+
+    it "returns '' when no origin remote is configured" do
+      with_temp_repo do |repo|
+        File.write(File.join(repo, "f.rb"), "v1\n")
+        git_commit(repo, "init")
+
+        doc = GalaxyDiff::DiffCapture.capture(
+          from_ref: "HEAD", to_ref: nil, repo_path: repo,
+        )
+
+        doc.metadata.repo.should eq("")
+      end
     end
   end
 end

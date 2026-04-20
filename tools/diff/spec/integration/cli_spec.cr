@@ -65,7 +65,11 @@ describe "CLI (galaxy-diff)", tags: "integration" do
         result[:output],
       )
       doc.version.should eq(1)
-      doc.metadata.ref_from.should eq("HEAD")
+      # "HEAD" resolves to the commit SHA so the .gdiff
+      # records a durable snapshot.
+      doc.metadata.ref_from.should match(
+        /\A[0-9a-f]{40}\z/,
+      )
       doc.metadata.ref_to.should eq("working-tree")
       doc.files.size.should eq(1)
       doc.files[0].path.should eq("f.rb")

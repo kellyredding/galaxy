@@ -73,10 +73,9 @@ describe GalaxyDiff::GdiffDocument do
     )
 
     metadata = GalaxyDiff::GdiffMetadata.new(
-      ref_from: "HEAD",
+      ref_from: "a" * 40,
       ref_to: "working-tree",
-      branch: "main",
-      repo: "/tmp/repo",
+      repo: "kellyredding/galaxy",
       created_at: "2026-04-17T00:00:00Z",
       summary: "1 file changed, 1 insertion, 1 deletion",
     )
@@ -91,7 +90,9 @@ describe GalaxyDiff::GdiffDocument do
     parsed = GalaxyDiff::GdiffDocument.from_json(json)
 
     parsed.version.should eq(1)
-    parsed.metadata.branch.should eq("main")
+    parsed.metadata.ref_from.should eq("a" * 40)
+    parsed.metadata.ref_to.should eq("working-tree")
+    parsed.metadata.repo.should eq("kellyredding/galaxy")
     parsed.metadata.summary.should eq(
       "1 file changed, 1 insertion, 1 deletion",
     )

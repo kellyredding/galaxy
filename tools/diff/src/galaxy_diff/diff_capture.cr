@@ -77,16 +77,34 @@ module GalaxyDiff
         end
       end
 
-      branch = resolve_branch(dir)
+      # Resolve refs to 40-char SHAs when possible —
+      # commit snapshots are durable, branch names
+      # aren't. Fall back to the original input (e.g.,
+      # "main" for an unresolvable ref, "staged" for
+      # the index pseudo-ref); fall back to
+      # "working-tree" when ref_to is nil. The reader
+      # uses the SHA-shape of both refs as its
+      # linkability check, so storing non-SHA strings
+      # here correctly suppresses the GitHub link
+      # affordance for cases that can't address a
+      # specific remote commit.
+      resolved_from =
+        resolve_ref_to_sha(dir, from_ref) || from_ref
+      resolved_to =
+        if to_ref.nil?
+          "working-tree"
+        else
+          resolve_ref_to_sha(dir, to_ref) || to_ref
+        end
+      repo = parse_github_origin(dir)
       summary = build_summary(files)
 
       GdiffDocument.new(
         version: 1,
         metadata: GdiffMetadata.new(
-          ref_from: from_ref,
-          ref_to: to_ref || "working-tree",
-          branch: branch,
-          repo: dir,
+          ref_from: resolved_from,
+          ref_to: resolved_to,
+          repo: repo,
           created_at: Time.utc.to_rfc3339,
           summary: summary,
         ),
@@ -237,12 +255,73 @@ module GalaxyDiff
       )
     end
 
-    private def resolve_branch(dir : String) : String
+    # Resolves a git ref to its full 40-char commit
+    # SHA. Uses `rev-parse --verify <ref>^{commit}` so
+    # tags peel to their commit and invalid refs fail
+    # cleanly. Returns nil when the ref doesn't
+    # resolve (bad input, "staged" pseudo-ref, etc.);
+    # caller falls back to the original input.
+    #
+    # Runs silently so expected-to-fail calls (e.g.,
+    # resolving "staged") don't pollute stderr.
+    private def resolve_ref_to_sha(
+      dir : String, ref : String,
+    ) : String?
       output, status = run_git_with_status(
-        dir, ["rev-parse", "--abbrev-ref", "HEAD"],
+        dir,
+        ["rev-parse", "--verify", "#{ref}^{commit}"],
+        silent: true,
       )
-      return "unknown" unless status.success?
-      output.strip
+      return nil unless status.success?
+      sha = output.strip
+      return nil unless sha =~ /\A[0-9a-f]{40}\z/
+      sha
+    end
+
+    # Parses `origin` remote URL into `owner/repo`
+    # form for GitHub remotes. Returns "" when origin
+    # isn't set or isn't a GitHub URL. Recognized
+    # shapes:
+    #   git@github.com:owner/repo.git
+    #   https://github.com/owner/repo.git
+    #   https://github.com/owner/repo
+    #   ssh://git@github.com/owner/repo.git
+    #
+    # GitHub Enterprise (github.mycorp.com) is not
+    # handled — would need explicit user configuration
+    # to know which hosts support the compare URL.
+    private def parse_github_origin(
+      dir : String,
+    ) : String
+      output, status = run_git_with_status(
+        dir,
+        ["remote", "get-url", "origin"],
+        silent: true,
+      )
+      return "" unless status.success?
+      url = output.strip
+      idx = url.index("github.com")
+      return "" if idx.nil?
+
+      # Everything after "github.com", minus any
+      # leading ":"/"/" (SSH uses colon, HTTPS uses
+      # slash).
+      remainder = url[(idx + "github.com".size)..]
+      remainder = remainder.lstrip(":/")
+
+      # Strip trailing noise: ".git" suffix, trailing
+      # slashes. Order matters — do "/" first so
+      # "repo.git/" trims to "repo.git" then "repo".
+      remainder = remainder.rchop("/")
+      remainder = remainder.rchop(".git")
+      remainder = remainder.rchop("/")
+
+      parts = remainder.split("/")
+      return "" if parts.size < 2
+      owner = parts[0]
+      repo = parts[1]
+      return "" if owner.empty? || repo.empty?
+      "#{owner}/#{repo}"
     end
 
     private def build_summary(
@@ -287,6 +366,7 @@ module GalaxyDiff
     private def run_git_with_status(
       dir : String,
       args : Array(String),
+      silent : Bool = false,
     ) : {String, Process::Status}
       output = IO::Memory.new
       error = IO::Memory.new
@@ -297,7 +377,7 @@ module GalaxyDiff
         output: output,
         error: error,
       )
-      unless status.success?
+      unless status.success? || silent
         err = error.to_s.strip
         STDERR.puts "git error: #{err}" unless err.empty?
       end

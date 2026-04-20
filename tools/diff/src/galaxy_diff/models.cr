@@ -69,18 +69,29 @@ module GalaxyDiff
     end
   end
 
+  # `ref_from` and `ref_to` are full 40-char commit
+  # SHAs when resolvable — commit snapshots are durable,
+  # branch names aren't. Non-SHA fallbacks: the original
+  # input string (e.g., "main" for an unresolvable ref)
+  # or "working-tree" when diffing against an uncommitted
+  # tree. The reader treats "both refs SHA-shape AND
+  # repo non-empty" as the signal for showing a
+  # remote-link affordance, so no separate flag is
+  # needed to mark a capture as linkable.
+  #
+  # `repo` stores `owner/repo` when origin is a GitHub
+  # remote, otherwise an empty string.
   struct GdiffMetadata
     include JSON::Serializable
 
     getter ref_from : String
     getter ref_to : String
-    getter branch : String
     getter repo : String
     getter created_at : String
     getter summary : String
 
     def initialize(
-      @ref_from, @ref_to, @branch,
+      @ref_from, @ref_to,
       @repo, @created_at, @summary,
     )
     end
