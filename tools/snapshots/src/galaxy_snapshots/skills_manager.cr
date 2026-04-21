@@ -92,13 +92,33 @@ module GalaxySnapshots
     After the CLI returns success, confirm to the user:
     "Saved as snapshot #N: 'Title'"
 
+    Creation automatically publishes a socket event so
+    Galaxy.app opens the new snapshot in its reader —
+    no separate show step is needed.
+
+    ## Showing an Existing Snapshot
+
+    To re-open an already-created snapshot in Galaxy.app's
+    reader:
+
+    ```bash
+    galaxy-snapshots show --pid $LEDGER_PID N
+    ```
+
+    Use this whenever the user says "open", "show", "view",
+    "pull up", or "show me" a specific snapshot by number
+    or title. Do NOT use it immediately after `create` —
+    creation already opens the snapshot.
+
     ## Viewing & Referencing Snapshots
 
     - Reference snapshots by number or title when justifying
       decisions: "Per snapshot #1 ('caching design'), we agreed..."
-    - If the user asks to view a snapshot in the terminal, run:
+    - If the user asks to view a snapshot's content in your
+      own context (for agent use, not user presentation), run:
       `galaxy-snapshots view --pid $LEDGER_PID N`
-    - If the user asks to open a snapshot in an editor, run:
+    - If the user asks to open a snapshot in an external
+      editor (not the Galaxy.app reader), run:
       `galaxy-snapshots open --pid $LEDGER_PID N`
     - To list all snapshots:
       `galaxy-snapshots list --pid $LEDGER_PID`

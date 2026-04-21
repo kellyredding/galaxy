@@ -87,6 +87,128 @@ describe "CLI snapshot commands", tags: "integration" do
       snapshot.should_not be_nil
       snapshot.not_nil!.title.should eq("Timeline test")
     end
+
+    it "publishes snapshot.show socket event by default" do
+      sock_path = SPEC_GALAXY_DIR / "galaxy.sock"
+      received = Channel(String?).new(1)
+
+      server = UNIXServer.new(sock_path.to_s)
+      spawn do
+        begin
+          client = server.accept
+          line = client.gets
+          received.send(line)
+          client.close
+        rescue
+          received.send(nil)
+        end
+      end
+
+      begin
+        sleep 10.milliseconds
+
+        ledger_bin = SPEC_GALAXY_DIR / "bin" /
+                     "galaxy-ledger"
+        File.write(
+          ledger_bin,
+          "#!/bin/sh\n" \
+          "echo '{\"session_identifiers\":[]}'\n",
+        )
+        File.chmod(ledger_bin, 0o755)
+
+        result = run_binary(
+          [
+            "create", "--ledger-session-id", "1",
+            "--title", "Event test",
+          ],
+          stdin: "content",
+          extra_env: {
+            "GALAXY_LEDGER_BIN" => ledger_bin.to_s,
+          },
+        )
+        result[:status].should eq(0)
+
+        select
+        when line = received.receive
+          line.should_not be_nil
+          if json_line = line
+            parsed = JSON.parse(json_line)
+            parsed["event"].as_s
+              .should eq("snapshot.show")
+            detail = parsed["detail_data"]
+            detail["snapshot_number"].as_i
+              .should eq(1)
+          end
+        when timeout(2.seconds)
+          fail "Timed out waiting for socket event"
+        end
+      ensure
+        server.close rescue nil
+        File.delete(sock_path.to_s) \
+          if File.exists?(sock_path.to_s)
+      end
+    end
+
+    it "skips socket event with --skip-event" do
+      sock_path = SPEC_GALAXY_DIR / "galaxy.sock"
+      received = Channel(String?).new(1)
+
+      server = UNIXServer.new(sock_path.to_s)
+      spawn do
+        begin
+          client = server.accept
+          line = client.gets
+          received.send(line)
+          client.close
+        rescue
+          received.send(nil)
+        end
+      end
+
+      begin
+        sleep 10.milliseconds
+
+        ledger_bin = SPEC_GALAXY_DIR / "bin" /
+                     "galaxy-ledger"
+        File.write(
+          ledger_bin,
+          "#!/bin/sh\n" \
+          "echo '{\"session_identifiers\":[]}'\n",
+        )
+        File.chmod(ledger_bin, 0o755)
+
+        result = run_binary(
+          [
+            "create", "--ledger-session-id", "1",
+            "--title", "Silent save",
+            "--skip-event",
+          ],
+          stdin: "content",
+          extra_env: {
+            "GALAXY_LEDGER_BIN" => ledger_bin.to_s,
+          },
+        )
+        result[:status].should eq(0)
+
+        # Expect NO snapshot.show event to arrive.
+        # Short timeout keeps the spec fast while
+        # being long enough to catch a stray publish.
+        select
+        when line = received.receive
+          if json_line = line
+            parsed = JSON.parse(json_line)
+            parsed["event"].as_s
+              .should_not eq("snapshot.show")
+          end
+        when timeout(500.milliseconds)
+          # Expected path: nothing arrives.
+        end
+      ensure
+        server.close rescue nil
+        File.delete(sock_path.to_s) \
+          if File.exists?(sock_path.to_s)
+      end
+    end
   end
 
   describe "list" do
@@ -203,6 +325,104 @@ describe "CLI snapshot commands", tags: "integration" do
 
       result[:status].should_not eq(0)
       result[:error].should contain("not found")
+    end
+  end
+
+  describe "show" do
+    it "publishes snapshot.show socket event" do
+      GalaxySnapshots::Database.save_snapshot(
+        1_i64, "Show target", "content here",
+      )
+      flush_wal
+
+      sock_path = SPEC_GALAXY_DIR / "galaxy.sock"
+      received = Channel(String?).new(1)
+
+      server = UNIXServer.new(sock_path.to_s)
+      spawn do
+        begin
+          client = server.accept
+          line = client.gets
+          received.send(line)
+          client.close
+        rescue
+          received.send(nil)
+        end
+      end
+
+      begin
+        sleep 10.milliseconds
+
+        ledger_bin = SPEC_GALAXY_DIR / "bin" /
+                     "galaxy-ledger"
+        File.write(
+          ledger_bin,
+          "#!/bin/sh\n" \
+          "echo '{\"session_identifiers\":[]}'\n",
+        )
+        File.chmod(ledger_bin, 0o755)
+
+        result = run_binary(
+          [
+            "show", "--ledger-session-id", "1", "1",
+          ],
+          extra_env: {
+            "GALAXY_LEDGER_BIN" => ledger_bin.to_s,
+          },
+        )
+        result[:status].should eq(0)
+        result[:output].should contain(
+          "Showing snapshot #1",
+        )
+
+        select
+        when line = received.receive
+          line.should_not be_nil
+          if json_line = line
+            parsed = JSON.parse(json_line)
+            parsed["event"].as_s
+              .should eq("snapshot.show")
+            detail = parsed["detail_data"]
+            detail["snapshot_number"].as_i
+              .should eq(1)
+          end
+        when timeout(2.seconds)
+          fail "Timed out waiting for socket event"
+        end
+      ensure
+        server.close rescue nil
+        File.delete(sock_path.to_s) \
+          if File.exists?(sock_path.to_s)
+      end
+    end
+
+    it "errors when snapshot not found" do
+      result = run_binary([
+        "show", "--ledger-session-id", "1", "99",
+      ])
+
+      result[:status].should_not eq(0)
+      result[:error].should contain("not found")
+    end
+
+    it "errors when no session identifier provided" do
+      result = run_binary(["show", "1"])
+
+      result[:status].should_not eq(0)
+      result[:error].should contain(
+        "--pid or --ledger-session-id is required",
+      )
+    end
+
+    it "errors when snapshot number missing" do
+      result = run_binary([
+        "show", "--ledger-session-id", "1",
+      ])
+
+      result[:status].should_not eq(0)
+      result[:error].should contain(
+        "snapshot number is required",
+      )
     end
   end
 

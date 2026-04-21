@@ -40,6 +40,12 @@ module GalaxySnapshots
         else
           handle_open(rest)
         end
+      when "show"
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_show_help
+        else
+          handle_show(rest)
+        end
       when "stats"
         if rest.includes?("-h") || rest.includes?("--help")
           show_stats_help
@@ -88,6 +94,7 @@ module GalaxySnapshots
       ledger_session_id_str : String? = nil
       title : String? = nil
       exchange_count = 1
+      skip_event = false
 
       i = 0
       while i < args.size
@@ -125,6 +132,9 @@ module GalaxySnapshots
             STDERR.puts "Error: --exchanges requires a value"
             exit(1)
           end
+        when "--skip-event"
+          skip_event = true
+          i += 1
         else
           STDERR.puts "Error: Unknown option '#{arg}'"
           STDERR.puts "Run 'galaxy-snapshots create --help' for usage"
@@ -169,8 +179,13 @@ module GalaxySnapshots
 
         # Record timeline event (fire-and-forget).
         # Timeline publishes to the socket as
-        # timeline.snapshot:created — no separate
-        # EventPublisher call needed.
+        # timeline.snapshot:created for the timeline
+        # itself to show the new entry. That event
+        # is separate from the reader-open event
+        # below — timeline records what happened,
+        # snapshot.show signals "open this in the
+        # reader." Both fire so the timeline stays
+        # accurate AND the new snapshot auto-opens.
         TimelinePublisher.snapshot_created(
           ledger_session_id,
           snapshot_number: number,
@@ -178,6 +193,25 @@ module GalaxySnapshots
           exchange_count: exchange_count,
           char_count: content.size,
         )
+
+        # Publish snapshot.show so Galaxy.app opens
+        # the newly-created snapshot in its reader.
+        # Mirrors galaxy-artifacts save publishing
+        # artifact.show on creation. Skipped when
+        # --skip-event is set (for in-app callers
+        # that handle their own UI updates).
+        unless skip_event
+          detail = JSON.build do |json|
+            json.object do
+              json.field "snapshot_number", number
+            end
+          end
+          EventPublisher.publish(
+            ledger_session_id,
+            event: "snapshot.show",
+            detail_data: detail,
+          )
+        end
       else
         STDERR.puts "Error: failed to save snapshot"
         exit(1)
@@ -593,6 +627,121 @@ module GalaxySnapshots
       end
 
       puts "Opened snapshot ##{number} (\"#{snapshot.title}\") → #{temp_path}"
+    end
+
+    # ============================================================
+    # show
+    # ============================================================
+
+    # Publishes a snapshot.show socket event so Galaxy.app
+    # switches to the snapshots tab for the target session
+    # and opens the snapshot in its reader. Mirrors
+    # galaxy-artifacts show — the in-app reader is the
+    # canonical way users review snapshots, and this
+    # subcommand is how existing snapshots get re-opened
+    # from the CLI (creation auto-opens via the same event
+    # fired from handle_create).
+    private def self.handle_show(args : Array(String))
+      pid_str : String? = nil
+      ledger_session_id_str : String? = nil
+      number : Int32? = nil
+
+      i = 0
+      while i < args.size
+        arg = args[i]
+        case arg
+        when "--pid"
+          if i + 1 < args.size
+            pid_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts "Error: --pid requires a value"
+            exit(1)
+          end
+        when "--ledger-session-id"
+          if i + 1 < args.size
+            ledger_session_id_str = args[i + 1]
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --ledger-session-id " \
+              "requires a value",
+            )
+            exit(1)
+          end
+        else
+          if n = arg.to_i?
+            number = n
+          else
+            STDERR.puts "Error: Unknown option '#{arg}'"
+            STDERR.puts(
+              "Run 'galaxy-snapshots show " \
+              "--help' for usage",
+            )
+            exit(1)
+          end
+          i += 1
+        end
+      end
+
+      # Resolve ledger_session_id
+      ledger_session_id : Int64? = nil
+      if lsid_str = ledger_session_id_str
+        ledger_session_id =
+          resolve_ledger_session_id_str(lsid_str)
+      elsif ps = pid_str
+        ledger_session_id =
+          resolve_pid_to_ledger_session_id(ps)
+      end
+
+      unless ledger_session_id
+        STDERR.puts(
+          "Error: --pid or --ledger-session-id " \
+          "is required",
+        )
+        STDERR.puts(
+          "Run 'galaxy-snapshots show --help' for usage",
+        )
+        exit(1)
+      end
+
+      unless number
+        STDERR.puts "Error: snapshot number is required"
+        STDERR.puts(
+          "Run 'galaxy-snapshots show --help' for usage",
+        )
+        exit(1)
+      end
+
+      snapshot = Database.get_snapshot_by_number(
+        ledger_session_id, number,
+      )
+
+      unless snapshot
+        STDERR.puts(
+          "Error: snapshot ##{number} not found",
+        )
+        exit(1)
+      end
+
+      # Publish socket event so Galaxy.app switches
+      # to the snapshots tab and opens this snapshot
+      # in its reader.
+      detail = JSON.build do |json|
+        json.object do
+          json.field "snapshot_number", snapshot.number
+        end
+      end
+      EventPublisher.publish(
+        ledger_session_id,
+        event: "snapshot.show",
+        detail_data: detail,
+      )
+
+      puts(
+        "Showing snapshot ##{number}" \
+        " (\"#{snapshot.title}\")",
+      )
     end
 
     # ============================================================
@@ -2042,6 +2191,7 @@ module GalaxySnapshots
         create      Create a snapshot from stdin
         list        List snapshots for a session
         view        View a snapshot's content
+        show        Show a snapshot in Galaxy.app
         open        Open a snapshot in an editor
         delete      Delete a snapshot
         stats       Get snapshot stats for a session (JSON)
@@ -2073,11 +2223,16 @@ module GalaxySnapshots
 
       OPTIONS:
         --exchanges N           Number of exchanges captured (default: 1)
+        --skip-event            Skip socket event publish
 
       DESCRIPTION:
         Reads markdown content from stdin and saves it as a session snapshot.
         Snapshots preserve verbatim user/assistant exchanges for restoration
         on context handoff (/clear, /compact).
+
+        Also publishes a snapshot.show socket event so Galaxy.app opens the
+        new snapshot in its reader automatically. Use --skip-event when the
+        caller handles its own UI updates (e.g., in-app callers).
 
       EXAMPLES:
         echo "## Exchange 1..." | galaxy-snapshots create --pid 12345 --title "Design discussion"
@@ -2174,6 +2329,29 @@ module GalaxySnapshots
 
       EXAMPLES:
         galaxy-snapshots open --pid 12345 1
+      HELP
+    end
+
+    private def self.show_show_help
+      puts <<-HELP
+      galaxy-snapshots show - Show a snapshot in Galaxy.app
+
+      USAGE:
+        galaxy-snapshots show --ledger-session-id ID NUMBER
+        galaxy-snapshots show --pid PID NUMBER
+
+      Publishes a snapshot.show socket event to Galaxy.app,
+      which switches to the snapshots tab for that session
+      and opens the snapshot in its reader. Creation already
+      fires the same event automatically — use `show` to
+      re-open an existing snapshot.
+
+      REQUIRED:
+        NUMBER                  Snapshot number
+
+      REQUIRED (one of):
+        --pid PID               Claude Code process ID
+        --ledger-session-id ID  Direct ledger session ID
       HELP
     end
 
