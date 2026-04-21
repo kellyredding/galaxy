@@ -349,7 +349,27 @@ private func buildDiffHTML(
         )
     }
 
-    for (fileIndex, file) in doc.files.enumerated() {
+    // Build the TOC tree first so we can use its DFS
+    // order as the rendering order for file cards.
+    // Without this, cards render in git's emit order
+    // while the TOC groups by folder — the two
+    // orderings diverge whenever git's order isn't
+    // already folder-grouped (common). Rendering in
+    // tree order keeps TOC and cards in lockstep so
+    // scrolling past file N arrives at the file that
+    // sits immediately below N in the tree.
+    //
+    // fileIndex stays tied to the original
+    // doc.files[i] position — the TOC's
+    // `data-target="file-card-N"` already uses that
+    // index, so only the visual order changes; click
+    // targets still resolve correctly.
+    let treeRoots = buildFileTree(doc.files)
+    let orderedIndices = flattenTreeFileOrder(
+        treeRoots
+    )
+    for fileIndex in orderedIndices {
+        let file = doc.files[fileIndex]
         lineCounter += 1
         let headerLine = lineCounter
 
@@ -371,6 +391,19 @@ private func buildDiffHTML(
     // `window.GALAXY_AFTERLINES[fileIndex]` when a user
     // clicks an unchanged-region expand affordance.
     let afterLinesJS = buildAfterLinesJS(files: doc.files)
+
+    // TOC side panel. `treeRoots` was built above so
+    // the card rendering loop could iterate in DFS
+    // order — reusing it here avoids a duplicate
+    // tree-build pass.
+    let sidebarHTML = renderFileTree(treeRoots)
+    let bodyLayoutHTML =
+        "<div class=\"diff-body\">"
+        + sidebarHTML
+        + "<main class=\"main-column\">"
+        + cardsHTML
+        + "</main>"
+        + "</div>"
 
     // Summary header at top of document.
     //
@@ -471,6 +504,149 @@ private func buildDiffHTML(
     }
     .diff-summary-sep {
         opacity: 0.5;
+    }
+    /* Two-column layout: TOC sidebar on the left,
+       file cards in the main column. align-items
+       flex-start so the sidebar doesn't stretch to
+       the full content height — the sidebar is its
+       own scroll container via max-height +
+       overflow-y below. */
+    .diff-body {
+        display: flex;
+        align-items: flex-start;
+        gap: 16px;
+    }
+    .main-column {
+        flex: 1 1 auto;
+        /* Constrain so long file paths wrap inside
+           the card instead of expanding the main
+           column and pushing the sidebar off-screen.
+           min-width:0 is the standard flex-item fix
+           for "child with overflow pushes parent". */
+        min-width: 0;
+    }
+    /* TOC sidebar. Sticky-top so it stays put while
+       the main column scrolls; own scroll container
+       so a long tree doesn't push everything below
+       the viewport. */
+    .toc-sidebar {
+        flex: 0 0 260px;
+        width: 260px;
+        position: sticky;
+        top: 12px;
+        max-height: calc(100vh - 24px);
+        overflow-y: auto;
+        padding: 8px 4px;
+        background: \(headerBg);
+        border: 1px solid \(borderColor);
+        border-radius: 6px;
+        font-family: -apple-system, system-ui,
+            sans-serif;
+        font-size: 12px;
+    }
+    .toc-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+    /* Folder + file rows share this button-based
+       clickable area. Buttons (not <a>s) because
+       they're in-page actions (collapse / scroll),
+       not navigation targets. */
+    .toc-folder-label, .toc-file-label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        width: 100%;
+        padding: 3px 8px 3px var(--toc-indent, 8px);
+        background: transparent;
+        border: 0;
+        color: \(textColor);
+        font: inherit;
+        cursor: pointer;
+        text-align: left;
+        border-radius: 4px;
+        white-space: nowrap;
+        overflow: hidden;
+    }
+    .toc-folder-label:hover,
+    .toc-file-label:hover {
+        background: \(hoverBg);
+    }
+    .toc-folder-name, .toc-file-name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .toc-folder-name {
+        font-family: ui-monospace, monospace;
+        color: \(mutedFg);
+    }
+    .toc-file-name {
+        font-family: ui-monospace, monospace;
+    }
+    /* Chevron rotates when the parent folder
+       collapses — one SVG, two visual states. */
+    .toc-chevron {
+        flex: 0 0 12px;
+        transition: transform 0.15s ease;
+        color: \(mutedFg);
+    }
+    .toc-folder.collapsed
+        > .toc-folder-label .toc-chevron {
+        transform: rotate(-90deg);
+    }
+    .toc-folder.collapsed > .toc-children {
+        display: none;
+    }
+    /* Status badges — compact single-letter pills
+       matching the file-card header's colors so
+       both views speak the same visual language. */
+    .toc-status {
+        flex: 0 0 16px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 16px;
+        height: 16px;
+        border-radius: 3px;
+        font-size: 10px;
+        font-weight: 600;
+        font-family: ui-monospace, monospace;
+        line-height: 1;
+    }
+    .toc-status-added {
+        background: \(greenBg); color: \(greenFg);
+    }
+    .toc-status-modified {
+        background: \(yellowBg); color: \(yellowFg);
+    }
+    .toc-status-deleted {
+        background: \(redBg); color: \(redFg);
+    }
+    .toc-status-renamed {
+        background: \(blueBg); color: \(blueFg);
+    }
+    .toc-status-binary {
+        background: \(hoverBg); color: \(mutedFg);
+    }
+    /* Annotation cards are absolute-positioned
+       relative to the viewport (defined in
+       annotationCSS, which is shared with the other
+       readers and stays at left:24px right:24px so
+       markdown/table/etc. render correctly). In the
+       diff reader the main content sits in a
+       276px-indented column (sidebar 260 + gap 16),
+       so full-viewport-width annotations would
+       extend under the sidebar. Shift `left` by the
+       sidebar offset when the sidebar is present —
+       `:has(.toc-sidebar)` scopes this to diffs
+       that actually rendered one (empty-state diffs
+       skip the sidebar and keep the default left).
+       The annotationCSS rules still win for any
+       reader that doesn't have a toc-sidebar. */
+    body:has(.toc-sidebar) .annotation-card,
+    body:has(.toc-sidebar) .annotation-form {
+        left: calc(24px + 276px);
     }
     .empty-state {
         padding: 40px 20px;
@@ -909,7 +1085,7 @@ private func buildDiffHTML(
     <body>
     <script>\(afterLinesJS)</script>
     \(metadataHTML)
-    \(cardsHTML)
+    \(bodyLayoutHTML)
     <script>\(hjsContent)</script>
     <script>
     if (typeof hljs !== 'undefined') {
@@ -944,6 +1120,9 @@ private func buildDiffHTML(
     \(fileCollapseJS)
     </script>
     <script>
+    \(tocNavJS)
+    </script>
+    <script>
     \(annotationManagerJS)
     </script>
     <script>\(emojiDataJS)</script>
@@ -975,7 +1154,7 @@ private func renderFileCard(
     isViewed: Bool
 ) -> FileCardResult {
     let (statusClass, statusLabel) = statusBadge(
-        for: file.status
+        for: file
     )
     let (adds, dels) = countChanges(in: file.hunks)
     let lang = file.language ?? "plaintext"
@@ -986,7 +1165,12 @@ private func renderFileCard(
     // File-card carries its own `data-file-path` so
     // the collapse handler can match annotation cards
     // (also stamped with `data-file-path`) and hide
-    // them together with the body rows.
+    // them together with the body rows. `id` on the
+    // card is a separate stable handle for the TOC
+    // click-to-scroll JS — file paths can contain
+    // characters that are awkward in CSS attribute
+    // selectors, so we use a numeric id there and
+    // keep the data attribute for annotation matching.
     //
     // Pre-collapse via `.collapsed` when the file is
     // persisted as viewed — the same class the chevron
@@ -996,6 +1180,7 @@ private func renderFileCard(
         ? "file-card collapsed" : "file-card"
     var html =
         "<div class=\"\(cardClasses)\""
+        + " id=\"file-card-\(fileIndex)\""
         + " data-file-path=\"\(fp)\">"
     html +=
         "<table class=\"diff-table\">"
@@ -2308,12 +2493,278 @@ private func isSHA(_ s: String) -> Bool {
     }
 }
 
+// MARK: - File Tree (TOC Sidebar)
+
+/// A node in the TOC file tree. `.folder` groups one
+/// or more path segments as a single label (path
+/// compression collapses single-child folder chains
+/// into `app/models/ai/tools/mcp`-style labels);
+/// `.file` is a leaf wrapping the real GdiffFile
+/// and its index in the flat files array (used as
+/// the click-target `file-card-N` id).
+private indirect enum TreeNode {
+    case folder(label: String, children: [TreeNode])
+    case file(file: GdiffFile, index: Int)
+}
+
+/// Builds the TOC file tree from the flat files
+/// array. Splits each file's path on `/`, inserts
+/// into a nested intermediate structure, then
+/// compresses chains of single-child subfolders
+/// (no file children, exactly one subfolder) into a
+/// single folder node whose label joins the
+/// segments back with `/`. File children stop the
+/// chain — a folder is never merged with a file
+/// leaf, so the folder header always stays visible
+/// above its files (matching the reference UI).
+private func buildFileTree(
+    _ files: [GdiffFile]
+) -> [TreeNode] {
+    // Mutable intermediate node. Reference semantics
+    // make the insertion loop read cleanly; the
+    // compression pass converts to immutable
+    // TreeNodes on the way out.
+    final class Build {
+        var sub: [String: Build] = [:]
+        // Preserve segment insertion order so two
+        // sibling subfolders render in the order
+        // their files first appeared, not hash order.
+        var subOrder: [String] = []
+        var files: [(file: GdiffFile, idx: Int)] = []
+    }
+
+    let root = Build()
+    for (idx, file) in files.enumerated() {
+        let parts = file.path
+            .split(
+                separator: "/",
+                omittingEmptySubsequences: true
+            )
+            .map(String.init)
+        guard !parts.isEmpty else {
+            // Root-level file (no path segments) —
+            // shouldn't normally happen in git diffs
+            // but defensive against weird inputs.
+            root.files.append((file, idx))
+            continue
+        }
+
+        var cursor = root
+        for segment in parts.dropLast() {
+            if let existing = cursor.sub[segment] {
+                cursor = existing
+            } else {
+                let next = Build()
+                cursor.sub[segment] = next
+                cursor.subOrder.append(segment)
+                cursor = next
+            }
+        }
+        cursor.files.append((file, idx))
+    }
+
+    // Recursive compression: for each subfolder,
+    // walk its single-child chain as long as the
+    // current node has no files AND exactly one
+    // subfolder. Emit a folder node whose label is
+    // the joined chain, then recurse into whatever
+    // we stopped at.
+    func compressFolder(
+        label: String, build: Build
+    ) -> TreeNode {
+        var currentLabel = label
+        var current = build
+        while current.files.isEmpty
+            && current.sub.count == 1,
+              let onlySegment = current.subOrder.first,
+              let onlyChild = current.sub[onlySegment]
+        {
+            currentLabel += "/\(onlySegment)"
+            current = onlyChild
+        }
+        return .folder(
+            label: currentLabel,
+            children: flatten(current)
+        )
+    }
+
+    func flatten(_ build: Build) -> [TreeNode] {
+        var result: [TreeNode] = []
+        for segment in build.subOrder {
+            guard let child = build.sub[segment]
+            else { continue }
+            result.append(compressFolder(
+                label: segment, build: child
+            ))
+        }
+        for (file, idx) in build.files {
+            result.append(
+                .file(file: file, index: idx)
+            )
+        }
+        return result
+    }
+
+    return flatten(root)
+}
+
+/// Walks the built tree in depth-first order and
+/// returns the original `doc.files` indices in that
+/// order. Used by `buildDiffHTML` to render cards
+/// in the same order the TOC lists them, so a user
+/// scrolling past file N arrives at the file that
+/// visually sits below N in the tree — no jumping
+/// across unrelated folders.
+private func flattenTreeFileOrder(
+    _ roots: [TreeNode]
+) -> [Int] {
+    var result: [Int] = []
+    func visit(_ node: TreeNode) {
+        switch node {
+        case let .folder(_, children):
+            for child in children { visit(child) }
+        case let .file(_, index):
+            result.append(index)
+        }
+    }
+    for root in roots { visit(root) }
+    return result
+}
+
+/// Emits the full `<nav class="toc-sidebar">` HTML
+/// for the tree. Returns "" if there are no nodes
+/// so the caller can conditionally skip the flex
+/// wrapper entirely on empty-diff renders.
+private func renderFileTree(
+    _ roots: [TreeNode]
+) -> String {
+    if roots.isEmpty { return "" }
+    var html = "<nav class=\"toc-sidebar\""
+    html += " aria-label=\"File tree\">"
+    html += "<ul class=\"toc-list toc-root\">"
+    for node in roots {
+        html += renderTreeNode(node, depth: 0)
+    }
+    html += "</ul></nav>"
+    return html
+}
+
+/// Renders one tree node (and its subtree). Depth is
+/// used for horizontal indent — written to a CSS
+/// custom property via inline style so one CSS rule
+/// (`padding-left: var(--toc-indent)`) covers every
+/// nesting level without per-depth selectors.
+private func renderTreeNode(
+    _ node: TreeNode, depth: Int
+) -> String {
+    // 12px per nesting level, 8px base inset so the
+    // leftmost items aren't flush with the sidebar's
+    // inner padding.
+    let indent = depth * 12 + 8
+    switch node {
+    case let .folder(label, children):
+        var html = "<li class=\"toc-folder\""
+        html += " style=\"--toc-indent: \(indent)px;"
+        html += "\">"
+        html += "<button type=\"button\""
+        html += " class=\"toc-folder-label\""
+        html += " aria-expanded=\"true\">"
+        html += tocChevronSVG()
+        html += "<span class=\"toc-folder-name\">"
+        html += htmlEscape(label)
+        html += "/</span></button>"
+        html += "<ul class=\"toc-list toc-children\">"
+        for child in children {
+            html += renderTreeNode(
+                child, depth: depth + 1
+            )
+        }
+        html += "</ul></li>"
+        return html
+
+    case let .file(file, index):
+        // Use trailing-path-segment for display —
+        // the folder label already covers the
+        // directory context.
+        let leafName = file.path
+            .split(separator: "/")
+            .last
+            .map(String.init) ?? file.path
+        let (statusClass, letter) = tocStatusIcon(
+            for: file
+        )
+        var html = "<li class=\"toc-file\""
+        html += " style=\"--toc-indent: \(indent)px;"
+        html += "\">"
+        html += "<button type=\"button\""
+        html += " class=\"toc-file-label\""
+        html += " data-target=\"file-card-\(index)\""
+        html += " title=\""
+        html += htmlEscape(file.path)
+        html += "\">"
+        html += "<span class=\"toc-status \(statusClass)"
+        html += "\" aria-hidden=\"true\">\(letter)"
+        html += "</span>"
+        html += "<span class=\"toc-file-name\">"
+        html += htmlEscape(leafName)
+        html += "</span></button></li>"
+        return html
+    }
+}
+
+/// Status icon class + single-letter glyph for the
+/// TOC. Uses `effectiveStatus` so the same
+/// rename-with-mods → "modified" promotion that the
+/// file card badge applies is mirrored here, keeping
+/// both views in lockstep.
+private func tocStatusIcon(
+    for file: GdiffFile
+) -> (String, String) {
+    switch effectiveStatus(for: file) {
+    case "added":
+        return ("toc-status-added", "A")
+    case "deleted":
+        return ("toc-status-deleted", "D")
+    case "renamed":
+        return ("toc-status-renamed", "R")
+    case "binary":
+        return ("toc-status-binary", "B")
+    default:
+        return ("toc-status-modified", "M")
+    }
+}
+
+/// Chevron-down SVG used on folder rows. CSS
+/// rotates to -90° when the parent `<li>` has the
+/// `.collapsed` class, so we only ship one glyph.
+private func tocChevronSVG() -> String {
+    let path = ""
+        + "M12.78 5.22a.749.749 0 010 1.06l-4.25"
+        + " 4.25a.749.749 0 01-1.06 0L3.22 6.28a.749"
+        + ".749 0 111.06-1.06L8 9.939l3.72-3.719a"
+        + ".749.749 0 011.06 0z"
+    return "<svg class=\"toc-chevron\""
+        + " viewBox=\"0 0 16 16\" width=\"12\""
+        + " height=\"12\" fill=\"currentColor\""
+        + " aria-hidden=\"true\">"
+        + "<path d=\"\(path)\"/></svg>"
+}
+
 // MARK: - Utility
 
+/// CSS class + human label for a file's status
+/// badge. Renamed files without any content changes
+/// show as "renamed" (useful signal: just moved —
+/// nothing to review inside); renamed files WITH
+/// content changes show as "modified" instead, since
+/// the content diff is what the reviewer actually
+/// cares about and an "R" badge would suggest the
+/// opposite. The old→new path is still visible
+/// inside the file card body.
 private func statusBadge(
-    for status: String
+    for file: GdiffFile
 ) -> (String, String) {
-    switch status {
+    switch effectiveStatus(for: file) {
     case "added":
         return ("status-added", "added")
     case "deleted":
@@ -2325,6 +2776,21 @@ private func statusBadge(
     default:
         return ("status-modified", "modified")
     }
+}
+
+/// Resolves the status we actually want to show the
+/// user — promoting a renamed-with-content-change
+/// file to "modified" so the TOC badge and the file
+/// card header tell the same story.
+private func effectiveStatus(
+    for file: GdiffFile
+) -> String {
+    if file.status == "renamed"
+        && !file.hunks.isEmpty
+    {
+        return "modified"
+    }
+    return file.status
 }
 
 private func countChanges(
@@ -3056,6 +3522,51 @@ private let fileCollapseJS: String = """
             showCopiedFeedback(btn);
         }
     });
+})();
+"""
+
+/// JS for the TOC sidebar: folder chevron toggle and
+/// click-to-scroll on file rows. All the tree data
+/// is static in the rendered HTML — this script just
+/// wires up the two interactions without needing any
+/// model reflection back into Swift.
+///
+/// The file click-to-scroll deliberately does NOT
+/// force-expand a collapsed file card (the user hit
+/// the "Viewed" checkbox for a reason) — it scrolls
+/// to the card header and leaves it up to the user
+/// to click the chevron if they want to re-expand.
+private let tocNavJS: String = """
+(function() {
+    document.querySelectorAll('.toc-folder-label')
+        .forEach(function(btn) {
+            btn.addEventListener('click', function(e) {
+                e.preventDefault();
+                var folder = btn.closest('.toc-folder');
+                if (!folder) return;
+                folder.classList.toggle('collapsed');
+                var expanded = !folder.classList
+                    .contains('collapsed');
+                btn.setAttribute(
+                    'aria-expanded', String(expanded)
+                );
+            });
+        });
+
+    document.querySelectorAll('.toc-file-label')
+        .forEach(function(btn) {
+            btn.addEventListener('click', function(e) {
+                e.preventDefault();
+                var id = btn.getAttribute('data-target');
+                if (!id) return;
+                var card = document.getElementById(id);
+                if (!card) return;
+                card.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'start'
+                });
+            });
+        });
 })();
 """
 
