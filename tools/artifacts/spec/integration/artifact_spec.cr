@@ -219,6 +219,261 @@ describe "CLI artifact commands", tags: "integration" do
       result[:status].should eq(0)
       result[:output].should contain("type: code")
     end
+
+    it "publishes artifact.show socket event (source-path)" do
+      source = create_test_file(
+        "save-event.csv", "data",
+      )
+
+      sock_path = SPEC_GALAXY_DIR / "galaxy.sock"
+      received = Channel(String?).new(1)
+
+      server = UNIXServer.new(sock_path.to_s)
+      spawn do
+        begin
+          client = server.accept
+          line = client.gets
+          received.send(line)
+          client.close
+        rescue
+          received.send(nil)
+        end
+      end
+
+      begin
+        sleep 10.milliseconds
+
+        ledger_bin = SPEC_GALAXY_DIR / "bin" /
+                     "galaxy-ledger"
+        File.write(
+          ledger_bin,
+          "#!/bin/sh\n" \
+          "echo '{\"session_identifiers\":[]}'\n",
+        )
+        File.chmod(ledger_bin, 0o755)
+
+        result = run_binary(
+          [
+            "save", "--ledger-session-id", "1",
+            "--source-path", source,
+            "--title", "Save event test",
+            "--artifact-type", "csv",
+            "--mime-type", "text/csv",
+          ],
+          extra_env: {
+            "GALAXY_LEDGER_BIN" => ledger_bin.to_s,
+          },
+        )
+        result[:status].should eq(0)
+
+        select
+        when line = received.receive
+          line.should_not be_nil
+          if json_line = line
+            parsed = JSON.parse(json_line)
+            parsed["event"].as_s
+              .should eq("artifact.show")
+            detail = parsed["detail_data"]
+            detail["artifact_number"].as_i
+              .should eq(1)
+          end
+        when timeout(2.seconds)
+          fail "Timed out waiting for socket event"
+        end
+      ensure
+        server.close rescue nil
+        File.delete(sock_path.to_s) \
+          if File.exists?(sock_path.to_s)
+      end
+    end
+
+    it "skips artifact.show with --skip-event (source-path)" do
+      source = create_test_file(
+        "save-silent.csv", "data",
+      )
+
+      sock_path = SPEC_GALAXY_DIR / "galaxy.sock"
+      received = Channel(String?).new(1)
+
+      server = UNIXServer.new(sock_path.to_s)
+      spawn do
+        begin
+          client = server.accept
+          line = client.gets
+          received.send(line)
+          client.close
+        rescue
+          received.send(nil)
+        end
+      end
+
+      begin
+        sleep 10.milliseconds
+
+        ledger_bin = SPEC_GALAXY_DIR / "bin" /
+                     "galaxy-ledger"
+        File.write(
+          ledger_bin,
+          "#!/bin/sh\n" \
+          "echo '{\"session_identifiers\":[]}'\n",
+        )
+        File.chmod(ledger_bin, 0o755)
+
+        result = run_binary(
+          [
+            "save", "--ledger-session-id", "1",
+            "--source-path", source,
+            "--title", "Silent save",
+            "--artifact-type", "csv",
+            "--mime-type", "text/csv",
+            "--skip-event",
+          ],
+          extra_env: {
+            "GALAXY_LEDGER_BIN" => ledger_bin.to_s,
+          },
+        )
+        result[:status].should eq(0)
+
+        # Expect NO artifact.show. Short timeout; any
+        # event received means the --skip-event gate
+        # leaked.
+        select
+        when line = received.receive
+          if json_line = line
+            parsed = JSON.parse(json_line)
+            parsed["event"].as_s
+              .should_not eq("artifact.show")
+          end
+        when timeout(500.milliseconds)
+          # Expected — no event arrives.
+        end
+      ensure
+        server.close rescue nil
+        File.delete(sock_path.to_s) \
+          if File.exists?(sock_path.to_s)
+      end
+    end
+
+    it "publishes artifact.show socket event (stdin)" do
+      sock_path = SPEC_GALAXY_DIR / "galaxy.sock"
+      received = Channel(String?).new(1)
+
+      server = UNIXServer.new(sock_path.to_s)
+      spawn do
+        begin
+          client = server.accept
+          line = client.gets
+          received.send(line)
+          client.close
+        rescue
+          received.send(nil)
+        end
+      end
+
+      begin
+        sleep 10.milliseconds
+
+        ledger_bin = SPEC_GALAXY_DIR / "bin" /
+                     "galaxy-ledger"
+        File.write(
+          ledger_bin,
+          "#!/bin/sh\n" \
+          "echo '{\"session_identifiers\":[]}'\n",
+        )
+        File.chmod(ledger_bin, 0o755)
+
+        result = run_binary(
+          [
+            "save", "--ledger-session-id", "1",
+            "--filename", "stdin-event.txt",
+            "--title", "Stdin event test",
+          ],
+          stdin: "piped content",
+          extra_env: {
+            "GALAXY_LEDGER_BIN" => ledger_bin.to_s,
+          },
+        )
+        result[:status].should eq(0)
+
+        select
+        when line = received.receive
+          line.should_not be_nil
+          if json_line = line
+            parsed = JSON.parse(json_line)
+            parsed["event"].as_s
+              .should eq("artifact.show")
+            detail = parsed["detail_data"]
+            detail["artifact_number"].as_i
+              .should eq(1)
+          end
+        when timeout(2.seconds)
+          fail "Timed out waiting for socket event"
+        end
+      ensure
+        server.close rescue nil
+        File.delete(sock_path.to_s) \
+          if File.exists?(sock_path.to_s)
+      end
+    end
+
+    it "skips artifact.show with --skip-event (stdin)" do
+      sock_path = SPEC_GALAXY_DIR / "galaxy.sock"
+      received = Channel(String?).new(1)
+
+      server = UNIXServer.new(sock_path.to_s)
+      spawn do
+        begin
+          client = server.accept
+          line = client.gets
+          received.send(line)
+          client.close
+        rescue
+          received.send(nil)
+        end
+      end
+
+      begin
+        sleep 10.milliseconds
+
+        ledger_bin = SPEC_GALAXY_DIR / "bin" /
+                     "galaxy-ledger"
+        File.write(
+          ledger_bin,
+          "#!/bin/sh\n" \
+          "echo '{\"session_identifiers\":[]}'\n",
+        )
+        File.chmod(ledger_bin, 0o755)
+
+        result = run_binary(
+          [
+            "save", "--ledger-session-id", "1",
+            "--filename", "stdin-silent.txt",
+            "--title", "Stdin silent",
+            "--skip-event",
+          ],
+          stdin: "piped content",
+          extra_env: {
+            "GALAXY_LEDGER_BIN" => ledger_bin.to_s,
+          },
+        )
+        result[:status].should eq(0)
+
+        select
+        when line = received.receive
+          if json_line = line
+            parsed = JSON.parse(json_line)
+            parsed["event"].as_s
+              .should_not eq("artifact.show")
+          end
+        when timeout(500.milliseconds)
+          # Expected — no event arrives.
+        end
+      ensure
+        server.close rescue nil
+        File.delete(sock_path.to_s) \
+          if File.exists?(sock_path.to_s)
+      end
+    end
   end
 
   describe "list" do

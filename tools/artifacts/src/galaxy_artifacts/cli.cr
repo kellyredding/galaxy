@@ -194,6 +194,7 @@ module GalaxyArtifacts
       mime_type : String? = nil
       content_hash_arg : String? = nil
       file_size_arg : Int64? = nil
+      skip_event = false
 
       i = 0
       while i < args.size
@@ -279,6 +280,9 @@ module GalaxyArtifacts
             STDERR.puts "Error: --file-size requires a value"
             exit(1)
           end
+        when "--skip-event"
+          skip_event = true
+          i += 1
         else
           STDERR.puts "Error: Unknown option '#{arg}'"
           STDERR.puts "Run 'galaxy-artifacts save --help' for usage"
@@ -310,6 +314,7 @@ module GalaxyArtifacts
           description: description,
           artifact_type: artifact_type,
           mime_type: mime_type,
+          skip_event: skip_event,
         )
         return
       end
@@ -418,6 +423,27 @@ module GalaxyArtifacts
 
       action_label = result.action.insert? ? "saved" : "updated"
       puts "Artifact ##{number} #{action_label} (title: \"#{artifact_title}\", type: #{effective_artifact_type}, size: #{format_file_size(fsize)})"
+
+      # Publish artifact.show so Galaxy.app opens the saved
+      # artifact in its reader. Fires for every action
+      # variant (insert/version_update/enrichment) — the
+      # user's intent in running `save` is "put this in
+      # front of me," regardless of whether it was a new
+      # save or a re-save of identical content. Skipped
+      # when --skip-event is set (in-app callers that
+      # handle their own UI updates).
+      unless skip_event
+        detail = JSON.build do |json|
+          json.object do
+            json.field "artifact_number", number
+          end
+        end
+        EventPublisher.publish(
+          ledger_session_id,
+          event: "artifact.show",
+          detail_data: detail,
+        )
+      end
     end
 
     # Save an artifact from stdin. No source file, no dedup —
@@ -430,6 +456,7 @@ module GalaxyArtifacts
       description : String?,
       artifact_type : String?,
       mime_type : String?,
+      skip_event : Bool = false,
     )
       unless filename
         STDERR.puts(
@@ -520,6 +547,27 @@ module GalaxyArtifacts
       )
 
       puts "Artifact ##{number} saved (title: \"#{artifact_title}\", type: #{effective_artifact_type}, size: #{format_file_size(fsize)})"
+
+      # Publish artifact.show so Galaxy.app opens the
+      # saved artifact in its reader. Same rationale as
+      # the source-path save path — the user running
+      # `save` wants to see the artifact; the stdin
+      # streaming variant is the one most commonly piped
+      # from other CLIs (galaxy-diff capture, pandoc,
+      # etc.), so this is the hottest path for auto-open.
+      # Skipped when --skip-event is set.
+      unless skip_event
+        detail = JSON.build do |json|
+          json.object do
+            json.field "artifact_number", number
+          end
+        end
+        EventPublisher.publish(
+          ledger_session_id,
+          event: "artifact.show",
+          detail_data: detail,
+        )
+      end
     end
 
     # ============================================================
@@ -2964,6 +3012,7 @@ module GalaxyArtifacts
         --mime-type MIME        MIME type (default: "application/octet-stream")
         --content-hash HASH     SHA256 hash (default: computed; source-path only)
         --file-size BYTES       File size in bytes (default: computed; source-path only)
+        --skip-event            Skip socket event publish
 
       DESCRIPTION:
         With --source-path: copies the file to artifact storage and creates
@@ -2976,6 +3025,10 @@ module GalaxyArtifacts
         storage in 64 KB chunks. No source file is created or maintained,
         and no dedup applies — each invocation creates a new artifact. Use
         for ephemeral content like diffs or piped output.
+
+        Also publishes an artifact.show socket event so Galaxy.app opens
+        the saved artifact in its reader automatically. Use --skip-event
+        when the caller handles its own UI updates (e.g., in-app callers).
       HELP
     end
 

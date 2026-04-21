@@ -29,22 +29,11 @@ module GalaxyArtifacts
     ## Terminology
 
     When the user says "open", "show", "view", or "pull up" an
-    artifact, they mean **show it in Galaxy.app**. Always use the
-    `show` subcommand for this — never the `open` subcommand.
-
-    ## Showing Artifacts
-
-    Show an artifact in Galaxy.app's reader. This is the primary
-    way users interact with artifacts. Galaxy.app handles all
-    renderable types (markdown, source, CSV, HTML, images, etc.)
-    and falls back to the macOS default app for unsupported types.
-
-    ```bash
-    galaxy-artifacts show --pid $LEDGER_PID N
-    ```
-
-    Use this whenever the user says "open", "show", "view",
-    "pull up", or "show me" an artifact.
+    artifact, they mean **show it in Galaxy.app**. Use the
+    `show` subcommand (not `open`) to re-open an existing
+    artifact. When creating an artifact, the new save/refresh
+    already fires the show event automatically — no extra
+    `show` call is needed.
 
     ## Creating Artifacts
 
@@ -60,16 +49,12 @@ module GalaxyArtifacts
       --description "Context about what this artifact contains"
     ```
 
-    **Always show after creating.** Parse the artifact number
-    from the save output (e.g., "Artifact #3 saved"), then:
-
-    ```bash
-    galaxy-artifacts show --pid $LEDGER_PID N
-    ```
-
-    The source file is copied to artifact storage. The original
-    is left in place. If the same source path was already saved
-    in this session, the existing artifact is updated (not
+    `save` automatically publishes the show event so Galaxy.app
+    opens the new artifact in its reader — do NOT follow up
+    with a `show` call on the same artifact number. The source
+    file is copied to artifact storage. The original is left
+    in place. If the same source path was already saved in
+    this session, the existing artifact is updated (not
     duplicated).
 
     ## Creating Artifacts from Stdin
@@ -88,9 +73,24 @@ module GalaxyArtifacts
       --description "Context about what this contains"
     ```
 
-    No source file is created or maintained, and no dedup
-    applies — each invocation creates a new artifact. Always
-    show after creating.
+    Same auto-open behavior as file-based save — no separate
+    show call needed. No source file is created or maintained,
+    and no dedup applies — each invocation creates a new
+    artifact.
+
+    ## Showing an Existing Artifact
+
+    To re-open an already-saved artifact in Galaxy.app's
+    reader:
+
+    ```bash
+    galaxy-artifacts show --pid $LEDGER_PID N
+    ```
+
+    Use this whenever the user says "open", "show", "view",
+    "pull up", or "show me" a specific artifact by number or
+    title. Do NOT use it immediately after `save` — save
+    already opens the artifact.
 
     ## Refreshing Artifacts
 
@@ -153,7 +153,8 @@ module GalaxyArtifacts
     - Auto-captured artifacts get a generated title from
       filename; manually saved artifacts should have
       descriptive titles
-    - Creating an artifact always implies showing it afterward
+    - `save` and `refresh` fire the show event automatically;
+      use `show` only to re-open an existing artifact
     SKILL
 
     ARTIFACTS_SKILLS = {
