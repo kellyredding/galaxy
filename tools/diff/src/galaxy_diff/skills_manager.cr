@@ -38,12 +38,10 @@ module GalaxyDiff
       --description "CONTEXT"
     ```
 
-    **Always show after creating.** Parse the artifact number
-    from the save output, then:
-
-    ```bash
-    galaxy-artifacts show --pid $LEDGER_PID N
-    ```
+    `save` automatically publishes the show event so Galaxy.app
+    opens the new diff in its reader — no separate show step
+    is needed. To re-open an existing diff later, use
+    `galaxy-artifacts show --pid $LEDGER_PID N`.
 
     ## Capture Options
 
