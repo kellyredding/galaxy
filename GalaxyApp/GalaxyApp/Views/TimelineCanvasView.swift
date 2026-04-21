@@ -1533,47 +1533,44 @@ struct TimelineItemTooltip: View {
                 .foregroundColor(.primary)
             }
 
-            // Timestamp
-            Text(
-                Self.dateTimeFormatter.string(
-                    from: item.event.occurredAt
-                )
-            )
-            .font(.system(
-                size: 10, design: .monospaced
-            ))
-            .foregroundColor(
-                .secondary
-            )
-
-            // Duration end time (for bars)
+            // Timestamp (one line: "date start → end").
+            // For open-ended bars, the "ongoing"
+            // suffix uses a dimmed secondary color via
+            // Text concatenation so the distinction is
+            // still visible without forcing the end
+            // time onto its own line.
+            let startStr = Self.dateTimeFormatter
+                .string(from: item.event.occurredAt)
             if let endEvt = item.endEvent {
                 Text(
-                    "→ "
-                        + Self.timeFormatter
-                            .string(
-                                from: endEvt
-                                    .occurredAt
-                            )
+                    startStr + " → "
+                        + Self.timeFormatter.string(
+                            from: endEvt.occurredAt
+                        )
                 )
                 .font(.system(
-                    size: 10,
-                    design: .monospaced
+                    size: 10, design: .monospaced
                 ))
-                .foregroundColor(
-                    .secondary
-                )
+                .foregroundColor(.secondary)
             } else if case .bar(let b) = item,
                 b.isOpenEnded
             {
-                Text("→ ongoing")
+                (Text(startStr)
+                    .foregroundColor(.secondary)
+                + Text(" → ongoing")
+                    .foregroundColor(
+                        .secondary.opacity(0.7)
+                    ))
+                .font(.system(
+                    size: 10, design: .monospaced
+                ))
+            } else {
+                Text(startStr)
                     .font(.system(
                         size: 10,
                         design: .monospaced
                     ))
-                    .foregroundColor(
-                        .secondary.opacity(0.7)
-                    )
+                    .foregroundColor(.secondary)
             }
 
             // Detail lines — for bars with an end event,
@@ -1601,7 +1598,7 @@ struct TimelineItemTooltip: View {
         .padding(.vertical, 8)
         .frame(
             minWidth: 140,
-            maxWidth: 260,
+            maxWidth: 380,
             alignment: .leading
         )
         .background(
@@ -1663,12 +1660,57 @@ struct TimelineItemTooltip: View {
     }
 
     /// Detail lines from both start and end events.
-    /// For dots: just the event's detail lines.
-    /// For bars: start lines + end lines concatenated.
+    /// For dots: just the event's detail lines. For
+    /// bars: start + end lines concatenated.
+    ///
+    /// Artifact events take a special path: the
+    /// identity (type · #N, title) is pulled once
+    /// from whichever event carries it, then the
+    /// per-event "facts" (trigger, reason, size
+    /// delta, etc.) concatenate below. This avoids
+    /// the "#13 + title repeated twice" duplication
+    /// you'd otherwise get from a duration pair.
     private var tooltipDetails: [String] {
+        let startType = item.event.eventType
+
+        if startType.hasPrefix("artifact:") {
+            // Try start event first for identity,
+            // fall back to end event if its
+            // detail_data is incomplete.
+            var identity = TimelineTooltipFormatter
+                .artifactIdentityLines(
+                    detailData: item.event.detailData
+                )
+            if identity.isEmpty,
+               let endEvt = item.endEvent
+            {
+                identity = TimelineTooltipFormatter
+                    .artifactIdentityLines(
+                        detailData: endEvt.detailData
+                    )
+            }
+
+            var facts = TimelineTooltipFormatter
+                .detailLines(
+                    for: startType,
+                    detailData: item.event.detailData
+                )
+            if let endEvt = item.endEvent {
+                facts += TimelineTooltipFormatter
+                    .detailLines(
+                        for: endEvt.eventType,
+                        detailData: endEvt.detailData
+                    )
+            }
+
+            return identity + facts
+        }
+
+        // Non-artifact events keep the existing
+        // concatenation behavior — no change.
         var lines = TimelineTooltipFormatter
             .detailLines(
-                for: item.event.eventType,
+                for: startType,
                 detailData: item.event.detailData
             )
         if let endEvt = item.endEvent {

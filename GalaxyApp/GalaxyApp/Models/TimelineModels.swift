@@ -503,6 +503,10 @@ enum TimelineTooltipFormatter {
             return "Artifact Updated"
         case "artifact:deleted":
             return "Artifact Deleted"
+        case "artifact:opened":
+            return "Artifact Opened"
+        case "artifact:closed":
+            return "Artifact Closed"
         case "artifact:reviewed":
             return "Artifact Reviewed"
         case "agent:started":
@@ -1090,22 +1094,79 @@ enum TimelineTooltipFormatter {
 
     // MARK: - Artifact Formatters
 
+    /// Two-line identity header for artifact event
+    /// tooltips: line 1 = "{type} · #{number}", line 2
+    /// = title (truncated to 60 chars). Called ONCE per
+    /// tooltip even for duration pairs — the identity
+    /// doesn't change between opened and closed, so
+    /// rendering it from both ends duplicated the
+    /// information. Returns fewer lines when fields are
+    /// missing (empty array if no number/type/title at
+    /// all). Handles both `number` (created/updated/
+    /// deleted) and `artifact_number` (opened/closed/
+    /// reviewed) detail-data keys.
+    static func artifactIdentityLines(
+        detailData: String?
+    ) -> [String] {
+        guard let d = parseDetailDict(detailData)
+        else { return [] }
+
+        var lines: [String] = []
+
+        let num = (d["number"] as? Int)
+            ?? (d["artifact_number"] as? Int)
+        let type = d["artifact_type"] as? String
+
+        // Line 1: "type · #N" — with graceful fallback
+        // if either field is missing.
+        if let num = num, let type = type {
+            lines.append("\(type) · #\(num)")
+        } else if let num = num {
+            lines.append("#\(num)")
+        } else if let type = type {
+            lines.append(type)
+        }
+
+        // Line 2: title (truncated). Bumped from the
+        // previous 40-char limit to 60 chars — the
+        // tooltip was widened to 380pt specifically to
+        // give the title room to breathe on its own
+        // line.
+        if let title = d["title"] as? String {
+            let truncated = title.count > 60
+                ? String(title.prefix(57)) + "…"
+                : title
+            lines.append(truncated)
+        }
+
+        return lines
+    }
+
+    /// Small helper — shared JSON parse used by
+    /// artifactIdentityLines and the per-event facts
+    /// formatters below.
+    private static func parseDetailDict(
+        _ detailData: String?
+    ) -> [String: Any]? {
+        guard let data = detailData,
+              let jsonData = data.data(using: .utf8),
+              let dict = try? JSONSerialization
+                  .jsonObject(with: jsonData)
+                  as? [String: Any]
+        else { return nil }
+        return dict
+    }
+
+    // Per-event "facts only" formatters — identity
+    // (number, title, type) is handled by
+    // artifactIdentityLines. These emit only the
+    // fields that distinguish THIS event from others
+    // (trigger, size delta, reason, annotation count).
+
     private static func artifactCreatedLines(
         _ d: [String: Any]
     ) -> [String] {
         var lines: [String] = []
-        if let num = d["number"] as? Int {
-            lines.append("#\(num)")
-        }
-        if let title = d["title"] as? String {
-            let truncated = title.count > 40
-                ? String(title.prefix(37)) + "…"
-                : title
-            lines.append(truncated)
-        }
-        if let type = d["artifact_type"] as? String {
-            lines.append("type: \(type)")
-        }
         if let size = d["file_size"] as? Int {
             lines.append(
                 "size: \(formatFileSize(size))"
@@ -1121,15 +1182,6 @@ enum TimelineTooltipFormatter {
         _ d: [String: Any]
     ) -> [String] {
         var lines: [String] = []
-        if let num = d["number"] as? Int {
-            lines.append("#\(num)")
-        }
-        if let title = d["title"] as? String {
-            let truncated = title.count > 40
-                ? String(title.prefix(37)) + "…"
-                : title
-            lines.append(truncated)
-        }
         if let size = d["file_size"] as? Int,
             let prev = d["previous_file_size"] as? Int
         {
@@ -1150,40 +1202,16 @@ enum TimelineTooltipFormatter {
     private static func artifactDeletedLines(
         _ d: [String: Any]
     ) -> [String] {
-        var lines: [String] = []
-        if let num = d["number"] as? Int {
-            lines.append("#\(num)")
-        }
-        if let title = d["title"] as? String {
-            let truncated = title.count > 40
-                ? String(title.prefix(37)) + "…"
-                : title
-            lines.append(truncated)
-        }
-        if let type = d["artifact_type"] as? String {
-            lines.append("type: \(type)")
-        }
-        return lines
+        // No distinguishing facts beyond identity —
+        // return empty; the tooltip body will be just
+        // the identity lines.
+        []
     }
 
     private static func artifactOpenedLines(
         _ d: [String: Any]
     ) -> [String] {
         var lines: [String] = []
-        if let num = d["artifact_number"] as? Int {
-            lines.append("#\(num)")
-        }
-        if let title = d["title"] as? String {
-            let truncated = title.count > 40
-                ? String(title.prefix(37)) + "…"
-                : title
-            lines.append(truncated)
-        }
-        if let type
-            = d["artifact_type"] as? String
-        {
-            lines.append("type: \(type)")
-        }
         if let trigger = d["trigger"] as? String {
             lines.append("trigger: \(trigger)")
         }
@@ -1194,15 +1222,6 @@ enum TimelineTooltipFormatter {
         _ d: [String: Any]
     ) -> [String] {
         var lines: [String] = []
-        if let num = d["artifact_number"] as? Int {
-            lines.append("#\(num)")
-        }
-        if let title = d["title"] as? String {
-            let truncated = title.count > 40
-                ? String(title.prefix(37)) + "…"
-                : title
-            lines.append(truncated)
-        }
         if let reason = d["reason"] as? String {
             lines.append("reason: \(reason)")
         }
@@ -1213,15 +1232,6 @@ enum TimelineTooltipFormatter {
         _ d: [String: Any]
     ) -> [String] {
         var lines: [String] = []
-        if let num = d["artifact_number"] as? Int {
-            lines.append("#\(num)")
-        }
-        if let title = d["title"] as? String {
-            let truncated = title.count > 40
-                ? String(title.prefix(37)) + "…"
-                : title
-            lines.append(truncated)
-        }
         if let count
             = d["annotation_count"] as? Int
         {
