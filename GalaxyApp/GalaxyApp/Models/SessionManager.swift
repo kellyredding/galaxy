@@ -83,6 +83,30 @@ class SessionManager: ObservableObject {
     /// Set by EventCoordinator on artifact.show, cleared by ArtifactsView after opening.
     @Published var pendingArtifactShow: Int32? = nil
 
+    /// Per-session queued artifact/snapshot "show" intents for
+    /// events that arrived while that session wasn't active.
+    /// Drained by `switchTo(sessionId:)` after the view state
+    /// is restored — the session's `lastActiveTab` is also
+    /// overridden to the appropriate tab on queue so the
+    /// existing tab-restore path lands the user on the right
+    /// tab automatically. Kept private because callers go
+    /// through `queueArtifactShow` / `queueSnapshotShow`.
+    ///
+    /// **In-memory only — not persisted.** If Galaxy.app
+    /// restarts (or crashes) between the event arriving and
+    /// the user switching back to the queued session, the
+    /// intent is lost — and the tab override is lost too
+    /// (Session's `lastActiveTab` is per-runtime state, not
+    /// in `toPersistedState`). Explicit trade-off against
+    /// adding disk I/O and persistence-schema complexity for
+    /// a transient UI cue that only matters in the narrow
+    /// window between a CLI `show` firing and the user
+    /// switching back.
+    private var pendingArtifactBySession:
+        [UUID: Int32] = [:]
+    private var pendingSnapshotBySession:
+        [UUID: Int32] = [:]
+
     /// Called when a session is removed from the session list.
     /// Used by EventCoordinator to clean up cached ledger_session_id mappings.
     var onSessionClosed: ((UUID) -> Void)?
@@ -1199,6 +1223,55 @@ class SessionManager: ObservableObject {
     private func restoreViewState(for session: Session) {
         activeTab = session.lastActiveTab
         activeLedgerSubTab = session.lastActiveLedgerSubTab
+        drainPendingShows(for: session)
+    }
+
+    /// Record an artifact.show intent for a session the user
+    /// isn't currently viewing. Overrides that session's
+    /// remembered tab to `.artifacts` so the regular tab
+    /// restore path lands the user on the right tab when they
+    /// later switch to it. Queues the artifact number for the
+    /// drain step in `restoreViewState`.
+    func queueArtifactShow(
+        sessionId: UUID, number: Int32
+    ) {
+        guard let session = sessions.first(
+            where: { $0.id == sessionId }
+        ) else { return }
+        session.lastActiveTab = .artifacts
+        pendingArtifactBySession[sessionId] = number
+    }
+
+    /// Snapshot-side mirror of queueArtifactShow. Overrides
+    /// remembered tab to `.snapshots`, queues the snapshot
+    /// number for drain on next switch.
+    func queueSnapshotShow(
+        sessionId: UUID, number: Int32
+    ) {
+        guard let session = sessions.first(
+            where: { $0.id == sessionId }
+        ) else { return }
+        session.lastActiveTab = .snapshots
+        pendingSnapshotBySession[sessionId] = number
+    }
+
+    /// Drain any queued show intents for the incoming
+    /// session. Called after restoreViewState has set
+    /// activeTab — the pending number fires the same
+    /// published-property that ArtifactsView /
+    /// SnapshotsView already watch, so the reader opens
+    /// without any additional plumbing.
+    private func drainPendingShows(for session: Session) {
+        if let num = pendingArtifactBySession.removeValue(
+            forKey: session.id
+        ) {
+            pendingArtifactShow = num
+        }
+        if let num = pendingSnapshotBySession.removeValue(
+            forKey: session.id
+        ) {
+            pendingSnapshotNumber = num
+        }
     }
 
     func switchTo(sessionId: UUID) {

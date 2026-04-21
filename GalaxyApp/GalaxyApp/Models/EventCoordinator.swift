@@ -34,6 +34,7 @@ final class EventCoordinator {
         "session.metrics",
         "ledger.entry",
         "artifact.show",
+        "snapshot.show",
         // Lifecycle events (timeline → DB → socket)
         "timeline.session:started",
         "timeline.session:resumed",
@@ -413,9 +414,14 @@ final class EventCoordinator {
         // Check if we handle this event type
         guard Self.knownEvents.contains(envelope.event) else { return }
 
-        // Snapshot-specific handling: switch tab and queue auto-open.
-        // The snapshot_number comes from the timeline event's
-        // detail_data (populated by TimelinePublisher).
+        // Snapshot created: notification-only now. The
+        // tab-switch + pending-open side effects moved to
+        // the snapshot.show handler below, which
+        // galaxy-snapshots create also publishes. This
+        // keeps timeline.snapshot:created faithful to its
+        // name (a timeline record) and decouples
+        // "recording an event happened" from "open this
+        // in the reader."
         if envelope.event == "timeline.snapshot:created",
            let number = envelope.detailValue(
                "snapshot_number", as: Int64.self
@@ -429,14 +435,6 @@ final class EventCoordinator {
                     self?.ledgerSessionIdCache[
                         envelope.ledgerSessionId
                     ]
-
-                // Auto-switch for active session
-                if let appSessionId,
-                   appSessionId == sm.activeSessionId
-                {
-                    sm.activeTab = .snapshots
-                    sm.pendingSnapshotNumber = snapNumber
-                }
 
                 // Snapshot Created notification
                 if SettingsManager.shared.settings
@@ -466,11 +464,45 @@ final class EventCoordinator {
             }
         }
 
-        // Artifact show: switch tab and queue auto-open,
-        // but only for the active session. Matches the
-        // conservative approach of snapshot:created —
-        // don't yank the user away from a different
-        // session they're viewing.
+        // Snapshot show: switch tab + open the snapshot
+        // in the reader. If the event's session is
+        // active, apply immediately. Otherwise queue
+        // via SessionManager — when the user later
+        // switches to that session, the tab + reader
+        // come up "ready."
+        if envelope.event == "snapshot.show",
+           let number = envelope.detailValue(
+               "snapshot_number", as: Int64.self
+           )
+        {
+            let snapNumber = Int32(number)
+            DispatchQueue.main.async { [weak self] in
+                guard let sm = self?.sessionManager
+                else { return }
+                let appSessionId =
+                    self?.ledgerSessionIdCache[
+                        envelope.ledgerSessionId
+                    ]
+                guard let appSessionId else { return }
+
+                if appSessionId == sm.activeSessionId {
+                    sm.activeTab = .snapshots
+                    sm.pendingSnapshotNumber = snapNumber
+                } else {
+                    sm.queueSnapshotShow(
+                        sessionId: appSessionId,
+                        number: snapNumber
+                    )
+                }
+            }
+            return
+        }
+
+        // Artifact show: switch tab + open the artifact
+        // in the reader. Parallel to snapshot.show above
+        // — active-session path applies immediately,
+        // non-active-session path queues via
+        // SessionManager for delivery on next switch.
         if envelope.event == "artifact.show",
            let number = envelope.detailValue(
                "artifact_number", as: Int64.self
@@ -484,13 +516,16 @@ final class EventCoordinator {
                     self?.ledgerSessionIdCache[
                         envelope.ledgerSessionId
                     ]
+                guard let appSessionId else { return }
 
-                if let appSessionId,
-                   appSessionId == sm.activeSessionId
-                {
+                if appSessionId == sm.activeSessionId {
                     sm.activeTab = .artifacts
-                    sm.pendingArtifactShow
-                        = artNumber
+                    sm.pendingArtifactShow = artNumber
+                } else {
+                    sm.queueArtifactShow(
+                        sessionId: appSessionId,
+                        number: artNumber
+                    )
                 }
             }
             return
