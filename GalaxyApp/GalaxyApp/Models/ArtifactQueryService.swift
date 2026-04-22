@@ -47,6 +47,52 @@ class ArtifactQueryService {
         return response.artifacts
     }
 
+    /// Find the artifact whose source_path matches the given
+    /// filesystem path. Compares on a normalized form
+    /// (tilde-expanded, symlinks resolved) so callers can pass
+    /// raw paths. Falls back to a filename-only match when the
+    /// full-path comparison misses, which covers the common case
+    /// of a path captured before a directory rename.
+    func artifact(
+        forSourcePath path: String,
+        in ledgerSessionId: Int64
+    ) async throws -> ArtifactSummary? {
+        let list = try await fetchArtifacts(
+            ledgerSessionId: ledgerSessionId
+        )
+        let target = Self.normalizedPath(path)
+        if let exact = list.first(where: {
+            guard let src = $0.sourcePath else {
+                return false
+            }
+            return Self.normalizedPath(src) == target
+        }) {
+            return exact
+        }
+        let targetFilename =
+            (target as NSString).lastPathComponent
+        return list.first { summary in
+            guard let source = summary.sourcePath else {
+                return false
+            }
+            return (source as NSString).lastPathComponent
+                == targetFilename
+        }
+    }
+
+    /// Normalize a filesystem path for equality comparison.
+    /// Expands leading `~`, standardizes the URL form
+    /// (collapses `//`, resolves `.`/`..`), and follows
+    /// symlinks when the file exists. Returns the original
+    /// expanded path when symlink resolution fails.
+    static func normalizedPath(_ s: String) -> String {
+        let expanded =
+            (s as NSString).expandingTildeInPath
+        let url = URL(fileURLWithPath: expanded)
+        return url.standardizedFileURL
+            .resolvingSymlinksInPath().path
+    }
+
     // MARK: - Annotations
 
     /// Fetch all annotations for an artifact.

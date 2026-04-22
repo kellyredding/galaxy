@@ -55,6 +55,14 @@ struct AgentsView: View {
     @State private var isBackHovered: Bool = false
     @State private var escapeMonitor: Any? = nil
 
+    // Transcript → artifact resolution for the detail view.
+    // Populated by resolveTranscriptArtifact() when an agent is
+    // opened. Nil means "not resolved yet" or "no matching
+    // artifact"; the UI degrades to plain text either way.
+    @State private var transcriptArtifact:
+        ArtifactSummary? = nil
+    @State private var isTranscriptHovered: Bool = false
+
     // Focus state for keyboard navigation
     @State private var focusedIndex: Int? = nil
 
@@ -158,6 +166,12 @@ struct AgentsView: View {
         }
         .onChange(of: sessionManager.activeSessionId) {
             updateEscapeMonitor()
+        }
+        // Resolve transcript → artifact whenever a new agent
+        // is opened. Keyed on agentId so switching between
+        // agents cancels any in-flight lookup.
+        .task(id: selectedAgent?.agentId) {
+            await resolveTranscriptArtifact()
         }
         .onDisappear {
             removeEscapeMonitor()
@@ -475,10 +489,22 @@ struct AgentsView: View {
                     )
                 }
                 if let path = agent.transcriptPath {
-                    detailField(
-                        "Transcript",
-                        abbreviatePath(path)
-                    )
+                    if let artifact = transcriptArtifact {
+                        detailLinkField(
+                            "Transcript",
+                            abbreviatePath(path),
+                            action: {
+                                openTranscriptArtifact(
+                                    artifact
+                                )
+                            }
+                        )
+                    } else {
+                        detailField(
+                            "Transcript",
+                            abbreviatePath(path)
+                        )
+                    }
                 }
             }
 
@@ -546,6 +572,40 @@ struct AgentsView: View {
             Text(value)
                 .chromeFont(size: fontSize.caption)
                 .textSelection(.enabled)
+        }
+    }
+
+    /// Link-styled variant of `detailField`. Renders the value
+    /// in the accent color, underlines it on hover, and swaps
+    /// the cursor to the pointing hand — same signals macOS
+    /// users expect from clickable text. The action fires on
+    /// click.
+    private func detailLinkField(
+        _ label: String,
+        _ value: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(label)
+                .chromeFont(size: fontSize.caption)
+                .foregroundColor(.secondary)
+                .frame(width: 90, alignment: .trailing)
+            Button(action: action) {
+                Text(value)
+                    .chromeFont(size: fontSize.caption)
+                    .foregroundColor(.accentColor)
+                    .underline(isTranscriptHovered)
+            }
+            .buttonStyle(.plain)
+            .help("Open in Artifacts")
+            .onHover { hovering in
+                isTranscriptHovered = hovering
+                if hovering {
+                    NSCursor.pointingHand.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
         }
     }
 
@@ -670,6 +730,63 @@ struct AgentsView: View {
                 )
             }
         }
+    }
+
+    /// Look up the artifact whose source_path matches the
+    /// selected agent's transcript file. Called from a
+    /// `.task(id:)` keyed on agentId — it auto-cancels when
+    /// the user switches agents. Results seed the session's
+    /// artifact title cache so NavigationCoordinator can
+    /// render a real title on the first history push instead
+    /// of "Artifact #N".
+    @MainActor
+    private func resolveTranscriptArtifact() async {
+        // Reset eagerly — until we confirm a match, the
+        // transcript renders as plain text.
+        transcriptArtifact = nil
+
+        guard let agent = selectedAgent,
+              let path = agent.transcriptPath,
+              let lsid = session.ledgerSessionId
+        else { return }
+
+        do {
+            let match = try await ArtifactQueryService
+                .shared
+                .artifact(
+                    forSourcePath: path, in: lsid
+                )
+            guard !Task.isCancelled,
+                  selectedAgent?.agentId
+                    == agent.agentId
+            else { return }
+            if let found = match {
+                transcriptArtifact = found
+                session.recordArtifactInfo(
+                    number: found.number,
+                    title: found.title,
+                    type: found.artifactType
+                )
+            }
+        } catch {
+            guard !Task.isCancelled else { return }
+            GalaxyLog.events(
+                "AgentsView transcript artifact"
+                + " lookup failed: \(error)"
+            )
+        }
+    }
+
+    /// Navigate to the artifact reader for the given
+    /// artifact. Mutations to `openArtifactNumber` and
+    /// `activeTab` are observed by NavigationCoordinator,
+    /// which debounces them into a single history entry —
+    /// Back returns the user to this agent detail page.
+    private func openTranscriptArtifact(
+        _ artifact: ArtifactSummary
+    ) {
+        session.openArtifactNumber = artifact.number
+        sessionManager.activeTab = .artifacts
     }
 
     /// Seed the session's agent title cache so
