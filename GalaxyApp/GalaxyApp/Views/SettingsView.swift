@@ -472,15 +472,15 @@ struct NotificationsSettingsTab: View {
                                     .bellSound
                             ) {
                                 Text(
-                                    SoundPreference.system
-                                        .displayName
-                                )
-                                .tag(SoundPreference.system)
-                                Text(
                                     SoundPreference.none
                                         .displayName
                                 )
                                 .tag(SoundPreference.none)
+                                Text(
+                                    SoundPreference.system
+                                        .displayName
+                                )
+                                .tag(SoundPreference.system)
 
                                 Divider()
 
@@ -736,6 +736,59 @@ struct NotificationsSettingsTab: View {
                                             .notifySessionIdleMinIdleRange
                                     )
                                     .frame(width: 100)
+                                }
+                            }
+                            .padding(.leading, 20)
+
+                            SettingsRow(label: "Sound") {
+                                HStack(spacing: 8) {
+                                    Picker(
+                                        "",
+                                        selection:
+                                            $settingsManager.settings
+                                            .notifySessionIdleSound
+                                    ) {
+                                        Text(
+                                            SoundPreference.none
+                                                .displayName
+                                        )
+                                        .tag(SoundPreference.none)
+                                        Text(
+                                            SoundPreference.system
+                                                .displayName
+                                        )
+                                        .tag(SoundPreference.system)
+
+                                        Divider()
+
+                                        ForEach(
+                                            SoundPreference.allCases
+                                                .filter { $0.isSound },
+                                            id: \.self
+                                        ) { pref in
+                                            Text(pref.displayName)
+                                                .tag(pref)
+                                        }
+                                    }
+                                    .labelsHidden()
+                                    .frame(width: 130)
+
+                                    Button(action: {
+                                        settingsManager.playSound(
+                                            settingsManager.settings
+                                                .notifySessionIdleSound
+                                        )
+                                    }) {
+                                        Image(
+                                            systemName: "play.fill"
+                                        )
+                                        .font(.system(size: 10))
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+                                    .help(
+                                        "Preview session idle sound"
+                                    )
                                 }
                             }
                             .padding(.leading, 20)

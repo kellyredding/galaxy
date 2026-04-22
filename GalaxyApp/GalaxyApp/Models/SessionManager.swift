@@ -1036,6 +1036,15 @@ class SessionManager: ObservableObject {
                             && self.isWindowFocused
                         guard !stillViewing else { return }
 
+                        // Play user-configured sound. Gated on
+                        // the same !stillViewing check as the
+                        // notification so the audio nudge stays
+                        // 1:1 with the banner.
+                        SettingsManager.shared.playSound(
+                            SettingsManager.shared.settings
+                                .notifySessionIdleSound
+                        )
+
                         NotificationService.shared
                             .notifySessionIdle(
                                 sessionId: session.id,
