@@ -115,7 +115,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             || appSettings.notifySessionExitedUnexpectedly
             || appSettings.notifyHighContext
             || appSettings.notifyAutoClearOccurred
-            || appSettings.notifySnapshotCreated
         {
             Task {
                 await SettingsManager.shared

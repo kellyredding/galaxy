@@ -156,7 +156,6 @@ struct AppSettings: Codable {
     var notifyHighContext: Bool = false
     var notifyHighContextThreshold: Int = 90
     var notifyAutoClearOccurred: Bool = false
-    var notifySnapshotCreated: Bool = false
     var notifyTerminalBell: Bool = false
     var notifyPermissionRequest: Bool = false
 
@@ -278,8 +277,6 @@ struct AppSettings: Codable {
             Int.self, forKey: .notifyHighContextThreshold) ?? 90
         notifyAutoClearOccurred = try container.decodeIfPresent(
             Bool.self, forKey: .notifyAutoClearOccurred) ?? false
-        notifySnapshotCreated = try container.decodeIfPresent(
-            Bool.self, forKey: .notifySnapshotCreated) ?? false
         notifyTerminalBell = try container.decodeIfPresent(
             Bool.self, forKey: .notifyTerminalBell) ?? false
         notifyPermissionRequest = try container.decodeIfPresent(

@@ -40,7 +40,6 @@ final class EventCoordinator {
         "timeline.session:resumed",
         "timeline.context:cleared",
         "timeline.context:compacted",
-        "timeline.snapshot:created",
         "timeline.snapshot.annotation:created",
         "timeline.snapshot.annotation:updated",
         "timeline.snapshot.annotation:deleted",
@@ -413,56 +412,6 @@ final class EventCoordinator {
 
         // Check if we handle this event type
         guard Self.knownEvents.contains(envelope.event) else { return }
-
-        // Snapshot created: notification-only now. The
-        // tab-switch + pending-open side effects moved to
-        // the snapshot.show handler below, which
-        // galaxy-snapshots create also publishes. This
-        // keeps timeline.snapshot:created faithful to its
-        // name (a timeline record) and decouples
-        // "recording an event happened" from "open this
-        // in the reader."
-        if envelope.event == "timeline.snapshot:created",
-           let number = envelope.detailValue(
-               "snapshot_number", as: Int64.self
-           )
-        {
-            let snapNumber = Int32(number)
-            DispatchQueue.main.async { [weak self] in
-                guard let sm = self?.sessionManager
-                else { return }
-                let appSessionId =
-                    self?.ledgerSessionIdCache[
-                        envelope.ledgerSessionId
-                    ]
-
-                // Snapshot Created notification
-                if SettingsManager.shared.settings
-                    .notifySnapshotCreated,
-                   let appSessionId,
-                   let session = sm.sessions.first(
-                       where: {
-                           $0.id == appSessionId
-                       }
-                   )
-                {
-                    let isViewingSession =
-                        appSessionId
-                            == sm.activeSessionId
-                        && sm.isWindowFocused
-                    if !isViewingSession {
-                        NotificationService.shared
-                            .notifySnapshotCreated(
-                                sessionId: appSessionId,
-                                displayName:
-                                    session.displayName,
-                                snapshotNumber:
-                                    snapNumber
-                            )
-                    }
-                }
-            }
-        }
 
         // Snapshot show: switch tab + open the snapshot
         // in the reader. If the event's session is

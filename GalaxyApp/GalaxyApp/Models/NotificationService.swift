@@ -154,30 +154,6 @@ final class NotificationService: NSObject,
         UNUserNotificationCenter.current().add(request)
     }
 
-    /// Send a "Snapshot Created" notification.
-    func notifySnapshotCreated(
-        sessionId: UUID,
-        displayName: String,
-        snapshotNumber: Int32
-    ) {
-        let content = UNMutableNotificationContent()
-        content.title = displayName
-        content.body = "Snapshot #\(snapshotNumber) created"
-        content.sound = .default
-        content.userInfo = [
-            "sessionId": sessionId.uuidString,
-            "tab": "snapshots",
-            "snapshotNumber": Int(snapshotNumber),
-        ]
-
-        let request = UNNotificationRequest(
-            identifier: "snapshot-\(sessionId.uuidString)",
-            content: content,
-            trigger: nil
-        )
-        UNUserNotificationCenter.current().add(request)
-    }
-
     /// Send a "Terminal Bell" notification with context
     /// from the most recent turn event.
     func notifyTerminalBell(

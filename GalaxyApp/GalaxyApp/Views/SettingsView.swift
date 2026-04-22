@@ -811,23 +811,6 @@ struct NotificationsSettingsTab: View {
                         Spacer()
                     }
 
-                    // Snapshot Created
-                    HStack {
-                        Toggle(
-                            "Snapshot created",
-                            isOn: $settingsManager.settings
-                                .notifySnapshotCreated
-                        )
-                        .toggleStyle(.checkbox)
-                        .onChange(
-                            of: settingsManager.settings
-                                .notifySnapshotCreated
-                        ) { _, enabled in
-                            if enabled { requestAuth() }
-                        }
-                        Spacer()
-                    }
-
                     // Authorization warning when any session
                     // notification is enabled but system permission
                     // is denied
@@ -873,7 +856,6 @@ struct NotificationsSettingsTab: View {
             || s.notifySessionExitedUnexpectedly
             || s.notifyHighContext
             || s.notifyAutoClearOccurred
-            || s.notifySnapshotCreated
             || s.notifyTerminalBell
             || s.notifyPermissionRequest
     }
