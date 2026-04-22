@@ -1,5 +1,42 @@
 require "../spec_helper"
 
+# Build an artifacts stub script that logs its invocation
+# args to a file, one call per line. Returns the log path.
+# Mirrors the timeline logging-stub pattern in
+# tools/ledger/spec/integration/event_pipeline_spec.cr so
+# subprocess arg assertions stay consistent across specs.
+private def build_artifacts_logging_stub : Path
+  log_path = SPEC_GALAXY_DIR / "artifacts_invocations.log"
+  stub_path = SPEC_GALAXY_DIR / "bin" / "galaxy-artifacts"
+
+  File.write(stub_path, <<-BASH)
+  #!/bin/bash
+  echo "$@" >> "#{log_path}"
+  exit 0
+  BASH
+  File.chmod(stub_path, 0o755)
+
+  log_path
+end
+
+# Read each invocation of the artifacts stub as a separate
+# line. Empty lines rejected for robustness.
+private def read_artifacts_log(
+  log_path : Path,
+) : Array(String)
+  return [] of String unless File.exists?(log_path)
+  File.read_lines(log_path).reject(&.empty?)
+end
+
+# Restore the no-op artifacts stub installed by
+# spec_helper.cr so later tests aren't affected.
+private def restore_artifacts_noop
+  File.write(
+    SPEC_ARTIFACTS_NOOP, "#!/bin/sh\nexit 0\n",
+  )
+  File.chmod(SPEC_ARTIFACTS_NOOP, 0o755)
+end
+
 describe "CLI agent commands", tags: "integration" do
   describe "start" do
     it "starts an agent" do
@@ -427,6 +464,69 @@ describe "CLI agent commands", tags: "integration" do
       )
 
       FileUtils.rm_rf(tmp.to_s)
+    end
+
+    it "saves transcript artifact with --skip-event" do
+      log_path = build_artifacts_logging_stub
+      File.delete(log_path) if File.exists?(log_path)
+
+      tmp = Path.new(Dir.tempdir) /
+            "galaxy-agents-skipevt-#{Random.rand(100000)}"
+      Dir.mkdir_p(tmp)
+      transcript = tmp / "agent-skipevt.jsonl"
+      File.write(
+        transcript,
+        %({"type":"assistant",) +
+        %("message":{"role":"assistant",) +
+        %("content":"ok"}}\n),
+      )
+
+      run_binary([
+        "start",
+        "--ledger-session-id", "1",
+        "--agent-id", "skipevt",
+        "--agent-type", "Explore",
+      ])
+
+      result = run_binary(
+        [
+          "stop",
+          "--ledger-session-id", "1",
+          "--agent-id", "skipevt",
+          "--agent-transcript-path",
+          transcript.to_s,
+          "--last-message-stdin",
+        ],
+        stdin: "ok",
+      )
+
+      result[:status].should eq(0)
+
+      # save_transcript_artifact is fire-and-forget —
+      # give the subprocess time to log before reading.
+      sleep 200.milliseconds
+
+      # Find the save call for OUR transcript specifically.
+      # Earlier tests in this describe block fire the same
+      # fire-and-forget save path; their subprocesses can
+      # race with ours after the logging stub is installed.
+      lines = read_artifacts_log(log_path)
+      save_call = lines.find do |line|
+        line.includes?("save") &&
+          line.includes?(transcript.to_s)
+      end
+
+      save_call.should_not be_nil
+      call = save_call.not_nil!
+      call.should contain("--skip-event")
+      call.should contain("--artifact-type")
+      call.should contain("jsonl")
+
+      FileUtils.rm_rf(tmp.to_s)
+    ensure
+      File.delete(log_path) if log_path &&
+                               File.exists?(log_path)
+      restore_artifacts_noop
     end
   end
 

@@ -973,6 +973,12 @@ module GalaxyAgents
           "--title", title,
           "--artifact-type", "jsonl",
           "--description", "Agent transcript",
+          # Agent transcripts are a side-effect of agent
+          # lifecycle, not user-initiated saves. Suppress
+          # the artifact.show socket event so Galaxy.app
+          # doesn't auto-open a reader on the user. The
+          # artifact remains available in the Artifacts tab.
+          "--skip-event",
         ],
         input: Process::Redirect::Close,
         output: Process::Redirect::Close,
