@@ -454,6 +454,86 @@ enum HoveredTimelineItem {
     }
 }
 
+// MARK: - Click Targets
+
+/// A navigable resource referenced by a timeline event.
+/// Present only for events whose underlying record has a
+/// dedicated reader view in the app (snapshots, artifacts,
+/// agents). Deletion events are intentionally excluded —
+/// navigating to a deleted record is confusing.
+enum TimelineClickTarget: Equatable {
+    case snapshot(Int32)
+    case artifact(Int32)
+    case agent(String)
+}
+
+extension TimelineEvent {
+    /// Returns a navigation target if this event references
+    /// a resource with a dedicated reader view. Parses
+    /// `detailData` using the same keys consumed by the
+    /// tooltip formatters. Returns nil for:
+    /// - Unsupported event types (sessions, turns, context,
+    ///   scrollback, markers)
+    /// - Deletion events (artifact:deleted, annotation
+    ///   deletions)
+    /// - Events whose detail_data is missing the expected
+    ///   identifier (defensive — should not happen in
+    ///   practice)
+    var clickTarget: TimelineClickTarget? {
+        guard let d = TimelineTooltipFormatter
+            .parseDetailDict(detailData)
+        else { return nil }
+
+        switch eventType {
+        case "snapshot:created",
+             "snapshot:reviewed",
+             "snapshot:opened",
+             "snapshot:closed",
+             "snapshot.annotation:created",
+             "snapshot.annotation:updated",
+             "snapshot.review:created":
+            guard let n = d["snapshot_number"] as? Int
+            else { return nil }
+            return .snapshot(Int32(n))
+
+        case "artifact:created",
+             "artifact:updated",
+             "artifact:reviewed",
+             "artifact:opened",
+             "artifact:closed",
+             "artifact.annotation:created",
+             "artifact.annotation:updated",
+             "artifact.review:created":
+            let n = (d["number"] as? Int)
+                ?? (d["artifact_number"] as? Int)
+            guard let n = n else { return nil }
+            return .artifact(Int32(n))
+
+        case "agent:started",
+             "agent:stopped",
+             "agent:failed",
+             "agent:abandoned":
+            guard let id = d["agent_id"] as? String
+            else { return nil }
+            return .agent(id)
+
+        default:
+            return nil
+        }
+    }
+}
+
+extension HoveredTimelineItem {
+    /// Navigation target for the hovered item. For duration
+    /// bars we prefer the start event's target but fall back
+    /// to the end event's — both ends of a pair carry the
+    /// same identifier today, but the fallback protects
+    /// against future event-type asymmetry.
+    var clickTarget: TimelineClickTarget? {
+        event.clickTarget ?? endEvent?.clickTarget
+    }
+}
+
 // MARK: - Tooltip Formatting
 
 /// Formats detail_data for tooltip display per event type.
@@ -1144,8 +1224,9 @@ enum TimelineTooltipFormatter {
 
     /// Small helper — shared JSON parse used by
     /// artifactIdentityLines and the per-event facts
-    /// formatters below.
-    private static func parseDetailDict(
+    /// formatters below. Also consumed by
+    /// `TimelineEvent.clickTarget`.
+    static func parseDetailDict(
         _ detailData: String?
     ) -> [String: Any]? {
         guard let data = detailData,

@@ -25,6 +25,11 @@ struct TimelineContentCanvas: View {
     // ID of the currently hovered item).
     var highlightId: String? = nil
 
+    /// Invoked when the user taps a hovered dot or bar
+    /// whose event has a navigation target. Not called
+    /// for items without a click target.
+    var onItemTapped: (HoveredTimelineItem) -> Void = { _ in }
+
     private let subColPitch: CGFloat = 25.0
 
     private var lanePadding: CGFloat {
@@ -77,18 +82,40 @@ struct TimelineContentCanvas: View {
             switch phase {
             case .active(let point):
                 updateHover(at: point)
+                // Pointer cursor when hovering a clickable
+                // item. Setting on every mouse move is
+                // cheap and matches NSCursor semantics used
+                // elsewhere in the app.
+                if hoveredItem?.clickTarget != nil {
+                    NSCursor.pointingHand.set()
+                } else {
+                    NSCursor.arrow.set()
+                }
             case .ended:
                 hoverSegmentId = nil
                 hoverRow = nil
                 hoverColX = nil
                 hoveredItem = nil
                 hoveredItemPoint = nil
+                NSCursor.arrow.set()
             @unknown default:
                 hoverSegmentId = nil
                 hoverRow = nil
                 hoverColX = nil
                 hoveredItem = nil
                 hoveredItemPoint = nil
+                NSCursor.arrow.set()
+            }
+        }
+        // Tap handler — reuses hover state since a tap is
+        // always preceded by a hover landing on the same
+        // item. Gated on clickTarget so empty-space taps
+        // don't fire.
+        .onTapGesture {
+            if let item = hoveredItem,
+               item.clickTarget != nil
+            {
+                onItemTapped(item)
             }
         }
     }
@@ -1592,6 +1619,18 @@ struct TimelineItemTooltip: View {
                         )
                         .lineLimit(1)
                 }
+            }
+
+            // Click affordance — shown only when the item
+            // has a navigation target. Cursor change alone
+            // is subtle; this makes the behaviour
+            // discoverable.
+            if item.clickTarget != nil {
+                Divider()
+                    .padding(.vertical, 1)
+                Text("↗ click to open")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
             }
         }
         .padding(.horizontal, 10)

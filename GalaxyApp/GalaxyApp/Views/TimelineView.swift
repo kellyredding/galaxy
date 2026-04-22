@@ -499,6 +499,32 @@ struct TimelineView: View {
         }  // GeometryReader
     }
 
+    // MARK: - Click Handling
+
+    /// Navigate to the reader view for a clicked timeline
+    /// item. Mirrors the ordering used by
+    /// NavigationCoordinator.apply(route:) — identifier
+    /// set first, then tab — so the reader view opens
+    /// pre-populated. Both @Published emissions land in
+    /// the coordinator's 50ms debounce window and coalesce
+    /// into a single history entry.
+    private func handleItemTapped(
+        _ item: HoveredTimelineItem
+    ) {
+        guard let target = item.clickTarget else { return }
+        switch target {
+        case .snapshot(let n):
+            session.openSnapshotNumber = n
+            sessionManager.activeTab = .snapshots
+        case .artifact(let n):
+            session.openArtifactNumber = n
+            sessionManager.activeTab = .artifacts
+        case .agent(let id):
+            session.selectedAgentId = id
+            sessionManager.activeTab = .agents
+        }
+    }
+
     // MARK: - Tooltip Positioning
 
     private struct TooltipPosition {
@@ -744,7 +770,8 @@ struct TimelineView: View {
                             $hoveredItem,
                         hoveredItemPoint:
                             $hoveredItemPoint,
-                        highlightId: highlightId
+                        highlightId: highlightId,
+                        onItemTapped: handleItemTapped
                     )
 
                     if let brk = layout.breakAfter(
