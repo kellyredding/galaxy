@@ -119,6 +119,84 @@ class Session: Identifiable, ObservableObject {
     /// so it survives conditional view teardown on session switch.
     var ledgerEntriesSearchQuery: String = ""
 
+    // MARK: - Reader / detail identifiers (for navigation history)
+    //
+    // Hoisted from view-local @State so NavigationCoordinator can
+    // observe changes (for recording) and mutate directly (for
+    // restoration on back/forward). The views themselves still own
+    // the resolved full objects (ArtifactSummary, SnapshotDetail,
+    // AgentRun); only the identifier lives here.
+
+    /// Number of the artifact currently open in ArtifactsView's
+    /// reader. nil when the reader is closed (viewing the index).
+    @Published var openArtifactNumber: Int32? = nil
+
+    /// Number of the snapshot currently open in SnapshotsView's
+    /// reader. nil when viewing the index.
+    @Published var openSnapshotNumber: Int32? = nil
+
+    /// agentId of the agent currently open in AgentsView's detail
+    /// view. nil when viewing the index.
+    @Published var selectedAgentId: String? = nil
+
+    // MARK: - History title caches
+    //
+    // Populated by views as they load summaries. Used by
+    // NavigationCoordinator to resolve human-readable titles for
+    // history entries at push time.
+
+    fileprivate var artifactTitles: [Int32: String] = [:]
+    fileprivate var artifactTypes: [Int32: String] = [:]
+    fileprivate var snapshotTitles: [Int32: String] = [:]
+    fileprivate var agentTitles: [String: String] = [:]
+
+    func recordArtifactInfo(
+        number: Int32, title: String, type: String
+    ) {
+        artifactTitles[number] = title
+        artifactTypes[number] = type
+    }
+
+    func artifactTitle(for number: Int32) -> String? {
+        guard let title = artifactTitles[number] else { return nil }
+        let type = artifactTypes[number] ?? "artifact"
+        return "(\(type)) — \(title) (Artifact #\(number))"
+    }
+
+    func recordSnapshotInfo(number: Int32, title: String) {
+        snapshotTitles[number] = title
+    }
+
+    func snapshotTitle(for number: Int32) -> String? {
+        guard let title = snapshotTitles[number] else { return nil }
+        return "\(title) (Snapshot #\(number))"
+    }
+
+    func recordAgentInfo(
+        id: String, type: String, description: String?
+    ) {
+        let desc = description ?? "Agent \(id.prefix(8))"
+        agentTitles[id] = "(\(type)) — \(desc)"
+    }
+
+    func agentTitle(for id: String) -> String? {
+        agentTitles[id]
+    }
+
+    // MARK: - Navigation coordinator
+    //
+    // Owns the per-session history stack and observes state
+    // changes (tab, subtab, reader/detail identifiers) to
+    // record navigation events. Lazy so initialization defers
+    // to first access — by then SessionManager.shared has been
+    // set up by the app launch path.
+    private(set) lazy var navigationCoordinator:
+        NavigationCoordinator
+        = NavigationCoordinator(
+            session: self,
+            sessionManager: SessionManager.shared
+        )
+
     // MARK: - Ledger Enrichment Data
     // Populated by EventCoordinator.applyEnrichmentData() on each
     // session.metrics event. Plain var (not @Published) until a

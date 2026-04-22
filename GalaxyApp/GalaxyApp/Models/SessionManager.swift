@@ -1212,6 +1212,31 @@ class SessionManager: ObservableObject {
 
     // MARK: - View State Save/Restore
 
+    // MARK: - Navigation history delegation
+    //
+    // Thin forwarders to the active session's NavigationCoordinator.
+    // Menu actions and chrome buttons call these rather than reach
+    // into Session directly, so "no active session" is handled in
+    // one place.
+
+    var canNavigateBack: Bool {
+        activeSession?.navigationCoordinator.history.canGoBack
+            ?? false
+    }
+
+    var canNavigateForward: Bool {
+        activeSession?.navigationCoordinator
+            .history.canGoForward ?? false
+    }
+
+    func navigateBack() {
+        activeSession?.navigationCoordinator.navigateBack()
+    }
+
+    func navigateForward() {
+        activeSession?.navigationCoordinator.navigateForward()
+    }
+
     /// Save the current tab/subtab state to the outgoing session.
     private func saveViewState() {
         guard let session = activeSession else { return }
@@ -1277,6 +1302,15 @@ class SessionManager: ObservableObject {
     func switchTo(sessionId: UUID) {
         guard activeSessionId != sessionId else { return }
         guard let session = sessions.first(where: { $0.id == sessionId }) else { return }
+
+        // Suppress navigation history recording on both the
+        // outgoing and incoming sessions across the state
+        // shuffle below. Without this, the save/restore/drain
+        // sequence would push spurious entries into history.
+        activeSession?.navigationCoordinator
+            .suppressForSessionSwitch()
+        session.navigationCoordinator
+            .suppressForSessionSwitch()
 
         saveViewState()
         activeSessionId = sessionId

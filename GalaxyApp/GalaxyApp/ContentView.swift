@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Combine
 
 struct ContentView: View {
     @EnvironmentObject var sessionManager: SessionManager
@@ -9,8 +10,16 @@ struct ContentView: View {
     // Track width during drag (nil when not dragging, uses settings value)
     @State private var draggingWidth: CGFloat? = nil
 
+    /// Observes the active session's navigation history so
+    /// back/forward button enabled-states and dropdown contents
+    /// update reactively when history changes. Rebinds on
+    /// session switch.
+    @StateObject private var historyObserver
+        = HistoryObserverBridge()
+
     private let toolbarHeight: CGFloat = 28
     private let collapsedSidebarWidth: CGFloat = 32
+    private let historyNavButtonsWidth: CGFloat = 54
 
     private var isSidebarVisible: Bool {
         settingsManager.settings.isSidebarVisible
@@ -117,9 +126,13 @@ struct ContentView: View {
 
     private var viewsControlBar: some View {
         HStack(spacing: 8) {
+            historyNavButtons
             Spacer()
             tabPicker
             Spacer()
+            // Balancing spacer so tabPicker stays centered
+            // relative to the full control bar width.
+            Color.clear.frame(width: historyNavButtonsWidth)
         }
         .padding(.horizontal, 8)
         .frame(height: toolbarHeight)
@@ -128,6 +141,88 @@ struct ContentView: View {
             Rectangle()
                 .fill(Color.primary.opacity(0.15))
                 .frame(height: 1)
+        }
+        .onAppear {
+            historyObserver.rebind(
+                to: activeSession?.navigationCoordinator
+                    .history
+            )
+        }
+        .onChange(of: sessionManager.activeSessionId) {
+            historyObserver.rebind(
+                to: activeSession?.navigationCoordinator
+                    .history
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var historyNavButtons: some View {
+        if let session = activeSession {
+            HStack(spacing: 2) {
+                LongPressMenuButton(
+                    systemImage: "chevron.backward",
+                    help: "Back ⌘[",
+                    isEnabled: session
+                        .navigationCoordinator
+                        .history.canGoBack,
+                    menuItems: {
+                        session.navigationCoordinator
+                            .history.backEntries
+                            .map {
+                                LongPressMenuItem(
+                                    id: $0.id,
+                                    title: $0.displayTitle,
+                                    systemImage: nil
+                                )
+                            }
+                    },
+                    onClick: {
+                        session.navigationCoordinator
+                            .navigateBack()
+                    },
+                    onSelect: { entryId in
+                        session.navigationCoordinator
+                            .jumpTo(entryId: entryId)
+                    }
+                )
+                .frame(width: 24, height: 20)
+
+                LongPressMenuButton(
+                    systemImage: "chevron.forward",
+                    help: "Forward ⌘]",
+                    isEnabled: session
+                        .navigationCoordinator
+                        .history.canGoForward,
+                    menuItems: {
+                        session.navigationCoordinator
+                            .history.forwardEntries
+                            .map {
+                                LongPressMenuItem(
+                                    id: $0.id,
+                                    title: $0.displayTitle,
+                                    systemImage: nil
+                                )
+                            }
+                    },
+                    onClick: {
+                        session.navigationCoordinator
+                            .navigateForward()
+                    },
+                    onSelect: { entryId in
+                        session.navigationCoordinator
+                            .jumpTo(entryId: entryId)
+                    }
+                )
+                .frame(width: 24, height: 20)
+            }
+            .frame(
+                width: historyNavButtonsWidth,
+                alignment: .leading
+            )
+        } else {
+            Color.clear
+                .frame(width: historyNavButtonsWidth)
         }
     }
 
@@ -255,6 +350,25 @@ struct ContentView: View {
                 }
             }
             .zIndex(100)
+    }
+}
+
+/// Forwards `objectWillChange` from the active session's
+/// `SessionNavigationHistory` so ContentView re-renders
+/// back/forward button enabled-states when history mutates.
+///
+/// Needed because ContentView observes `Session` (via
+/// `activeSession`) but not the nested
+/// `navigationCoordinator.history` — SwiftUI doesn't follow
+/// nested ObservableObject chains automatically.
+final class HistoryObserverBridge: ObservableObject {
+    private var cancellable: AnyCancellable?
+
+    func rebind(to history: SessionNavigationHistory?) {
+        cancellable = history?.objectWillChange
+            .sink { [weak self] in
+                self?.objectWillChange.send()
+            }
     }
 }
 

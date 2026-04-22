@@ -324,15 +324,46 @@ class MainMenu: NSObject, NSMenuDelegate {
         let panelOnLeft = settingsManager.settings.sidebarPosition == .left
         let isVisible = settingsManager.settings.isSidebarVisible
 
-        // Hide sessions: ⌘[ if panel on left, ⌘] if panel on right
-        let hideItem = NSMenuItem(title: "Hide sessions", action: #selector(MenuActions.hideSessions(_:)), keyEquivalent: panelOnLeft ? "[" : "]")
+        // Back / Forward in session navigation history
+        let backItem = NSMenuItem(
+            title: "Back",
+            action: #selector(MenuActions.historyBack(_:)),
+            keyEquivalent: "["
+        )
+        backItem.target = MenuActions.shared
+        backItem.isEnabled = sessionManager.canNavigateBack
+        menu.addItem(backItem)
+
+        let forwardItem = NSMenuItem(
+            title: "Forward",
+            action: #selector(MenuActions.historyForward(_:)),
+            keyEquivalent: "]"
+        )
+        forwardItem.target = MenuActions.shared
+        forwardItem.isEnabled = sessionManager.canNavigateForward
+        menu.addItem(forwardItem)
+
+        menu.addItem(.separator())
+
+        // Hide sessions: ⌘⇧[ if panel on left, ⌘⇧] if panel on right
+        let hideItem = NSMenuItem(
+            title: "Hide sessions",
+            action: #selector(MenuActions.hideSessions(_:)),
+            keyEquivalent: panelOnLeft ? "[" : "]"
+        )
         hideItem.target = MenuActions.shared
+        hideItem.keyEquivalentModifierMask = [.command, .shift]
         hideItem.isEnabled = isVisible
         menu.addItem(hideItem)
 
-        // Show sessions: ⌘] if panel on left, ⌘[ if panel on right
-        let showItem = NSMenuItem(title: "Show sessions", action: #selector(MenuActions.showSessions(_:)), keyEquivalent: panelOnLeft ? "]" : "[")
+        // Show sessions: ⌘⇧] if panel on left, ⌘⇧[ if panel on right
+        let showItem = NSMenuItem(
+            title: "Show sessions",
+            action: #selector(MenuActions.showSessions(_:)),
+            keyEquivalent: panelOnLeft ? "]" : "["
+        )
         showItem.target = MenuActions.shared
+        showItem.keyEquivalentModifierMask = [.command, .shift]
         showItem.isEnabled = !isVisible
         menu.addItem(showItem)
 
@@ -695,6 +726,14 @@ class MenuActions: NSObject {
         withAnimation(.easeInOut(duration: 0.2)) {
             SessionManager.shared.isSidebarVisible = true
         }
+    }
+
+    @objc func historyBack(_ sender: Any?) {
+        SessionManager.shared.navigateBack()
+    }
+
+    @objc func historyForward(_ sender: Any?) {
+        SessionManager.shared.navigateForward()
     }
 
     @objc func previousSession(_ sender: Any?) {

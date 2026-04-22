@@ -157,6 +157,31 @@ struct SnapshotsView: View {
             guard session.id == sessionManager.activeSessionId else { return }
             handlePendingSnapshot()
         }
+        // Mirror local reader state up to the session so
+        // NavigationCoordinator can observe it for history
+        // recording. Paired with the observer below.
+        .onChange(of: openSnapshot?.number) { _, newValue in
+            if session.openSnapshotNumber != newValue {
+                session.openSnapshotNumber = newValue
+            }
+        }
+        // React to external writes to session.openSnapshotNumber
+        // (e.g., from NavigationCoordinator.apply during
+        // back/forward). Opens or closes the reader to match.
+        .onChange(of: session.openSnapshotNumber) { _, newValue in
+            guard session.id == sessionManager.activeSessionId
+            else { return }
+            if openSnapshot?.number == newValue { return }
+            if let number = newValue {
+                openSnapshotByNumber(
+                    number,
+                    reason: "history-nav",
+                    trigger: "history-nav"
+                )
+            } else if openSnapshot != nil {
+                closeReader(reason: "history-nav")
+            }
+        }
         .onChange(of: sessionManager.listNavAction) {
             guard session.id == sessionManager.activeSessionId else { return }
             guard sessionManager.activeTab == .snapshots else { return }
@@ -468,6 +493,7 @@ struct SnapshotsView: View {
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
                     snapshots = result
+                    seedSnapshotTitles(result)
                     isLoading = false
                     focusedIndex = result.isEmpty ? nil : 0
                 }
@@ -817,11 +843,21 @@ struct SnapshotsView: View {
     private func handlePendingSnapshot() {
         guard let number = sessionManager.pendingSnapshotNumber else { return }
         sessionManager.pendingSnapshotNumber = nil
+        openSnapshotByNumber(
+            number, reason: "auto-open", trigger: "auto-open"
+        )
+    }
 
+    /// Fetch the snapshot list and open the snapshot with the given
+    /// number. Shared entry point for both EventCoordinator-driven
+    /// opens and history restoration (back/forward navigation).
+    private func openSnapshotByNumber(
+        _ number: Int32, reason: String, trigger: String
+    ) {
         // Close any currently-open snapshot so its
         // duration event fires and state is cleaned up.
         if openSnapshot != nil {
-            closeReader(reason: "auto-open")
+            closeReader(reason: reason)
         }
 
         // Fetch fresh list first, then open the snapshot
@@ -839,6 +875,7 @@ struct SnapshotsView: View {
                 guard list.contains(where: { $0.number == number }) else {
                     await MainActor.run {
                         snapshots = list
+                        seedSnapshotTitles(list)
                         isLoading = false
                     }
                     return  // Fail silently — unknown ref
@@ -860,6 +897,7 @@ struct SnapshotsView: View {
 
                 await MainActor.run {
                     snapshots = list
+                    seedSnapshotTitles(list)
                     isLoading = false
                     openSnapshot = detail
                     openAnnotations = annotations
@@ -884,7 +922,7 @@ struct SnapshotsView: View {
                             "snapshot_number":
                                 detail.number,
                             "title": detail.title,
-                            "trigger": "auto-open",
+                            "trigger": trigger,
                         ]
                     )
                 }
@@ -894,6 +932,19 @@ struct SnapshotsView: View {
                     isLoading = false
                 }
             }
+        }
+    }
+
+    /// Seed the session's snapshot title cache so
+    /// NavigationCoordinator can resolve history
+    /// entry titles at push time.
+    private func seedSnapshotTitles(
+        _ list: [SnapshotSummary]
+    ) {
+        for snap in list {
+            session.recordSnapshotInfo(
+                number: snap.number, title: snap.title
+            )
         }
     }
 

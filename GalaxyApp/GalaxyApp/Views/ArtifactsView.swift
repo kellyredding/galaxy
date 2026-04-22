@@ -215,6 +215,33 @@ struct ArtifactsView: View {
             else { return }
             handlePendingArtifactShow()
         }
+        // Mirror local reader state up to the session so
+        // NavigationCoordinator can observe it for history
+        // recording. Paired with the observer below — each
+        // guards against looping by checking equality first.
+        .onChange(of: openArtifact?.number) { _, newValue in
+            if session.openArtifactNumber != newValue {
+                session.openArtifactNumber = newValue
+            }
+        }
+        // React to external writes to session.openArtifactNumber
+        // (e.g., from NavigationCoordinator.apply during
+        // back/forward). Opens or closes the reader to match.
+        .onChange(of: session.openArtifactNumber) { _, newValue in
+            guard session.id
+                == sessionManager.activeSessionId
+            else { return }
+            // Already in sync — this change came from our own
+            // mirror above.
+            if openArtifact?.number == newValue { return }
+            if let number = newValue {
+                openArtifactByNumber(
+                    number, reason: "history-nav"
+                )
+            } else if openArtifact != nil {
+                closeReader(reason: "history-nav")
+            }
+        }
         .onDisappear {
             if openArtifact != nil {
                 closeReader(reason: "session-removed")
@@ -1099,6 +1126,7 @@ struct ArtifactsView: View {
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
                     artifacts = result
+                    seedArtifactTitles(result)
                     isLoading = false
                     focusedIndex =
                         result.isEmpty ? nil : 0
@@ -1252,24 +1280,31 @@ struct ArtifactsView: View {
     }
 
     /// Handle a pending artifact show from
-    /// EventCoordinator (socket event). Fetches the
-    /// artifact list, then opens the artifact reader
-    /// — which triggers the full content + annotation
-    /// load flow. Falls back to macOS open for types
-    /// without an inline reader.
+    /// EventCoordinator (socket event). Delegates to
+    /// openArtifactByNumber after clearing the
+    /// pending signal.
     private func handlePendingArtifactShow() {
         guard let number =
             sessionManager.pendingArtifactShow
         else { return }
         sessionManager.pendingArtifactShow = nil
+        openArtifactByNumber(number, reason: "pending-show")
+    }
 
+    /// Fetch the artifact list and open the artifact
+    /// with the given number. Shared entry point for
+    /// both EventCoordinator-driven shows and history
+    /// restoration (back/forward navigation).
+    private func openArtifactByNumber(
+        _ number: Int32, reason: String
+    ) {
         guard let lsid = session.ledgerSessionId
         else { return }
 
         // Close any currently-open artifact so its
         // duration event fires and state is cleaned up.
         if openArtifact != nil {
-            closeReader(reason: "auto-refresh")
+            closeReader(reason: reason)
         }
 
         // Fetch fresh list, then open the artifact
@@ -1291,6 +1326,7 @@ struct ArtifactsView: View {
                 ) else {
                     await MainActor.run {
                         artifacts = list
+                        seedArtifactTitles(list)
                         isLoading = false
                     }
                     return
@@ -1298,6 +1334,7 @@ struct ArtifactsView: View {
 
                 await MainActor.run {
                     artifacts = list
+                    seedArtifactTitles(list)
                     isLoading = false
                     openArtifactReader(
                         artifact: artifact
@@ -1308,6 +1345,21 @@ struct ArtifactsView: View {
                     isLoading = false
                 }
             }
+        }
+    }
+
+    /// Seed the session's artifact title cache so
+    /// NavigationCoordinator can resolve history
+    /// entry titles at push time.
+    private func seedArtifactTitles(
+        _ list: [ArtifactSummary]
+    ) {
+        for artifact in list {
+            session.recordArtifactInfo(
+                number: artifact.number,
+                title: artifact.title,
+                type: artifact.artifactType
+            )
         }
     }
 

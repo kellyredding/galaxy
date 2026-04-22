@@ -130,6 +130,23 @@ struct AgentsView: View {
         .onChange(of: selectedAgent != nil) {
             updateEscapeMonitor()
         }
+        // Mirror local detail state up to the session so
+        // NavigationCoordinator can observe it for history
+        // recording. Paired with the observer below.
+        .onChange(of: selectedAgent?.agentId) { _, newValue in
+            if session.selectedAgentId != newValue {
+                session.selectedAgentId = newValue
+            }
+        }
+        // React to external writes to session.selectedAgentId
+        // (e.g., from NavigationCoordinator.apply during
+        // back/forward). Opens or closes the detail view.
+        .onChange(of: session.selectedAgentId) { _, newValue in
+            guard session.id == sessionManager.activeSessionId
+            else { return }
+            if selectedAgent?.agentId == newValue { return }
+            applyExternalAgentSelection(newValue)
+        }
         .onChange(of: sessionManager.activeTab) {
             updateEscapeMonitor()
             if sessionManager.activeTab == .agents,
@@ -635,6 +652,7 @@ struct AgentsView: View {
                     return
                 }
                 agents = result
+                seedAgentTitles(result)
                 if focusedIndex == nil,
                    !result.isEmpty
                 {
@@ -650,6 +668,52 @@ struct AgentsView: View {
                     "AgentsView fetch failed:"
                     + " \(error)"
                 )
+            }
+        }
+    }
+
+    /// Seed the session's agent title cache so
+    /// NavigationCoordinator can resolve history
+    /// entry titles at push time.
+    private func seedAgentTitles(
+        _ list: [AgentRun]
+    ) {
+        for agent in list {
+            session.recordAgentInfo(
+                id: agent.agentId,
+                type: agent.agentType,
+                description: agent.description
+            )
+        }
+    }
+
+    /// Apply an external selection change (e.g., from
+    /// NavigationCoordinator.apply during history restoration).
+    /// Falls back to nil if the agent is no longer in the list.
+    private func applyExternalAgentSelection(
+        _ newValue: String?
+    ) {
+        guard let agentId = newValue else {
+            selectedAgent = nil
+            return
+        }
+        if let match = agents?.first(where: {
+            $0.agentId == agentId
+        }) {
+            selectedAgent = match
+        } else {
+            // Agent not in cache — refetch and retry once.
+            fetchAgents()
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + 0.3
+            ) {
+                if let match = agents?.first(where: {
+                    $0.agentId == agentId
+                }) {
+                    selectedAgent = match
+                } else {
+                    selectedAgent = nil
+                }
             }
         }
     }
