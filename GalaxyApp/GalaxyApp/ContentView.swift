@@ -513,26 +513,82 @@ extension TabUnreadIndicator {
 }
 
 
-/// Wrapper view that observes individual session state changes
+/// Wrapper view that observes individual session state changes.
+/// Constructs a SessionTerminalPane adapter for the running
+/// branch, cached via a @StateObject so its identity is stable
+/// across SwiftUI re-renders and only rebuilt when the underlying
+/// GalaxyTerminalView changes (e.g., after a stop+resume cycle).
 struct SessionPaneView: View {
     @ObservedObject var session: Session
     let isActive: Bool
     let onResume: () -> Void
+
+    @StateObject private var adapterHolder = SessionPaneAdapterHolder()
 
     var body: some View {
         Group {
             if session.hasExited {
                 // Show stopped session UI
                 StoppedSessionView(session: session, onResume: onResume)
-            } else {
-                // Show terminal
+            } else if let galaxyView = session.terminalView {
+                // Show terminal via TerminalPane abstraction
                 FocusableTerminalView(
-                    session: session,
+                    pane: adapterHolder.adapter(
+                        for: session, view: galaxyView
+                    ),
                     isActive: isActive
                 )
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onChange(of: session.hasExited) {
+            // Release the cached adapter (and its strong reference
+            // to the old GalaxyTerminalView) when the session
+            // stops. Without this, the ~32MB scrollback buffer
+            // stays resident until the user either resumes the
+            // session (which replaces the cached adapter) or
+            // dismisses it (which tears down the whole
+            // SessionPaneView). With it, Session.releaseTerminalView
+            // can actually free the buffer at stop time, matching
+            // pre-refactor behavior.
+            if session.hasExited {
+                adapterHolder.release()
+            }
+        }
+    }
+}
+
+/// Caches a SessionTerminalPane adapter per SessionPaneView
+/// lifetime, returning the same instance for the same underlying
+/// GalaxyTerminalView. On view change (e.g., stop+resume creates
+/// a fresh GalaxyTerminalView), a new adapter is constructed.
+///
+/// The cached adapter is stored in a non-@Published property so
+/// mutating it during body evaluation doesn't re-trigger SwiftUI
+/// updates.
+private final class SessionPaneAdapterHolder: ObservableObject {
+    private var cached: SessionTerminalPane?
+
+    func adapter(
+        for session: Session,
+        view: GalaxyTerminalView
+    ) -> SessionTerminalPane {
+        if let cached, cached.galaxyView === view {
+            return cached
+        }
+        let fresh = SessionTerminalPane(
+            session: session, galaxyView: view
+        )
+        cached = fresh
+        return fresh
+    }
+
+    /// Drop the cached adapter so the GalaxyTerminalView it holds
+    /// strongly can be released. Called when the session stops so
+    /// the scrollback buffer is freed at stop time rather than at
+    /// resume or dismiss time.
+    func release() {
+        cached = nil
     }
 }
 
