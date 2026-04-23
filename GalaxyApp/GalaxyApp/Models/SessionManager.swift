@@ -2,6 +2,7 @@ import Foundation
 import AppKit
 import SwiftUI
 import SwiftTerm
+import Combine
 
 enum ListNavAction {
     case up, down, activate
@@ -127,6 +128,12 @@ class SessionManager: ObservableObject {
     /// session goes busy again before the timer fires (minimum idle duration).
     private var pendingIdleNotificationTimers: [UUID: Timer] = [:]
 
+    /// Per-session Combine subscription to
+    /// `session.$terminalView`. Fires `wireSessionCallbacks` every
+    /// time the terminal view transitions to non-nil (session
+    /// start, resume). Torn down when the session is removed.
+    private var terminalViewSubs: [UUID: AnyCancellable] = [:]
+
     /// Minimum seconds between auto-clears for the same session.
     private static let autoClearCooldown: TimeInterval = 30
 
@@ -169,6 +176,13 @@ class SessionManager: ObservableObject {
             for state in persisted.sessions {
                 let session = Session(restoring: state)
                 sessions.append(session)
+                // Observe terminalView lifecycle even for stopped
+                // sessions — when the user resumes one,
+                // ensureTerminalView() fires the subscription and
+                // callbacks wire automatically. Restored sessions
+                // start with terminalView == nil, so the immediate
+                // sink fire is a no-op.
+                observeTerminalViewLifecycle(for: session)
             }
             if let activeId = persisted.activeSessionId {
                 activeSessionId = activeId
@@ -267,93 +281,13 @@ class SessionManager: ObservableObject {
             executablePath = claudePath
         }
 
-        // Set up terminal delegate to track process termination
-        // Store a strong reference in session so it doesn't get deallocated
-        let handler = TerminalProcessHandler(session: session, sessionManager: self)
-        session.processHandler = handler
-        session.terminalView?.processDelegate = handler
-
-        // Set up bell callback — handles sound/visual bell
-        // and optionally sends a macOS notification with
-        // context from the most recent turn event.
-        session.terminalView?.onBell = { [weak self, weak session] in
-            guard let self = self, let session = session else { return }
-            DispatchQueue.main.async {
-                let settings = SettingsManager.shared.settings
-
-                // Play sound (always, regardless of focus)
-                SettingsManager.shared.playSound(
-                    settings.bellSound
-                )
-
-                // Visual flash (always, regardless of focus)
-                if settings.bellVisualFlash {
-                    self.triggerVisualBell(for: session)
-                }
-
-                // Terminal bell notification
-                guard settings.notifyTerminalBell else { return }
-                let isViewing = session.id == self.activeSessionId
-                    && self.activeTab == .terminal
-                    && self.isWindowFocused
-                guard !isViewing else { return }
-
-                guard let lsid = session.ledgerSessionId else { return }
-                let sessionId = session.id
-                let displayName = session.displayName
-
-                Task {
-                    do {
-                        let event = try await TimelineQueryService
-                            .shared
-                            .fetchMostRecentTurnEvent(
-                                ledgerSessionId: lsid
-                            )
-                        let bodyText = Self.bellNotificationBody(from: event)
-                        await MainActor.run {
-                            NotificationService.shared.notifyTerminalBell(
-                                sessionId: sessionId,
-                                displayName: displayName,
-                                bodyText: bodyText
-                            )
-                        }
-                    } catch {
-                        // Best-effort — send without body
-                        await MainActor.run {
-                            NotificationService.shared.notifyTerminalBell(
-                                sessionId: sessionId,
-                                displayName: displayName,
-                                bodyText: nil
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // Set up data received callback for busy state detection
-        session.terminalView?.onDataReceived = { [weak session] in
-            session?.markBusy()
-        }
-
-        // Start buffer content monitor (Phase 0 de-risk logging)
-        session.terminalView?.startContentMonitor()
-
-        // Cancel pending idle notification timer when turn starts
-        session.onTurnStart = { [weak self] session in
-            self?.pendingIdleNotificationTimers[session.id]?.invalidate()
-            self?.pendingIdleNotificationTimers.removeValue(forKey: session.id)
-        }
-
-        // Micro-idle: only runs interrupt detection
-        session.onIdleTransition = { [weak self] session in
-            self?.checkForInterrupt(for: session)
-        }
-
-        // Turn-end: all consumer logic (unread, notifications, auto-clear)
-        session.onTurnEnd = { [weak self] session, duration in
-            self?.handleTurnEnd(for: session, duration: duration)
-        }
+        // Observe the session's terminalView lifecycle. Fires
+        // immediately with the current (just-created-in-init)
+        // view, which triggers wireSessionCallbacks → sets up
+        // the bell, processDelegate, onDataReceived, content
+        // monitor, and session-level turn callbacks. The same
+        // subscription handles future recreations on resume.
+        observeTerminalViewLifecycle(for: session)
 
         // Determine if this is a resume (resumeSessionId provided means URL had resume param)
         let isResume = resumeSessionId != nil
@@ -642,92 +576,12 @@ class SessionManager: ObservableObject {
         // scroll history across resumes.
         session.terminalView?.feed(text: "\u{1b}[2J\u{1b}[H")
 
-        // Re-attach process handler
-        let handler = TerminalProcessHandler(session: session, sessionManager: self)
-        session.processHandler = handler
-        session.terminalView?.processDelegate = handler
-
-        // Set up bell callback — handles sound/visual bell
-        // and optionally sends a macOS notification with
-        // context from the most recent turn event.
-        session.terminalView?.onBell = { [weak self, weak session] in
-            guard let self = self, let session = session else { return }
-            DispatchQueue.main.async {
-                let settings = SettingsManager.shared.settings
-
-                // Play sound (always, regardless of focus)
-                SettingsManager.shared.playSound(
-                    settings.bellSound
-                )
-
-                // Visual flash (always, regardless of focus)
-                if settings.bellVisualFlash {
-                    self.triggerVisualBell(for: session)
-                }
-
-                // Terminal bell notification
-                guard settings.notifyTerminalBell else { return }
-                let isViewing = session.id == self.activeSessionId
-                    && self.activeTab == .terminal
-                    && self.isWindowFocused
-                guard !isViewing else { return }
-
-                guard let lsid = session.ledgerSessionId else { return }
-                let sessionId = session.id
-                let displayName = session.displayName
-
-                Task {
-                    do {
-                        let event = try await TimelineQueryService
-                            .shared
-                            .fetchMostRecentTurnEvent(
-                                ledgerSessionId: lsid
-                            )
-                        let bodyText = Self.bellNotificationBody(from: event)
-                        await MainActor.run {
-                            NotificationService.shared.notifyTerminalBell(
-                                sessionId: sessionId,
-                                displayName: displayName,
-                                bodyText: bodyText
-                            )
-                        }
-                    } catch {
-                        // Best-effort — send without body
-                        await MainActor.run {
-                            NotificationService.shared.notifyTerminalBell(
-                                sessionId: sessionId,
-                                displayName: displayName,
-                                bodyText: nil
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // Set up data received callback for busy state detection
-        session.terminalView?.onDataReceived = { [weak session] in
-            session?.markBusy()
-        }
-
-        // Start buffer content monitor (Phase 0 de-risk logging)
-        session.terminalView?.startContentMonitor()
-
-        // Cancel pending idle notification timer when turn starts
-        session.onTurnStart = { [weak self] session in
-            self?.pendingIdleNotificationTimers[session.id]?.invalidate()
-            self?.pendingIdleNotificationTimers.removeValue(forKey: session.id)
-        }
-
-        // Micro-idle: only runs interrupt detection
-        session.onIdleTransition = { [weak self] session in
-            self?.checkForInterrupt(for: session)
-        }
-
-        // Turn-end: all consumer logic (unread, notifications, auto-clear)
-        session.onTurnEnd = { [weak self] session, duration in
-            self?.handleTurnEnd(for: session, duration: duration)
-        }
+        // Callbacks are re-wired automatically by the subscription
+        // set up in observeTerminalViewLifecycle when this session
+        // was originally registered: ensureTerminalView() above
+        // assigned a fresh GalaxyTerminalView to session.terminalView,
+        // which fired the subscription, which called
+        // wireSessionCallbacks on the new view.
 
         // Determine executable path: claude-persona for persona sessions, claude for vanilla
         let executablePath: String
@@ -1383,6 +1237,10 @@ class SessionManager: ObservableObject {
         session.onTurnStart = nil
         session.onTurnEnd = nil
 
+        // Cancel the terminalView lifecycle observer so it doesn't
+        // re-wire callbacks on any post-removal terminalView churn.
+        terminalViewSubs.removeValue(forKey: session.id)
+
         // Remove the session (this will deallocate the terminal view which kills the process)
         sessions.remove(at: index)
         SessionPersistence.shared.markDirty()
@@ -1437,6 +1295,9 @@ class SessionManager: ObservableObject {
         // Create stopped session from persisted state
         let session = Session(restoring: closedSession.session)
         sessions.append(session)
+        // Observe terminalView lifecycle so callbacks wire
+        // automatically when the user later resumes this session.
+        observeTerminalViewLifecycle(for: session)
 
         // Save outgoing session's view state, then activate restored session
         saveViewState()
@@ -1595,7 +1456,10 @@ class SessionManager: ObservableObject {
         return cleaned
     }
 
-    /// Trigger visual bell with 3 flashes, each shorter than the last
+    /// Trigger visual bell with 3 flashes, each shorter than the last.
+    /// Unconditional — debounce lives one level up in handleBell(for:)
+    /// so the whole pipeline (sound + flash + notification) is gated
+    /// together, not just the flash.
     private func triggerVisualBell(for session: Session) {
         // Flash durations: 3 flashes at 375ms each
         // Gap between flashes: 100ms
@@ -1621,6 +1485,162 @@ class SessionManager: ObservableObject {
             }
         }
     }
+
+    /// Total duration of a single bell pipeline event. Matches the
+    /// visual flash sequence (3 flashes × 375ms + 2 gaps × 100ms).
+    /// Used as the debounce window in handleBell(for:).
+    private static let bellPipelineDuration: TimeInterval =
+        (0.375 * 3) + (0.1 * 2)
+
+    /// Subscribe to a session's `$terminalView` so the callback set
+    /// below (`wireSessionCallbacks`) fires automatically whenever
+    /// the view is (re)created. One subscription per session,
+    /// established when the session is first registered. Survives
+    /// stop → resume cycles — `releaseTerminalView` writes nil
+    /// (subscriber ignores) and `ensureTerminalView` writes a new
+    /// view (subscriber re-wires). Removed in `removeSession`.
+    private func observeTerminalViewLifecycle(for session: Session) {
+        terminalViewSubs[session.id] = session.$terminalView
+            .sink { [weak self, weak session] newView in
+                guard let self = self,
+                      let session = session,
+                      let view = newView else { return }
+                self.wireSessionCallbacks(
+                    for: session, terminalView: view
+                )
+            }
+    }
+
+    /// Single source of truth for wiring SessionManager-owned
+    /// callbacks on a session's terminal view. Called by the
+    /// observer set up in `observeTerminalViewLifecycle(for:)`
+    /// every time `session.terminalView` transitions to non-nil.
+    ///
+    /// Idempotent: each call replaces any prior wiring on the
+    /// current view, so stacking calls doesn't leak handlers.
+    /// Session-level callbacks (onTurnStart, onIdleTransition,
+    /// onTurnEnd) persist across terminalView recreation but are
+    /// re-assigned here for parity with pre-refactor behavior.
+    private func wireSessionCallbacks(
+        for session: Session,
+        terminalView: GalaxyTerminalView
+    ) {
+        // Process handler — strong ref on Session so it outlives
+        // the closure captures below.
+        let handler = TerminalProcessHandler(
+            session: session, sessionManager: self
+        )
+        session.processHandler = handler
+        terminalView.processDelegate = handler
+
+        // Bell — delegates to the debounced pipeline in handleBell.
+        terminalView.onBell = { [weak self, weak session] in
+            guard let self = self,
+                  let session = session else { return }
+            self.handleBell(for: session)
+        }
+
+        // Busy-state detection (PTY activity).
+        terminalView.onDataReceived = { [weak session] in
+            session?.markBusy()
+        }
+
+        // Start buffer content monitor.
+        terminalView.startContentMonitor()
+
+        // Cancel pending idle notification timer when turn starts.
+        session.onTurnStart = { [weak self] session in
+            self?.pendingIdleNotificationTimers[session.id]?
+                .invalidate()
+            self?.pendingIdleNotificationTimers
+                .removeValue(forKey: session.id)
+        }
+
+        // Micro-idle: only runs interrupt detection.
+        session.onIdleTransition = { [weak self] session in
+            self?.checkForInterrupt(for: session)
+        }
+
+        // Turn-end: all consumer logic (unread, notifications,
+        // auto-clear).
+        session.onTurnEnd = { [weak self] session, duration in
+            self?.handleTurnEnd(for: session, duration: duration)
+        }
+    }
+
+    /// Handle a bell event from the session's terminal. Single
+    /// source of truth for the bell pipeline — plays sound, fires
+    /// visual flash (if enabled), and posts a notification (if
+    /// enabled and not viewing). Debounced: if a bell is already in
+    /// flight for this session, the new event is dropped entirely.
+    ///
+    /// Called from the `onBell` closure wired in
+    /// `wireSessionCallbacks`, and from the debug bell shortcut
+    /// via `session.terminalView?.onBell?()`.
+    private func handleBell(for session: Session) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            guard !session.bellDebounceActive else { return }
+            session.bellDebounceActive = true
+
+            // Clear the gate after the full pipeline duration so
+            // the next bell can fire cleanly.
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + Self.bellPipelineDuration
+            ) {
+                session.bellDebounceActive = false
+            }
+
+            let settings = SettingsManager.shared.settings
+
+            // Play sound (regardless of focus)
+            SettingsManager.shared.playSound(settings.bellSound)
+
+            // Visual flash (regardless of focus, honors setting)
+            if settings.bellVisualFlash {
+                self.triggerVisualBell(for: session)
+            }
+
+            // Terminal bell notification (honors setting + not viewing)
+            guard settings.notifyTerminalBell else { return }
+            let isViewing = session.id == self.activeSessionId
+                && self.activeTab == .terminal
+                && self.isWindowFocused
+            guard !isViewing else { return }
+
+            guard let lsid = session.ledgerSessionId else { return }
+            let sessionId = session.id
+            let displayName = session.displayName
+
+            Task {
+                do {
+                    let event = try await TimelineQueryService
+                        .shared
+                        .fetchMostRecentTurnEvent(
+                            ledgerSessionId: lsid
+                        )
+                    let bodyText = Self.bellNotificationBody(from: event)
+                    await MainActor.run {
+                        NotificationService.shared.notifyTerminalBell(
+                            sessionId: sessionId,
+                            displayName: displayName,
+                            bodyText: bodyText
+                        )
+                    }
+                } catch {
+                    // Best-effort — send without body
+                    await MainActor.run {
+                        NotificationService.shared.notifyTerminalBell(
+                            sessionId: sessionId,
+                            displayName: displayName,
+                            bodyText: nil
+                        )
+                    }
+                }
+            }
+        }
+    }
+
 }
 
 // Handler for terminal process events

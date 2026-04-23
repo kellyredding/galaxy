@@ -426,7 +426,7 @@ struct TerminalContainerView: View {
     var body: some View {
         ZStack {
             ForEach(sessionManager.sessions) { session in
-                SessionContentView(
+                SessionPaneView(
                     session: session,
                     isActive: session.id == sessionManager.activeSessionId,
                     onResume: { sessionManager.resumeSession(sessionId: session.id) }
@@ -514,7 +514,7 @@ extension TabUnreadIndicator {
 
 
 /// Wrapper view that observes individual session state changes
-struct SessionContentView: View {
+struct SessionPaneView: View {
     @ObservedObject var session: Session
     let isActive: Bool
     let onResume: () -> Void

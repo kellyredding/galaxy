@@ -64,6 +64,15 @@ class Session: Identifiable, ObservableObject {
     /// SessionManager.shared.updateDockBadge() to keep the dock badge in sync.
     @Published var hasUnreadResponse: Bool = false
     @Published var visualBellActive: Bool = false
+
+    /// Gate for bell-pipeline debounce. Set true at the top of
+    /// the bell handler while a bell event is in progress;
+    /// additional bells that arrive during this window are
+    /// dropped entirely — no sound, no flash, no notification.
+    /// Window duration matches the full visual flash sequence
+    /// (~1.225s) so the debounce naturally aligns with the
+    /// perceived bell event.
+    @Published var bellDebounceActive: Bool = false
     @Published var isBusy: Bool = false
 
     // MARK: - Turn State
@@ -328,7 +337,12 @@ class Session: Identifiable, ObservableObject {
         }
     }
 
-    private(set) var terminalView: GalaxyTerminalView?
+    /// The GalaxyTerminalView backing this session. Published so
+    /// SessionManager can observe lifecycle transitions (creation in
+    /// `init`/`ensureTerminalView`, teardown in `releaseTerminalView`)
+    /// and re-wire its callbacks without duplicating setup code at
+    /// every call site. See `SessionManager.observeTerminalViewLifecycle`.
+    @Published private(set) var terminalView: GalaxyTerminalView?
     let createdAt: Date
     let workingDirectory: String
 

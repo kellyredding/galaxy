@@ -811,6 +811,7 @@ class MenuActions: NSObject {
     @objc func showPreferences(_ sender: Any?) {
         NotificationCenter.default.post(name: .showPreferences, object: nil)
     }
+
 }
 
 // MARK: - Notifications
