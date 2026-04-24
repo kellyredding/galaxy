@@ -209,28 +209,11 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
 
     /// Short debounce window covering the full bell
     /// pipeline (sound fire + flash overlay animation).
-    /// Slightly longer than `bellFlashDuration` so the
-    /// gate clears after the overlay is fully torn down
-    /// — never shorter, or rapid bells would stack
-    /// overlays.
+    /// Slightly longer than `TerminalVisualBell.duration`
+    /// so the gate clears after the overlay is fully
+    /// torn down — never shorter, or rapid bells would
+    /// stack overlays.
     private static let bellDebounceWindow: TimeInterval = 0.24
-
-    /// Total duration of the bell pulse (rise + fall).
-    /// Long enough to feel like a deliberate pulse
-    /// rather than a snap, short enough to stay crisp.
-    private static let bellFlashDuration: TimeInterval = 0.20
-
-    /// Peak opacity of the pulse. Dimmer than the old
-    /// snap-in overlay because a pulse gives the eye
-    /// more time to register the flash, so it doesn't
-    /// need to shout.
-    private static let bellFlashPeakOpacity: Float = 0.25
-
-    /// Fraction of the total duration at which the pulse
-    /// reaches peak. A quick rise (25%) then a longer
-    /// decay (75%) feels more like a pulse than a
-    /// symmetric triangle.
-    private static let bellFlashPeakFraction: Double = 0.25
 
     /// Apply shell-bell side effects per current settings.
     /// Called from `backend.onBell` (pane-local, no
@@ -262,63 +245,13 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
         }
     }
 
-    /// Pulse a neutral-gray overlay across the terminal:
-    /// rise quickly to peak, then decay back to zero.
-    /// Neutral 0.5 gray is theme-agnostic (sits between
-    /// light and dark backgrounds without fighting
-    /// either). Sibling-view approach (vs. swapping
-    /// terminal colors) avoids racing SwiftTerm's render
-    /// cadence, and `.above` positioning pins the
-    /// overlay on top of the caret so the cursor can't
-    /// peek through during the pulse.
-    ///
-    /// Uses `CAKeyframeAnimation` rather than chained
-    /// `NSAnimationContext` groups: one Core Animation
-    /// call gives smoother interpolation and avoids the
-    /// inter-group jitter you get when chaining two
-    /// separate animation runs.
+    /// Delegate to the shared `TerminalVisualBell` pulse
+    /// so the Shell and Session panes render identical
+    /// flashes. All pulse tuning (peak opacity,
+    /// duration, curve) lives in one place; this method
+    /// just picks the target view.
     private func flashVisualBell() {
-        let target = backend.view
-        let flash = NSView(frame: target.bounds)
-        flash.wantsLayer = true
-        flash.layer?.backgroundColor = NSColor.gray.cgColor
-        flash.autoresizingMask = [.width, .height]
-        // Base layer opacity is 0 — the animation
-        // overlays the temporary pulse curve, and when
-        // the animation ends the layer snaps back to 0
-        // (invisible) before `removeFromSuperview`
-        // fires, so there's no end-of-pulse flicker.
-        flash.layer?.opacity = 0
-        target.addSubview(
-            flash, positioned: .above, relativeTo: nil
-        )
-
-        let pulse = CAKeyframeAnimation(keyPath: "opacity")
-        pulse.values = [
-            0,
-            Self.bellFlashPeakOpacity,
-            0
-        ]
-        pulse.keyTimes = [
-            0,
-            NSNumber(value: Self.bellFlashPeakFraction),
-            1
-        ]
-        pulse.duration = Self.bellFlashDuration
-        // Ease-out on the rise so the pulse pops in
-        // crisply; ease-in on the fall so the tail
-        // feels gentle rather than cliff-edged.
-        pulse.timingFunctions = [
-            CAMediaTimingFunction(name: .easeOut),
-            CAMediaTimingFunction(name: .easeIn)
-        ]
-        flash.layer?.add(pulse, forKey: "pulse")
-
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + Self.bellFlashDuration
-        ) {
-            flash.removeFromSuperview()
-        }
+        TerminalVisualBell.pulse(over: backend.view)
     }
 
     private func subscribeToSettings() {

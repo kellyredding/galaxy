@@ -96,6 +96,7 @@
 		C7C58C9749BA5147D39E5B17 /* NewSessionSheetController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8A53165AE008050CD86AE4F /* NewSessionSheetController.swift */; };
 		C81FA322757FF337EF9E18AC /* github-dark.min.css in Resources */ = {isa = PBXBuildFile; fileRef = 571E103D146B34A40CCC6E58 /* github-dark.min.css */; };
 		CA284F033220A4AD5EE21F09 /* TerminalTabSplitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC11C8CB88502C2AD6E56775 /* TerminalTabSplitView.swift */; };
+		E8A2FB4C9D6B5E3F1A7C8D2B /* TerminalVisualBell.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4F1A5B8C2E34D7E9B3F6A1C /* TerminalVisualBell.swift */; };
 		CC27D1B9C8318928AE6187FE /* SocketListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA7C61AE6C010B6F8091B0B3 /* SocketListener.swift */; };
 		CF28242E079441458AD5DF08 /* ArtifactQueryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B3D4BA58AA8141ED6BB4741 /* ArtifactQueryService.swift */; };
 		CF2878EF8B56C276182C86A2 /* SessionTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 132ABF5FFF205D134EED1EE4 /* SessionTab.swift */; };
@@ -193,6 +194,7 @@
 		BAEF4E4E06E2AD409BFED23F /* SessionPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionPersistence.swift; sourceTree = "<group>"; };
 		BB1BD0B12AE09B3D09B6EE03 /* AnnotationHTMLVisitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnnotationHTMLVisitor.swift; sourceTree = "<group>"; };
 		BC11C8CB88502C2AD6E56775 /* TerminalTabSplitView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TerminalTabSplitView.swift; sourceTree = "<group>"; };
+		D4F1A5B8C2E34D7E9B3F6A1C /* TerminalVisualBell.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TerminalVisualBell.swift; sourceTree = "<group>"; };
 		BC39AC5B7A009BF079447618 /* TimelineQueryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineQueryService.swift; sourceTree = "<group>"; };
 		BD1324D7665E5F848D1DDD90 /* ScrollbackOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollbackOverlayView.swift; sourceTree = "<group>"; };
 		BE3DAF1743A20920A57B236D /* NewSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewSessionView.swift; sourceTree = "<group>"; };
@@ -355,6 +357,7 @@
 				5E81C1699D1612037E84FE65 /* ShellPaneBar.swift */,
 				1260117598D2E8A70DFB8B9F /* ShellPaneView.swift */,
 				BC11C8CB88502C2AD6E56775 /* TerminalTabSplitView.swift */,
+				D4F1A5B8C2E34D7E9B3F6A1C /* TerminalVisualBell.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -571,6 +574,7 @@
 				C712BC35633C53B4F24FCD1C /* ShellPaneBar.swift in Sources */,
 				51A10F722AB6150B8A30DB2F /* ShellPaneView.swift in Sources */,
 				CA284F033220A4AD5EE21F09 /* TerminalTabSplitView.swift in Sources */,
+				E8A2FB4C9D6B5E3F1A7C8D2B /* TerminalVisualBell.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

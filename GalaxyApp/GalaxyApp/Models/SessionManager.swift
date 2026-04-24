@@ -1596,9 +1596,17 @@ class SessionManager: ObservableObject {
             // Play sound (regardless of focus)
             SettingsManager.shared.playSound(settings.bellSound)
 
-            // Visual flash (regardless of focus, honors setting)
+            // Visual flash (regardless of focus, honors setting).
+            // `bellVisualFlash` gates both cues: the sidebar
+            // flash (persistent attention) and an in-pane pulse
+            // (immediate in-place acknowledgment). Pulse fires
+            // once at the start of the bell sequence; the
+            // sidebar continues its 3-flash cadence.
             if settings.bellVisualFlash {
                 self.triggerVisualBell(for: session)
+                if let view = session.terminalView {
+                    TerminalVisualBell.pulse(over: view)
+                }
             }
 
             // Terminal bell notification (honors setting + not viewing)
