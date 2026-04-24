@@ -6,6 +6,26 @@ class ScrollbackOverlayView: NSView {
     let scrollbackView: ScrollbackWebView
     private let pillLabel: NSTextField
 
+    /// Alpha applied to the border + pill background when
+    /// the overlay's pane has lost focus. Visually de-
+    /// emphasizes the inactive overlay so the user can
+    /// tell at a glance which scrollback is "live" when
+    /// both panes have a scrollback open.
+    private static let unfocusedAlpha: CGFloat = 0.55
+
+    /// Whether the host pane is the focus-holder. Toggled
+    /// by `TerminalHostView` via KVO on
+    /// `window.firstResponder` while a scrollback is open.
+    /// Defaults to true so the overlay reads as "active"
+    /// the moment it appears (it almost always becomes
+    /// firstResponder immediately).
+    var isPaneFocused: Bool = true {
+        didSet {
+            guard isPaneFocused != oldValue else { return }
+            applyFocusedState()
+        }
+    }
+
     init(frame: NSRect, scrollbackView: ScrollbackWebView) {
         self.scrollbackView = scrollbackView
         self.pillLabel = NSTextField(labelWithString: "Scrollback · Esc to exit")
@@ -20,9 +40,11 @@ class ScrollbackOverlayView: NSView {
         // Configure pill indicator
         configurePill()
 
-        // Draw 2px accent-color border
+        // Draw 2px accent-color border (focus-aware via
+        // applyFocusedState so the alpha is honored even on
+        // first paint).
         layer?.borderWidth = 2
-        layer?.borderColor = NSColor.controlAccentColor.cgColor
+        applyFocusedState()
     }
 
     @available(*, unavailable)
@@ -96,9 +118,23 @@ class ScrollbackOverlayView: NSView {
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        // Update border and pill colors when accent color changes
-        layer?.borderColor = NSColor.controlAccentColor.cgColor
-        pillLabel.backgroundColor = NSColor.controlAccentColor
+        // Update border + pill colors when accent color
+        // changes; preserve the current focus alpha.
+        applyFocusedState()
         pillLabel.textColor = contrastingTextColor()
+    }
+
+    /// Apply the accent color at the alpha level dictated
+    /// by `isPaneFocused`. Single source of truth for the
+    /// border + pill background color so focus changes and
+    /// appearance changes always agree.
+    private func applyFocusedState() {
+        let alpha: CGFloat = isPaneFocused
+            ? 1.0
+            : Self.unfocusedAlpha
+        let tinted = NSColor.controlAccentColor
+            .withAlphaComponent(alpha)
+        layer?.borderColor = tinted.cgColor
+        pillLabel.backgroundColor = tinted
     }
 }

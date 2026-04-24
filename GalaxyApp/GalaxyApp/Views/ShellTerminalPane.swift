@@ -128,9 +128,10 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
     }
 
     /// Shell pane's Send-to-Claude routes pastes to the owning
-    /// Claude session's terminal. Phase 2 scope: only the
-    /// session-stopped blocker — session-scrollback-open
-    /// detection is deferred to Phase 3 (live state updates).
+    /// Claude session's terminal. Disabled with a tooltip when
+    /// the session isn't running (takes precedence) or the
+    /// session pane's scrollback overlay is open — sending
+    /// into a paused buffer view would land out-of-order.
     var sendToClaudeTarget: SendToClaudeTarget? {
         guard let s = session else { return nil }
         let sessionView = s.terminalView
@@ -142,16 +143,42 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
             sendCR: { [weak sessionView] in
                 sessionView?.send([0x0D])
             },
-            disabledReason: { [weak s] in
+            disabledReason: { [weak self, weak s] in
                 guard let s = s else {
                     return "Session unavailable"
                 }
+                // Session-stopped takes precedence — it's the
+                // more fundamental block.
                 if !s.isRunning || s.hasExited {
                     return "Resume the session first"
+                }
+                if self?.findSessionHostView()?
+                    .isScrollbackActive == true {
+                    return "Close session scrollback first"
                 }
                 return nil
             }
         )
+    }
+
+    /// Walk the session terminal view's superview chain to
+    /// locate its `TerminalHostView`. Used by
+    /// `sendToClaudeTarget.disabledReason` to check the
+    /// session pane's live scrollback state without holding
+    /// a direct reference (which would risk a retain cycle
+    /// or stale handle across stop/resume). Returns nil when
+    /// the session isn't mounted in a host view — which
+    /// correctly falls through to "not blocked by session
+    /// scrollback".
+    private func findSessionHostView() -> TerminalHostView? {
+        var v: NSView? = session?.terminalView?.superview
+        while let curr = v {
+            if let host = curr as? TerminalHostView {
+                return host
+            }
+            v = curr.superview
+        }
+        return nil
     }
 
     // MARK: - Font size

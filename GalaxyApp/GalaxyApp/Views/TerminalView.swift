@@ -145,6 +145,32 @@ class TerminalHostView: NSView {
     /// Combine subscriptions for live settings sync (font, theme, hasExited).
     private var cancellables = Set<AnyCancellable>()
 
+    /// Subscriptions active only while a scrollback overlay is
+    /// open, driving live enable/disable transitions on the
+    /// Send-to-Claude button. Cleared in
+    /// `performScrollbackTeardown` so timers don't keep firing
+    /// after the overlay closes.
+    private var sendButtonStateCancellables = Set<AnyCancellable>()
+
+    /// KVO on `window.firstResponder` driving the focus-
+    /// aware dim of:
+    ///   1. `pane.view.alphaValue` — the live terminal
+    ///      view fades when this pane loses focus to a
+    ///      sibling pane (Session ↔ Shell).
+    ///   2. `ScrollbackOverlayView.isPaneFocused` — the
+    ///      pill + border tint when a scrollback is open.
+    /// Lifetime is the host view's, not the scrollback's,
+    /// because pane dim applies whether or not a scrollback
+    /// is up. Started in `viewDidMoveToWindow`, invalidated
+    /// in `deinit`.
+    private var firstResponderObservation: NSKeyValueObservation?
+
+    /// Alpha applied to `pane.view` when this pane has
+    /// lost focus to a sibling. Tuned so the unfocused
+    /// pane reads as clearly inactive without making text
+    /// hard to scan if the user glances over.
+    private static let unfocusedPaneAlpha: CGFloat = 0.70
+
     init(pane: TerminalPane) {
         self.pane = pane
         super.init(frame: .zero)
@@ -161,6 +187,7 @@ class TerminalHostView: NSView {
         }
         cancellables.removeAll()
         scrollbackCooldownTimer?.cancel()
+        firstResponderObservation?.invalidate()
     }
 
     /// Set up local event monitor to intercept Ctrl+Arrow for line navigation.
@@ -224,6 +251,13 @@ class TerminalHostView: NSView {
             setupTerminal()
             isSetUp = true
         }
+
+        // Re-bind the first-responder observer to the
+        // current window. Handles both add (window
+        // assigned) and remove (window goes nil), so the
+        // observer only exists while we're actually in a
+        // window and can never leak across reattachment.
+        startObservingFirstResponder()
     }
 
     private func setupTerminal() {
@@ -660,6 +694,22 @@ class TerminalHostView: NSView {
 
             // Restore note cards if this is a reload (theme/font change)
             webView.restoreNoteState()
+
+            // Push initial Send-button state and wire live
+            // subscriptions. Initial push matters because
+            // the overlay may open with a blocker already
+            // in effect (e.g. shell scrollback opened while
+            // the session is stopped).
+            self.refreshSendButtonState()
+            self.subscribeToSendButtonStateChanges()
+
+            // Push initial focus state into the new
+            // overlay. The KVO observer is already running
+            // (view-lifetime, not scrollback-scoped), so
+            // future first-responder changes flow through
+            // automatically — but the overlay just spawned
+            // and needs its starting tint set.
+            self.refreshFocusState()
         }
         webView.onConfirmDismiss = { [weak self] in
             self?.showDismissConfirmation()
@@ -860,6 +910,14 @@ class TerminalHostView: NSView {
             window?.makeFirstResponder(pane.view)
         }
 
+        // Clear Send-button state subscriptions before the
+        // overlay goes away — the timer publisher would keep
+        // firing and the button ID would be gone.
+        sendButtonStateCancellables.removeAll()
+        // Note: `firstResponderObservation` stays alive —
+        // its lifetime is the host view's, since it also
+        // drives the always-on pane dim.
+
         // Explicit teardown breaks the WKWebView retain cycle so
         // the web process is freed immediately rather than leaking.
         overlay.scrollbackView.teardown()
@@ -874,6 +932,139 @@ class TerminalHostView: NSView {
             .scrollToEnterScrollback {
             startScrollbackCooldown()
         }
+    }
+
+    /// Push the current `sendToClaudeTarget.disabledReason()`
+    /// into the scrollback overlay's JS via
+    /// `ScrollbackManager.setSendButtonState`. Safe to call
+    /// when the overlay isn't open — bails early. String
+    /// escaping handles apostrophes in reason text (e.g.
+    /// "Don't…") and literal backslashes defensively, so the
+    /// inline JS template never breaks on user-facing
+    /// wording changes.
+    private func refreshSendButtonState() {
+        guard let overlay = scrollbackOverlay else { return }
+        let target = pane.sendToClaudeTarget
+        let reason = target?.disabledReason()
+        let enabled = (target != nil && reason == nil)
+        let tooltip = reason ?? ""
+        let escaped = tooltip
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+        let js =
+            "ScrollbackManager.setSendButtonState(" +
+            "\(enabled), '\(escaped)')"
+        overlay.scrollbackView.webView
+            .evaluateJavaScript(js)
+    }
+
+    /// Wire the push/poll inputs that make the Send-button
+    /// state react live to blocker changes. Called from
+    /// `createScrollback` after the web view is ready;
+    /// cleared in `performScrollbackTeardown`.
+    ///
+    /// - Shell pane has two blockers: the owning session's
+    ///   running state (push via `@Published`) and the
+    ///   session pane's scrollback overlay state (poll at
+    ///   200ms — `isScrollbackActive` isn't published, and
+    ///   adding a publisher wrapper is more plumbing than a
+    ///   short-lived timer while a scrollback is open).
+    /// - Session pane has one blocker (its own running
+    ///   state), push-based. Future Session-pane blockers
+    ///   can reuse this same subscription path.
+    private func subscribeToSendButtonStateChanges() {
+        sendButtonStateCancellables.removeAll()
+
+        if let shell = pane as? ShellTerminalPane,
+           let session = shell.session {
+            Publishers.CombineLatest(
+                session.$isRunning,
+                session.$hasExited
+            )
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _, _ in
+                self?.refreshSendButtonState()
+            }
+            .store(in: &sendButtonStateCancellables)
+
+            // Poll the session pane's scrollback state. Cost
+            // is negligible — 5 Hz, pure Swift property reads
+            // on the main thread, only while a shell
+            // scrollback is visible.
+            Timer.publish(
+                every: 0.2, on: .main, in: .common
+            )
+            .autoconnect()
+            .sink { [weak self] _ in
+                self?.refreshSendButtonState()
+            }
+            .store(in: &sendButtonStateCancellables)
+        }
+
+        if let sessionPane = pane as? SessionTerminalPane,
+           let session = sessionPane.session {
+            Publishers.CombineLatest(
+                session.$isRunning,
+                session.$hasExited
+            )
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _, _ in
+                self?.refreshSendButtonState()
+            }
+            .store(in: &sendButtonStateCancellables)
+        }
+    }
+
+    /// (Re)bind the KVO observer for the focus-driven
+    /// dim. Idempotent — invalidates the prior observation
+    /// before binding to the current window. When this
+    /// view is removed from a window, the resulting nil
+    /// window simply leaves the observer torn down until
+    /// we're attached again.
+    private func startObservingFirstResponder() {
+        firstResponderObservation?.invalidate()
+        firstResponderObservation = nil
+        guard let window = window else { return }
+        firstResponderObservation = window.observe(
+            \.firstResponder, options: [.initial, .new]
+        ) { [weak self] _, _ in
+            self?.refreshFocusState()
+        }
+    }
+
+    /// Apply the current focus state to both signals
+    /// gated on it: the live terminal pane's `alphaValue`
+    /// and (if a scrollback is open) the overlay's pill +
+    /// border tint. "Focused" = first-responder is this
+    /// host view or any descendant — which covers the
+    /// SwiftTerm view, the scrollback web view, and any
+    /// nested first-responder we haven't thought of.
+    private func refreshFocusState() {
+        let fr = window?.firstResponder
+        var isFocusInPane = false
+        if let frView = fr as? NSView {
+            isFocusInPane = (frView === self)
+                || frView.isDescendant(of: self)
+        }
+
+        // Pane-level dim: animate alpha so the transition
+        // doesn't feel snappy/jarring on every focus
+        // shift. 150ms ease matches NSWindow's own
+        // active/inactive cadence.
+        let target: CGFloat = isFocusInPane
+            ? 1.0
+            : Self.unfocusedPaneAlpha
+        if pane.view.alphaValue != target {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.15
+                pane.view.animator().alphaValue = target
+            }
+        }
+
+        // Scrollback overlay dim — same focus signal
+        // gates the pill + border alpha on the overlay
+        // when one is open.
+        scrollbackOverlay?.isPaneFocused = isFocusInPane
     }
 
     /// Show an NSAlert sheet asking the user to confirm discarding notes.

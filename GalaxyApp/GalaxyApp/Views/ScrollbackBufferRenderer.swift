@@ -438,6 +438,24 @@ enum ScrollbackBufferRenderer {
         }
     };
 
+    // Native-side hook to push Send-to-Claude button state
+    // into the overlay live. Called from Swift whenever the
+    // underlying disabledReason() changes (session stops or
+    // resumes, session-pane scrollback opens or closes).
+    // Uses a data-attribute (not the native `title`) so the
+    // CSS tooltip in `.send-bar-button[data-disabled-reason]`
+    // shows instantly on hover, no OS-imposed delay.
+    ScrollbackManager.setSendButtonState = function(enabled, tooltip) {
+        const btn = document.getElementById('send-bar-button');
+        if (!btn) return;
+        btn.disabled = !enabled;
+        if (tooltip) {
+            btn.setAttribute('data-disabled-reason', tooltip);
+        } else {
+            btn.removeAttribute('data-disabled-reason');
+        }
+    };
+
     document.addEventListener('DOMContentLoaded', () => {
         ScrollbackManager.initialize();
     });
@@ -733,9 +751,43 @@ enum ScrollbackBufferRenderer {
             cursor: pointer;
             font-weight: 600;
             font-size: 13px;
+            position: relative; /* anchor for tooltip ::after */
         }
-        .send-bar-button:hover {
+        .send-bar-button:not(:disabled):hover {
             background: rgba(255, 255, 255, 0.35);
+        }
+        /* Disabled look WITHOUT `opacity` — opacity would
+           cascade to the ::after tooltip, washing out its
+           pill background and text. Dim via color/border
+           changes instead so the tooltip renders at full
+           opacity. */
+        .send-bar-button:disabled {
+            cursor: not-allowed;
+            color: rgba(255, 255, 255, 0.45);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+        /* Instant CSS tooltip for the disabled state — the
+           native `title` attribute has a multi-second OS
+           delay before showing, which feels broken for a
+           user actively trying to figure out why the button
+           is disabled. The data-attribute is set by
+           ScrollbackManager.setSendButtonState. */
+        .send-bar-button[data-disabled-reason]:hover::after {
+            content: attr(data-disabled-reason);
+            position: absolute;
+            bottom: calc(100% + 6px);
+            right: 0;
+            background: #2b2b2b;
+            color: #fff;
+            padding: 4px 8px;
+            border-radius: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.5);
+            font-size: 11px;
+            font-weight: 500;
+            white-space: nowrap;
+            pointer-events: none;
+            z-index: 1001;
         }
 
         /* Edit textarea in card */
