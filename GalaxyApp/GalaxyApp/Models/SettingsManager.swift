@@ -138,6 +138,18 @@ struct AppSettings: Codable {
     // Terminal scrollback settings
     var terminalScrollbackLines: Int = 10_000  // Scrollback buffer size in lines
 
+    // Shell pane settings
+    /// Default split ratio for a newly opened shell pane,
+    /// expressed as the shell's fraction of total height
+    /// (0.0–1.0). The top (session) pane gets `1 - ratio`.
+    /// Clamped to `shellDefaultHeightRatioRange` on apply
+    /// so the stored value can't drift outside the same
+    /// window the drag indicator enforces. Applied at open
+    /// time only — changing this while a shell is already
+    /// open does NOT retroactively resize it (matches
+    /// `defaultTerminalFontSize` semantics).
+    var shellDefaultHeightRatio: Double = 0.5
+
     // Session sidebar settings
     var gitStatusStyle: GitStatusStyle = .symbolic  // Git status display style
 
@@ -179,6 +191,16 @@ struct AppSettings: Codable {
 
     // Scrollback constraints
     static let terminalScrollbackRange: ClosedRange<Int> = 500...100_000
+
+    // Shell pane default height constraints. The same 30–70%
+    // window the drag indicator enforces, so the setting can't
+    // be configured outside the usable range.
+    static let shellDefaultHeightRatioRange:
+        ClosedRange<Double> = 0.30...0.70
+    /// Stepper increment for the Settings UI. 1% nudges
+    /// give fine-grained control; text field accepts any
+    /// integer percent inside the range.
+    static let shellDefaultHeightRatioStep: Double = 0.01
 
     /// Estimated memory usage for a given scrollback line count.
     /// Assumes 200-column terminal width at 16 bytes per cell (3,200 bytes/line).
@@ -297,6 +319,9 @@ struct AppSettings: Codable {
             CGFloat.self, forKey: .restoreColClosedWidth) ?? 110
         newSessionDefaultDir = try container.decodeIfPresent(String.self, forKey: .newSessionDefaultDir) ?? "~/"
         newSessionLastPersona = try container.decodeIfPresent(String.self, forKey: .newSessionLastPersona)
+        shellDefaultHeightRatio = try container.decodeIfPresent(
+            Double.self, forKey: .shellDefaultHeightRatio
+        ) ?? 0.5
     }
 
     init() {

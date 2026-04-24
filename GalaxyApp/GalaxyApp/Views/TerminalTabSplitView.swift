@@ -68,7 +68,8 @@ struct TerminalTabSplitView: View {
                                 withAnimation(
                                     .easeInOut(duration: 0.15)
                                 ) {
-                                    state.ratio = 0.5
+                                    state.ratio =
+                                        Self.configuredTopRatio()
                                 }
                             }
                         )
@@ -132,6 +133,26 @@ struct TerminalTabSplitView: View {
         )
         return totalHeight * clampedRatio
     }
+
+    /// Top-pane fraction derived from the user's configured
+    /// default shell height. Clamped against the same drag
+    /// window the view enforces so the setting can never
+    /// disagree with live drag bounds. Used on shell open
+    /// and on double-click reset.
+    static func configuredTopRatio() -> CGFloat {
+        let shellRatio = SettingsManager.shared.settings
+            .shellDefaultHeightRatio
+        let clampedShell = min(
+            max(
+                shellRatio,
+                AppSettings
+                    .shellDefaultHeightRatioRange.lowerBound
+            ),
+            AppSettings
+                .shellDefaultHeightRatioRange.upperBound
+        )
+        return CGFloat(1.0 - clampedShell)
+    }
 }
 
 /// Mutable split state — ratio, shell pane instance, and
@@ -181,7 +202,7 @@ final class SplitState: ObservableObject {
         }
 
         pane.start()
-        ratio = 0.5
+        ratio = TerminalTabSplitView.configuredTopRatio()
         shellPane = pane
 
         // Focus the shell on open (user just asked for it).

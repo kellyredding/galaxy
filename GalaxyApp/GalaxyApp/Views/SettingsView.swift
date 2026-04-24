@@ -32,6 +32,7 @@ struct SettingsView: View {
     @ObservedObject var settingsManager = SettingsManager.shared
     @State private var fontSizeText: String = ""
     @State private var scrollbackText: String = ""
+    @State private var shellHeightPercentText: String = ""
     @State private var selectedTab: SettingsTab = .general
 
     var body: some View {
@@ -61,7 +62,9 @@ struct SettingsView: View {
                     TerminalSettingsTab(
                         settingsManager: settingsManager,
                         fontSizeText: $fontSizeText,
-                        scrollbackText: $scrollbackText
+                        scrollbackText: $scrollbackText,
+                        shellHeightPercentText:
+                            $shellHeightPercentText
                     )
                 case .notifications:
                     NotificationsSettingsTab(settingsManager: settingsManager)
@@ -268,6 +271,47 @@ struct TerminalSettingsTab: View {
     @ObservedObject var settingsManager: SettingsManager
     @Binding var fontSizeText: String
     @Binding var scrollbackText: String
+    @Binding var shellHeightPercentText: String
+
+    /// Drives the blur-normalize behavior for the shell
+    /// height percent field. When focus leaves the field
+    /// (or Return is pressed), we clamp out-of-range typed
+    /// values and revert empty/invalid input to the
+    /// current setting — so the visible text always
+    /// honestly reflects what's in effect.
+    @FocusState private var shellHeightFocused: Bool
+
+    /// Called on blur / Return. Normalizes the shell
+    /// height text field:
+    /// - Valid integer in range → write to setting (idempotent)
+    /// - Valid integer out of range → clamp, write, sync text
+    /// - Empty / non-integer → revert text to current setting
+    private func normalizeShellHeightText() {
+        let range = AppSettings.shellDefaultHeightRatioRange
+        let setting = settingsManager.settings
+            .shellDefaultHeightRatio
+
+        if let pct = Int(shellHeightPercentText) {
+            let ratio = Double(pct) / 100.0
+            let clamped = min(
+                max(ratio, range.lowerBound),
+                range.upperBound
+            )
+            if clamped != setting {
+                settingsManager.settings
+                    .shellDefaultHeightRatio = clamped
+            }
+            let clampedPct = Int((clamped * 100).rounded())
+            let newText = "\(clampedPct)"
+            if shellHeightPercentText != newText {
+                shellHeightPercentText = newText
+            }
+        } else {
+            // Empty or non-numeric → revert to setting
+            let pct = Int((setting * 100).rounded())
+            shellHeightPercentText = "\(pct)"
+        }
+    }
 
     /// Format an integer with comma grouping (e.g. 10000 → "10,000")
     private static func formatWithCommas(_ value: Int) -> String {
@@ -414,6 +458,81 @@ struct TerminalSettingsTab: View {
                             named: settingsManager.settings.terminalColorThemeName
                         )
                     )
+                }
+            }
+
+            // Shell pane settings
+            SettingsCard(title: "Shell") {
+                VStack(alignment: .leading, spacing: 12) {
+                    SettingsRow(label: "Default height") {
+                        HStack(spacing: 4) {
+                            TextField("", text: $shellHeightPercentText)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 50)
+                                .multilineTextAlignment(.trailing)
+                                .focused($shellHeightFocused)
+                                .onAppear {
+                                    let pct = Int(
+                                        (settingsManager.settings
+                                            .shellDefaultHeightRatio
+                                            * 100).rounded()
+                                    )
+                                    shellHeightPercentText = "\(pct)"
+                                }
+                                .onChange(of: shellHeightPercentText) { _, newValue in
+                                    // As-you-type: only commit to the
+                                    // setting when the typed value is a
+                                    // valid integer inside the allowed
+                                    // range. This preserves mid-typing
+                                    // states like "3" on the way to "35"
+                                    // without clobbering the setting —
+                                    // the blur/submit handler normalizes
+                                    // final state.
+                                    guard let pct = Int(newValue)
+                                    else { return }
+                                    let ratio = Double(pct) / 100.0
+                                    if AppSettings
+                                        .shellDefaultHeightRatioRange
+                                        .contains(ratio) {
+                                        settingsManager.settings
+                                            .shellDefaultHeightRatio = ratio
+                                    }
+                                }
+                                .onChange(of: shellHeightFocused) { _, isFocused in
+                                    if !isFocused {
+                                        normalizeShellHeightText()
+                                    }
+                                }
+                                .onSubmit {
+                                    normalizeShellHeightText()
+                                }
+                                .onChange(of: settingsManager.settings
+                                    .shellDefaultHeightRatio
+                                ) { _, newValue in
+                                    let pct = Int(
+                                        (newValue * 100).rounded()
+                                    )
+                                    let newText = "\(pct)"
+                                    if shellHeightPercentText != newText {
+                                        shellHeightPercentText = newText
+                                    }
+                                }
+
+                            Stepper(
+                                "",
+                                value: $settingsManager.settings
+                                    .shellDefaultHeightRatio,
+                                in: AppSettings
+                                    .shellDefaultHeightRatioRange,
+                                step: AppSettings
+                                    .shellDefaultHeightRatioStep
+                            )
+                            .labelsHidden()
+
+                            Text("%")
+                                .foregroundColor(.secondary)
+                        }
+                    }
                 }
             }
 
