@@ -2,6 +2,16 @@ import AppKit
 import Combine
 import SwiftTerm
 
+/// Pair wrapper over (style, blink) so Combine can dedupe
+/// changes as a single unit. Without this, two independent
+/// subscriptions on `shellCursorStyle` and `shellCursorBlink`
+/// would each fire `applyCursor` on init — this struct lets
+/// a single `.removeDuplicates()` guard the combined signal.
+private struct ShellCursorConfig: Hashable {
+    let style: ShellCursorStyle
+    let blink: Bool
+}
+
 /// Non-Claude interactive shell pane. Runs the user's login
 /// shell (`getpwuid_r` + `-il`), inherits user environment
 /// minus Claude env vars (with forced `TERM=xterm-256color`),
@@ -213,6 +223,28 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
                 self?.backend.changeHistorySize(lines)
             }
             .store(in: &cancellables)
+
+        // Cursor (shell-only). SwiftTerm's `CursorStyle`
+        // fuses shape + blink, so dedupe on the pair to
+        // avoid redundant applies — two separate
+        // subscriptions would fire twice on init. Routed
+        // through the backend's `applyCursor` to keep the
+        // mapping in one place.
+        mgr.$settings
+            .map {
+                ShellCursorConfig(
+                    style: $0.shellCursorStyle,
+                    blink: $0.shellCursorBlink
+                )
+            }
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] config in
+                self?.backend.applyCursor(
+                    style: config.style, blink: config.blink
+                )
+            }
+            .store(in: &cancellables)
     }
 
     private func applyInitialAppearance() {
@@ -220,6 +252,11 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
         applyFont()
         backend.changeHistorySize(
             SettingsManager.shared.settings.terminalScrollbackLines
+        )
+        let s = SettingsManager.shared.settings
+        backend.applyCursor(
+            style: s.shellCursorStyle,
+            blink: s.shellCursorBlink
         )
     }
 

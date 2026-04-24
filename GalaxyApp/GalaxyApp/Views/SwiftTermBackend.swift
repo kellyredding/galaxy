@@ -144,6 +144,28 @@ final class SwiftTermBackend: NSObject, TerminalBackend,
         terminalView.font = font
     }
 
+    func applyCursor(
+        style: ShellCursorStyle, blink: Bool
+    ) {
+        // Collapse Galaxy's two orthogonal toggles into
+        // SwiftTerm's 6-case `CursorStyle` enum. Setting
+        // via `terminal.setCursorStyle` fires the delegate
+        // hook which updates `MacCaretView`'s shape and
+        // toggles the blink animation off the CALayer
+        // opacity keypath.
+        let mapped: SwiftTerm.CursorStyle = {
+            switch (style, blink) {
+            case (.block, true):        return .blinkBlock
+            case (.block, false):       return .steadyBlock
+            case (.underline, true):    return .blinkUnderline
+            case (.underline, false):   return .steadyUnderline
+            case (.verticalBar, true):  return .blinkBar
+            case (.verticalBar, false): return .steadyBar
+            }
+        }()
+        terminalView.terminal.setCursorStyle(mapped)
+    }
+
     func snapshotBuffer() -> Buffer? {
         terminalView.terminal.snapshotBuffer(
             terminalView.terminal.buffer

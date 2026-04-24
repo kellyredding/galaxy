@@ -56,6 +56,15 @@ protocol TerminalBackend: AnyObject {
     /// Set the terminal font.
     func setFont(_ font: NSFont)
 
+    /// Apply cursor appearance. SwiftTerm's native
+    /// `CursorStyle` enum fuses shape + blink into one
+    /// value, so we pass both here and let the backend
+    /// map to the 6-case combination. Shell-only in
+    /// practice today — the Session pane's caret is
+    /// hidden by Claude Code's own cursor rendering, so
+    /// it doesn't subscribe.
+    func applyCursor(style: ShellCursorStyle, blink: Bool)
+
     /// Snapshot the current buffer for scrollback
     /// rendering. Returns nil if no buffer is available.
     func snapshotBuffer() -> Buffer?

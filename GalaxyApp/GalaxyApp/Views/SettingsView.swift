@@ -533,6 +533,34 @@ struct TerminalSettingsTab: View {
                                 .foregroundColor(.secondary)
                         }
                     }
+
+                    SettingsRow(label: "Cursor style") {
+                        Picker(
+                            "",
+                            selection: $settingsManager.settings
+                                .shellCursorStyle
+                        ) {
+                            ForEach(
+                                ShellCursorStyle.allCases,
+                                id: \.self
+                            ) { style in
+                                Text(style.displayName)
+                                    .tag(style)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 140)
+                    }
+
+                    HStack {
+                        Toggle(
+                            "Blink cursor",
+                            isOn: $settingsManager.settings
+                                .shellCursorBlink
+                        )
+                        .toggleStyle(.checkbox)
+                        Spacer()
+                    }
                 }
             }
 

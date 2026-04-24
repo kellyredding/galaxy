@@ -115,6 +115,29 @@ enum GitStatusStyle: String, Codable, CaseIterable {
     }
 }
 
+/// Shape of the cursor rendered in the Shell pane. Pairs
+/// with `shellCursorBlink` to pick one of SwiftTerm's six
+/// `CursorStyle` cases at apply time (see
+/// `SwiftTermBackend.applyCursor`).
+///
+/// User-facing settings keep style + blink as two
+/// orthogonal knobs because that's the clearer mental
+/// model; the backend is where the two collapse into
+/// SwiftTerm's native enum.
+enum ShellCursorStyle: String, Codable, CaseIterable {
+    case block = "block"
+    case underline = "underline"
+    case verticalBar = "verticalBar"
+
+    var displayName: String {
+        switch self {
+        case .block: return "Block"
+        case .underline: return "Underline"
+        case .verticalBar: return "Vertical Bar"
+        }
+    }
+}
+
 /// Persistent settings for the Galaxy app
 struct AppSettings: Codable {
     var sidebarPosition: SidebarPosition = .left
@@ -149,6 +172,17 @@ struct AppSettings: Codable {
     /// open does NOT retroactively resize it (matches
     /// `defaultTerminalFontSize` semantics).
     var shellDefaultHeightRatio: Double = 0.5
+
+    /// Cursor shape for the Shell pane. Default `.block`
+    /// matches macOS Terminal.app's default. Shell-only —
+    /// the Session pane's SwiftTerm caret is hidden by
+    /// Claude Code's own cursor rendering.
+    var shellCursorStyle: ShellCursorStyle = .block
+    /// Whether the Shell pane cursor blinks. Default off
+    /// because a steady cursor is less distracting in a
+    /// secondary pane where the user's visual focus is
+    /// usually the Claude session above.
+    var shellCursorBlink: Bool = false
 
     // Session sidebar settings
     var gitStatusStyle: GitStatusStyle = .symbolic  // Git status display style
@@ -322,6 +356,12 @@ struct AppSettings: Codable {
         shellDefaultHeightRatio = try container.decodeIfPresent(
             Double.self, forKey: .shellDefaultHeightRatio
         ) ?? 0.5
+        shellCursorStyle = try container.decodeIfPresent(
+            ShellCursorStyle.self, forKey: .shellCursorStyle
+        ) ?? .block
+        shellCursorBlink = try container.decodeIfPresent(
+            Bool.self, forKey: .shellCursorBlink
+        ) ?? false
     }
 
     init() {
