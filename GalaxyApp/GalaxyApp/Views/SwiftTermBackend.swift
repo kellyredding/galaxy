@@ -14,6 +14,16 @@ final class ScrollInterceptingTerminalView: LocalProcessTerminalView {
     /// the event, `false` to pass through to `super`.
     var onScrollUp: ((NSEvent) -> Bool)?
 
+    /// Called when SwiftTerm parses a BEL byte. Set by
+    /// `SwiftTermBackend` (via a computed forward) so the
+    /// owning pane can apply shell-specific settings
+    /// (audible toggle + sound + local visual flash).
+    /// Deliberately skips `super.bell(source:)` so the
+    /// default NSBeep never fires — the pane's handler is
+    /// the sole source of truth for shell-bell side
+    /// effects.
+    var onBell: (() -> Void)?
+
     override func scrollWheel(with event: NSEvent) {
         if event.deltaY > 0,
            let callback = onScrollUp,
@@ -23,17 +33,8 @@ final class ScrollInterceptingTerminalView: LocalProcessTerminalView {
         super.scrollWheel(with: event)
     }
 
-    /// Override to swallow the bell event entirely —
-    /// skipping `super.bell(source:)` kills the NSBeep
-    /// that SwiftTerm's default handler produces. Shell
-    /// bell behavior (audible toggle + local visual
-    /// flash) will be wired through shell-specific
-    /// settings in a follow-up commit; today this is
-    /// deliberately silent so routine shell events
-    /// (backspace at line start, etc.) don't produce
-    /// surprise beeps or sidebar flashes.
     override func bell(source: SwiftTerm.Terminal) {
-        // intentionally empty — see doc comment above.
+        onBell?()
     }
 }
 
@@ -53,12 +54,19 @@ final class SwiftTermBackend: NSObject, TerminalBackend,
 
     var view: NSView { terminalView }
     var onProcessTerminated: ((Int32) -> Void)?
-    var onBell: (() -> Void)?
     var onDataReceived: (() -> Void)?
 
     var onScrollUp: ((NSEvent) -> Bool)? {
         get { terminalView.onScrollUp }
         set { terminalView.onScrollUp = newValue }
+    }
+
+    /// Forward to the subclass's stored property so
+    /// `bell(source:)` can fire it directly without a
+    /// backend back-reference. Mirrors `onScrollUp`.
+    var onBell: (() -> Void)? {
+        get { terminalView.onBell }
+        set { terminalView.onBell = newValue }
     }
 
     init(frame: NSRect) {

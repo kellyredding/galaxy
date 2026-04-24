@@ -191,15 +191,13 @@ final class SplitState: ObservableObject {
             }
         }
 
-        // Route shell bells into the session-bell pipeline
-        // — same sound + red dot + notification path as
-        // session-pane bells, debounced together.
-        pane.onBell = { [weak session] in
-            guard let session = session else { return }
-            SessionManager.shared.routeShellBell(
-                for: session
-            )
-        }
+        // Shell bell is fully pane-local (sound + local
+        // visual flash) — `ShellTerminalPane.handleBell`
+        // consumes it internally. No SessionManager
+        // pipeline, no sidebar flash, no notification:
+        // those belong to Claude-attention events, not
+        // user-driven shell events like backspace at
+        // line start.
 
         pane.start()
         ratio = TerminalTabSplitView.configuredTopRatio()

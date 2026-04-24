@@ -561,6 +561,81 @@ struct TerminalSettingsTab: View {
                         .toggleStyle(.checkbox)
                         Spacer()
                     }
+
+                    Divider()
+
+                    HStack {
+                        Toggle(
+                            "Audible bell",
+                            isOn: $settingsManager.settings
+                                .shellBellAudible
+                        )
+                        .toggleStyle(.checkbox)
+                        Spacer()
+                    }
+
+                    if settingsManager.settings
+                        .shellBellAudible {
+                        SettingsRow(label: "Sound") {
+                            HStack(spacing: 8) {
+                                Picker(
+                                    "",
+                                    selection:
+                                        $settingsManager.settings
+                                        .shellBellSound
+                                ) {
+                                    Text(
+                                        SoundPreference.none
+                                            .displayName
+                                    )
+                                    .tag(SoundPreference.none)
+                                    Text(
+                                        SoundPreference.system
+                                            .displayName
+                                    )
+                                    .tag(SoundPreference.system)
+
+                                    Divider()
+
+                                    ForEach(
+                                        SoundPreference.allCases
+                                            .filter { $0.isSound },
+                                        id: \.self
+                                    ) { pref in
+                                        Text(pref.displayName)
+                                            .tag(pref)
+                                    }
+                                }
+                                .labelsHidden()
+                                .frame(width: 130)
+
+                                Button(action: {
+                                    settingsManager.playSound(
+                                        settingsManager.settings
+                                            .shellBellSound
+                                    )
+                                }) {
+                                    Image(
+                                        systemName: "play.fill"
+                                    )
+                                    .font(.system(size: 10))
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                                .help("Preview bell sound")
+                            }
+                        }
+                    }
+
+                    HStack {
+                        Toggle(
+                            "Visual flash",
+                            isOn: $settingsManager.settings
+                                .shellBellVisualFlash
+                        )
+                        .toggleStyle(.checkbox)
+                        Spacer()
+                    }
                 }
             }
 

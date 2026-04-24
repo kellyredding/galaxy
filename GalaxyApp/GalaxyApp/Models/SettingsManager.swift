@@ -184,6 +184,21 @@ struct AppSettings: Codable {
     /// usually the Claude session above.
     var shellCursorBlink: Bool = false
 
+    /// Whether the Shell pane plays a sound on BEL.
+    /// Default off — routine shell events (e.g.
+    /// backspace at line start) should not nag the user
+    /// by default.
+    var shellBellAudible: Bool = false
+    /// Sound played when `shellBellAudible` is on.
+    /// Defaults to `.system` so users who flip the
+    /// audible toggle on get something immediately
+    /// audible without having to pick.
+    var shellBellSound: SoundPreference = .system
+    /// Whether the Shell pane briefly flashes an overlay
+    /// on BEL. Default on — silent-but-noticeable feedback
+    /// is the sweet spot for a secondary pane.
+    var shellBellVisualFlash: Bool = true
+
     // Session sidebar settings
     var gitStatusStyle: GitStatusStyle = .symbolic  // Git status display style
 
@@ -362,6 +377,15 @@ struct AppSettings: Codable {
         shellCursorBlink = try container.decodeIfPresent(
             Bool.self, forKey: .shellCursorBlink
         ) ?? false
+        shellBellAudible = try container.decodeIfPresent(
+            Bool.self, forKey: .shellBellAudible
+        ) ?? false
+        shellBellSound = try container.decodeIfPresent(
+            SoundPreference.self, forKey: .shellBellSound
+        ) ?? .system
+        shellBellVisualFlash = try container.decodeIfPresent(
+            Bool.self, forKey: .shellBellVisualFlash
+        ) ?? true
     }
 
     init() {

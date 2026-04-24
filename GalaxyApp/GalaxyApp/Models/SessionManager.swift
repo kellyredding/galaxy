@@ -1457,17 +1457,6 @@ class SessionManager: ObservableObject {
     }
 
     /// Trigger visual bell with 3 flashes, each shorter than the last.
-    /// Route a bell rung from the Shell pane into the same
-    /// pipeline as session-pane bells. Called from
-    /// `ShellTerminalPane.onBell` via `SplitState.openShell`.
-    /// The full pipeline (sound, visual flash, notification)
-    /// runs, debounced together via `session.bellDebounceActive`
-    /// — so a Claude-side bell + a shell-side bell within the
-    /// same ~1.225s window produce only one flash/sound.
-    func routeShellBell(for session: Session) {
-        handleBell(for: session)
-    }
-
     /// Unconditional — debounce lives one level up in handleBell(for:)
     /// so the whole pipeline (sound + flash + notification) is gated
     /// together, not just the flash.
