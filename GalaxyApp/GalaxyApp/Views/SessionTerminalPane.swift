@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftTerm
 
 /// `TerminalPane` conformer that wraps an existing
@@ -31,6 +32,28 @@ final class SessionTerminalPane: TerminalPane {
     /// `galaxyView.onBell` directly to its bell pipeline.
     /// Do NOT double-install from here.
     var onBell: (() -> Void)?
+
+    /// Scroll-up interception forwards to
+    /// `GalaxyTerminalView.onScrollUp`, which fires from its
+    /// `scrollWheel` override.
+    var onScrollUp: ((NSEvent) -> Bool)? {
+        get { galaxyView.onScrollUp }
+        set { galaxyView.onScrollUp = newValue }
+    }
+
+    /// Session pane reads font size from the owning Session
+    /// (per-session `@Published`). Returns 0 if the session
+    /// has been deallocated — should not happen in practice
+    /// because a Session pane only exists while the Session
+    /// is running.
+    var fontSize: CGFloat {
+        session?.terminalFontSize ?? 0
+    }
+
+    var fontSizePublisher: AnyPublisher<CGFloat, Never> {
+        session?.$terminalFontSize.eraseToAnyPublisher()
+            ?? Empty().eraseToAnyPublisher()
+    }
 
     init(session: Session, galaxyView: GalaxyTerminalView) {
         self.session = session

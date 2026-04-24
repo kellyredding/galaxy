@@ -426,7 +426,7 @@ struct TerminalContainerView: View {
     var body: some View {
         ZStack {
             ForEach(sessionManager.sessions) { session in
-                SessionPaneView(
+                TerminalTabSplitView(
                     session: session,
                     isActive: session.id == sessionManager.activeSessionId,
                     onResume: { sessionManager.resumeSession(sessionId: session.id) }

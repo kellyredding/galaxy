@@ -1,6 +1,42 @@
 import AppKit
 import SwiftTerm
 
+/// Internal `LocalProcessTerminalView` subclass that adds
+/// a scroll-wheel interception hook and silences the
+/// default bell. Kept file-private since the only reason
+/// it exists is to let `SwiftTermBackend` satisfy
+/// `TerminalBackend.onScrollUp` and to stop
+/// SwiftTerm's default `bell(source:)` from firing an
+/// NSBeep every time the shell rings (e.g., backspace at
+/// line start).
+final class ScrollInterceptingTerminalView: LocalProcessTerminalView {
+    /// Called on scroll-wheel-up. Return `true` to consume
+    /// the event, `false` to pass through to `super`.
+    var onScrollUp: ((NSEvent) -> Bool)?
+
+    override func scrollWheel(with event: NSEvent) {
+        if event.deltaY > 0,
+           let callback = onScrollUp,
+           callback(event) {
+            return
+        }
+        super.scrollWheel(with: event)
+    }
+
+    /// Override to swallow the bell event entirely —
+    /// skipping `super.bell(source:)` kills the NSBeep
+    /// that SwiftTerm's default handler produces. Shell
+    /// bell behavior (audible toggle + local visual
+    /// flash) will be wired through shell-specific
+    /// settings in a follow-up commit; today this is
+    /// deliberately silent so routine shell events
+    /// (backspace at line start, etc.) don't produce
+    /// surprise beeps or sidebar flashes.
+    override func bell(source: SwiftTerm.Terminal) {
+        // intentionally empty — see doc comment above.
+    }
+}
+
 /// `TerminalBackend` implementation using SwiftTerm's
 /// `LocalProcessTerminalView` directly (no Galaxy
 /// subclassing, no Claude-specific content monitor or turn
@@ -13,16 +49,21 @@ import SwiftTerm
 final class SwiftTermBackend: NSObject, TerminalBackend,
     LocalProcessTerminalViewDelegate {
 
-    private let terminalView: LocalProcessTerminalView
+    private let terminalView: ScrollInterceptingTerminalView
 
     var view: NSView { terminalView }
     var onProcessTerminated: ((Int32) -> Void)?
     var onBell: (() -> Void)?
     var onDataReceived: (() -> Void)?
 
+    var onScrollUp: ((NSEvent) -> Bool)? {
+        get { terminalView.onScrollUp }
+        set { terminalView.onScrollUp = newValue }
+    }
+
     init(frame: NSRect) {
         self.terminalView =
-            LocalProcessTerminalView(frame: frame)
+            ScrollInterceptingTerminalView(frame: frame)
         super.init()
         self.terminalView.processDelegate = self
         // Match GalaxyTerminalView's glyph-rendering

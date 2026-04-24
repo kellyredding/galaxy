@@ -595,6 +595,37 @@ class MainMenu: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
+        // Terminal tab shell pane controls.
+        // Enabled only when the Terminal tab is active and a
+        // session exists. Both items take a matching Cmd+T /
+        // Cmd+Shift+T binding; the focus-session shortcut
+        // returns focus to the Claude terminal after the user
+        // has been typing in the shell.
+        let canOperateShell = sessionManager.activeTab == .terminal
+            && sessionManager.activeSessionId != nil
+
+        let openShellItem = NSMenuItem(
+            title: "Open Shell",
+            action: #selector(MenuActions.openShell(_:)),
+            keyEquivalent: "t"
+        )
+        openShellItem.target = MenuActions.shared
+        openShellItem.isEnabled = canOperateShell
+        menu.addItem(openShellItem)
+
+        let focusSessionItem = NSMenuItem(
+            title: "Focus Session Pane",
+            action: #selector(MenuActions.focusSessionPane(_:)),
+            keyEquivalent: "t"
+        )
+        focusSessionItem.target = MenuActions.shared
+        focusSessionItem.keyEquivalentModifierMask =
+            [.command, .shift]
+        focusSessionItem.isEnabled = canOperateShell
+        menu.addItem(focusSessionItem)
+
+        menu.addItem(.separator())
+
         // Standard view items
         menu.addItem(withTitle: "Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
             .keyEquivalentModifierMask = [.command, .control]
@@ -779,11 +810,54 @@ class MenuActions: NSObject {
     }
 
     @objc func biggerTerminalFontSize(_ sender: Any?) {
-        SessionManager.shared.activeSession?.increaseTerminalFontSize()
+        if let shellPane = Self.focusedShellPane() {
+            shellPane.increaseFontSize()
+        } else {
+            SessionManager.shared.activeSession?
+                .increaseTerminalFontSize()
+        }
     }
 
     @objc func smallerTerminalFontSize(_ sender: Any?) {
-        SessionManager.shared.activeSession?.decreaseTerminalFontSize()
+        if let shellPane = Self.focusedShellPane() {
+            shellPane.decreaseFontSize()
+        } else {
+            SessionManager.shared.activeSession?
+                .decreaseTerminalFontSize()
+        }
+    }
+
+    @objc func openShell(_ sender: Any?) {
+        guard let id = SessionManager.shared.activeSessionId
+        else { return }
+        TerminalTabCommands.shared.openShell.send(id)
+    }
+
+    @objc func focusSessionPane(_ sender: Any?) {
+        guard let id = SessionManager.shared.activeSessionId
+        else { return }
+        TerminalTabCommands.shared.focusSession.send(id)
+    }
+
+    /// Walk up from the current first responder looking for
+    /// a `TerminalHostView` hosting a `ShellTerminalPane`.
+    /// Used by ⌘+/⌘- to route font size changes to the focused
+    /// pane — shell pane when it's focused, session pane
+    /// otherwise. Returns nil when the focus is elsewhere.
+    private static func focusedShellPane() -> ShellTerminalPane? {
+        guard let window = NSApp.keyWindow,
+              let responder =
+                window.firstResponder as? NSView
+        else { return nil }
+        var view: NSView? = responder
+        while let v = view {
+            if let host = v as? TerminalHostView,
+               let shell = host.pane as? ShellTerminalPane {
+                return shell
+            }
+            view = v.superview
+        }
+        return nil
     }
 
     @objc func defaultChromeFontSize(_ sender: Any?) {

@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftTerm
 
 /// Contract for any terminal surface hostable by
@@ -65,6 +66,25 @@ protocol TerminalPane: AnyObject {
     /// `disabledReason` means the UI should show the button
     /// disabled with the given tooltip.
     var sendToClaudeTarget: SendToClaudeTarget? { get }
+
+    /// Callback invoked when the user scrolls the terminal
+    /// upward. Return `true` to consume the event (e.g.,
+    /// entered scrollback), `false` to let normal scrolling
+    /// proceed. Set by `TerminalHostView` to route scroll-up
+    /// into the scrollback-creation path uniformly for both
+    /// panes.
+    var onScrollUp: ((NSEvent) -> Bool)? { get set }
+
+    /// Current font size for this pane's terminal. Per-pane
+    /// so Session and Shell panes can diverge independently
+    /// (⌘+/⌘- only affects the focused pane).
+    var fontSize: CGFloat { get }
+
+    /// Publisher that emits whenever `fontSize` changes.
+    /// Used by `TerminalHostView` to re-render the scrollback
+    /// overlay with updated font metrics, without caring
+    /// whether the source is a session or a shell pane.
+    var fontSizePublisher: AnyPublisher<CGFloat, Never> { get }
 }
 
 /// Describes where a "Send to Claude" action should route

@@ -61,13 +61,24 @@ class TerminalHostView: NSView {
     }
 
     /// Convenience accessors derived from `sessionPane`. Kept as
-    /// optionals because the Shell pane (Phase 2) won't populate
-    /// them. Paths that hit these are inherently Session-specific
-    /// and will either stay this way or get their own abstraction
-    /// when the Shell pane lands.
+    /// optionals because non-Session panes (Shell pane) don't
+    /// populate them. Paths that hit these are Session-specific
+    /// (Claude-side observers, caret hide) and stay that way.
     var session: Session? { sessionPane?.session }
     private var galaxyView: GalaxyTerminalView? {
         sessionPane?.galaxyView
+    }
+
+    /// Shared SwiftTerm accessor. Both panes ultimately wrap a
+    /// `LocalProcessTerminalView` — the Session pane via
+    /// `GalaxyTerminalView` (a subclass), the Shell pane via
+    /// `SwiftTermBackend`'s internal subclass. Scrollback rendering,
+    /// `selection`, `cellDimension`, `bracketedPasteMode`, and the
+    /// Terminal object all live here. Once a non-SwiftTerm backend
+    /// (e.g., libghostty) arrives, this accessor and its users need
+    /// an alternative.
+    private var localProcessView: LocalProcessTerminalView? {
+        pane.view as? LocalProcessTerminalView
     }
 
     // Track if this is the active session - controls drag-drop registration
@@ -79,6 +90,13 @@ class TerminalHostView: NSView {
         }
     }
     private var isSetUp = false
+
+    /// Uniform inset between the host's bounds and the inner
+    /// terminal view / scrollback overlay / drag highlight.
+    /// The host's layer background is painted in the current
+    /// theme color so the inset strip reads as "part of the
+    /// pane" rather than chrome.
+    private static let terminalPadding: CGFloat = 4
 
     // Drag highlight overlay (drawn on top of terminal)
     private var dragHighlightView: DragHighlightView?
@@ -209,22 +227,46 @@ class TerminalHostView: NSView {
     }
 
     private func setupTerminal() {
-        // Add the pane's inner terminal view with autoresizing.
-        pane.view.frame = bounds
-        pane.view.autoresizingMask = [.width, .height]
+        // Paint the host's layer in the current theme background
+        // color. Combined with the per-subview inset below, this
+        // creates a padded strip around the terminal content that
+        // reads as "part of the pane" rather than chrome.
+        applyHostBackgroundColor()
+
+        // Add the pane's inner terminal view, inset by the
+        // padding amount. Autoresizing is disabled so layout()
+        // stays the single source of truth for the frame.
+        pane.view.frame = paddedBounds()
+        pane.view.autoresizingMask = []
         addSubview(pane.view)
 
-        // Session-pane-specific setup: caret hidden (Claude Code
-        // renders its own cursor), scroll-up interception, and
-        // Session lifecycle observers. The Shell pane (Phase 2)
-        // doesn't need any of this — its backend handles caret
-        // rendering and scroll behavior natively.
+        // Session-pane-specific chrome: Claude Code renders its
+        // own cursor so we hide SwiftTerm's caret. Shell pane
+        // keeps the native caret.
         if let galaxyView = self.galaxyView {
             galaxyView.caretView.isHidden = true
-            galaxyView.onScrollUp = { [weak self] event in
-                self?.handleScrollUp(event: event) ?? false
-            }
         }
+
+        // Scroll-up interception — pane-generic. Both session
+        // and shell panes route scroll-up through the pane
+        // protocol so we enter scrollback mode uniformly.
+        pane.onScrollUp = { [weak self] event in
+            self?.handleScrollUp(event: event) ?? false
+        }
+
+        // Font-size re-renders for the scrollback overlay —
+        // pane-generic. Session pane's size lives on
+        // `session.$terminalFontSize`; shell pane's lives on
+        // `ShellTerminalPane.$fontSize`. Both publish through
+        // `pane.fontSizePublisher`.
+        pane.fontSizePublisher
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.applySettingsToScrollback()
+            }
+            .store(in: &cancellables)
 
         if let session = self.session {
             // Wire up scrollback unsaved-work check for session stop
@@ -254,16 +296,6 @@ class TerminalHostView: NSView {
                     }
                 }
                 .store(in: &cancellables)
-
-            // Observe font size changes — apply to scrollback view if present
-            session.$terminalFontSize
-                .removeDuplicates()
-                .dropFirst()
-                .receive(on: DispatchQueue.main)
-                .sink { [weak self] _ in
-                    self?.applySettingsToScrollback()
-                }
-                .store(in: &cancellables)
         }
 
         // Add drag highlight overlay ON TOP of terminal view
@@ -283,13 +315,16 @@ class TerminalHostView: NSView {
             }
             .store(in: &cancellables)
 
-        // Observe color theme changes — apply to scrollback view if present
+        // Observe color theme changes — apply to the padded host
+        // background so the 4px strip around the terminal tracks
+        // the theme, and re-render any active scrollback overlay.
         SettingsManager.shared.$settings
             .map(\.terminalColorThemeName)
             .removeDuplicates()
             .dropFirst()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
+                self?.applyHostBackgroundColor()
                 self?.applySettingsToScrollback()
             }
             .store(in: &cancellables)
@@ -326,9 +361,32 @@ class TerminalHostView: NSView {
 
     override func layout() {
         super.layout()
-        pane.view.frame = bounds
-        dragHighlightView?.frame = bounds
-        scrollbackOverlay?.frame = bounds
+        let inner = paddedBounds()
+        pane.view.frame = inner
+        dragHighlightView?.frame = inner
+        scrollbackOverlay?.frame = inner
+    }
+
+    /// Current bounds inset by the terminal padding. Used for
+    /// every subview's frame so the host layer's background
+    /// color shows through as a uniform padded strip.
+    private func paddedBounds() -> NSRect {
+        bounds.insetBy(
+            dx: Self.terminalPadding,
+            dy: Self.terminalPadding
+        )
+    }
+
+    /// Paint the host's layer in the current theme background
+    /// color. Called on setup and on theme changes.
+    private func applyHostBackgroundColor() {
+        let theme = TerminalColorTheme.theme(
+            named: SettingsManager.shared
+                .settings.terminalColorThemeName
+        )
+        wantsLayer = true
+        layer?.backgroundColor =
+            theme.backgroundColorValue.cgColor
     }
 
     func requestFocus() {
@@ -463,15 +521,18 @@ class TerminalHostView: NSView {
         guard SettingsManager.shared.settings.scrollToEnterScrollback else { return false }
         guard !isScrollbackActive else { return false }
         guard !scrollbackCooldown else { return false }
-        // Only wired for the Session pane today (via galaxyView's
-        // onScrollUp hook). This guard stays a no-op for other panes.
-        guard let galaxyView = self.galaxyView else { return false }
+        // Both Session and Shell panes wrap a
+        // LocalProcessTerminalView underneath — scroll-up
+        // works uniformly via this accessor.
+        guard let lpView = self.localProcessView else {
+            return false
+        }
 
-        let displayBuffer = galaxyView.terminal.displayBuffer
+        let displayBuffer = lpView.terminal.displayBuffer
         guard displayBuffer.yBase > 0 else { return false }
 
         let scrollPosition = displayBuffer.yDisp
-        galaxyView.selection.selectNone()
+        lpView.selection.selectNone()
         createScrollback(initialScrollLine: scrollPosition)
         return true
     }
@@ -512,34 +573,45 @@ class TerminalHostView: NSView {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: timer)
     }
 
-    /// Enter scrollback mode from Cmd+S menu action. Only the active
-    /// pane's TerminalHostView should respond — all others ignore.
+    /// Enter scrollback mode from Cmd+S menu action. Only the
+    /// currently-focused pane should respond — with the split
+    /// view, both the Session and Shell panes hear the
+    /// notification but we want scrollback only on the one the
+    /// user is actually typing into.
+    ///
+    /// Unlike `handleScrollUp`, we don't require `yBase > 0` here.
+    /// Cmd+S is a deliberate user action — even with an empty
+    /// scrollback buffer (fresh shell, minimal Claude output),
+    /// entering scrollback lets the user annotate what's currently
+    /// visible. The scroll-wheel path stays strict to avoid
+    /// spamming the overlay on ordinary scroll gestures.
     private func enterScrollbackFromMenu() {
         guard isActive else { return }
         guard !isScrollbackActive else { return }
-        // SwiftTerm-specific buffer inspection — Session pane only
-        // for now. Shell pane (Phase 2) will wire its own path.
-        guard let galaxyView = self.galaxyView else { return }
-
-        let displayBuffer = galaxyView.terminal.displayBuffer
-        guard displayBuffer.yBase > 0 else { return }
+        guard window?.firstResponder === pane.view else {
+            return
+        }
+        guard let lpView = self.localProcessView else {
+            return
+        }
 
         // Capture the live terminal's current scroll position — the
         // scrollback view opens at this position. Clear any selection now
         // but defer scrolling the live view to bottom until after the
         // WKWebView is visible (avoids a flash of the live view jumping).
-        let scrollPosition = displayBuffer.yDisp
-        galaxyView.selection.selectNone()
+        let scrollPosition = lpView.terminal.displayBuffer.yDisp
+        lpView.selection.selectNone()
 
         createScrollback(initialScrollLine: scrollPosition)
     }
 
     /// Create the scrollback overlay with an HTML rendering of the live terminal's buffer.
     private func createScrollback(initialScrollLine: Int? = nil) {
-        // HTML rendering requires SwiftTerm internals (font,
-        // cellDimension, Terminal object) — Session-pane-only for
-        // now. Phase 2 will wire the Shell pane's equivalent.
-        guard let galaxyView = self.galaxyView,
+        // HTML rendering needs SwiftTerm internals (font,
+        // cellDimension, Terminal). Works for both panes today
+        // since both wrap LocalProcessTerminalView; swap point
+        // for a future libghostty backend.
+        guard let lpView = self.localProcessView,
               let snapshot = pane.snapshotBuffer() else { return }
         self.currentSnapshot = snapshot
 
@@ -547,8 +619,8 @@ class TerminalHostView: NSView {
         let initialScrollLine = initialScrollLine ?? snapshot.yDisp
 
         // Get current font metrics for CSS matching
-        let font = galaxyView.font
-        let cellDim = galaxyView.cellDimension!
+        let font = lpView.font
+        let cellDim = lpView.cellDimension!
         let theme = TerminalColorTheme.theme(
             named: SettingsManager.shared.settings.terminalColorThemeName
         )
@@ -556,7 +628,7 @@ class TerminalHostView: NSView {
         // Render buffer to HTML
         let html = ScrollbackBufferRenderer.render(
             buffer: snapshot,
-            terminal: galaxyView.terminal,
+            terminal: lpView.terminal,
             theme: theme,
             fontFamily: font.fontName,
             fontSize: font.pointSize,
@@ -566,7 +638,7 @@ class TerminalHostView: NSView {
 
         // Create web view with theme background for rubber-band overscroll
         let webView = ScrollbackWebView(
-            frame: galaxyView.bounds,
+            frame: lpView.bounds,
             html: html,
             initialScrollLine: initialScrollLine,
             backgroundColor: theme.backgroundColorValue
@@ -578,11 +650,13 @@ class TerminalHostView: NSView {
             // Scroll the live terminal to the bottom now that the scrollback
             // overlay is visible — prevents a flash of the live view jumping.
             guard let self = self,
-                  let galaxyView = self.galaxyView else { return }
-            let buf = galaxyView.terminal.displayBuffer
-            galaxyView.terminal.userScrolling = false
+                  let lpView = self.localProcessView else {
+                return
+            }
+            let buf = lpView.terminal.displayBuffer
+            lpView.terminal.userScrolling = false
             buf.yDisp = buf.yBase
-            galaxyView.setNeedsDisplay(galaxyView.bounds)
+            lpView.setNeedsDisplay(lpView.bounds)
 
             // Restore note cards if this is a reload (theme/font change)
             webView.restoreNoteState()
@@ -664,9 +738,16 @@ class TerminalHostView: NSView {
             )
         }
 
-        // Create overlay container with border and pill
-        let overlay = ScrollbackOverlayView(frame: bounds, scrollbackView: webView)
-        overlay.autoresizingMask = [.width, .height]
+        // Create overlay container with border and pill. Sized to
+        // paddedBounds() so the scrollback view aligns exactly
+        // with the live terminal's position inside the padded
+        // host — avoiding the up-left / down-right shift on
+        // enter / exit that happened when the overlay was sized
+        // to the full (unpadded) host bounds.
+        let overlay = ScrollbackOverlayView(
+            frame: paddedBounds(), scrollbackView: webView
+        )
+        overlay.autoresizingMask = []
 
         // Add above drag highlight so it's the topmost interactive layer
         addSubview(overlay, positioned: .above, relativeTo: dragHighlightView)
@@ -916,11 +997,12 @@ class TerminalHostView: NSView {
     private func applySettingsToScrollback() {
         guard let overlay = scrollbackOverlay else { return }
         guard let snapshot = currentSnapshot else { return }
-        // Font size and SwiftTerm Terminal access are
-        // Session-pane-specific today. Phase 2 will add the
-        // equivalent for the Shell pane.
-        guard let session = self.session,
-              let galaxyView = self.galaxyView else { return }
+        // Font size comes from the pane (per-pane), and the
+        // Terminal object from the underlying SwiftTerm view —
+        // both panes provide these today.
+        guard let lpView = self.localProcessView else {
+            return
+        }
 
         // Save current scroll position before rebuilding
         overlay.scrollbackView.webView.evaluateJavaScript(
@@ -934,7 +1016,7 @@ class TerminalHostView: NSView {
                 named: SettingsManager.shared.settings.terminalColorThemeName
             )
             let family = SettingsManager.shared.settings.terminalFontFamily
-            let size = session.terminalFontSize
+            let size = self.pane.fontSize
 
             // Compute font and cell height (same logic as Session)
             let font: NSFont
@@ -952,7 +1034,7 @@ class TerminalHostView: NSView {
 
             let html = ScrollbackBufferRenderer.render(
                 buffer: snapshot,
-                terminal: galaxyView.terminal,
+                terminal: lpView.terminal,
                 theme: theme,
                 fontFamily: font.fontName,
                 fontSize: size,
@@ -967,32 +1049,27 @@ class TerminalHostView: NSView {
     // MARK: - Terminal Text Injection
 
     /// Send text to the terminal with bracketed paste mode support.
-    /// Manually sends escape sequences via terminalView.send() - no clipboard involvement.
-    ///
-    /// Bracketed paste detection reads `terminal.bracketedPasteMode`
-    /// which is SwiftTerm-specific — Session-pane-only for now. If
-    /// called on a non-Session pane, this degrades to plain text via
-    /// `pane.send(text:)` (which is actually the correct default
-    /// for a shell since bracketed paste still works at the byte
-    /// level if the shell has it enabled).
+    /// Manually sends escape sequences via terminalView.send() —
+    /// no clipboard involvement. Works for both panes via the
+    /// shared `localProcessView` accessor.
     private func sendTextToTerminal(_ text: String, asPaste: Bool) {
-        guard let galaxyView = self.galaxyView else {
+        guard let lpView = self.localProcessView else {
             pane.send(text: text)
             return
         }
-        let bracketedMode = galaxyView.terminal.bracketedPasteMode
+        let bracketedMode = lpView.terminal.bracketedPasteMode
 
         if asPaste && bracketedMode {
             // Send bracketed paste sequences:
             // 1. Start sequence (ESC[200~)
             // 2. Text content
             // 3. End sequence (ESC[201~)
-            galaxyView.send(Array(EscapeSequences.bracketedPasteStart))
-            galaxyView.send(txt: text)
-            galaxyView.send(Array(EscapeSequences.bracketedPasteEnd))
+            lpView.send(Array(EscapeSequences.bracketedPasteStart))
+            lpView.send(txt: text)
+            lpView.send(Array(EscapeSequences.bracketedPasteEnd))
         } else {
             // Send plain text
-            galaxyView.send(txt: text)
+            lpView.send(txt: text)
         }
     }
 }

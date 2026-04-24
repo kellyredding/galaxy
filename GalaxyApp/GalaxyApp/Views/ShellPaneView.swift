@@ -1,0 +1,31 @@
+import SwiftUI
+
+/// SwiftUI container for the Shell pane. Lays out the
+/// `ShellPaneBar` on top and the terminal below.
+/// Instantiated by `TerminalTabSplitView` when the split is
+/// open.
+struct ShellPaneView: View {
+    @ObservedObject var pane: ShellTerminalPane
+    let isActive: Bool
+    let onBarDragBegan: () -> Void
+    let onBarDrag: (CGFloat) -> Void
+    let onBarDragEnded: () -> Void
+    let onBarDoubleClick: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ShellPaneBar(
+                onDragBegan: onBarDragBegan,
+                onDrag: onBarDrag,
+                onDragEnded: onBarDragEnded,
+                onResetSplit: onBarDoubleClick
+            )
+            .frame(height: 28)
+
+            FocusableTerminalView(
+                pane: pane,
+                isActive: isActive
+            )
+        }
+    }
+}
