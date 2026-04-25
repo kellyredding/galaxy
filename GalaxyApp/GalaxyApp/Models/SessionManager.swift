@@ -635,10 +635,25 @@ class SessionManager: ObservableObject {
         // Start process: --resume if session exists in Claude storage, --session-id if not
         session.startProcess(executablePath: executablePath, resume: canResume)
 
-        // /galaxy:resume is now triggered by the session.resume
-        // socket event in EventCoordinator.routeEvent() — no
-        // delay needed. The on_resume hook publishes that event
-        // once Claude has restored the transcript.
+        // Trigger /galaxy:resume directly off resumeSession()
+        // rather than off the timeline.session:resumed socket
+        // event. The event-driven path was racy on Galaxy app
+        // restart (and possibly other timing-sensitive paths):
+        // the event could arrive before the Session model was
+        // updated by resumeSession(), causing the
+        // EventCoordinator's `isRunning && !hasExited` guard
+        // to bail out silently. By firing from inside
+        // resumeSession() — after startProcess() — we are
+        // guaranteed the model is in a valid state. The
+        // marker poll itself still detects when Claude has
+        // finished restoring the transcript and is ready for
+        // input, so we don't lose the "wait until ready"
+        // semantics the original event-driven version had.
+        if canResume {
+            session.waitForResumeMarker { [weak session] in
+                session?.sendCommand("/galaxy:resume")
+            }
+        }
 
         // Make this the active session
         activeSessionId = session.id

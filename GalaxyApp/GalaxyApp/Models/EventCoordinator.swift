@@ -343,30 +343,17 @@ final class EventCoordinator {
         // transcript and shown the prompt. Poll the terminal
         // buffer for the resume marker (the hook's output
         // line), then send /galaxy:resume once it appears.
-        if envelope.event == "timeline.session:resumed" {
-            if let appSessionId =
-                ledgerSessionIdCache[envelope.ledgerSessionId],
-               let session = sessionManager?.sessions
-                   .first(where: { $0.id == appSessionId }),
-               session.isRunning && !session.hasExited
-            {
-                GalaxyLog.events(
-                    "[\(session.sessionRef)] routeEvent:"
-                    + " waiting for resume marker"
-                    + " via \(envelope.event)"
-                )
-                session.waitForResumeMarker {
-                    GalaxyLog.events(
-                        "[\(session.sessionRef)]"
-                        + " resume marker found,"
-                        + " sending /galaxy:resume"
-                    )
-                    session.sendCommand(
-                        "/galaxy:resume"
-                    )
-                }
-            }
-        }
+        // timeline.session:resumed used to trigger
+        // waitForResumeMarker → sendCommand("/galaxy:resume")
+        // here, but that was racy: on Galaxy app restart the
+        // event could arrive before the Session model was
+        // updated by SessionManager.resumeSession(), causing
+        // the isRunning/hasExited guard to bail silently. The
+        // trigger now lives inside resumeSession() itself,
+        // where the model is guaranteed valid by the time the
+        // marker poll starts. No-op observation point — kept
+        // as a comment marker in case future logic needs to
+        // hook session-resumed.
 
         // Permission request: play sound + optional notification
         if envelope.event == "permission_request" {

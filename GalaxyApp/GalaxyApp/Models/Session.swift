@@ -306,6 +306,76 @@ class Session: Identifiable, ObservableObject {
         }
     }
 
+    // MARK: - Pane Focus Memory
+
+    /// Which pane was most recently the first responder. Read
+    /// by tab-switch / session-switch / window-becomes-key
+    /// restoration paths so the user lands back on whichever
+    /// pane they were last typing in. Written by
+    /// `TerminalHostView` when its inner view gains first
+    /// responder. Defaults to `.session` so single-pane
+    /// sessions (no shell open) behave identically to before.
+    @Published var lastFocusedPaneKind:
+        ScrollbackPaneKind = .session
+
+    /// Per-host restoration closures, keyed by registering
+    /// `TerminalHostView`'s `ObjectIdentifier`. Each entry
+    /// carries its `ScrollbackPaneKind` so
+    /// `restorePreferredPaneFocus` can pick the one matching
+    /// `lastFocusedPaneKind`. Mirrors
+    /// `scrollbackUnsavedWorkCheckers` so registration /
+    /// unregistration / lookup follow the same shape.
+    private var paneFocusRestorers:
+        [ObjectIdentifier: (
+            kind: ScrollbackPaneKind,
+            restore: () -> Void
+        )] = [:]
+
+    /// Register a pane focus restorer. Call from
+    /// `TerminalHostView` setup. Paired with
+    /// `unregisterPaneFocusRestorer` in deinit.
+    func registerPaneFocusRestorer(
+        _ key: ObjectIdentifier,
+        kind: ScrollbackPaneKind,
+        restore: @escaping () -> Void
+    ) {
+        paneFocusRestorers[key] = (kind: kind, restore: restore)
+    }
+
+    /// Remove a restorer when its host view goes away.
+    func unregisterPaneFocusRestorer(
+        _ key: ObjectIdentifier
+    ) {
+        paneFocusRestorers.removeValue(forKey: key)
+    }
+
+    /// Restore focus to the pane matching
+    /// `lastFocusedPaneKind`, falling back to whichever pane
+    /// is registered if the preferred one isn't available
+    /// (e.g., user remembered being in shell, but the shell
+    /// pane has since closed). No-op if no panes are
+    /// registered.
+    func restorePreferredPaneFocus() {
+        let preferred = lastFocusedPaneKind
+        if let entry = paneFocusRestorers.values
+            .first(where: { $0.kind == preferred }) {
+            entry.restore()
+            return
+        }
+        // Preferred kind not available — fall back to whatever
+        // is registered. Session pane wins ties since that's
+        // the historical default.
+        if let entry = paneFocusRestorers.values
+            .first(where: { $0.kind == .session }) {
+            entry.restore()
+            return
+        }
+        if let entry = paneFocusRestorers.values
+            .first(where: { $0.kind == .shell }) {
+            entry.restore()
+        }
+    }
+
     /// Ledger session ID for fast event matching. Set when the event
     /// system first matches this session via session_identifiers array.
     /// Optional because it's not known until the first event or
@@ -849,14 +919,19 @@ class Session: Identifiable, ObservableObject {
             }
             if attempts >= Self.resumeMarkerMaxAttempts {
                 timer.invalidate()
-                // Timeout — fire anyway as a fallback
+                // Timeout — log and bail. Previously we fired
+                // the action anyway as a fallback, which masked
+                // genuine pipeline failures by sending bytes
+                // into a Claude that may not have been ready
+                // to receive them. If the marker doesn't appear
+                // in 10s, something is wrong; better to fail
+                // cleanly so the user can investigate and
+                // retry manually.
                 NSLog(
                     "Session: resume marker not found"
-                    + " after %d attempts, firing"
-                    + " anyway",
+                    + " after %d attempts; giving up",
                     attempts
                 )
-                action()
             }
         }
     }
