@@ -9,6 +9,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var cancellables = Set<AnyCancellable>()
     private var eventCoordinator: EventCoordinator?
 
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // Disable macOS press-and-hold accent popover app-wide so held keys
+        // produce normal key repeats. Without this, holding j/k in less (or
+        // any pager/vim-style UI inside the shell pane) registers once and
+        // then stops, while less rings BEL on the swallowed repeats. Routing
+        // through SwiftTerm's interpretKeyEvents path is what exposes us to
+        // the system default — Ghostty registers this same override at
+        // launch for the same reason, so the workaround stays valid after
+        // the eventual emulator swap. register(defaults:) writes to the
+        // lowest-priority domain (no on-disk persistence), and Will-finish
+        // is early enough to run before any window or text input context
+        // initializes.
+        UserDefaults.standard.register(defaults: [
+            "ApplePressAndHoldEnabled": false,
+        ])
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Enable click-through: clicking into the Galaxy window from another
         // app activates AND delivers the click in one action, instead of
