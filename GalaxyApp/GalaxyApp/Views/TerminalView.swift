@@ -61,7 +61,15 @@ struct FocusableTerminalView: NSViewRepresentable {
             }
         }
 
-        nsView.isHidden = !isActive
+        // Skip the write when the value already matches —
+        // NSView.setHidden does KVO + layer-dirty work even
+        // on no-op assignments. After SwiftUI's per-row
+        // short-circuit, only the two transition rows
+        // actually need this poke.
+        let shouldHide = !isActive
+        if nsView.isHidden != shouldHide {
+            nsView.isHidden = shouldHide
+        }
 
         // Only grab focus on activation transition, not every re-render.
         // Unconditional requestFocus() steals focus from rename TextFields
@@ -74,6 +82,31 @@ struct FocusableTerminalView: NSViewRepresentable {
         if isActive && !wasActive {
             nsView.requestFocusIfPreferred()
         }
+    }
+}
+
+extension FocusableTerminalView: Equatable {
+    /// Identity equality: same pane (by reference) and same
+    /// isActive flag. Used via `.equatable()` at call sites
+    /// so SwiftUI guarantees `updateNSView` is skipped on
+    /// rows whose inputs haven't changed — independent of
+    /// SwiftUI's automatic memberwise diff for the
+    /// protocol-typed `pane` property, which isn't
+    /// guaranteed to compare by reference.
+    ///
+    /// `pane` is always a class-conforming `TerminalPane`
+    /// (`SessionTerminalPane` or `ShellTerminalPane`), so
+    /// `as AnyObject` reference equality is well-defined.
+    /// `SessionPaneAdapterHolder` caches the adapter per
+    /// `GalaxyTerminalView`, so the reference flips exactly
+    /// when stop/resume creates a new terminal view — i.e.,
+    /// when we *want* a re-update.
+    static func == (
+        lhs: FocusableTerminalView,
+        rhs: FocusableTerminalView
+    ) -> Bool {
+        lhs.isActive == rhs.isActive
+            && (lhs.pane as AnyObject) === (rhs.pane as AnyObject)
     }
 }
 

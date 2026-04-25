@@ -22,10 +22,15 @@ struct ShellPaneView: View {
             )
             .frame(height: 28)
 
+            // `.equatable()` opts into FocusableTerminalView's
+            // Equatable conformance so SwiftUI skips
+            // updateNSView on rows whose pane and isActive
+            // haven't changed.
             FocusableTerminalView(
                 pane: pane,
                 isActive: isActive
             )
+            .equatable()
         }
     }
 }

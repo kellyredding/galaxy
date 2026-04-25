@@ -528,13 +528,18 @@ struct SessionPaneView: View {
                 // Show stopped session UI
                 StoppedSessionView(session: session, onResume: onResume)
             } else if let galaxyView = session.terminalView {
-                // Show terminal via TerminalPane abstraction
+                // Show terminal via TerminalPane abstraction.
+                // `.equatable()` opts into our Equatable
+                // conformance for SwiftUI's diff, guaranteeing
+                // updateNSView is skipped on rows whose pane
+                // and isActive flag haven't changed.
                 FocusableTerminalView(
                     pane: adapterHolder.adapter(
                         for: session, view: galaxyView
                     ),
                     isActive: isActive
                 )
+                .equatable()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
