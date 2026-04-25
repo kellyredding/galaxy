@@ -22,29 +22,43 @@ struct FocusableTerminalView: NSViewRepresentable {
 
     func updateNSView(_ nsView: TerminalHostView, context: Context) {
         let wasActive = nsView.isActive
+        let activationChanged = isActive != wasActive
 
-        nsView.isActive = isActive  // didSet → updateDragRegistration
-        nsView.refreshDragRegistration()
+        // didSet on isActive runs updateDragRegistration when
+        // the value flips (guarded by != oldValue). Only call
+        // refreshDragRegistration explicitly when isActive
+        // didn't flip — that's the case where
+        // pane.isAcceptingInput may have changed and the
+        // didSet path skipped. Avoids paying for two
+        // register/unregister cycles per transition row.
+        nsView.isActive = isActive
+        if !activationChanged {
+            nsView.refreshDragRegistration()
+        }
 
-        // If we're deactivating AND this host holds first
-        // responder (i.e., the user was typing in this pane),
-        // resign first responder EXPLICITLY before flipping
-        // isHidden. AppKit's auto-resign path inside
-        // -[NSView setHidden:] does ~800ms of synchronous
-        // work when the first responder is a descendant of
-        // the view being hidden — observed on shell pane
-        // session-switch, with cost asymmetric to whether
-        // the pane was focused. Resigning first responder
-        // ourselves before the hide drops that cost from
-        // ~800ms to <1ms. The workaround is backend-agnostic
-        // (no SwiftTerm-specific code), so it survives a
-        // future libghostty migration unchanged.
-        let firstResponderInPane: Bool =
-            nsView.window?.firstResponder === nsView.pane.view
-            || (nsView.window?.firstResponder as? NSView)?
-                .isDescendant(of: nsView) == true
-        if !isActive && firstResponderInPane {
-            nsView.window?.makeFirstResponder(nil)
+        if !isActive {
+            // If we're deactivating AND this host holds first
+            // responder (i.e., the user was typing in this
+            // pane), resign first responder EXPLICITLY before
+            // flipping isHidden. AppKit's auto-resign path
+            // inside -[NSView setHidden:] does ~800ms of
+            // synchronous work when the first responder is a
+            // descendant of the view being hidden — observed
+            // on shell pane session-switch, with cost
+            // asymmetric to whether the pane was focused.
+            // Resigning first responder ourselves before the
+            // hide drops that cost from ~800ms to <1ms. The
+            // workaround is backend-agnostic (no SwiftTerm-
+            // specific code), so it survives a future
+            // libghostty migration unchanged.
+            let responder = nsView.window?.firstResponder
+            let firstResponderInPane =
+                responder === nsView.pane.view
+                || (responder as? NSView)?
+                    .isDescendant(of: nsView) == true
+            if firstResponderInPane {
+                nsView.window?.makeFirstResponder(nil)
+            }
         }
 
         nsView.isHidden = !isActive
