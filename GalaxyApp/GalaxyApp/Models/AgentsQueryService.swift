@@ -12,6 +12,15 @@ class AgentsQueryService {
     /// Currently running subprocess — terminated before each
     /// new fetch.
     private var currentProcess: Process?
+
+    /// Mutation subprocess slot. Lives in a separate slot
+    /// from `currentProcess` so a concurrent polling fetch
+    /// can't terminate an in-flight mutation via
+    /// `cancelAll()`. Mutations should not overlap with
+    /// each other, but they're allowed to run alongside
+    /// any number of polling reads.
+    private var currentMutationProcess: Process?
+
     private let lock = NSLock()
 
     private init() {
@@ -70,6 +79,24 @@ class AgentsQueryService {
             RunningCountResponse.self, from: data
         )
         return response.count
+    }
+
+    /// Mark a single agent as abandoned. Idempotent — the
+    /// CLI exits 0 even when the row is already terminal,
+    /// so callers don't need to distinguish "race lost"
+    /// from real errors.
+    func abandonAgent(
+        ledgerSessionId: Int64,
+        agentId: String
+    ) async throws {
+        _ = try await runMutationCLI(
+            args: [
+                "abandon",
+                "--ledger-session-id",
+                String(ledgerSessionId),
+                "--agent-id", agentId,
+            ]
+        )
     }
 
     // MARK: - CLI Subprocess
@@ -162,6 +189,94 @@ class AgentsQueryService {
         lock.lock()
         if currentProcess === process {
             currentProcess = nil
+        }
+        lock.unlock()
+    }
+
+    /// Mutation-lane subprocess runner. Mirrors `runCLI` but
+    /// uses `currentMutationProcess` and never calls
+    /// `cancelAll()` — concurrent polling reads must not
+    /// terminate an in-flight write. Short-lived; callers
+    /// should not fire overlapping mutations.
+    private func runMutationCLI(
+        args: [String]
+    ) async throws -> Data {
+        try Task.checkCancellation()
+
+        let process = Process()
+        let stdout = Pipe()
+        let stderr = Pipe()
+
+        process.executableURL = URL(
+            fileURLWithPath: binaryPath
+        )
+        process.arguments = args
+        process.standardOutput = stdout
+        process.standardError = stderr
+
+        lock.lock()
+        currentMutationProcess = process
+        lock.unlock()
+
+        return try await withCheckedThrowingContinuation {
+            continuation in
+            do {
+                try process.run()
+            } catch {
+                self.clearMutationProcess(process)
+                continuation.resume(throwing: error)
+                return
+            }
+
+            DispatchQueue.global(
+                qos: .userInitiated
+            ).async {
+                let outData = stdout
+                    .fileHandleForReading
+                    .readDataToEndOfFile()
+                let errData = stderr
+                    .fileHandleForReading
+                    .readDataToEndOfFile()
+                process.waitUntilExit()
+
+                self.clearMutationProcess(process)
+
+                guard process.terminationStatus == 0
+                else {
+                    let errMsg = String(
+                        data: errData,
+                        encoding: .utf8
+                    ) ?? "Unknown error"
+                    continuation.resume(
+                        throwing:
+                            AgentsQueryError.cliError(
+                                status: process
+                                    .terminationStatus,
+                                message: errMsg
+                                    .trimmingCharacters(
+                                        in:
+                                            .whitespacesAndNewlines
+                                    )
+                            )
+                    )
+                    return
+                }
+
+                continuation.resume(
+                    returning: outData
+                )
+            }
+        }
+    }
+
+    /// Thread-safe conditional clear of
+    /// currentMutationProcess.
+    private func clearMutationProcess(
+        _ process: Process
+    ) {
+        lock.lock()
+        if currentMutationProcess === process {
+            currentMutationProcess = nil
         }
         lock.unlock()
     }

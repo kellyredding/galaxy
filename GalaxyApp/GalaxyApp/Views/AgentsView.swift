@@ -63,6 +63,13 @@ struct AgentsView: View {
         ArtifactSummary? = nil
     @State private var isTranscriptHovered: Bool = false
 
+    // Abandon-confirmation state for the detail view's
+    // "Mark as abandoned" affordance. Visible only while
+    // the selected agent's status is "running".
+    @State private var showAbandonConfirm: Bool = false
+    @State private var isAbandoning: Bool = false
+    @State private var abandonErrorMessage: String? = nil
+
     // Focus state for keyboard navigation
     @State private var focusedIndex: Int? = nil
 
@@ -429,36 +436,85 @@ struct AgentsView: View {
         }
     }
 
+    /// Header row for the detail view: agent type, status
+    /// pill, and (when running) a "Mark as abandoned"
+    /// affordance sitting flush against the pill.
+    /// Extracted from `detailContent` to keep the parent
+    /// ViewBuilder small enough for SwiftUI's type checker
+    /// to handle.
+    private func detailHeader(
+        _ agent: AgentRun
+    ) -> some View {
+        HStack(spacing: 8) {
+            Text(agent.agentType)
+                .chromeFont(size: fontSize.title2)
+                .fontWeight(.semibold)
+
+            statusPill(agent)
+
+            if agent.isRunning {
+                abandonButton
+            }
+        }
+    }
+
+    private func statusPill(
+        _ agent: AgentRun
+    ) -> some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(agent.statusColor)
+                .frame(width: 8, height: 8)
+            Text(agent.statusLabel)
+                .chromeFont(size: fontSize.caption)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(agent.statusColor.opacity(0.15))
+        .cornerRadius(4)
+    }
+
+    /// Cleanup affordance for stuck-running rows (e.g. the
+    /// parent session crashed and never fired its
+    /// end-of-session abandon sweep). The detail header
+    /// only renders this when `agent.isRunning`, so it
+    /// disappears once the status flips.
+    ///
+    /// Styling deliberately mirrors `statusPill` so the
+    /// affordance reads as a sibling to the Running label
+    /// — same caption font, padding, corner radius, and a
+    /// neutral ghost background.
+    private var abandonButton: some View {
+        Button {
+            showAbandonConfirm = true
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "xmark.circle")
+                    .font(.system(size: 9))
+                Text("Mark as abandoned")
+                    .chromeFont(size: fontSize.caption)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Color.primary.opacity(0.08))
+            .cornerRadius(4)
+        }
+        .buttonStyle(.plain)
+        .disabled(isAbandoning)
+        .help(
+            "Mark this agent's record as abandoned. Use "
+            + "when the agent actually crashed or was "
+            + "killed externally (e.g. kernel panic) and "
+            + "will never report back. Does not stop a "
+            + "live process."
+        )
+    }
+
     private func detailContent(
         _ agent: AgentRun
     ) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            // Header: type + status
-            HStack(spacing: 8) {
-                Text(agent.agentType)
-                    .chromeFont(
-                        size: fontSize.title2
-                    )
-                    .fontWeight(.semibold)
-
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(agent.statusColor)
-                        .frame(width: 8, height: 8)
-                    Text(agent.statusLabel)
-                        .chromeFont(
-                            size: fontSize.caption
-                        )
-                }
-                .padding(
-                    .horizontal, 8
-                )
-                .padding(.vertical, 3)
-                .background(
-                    agent.statusColor.opacity(0.15)
-                )
-                .cornerRadius(4)
-            }
+            detailHeader(agent)
 
             // Metadata grid
             VStack(
@@ -558,6 +614,37 @@ struct AgentsView: View {
             maxWidth: .infinity,
             alignment: .leading
         )
+        .confirmationDialog(
+            "Mark agent as abandoned?",
+            isPresented: $showAbandonConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Mark as abandoned") {
+                Task { await performAbandon() }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text(
+                "This only updates Galaxy's record of "
+                    + "the agent. It does not stop a "
+                    + "live process. Use this when the "
+                    + "agent has already crashed or "
+                    + "been killed."
+            )
+        }
+        .alert(
+            "Couldn't mark as abandoned",
+            isPresented: Binding(
+                get: { abandonErrorMessage != nil },
+                set: {
+                    if !$0 { abandonErrorMessage = nil }
+                }
+            )
+        ) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(abandonErrorMessage ?? "")
+        }
     }
 
     private func detailField(
@@ -729,6 +816,73 @@ struct AgentsView: View {
                     + " \(error)"
                 )
             }
+        }
+    }
+
+    /// Abandon the currently selected agent, then refresh
+    /// both the local list and the selectedAgent binding so
+    /// the detail view reflects the new status (orange pill,
+    /// "Abandoned" label, concrete duration) immediately.
+    /// The CLI's `agent:abandoned` timeline event also flows
+    /// through EventCoordinator to decrement the tab badge,
+    /// but the local `agents` array is independent of that
+    /// event stream and needs an explicit refresh.
+    @MainActor
+    private func performAbandon() async {
+        guard let agent = selectedAgent,
+              let lsid = session.ledgerSessionId
+        else { return }
+
+        isAbandoning = true
+        defer { isAbandoning = false }
+
+        do {
+            try await AgentsQueryService.shared
+                .abandonAgent(
+                    ledgerSessionId: lsid,
+                    agentId: agent.agentId
+                )
+
+            await refreshAfterAbandon(
+                agentId: agent.agentId,
+                lsid: lsid
+            )
+        } catch {
+            abandonErrorMessage =
+                error.localizedDescription
+        }
+    }
+
+    /// Re-fetch the agents list after an abandon and
+    /// re-bind selectedAgent so the detail view picks up
+    /// the new status without waiting for the next polling
+    /// fetch. Keeps writes off the polling subprocess lane
+    /// — but read-back uses the polling lane, which is fine
+    /// since this fetch is the most recent thing on it.
+    @MainActor
+    private func refreshAfterAbandon(
+        agentId: String,
+        lsid: Int64
+    ) async {
+        do {
+            let all = try await AgentsQueryService
+                .shared
+                .fetchAgents(ledgerSessionId: lsid)
+            agents = all
+            if selectedAgent?.agentId == agentId,
+               let fresh = all.first(where: {
+                   $0.agentId == agentId
+               })
+            {
+                selectedAgent = fresh
+            }
+        } catch {
+            // Non-fatal — the next polling fetch (or
+            // event-driven refresh) will catch up.
+            GalaxyLog.events(
+                "AgentsView refreshAfterAbandon "
+                + "failed: \(error)"
+            )
         }
     }
 
