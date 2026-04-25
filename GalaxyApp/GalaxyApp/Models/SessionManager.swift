@@ -391,40 +391,40 @@ class SessionManager: ObservableObject {
         let isBusy = session.isInTurn
         let agentCount = session.runningAgentCount
 
-        if let checker = session.checkScrollbackUnsavedWork {
-            checker { hasWork in
-                if hasWork {
-                    completion(.unsavedScrollback)
-                } else if isBusy {
-                    completion(.inTurn)
-                } else if agentCount > 0 {
-                    completion(
-                        .runningAgents(count: agentCount)
-                    )
-                } else {
-                    completion(nil)
-                }
+        // Stop-session only consults the SESSION pane's
+        // scrollback. Shell-pane notes are explicitly
+        // out of scope here — the shell process survives
+        // session stop, so its notes aren't lost.
+        session.checkAnyScrollbackUnsavedWork(
+            kinds: [.session]
+        ) { hasWork in
+            if hasWork {
+                completion(.unsavedScrollback)
+            } else if isBusy {
+                completion(.inTurn)
+            } else if agentCount > 0 {
+                completion(
+                    .runningAgents(count: agentCount)
+                )
+            } else {
+                completion(nil)
             }
-        } else if isBusy {
-            completion(.inTurn)
-        } else if agentCount > 0 {
-            completion(.runningAgents(count: agentCount))
-        } else {
-            completion(nil)
         }
     }
 
-    /// Check all live sessions for stop warnings. Calls back
-    /// with a list of sessions that need confirmation.
+    /// Check all sessions — live AND stopped — for quit
+    /// warnings. Differs from `stopWarningReason` in two
+    /// ways: it also covers stopped sessions (their
+    /// shell pane may still be open with notes that quit
+    /// would destroy), and live sessions consult both
+    /// their session-pane and shell-pane scrollback
+    /// (quit kills both).
     func quitWarnings(
         completion: @escaping (
             [(Session, StopWarningReason)]
         ) -> Void
     ) {
-        let liveSessions = sessions.filter {
-            !$0.hasExited
-        }
-        guard !liveSessions.isEmpty else {
+        guard !sessions.isEmpty else {
             completion([])
             return
         }
@@ -433,13 +433,54 @@ class SessionManager: ObservableObject {
         var warnings: [(Session, StopWarningReason)] = []
         let lock = NSLock()
 
-        for session in liveSessions {
+        for session in sessions {
+            // Stopped sessions: only the shell pane can
+            // still hold unsaved notes (session pane is
+            // gone). Live sessions: both panes apply.
+            let kinds: Set<Session.ScrollbackPaneKind> =
+                session.hasExited
+                    ? [.shell]
+                    : [.session, .shell]
+
             group.enter()
-            stopWarningReason(for: session) { reason in
-                if let reason = reason {
+            session.checkAnyScrollbackUnsavedWork(
+                kinds: kinds
+            ) { hasScrollbackWork in
+                if hasScrollbackWork {
                     lock.lock()
-                    warnings.append((session, reason))
+                    warnings.append(
+                        (session, .unsavedScrollback)
+                    )
                     lock.unlock()
+                    group.leave()
+                    return
+                }
+                // No scrollback work — for live sessions,
+                // also surface in-turn / running-agent
+                // warnings (those don't apply to stopped
+                // sessions, which have no process left to
+                // be busy or run agents).
+                if !session.hasExited {
+                    if session.isInTurn {
+                        lock.lock()
+                        warnings.append(
+                            (session, .inTurn)
+                        )
+                        lock.unlock()
+                    } else if session.runningAgentCount
+                        > 0 {
+                        lock.lock()
+                        warnings.append(
+                            (
+                                session,
+                                .runningAgents(
+                                    count: session
+                                        .runningAgentCount
+                                )
+                            )
+                        )
+                        lock.unlock()
+                    }
                 }
                 group.leave()
             }

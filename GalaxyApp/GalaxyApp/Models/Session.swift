@@ -211,11 +211,100 @@ class Session: Identifiable, ObservableObject {
     // session.metrics event. Plain var (not @Published) until a
     // specific property is promoted for UI rendering.
 
-    /// Closure set by TerminalHostView to check whether scrollback
-    /// has unsaved work (notes, form content, or in-progress edits).
-    /// Called by SessionManager before stopping a session.
-    var checkScrollbackUnsavedWork:
-        ((@escaping (Bool) -> Void) -> Void)?
+    /// Which terminal pane a scrollback checker covers.
+    /// Stop-session and quit-app each consult a different
+    /// subset — stopping a session only loses notes from
+    /// the session pane (the shell process survives),
+    /// while quitting the app loses both. Tagging the
+    /// registered checker is what lets callers ask the
+    /// right question.
+    enum ScrollbackPaneKind {
+        case session
+        case shell
+    }
+
+    /// Per-host-view closures that check whether this
+    /// session has unsaved scrollback work (notes, form
+    /// content, in-progress edits). Keyed by the
+    /// registering `TerminalHostView`'s
+    /// `ObjectIdentifier` so multiple panes each
+    /// contribute one checker; dying views remove theirs
+    /// cleanly. Each entry carries a
+    /// `ScrollbackPaneKind` so callers can filter to the
+    /// panes whose loss matters in their context. Use
+    /// `registerScrollbackUnsavedWorkChecker` /
+    /// `unregisterScrollbackUnsavedWorkChecker` /
+    /// `checkAnyScrollbackUnsavedWork` — do not access
+    /// directly.
+    private var scrollbackUnsavedWorkCheckers:
+        [ObjectIdentifier: (
+            kind: ScrollbackPaneKind,
+            check: (@escaping (Bool) -> Void) -> Void
+        )] = [:]
+
+    /// Register a checker for one pane's scrollback.
+    /// Call from `TerminalHostView` setup with the kind
+    /// that matches the host view's pane.
+    func registerScrollbackUnsavedWorkChecker(
+        _ key: ObjectIdentifier,
+        kind: ScrollbackPaneKind,
+        checker: @escaping (
+            @escaping (Bool) -> Void
+        ) -> Void
+    ) {
+        scrollbackUnsavedWorkCheckers[key] =
+            (kind: kind, check: checker)
+    }
+
+    /// Remove a checker when its host view goes away.
+    func unregisterScrollbackUnsavedWorkChecker(
+        _ key: ObjectIdentifier
+    ) {
+        scrollbackUnsavedWorkCheckers
+            .removeValue(forKey: key)
+    }
+
+    /// Fan out to checkers matching `kinds` and report
+    /// `true` if ANY of them reports unsaved work. Runs
+    /// the per-pane checks in parallel. Calls completion
+    /// on main.
+    ///
+    /// Stop-session uses `[.session]` — shell pane notes
+    /// don't matter because the shell process keeps
+    /// running. Quit-app uses `[.session, .shell]` for
+    /// live sessions and `[.shell]` for stopped sessions
+    /// (whose shell pane may still be open).
+    func checkAnyScrollbackUnsavedWork(
+        kinds: Set<ScrollbackPaneKind>,
+        completion: @escaping (Bool) -> Void
+    ) {
+        let entries = scrollbackUnsavedWorkCheckers.values
+            .filter { kinds.contains($0.kind) }
+        guard !entries.isEmpty else {
+            completion(false)
+            return
+        }
+
+        let group = DispatchGroup()
+        var anyHasWork = false
+        let lock = NSLock()
+
+        for entry in entries {
+            group.enter()
+            entry.check { hasWork in
+                if hasWork {
+                    lock.lock()
+                    anyHasWork = true
+                    lock.unlock()
+                }
+                group.leave()
+            }
+        }
+
+        group.notify(queue: .main) {
+            completion(anyHasWork)
+        }
+    }
 
     /// Ledger session ID for fast event matching. Set when the event
     /// system first matches this session via session_identifiers array.

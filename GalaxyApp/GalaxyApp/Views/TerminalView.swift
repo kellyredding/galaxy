@@ -69,6 +69,21 @@ class TerminalHostView: NSView {
         sessionPane?.galaxyView
     }
 
+    /// The owning session regardless of pane type.
+    /// `self.session` above only resolves for the Session
+    /// pane; this also reaches through `ShellTerminalPane`
+    /// so shared behaviors (e.g. quit-warning checkers)
+    /// can cover both panes with one call site.
+    private var owningSession: Session? {
+        if let sp = sessionPane {
+            return sp.session
+        }
+        if let sp = pane as? ShellTerminalPane {
+            return sp.session
+        }
+        return nil
+    }
+
     /// Shared SwiftTerm accessor. Both panes ultimately wrap a
     /// `LocalProcessTerminalView` — the Session pane via
     /// `GalaxyTerminalView` (a subclass), the Shell pane via
@@ -188,6 +203,10 @@ class TerminalHostView: NSView {
         cancellables.removeAll()
         scrollbackCooldownTimer?.cancel()
         firstResponderObservation?.invalidate()
+        owningSession?
+            .unregisterScrollbackUnsavedWorkChecker(
+                ObjectIdentifier(self)
+            )
     }
 
     /// Set up local event monitor to intercept Ctrl+Arrow for line navigation.
@@ -302,16 +321,37 @@ class TerminalHostView: NSView {
             }
             .store(in: &cancellables)
 
-        if let session = self.session {
-            // Wire up scrollback unsaved-work check for session stop
-            // confirmation. SessionManager calls this before terminating.
-            session.checkScrollbackUnsavedWork = {
-                [weak self] completion in
-                self?.checkScrollbackUnsavedWork(
+        // Register this host view's scrollback-unsaved-
+        // work checker on the owning session so Cmd+Q /
+        // stop-session confirmations cover whichever pane
+        // has the open scrollback — not just the Session
+        // pane. Paired with `unregister` in `deinit`.
+        // Register this host view's scrollback-unsaved-
+        // work checker on the owning session, tagged with
+        // its pane kind so callers (stop-session vs.
+        // quit-app) can filter to the panes whose loss
+        // matters in their context. Paired with the
+        // unregister in `deinit`.
+        if let session = owningSession {
+            let kind: Session.ScrollbackPaneKind =
+                pane is ShellTerminalPane
+                    ? .shell : .session
+            let key = ObjectIdentifier(self)
+            session.registerScrollbackUnsavedWorkChecker(
+                key,
+                kind: kind
+            ) { [weak self] completion in
+                guard let self = self else {
+                    completion(false)
+                    return
+                }
+                self.checkScrollbackUnsavedWork(
                     completion: completion
-                ) ?? completion(false)
+                )
             }
+        }
 
+        if let session = self.session {
             // Observe session process exit — tear down scrollback if process dies.
             // Skip note confirmation — the process is gone so there's nothing
             // to send notes to.
