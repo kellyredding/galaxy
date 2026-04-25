@@ -457,14 +457,20 @@ struct TerminalContainerView: View {
     /// when hidden and doesn't regain it. Routes through Session's
     /// pane-focus registry, which lets each TerminalHostView's
     /// requestFocus() handle scrollback state internally.
+    ///
+    /// Called synchronously rather than through asyncAfter — the
+    /// inner DispatchQueue.main.async + retry inside
+    /// TerminalHostView.requestFocus already handles the
+    /// "view-not-yet-in-window" case the previous 50ms outer wait
+    /// targeted, and that 50ms consistently slipped to ~180ms
+    /// because the main thread was busy with AppKit draw work
+    /// after the switch.
     private func restoreTerminalFocus() {
         guard let activeId = sessionManager.activeSessionId,
               let session = sessionManager.sessions
                 .first(where: { $0.id == activeId }),
               !session.hasExited else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            session.restorePreferredPaneFocus()
-        }
+        session.restorePreferredPaneFocus()
     }
 }
 
