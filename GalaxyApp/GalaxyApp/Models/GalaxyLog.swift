@@ -34,6 +34,17 @@ enum GalaxyLog {
         write("[Galaxy/circuit] \(message)")
     }
 
+    /// Diagnostic logging for transient bug investigations.
+    /// Tag categorizes the subsystem (e.g. "resume", "cmd",
+    /// "switch", "active"). Remove call sites once the bug is
+    /// resolved; the dbg method itself can stay.
+    ///
+    /// View live:  tail -f ~/.claude/galaxy/galaxy.log | grep dbg
+    /// By tag:     grep "Galaxy/dbg/resume" ~/.claude/galaxy/galaxy.log
+    static func dbg(_ tag: String, _ message: String) {
+        write("[Galaxy/dbg/\(tag)] \(message)")
+    }
+
     private static func write(_ message: String) {
         let timestamp = dateFormatter.string(from: Date())
         let line = "[\(timestamp)] \(message)\n"
