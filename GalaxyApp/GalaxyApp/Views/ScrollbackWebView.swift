@@ -396,6 +396,10 @@ class ScrollbackDropWebView: WKWebView {
     override func draggingEntered(
         _ sender: NSDraggingInfo
     ) -> NSDragOperation {
+        guard !ModalState.isPresenting(over: window) else {
+            return []
+        }
+
         guard sender.draggingPasteboard.canReadObject(
             forClasses: [NSURL.self],
             options: [.urlReadingFileURLsOnly: true]
@@ -411,6 +415,10 @@ class ScrollbackDropWebView: WKWebView {
     override func draggingUpdated(
         _ sender: NSDraggingInfo
     ) -> NSDragOperation {
+        guard !ModalState.isPresenting(over: window) else {
+            return []
+        }
+
         guard sender.draggingPasteboard.canReadObject(
             forClasses: [NSURL.self],
             options: [.urlReadingFileURLsOnly: true]
@@ -444,6 +452,10 @@ class ScrollbackDropWebView: WKWebView {
                 "document.body.classList"
                 + ".remove('file-drop-active')"
             )
+        }
+
+        guard !ModalState.isPresenting(over: window) else {
+            return false
         }
 
         guard let urls = sender.draggingPasteboard

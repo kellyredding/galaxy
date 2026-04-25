@@ -591,16 +591,18 @@ class TerminalHostView: NSView {
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        // Reject drops while any app-modal window (Settings, New
-        // Session, Restore Session — all presented via
-        // NSApp.runModal) is up. Prevents the stale-render bug
-        // where a drop during Settings-open accepts the paste
+        // Reject drops while any modal is presenting over our
+        // window: app-modal windows (Settings, New Session,
+        // Restore Session via NSApp.runModal) or window-modal
+        // sheets (every SheetAlert.confirm — quit, stop-session,
+        // discard-notes, artifact/snapshot deletes). Prevents
+        // the stale-render bug where a drop accepts the paste
         // bytes but the terminal view doesn't repaint until a
         // later event wakes it. Don't gate on isKeyWindow — for
         // inter-app drags from Finder, the source app stays
         // active so neither of our windows is key during the
         // drag, which would reject every legitimate drop.
-        guard NSApp.modalWindow == nil else {
+        guard !ModalState.isPresenting(over: window) else {
             NSCursor.operationNotAllowed.set()
             return []
         }
@@ -636,7 +638,7 @@ class TerminalHostView: NSView {
     }
 
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        guard NSApp.modalWindow == nil else {
+        guard !ModalState.isPresenting(over: window) else {
             NSCursor.operationNotAllowed.set()
             return []
         }
@@ -667,7 +669,7 @@ class TerminalHostView: NSView {
         // Defense-in-depth: same modal guard as draggingEntered.
         // AppKit may not route performDragOperation when entered
         // returned []—but if it does, refuse cleanly.
-        guard NSApp.modalWindow == nil else {
+        guard !ModalState.isPresenting(over: window) else {
             return false
         }
 

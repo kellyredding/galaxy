@@ -79,6 +79,7 @@
 		9A7E8C74C205BD7E4329689D /* MainMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = D96AFD79CE59690C239E10B5 /* MainMenu.swift */; };
 		9AA9CE7723F2ABB70173493D /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 7CE7EDB3AA040F6F2534E97D /* SwiftTerm */; };
 		9C1BE8D8B5D26E04841D180D /* SheetAlert.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50B1BA689B62E9309B084C1 /* SheetAlert.swift */; };
+		A1B2C3D4E5F60718293A4B5C /* ModalState.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7E8F90A1B2C3D4E5F6A7B8C /* ModalState.swift */; };
 		9DF6C43FCF8057F92F9035DF /* RestoreSessionSheetController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A3E23B7649EB363652B3378 /* RestoreSessionSheetController.swift */; };
 		9EBBFFABF0552FDA783CAA6F /* BellIndicatorBehavior.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C3C1E1CDC72CB3FDF60D346 /* BellIndicatorBehavior.swift */; };
 		A20D4EC7B5F8E3D1DDBB8D4E /* SettingsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C7501DB8ABDB113A9CF35C8 /* SettingsManager.swift */; };
@@ -201,6 +202,7 @@
 		BFFF3072B720C04EC59D3554 /* AgentRun.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRun.swift; sourceTree = "<group>"; };
 		C2C9905E81F2549614ADA8EE /* LedgerEntriesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerEntriesView.swift; sourceTree = "<group>"; };
 		C50B1BA689B62E9309B084C1 /* SheetAlert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SheetAlert.swift; sourceTree = "<group>"; };
+		D7E8F90A1B2C3D4E5F6A7B8C /* ModalState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModalState.swift; sourceTree = "<group>"; };
 		C694C8B104DEAC6605437941 /* AgentsQueryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentsQueryService.swift; sourceTree = "<group>"; };
 		C7704E47DFEE80B330501660 /* GalaxyTerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxyTerminalView.swift; sourceTree = "<group>"; };
 		C77E50164B4FCCB1E3C49395 /* NavigationRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationRoute.swift; sourceTree = "<group>"; };
@@ -344,6 +346,7 @@
 				4A2B8AABAEE680386E0753B7 /* SessionStatusDot.swift */,
 				F0269FFB63DF2EC261DC5B6A /* SettingsView.swift */,
 				C50B1BA689B62E9309B084C1 /* SheetAlert.swift */,
+				D7E8F90A1B2C3D4E5F6A7B8C /* ModalState.swift */,
 				29344914B2D95B3DADB11F4A /* SnapshotsView.swift */,
 				2C599534AAFC2570BC5F292A /* StoppedSessionView.swift */,
 				DCE6073F39BD2A2E08FD007F /* TerminalView.swift */,
@@ -547,6 +550,7 @@
 				A20D4EC7B5F8E3D1DDBB8D4E /* SettingsManager.swift in Sources */,
 				55C2F61C9B63ACCE613CBC37 /* SettingsView.swift in Sources */,
 				9C1BE8D8B5D26E04841D180D /* SheetAlert.swift in Sources */,
+				A1B2C3D4E5F60718293A4B5C /* ModalState.swift in Sources */,
 				F19AFC56BBDD37BD92E68719 /* SnapshotQueryService.swift in Sources */,
 				D499F472C2F9A6CB0D02D493 /* SnapshotsView.swift in Sources */,
 				CC27D1B9C8318928AE6187FE /* SocketListener.swift in Sources */,
