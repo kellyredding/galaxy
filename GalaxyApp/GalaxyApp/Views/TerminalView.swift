@@ -23,23 +23,42 @@ struct FocusableTerminalView: NSViewRepresentable {
     func updateNSView(_ nsView: TerminalHostView, context: Context) {
         let wasActive = nsView.isActive
 
-        nsView.isActive = isActive  // This triggers updateDragRegistration via didSet
-
-        // Also update drag registration when session state changes (e.g., session stopped)
+        nsView.isActive = isActive  // didSet → updateDragRegistration
         nsView.refreshDragRegistration()
 
-        // Hide inactive terminals at the AppKit level so they don't intercept
-        // NSDragging hitTest. SwiftUI's .allowsHitTesting(false) + .opacity(0)
-        // don't set NSView.isHidden, so AppKit's hitTest still finds them.
+        // If we're deactivating AND this host holds first
+        // responder (i.e., the user was typing in this pane),
+        // resign first responder EXPLICITLY before flipping
+        // isHidden. AppKit's auto-resign path inside
+        // -[NSView setHidden:] does ~800ms of synchronous
+        // work when the first responder is a descendant of
+        // the view being hidden — observed on shell pane
+        // session-switch, with cost asymmetric to whether
+        // the pane was focused. Resigning first responder
+        // ourselves before the hide drops that cost from
+        // ~800ms to <1ms. The workaround is backend-agnostic
+        // (no SwiftTerm-specific code), so it survives a
+        // future libghostty migration unchanged.
+        let firstResponderInPane: Bool =
+            nsView.window?.firstResponder === nsView.pane.view
+            || (nsView.window?.firstResponder as? NSView)?
+                .isDescendant(of: nsView) == true
+        if !isActive && firstResponderInPane {
+            nsView.window?.makeFirstResponder(nil)
+        }
+
         nsView.isHidden = !isActive
 
         // Only grab focus on activation transition, not every re-render.
         // Unconditional requestFocus() steals focus from rename TextFields
-        // and other non-terminal first responders. Legitimate focus restoration
-        // for tab/session switching is handled by TerminalContainerView's
-        // onChange handlers via restoreTerminalFocus().
+        // and other non-terminal first responders. Gated through
+        // requestFocusIfPreferred() so split-pane sessions (Session +
+        // Shell) don't race — only the host matching the session's
+        // lastFocusedPaneKind takes focus, leaving the registry's
+        // memory intact for TerminalContainerView's onChange-driven
+        // restoreTerminalFocus() (which reads the same value).
         if isActive && !wasActive {
-            nsView.requestFocus()
+            nsView.requestFocusIfPreferred()
         }
     }
 }
@@ -203,10 +222,10 @@ class TerminalHostView: NSView {
         cancellables.removeAll()
         scrollbackCooldownTimer?.cancel()
         firstResponderObservation?.invalidate()
+        let key = ObjectIdentifier(self)
         owningSession?
-            .unregisterScrollbackUnsavedWorkChecker(
-                ObjectIdentifier(self)
-            )
+            .unregisterScrollbackUnsavedWorkChecker(key)
+        owningSession?.unregisterPaneFocusRestorer(key)
     }
 
     /// Set up local event monitor to intercept Ctrl+Arrow for line navigation.
@@ -349,6 +368,16 @@ class TerminalHostView: NSView {
                     completion: completion
                 )
             }
+
+            // Register pane-focus restorer so tab-switch /
+            // session-switch / app-becomes-key paths can land
+            // the user back on the pane they were last in,
+            // not unconditionally on the Session pane.
+            session.registerPaneFocusRestorer(
+                key, kind: kind
+            ) { [weak self] in
+                self?.requestFocus()
+            }
         }
 
         if let session = self.session {
@@ -427,6 +456,45 @@ class TerminalHostView: NSView {
             }
             .store(in: &cancellables)
 
+        // Observe main-window-becomes-key. SwiftTerm's display
+        // refresh appears to stall while the window is inactive;
+        // when it regains key, force a redraw so the current
+        // buffer state is painted immediately rather than
+        // lingering on stale cells until the next mouse/key event.
+        // Also re-asserts input focus when the responder chain
+        // didn't settle on us — covers the typing-stuck sibling
+        // of the stale-render symptom (fix c′).
+        NotificationCenter.default.publisher(
+            for: NSWindow.didBecomeKeyNotification
+        )
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] notification in
+                guard let self = self else { return }
+                guard self.isActive else { return }
+                // Only react when our own window became key.
+                guard let window =
+                    notification.object as? NSWindow,
+                      window === self.window else { return }
+                if let lpView = self.localProcessView {
+                    lpView.setNeedsDisplay(lpView.bounds)
+                }
+                // Only the preferred pane re-asserts focus.
+                // Without this gate, both the session and shell
+                // hosts would race and whichever fired last
+                // would steal focus regardless of which pane
+                // the user was actually in.
+                let myKind: Session.ScrollbackPaneKind =
+                    self.pane is ShellTerminalPane
+                        ? .shell : .session
+                let preferred = self.owningSession?
+                    .lastFocusedPaneKind ?? .session
+                guard myKind == preferred else { return }
+                if window.firstResponder !== self.pane.view {
+                    self.requestFocus()
+                }
+            }
+            .store(in: &cancellables)
+
         // Request focus after a short delay
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
             self?.requestFocus()
@@ -471,12 +539,37 @@ class TerminalHostView: NSView {
         // keyboard-dead after session switches.
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            if let overlay = self.scrollbackOverlay {
-                window.makeFirstResponder(overlay.scrollbackView.webView)
-            } else {
-                window.makeFirstResponder(self.pane.view)
+            let target: NSResponder =
+                self.scrollbackOverlay?.scrollbackView.webView
+                ?? self.pane.view
+            if window.makeFirstResponder(target) { return }
+            // First try lost — retry once next runloop in case a
+            // resigning responder elsewhere (closing Settings,
+            // app-switch focus restore) hadn't fully released the
+            // chain yet. One retry is sufficient; further failures
+            // imply a deeper problem to investigate via fix (e).
+            DispatchQueue.main.async { [weak window] in
+                guard let w = window else { return }
+                _ = w.makeFirstResponder(target)
             }
         }
+    }
+
+    /// Like `requestFocus()`, but only when this pane matches
+    /// the owning session's `lastFocusedPaneKind`. Used by
+    /// `FocusableTerminalView.updateNSView` so the activation-
+    /// transition focus restoration honors the user's last
+    /// pane choice. Without this gate, both the session and
+    /// shell hosts would race on every session switch and the
+    /// loser of the race would clobber `lastFocusedPaneKind`
+    /// via `refreshFocusState`, defeating the registry.
+    func requestFocusIfPreferred() {
+        let myKind: Session.ScrollbackPaneKind =
+            pane is ShellTerminalPane ? .shell : .session
+        let preferred = owningSession?
+            .lastFocusedPaneKind ?? .session
+        guard myKind == preferred else { return }
+        requestFocus()
     }
 
     // Forward mouse events to request focus
@@ -498,6 +591,20 @@ class TerminalHostView: NSView {
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        // Reject drops while any app-modal window (Settings, New
+        // Session, Restore Session — all presented via
+        // NSApp.runModal) is up. Prevents the stale-render bug
+        // where a drop during Settings-open accepts the paste
+        // bytes but the terminal view doesn't repaint until a
+        // later event wakes it. Don't gate on isKeyWindow — for
+        // inter-app drags from Finder, the source app stays
+        // active so neither of our windows is key during the
+        // drag, which would reject every legitimate drop.
+        guard NSApp.modalWindow == nil else {
+            NSCursor.operationNotAllowed.set()
+            return []
+        }
+
         // Dismiss scrollback on file drag entry — if notes exist, show
         // confirmation instead of auto-dismissing
         if isScrollbackActive {
@@ -529,6 +636,11 @@ class TerminalHostView: NSView {
     }
 
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        guard NSApp.modalWindow == nil else {
+            NSCursor.operationNotAllowed.set()
+            return []
+        }
+
         guard canAcceptDrop else {
             NSCursor.operationNotAllowed.set()
             return []
@@ -551,6 +663,13 @@ class TerminalHostView: NSView {
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         isReceivingDrag = false
         NSCursor.arrow.set()
+
+        // Defense-in-depth: same modal guard as draggingEntered.
+        // AppKit may not route performDragOperation when entered
+        // returned []—but if it does, refuse cleanly.
+        guard NSApp.modalWindow == nil else {
+            return false
+        }
 
         guard canAcceptDrop else {
             return false
@@ -583,6 +702,16 @@ class TerminalHostView: NSView {
 
         // Send to terminal with bracketed paste mode
         sendTextToTerminal(pathsText, asPaste: true)
+
+        // Defensive: kick the terminal view to repaint even if
+        // we're arriving from a window-inactive state where
+        // SwiftTerm's display refresh paused. requestFocus()
+        // (not pane.focus()) engages the verified-retry path
+        // from b′ so input also revives.
+        if let lpView = self.localProcessView {
+            lpView.setNeedsDisplay(lpView.bounds)
+        }
+        requestFocus()
 
         return true
     }
@@ -1085,6 +1214,21 @@ class TerminalHostView: NSView {
         if let frView = fr as? NSView {
             isFocusInPane = (frView === self)
                 || frView.isDescendant(of: self)
+        }
+
+        // Record this pane as the session's last-focused
+        // when focus enters our subtree. Drives tab-switch /
+        // session-switch / app-becomes-key restoration so
+        // the user returns to the pane they were typing in.
+        // Only writes on entry — leaving (e.g., to a rename
+        // text field) keeps the prior value so post-edit
+        // restoration lands back where they were.
+        if isFocusInPane {
+            let myKind: Session.ScrollbackPaneKind =
+                pane is ShellTerminalPane ? .shell : .session
+            if owningSession?.lastFocusedPaneKind != myKind {
+                owningSession?.lastFocusedPaneKind = myKind
+            }
         }
 
         // Pane-level dim: animate alpha so the transition

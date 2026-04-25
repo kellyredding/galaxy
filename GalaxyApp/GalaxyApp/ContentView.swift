@@ -449,30 +449,21 @@ struct TerminalContainerView: View {
         }
     }
 
-    /// Restore AppKit first responder to the active session's terminal.
-    /// Tab/session switching via ZStack opacity toggling doesn't trigger
-    /// FocusableTerminalView.updateNSView (inputs unchanged), so the
-    /// terminal loses first responder when hidden and doesn't regain it.
-    /// Routes through TerminalHostView.requestFocus() so scrollback state
-    /// is respected — the scrollback view gets focus if it's active.
+    /// Restore AppKit first responder to the active session's
+    /// preferred pane (whichever one was last focused — Session
+    /// or Shell).  Tab/session switching via ZStack opacity
+    /// toggling doesn't trigger FocusableTerminalView.updateNSView
+    /// (inputs unchanged), so the terminal loses first responder
+    /// when hidden and doesn't regain it. Routes through Session's
+    /// pane-focus registry, which lets each TerminalHostView's
+    /// requestFocus() handle scrollback state internally.
     private func restoreTerminalFocus() {
         guard let activeId = sessionManager.activeSessionId,
-              let session = sessionManager.sessions.first(where: { $0.id == activeId }),
-              !session.hasExited,
-              let terminalView = session.terminalView else { return }
+              let session = sessionManager.sessions
+                .first(where: { $0.id == activeId }),
+              !session.hasExited else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            // Walk up from the terminal view to find the TerminalHostView,
-            // which knows whether scrollback is active.
-            var view: NSView? = terminalView.superview
-            while let v = view {
-                if let host = v as? TerminalHostView {
-                    host.requestFocus()
-                    return
-                }
-                view = v.superview
-            }
-            // Fallback: direct focus if TerminalHostView not found
-            terminalView.window?.makeFirstResponder(terminalView)
+            session.restorePreferredPaneFocus()
         }
     }
 }

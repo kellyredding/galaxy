@@ -539,20 +539,15 @@ struct SessionRow: View {
         restoreTerminalFocus()
     }
 
-    /// Return focus to the terminal if it's visible (running, not exited).
-    /// Routes through TerminalHostView so scrollback state is respected.
+    /// Return focus to the terminal's preferred pane (Session
+    /// or Shell, whichever was last focused) if it's visible
+    /// (running, not exited). Routes through Session's
+    /// pane-focus registry so scrollback state is respected
+    /// inside each TerminalHostView.requestFocus().
     private func restoreTerminalFocus() {
         DispatchQueue.main.async {
-            guard let terminalView = session.terminalView else { return }
-            var view: NSView? = terminalView.superview
-            while let v = view {
-                if let host = v as? TerminalHostView {
-                    host.requestFocus()
-                    return
-                }
-                view = v.superview
-            }
-            terminalView.window?.makeFirstResponder(terminalView)
+            guard !session.hasExited else { return }
+            session.restorePreferredPaneFocus()
         }
     }
 }
