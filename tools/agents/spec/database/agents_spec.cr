@@ -356,6 +356,83 @@ describe GalaxyAgents::Database do
     end
   end
 
+  describe ".abandon_agent" do
+    it "marks a single running agent as abandoned" do
+      GalaxyAgents::Database.start_agent(
+        1_i64, "a1", "Explore",
+      )
+      GalaxyAgents::Database.start_agent(
+        1_i64, "a2", "general-purpose",
+      )
+
+      result = GalaxyAgents::Database.abandon_agent(
+        1_i64, "a1",
+      )
+      result.should_not be_nil
+      result.not_nil!.agent_id.should eq("a1")
+
+      a1 = GalaxyAgents::Database.get_agent(
+        1_i64, "a1",
+      )
+      a1.not_nil!.status.should eq("abandoned")
+
+      # a2 is untouched
+      a2 = GalaxyAgents::Database.get_agent(
+        1_i64, "a2",
+      )
+      a2.not_nil!.status.should eq("running")
+    end
+
+    it "writes completed_at and duration_ms" do
+      GalaxyAgents::Database.start_agent(
+        1_i64, "a1", "Explore",
+      )
+
+      GalaxyAgents::Database.abandon_agent(
+        1_i64, "a1",
+      )
+
+      a = GalaxyAgents::Database.get_agent(
+        1_i64, "a1",
+      ).not_nil!
+      a.completed_at.should_not be_nil
+      a.duration_ms.should_not be_nil
+    end
+
+    it "returns nil when agent is already terminal" do
+      GalaxyAgents::Database.start_agent(
+        1_i64, "a1", "Explore",
+      )
+      GalaxyAgents::Database.stop_agent(
+        1_i64, "a1", status: "stopped")
+
+      result = GalaxyAgents::Database.abandon_agent(
+        1_i64, "a1",
+      )
+      result.should be_nil
+
+      # Status unchanged
+      a = GalaxyAgents::Database.get_agent(
+        1_i64, "a1",
+      )
+      a.not_nil!.status.should eq("stopped")
+    end
+
+    it "returns nil when agent does not exist" do
+      result = GalaxyAgents::Database.abandon_agent(
+        1_i64, "missing",
+      )
+      result.should be_nil
+    end
+
+    it "returns nil for invalid session" do
+      result = GalaxyAgents::Database.abandon_agent(
+        0_i64, "a1",
+      )
+      result.should be_nil
+    end
+  end
+
   describe ".list_agents" do
     it "returns agents ordered by started_at" do
       GalaxyAgents::Database.start_agent(

@@ -311,6 +311,79 @@ module GalaxyAgents
       abandoned
     end
 
+    # Abandon a single running agent by agent_id.
+    # Returns the pre-update Agent row when the transition
+    # actually happened (status was 'running'), or nil when
+    # the row doesn't exist or is already terminal.
+    # Idempotent: callers can retry safely.
+    #
+    # Unlike `abandon_running`, this writes `duration_ms`
+    # explicitly so JSON consumers (e.g. the SwiftUI detail
+    # view) can render a concrete duration immediately
+    # without re-deriving it from started_at.
+    def self.abandon_agent(
+      ledger_session_id : Int64,
+      agent_id : String,
+    ) : Agent?
+      return nil if ledger_session_id <= 0
+
+      begin
+        open do |db|
+          agent = db.query_one?(
+            <<-SQL,
+              SELECT id, ledger_session_id, agent_id,
+                     agent_type, status, description,
+                     started_at, completed_at,
+                     duration_ms, prompt, last_message,
+                     transcript_path, created_at,
+                     updated_at
+              FROM agents
+              WHERE ledger_session_id = ?
+                AND agent_id = ?
+                AND status = 'running'
+            SQL
+            ledger_session_id,
+            agent_id,
+          ) do |rs|
+            Agent.from_row(rs)
+          end
+
+          return nil unless agent
+
+          duration_ms : Int64? = nil
+          begin
+            started = Time.parse_utc(
+              agent.started_at, "%Y-%m-%d %H:%M:%S",
+            )
+            elapsed = Time.utc - started
+            duration_ms = elapsed.total_milliseconds.to_i64
+          rescue
+            # Leave nil; UI still renders "—"
+          end
+
+          db.exec(
+            <<-SQL,
+              UPDATE agents
+              SET status = 'abandoned',
+                  completed_at = datetime('now'),
+                  duration_ms = COALESCE(?, duration_ms),
+                  updated_at = datetime('now')
+              WHERE ledger_session_id = ?
+                AND agent_id = ?
+                AND status = 'running'
+            SQL
+            duration_ms,
+            ledger_session_id,
+            agent_id,
+          )
+
+          agent
+        end
+      rescue
+        nil
+      end
+    end
+
     # List agents for a session ordered by started_at.
     def self.list_agents(
       ledger_session_id : Int64,

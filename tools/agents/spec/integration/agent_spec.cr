@@ -37,6 +37,41 @@ private def restore_artifacts_noop
   File.chmod(SPEC_ARTIFACTS_NOOP, 0o755)
 end
 
+# Build a timeline stub that logs its invocation args to
+# a file, one call per line. Returns the log path. Mirrors
+# `build_artifacts_logging_stub` above; together they let
+# specs assert which timeline / artifact subprocess calls
+# the CLI made (or didn't make).
+private def build_timeline_logging_stub : Path
+  log_path = SPEC_GALAXY_DIR / "timeline_invocations.log"
+  stub_path = SPEC_GALAXY_DIR / "bin" / "galaxy-timeline"
+
+  File.write(stub_path, <<-BASH)
+  #!/bin/bash
+  echo "$@" >> "#{log_path}"
+  exit 0
+  BASH
+  File.chmod(stub_path, 0o755)
+
+  log_path
+end
+
+private def read_timeline_log(
+  log_path : Path,
+) : Array(String)
+  return [] of String unless File.exists?(log_path)
+  File.read_lines(log_path).reject(&.empty?)
+end
+
+# Restore the no-op timeline stub installed by
+# spec_helper.cr so later tests aren't affected.
+private def restore_timeline_noop
+  File.write(
+    SPEC_TIMELINE_NOOP, "#!/bin/sh\nexit 0\n",
+  )
+  File.chmod(SPEC_TIMELINE_NOOP, 0o755)
+end
+
 describe "CLI agent commands", tags: "integration" do
   describe "start" do
     it "starts an agent" do
@@ -528,6 +563,137 @@ describe "CLI agent commands", tags: "integration" do
                                File.exists?(log_path)
       restore_artifacts_noop
     end
+
+    it "preserves abandoned status on a later stop" do
+      run_binary([
+        "start",
+        "--ledger-session-id", "1",
+        "--agent-id", "sa1",
+        "--agent-type", "Explore",
+      ])
+      run_binary([
+        "abandon",
+        "--ledger-session-id", "1",
+        "--agent-id", "sa1",
+      ])
+
+      result = run_binary(
+        [
+          "stop",
+          "--ledger-session-id", "1",
+          "--agent-id", "sa1",
+          "--last-message-stdin",
+        ],
+        stdin: "Done!",
+      )
+
+      result[:status].should eq(0)
+      result[:output].should contain(
+        "was already abandoned",
+      )
+
+      list = run_binary([
+        "list",
+        "--ledger-session-id", "1",
+        "--json",
+      ])
+      parsed = JSON.parse(list[:output])
+      sa1 = parsed["agents"].as_a.find do |a|
+        a["agent_id"].as_s == "sa1"
+      end
+      sa1.should_not be_nil
+      sa1.not_nil!["status"].as_s.should eq("abandoned")
+      # The idempotent stop path still captures the
+      # final response so the detail view can show it.
+      sa1.not_nil!["last_message"].as_s.should eq("Done!")
+    end
+
+    it(
+      "skips lifecycle timeline event when " \
+      "stop arrives after abandon",
+    ) do
+      log_path = build_timeline_logging_stub
+
+      run_binary([
+        "start",
+        "--ledger-session-id", "1",
+        "--agent-id", "sa2",
+        "--agent-type", "Explore",
+      ])
+      run_binary([
+        "abandon",
+        "--ledger-session-id", "1",
+        "--agent-id", "sa2",
+      ])
+
+      # Snapshot the log just before the stop call so we
+      # can isolate which timeline records came from stop.
+      sleep 100.milliseconds
+      pre_stop = read_timeline_log(log_path).size
+
+      run_binary(
+        [
+          "stop",
+          "--ledger-session-id", "1",
+          "--agent-id", "sa2",
+          "--last-message-stdin",
+        ],
+        stdin: "Late finish",
+      )
+
+      # Timeline publish is fire-and-forget; give it a
+      # moment to actually NOT happen.
+      sleep 200.milliseconds
+      post_stop = read_timeline_log(log_path)
+      stop_calls = post_stop.skip(pre_stop)
+
+      stop_calls.any? do |line|
+        line.includes?("agent:stopped")
+      end.should be_false
+      stop_calls.any? do |line|
+        line.includes?("agent:failed")
+      end.should be_false
+    ensure
+      File.delete(log_path) if log_path &&
+                               File.exists?(log_path)
+      restore_timeline_noop
+    end
+
+    it "still publishes timeline event on normal stop" do
+      log_path = build_timeline_logging_stub
+
+      run_binary([
+        "start",
+        "--ledger-session-id", "1",
+        "--agent-id", "sa3",
+        "--agent-type", "Explore",
+      ])
+
+      sleep 100.milliseconds
+      pre_stop = read_timeline_log(log_path).size
+
+      run_binary(
+        [
+          "stop",
+          "--ledger-session-id", "1",
+          "--agent-id", "sa3",
+          "--last-message-stdin",
+        ],
+        stdin: "Finished cleanly",
+      )
+
+      sleep 200.milliseconds
+      post_stop = read_timeline_log(log_path)
+      stop_calls = post_stop.skip(pre_stop)
+
+      stop_calls.any? do |line|
+        line.includes?("agent:stopped")
+      end.should be_true
+    ensure
+      File.delete(log_path) if log_path &&
+                               File.exists?(log_path)
+      restore_timeline_noop
+    end
   end
 
   describe "abandon" do
@@ -562,6 +728,77 @@ describe "CLI agent commands", tags: "integration" do
 
       result[:status].should eq(0)
       result[:output].should contain("Abandoned 0 agents")
+    end
+
+    it "abandons a single agent by id" do
+      run_binary([
+        "start",
+        "--ledger-session-id", "1",
+        "--agent-id", "ab1",
+        "--agent-type", "Explore",
+      ])
+      run_binary([
+        "start",
+        "--ledger-session-id", "1",
+        "--agent-id", "ab2",
+        "--agent-type", "general-purpose",
+      ])
+
+      result = run_binary([
+        "abandon",
+        "--ledger-session-id", "1",
+        "--agent-id", "ab1",
+      ])
+
+      result[:status].should eq(0)
+      result[:output].should contain("Abandoned agent ab1")
+
+      # ab2 is still running
+      list = run_binary([
+        "list",
+        "--ledger-session-id", "1",
+        "--json",
+      ])
+      parsed = JSON.parse(list[:output])
+      statuses = parsed["agents"].as_a.map do |a|
+        {a["agent_id"].as_s, a["status"].as_s}
+      end
+      statuses.should contain({"ab1", "abandoned"})
+      statuses.should contain({"ab2", "running"})
+    end
+
+    it "exits 0 with no-op message for already terminal" do
+      run_binary([
+        "start",
+        "--ledger-session-id", "1",
+        "--agent-id", "ab1",
+        "--agent-type", "Explore",
+      ])
+      run_binary([
+        "abandon",
+        "--ledger-session-id", "1",
+        "--agent-id", "ab1",
+      ])
+
+      result = run_binary([
+        "abandon",
+        "--ledger-session-id", "1",
+        "--agent-id", "ab1",
+      ])
+
+      result[:status].should eq(0)
+      result[:output].should contain("not running")
+    end
+
+    it "exits 0 with no-op message for missing agent" do
+      result = run_binary([
+        "abandon",
+        "--ledger-session-id", "1",
+        "--agent-id", "never-existed",
+      ])
+
+      result[:status].should eq(0)
+      result[:output].should contain("not running")
     end
   end
 

@@ -280,6 +280,22 @@ module GalaxyAgents
         ledger_session_id, agent_id,
       )
 
+      # Detect already-terminal so the lifecycle timeline
+      # event below can be suppressed. Without this guard,
+      # a SubagentStop following a manual abandon would
+      # publish a second durationEnd event paired with the
+      # same agent--<id> identifier and double-decrement
+      # the running-agent badge in Galaxy.app. The DB write
+      # below still captures last_message / transcript_path
+      # / duration_ms so the detail view reflects the real
+      # completion data — only the redundant lifecycle
+      # broadcast is dropped.
+      already_terminal = false
+      if e = existing
+        already_terminal =
+          Database::TERMINAL_STATUSES.includes?(e.status)
+      end
+
       # Compute duration
       duration_ms : Int64? = nil
       if existing
@@ -327,29 +343,45 @@ module GalaxyAgents
       dm = duration_ms || 0_i64
       at = existing.try(&.agent_type) || "unknown"
 
-      # Timeline event
-      if status == "stopped"
-        TimelinePublisher.agent_stopped(
-          ledger_session_id,
-          agent_id: agent_id,
-          agent_type: at,
-          duration_ms: dm,
-          prompt: prompt,
-          last_message: last_message,
-        )
-      else
-        TimelinePublisher.agent_failed(
-          ledger_session_id,
-          agent_id: agent_id,
-          agent_type: at,
-          duration_ms: dm,
-          prompt: prompt,
-          last_message: last_message,
-        )
+      # Timeline event — suppress when the agent was
+      # already terminal. The prior end event (e.g. from a
+      # manual abandon) already paired with start; emitting
+      # a second one would over-decrement the
+      # running-agent badge.
+      unless already_terminal
+        if status == "stopped"
+          TimelinePublisher.agent_stopped(
+            ledger_session_id,
+            agent_id: agent_id,
+            agent_type: at,
+            duration_ms: dm,
+            prompt: prompt,
+            last_message: last_message,
+          )
+        else
+          TimelinePublisher.agent_failed(
+            ledger_session_id,
+            agent_id: agent_id,
+            agent_type: at,
+            duration_ms: dm,
+            prompt: prompt,
+            last_message: last_message,
+          )
+        end
       end
 
-      duration_str = format_duration(dm)
-      puts "Agent #{agent_id} #{status} (#{duration_str})"
+      if already_terminal
+        prior = existing.try(&.status) || "terminal"
+        puts(
+          "Agent #{agent_id} stop recorded " \
+          "(was already #{prior}; details captured)",
+        )
+      else
+        duration_str = format_duration(dm)
+        puts(
+          "Agent #{agent_id} #{status} (#{duration_str})",
+        )
+      end
     end
 
     # ==========================================================
@@ -358,6 +390,7 @@ module GalaxyAgents
 
     private def self.handle_abandon(args : Array(String))
       ledger_session_id_str : String? = nil
+      agent_id : String? = nil
 
       i = 0
       while i < args.size
@@ -370,6 +403,16 @@ module GalaxyAgents
             STDERR.puts(
               "Error: --ledger-session-id " \
               "requires a value",
+            )
+            exit(1)
+          end
+        when "--agent-id"
+          if i + 1 < args.size
+            agent_id = args[i + 1]
+            i += 2
+          else
+            STDERR.puts(
+              "Error: --agent-id requires a value",
             )
             exit(1)
           end
@@ -389,6 +432,33 @@ module GalaxyAgents
         ledger_session_id_str, "abandon",
       )
 
+      # Single-agent path: scope to one row.
+      if aid = agent_id
+        agent = Database.abandon_agent(
+          ledger_session_id, aid,
+        )
+
+        if agent
+          TimelinePublisher.agent_abandoned(
+            ledger_session_id,
+            agent_id: agent.agent_id,
+            agent_type: agent.agent_type,
+          )
+          puts "Abandoned agent #{aid}"
+        else
+          # No-op is success from the caller's point of
+          # view: either the agent was already terminal or
+          # doesn't exist. Exit 0 so SwiftUI clients don't
+          # have to distinguish "race lost" from real errors.
+          puts(
+            "Agent #{aid} not running " \
+            "(already terminal or not found)",
+          )
+        end
+        return
+      end
+
+      # Bulk path: abandon all running agents for the session.
       abandoned = Database.abandon_running(
         ledger_session_id,
       )
@@ -1321,15 +1391,30 @@ module GalaxyAgents
 
       USAGE:
         galaxy-agents abandon --ledger-session-id ID
+        galaxy-agents abandon --ledger-session-id ID \\
+          --agent-id AID
 
       REQUIRED:
         --ledger-session-id ID   Ledger session ID
 
+      OPTIONS:
+        --agent-id AID           Abandon only this agent.
+                                 When omitted, abandons all
+                                 running agents for the
+                                 session.
+
       DESCRIPTION:
-        Marks all running agents for the session as abandoned.
-        Used at session end to clean up orphaned agents. Publishes
-        agent:abandoned timeline event and agent.abandoned socket
-        event for each agent.
+        Marks running agents as abandoned. Used at session
+        end to clean up orphaned agents (bulk path), or
+        manually to clean up a specific agent that was
+        killed externally — e.g. after a crash — using the
+        --agent-id option. Publishes agent:abandoned timeline
+        event and agent.abandoned socket event for each
+        affected agent.
+
+        When --agent-id is provided and the agent is already
+        terminal (or doesn't exist), the command exits 0
+        with a no-op message so callers can retry safely.
       HELP
     end
 
