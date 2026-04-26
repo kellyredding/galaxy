@@ -219,7 +219,12 @@ describe GalaxyLedger::Hooks::OnUserPromptSubmit do
       state.uuid.should_not be_empty
     end
 
-    it "skips turn state for task-notification prompts" do
+    it "writes turn state for task-notification prompts" do
+      # Task-notifications now flow through the normal turn-
+      # tracking path so the timeline view shows duration bars
+      # for agent-response turns. Source is tagged distinctly
+      # so the timeline can distinguish them from user-authored
+      # turns.
       ledger_id = GalaxyLedger::Database.create_session(
         test_session_id,
       )
@@ -237,9 +242,53 @@ describe GalaxyLedger::Hooks::OnUserPromptSubmit do
       )
       result[:status].should eq(0)
 
-      GalaxyLedger::Hooks::TurnState.exists?(
+      state = GalaxyLedger::Hooks::TurnState.read(
         test_session_id,
-      ).should be_false
+      )
+      state.should_not be_nil
+      state = state.not_nil!
+      state.user_message.should start_with(
+        "<task-notification>",
+      )
+      state.uuid.should_not be_empty
+    end
+
+    it "skips turn state for task-notification when active" do
+      # When a turn is already in progress (e.g., a fast
+      # background agent completes mid-user-turn), the
+      # task-notification must NOT overwrite the in-flight
+      # TurnState — that would orphan the original turn's
+      # initiated_at and break follow-up attribution.
+      ledger_id = GalaxyLedger::Database.create_session(
+        test_session_id,
+      )
+      flush_wal
+
+      # Simulate an active user turn by pre-writing TurnState
+      original_uuid = "original-turn-uuid"
+      GalaxyLedger::Hooks::TurnState.write(
+        test_session_id, original_uuid, "user said hello"
+      )
+
+      input = {
+        "session_id"      => test_session_id,
+        "prompt"          => "<task-notification>\n<task-id>abc</task-id>\n</task-notification>",
+        "hook_event_name" => "UserPromptSubmit",
+      }.to_json
+
+      result = run_binary(
+        ["on-user-prompt-submit"],
+        stdin: input,
+      )
+      result[:status].should eq(0)
+
+      # Original TurnState must be preserved
+      state = GalaxyLedger::Hooks::TurnState.read(
+        test_session_id,
+      )
+      state.should_not be_nil
+      state.not_nil!.uuid.should eq(original_uuid)
+      state.not_nil!.user_message.should eq("user said hello")
     end
 
     it "skips turn state for mismatched session_id" do

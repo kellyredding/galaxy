@@ -40,16 +40,8 @@ module GalaxyLedger
         )
         return unless ledger_session_id
 
-        # Task notifications: socket-only turn:initiated
-        # for Galaxy real-time UI. No timeline record, no
-        # TurnState file (on_stop records turn:continued).
-        if prompt.starts_with?("<task-notification>")
-          EventPublisher.publish(
-            ledger_session_id: ledger_session_id,
-            event: "timeline.turn:initiated",
-          )
-          return
-        end
+        is_task_notification =
+          prompt.starts_with?("<task-notification>")
 
         # Get current session_identifier for extraction
         # subprocess --session flag
@@ -63,11 +55,36 @@ module GalaxyLedger
 
         # Record turn:initiated timeline event and write
         # TurnState file for ALL user prompts (no size
-        # filter). The timeline record also publishes to
-        # the socket as timeline.turn:initiated.
+        # filter, including task-notifications). The
+        # timeline record also publishes to the socket as
+        # timeline.turn:initiated.
+        #
+        # Task-notifications use a distinct source so the
+        # timeline view can distinguish agent-response
+        # turns from user-authored turns. The TurnState
+        # guard inside record_turn_initiated still skips
+        # recording when a turn is already in progress
+        # (prevents overwriting an active user turn's
+        # initiated_at when a fast background agent
+        # completes mid-turn).
+        turn_source = if is_task_notification
+                        "galaxy-ledger/task-notification"
+                      else
+                        "galaxy-ledger"
+                      end
+
         record_turn_initiated(
-          ledger_session_id, current_sid, prompt,
+          ledger_session_id,
+          current_sid,
+          prompt,
+          source: turn_source,
         )
+
+        # Task-notifications are auto-injected agent results,
+        # not user-authored prompts. Skip extraction +
+        # initial-message persistence (which interpret the
+        # prompt as something the user wrote).
+        return if is_task_notification
 
         # Short prompts: skip extraction + persistence.
         # Turn tracking above still runs — Galaxy needs
@@ -95,6 +112,7 @@ module GalaxyLedger
         ledger_session_id : Int64,
         current_sid : String,
         prompt : String,
+        source : String = "galaxy-ledger",
       )
         stdin_sid = @stdin_session_identifier
         return unless stdin_sid
@@ -128,7 +146,7 @@ module GalaxyLedger
               "--ledger-session-id",
               ledger_session_id.to_s,
               "--event-type", "turn:initiated",
-              "--source", "galaxy-ledger",
+              "--source", source,
               "--duration-identifier",
               "turn--#{uuid}",
               "--detail-data-stdin",
