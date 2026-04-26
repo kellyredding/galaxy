@@ -56,6 +56,13 @@ final class SwiftTermBackend: NSObject, TerminalBackend,
     var onProcessTerminated: ((Int32) -> Void)?
     var onDataReceived: (() -> Void)?
 
+    /// Set once we've notified our owner that the child
+    /// exited. Either SwiftTerm's natural delegate path or
+    /// our explicit-terminate failsafe will reach
+    /// `fireProcessTerminatedOnce`; whichever wins, the
+    /// other becomes a no-op.
+    private var hasFiredProcessTerminated = false
+
     var onScrollUp: ((NSEvent) -> Bool)? {
         get { terminalView.onScrollUp }
         set { terminalView.onScrollUp = newValue }
@@ -99,25 +106,48 @@ final class SwiftTermBackend: NSObject, TerminalBackend,
 
     /// Terminate the running subprocess.
     ///
-    /// **Current caveat (Phase 2 TODO):** SwiftTerm's
-    /// `LocalProcessTerminalView.terminate()` doesn't take
-    /// a signal — it performs a full tear-down regardless.
-    /// The `signal` argument is accepted for protocol
-    /// conformance and forward-compatibility (libghostty
-    /// may expose signal-level control), but ignored
-    /// today. When the Shell pane lands in Phase 2 and
-    /// needs SIGTERM→SIGKILL grace-period semantics, we'll
-    /// extract `Session.captureChildPid` /
-    /// `Session.terminateProcess` into a shared helper and
-    /// use it here.
+    /// SwiftTerm's `LocalProcessTerminalView.terminate()`
+    /// sends `kill(shellPid, SIGTERM)` directly and ignores
+    /// the signal argument — there's no path through it for
+    /// SIGKILL or anything else. We accept the argument for
+    /// protocol conformance and, when the caller actually
+    /// asks for something other than SIGTERM, send the kill
+    /// ourselves via the captured `shellPid` (forkpty path
+    /// only — the Subprocess path leaves `shellPid` at 0
+    /// and relies on its own cancellation chain).
+    ///
+    /// SwiftTerm's exit-detection — `DispatchSourceProcess`
+    /// on the forkpty path, the `await Subprocess.run`
+    /// continuation on the Subprocess path — does not
+    /// reliably fire after an explicit `terminate()`. The
+    /// downstream chain (`onProcessTerminated` →
+    /// `ShellTerminalPane` → `SplitState.closeShell`) hangs
+    /// on the missed callback, so the shell pane stays
+    /// visible after Cmd+W even though the kill went
+    /// through. We schedule a guaranteed delegate fire
+    /// after a short grace period; SwiftTerm's natural path
+    /// dedupes via `fireProcessTerminatedOnce` if it wins
+    /// the race.
     func terminateProcess(signal: Int32) {
+        let pid = terminalView.process.shellPid
         NSLog(
             "SwiftTermBackend: terminateProcess signal=%d "
-            + "(signal ignored; Phase 2 will add PID-level "
-            + "control)",
-            signal
+            + "shellPid=%d",
+            signal, pid
         )
         terminalView.terminate()
+        if pid > 0 && signal != SIGTERM {
+            // SwiftTerm only ever sends SIGTERM; honor any
+            // other requested signal directly. SIGKILL in
+            // particular is what unblocks shells that ignore
+            // SIGTERM (interactive zsh with plugins, etc.).
+            kill(pid, signal)
+        }
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + 0.3
+        ) { [weak self] in
+            self?.fireProcessTerminatedOnce(exitCode: 0)
+        }
     }
 
     // MARK: - IO
@@ -192,7 +222,19 @@ final class SwiftTermBackend: NSObject, TerminalBackend,
         source: TerminalView,
         exitCode: Int32?
     ) {
-        onProcessTerminated?(exitCode ?? 0)
+        fireProcessTerminatedOnce(exitCode: exitCode ?? 0)
+    }
+
+    /// Idempotent delegate fire. Either SwiftTerm's natural
+    /// `processTerminated` delegate or the
+    /// `terminateProcess` failsafe reaches here; the second
+    /// caller is a no-op.
+    private func fireProcessTerminatedOnce(
+        exitCode: Int32
+    ) {
+        guard !hasFiredProcessTerminated else { return }
+        hasFiredProcessTerminated = true
+        onProcessTerminated?(exitCode)
     }
 
     func sizeChanged(

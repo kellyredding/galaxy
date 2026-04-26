@@ -517,6 +517,40 @@ class SessionManager: ObservableObject {
         }
     }
 
+    /// Confirm-then-close the shell pane for a session.
+    /// Mirrors `confirmAndStopSession`'s shape: queries the
+    /// session's shell-pane scrollback for unsaved work and
+    /// gates the close on a confirmation sheet so notes
+    /// aren't silently lost when the user hits Cmd+W in
+    /// scrollback mode. Shell-pane close has no in-turn /
+    /// running-agents analog (those apply to Claude only),
+    /// so the only reason that fires here is unsaved
+    /// scrollback work.
+    func confirmAndCloseShellPane(
+        session: Session,
+        onConfirm: @escaping () -> Void
+    ) {
+        session.checkAnyScrollbackUnsavedWork(
+            kinds: [.shell]
+        ) { hasWork in
+            guard hasWork else {
+                onConfirm()
+                return
+            }
+            guard let window = NSApp.keyWindow
+            else { return }
+            SheetAlert.confirm(
+                in: window,
+                message: "Close shell pane with "
+                    + "unsaved scrollback notes?",
+                detail: "Unsaved notes will be lost "
+                    + "when the shell pane closes.",
+                confirm: "Close",
+                onConfirm: onConfirm
+            )
+        }
+    }
+
     func stopSession(sessionId: UUID) {
         guard let session = sessions.first(where: { $0.id == sessionId }) else {
             NSLog("SessionManager: Cannot stop - session not found")

@@ -45,6 +45,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         mainMenu = MainMenu()
         NSApp.mainMenu = mainMenu?.createMainMenu()
 
+        // Eager-init the Terminal-tab command hub so its
+        // Cmd+W local monitor is installed at launch rather
+        // than lazily on first SwiftUI body evaluation. The
+        // monitor needs to be in place before the user can
+        // possibly press Cmd+W in a focused shell pane.
+        _ = TerminalTabCommands.shared
+
         // Create and show the main window
         mainWindowController = MainWindowController()
         mainWindowController?.showWindow(nil)

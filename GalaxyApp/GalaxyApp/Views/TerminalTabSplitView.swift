@@ -120,7 +120,15 @@ struct TerminalTabSplitView: View {
         ) { sessionId in
             guard sessionId == session.id,
                   let pane = state.shellPane else { return }
-            pane.requestClose()
+            // Mirror session-pane Cmd+W: gate destructive
+            // close on a confirmation sheet when scrollback
+            // notes would be lost. The helper no-ops the
+            // sheet when there's no unsaved work.
+            SessionManager.shared.confirmAndCloseShellPane(
+                session: session
+            ) {
+                pane.requestClose()
+            }
         }
     }
 
