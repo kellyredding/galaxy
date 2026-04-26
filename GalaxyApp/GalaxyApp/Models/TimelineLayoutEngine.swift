@@ -27,8 +27,18 @@ enum TimelineLayoutEngine {
         }
         guard !registered.isEmpty else { return nil }
 
-        // 2. Sort by occurred_at (defensive re-sort)
-        let sorted = registered.sorted { $0.0.occurredAt < $1.0.occurredAt }
+        // 2. Sort by occurred_at, then by event id as a stable
+        // tiebreaker. Without the id tiebreaker, events that share
+        // the same occurredAt can switch relative order across
+        // re-renders depending on source-data fetch order, which
+        // bleeds into nondeterministic sub-column placement
+        // downstream.
+        let sorted = registered.sorted { lhs, rhs in
+            if lhs.0.occurredAt != rhs.0.occurredAt {
+                return lhs.0.occurredAt < rhs.0.occurredAt
+            }
+            return lhs.0.id < rhs.0.id
+        }
 
         // 3. Determine active lanes
         let activeResources = Set(sorted.map { $0.1.resource })
@@ -258,12 +268,22 @@ enum TimelineLayoutEngine {
                 // columns[col] = occupied hash ranges
                 var columns: [[ClosedRange<Int>]] = []
 
-                // Pack bars first (sorted by start hash)
+                // Pack bars first (sorted by start hash, then
+                // by start-event id as a deterministic tiebreaker
+                // for bars that share the same starting slot).
+                // Lower id sorts first → gets the leftmost free
+                // sub-column, so bar placement within a slot is
+                // stable across re-renders.
                 let laneBarIndices = barEntries.indices
                     .filter { barEntries[$0].laneIndex == lane }
-                    .sorted {
-                        barEntries[$0].localStart
-                            < barEntries[$1].localStart
+                    .sorted { lhs, rhs in
+                        let a = barEntries[lhs]
+                        let b = barEntries[rhs]
+                        if a.localStart != b.localStart {
+                            return a.localStart < b.localStart
+                        }
+                        return a.dur.startEvent.id
+                            < b.dur.startEvent.id
                     }
 
                 // Phase A: Pre-place bars continuing from
@@ -333,12 +353,19 @@ enum TimelineLayoutEngine {
                     }
                 }
 
-                // Pack dots (sorted by hash, then event id)
+                // Pack dots (sorted by hash, then by event id as
+                // a deterministic tiebreaker for dots sharing the
+                // same hash bucket — multiple point events at the
+                // same instant). Lower id → leftmost sub-column.
                 let laneDotIndices = dotEntries.indices
                     .filter { dotEntries[$0].laneIndex == lane }
-                    .sorted {
-                        dotEntries[$0].localHash
-                            < dotEntries[$1].localHash
+                    .sorted { lhs, rhs in
+                        let a = dotEntries[lhs]
+                        let b = dotEntries[rhs]
+                        if a.localHash != b.localHash {
+                            return a.localHash < b.localHash
+                        }
+                        return a.event.id < b.event.id
                     }
 
                 for di in laneDotIndices {
