@@ -596,33 +596,30 @@ class MainMenu: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
 
         // Terminal tab shell pane controls.
-        // Enabled only when the Terminal tab is active and a
-        // session exists. Both items take a matching Cmd+T /
-        // Cmd+Shift+T binding; the focus-session shortcut
-        // returns focus to the Claude terminal after the user
-        // has been typing in the shell.
-        let canOperateShell = sessionManager.activeTab == .terminal
-            && sessionManager.activeSessionId != nil
-
-        let openShellItem = NSMenuItem(
-            title: "Open Shell",
-            action: #selector(MenuActions.openShell(_:)),
-            keyEquivalent: "t"
-        )
-        openShellItem.target = MenuActions.shared
-        openShellItem.isEnabled = canOperateShell
-        menu.addItem(openShellItem)
-
+        // Both shortcuts always navigate to the Terminal tab
+        // first, regardless of which tab the user is on.
+        // Cmd+T then focuses the Claude session pane (if a
+        // session exists); Cmd+Shift+T opens-or-focuses the
+        // shell pane (if a session exists). With no active
+        // session the shortcuts still switch to the Terminal
+        // tab and otherwise no-op.
         let focusSessionItem = NSMenuItem(
             title: "Focus Session Pane",
             action: #selector(MenuActions.focusSessionPane(_:)),
             keyEquivalent: "t"
         )
         focusSessionItem.target = MenuActions.shared
-        focusSessionItem.keyEquivalentModifierMask =
-            [.command, .shift]
-        focusSessionItem.isEnabled = canOperateShell
         menu.addItem(focusSessionItem)
+
+        let openShellItem = NSMenuItem(
+            title: "Open Shell Pane",
+            action: #selector(MenuActions.openShell(_:)),
+            keyEquivalent: "t"
+        )
+        openShellItem.target = MenuActions.shared
+        openShellItem.keyEquivalentModifierMask =
+            [.command, .shift]
+        menu.addItem(openShellItem)
 
         menu.addItem(.separator())
 
@@ -828,14 +825,20 @@ class MenuActions: NSObject {
     }
 
     @objc func openShell(_ sender: Any?) {
-        guard let id = SessionManager.shared.activeSessionId
-        else { return }
+        let sm = SessionManager.shared
+        if sm.activeTab != .terminal {
+            sm.activeTab = .terminal
+        }
+        guard let id = sm.activeSessionId else { return }
         TerminalTabCommands.shared.openShell.send(id)
     }
 
     @objc func focusSessionPane(_ sender: Any?) {
-        guard let id = SessionManager.shared.activeSessionId
-        else { return }
+        let sm = SessionManager.shared
+        if sm.activeTab != .terminal {
+            sm.activeTab = .terminal
+        }
+        guard let id = sm.activeSessionId else { return }
         TerminalTabCommands.shared.focusSession.send(id)
     }
 
