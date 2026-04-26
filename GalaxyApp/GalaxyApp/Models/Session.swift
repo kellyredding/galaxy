@@ -94,6 +94,15 @@ class Session: Identifiable, ObservableObject {
     /// All user-visible consumers observe this, not isBusy.
     @Published var isInTurn: Bool = false
 
+    /// True once Claude has finished its on_resume / on_startup
+    /// hook and is at (or imminently at) the prompt. Driven by
+    /// the `session:ready` socket event emitted by the Crystal
+    /// hook. Replaces the legacy buffer-scan path that polled
+    /// SwiftTerm's `terminal.buffer` for a literal marker line.
+    /// Reset to false on `startProcess`, `releaseTerminalView`,
+    /// and `processDidExit` so each new lifecycle starts unready.
+    @Published private(set) var isReady: Bool = false
+
     /// Number of currently running agents. Maintained by
     /// EventCoordinator (increment on agent:started, decrement
     /// on agent:stopped/failed/abandoned). Seeded at startup
@@ -658,6 +667,10 @@ class Session: Identifiable, ObservableObject {
         terminalView?.onDataReceived = nil
         terminalView?.processDelegate = nil
 
+        // Clear readiness — a future ensureTerminalView() +
+        // startProcess() cycle will re-arm via session:ready.
+        isReady = false
+
         // Release the view — TerminalHostView retains its own copy
         // until SwiftUI tears it down via the hasExited transition.
         terminalView = nil
@@ -712,12 +725,26 @@ class Session: Identifiable, ObservableObject {
     /// Send a slash command to the terminal (e.g., "/clear", "/compact").
     /// Only works when session is running.
     ///
-    /// Uses a verify-and-retry loop: after sending the CR, checks whether
-    /// the session transitioned to busy (meaning Claude accepted the
-    /// command). If not, resends the CR up to `commandMaxRetries` times.
-    /// This eliminates the timing-only approach where a single blind delay
-    /// could still lose the CR on loaded systems.
-    func sendCommand(_ command: String) {
+    /// By default, uses a verify-and-retry loop: after sending the CR,
+    /// checks whether the session transitioned to busy (meaning Claude
+    /// accepted the command). If not, resends the CR up to
+    /// `commandMaxRetries` times. This eliminates the timing-only
+    /// approach where a single blind delay could still lose the CR on
+    /// loaded systems.
+    ///
+    /// Pass `verifyAccepted: false` when the caller has independent
+    /// confirmation that Claude is at the prompt and ready to receive
+    /// input (e.g., the `session:ready` hook event after resume). The
+    /// retry path can be actively harmful on slash commands like
+    /// `/galaxy:resume` whose initial work (skill load + tool calls)
+    /// often takes longer than the 250ms verify window — a stray
+    /// retry CR ends up buffered at the kernel TTY input, then
+    /// dequeued at the empty prompt after the first command finishes,
+    /// where Claude Code's TUI interprets Enter-on-empty as
+    /// "repeat last command" and re-runs the command.
+    func sendCommand(
+        _ command: String, verifyAccepted: Bool = true
+    ) {
         guard isRunning && !hasExited else {
             NSLog("Session: Cannot send command - session not running")
             return
@@ -744,8 +771,9 @@ class Session: Identifiable, ObservableObject {
             // Send CR (0x0D) - same byte as keyboard Return
             self.terminalView?.send([0x0D])
 
-            // Skip verification if session was already busy
-            guard !wasBusy else { return }
+            // Skip verification if caller opted out, or if session
+            // was already busy when we entered.
+            guard verifyAccepted, !wasBusy else { return }
 
             self.verifyCommandSubmit(retriesLeft: Self.commandMaxRetries)
         }
@@ -882,95 +910,78 @@ class Session: Identifiable, ObservableObject {
         }
     }
 
-    // Terminal marker emitted by the on_resume hook after
-    // transcript restore completes. SwiftTerm renders
-    // inter-word spaces as null bytes (U+0000), so match
-    // on the contiguous portion before the first space.
-    private static let resumeMarker =
-        "SessionStart:resume"
+    /// Maximum time to wait for the `session:ready` event
+    /// after a resume. Matches the on_resume hook's 30s
+    /// timeout in ~/.claude/settings.json — if the hook
+    /// hasn't emitted by then, something is wrong upstream
+    /// and we don't want to fire /galaxy:resume blind.
+    private static let waitForReadyTimeout:
+        TimeInterval = 30
 
-    /// Poll interval and attempt limit for resume marker scan.
-    private static let resumeMarkerPollInterval:
-        TimeInterval = 0.25
-    private static let resumeMarkerMaxAttempts = 40  // 10s
-
-    /// Polls the terminal buffer for the resume marker,
-    /// then calls the completion handler. The on_resume hook
-    /// prints this marker once Claude has restored the
-    /// transcript and processed startup hooks — meaning the
-    /// prompt is ready (or nearly ready) for input.
-    func waitForResumeMarker(
-        then action: @escaping () -> Void
-    ) {
-        var attempts = 0
-        Timer.scheduledTimer(
-            withTimeInterval: Self.resumeMarkerPollInterval,
-            repeats: true
-        ) { [weak self] timer in
-            attempts += 1
-            guard let self = self else {
-                timer.invalidate()
-                return
-            }
-            if self.bufferContainsResumeMarker() {
-                timer.invalidate()
-                action()
-                return
-            }
-            if attempts >= Self.resumeMarkerMaxAttempts {
-                timer.invalidate()
-                // Timeout — log and bail. Previously we fired
-                // the action anyway as a fallback, which masked
-                // genuine pipeline failures by sending bytes
-                // into a Claude that may not have been ready
-                // to receive them. If the marker doesn't appear
-                // in 10s, something is wrong; better to fail
-                // cleanly so the user can investigate and
-                // retry manually.
+    /// Marks this session as ready. Called from
+    /// EventCoordinator on receipt of a `session:ready`
+    /// socket event with `ref: "resume"`. Idempotent —
+    /// repeat calls during the same lifecycle are no-ops.
+    /// Reset to false on `startProcess`,
+    /// `releaseTerminalView`, and `processDidExit`.
+    func markReady() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self,
+                  self.isRunning, !self.hasExited
+            else { return }
+            if !self.isReady {
+                self.isReady = true
                 NSLog(
-                    "Session: resume marker not found"
-                    + " after %d attempts; giving up",
-                    attempts
+                    "Session[%@]: markReady fired",
+                    self.sessionRef
                 )
             }
         }
     }
 
-    /// How many rows above the input box to scan for the
-    /// resume marker. The marker appears in the last few
-    /// lines of output, just above the prompt.
-    private static let resumeMarkerScanRows = 10
+    /// Run `action` once the session is ready. Fires
+    /// immediately if already ready; otherwise subscribes
+    /// to `$isReady` and fires on the first true value.
+    /// Times out after `waitForReadyTimeout` seconds — on
+    /// timeout, the action is NOT invoked (logs and bails)
+    /// rather than firing blind into a Claude that may not
+    /// be ready to receive input.
+    func waitForReady(
+        then action: @escaping () -> Void
+    ) {
+        if isReady {
+            action()
+            return
+        }
 
-    /// Scan the scrollback buffer backwards for the resume
-    /// marker. Uses getScrollInvariantLine — the same API
-    /// as isGenuineInterrupt in SessionManager — which
-    /// produces clean strings without null-byte artifacts.
-    private func bufferContainsResumeMarker() -> Bool {
-        guard let tv = terminalView,
-              let terminal = tv.terminal
-        else { return false }
-
-        let buf = terminal.buffer
-        let top = buf.linesTop
-        let end = top + buf.lines.count
-        let scanStart = max(
-            top, end - Self.resumeMarkerScanRows
-        )
-
-        for row in stride(
-            from: end - 1, through: scanStart, by: -1
-        ) {
-            guard let line = terminal
-                .getScrollInvariantLine(row: row)
-            else { continue }
-            let text = line.translateToString(
-                trimRight: true
-            )
-            if text.contains(Self.resumeMarker) {
-                return true
+        var didFire = false
+        var token: AnyCancellable?
+        let fire: (Bool) -> Void = { [weak self] success in
+            guard !didFire else { return }
+            didFire = true
+            token?.cancel()
+            token = nil
+            if success {
+                action()
+            } else {
+                NSLog(
+                    "Session[%@]: waitForReady TIMEOUT"
+                    + " after %.0fs — not firing action",
+                    self?.sessionRef ?? "?",
+                    Self.waitForReadyTimeout
+                )
             }
         }
-        return false
+
+        token = $isReady
+            .filter { $0 }
+            .first()
+            .receive(on: DispatchQueue.main)
+            .sink { _ in fire(true) }
+
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + Self.waitForReadyTimeout
+        ) { fire(false) }
     }
 
     /// Returns the CLI command to resume this session outside of Galaxy.
@@ -1161,6 +1172,12 @@ class Session: Identifiable, ObservableObject {
             NSLog("Session: Cannot start process - no terminal view")
             return
         }
+        // Reset readiness — each new lifecycle starts unready.
+        // The on_resume / on_startup hook will emit
+        // `session:ready` once it completes, flipping this back
+        // to true via markReady().
+        isReady = false
+
         terminalView.startProcess(
             executable: executablePath,
             args: args,
@@ -1195,6 +1212,12 @@ class Session: Identifiable, ObservableObject {
             if self.isInTurn {
                 self.isInTurn = false
                 self.turnStartTime = nil
+            }
+
+            // A dead process is not ready. Next resume cycle
+            // re-arms via session:ready.
+            if self.isReady {
+                self.isReady = false
             }
 
             // Clear any pending idle actions — session is dead

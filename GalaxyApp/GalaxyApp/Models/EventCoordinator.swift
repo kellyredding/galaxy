@@ -340,20 +340,38 @@ final class EventCoordinator {
         // Resume event: the on_resume hook records a
         // session:resumed timeline event during SessionStart
         // processing, before Claude has fully rendered the
-        // transcript and shown the prompt. Poll the terminal
-        // buffer for the resume marker (the hook's output
-        // line), then send /galaxy:resume once it appears.
-        // timeline.session:resumed used to trigger
-        // waitForResumeMarker → sendCommand("/galaxy:resume")
-        // here, but that was racy: on Galaxy app restart the
-        // event could arrive before the Session model was
-        // updated by SessionManager.resumeSession(), causing
-        // the isRunning/hasExited guard to bail silently. The
-        // trigger now lives inside resumeSession() itself,
-        // where the model is guaranteed valid by the time the
-        // marker poll starts. No-op observation point — kept
-        // as a comment marker in case future logic needs to
-        // hook session-resumed.
+        // transcript and shown the prompt. The on_resume hook
+        // also emits a `session:ready` direct-socket event
+        // (handled below) once it completes, which is what
+        // SessionManager.resumeSession listens for to fire
+        // /galaxy:resume. timeline.session:resumed remains
+        // a no-op here — kept as a comment marker in case
+        // future logic needs to hook session-resumed.
+
+        // Session ready: emitted by the on_resume / on_startup
+        // hooks once they finish running. ref disambiguates
+        // ("resume" vs "startup"). Today we only act on resume;
+        // startup is a no-op (the on_startup hook fires before
+        // a fresh session would have any work queued for it).
+        // Drives Session.markReady → resolves any pending
+        // waitForReady continuation in SessionManager.
+        if envelope.event == "session:ready" {
+            if envelope.ref == "resume",
+               let appSessionId =
+                   ledgerSessionIdCache[
+                       envelope.ledgerSessionId
+                   ],
+               let session = sessionManager?.sessions
+                   .first(where: { $0.id == appSessionId })
+            {
+                GalaxyLog.events(
+                    "[\(session.sessionRef)] routeEvent:"
+                    + " session:ready ref=resume"
+                )
+                session.markReady()
+            }
+            return
+        }
 
         // Permission request: play sound + optional notification
         if envelope.event == "permission_request" {
