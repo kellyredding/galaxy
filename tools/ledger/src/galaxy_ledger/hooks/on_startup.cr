@@ -136,6 +136,18 @@ module GalaxyLedger
 
         # Output JSON with systemMessage and additionalContext
         puts Helpers.output_json(system_message, context)
+
+        # Signal Galaxy.app that the startup hook has finished and the
+        # prompt is imminent. Galaxy currently only acts on the
+        # ref="resume" variant; ref="startup" is emitted for symmetry
+        # and future use. Errors are silently rescued by
+        # EventPublisher; the hook behaves identically whether or not
+        # Galaxy is listening.
+        EventPublisher.publish(
+          ledger_session_id: ledger_session_id.not_nil!,
+          event: "session:ready",
+          ref: "startup",
+        )
       end
 
       private def parse_hook_input

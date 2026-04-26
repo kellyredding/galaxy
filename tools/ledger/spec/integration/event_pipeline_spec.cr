@@ -1,10 +1,16 @@
 require "../spec_helper"
 
 # Verifies that session lifecycle hooks publish events
-# exclusively through the timeline pipeline (no direct
-# socket events). Each hook should call galaxy-timeline
-# with the correct --event-type, and no direct event
-# should arrive on the Galaxy socket.
+# through the correct channel:
+#
+# - timeline.* events (session:started, session:resumed,
+#   context:cleared, context:compacted) flow exclusively
+#   through the timeline pipeline. They MUST NOT appear as
+#   direct socket events.
+# - session:ready is the one direct-socket event the
+#   SessionStart hooks emit. It signals to Galaxy.app that
+#   the on_resume / on_startup hook has completed and the
+#   prompt is imminent. ref disambiguates resume vs startup.
 #
 # Uses a logging timeline stub that records invocations
 # to a temp file, and a UNIXServer on the socket path
@@ -123,6 +129,33 @@ describe "Event pipeline: hooks use timeline, not direct socket" do
       path = SPEC_GALAXY_DIR / "galaxy.sock"
       File.delete(path) if File.exists?(path)
     end
+
+    it "publishes session:ready with ref=startup to direct socket" do
+      session_id = "evpipe-startup-ready-#{Random.rand(100000)}"
+      hook_input = {"session_id" => session_id}.to_json
+      socket_path = SPEC_GALAXY_DIR / "galaxy.sock"
+
+      events = capture_socket_events(socket_path) do
+        result = run_binary(["on-startup"], stdin: hook_input)
+        result[:status].should eq(0)
+        sleep 200.milliseconds
+      end
+
+      ready_events = events.compact_map do |e|
+        begin
+          parsed = JSON.parse(e)
+          parsed["event"].as_s == "session:ready" ? parsed : nil
+        rescue
+          nil
+        end
+      end
+      ready_events.size.should eq(1)
+      ready_events.first["ref"].as_s.should eq("startup")
+      ready_events.first["ledger_session_id"].as_i64.should be > 0
+    ensure
+      path = SPEC_GALAXY_DIR / "galaxy.sock"
+      File.delete(path) if File.exists?(path)
+    end
   end
 
   describe "on-resume" do
@@ -173,6 +206,65 @@ describe "Event pipeline: hooks use timeline, not direct socket" do
         end
       end
       direct_resume.should be_empty
+    ensure
+      path = SPEC_GALAXY_DIR / "galaxy.sock"
+      File.delete(path) if File.exists?(path)
+    end
+
+    it "publishes session:ready with ref=resume to direct socket" do
+      session_id = "evpipe-resume-ready-#{Random.rand(100000)}"
+      ledger_id = GalaxyLedger::Database.create_session(session_id)
+      flush_wal
+
+      hook_input = {"session_id" => session_id}.to_json
+      socket_path = SPEC_GALAXY_DIR / "galaxy.sock"
+
+      events = capture_socket_events(socket_path) do
+        result = run_binary(["on-resume"], stdin: hook_input)
+        result[:status].should eq(0)
+        sleep 200.milliseconds
+      end
+
+      ready_events = events.compact_map do |e|
+        begin
+          parsed = JSON.parse(e)
+          parsed["event"].as_s == "session:ready" ? parsed : nil
+        rescue
+          nil
+        end
+      end
+      ready_events.size.should eq(1)
+      ready_events.first["ref"].as_s.should eq("resume")
+      ready_events.first["ledger_session_id"]
+        .as_i64.should eq(ledger_id)
+    ensure
+      path = SPEC_GALAXY_DIR / "galaxy.sock"
+      File.delete(path) if File.exists?(path)
+    end
+
+    it "does not publish session:ready when session cannot be resolved" do
+      # No DB record for this identifier. on_resume's
+      # resolve_for_resume returns nil → output_empty → no
+      # EventPublisher.publish call.
+      session_id = "evpipe-resume-noresolve-#{Random.rand(100000)}"
+      hook_input = {"session_id" => session_id}.to_json
+      socket_path = SPEC_GALAXY_DIR / "galaxy.sock"
+
+      events = capture_socket_events(socket_path) do
+        result = run_binary(["on-resume"], stdin: hook_input)
+        result[:status].should eq(0)
+        sleep 200.milliseconds
+      end
+
+      ready_events = events.select do |e|
+        begin
+          parsed = JSON.parse(e)
+          parsed["event"].as_s == "session:ready"
+        rescue
+          false
+        end
+      end
+      ready_events.should be_empty
     ensure
       path = SPEC_GALAXY_DIR / "galaxy.sock"
       File.delete(path) if File.exists?(path)

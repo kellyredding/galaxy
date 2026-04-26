@@ -122,6 +122,18 @@ module GalaxyLedger
         )
 
         puts Helpers.output_json(system_message, context)
+
+        # Signal Galaxy.app that the resume hook has finished and the
+        # prompt is imminent. Replaces the legacy buffer-scan path
+        # (Session.waitForResumeMarker) — Galaxy listens for this
+        # event in EventCoordinator and fires /galaxy:resume directly.
+        # Errors are silently rescued by EventPublisher; the hook
+        # behaves identically whether or not Galaxy is listening.
+        EventPublisher.publish(
+          ledger_session_id: ledger_session_id,
+          event: "session:ready",
+          ref: "resume",
+        )
       end
 
       private def parse_hook_input
