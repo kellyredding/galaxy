@@ -67,6 +67,11 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
     var viewportRow: Int { backend.viewportRow }
     func clearSelection() { backend.clearSelection() }
 
+    var font: NSFont { backend.font }
+    var cellHeight: CGFloat { backend.cellHeight }
+    func redraw() { backend.redraw() }
+    func snapViewportToBottom() { backend.snapViewportToBottom() }
+
     var fontSizePublisher: AnyPublisher<CGFloat, Never> {
         $fontSize.eraseToAnyPublisher()
     }

@@ -67,6 +67,23 @@ final class SessionTerminalPane: TerminalPane {
         galaxyView.selection.selectNone()
     }
 
+    var font: NSFont { galaxyView.font }
+
+    var cellHeight: CGFloat {
+        galaxyView.cellDimension!.height
+    }
+
+    func redraw() {
+        galaxyView.setNeedsDisplay(galaxyView.bounds)
+    }
+
+    func snapViewportToBottom() {
+        let buf = galaxyView.terminal.displayBuffer
+        galaxyView.terminal.userScrolling = false
+        buf.yDisp = buf.yBase
+        galaxyView.setNeedsDisplay(galaxyView.bounds)
+    }
+
     /// Session pane reads font size from the owning Session
     /// (per-session `@Published`). Returns 0 if the session
     /// has been deallocated — should not happen in practice

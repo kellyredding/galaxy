@@ -567,9 +567,7 @@ class TerminalHostView: NSView {
                 guard let window =
                     notification.object as? NSWindow,
                       window === self.window else { return }
-                if let lpView = self.localProcessView {
-                    lpView.setNeedsDisplay(lpView.bounds)
-                }
+                pane.redraw()
                 // Only the preferred pane re-asserts focus.
                 // Without this gate, both the session and shell
                 // hosts would race and whichever fired last
@@ -802,9 +800,7 @@ class TerminalHostView: NSView {
         // SwiftTerm's display refresh paused. requestFocus()
         // (not pane.focus()) engages the verified-retry path
         // from b′ so input also revives.
-        if let lpView = self.localProcessView {
-            lpView.setNeedsDisplay(lpView.bounds)
-        }
+        pane.redraw()
         requestFocus()
 
         return true
@@ -893,10 +889,11 @@ class TerminalHostView: NSView {
 
     /// Create the scrollback overlay with an HTML rendering of the live terminal's buffer.
     private func createScrollback(initialScrollLine: Int? = nil) {
-        // HTML rendering needs SwiftTerm internals (font,
-        // cellDimension, Terminal). Works for both panes today
-        // since both wrap LocalProcessTerminalView; swap point
-        // for a future libghostty backend.
+        // HTML rendering still needs the SwiftTerm Terminal handle
+        // for grapheme lookup (passed to the renderer). The font,
+        // cell metrics, and bounds now come from the pane protocol;
+        // the renderer detox will retire the remaining lpView read
+        // in a later slice.
         guard let lpView = self.localProcessView,
               let snapshot = pane.snapshotBuffer() else { return }
         self.currentSnapshot = snapshot
@@ -905,8 +902,8 @@ class TerminalHostView: NSView {
         let initialScrollLine = initialScrollLine ?? snapshot.yDisp
 
         // Get current font metrics for CSS matching
-        let font = lpView.font
-        let cellDim = lpView.cellDimension!
+        let font = pane.font
+        let cellHeight = pane.cellHeight
         let theme = TerminalColorTheme.theme(
             named: SettingsManager.shared.settings.terminalColorThemeName
         )
@@ -918,13 +915,13 @@ class TerminalHostView: NSView {
             theme: theme,
             fontFamily: font.fontName,
             fontSize: font.pointSize,
-            cellHeight: cellDim.height,
+            cellHeight: cellHeight,
             cols: snapshot.cols
         )
 
         // Create web view with theme background for rubber-band overscroll
         let webView = ScrollbackWebView(
-            frame: lpView.bounds,
+            frame: pane.view.bounds,
             html: html,
             initialScrollLine: initialScrollLine,
             backgroundColor: theme.backgroundColorValue
@@ -935,14 +932,8 @@ class TerminalHostView: NSView {
         webView.onReady = { [weak self] in
             // Scroll the live terminal to the bottom now that the scrollback
             // overlay is visible — prevents a flash of the live view jumping.
-            guard let self = self,
-                  let lpView = self.localProcessView else {
-                return
-            }
-            let buf = lpView.terminal.displayBuffer
-            lpView.terminal.userScrolling = false
-            buf.yDisp = buf.yBase
-            lpView.setNeedsDisplay(lpView.bounds)
+            guard let self = self else { return }
+            self.pane.snapViewportToBottom()
 
             // Restore note cards if this is a reload (theme/font change)
             webView.restoreNoteState()

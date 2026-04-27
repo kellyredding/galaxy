@@ -119,6 +119,33 @@ protocol TerminalPane: AnyObject {
     /// overlay.
     func clearSelection()
 
+    /// Active font on the underlying terminal surface.
+    /// The scrollback HTML renderer reads `fontName` and
+    /// `pointSize` for CSS matching against the live cells.
+    var font: NSFont { get }
+
+    /// Pixel height of one terminal cell. Used for CSS
+    /// line-height in the scrollback overlay so frozen
+    /// cells align with their live counterparts during the
+    /// open animation.
+    var cellHeight: CGFloat { get }
+
+    /// Force a paint of the underlying terminal surface.
+    /// Used to recover from stalled-render cases (e.g.
+    /// window going inactive) where the chrome can see the
+    /// stale state but can't trigger a redraw via AppKit
+    /// alone.
+    func redraw()
+
+    /// Unconditionally snap the viewport to the bottom of
+    /// the scrollback buffer and clear the `userScrolling`
+    /// gate so subsequent output auto-follows. Distinct
+    /// from `snapViewportToBottomIfWithin(rows:)` — no
+    /// threshold, no selection-active guard, no return
+    /// value. Used by the scrollback overlay's `onReady`
+    /// hook.
+    func snapViewportToBottom()
+
     /// Current font size for this pane's terminal. Per-pane
     /// so Session and Shell panes can diverge independently
     /// (⌘+/⌘- only affects the focused pane).

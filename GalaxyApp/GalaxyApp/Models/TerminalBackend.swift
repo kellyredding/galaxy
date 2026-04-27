@@ -129,4 +129,36 @@ protocol TerminalBackend: AnyObject {
     /// overlay so selection state doesn't bleed across
     /// the live → frozen transition.
     func clearSelection()
+
+    /// Active font on the terminal surface. Consumers
+    /// (e.g. the scrollback HTML renderer) read `fontName`
+    /// and `pointSize` for CSS matching against the live
+    /// cells.
+    var font: NSFont { get }
+
+    /// Pixel height of one terminal cell. Consumers use
+    /// this for CSS line-height in the scrollback overlay
+    /// so frozen cells align exactly with their live
+    /// counterparts during the open animation. Force-
+    /// unwrapped at the SwiftTerm boundary today
+    /// (`cellDimension!`); backend impls own the
+    /// optionality decision.
+    var cellHeight: CGFloat { get }
+
+    /// Force a paint of the entire terminal surface. Used
+    /// to recover from cases where the surface stalled
+    /// (e.g. window going inactive) — `setNeedsDisplay`
+    /// is too coarse for the chrome to express via AppKit
+    /// alone because the chrome doesn't own the surface.
+    func redraw()
+
+    /// Unconditionally snap the viewport to the bottom of
+    /// the scrollback buffer (`yDisp = yBase`) and clear
+    /// the `userScrolling` gate so subsequent output auto-
+    /// follows. Distinct from `snapViewportToBottomIfWithin`
+    /// — no threshold, no selection-active guard, no return
+    /// value. Used by the scrollback overlay's `onReady`
+    /// hook to scroll the live terminal underneath after
+    /// the overlay has fully painted.
+    func snapViewportToBottom()
 }

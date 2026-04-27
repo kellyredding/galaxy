@@ -133,6 +133,29 @@ final class SwiftTermBackend: NSObject, TerminalBackend,
         terminalView.selection.selectNone()
     }
 
+    var font: NSFont { terminalView.font }
+
+    var cellHeight: CGFloat {
+        // SwiftTerm computes cellDimension lazily on first
+        // layout — it's effectively never nil after the
+        // surface has been shown. Force-unwrap matches the
+        // existing chrome read site that this method
+        // replaces; if the assumption ever breaks we'll see
+        // it here, in one place, instead of scattered.
+        terminalView.cellDimension!.height
+    }
+
+    func redraw() {
+        terminalView.setNeedsDisplay(terminalView.bounds)
+    }
+
+    func snapViewportToBottom() {
+        let buf = terminalView.terminal.displayBuffer
+        terminalView.terminal.userScrolling = false
+        buf.yDisp = buf.yBase
+        terminalView.setNeedsDisplay(terminalView.bounds)
+    }
+
     /// Forward to the subclass's stored property so
     /// `bell(source:)` can fire it directly without a
     /// backend back-reference. Mirrors `onScrollUp`.
