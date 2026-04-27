@@ -63,10 +63,56 @@ class GalaxyTerminalView: LocalProcessTerminalView {
     /// overlay created), false to let the parent proceed normally.
     var onScrollUp: ((NSEvent) -> Bool)?
 
+    /// Callback invoked after a scroll motion that moved `yDisp`
+    /// downward. Source-agnostic — fires for trackpad, mouse wheel,
+    /// scroller knob, and Page Down because every path lands in
+    /// `scrollTo`. Used by `TerminalHostView` to snap to the bottom
+    /// when the user lands within a couple of rows, fixing the
+    /// fractional-accumulator slop that otherwise leaves yDisp short
+    /// of yBase and `userScrolling` stuck true.
+    var onScrollDown: (() -> Void)?
+
     public override func scrollWheel(with event: NSEvent) {
         if event.deltaY > 0, let callback = onScrollUp, callback(event) {
             return
         }
         super.scrollWheel(with: event)
+    }
+
+    /// Override the canonical scroll funnel. Every motion (wheel,
+    /// page, scroller knob, programmatic) lands here, so a single
+    /// post-call check covers all entry points. Capture yDisp before
+    /// super so we can detect direction and only fire the down-snap
+    /// callback when the viewport actually moved toward the bottom.
+    public override func scrollTo(
+        row: Int, notifyAccessibility: Bool = true
+    ) {
+        let before = terminal.displayBuffer.yDisp
+        super.scrollTo(
+            row: row, notifyAccessibility: notifyAccessibility
+        )
+        if terminal.displayBuffer.yDisp > before {
+            onScrollDown?()
+        }
+    }
+
+    /// If `yDisp` is within `rows` of `yBase` but short of
+    /// it, snap to bottom and clear `userScrolling` so
+    /// `Terminal.scroll()` resumes pinning yDisp = yBase on
+    /// every feed. No-op when at bottom, far from bottom, or
+    /// while a selection is active (selection.active owns
+    /// userScrolling and freezes the viewport — see
+    /// `selectionChanged` in MacTerminalView).
+    @discardableResult
+    func snapViewportToBottomIfWithin(rows: Int) -> Bool {
+        let buf = terminal.displayBuffer
+        guard !selection.active else { return false }
+        guard buf.yDisp < buf.yBase else { return false }
+        guard buf.yDisp >= buf.yBase - rows else { return false }
+        terminal.userScrolling = false
+        buf.yDisp = buf.yBase
+        terminal.refresh(startRow: 0, endRow: terminal.rows)
+        setNeedsDisplay(bounds)
+        return true
     }
 }

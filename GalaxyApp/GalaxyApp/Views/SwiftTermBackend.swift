@@ -14,6 +14,15 @@ final class ScrollInterceptingTerminalView: LocalProcessTerminalView {
     /// the event, `false` to pass through to `super`.
     var onScrollUp: ((NSEvent) -> Bool)?
 
+    /// Called after a scroll motion that moved `yDisp`
+    /// downward (wheel, page, scroller knob — every path
+    /// funnels through `scrollTo`). Set by
+    /// `SwiftTermBackend` so the pane host can snap to the
+    /// bottom when the user lands within a couple of rows,
+    /// fixing the fractional-accumulator slop that
+    /// otherwise leaves `userScrolling` stuck true.
+    var onScrollDown: (() -> Void)?
+
     /// Called when SwiftTerm parses a BEL byte. Set by
     /// `SwiftTermBackend` (via a computed forward) so the
     /// owning pane can apply shell-specific settings
@@ -31,6 +40,38 @@ final class ScrollInterceptingTerminalView: LocalProcessTerminalView {
             return
         }
         super.scrollWheel(with: event)
+    }
+
+    /// Single funnel for all viewport-positioning paths —
+    /// override here to detect downward motion regardless
+    /// of input source and notify the pane host.
+    override func scrollTo(
+        row: Int, notifyAccessibility: Bool = true
+    ) {
+        let before = terminal.displayBuffer.yDisp
+        super.scrollTo(
+            row: row, notifyAccessibility: notifyAccessibility
+        )
+        if terminal.displayBuffer.yDisp > before {
+            onScrollDown?()
+        }
+    }
+
+    /// Snap-to-bottom threshold check used by
+    /// `SwiftTermBackend.snapViewportToBottomIfWithin`.
+    /// See `GalaxyTerminalView.snapViewportToBottomIfWithin`
+    /// for the full contract — same shape, kept in sync.
+    @discardableResult
+    func snapViewportToBottomIfWithin(rows: Int) -> Bool {
+        let buf = terminal.displayBuffer
+        guard !selection.active else { return false }
+        guard buf.yDisp < buf.yBase else { return false }
+        guard buf.yDisp >= buf.yBase - rows else { return false }
+        terminal.userScrolling = false
+        buf.yDisp = buf.yBase
+        terminal.refresh(startRow: 0, endRow: terminal.rows)
+        setNeedsDisplay(bounds)
+        return true
     }
 
     override func bell(source: SwiftTerm.Terminal) {
@@ -65,6 +106,19 @@ final class SwiftTermBackend: NSObject, TerminalBackend,
     var onScrollUp: ((NSEvent) -> Bool)? {
         get { terminalView.onScrollUp }
         set { terminalView.onScrollUp = newValue }
+    }
+
+    /// Forward to the subclass's stored property — mirror
+    /// of `onScrollUp`. Lets `TerminalHostView` wire its
+    /// snap-to-bottom hook through the backend without
+    /// reaching past the protocol.
+    var onScrollDown: (() -> Void)? {
+        get { terminalView.onScrollDown }
+        set { terminalView.onScrollDown = newValue }
+    }
+
+    func snapViewportToBottomIfWithin(rows: Int) -> Bool {
+        terminalView.snapViewportToBottomIfWithin(rows: rows)
     }
 
     /// Forward to the subclass's stored property so

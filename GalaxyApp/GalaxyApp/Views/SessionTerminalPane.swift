@@ -41,6 +41,20 @@ final class SessionTerminalPane: TerminalPane {
         set { galaxyView.onScrollUp = newValue }
     }
 
+    /// Scroll-down notification forwards to
+    /// `GalaxyTerminalView.onScrollDown`, which fires from
+    /// its `scrollTo` override after any motion that moved
+    /// `yDisp` downward. Same delegation pattern as
+    /// `onScrollUp`.
+    var onScrollDown: (() -> Void)? {
+        get { galaxyView.onScrollDown }
+        set { galaxyView.onScrollDown = newValue }
+    }
+
+    func snapViewportToBottomIfWithin(rows: Int) -> Bool {
+        galaxyView.snapViewportToBottomIfWithin(rows: rows)
+    }
+
     /// Session pane reads font size from the owning Session
     /// (per-session `@Published`). Returns 0 if the session
     /// has been deallocated — should not happen in practice
