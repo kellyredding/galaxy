@@ -54,7 +54,6 @@ final class SwiftTermBackend: NSObject, TerminalBackend,
 
     var view: NSView { terminalView }
     var onProcessTerminated: ((Int32) -> Void)?
-    var onDataReceived: (() -> Void)?
 
     /// Set once we've notified our owner that the child
     /// exited. Either SwiftTerm's natural delegate path or

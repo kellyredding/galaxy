@@ -650,12 +650,8 @@ class Session: Identifiable, ObservableObject {
     func releaseTerminalView() {
         guard terminalView != nil else { return }
 
-        // Stop content monitor before clearing callbacks
-        terminalView?.stopContentMonitor()
-
         // Clear callbacks to break any retain cycles
         terminalView?.onBell = nil
-        terminalView?.onDataReceived = nil
         terminalView?.processDelegate = nil
 
         // Clear readiness — a future ensureTerminalView() +

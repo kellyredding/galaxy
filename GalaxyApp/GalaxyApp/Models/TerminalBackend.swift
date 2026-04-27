@@ -80,11 +80,6 @@ protocol TerminalBackend: AnyObject {
     /// Called when the terminal parses a BEL byte.
     var onBell: (() -> Void)? { get set }
 
-    /// Called on every byte slice the PTY delivers. Used
-    /// by busy detection (session pane); shell pane doesn't
-    /// subscribe.
-    var onDataReceived: (() -> Void)? { get set }
-
     /// Called on scroll-wheel-up. Return `true` to consume
     /// the event (e.g., entered scrollback), `false` to
     /// let normal scrolling proceed.

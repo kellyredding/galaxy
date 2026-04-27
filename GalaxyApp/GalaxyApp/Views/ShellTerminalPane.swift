@@ -222,8 +222,6 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
             // handler above is the policy layer.
             self?.onBell?()
         }
-        // No onDataReceived subscription — shell pane doesn't
-        // track busy state.
     }
 
     /// True while a bell's side effects are in flight.
