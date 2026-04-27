@@ -504,6 +504,18 @@ class Session: Identifiable, ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var terminalCancellables = Set<AnyCancellable>()
 
+    /// Pending post-ready actions registered via `waitForReady`,
+    /// keyed by UUID so each subscription can self-remove from the
+    /// dictionary when its `.first()` completes. Two additional
+    /// cleanup paths beyond self-removal:
+    ///   1. `processDidExit` clears the dict on session death.
+    ///   2. `sendCommand` for `/clear` and `/compact` clears the
+    ///      dict before queueing new post-ready actions, since
+    ///      context reset invalidates any pre-queued actions
+    ///      that were waiting on the prior lifecycle's
+    ///      `session:ready` event.
+    private var pendingReadyActions = [UUID: AnyCancellable]()
+
     // Track the child process PID for termination (SwiftTerm doesn't expose this)
     private var childPid: pid_t = 0
 
@@ -763,11 +775,24 @@ class Session: Identifiable, ObservableObject {
         // treating these as synthetic turns: optimistically
         // startTurn here, and rely on the matching
         // context:cleared / context:compacted socket event
-        // (handled in EventCoordinator) to call endTurn. This
-        // restores the afterNextIdle arming path that
-        // clearAndHandoff and compactActiveSession depend on.
+        // (handled in EventCoordinator) to call endTurn.
+        //
+        // Also reset isReady so that the post-reset /handoff
+        // chain (waitForReady) waits for the matching
+        // session:ready event (ref="clear"/"compact") emitted
+        // from on_clear / on_compact rather than firing
+        // immediately on the previous resume's stale isReady=true.
+        //
+        // Context reset also invalidates any post-ready actions
+        // queued against the prior lifecycle (e.g., a /handoff
+        // still waiting on a previous compact's session:ready
+        // that hasn't arrived yet). Clear them before this
+        // cycle's waitForReady registers its own action so the
+        // new session:ready fires only this cycle's action.
         if Self.isContextResetCommand(command) {
             startTurn(source: "sendCommand:\(command)")
+            isReady = false
+            pendingReadyActions.removeAll()
         }
 
         // Send command text first
@@ -880,20 +905,13 @@ class Session: Identifiable, ObservableObject {
         }
     }
 
-    /// Maximum time to wait for the `session:ready` event
-    /// after a resume. Matches the on_resume hook's 30s
-    /// timeout in ~/.claude/settings.json — if the hook
-    /// hasn't emitted by then, something is wrong upstream
-    /// and we don't want to fire /galaxy:resume blind.
-    private static let waitForReadyTimeout:
-        TimeInterval = 30
-
     /// Marks this session as ready. Called from
     /// EventCoordinator on receipt of a `session:ready`
-    /// socket event with `ref: "resume"`. Idempotent —
-    /// repeat calls during the same lifecycle are no-ops.
-    /// Reset to false on `startProcess`,
-    /// `releaseTerminalView`, and `processDidExit`.
+    /// socket event (refs: resume / clear / compact).
+    /// Idempotent — repeat calls during the same lifecycle
+    /// are no-ops. Reset to false on `startProcess`,
+    /// `releaseTerminalView`, `processDidExit`, and
+    /// inside `sendCommand` for context-reset commands.
     func markReady() {
         DispatchQueue.main.async { [weak self] in
             guard let self = self,
@@ -912,10 +930,18 @@ class Session: Identifiable, ObservableObject {
     /// Run `action` once the session is ready. Fires
     /// immediately if already ready; otherwise subscribes
     /// to `$isReady` and fires on the first true value.
-    /// Times out after `waitForReadyTimeout` seconds — on
-    /// timeout, the action is NOT invoked (logs and bails)
-    /// rather than firing blind into a Claude that may not
-    /// be ready to receive input.
+    ///
+    /// The wait is bounded by session lifetime and by
+    /// context-reset events: `processDidExit` clears any
+    /// pending actions on session death, and `sendCommand`
+    /// for `/clear` / `/compact` clears them before
+    /// queueing new ones (since a context reset
+    /// invalidates anything queued against the prior
+    /// lifecycle). No wall-clock timeout — `/compact` on a
+    /// large session can take well over 30 seconds for
+    /// Claude to summarize before its `session:ready`
+    /// fires, and a fixed timeout there silently dropped
+    /// the queued `/handoff`.
     func waitForReady(
         then action: @escaping () -> Void
     ) {
@@ -924,34 +950,25 @@ class Session: Identifiable, ObservableObject {
             return
         }
 
-        var didFire = false
-        var token: AnyCancellable?
-        let fire: (Bool) -> Void = { [weak self] success in
-            guard !didFire else { return }
-            didFire = true
-            token?.cancel()
-            token = nil
-            if success {
-                action()
-            } else {
-                NSLog(
-                    "Session[%@]: waitForReady TIMEOUT"
-                    + " after %.0fs — not firing action",
-                    self?.sessionRef ?? "?",
-                    Self.waitForReadyTimeout
-                )
-            }
-        }
-
-        token = $isReady
+        let id = UUID()
+        pendingReadyActions[id] = $isReady
             .filter { $0 }
             .first()
             .receive(on: DispatchQueue.main)
-            .sink { _ in fire(true) }
-
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + Self.waitForReadyTimeout
-        ) { fire(false) }
+            .sink(
+                receiveCompletion: { [weak self] _ in
+                    // Self-remove when our `.first()`
+                    // finishes. Fires after delivery;
+                    // explicit cancel via `removeAll`
+                    // bypasses this path (Combine
+                    // doesn't deliver completion on
+                    // upstream cancel) but the entry
+                    // is already removed by then.
+                    self?.pendingReadyActions
+                        .removeValue(forKey: id)
+                },
+                receiveValue: { _ in action() }
+            )
     }
 
     /// Returns the CLI command to resume this session outside of Galaxy.
@@ -1187,6 +1204,12 @@ class Session: Identifiable, ObservableObject {
             // Clear any pending idle actions — session is dead
             self.afterNextIdleActions.removeAll()
             self.afterNextIdleArmed = false
+
+            // Cancel any pending post-ready actions (e.g., a
+            // /handoff still waiting on session:ready). Nothing
+            // upstream can fire them now and they'd be invalid
+            // for any future resumed lifecycle anyway.
+            self.pendingReadyActions.removeAll()
 
             // Release terminal view to free ~32MB scrollback buffer.
             // The view shows StoppedSessionView now, not the terminal.

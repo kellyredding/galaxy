@@ -348,15 +348,20 @@ final class EventCoordinator {
         // a no-op here — kept as a comment marker in case
         // future logic needs to hook session-resumed.
 
-        // Session ready: emitted by the on_resume / on_startup
-        // hooks once they finish running. ref disambiguates
-        // ("resume" vs "startup"). Today we only act on resume;
-        // startup is a no-op (the on_startup hook fires before
-        // a fresh session would have any work queued for it).
-        // Drives Session.markReady → resolves any pending
-        // waitForReady continuation in SessionManager.
+        // Session ready: emitted by the on_resume / on_startup /
+        // on_clear / on_compact hooks once they finish running.
+        // ref disambiguates the lifecycle path. We act on
+        // "resume", "clear", and "compact" — each gates a
+        // pending /handoff or /galaxy:resume sendCommand via
+        // Session.markReady and the matching waitForReady call.
+        // "startup" is a no-op (on_startup fires before a fresh
+        // session would have any work queued for it).
         if envelope.event == "session:ready" {
-            if envelope.ref == "resume",
+            let actionableRefs: Set<String> = [
+                "resume", "clear", "compact",
+            ]
+            if let ref = envelope.ref,
+               actionableRefs.contains(ref),
                let appSessionId =
                    ledgerSessionIdCache[
                        envelope.ledgerSessionId
@@ -366,7 +371,7 @@ final class EventCoordinator {
             {
                 GalaxyLog.events(
                     "[\(session.sessionRef)] routeEvent:"
-                    + " session:ready ref=resume"
+                    + " session:ready ref=\(ref)"
                 )
                 session.markReady()
             }

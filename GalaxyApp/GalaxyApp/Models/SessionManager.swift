@@ -724,7 +724,13 @@ class SessionManager: ObservableObject {
         // positive on the optimistic startTurn that
         // sendCommand sets for context-reset commands.
         session.sendCommand("/compact", verifyAccepted: false)
-        session.afterNextIdle { [weak session] in
+        // /handoff is gated on the on_compact hook's
+        // session:ready (ref="compact") event, which fires
+        // exactly when Claude is at-or-imminently-at the new
+        // prompt. sendCommand("/compact") above resets
+        // isReady so this won't be satisfied immediately by a
+        // stale isReady=true from a previous resume cycle.
+        session.waitForReady { [weak session] in
             session?.sendCommand("/handoff")
         }
     }
@@ -739,7 +745,10 @@ class SessionManager: ObservableObject {
         // optimistically set isInTurn." CR-retry safety
         // net is intentionally off for context-reset.
         session.sendCommand("/clear", verifyAccepted: false)
-        session.afterNextIdle { [weak session] in
+        // /handoff is gated on the on_clear hook's
+        // session:ready (ref="clear") event — see
+        // compactActiveSession for the full rationale.
+        session.waitForReady { [weak session] in
             session?.sendCommand("/handoff")
         }
     }
