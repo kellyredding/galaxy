@@ -10,8 +10,9 @@ class Session: Identifiable, ObservableObject {
     private static let commandSubmitDelay: TimeInterval = 0.1  // 100ms
 
     /// How long to wait after sending CR before checking if it was accepted.
-    /// If isBusy hasn't transitioned to true within this window, the CR was
-    /// likely swallowed and needs to be resent.
+    /// If isInTurn hasn't transitioned to true within this window (driven
+    /// by the on_user_prompt_submit hook event), the CR was likely
+    /// swallowed and needs to be resent.
     private static let commandVerifyDelay: TimeInterval = 0.25  // 250ms
 
     /// Maximum number of CR resend attempts before giving up. Each retry
@@ -73,26 +74,27 @@ class Session: Identifiable, ObservableObject {
     /// (~1.225s) so the debounce naturally aligns with the
     /// perceived bell event.
     @Published var bellDebounceActive: Bool = false
-    @Published var isBusy: Bool = false
 
     // MARK: - Turn State
     //
-    // Socket-driven turn model (Phase 3):
-    // - isBusy (micro): PTY activity toggle with 500ms debounce.
-    //   Drives: sendCommand CR verification, resume startup
-    //   detection (afterNextIdle), interrupt detection
-    //   (checkForInterrupt on micro-idle). Does NOT touch isInTurn.
-    // - isInTurn (turn): exclusively socket-driven via
-    //   startTurn/endTurn. Set by timeline.turn:initiated socket
-    //   event or sendCommand(). Cleared by turn-end socket events
-    //   (completed/failed/continued/interrupted). All user-visible
-    //   consumers observe isInTurn.
+    // Socket-driven turn model: isInTurn is the single source of
+    // truth for "Claude is working." Set by startTurn() in
+    // response to the timeline.turn:initiated socket event
+    // (emitted by the on_user_prompt_submit hook). Cleared by
+    // endTurn() in response to turn-end socket events
+    // (completed/failed/continued/interrupted).
 
     /// True when the session is in an active turn (Claude is
-    /// working). Set by startTurn() (socket event or
-    /// sendCommand), cleared by endTurn() (socket event).
-    /// All user-visible consumers observe this, not isBusy.
+    /// working). Driven exclusively by socket events from the
+    /// Crystal hooks — Galaxy never optimistically flips this.
     @Published var isInTurn: Bool = false
+
+    /// Projection of isInTurn for callers that conceptually want
+    /// busy/idle granularity. Kept as a separate name to minimize
+    /// call-site churn during the buffer/data-stream decoupling
+    /// migration; consider folding into isInTurn after callers
+    /// settle.
+    var isBusy: Bool { isInTurn }
 
     /// True once Claude has finished its on_resume / on_startup
     /// hook and is at (or imminently at) the prompt. Driven by
@@ -477,26 +479,15 @@ class Session: Identifiable, ObservableObject {
         personaName != nil ? "claude-persona" : "claude"
     }
 
-    /// Debounce timer for busy→idle transition
-    private var busyDebounceTimer: Timer?
-
-    /// How long after the last PTY output before transitioning busy→idle
-    private static let busyDebounceInterval: TimeInterval = 0.5
-
-    /// One-shot closures to fire on the next busy→idle transition.
+    /// One-shot closures to fire on the next turn-end transition.
     /// Armed when the session transitions idle→busy after being set.
-    /// Fired and cleared on the subsequent busy→idle transition.
+    /// Fired and cleared on the subsequent turn-end transition.
     private var afterNextIdleActions: [() -> Void] = []
 
     /// Whether the afterNextIdle actions have been armed (session went
-    /// busy after they were registered). Prevents firing on a stale
-    /// idle transition that was already in progress when actions were set.
+    /// in-turn after they were registered). Prevents firing on a stale
+    /// turn-end that was already in progress when actions were set.
     private var afterNextIdleArmed: Bool = false
-
-    /// Persistent callback fired on every busy→idle transition.
-    /// Narrowed to interrupt detection only — all other consumers
-    /// moved to onTurnEnd.
-    var onIdleTransition: ((Session) -> Void)?
 
     /// Current terminal font size for this session (transient, not persisted)
     @Published var terminalFontSize: CGFloat {
@@ -742,6 +733,21 @@ class Session: Identifiable, ObservableObject {
     /// dequeued at the empty prompt after the first command finishes,
     /// where Claude Code's TUI interprets Enter-on-empty as
     /// "repeat last command" and re-runs the command.
+    /// Detect /clear and /compact, which bypass Claude
+    /// Code's UserPromptSubmit hook (handled at the TUI
+    /// level before the prompt-submit pipeline runs).
+    /// `sendCommand` treats matches as synthetic Galaxy-
+    /// initiated turns, optimistically calling startTurn
+    /// since no turn:initiated socket event will arrive.
+    private static func isContextResetCommand(
+        _ command: String
+    ) -> Bool {
+        let trimmed = command.trimmingCharacters(
+            in: .whitespaces
+        )
+        return trimmed == "/clear" || trimmed == "/compact"
+    }
+
     func sendCommand(
         _ command: String, verifyAccepted: Bool = true
     ) {
@@ -752,14 +758,28 @@ class Session: Identifiable, ObservableObject {
 
         NSLog("Session: Sending command: %@", command)
 
-        // Galaxy-initiated turn — enter immediately.
-        // The hook's turn:initiated socket event will arrive
-        // as a redundant no-op (startTurn guards on !isInTurn).
-        startTurn(source: "sendCommand:\(command)")
+        // Capture pre-send turn state. If we're already in a turn,
+        // the on_user_prompt_submit hook's turn:initiated event
+        // can't serve as a CR-acceptance signal (isInTurn is
+        // already true), so skip verification and fall back to
+        // fire-and-forget.
+        let wasInTurn = isInTurn
 
-        // If already busy we can't use isBusy as a verification signal.
-        // Fall back to the original fire-and-forget behavior.
-        let wasBusy = isBusy
+        // Galaxy-initiated context-reset commands (/clear,
+        // /compact) bypass Claude Code's UserPromptSubmit hook
+        // entirely — they're intercepted at the TUI level
+        // before the prompt-submit pipeline runs. As a result,
+        // no turn:initiated socket event ever fires for them
+        // and Galaxy would never enter a turn. We compensate by
+        // treating these as synthetic turns: optimistically
+        // startTurn here, and rely on the matching
+        // context:cleared / context:compacted socket event
+        // (handled in EventCoordinator) to call endTurn. This
+        // restores the afterNextIdle arming path that
+        // clearAndHandoff and compactActiveSession depend on.
+        if Self.isContextResetCommand(command) {
+            startTurn(source: "sendCommand:\(command)")
+        }
 
         // Send command text first
         terminalView?.send(txt: command)
@@ -772,20 +792,23 @@ class Session: Identifiable, ObservableObject {
             self.terminalView?.send([0x0D])
 
             // Skip verification if caller opted out, or if session
-            // was already busy when we entered.
-            guard verifyAccepted, !wasBusy else { return }
+            // was already in a turn when we entered.
+            guard verifyAccepted, !wasInTurn else { return }
 
             self.verifyCommandSubmit(retriesLeft: Self.commandMaxRetries)
         }
     }
 
-    /// Check whether the session went busy after sending CR. If not,
-    /// resend CR and schedule another check. Bails after exhausting retries.
+    /// Check whether the session entered a turn after sending CR.
+    /// If not, resend CR and schedule another check. Bails after
+    /// exhausting retries. Detection rides on isInTurn, which is
+    /// flipped by the on_user_prompt_submit hook event — a true
+    /// "Claude received the prompt" signal.
     private func verifyCommandSubmit(retriesLeft: Int) {
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.commandVerifyDelay) { [weak self] in
             guard let self = self, self.isRunning, !self.hasExited else { return }
 
-            if self.isBusy {
+            if self.isInTurn {
                 NSLog("Session: Command accepted (retries remaining: %d)", retriesLeft)
                 return
             }
@@ -798,48 +821,6 @@ class Session: Identifiable, ObservableObject {
             NSLog("Session: Command CR not accepted, resending (%d retries left)", retriesLeft)
             self.terminalView?.send([0x0D])
             self.verifyCommandSubmit(retriesLeft: retriesLeft - 1)
-        }
-    }
-
-    // MARK: - Busy State (micro-level)
-    //
-    // Tracks PTY activity with a 500ms debounce.
-    // Does NOT drive turn state (isInTurn) — that's
-    // socket-driven via startTurn/endTurn.
-    //
-    // Consumers:
-    // - sendCommand CR verification (needs sub-250ms
-    //   signal that PTY output started)
-    // - Resume startup detection (afterNextIdle needs
-    //   a busy→idle cycle to detect transcript restore
-    //   completion)
-    // - Interrupt detection (checkForInterrupt runs on
-    //   every micro-idle via onIdleTransition)
-
-    /// Called from onDataReceived callback.
-    func markBusy() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self,
-                  self.isRunning, !self.hasExited
-            else { return }
-
-            if !self.isBusy {
-                self.isBusy = true
-            }
-
-            self.busyDebounceTimer?.invalidate()
-            self.busyDebounceTimer = Timer
-                .scheduledTimer(
-                    withTimeInterval:
-                        Self.busyDebounceInterval,
-                    repeats: false
-                ) { [weak self] _ in
-                    guard let self = self else {
-                        return
-                    }
-                    self.isBusy = false
-                    self.onIdleTransition?(self)
-                }
         }
     }
 
@@ -1201,14 +1182,8 @@ class Session: Identifiable, ObservableObject {
             self.hasExited = true
             self.exitCode = exitCode
             self.childPid = 0
-            // A dead process is never busy — clear state and timer
-            self.busyDebounceTimer?.invalidate()
-            self.busyDebounceTimer = nil
-            if self.isBusy {
-                self.isBusy = false
-            }
 
-            // Clear turn state
+            // Clear turn state — a dead process can't be in a turn.
             if self.isInTurn {
                 self.isInTurn = false
                 self.turnStartTime = nil

@@ -275,19 +275,48 @@ class TerminalHostView: NSView {
         owningSession?.unregisterPaneFocusRestorer(key)
     }
 
-    /// Set up local event monitor to intercept Ctrl+Arrow for line navigation.
-    /// Translates Ctrl+Left → Ctrl+A (beginning of line) and Ctrl+Right → Ctrl+E (end of line).
-    /// This matches Terminal.app's configurable keyboard shortcuts behavior.
+    /// Set up local event monitor for two purposes:
+    ///
+    /// 1. Intercept Ctrl+Arrow → translate to Ctrl+A /
+    ///    Ctrl+E for word-style line navigation (matches
+    ///    Terminal.app's keyboard shortcuts).
+    /// 2. Detect Esc while in-turn on the Session pane —
+    ///    record `turn:interrupted` immediately so the
+    ///    sidebar dot stops pulsing without waiting on a
+    ///    buffer scan or hook (Claude Code does not fire
+    ///    a Stop hook on Esc-aborted streams).
     ///
     /// Naturally safe during scrollback: the guard checks
-    /// `self.window?.firstResponder === self.pane.view`, which fails when
-    /// ScrollbackWebView is first responder, so no bytes are sent.
+    /// `self.window?.firstResponder === self.pane.view`,
+    /// which fails when ScrollbackWebView is first
+    /// responder, so no bytes are sent and no interrupt
+    /// is recorded.
     private func setupKeyEventMonitor() {
         keyEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self = self else { return event }
 
             // Only handle if our terminal is the first responder
             guard self.window?.firstResponder === self.pane.view else { return event }
+
+            // Esc with no modifiers → if a turn is active
+            // on this Session pane, record turn:interrupted.
+            // Don't consume — Esc still needs to flow to
+            // SwiftTerm so Claude Code aborts the stream.
+            // Idempotency is via TurnState file deletion
+            // inside recordEscapeInterrupt — rapid repeat
+            // Escs against the same turn read TurnState
+            // as nil and bail without re-recording.
+            if event.keyCode == 53,
+               event.modifierFlags.intersection([
+                   .control, .option, .command, .shift,
+               ]).isEmpty,
+               let session = self.session,
+               session.isInTurn
+            {
+                SessionManager.shared
+                    .recordEscapeInterrupt(for: session)
+                return event
+            }
 
             // Only intercept when Control is pressed without Option or Command
             let controlOnly = event.modifierFlags.intersection([.control, .option, .command]) == .control

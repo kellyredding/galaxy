@@ -284,9 +284,9 @@ class SessionManager: ObservableObject {
         // Observe the session's terminalView lifecycle. Fires
         // immediately with the current (just-created-in-init)
         // view, which triggers wireSessionCallbacks → sets up
-        // the bell, processDelegate, onDataReceived, content
-        // monitor, and session-level turn callbacks. The same
-        // subscription handles future recreations on resume.
+        // the bell, processDelegate, and session-level turn
+        // callbacks. The same subscription handles future
+        // recreations on resume.
         observeTerminalViewLifecycle(for: session)
 
         // Determine if this is a resume (resumeSessionId provided means URL had resume param)
@@ -683,13 +683,15 @@ class SessionManager: ObservableObject {
         // hook signals that Claude has finished its hook
         // lifecycle and is at (or imminently at) the prompt.
         // verifyAccepted: false because that signal is itself
-        // the readiness gate — the verify-and-retry loop's
-        // 250ms isBusy check is too tight for /galaxy:resume's
-        // skill-load + tool-call latency, and a stray retry CR
-        // ends up dequeued at the empty prompt after the first
+        // the readiness gate — and a stray retry CR ends up
+        // dequeued at the empty prompt after the first
         // /galaxy:resume completes, where Claude Code's TUI
         // treats Enter-on-empty as "repeat last command" and
-        // re-runs /galaxy:resume.
+        // re-runs /galaxy:resume. The verifyCommandSubmit path
+        // is now hook-driven (waits for isInTurn flip from
+        // on_user_prompt_submit) so it would no longer be
+        // tripped by skill-load latency, but we leave verify
+        // off here to avoid the empty-prompt-replay risk.
         if canResume {
             session.waitForReady { [weak session] in
                 session?.sendCommand(
@@ -715,24 +717,30 @@ class SessionManager: ObservableObject {
     /// Compact the active session and auto-handoff when Claude settles.
     func compactActiveSession() {
         guard let session = activeSession, session.isRunning, !session.hasExited else { return }
-        session.sendCommand("/compact")
-        // Extra 1s delay after idle gives the TUI time to fully
-        // settle after the compact operation completes.
+        // verifyAccepted: false — /compact bypasses
+        // Claude Code's UserPromptSubmit hook (no
+        // turn:initiated event arrives), so the verify-
+        // and-retry loop's isInTurn check would false-
+        // positive on the optimistic startTurn that
+        // sendCommand sets for context-reset commands.
+        session.sendCommand("/compact", verifyAccepted: false)
         session.afterNextIdle { [weak session] in
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak session] in
-                session?.sendCommand("/handoff")
-            }
+            session?.sendCommand("/handoff")
         }
     }
 
     /// Send /clear to a session and queue /handoff after it settles.
     /// Used by clearActiveSession, compactActiveSession, and auto-clear.
     private func clearAndHandoff(_ session: Session) {
-        session.sendCommand("/clear")
+        // verifyAccepted: false — same reasoning as
+        // compactActiveSession. /clear bypasses
+        // UserPromptSubmit, so verifyCommandSubmit can't
+        // distinguish "Claude accepted CR" from "Galaxy
+        // optimistically set isInTurn." CR-retry safety
+        // net is intentionally off for context-reset.
+        session.sendCommand("/clear", verifyAccepted: false)
         session.afterNextIdle { [weak session] in
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak session] in
-                session?.sendCommand("/handoff")
-            }
+            session?.sendCommand("/handoff")
         }
     }
 
@@ -766,148 +774,25 @@ class SessionManager: ObservableObject {
         return (uuid: uuid, userMessage: msg)
     }
 
-    /// Normalize text for fuzzy matching: strip
-    /// non-alphanumeric/non-space characters and condense
-    /// runs of whitespace to a single space. This removes
-    /// prompt artifacts (❯), non-breaking spaces, and other
-    /// terminal rendering differences.
-    private static func normalizeForMatch(
-        _ text: String
-    ) -> String {
-        let stripped = text.unicodeScalars.map { scalar in
-            if CharacterSet.alphanumerics
-                .contains(scalar)
-                || scalar == " "
-            {
-                return Character(scalar)
-            }
-            return Character(" ")
-        }
-        return String(stripped)
-            .components(separatedBy: .whitespaces)
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
-    }
-
-    // Claude Code terminal markers for interrupt detection.
-    // Matched with hasPrefix on terminal buffer lines.
-    // Note: the space after ⎿ is U+0020 followed by U+00A0
-    // (non-breaking space) — this is how Claude Code renders
-    // these markers in the terminal.
-    private static let stopMarker =
-        "  \u{23BF} \u{00A0}Stop says: "
-    private static let interruptMarker =
-        "  \u{23BF} \u{00A0}Interrupted \u{00B7} "
-
-    /// Check the SwiftTerm buffer for a genuine interrupt.
-    /// Scans backwards through the scrollback for the last
-    /// stop marker (previous turn boundary), then forward
-    /// for an interrupt marker, then verifies the user
-    /// message appears between them.
-    private func isGenuineInterrupt(
-        session: Session,
-        userMessage: String
-    ) -> Bool {
-        guard let tv = session.terminalView,
-              let terminal = tv.terminal
-        else { return false }
-        let buf = terminal.buffer
-        let top = buf.linesTop
-        let end = top + buf.lines.count
-        let scanStart = top
-
-        NSLog(
-            "isGenuineInterrupt: top=%d end=%d"
-            + " scanStart=%d userMsg='%@'",
-            top, end, scanStart,
-            String(userMessage.prefix(50))
-        )
-
-        // Step 1: Find last stop marker (scan backwards
-        // through scrollback)
-        var stopRow = -1
-        for row in stride(
-            from: end - 1, through: scanStart, by: -1
-        ) {
-            guard let line = terminal
-                .getScrollInvariantLine(row: row)
-            else { continue }
-            let text = line.translateToString(
-                trimRight: true
-            )
-            if text.hasPrefix(Self.stopMarker) {
-                stopRow = row
-                break
-            }
-        }
-        guard stopRow >= 0 else { return false }
-
-        // Step 2: Find interrupt marker after stop marker
-        var interruptRow = -1
-        for row in (stopRow + 1)..<end {
-            guard let line = terminal
-                .getScrollInvariantLine(row: row)
-            else { continue }
-            let text = line.translateToString(
-                trimRight: true
-            )
-            if text.hasPrefix(Self.interruptMarker) {
-                interruptRow = row
-                break
-            }
-        }
-        guard interruptRow > stopRow else { return false }
-
-        // Step 3: Concatenate between markers, check
-        // for user message. Normalize both sides: strip
-        // non-alphanumeric characters and condense
-        // whitespace so prompt artifacts (❯, NBSP, etc.)
-        // don't prevent matching.
-        var combined = ""
-        for row in stopRow...interruptRow {
-            guard let line = terminal
-                .getScrollInvariantLine(row: row)
-            else { continue }
-            combined += line.translateToString(
-                trimRight: true
-            )
-            combined += " "
-        }
-
-        let normalizedCombined =
-            Self.normalizeForMatch(combined)
-        let normalizedMessage =
-            Self.normalizeForMatch(userMessage)
-
-        let match = normalizedCombined.contains(
-            normalizedMessage
-        )
-        NSLog(
-            "isGenuineInterrupt: stopRow=%d"
-            + " interruptRow=%d match=%d",
-            stopRow, interruptRow, match ? 1 : 0
-        )
-        return match
-    }
-
-    /// Detect user interrupts on busy→idle by checking the
-    /// turn state file and corroborating with the SwiftTerm
-    /// buffer. Records turn:interrupted only when the buffer
-    /// confirms a genuine interrupt (stop marker → user
-    /// message → interrupt marker chain).
-    private func checkForInterrupt(
-        for session: Session
-    ) {
+    /// Record `turn:interrupted` in response to the user
+    /// pressing Esc with the session pane focused while a
+    /// turn is active. Called from
+    /// `TerminalHostView.setupKeyEventMonitor`. The
+    /// keystroke is the trigger — no buffer scan, no
+    /// polling, no debounce timer. Idempotency comes for
+    /// free: we delete the TurnState file after recording,
+    /// so subsequent rapid Esc presses against the same
+    /// turn read TurnState as nil and bail.
+    ///
+    /// The recorded event flows back through the socket as
+    /// `timeline.turn:interrupted`, which EventCoordinator
+    /// translates into `session.endTurn()` — that's what
+    /// stops the dot and closes the timeline bar.
+    func recordEscapeInterrupt(for session: Session) {
         guard let ledgerSessionId = session.ledgerSessionId
         else { return }
-
         guard let captured = readTurnState(for: session)
         else { return }
-
-        guard isGenuineInterrupt(
-            session: session,
-            userMessage: captured.userMessage
-        ) else { return }
 
         TimelineService.record(
             ledgerSessionId: ledgerSessionId,
@@ -920,7 +805,7 @@ class SessionManager: ObservableObject {
             ]
         )
 
-        // Delete only if UUID still matches (we own it)
+        // Delete only if UUID still matches (we own it).
         let current = readTurnState(for: session)
         if current?.uuid == captured.uuid {
             try? FileManager.default.removeItem(
@@ -1330,9 +1215,8 @@ class SessionManager: ObservableObject {
         pendingIdleNotificationTimers.removeValue(forKey: sessionId)
         NotificationService.shared.sessionClosed(sessionId)
 
-        // Clear session callbacks to stop idle/busy state machine activity
+        // Clear session callbacks to stop turn state machine activity
         let session = sessions[index]
-        session.onIdleTransition = nil
         session.onTurnStart = nil
         session.onTurnEnd = nil
 
@@ -1617,9 +1501,9 @@ class SessionManager: ObservableObject {
     ///
     /// Idempotent: each call replaces any prior wiring on the
     /// current view, so stacking calls doesn't leak handlers.
-    /// Session-level callbacks (onTurnStart, onIdleTransition,
-    /// onTurnEnd) persist across terminalView recreation but are
-    /// re-assigned here for parity with pre-refactor behavior.
+    /// Session-level callbacks (onTurnStart, onTurnEnd) persist
+    /// across terminalView recreation but are re-assigned here
+    /// for parity with pre-refactor behavior.
     private func wireSessionCallbacks(
         for session: Session,
         terminalView: GalaxyTerminalView
@@ -1639,14 +1523,6 @@ class SessionManager: ObservableObject {
             self.handleBell(for: session)
         }
 
-        // Busy-state detection (PTY activity).
-        terminalView.onDataReceived = { [weak session] in
-            session?.markBusy()
-        }
-
-        // Start buffer content monitor.
-        terminalView.startContentMonitor()
-
         // Cancel pending idle notification timer when turn starts.
         session.onTurnStart = { [weak self] session in
             self?.pendingIdleNotificationTimers[session.id]?
@@ -1655,13 +1531,11 @@ class SessionManager: ObservableObject {
                 .removeValue(forKey: session.id)
         }
 
-        // Micro-idle: only runs interrupt detection.
-        session.onIdleTransition = { [weak self] session in
-            self?.checkForInterrupt(for: session)
-        }
-
-        // Turn-end: all consumer logic (unread, notifications,
-        // auto-clear).
+        // Turn-end: all consumer logic (unread,
+        // notifications, auto-clear). Interrupt detection
+        // is no longer turn-end-triggered — it's driven
+        // by the Esc keystroke via
+        // recordEscapeInterrupt(for:).
         session.onTurnEnd = { [weak self] session, duration in
             self?.handleTurnEnd(for: session, duration: duration)
         }
