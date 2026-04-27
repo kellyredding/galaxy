@@ -818,18 +818,10 @@ class TerminalHostView: NSView {
         guard SettingsManager.shared.settings.scrollToEnterScrollback else { return false }
         guard !isScrollbackActive else { return false }
         guard !scrollbackCooldown else { return false }
-        // Both Session and Shell panes wrap a
-        // LocalProcessTerminalView underneath — scroll-up
-        // works uniformly via this accessor.
-        guard let lpView = self.localProcessView else {
-            return false
-        }
+        guard pane.hasScrollbackContent else { return false }
 
-        let displayBuffer = lpView.terminal.displayBuffer
-        guard displayBuffer.yBase > 0 else { return false }
-
-        let scrollPosition = displayBuffer.yDisp
-        lpView.selection.selectNone()
+        let scrollPosition = pane.viewportRow
+        pane.clearSelection()
         createScrollback(initialScrollLine: scrollPosition)
         return true
     }
@@ -888,16 +880,13 @@ class TerminalHostView: NSView {
         guard window?.firstResponder === pane.view else {
             return
         }
-        guard let lpView = self.localProcessView else {
-            return
-        }
 
         // Capture the live terminal's current scroll position — the
         // scrollback view opens at this position. Clear any selection now
         // but defer scrolling the live view to bottom until after the
         // WKWebView is visible (avoids a flash of the live view jumping).
-        let scrollPosition = lpView.terminal.displayBuffer.yDisp
-        lpView.selection.selectNone()
+        let scrollPosition = pane.viewportRow
+        pane.clearSelection()
 
         createScrollback(initialScrollLine: scrollPosition)
     }

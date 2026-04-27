@@ -63,6 +63,10 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
         backend.snapViewportToBottomIfWithin(rows: rows)
     }
 
+    var hasScrollbackContent: Bool { backend.hasScrollbackContent }
+    var viewportRow: Int { backend.viewportRow }
+    func clearSelection() { backend.clearSelection() }
+
     var fontSizePublisher: AnyPublisher<CGFloat, Never> {
         $fontSize.eraseToAnyPublisher()
     }

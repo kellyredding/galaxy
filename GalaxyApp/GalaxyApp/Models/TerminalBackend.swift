@@ -104,4 +104,24 @@ protocol TerminalBackend: AnyObject {
     /// active calls are no-ops to preserve the
     /// `selectionChanged` viewport-freeze contract.
     func snapViewportToBottomIfWithin(rows: Int) -> Bool
+
+    /// True when the scrollback buffer has any content
+    /// above the current viewport (i.e. `yBase > 0`).
+    /// Used by chrome to gate scrollback overlay creation
+    /// — there's no point opening the overlay if there's
+    /// nothing above to look at.
+    var hasScrollbackContent: Bool { get }
+
+    /// Current viewport top row inside the scrollback
+    /// buffer (`yDisp`). Used as the initial scroll
+    /// position when opening the scrollback overlay so
+    /// the overlay opens at the user's current view
+    /// rather than at the bottom.
+    var viewportRow: Int { get }
+
+    /// Clear any active text selection on the terminal
+    /// surface. Called before opening the scrollback
+    /// overlay so selection state doesn't bleed across
+    /// the live → frozen transition.
+    func clearSelection()
 }

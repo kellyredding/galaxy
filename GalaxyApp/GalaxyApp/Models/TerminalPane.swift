@@ -97,6 +97,23 @@ protocol TerminalPane: AnyObject {
     /// directly for Session).
     func snapViewportToBottomIfWithin(rows: Int) -> Bool
 
+    /// True when the underlying terminal has scrollback
+    /// content above the viewport. Both panes forward to
+    /// their respective surfaces; chrome consumes via
+    /// `pane.hasScrollbackContent` to gate overlay creation.
+    var hasScrollbackContent: Bool { get }
+
+    /// Current viewport top row inside the scrollback
+    /// buffer. Both panes forward to their respective
+    /// surfaces; chrome uses this as the initial scroll
+    /// position when creating the scrollback overlay.
+    var viewportRow: Int { get }
+
+    /// Clear any active text selection on the underlying
+    /// terminal. Called before opening the scrollback
+    /// overlay.
+    func clearSelection()
+
     /// Current font size for this pane's terminal. Per-pane
     /// so Session and Shell panes can diverge independently
     /// (⌘+/⌘- only affects the focused pane).

@@ -55,6 +55,18 @@ final class SessionTerminalPane: TerminalPane {
         galaxyView.snapViewportToBottomIfWithin(rows: rows)
     }
 
+    var hasScrollbackContent: Bool {
+        galaxyView.terminal.displayBuffer.yBase > 0
+    }
+
+    var viewportRow: Int {
+        galaxyView.terminal.displayBuffer.yDisp
+    }
+
+    func clearSelection() {
+        galaxyView.selection.selectNone()
+    }
+
     /// Session pane reads font size from the owning Session
     /// (per-session `@Published`). Returns 0 if the session
     /// has been deallocated — should not happen in practice

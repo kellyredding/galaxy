@@ -121,6 +121,18 @@ final class SwiftTermBackend: NSObject, TerminalBackend,
         terminalView.snapViewportToBottomIfWithin(rows: rows)
     }
 
+    var hasScrollbackContent: Bool {
+        terminalView.terminal.displayBuffer.yBase > 0
+    }
+
+    var viewportRow: Int {
+        terminalView.terminal.displayBuffer.yDisp
+    }
+
+    func clearSelection() {
+        terminalView.selection.selectNone()
+    }
+
     /// Forward to the subclass's stored property so
     /// `bell(source:)` can fire it directly without a
     /// backend back-reference. Mirrors `onScrollUp`.
