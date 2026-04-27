@@ -132,8 +132,8 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
         backend.snapshotBuffer()
     }
 
-    func send(text: String) {
-        backend.send(text: text)
+    func send(text: String, asPaste: Bool) {
+        backend.send(text: text, asPaste: asPaste)
     }
 
     func focus() {

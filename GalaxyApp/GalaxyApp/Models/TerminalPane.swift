@@ -25,9 +25,14 @@ protocol TerminalPane: AnyObject {
     /// progress, no active buffer, etc.).
     func snapshotBuffer() -> Buffer?
 
-    /// Send typed text. Used by drag-drop (bracketed paste)
-    /// and "Send to Claude" routing.
-    func send(text: String)
+    /// Send typed text. When `asPaste` is true and the terminal
+    /// has bracketed-paste-mode enabled, the pane wraps the text
+    /// in bracketed-paste sequences so the remote process can
+    /// distinguish a paste from typed input. When bracketed-paste-
+    /// mode is disabled or `asPaste` is false, the text is sent
+    /// verbatim. Used by drag-drop (bracketed paste) and keystroke
+    /// injection (plain).
+    func send(text: String, asPaste: Bool)
 
     /// Make the inner terminal the first responder.
     func focus()

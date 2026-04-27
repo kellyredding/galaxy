@@ -324,10 +324,10 @@ class TerminalHostView: NSView {
             if controlOnly {
                 switch event.keyCode {
                 case 123: // Left arrow → beginning of line (Ctrl+A = 0x01)
-                    self.pane.send(text: "\u{01}")
+                    self.pane.send(text: "\u{01}", asPaste: false)
                     return nil  // Consume the event
                 case 124: // Right arrow → end of line (Ctrl+E = 0x05)
-                    self.pane.send(text: "\u{05}")
+                    self.pane.send(text: "\u{05}", asPaste: false)
                     return nil  // Consume the event
                 default:
                     break
@@ -1523,29 +1523,11 @@ class TerminalHostView: NSView {
 
     // MARK: - Terminal Text Injection
 
-    /// Send text to the terminal with bracketed paste mode support.
-    /// Manually sends escape sequences via terminalView.send() —
-    /// no clipboard involvement. Works for both panes via the
-    /// shared `localProcessView` accessor.
+    /// Send text to the terminal, routing through the pane so
+    /// bracketed-paste-mode handling stays inside the backend
+    /// rather than the chrome layer.
     private func sendTextToTerminal(_ text: String, asPaste: Bool) {
-        guard let lpView = self.localProcessView else {
-            pane.send(text: text)
-            return
-        }
-        let bracketedMode = lpView.terminal.bracketedPasteMode
-
-        if asPaste && bracketedMode {
-            // Send bracketed paste sequences:
-            // 1. Start sequence (ESC[200~)
-            // 2. Text content
-            // 3. End sequence (ESC[201~)
-            lpView.send(Array(EscapeSequences.bracketedPasteStart))
-            lpView.send(txt: text)
-            lpView.send(Array(EscapeSequences.bracketedPasteEnd))
-        } else {
-            // Send plain text
-            lpView.send(txt: text)
-        }
+        pane.send(text: text, asPaste: asPaste)
     }
 }
 

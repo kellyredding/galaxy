@@ -40,8 +40,13 @@ protocol TerminalBackend: AnyObject {
     /// Send bytes to the PTY.
     func send(bytes: [UInt8])
 
-    /// Send text to the PTY (UTF-8 encoded).
-    func send(text: String)
+    /// Send text to the PTY (UTF-8 encoded). When `asPaste` is
+    /// true and the terminal has bracketed-paste-mode enabled,
+    /// the implementation wraps the text in `ESC[200~` …
+    /// `ESC[201~` so the remote process can distinguish a paste
+    /// from typed input. When bracketed-paste-mode is disabled,
+    /// `asPaste` has no effect and the text is sent verbatim.
+    func send(text: String, asPaste: Bool)
 
     /// Adjust scrollback history size at runtime.
     func changeHistorySize(_ lines: Int)

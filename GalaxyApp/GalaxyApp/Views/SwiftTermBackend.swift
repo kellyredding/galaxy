@@ -221,8 +221,18 @@ final class SwiftTermBackend: NSObject, TerminalBackend,
         terminalView.send(bytes)
     }
 
-    func send(text: String) {
-        terminalView.send(txt: text)
+    func send(text: String, asPaste: Bool) {
+        if asPaste, terminalView.terminal.bracketedPasteMode {
+            terminalView.send(
+                Array(EscapeSequences.bracketedPasteStart)
+            )
+            terminalView.send(txt: text)
+            terminalView.send(
+                Array(EscapeSequences.bracketedPasteEnd)
+            )
+        } else {
+            terminalView.send(txt: text)
+        }
     }
 
     // MARK: - Buffer / appearance

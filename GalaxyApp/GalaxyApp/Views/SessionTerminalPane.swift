@@ -92,8 +92,18 @@ final class SessionTerminalPane: TerminalPane {
         )
     }
 
-    func send(text: String) {
-        galaxyView.send(txt: text)
+    func send(text: String, asPaste: Bool) {
+        if asPaste, galaxyView.terminal.bracketedPasteMode {
+            galaxyView.send(
+                Array(EscapeSequences.bracketedPasteStart)
+            )
+            galaxyView.send(txt: text)
+            galaxyView.send(
+                Array(EscapeSequences.bracketedPasteEnd)
+            )
+        } else {
+            galaxyView.send(txt: text)
+        }
     }
 
     func focus() {
