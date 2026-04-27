@@ -388,7 +388,7 @@ class SessionManager: ObservableObject {
             return
         }
 
-        let isBusy = session.isInTurn
+        let inTurn = session.isInTurn
         let agentCount = session.runningAgentCount
 
         // Stop-session only consults the SESSION pane's
@@ -400,7 +400,7 @@ class SessionManager: ObservableObject {
         ) { hasWork in
             if hasWork {
                 completion(.unsavedScrollback)
-            } else if isBusy {
+            } else if inTurn {
                 completion(.inTurn)
             } else if agentCount > 0 {
                 completion(

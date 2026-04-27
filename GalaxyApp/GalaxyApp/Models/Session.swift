@@ -89,13 +89,6 @@ class Session: Identifiable, ObservableObject {
     /// Crystal hooks — Galaxy never optimistically flips this.
     @Published var isInTurn: Bool = false
 
-    /// Projection of isInTurn for callers that conceptually want
-    /// busy/idle granularity. Kept as a separate name to minimize
-    /// call-site churn during the buffer/data-stream decoupling
-    /// migration; consider folding into isInTurn after callers
-    /// settle.
-    var isBusy: Bool { isInTurn }
-
     /// True once Claude has finished its on_resume / on_startup
     /// hook and is at (or imminently at) the prompt. Driven by
     /// the `session:ready` socket event emitted by the Crystal
