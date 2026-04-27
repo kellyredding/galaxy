@@ -11,13 +11,16 @@ module GalaxyLedger
       READ_ONLY_FILES_CAP = 15
 
       # Runs the full context handoff flow. Called by OnClear and
-      # OnCompact with the parsed hook input.
+      # OnCompact with the parsed hook input. Returns the resolved
+      # ledger_session_id (used by the caller to publish a
+      # `session:ready` event after handoff completes), or nil if
+      # session resolution failed.
       def self.run(
         stdin_session_identifier : String?,
         source : String?,
         transcript_path : String? = nil,
         timeline_event_id : Int64? = nil,
-      )
+      ) : Int64?
         # Resolve session via 3-tier chain (env var → PID → hook session_id),
         # creating a new session as last resort.
         claude_pid = Process.ppid.to_i64
@@ -31,7 +34,10 @@ module GalaxyLedger
           cwd: Dir.current,
         )
 
-        return output_empty unless ledger_session_id && ledger_session_id > 0
+        unless ledger_session_id && ledger_session_id > 0
+          output_empty
+          return nil
+        end
 
         # Register the new stdin session_id against the existing session.
         # On /clear, Claude generates a new UUID — register it so it maps
@@ -94,6 +100,7 @@ module GalaxyLedger
         end
 
         puts Helpers.output_json(system_message, context)
+        ledger_session_id
       end
 
       # Determines the working directory to report in the handoff.

@@ -31,12 +31,27 @@ module GalaxyLedger
           event_type: "context:cleared",
         )
 
-        ContextHandoff.run(
+        ledger_session_id = ContextHandoff.run(
           @stdin_session_identifier,
           @source,
           transcript_path: @transcript_path,
           timeline_event_id: timeline_event_id,
         )
+
+        # Signal Galaxy.app that the clear hook has finished and
+        # the new prompt is imminent. Galaxy listens for this
+        # event in EventCoordinator and uses it as the readiness
+        # gate before sending /handoff via clearAndHandoff.
+        # Errors are silently rescued by EventPublisher; the
+        # hook behaves identically whether or not Galaxy is
+        # listening.
+        if lsid = ledger_session_id
+          EventPublisher.publish(
+            ledger_session_id: lsid,
+            event: "session:ready",
+            ref: "clear",
+          )
+        end
       end
 
       private def parse_hook_input

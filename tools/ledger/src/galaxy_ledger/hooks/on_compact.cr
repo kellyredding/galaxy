@@ -33,12 +33,27 @@ module GalaxyLedger
           event_type: "context:compacted",
         )
 
-        ContextHandoff.run(
+        ledger_session_id = ContextHandoff.run(
           @stdin_session_identifier,
           @source,
           transcript_path: @transcript_path,
           timeline_event_id: timeline_event_id,
         )
+
+        # Signal Galaxy.app that the compact hook has finished
+        # and the new prompt is imminent. Galaxy listens for
+        # this event in EventCoordinator and uses it as the
+        # readiness gate before sending /handoff via
+        # compactActiveSession. Errors are silently rescued by
+        # EventPublisher; the hook behaves identically whether
+        # or not Galaxy is listening.
+        if lsid = ledger_session_id
+          EventPublisher.publish(
+            ledger_session_id: lsid,
+            event: "session:ready",
+            ref: "compact",
+          )
+        end
       end
 
       private def parse_hook_input
