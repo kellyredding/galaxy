@@ -2478,7 +2478,7 @@ module GalaxyLedger
           max_cost_w = cost_strs.compact.max_of?(&.size) || 0
           max_tok_w = token_strs.compact.max_of?(&.size) || 0
           rows = daily.map_with_index do |d, idx|
-            label = format_bar_date(d.date)
+            label = format_bar_date(d.date, with_dow: true)
             if d.cost > 0.0
               extra = "#{cost_strs[idx].not_nil!.rjust(max_cost_w)}    #{token_strs[idx].not_nil!.rjust(max_tok_w)}"
               extra += "  *" if footnote && idx == daily.size - 1
@@ -2617,11 +2617,16 @@ module GalaxyLedger
       end
     end
 
-    # Format a date for bar chart labels (e.g., "Feb 01")
-    private def self.format_bar_date(date_str : String) : String
+    # Format a date for bar chart labels (e.g., "Feb 01"). When with_dow
+    # is true, prepends the 3-letter day-of-week (e.g., "Mon Feb 01") to
+    # surface day-of-week usage patterns in daily breakdowns.
+    private def self.format_bar_date(
+      date_str : String,
+      with_dow : Bool = false,
+    ) : String
       begin
         date = Time.parse(date_str, "%Y-%m-%d", Time::Location::UTC)
-        date.to_s("%b %d")
+        with_dow ? date.to_s("%a %b %d") : date.to_s("%b %d")
       rescue
         date_str
       end

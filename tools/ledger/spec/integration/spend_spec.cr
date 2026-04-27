@@ -194,10 +194,11 @@ describe "CLI Integration - spend" do
 
       result = run_binary(["spend", "2025-03-01..2025-03-03"])
       result[:status].should eq(0)
-      # All three days should appear in the bar chart
-      result[:output].should contain("Mar 01")
-      result[:output].should contain("Mar 02")
-      result[:output].should contain("Mar 03")
+      # All three days should appear in the bar chart, each prefixed
+      # with the 3-letter day-of-week (Sat/Sun/Mon for those dates).
+      result[:output].should contain("Sat Mar 01")
+      result[:output].should contain("Sun Mar 02")
+      result[:output].should contain("Mon Mar 03")
     end
 
     it "does not gap-fill JSON output" do
