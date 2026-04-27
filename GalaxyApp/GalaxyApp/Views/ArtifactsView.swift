@@ -2384,7 +2384,7 @@ struct ArtifactsView: View {
                 )
 
                 await MainActor.run {
-                    session.afterNextIdle {
+                    session.onceAfterTurnEnd {
                         [weak session] in
                         DispatchQueue.main.asyncAfter(
                             deadline: .now() + 3.0

@@ -472,15 +472,14 @@ class Session: Identifiable, ObservableObject {
         personaName != nil ? "claude-persona" : "claude"
     }
 
-    /// One-shot closures to fire on the next turn-end transition.
-    /// Armed when the session transitions idle→busy after being set.
-    /// Fired and cleared on the subsequent turn-end transition.
-    private var afterNextIdleActions: [() -> Void] = []
-
-    /// Whether the afterNextIdle actions have been armed (session went
-    /// in-turn after they were registered). Prevents firing on a stale
-    /// turn-end that was already in progress when actions were set.
-    private var afterNextIdleArmed: Bool = false
+    /// One-shot closures fired on the next endTurn() call, then
+    /// cleared. Used by post-turn workflows (e.g. snapshot/artifact
+    /// review-message send after a /galaxy:resume turn completes).
+    /// Lifetime is bounded by session death (processDidExit clears)
+    /// and by context-reset events (sendCommand for /clear and
+    /// /compact clears, since reset invalidates anything queued
+    /// against the prior lifecycle).
+    private var oneShotTurnEndActions: [() -> Void] = []
 
     /// Current terminal font size for this session (transient, not persisted)
     @Published var terminalFontSize: CGFloat {
@@ -783,16 +782,18 @@ class Session: Identifiable, ObservableObject {
         // from on_clear / on_compact rather than firing
         // immediately on the previous resume's stale isReady=true.
         //
-        // Context reset also invalidates any post-ready actions
-        // queued against the prior lifecycle (e.g., a /handoff
-        // still waiting on a previous compact's session:ready
-        // that hasn't arrived yet). Clear them before this
-        // cycle's waitForReady registers its own action so the
-        // new session:ready fires only this cycle's action.
+        // Context reset also invalidates anything queued against
+        // the prior lifecycle: post-ready actions (e.g., a
+        // /handoff still waiting on a previous compact's
+        // session:ready) and post-turn-end actions (e.g., a
+        // queued review-message send). Clear both before this
+        // cycle's actions register so the new lifecycle's events
+        // fire only this cycle's actions.
         if Self.isContextResetCommand(command) {
             startTurn(source: "sendCommand:\(command)")
             isReady = false
             pendingReadyActions.removeAll()
+            oneShotTurnEndActions.removeAll()
         }
 
         // Send command text first
@@ -852,11 +853,6 @@ class Session: Identifiable, ObservableObject {
         isInTurn = true
         turnStartTime = Date()
         onTurnStart?(self)
-
-        // Arm pending one-shot actions
-        if !afterNextIdleActions.isEmpty {
-            afterNextIdleArmed = true
-        }
     }
 
     /// Called when an authoritative turn-end signal
@@ -877,13 +873,13 @@ class Session: Identifiable, ObservableObject {
         }
         turnStartTime = nil
 
-        // Fire armed one-shot actions (afterNextIdle)
-        if afterNextIdleArmed,
-           !afterNextIdleActions.isEmpty
-        {
-            let actions = afterNextIdleActions
-            afterNextIdleActions.removeAll()
-            afterNextIdleArmed = false
+        // Drain one-shot post-turn actions. Drain BEFORE
+        // calling them so the source array is empty before
+        // any action runs — protects against an action that
+        // re-enters endTurn or re-registers a new one-shot.
+        if !oneShotTurnEndActions.isEmpty {
+            let actions = oneShotTurnEndActions
+            oneShotTurnEndActions.removeAll()
             for action in actions {
                 action()
             }
@@ -892,17 +888,14 @@ class Session: Identifiable, ObservableObject {
         onTurnEnd?(self, duration)
     }
 
-    /// Register a one-shot action to fire after the next complete
-    /// busy→idle cycle. Multiple actions can be queued; all fire
-    /// together. If the session is already in a turn, the action
-    /// arms immediately so it fires when that turn ends. If idle,
-    /// arming is deferred to the next startTurn call, preventing
-    /// premature fires on stale idle state.
-    func afterNextIdle(_ action: @escaping () -> Void) {
-        afterNextIdleActions.append(action)
-        if isInTurn {
-            afterNextIdleArmed = true
-        }
+    /// Register a closure to fire on the next endTurn(). Fires
+    /// once, then unregisters. If the session is currently in a
+    /// turn, the action waits for that turn to end. If between
+    /// turns, the action waits for the next startTurn → endTurn
+    /// cycle. Multiple actions can be queued; all fire together
+    /// on the next endTurn.
+    func onceAfterTurnEnd(_ action: @escaping () -> Void) {
+        oneShotTurnEndActions.append(action)
     }
 
     /// Marks this session as ready. Called from
@@ -1201,9 +1194,10 @@ class Session: Identifiable, ObservableObject {
                 self.isReady = false
             }
 
-            // Clear any pending idle actions — session is dead
-            self.afterNextIdleActions.removeAll()
-            self.afterNextIdleArmed = false
+            // Cancel any pending post-turn-end actions (e.g., a
+            // queued review-message send waiting on the next turn
+            // boundary). Session is dead — no turn will end.
+            self.oneShotTurnEndActions.removeAll()
 
             // Cancel any pending post-ready actions (e.g., a
             // /handoff still waiting on session:ready). Nothing

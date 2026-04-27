@@ -1160,17 +1160,15 @@ struct SnapshotsView: View {
                     snapshotNumber: snapshotNumber
                 )
 
-                // Register review action and resume in a SINGLE
-                // MainActor.run block so both afterNextIdle calls
-                // happen before the process starts. See plan for
-                // the arming invariant.
-                //
-                // Timing: afterNextIdle actions fire together in a
-                // single drain loop. /handoff uses asyncAfter(+1.0),
-                // the review uses asyncAfter(+3.0). Both schedule
-                // from the same instant, giving ~2s gap.
+                // Register the review action and resume in a
+                // SINGLE MainActor.run block so registration
+                // happens before resumeSession kicks off the new
+                // process. The queued action fires on the next
+                // endTurn — which is /galaxy:resume's turn end,
+                // since that's the first turn the resumed session
+                // runs.
                 await MainActor.run {
-                    session.afterNextIdle { [weak session] in
+                    session.onceAfterTurnEnd { [weak session] in
                         DispatchQueue.main.asyncAfter(
                             deadline: .now() + 3.0
                         ) {
@@ -1215,9 +1213,10 @@ struct SnapshotsView: View {
                         }
                     }
 
-                    // Resume the session. Internally registers
-                    // /handoff via afterNextIdle (at +1s) and calls
-                    // startProcess.
+                    // Resume the session. Internally calls
+                    // startProcess and gates /galaxy:resume on
+                    // the on_resume hook's session:ready event
+                    // via waitForReady.
                     sessionManager.resumeSession(
                         sessionId: session.id
                     )

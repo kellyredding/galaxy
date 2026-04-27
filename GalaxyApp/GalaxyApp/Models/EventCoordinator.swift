@@ -315,9 +315,13 @@ final class EventCoordinator {
         // Context-reset events: /clear and /compact are slash
         // commands that skip the normal prompt→stop lifecycle,
         // so no turn:completed event is ever published. End
-        // the Galaxy-side turn here so afterNextIdle actions
-        // (e.g. queued /handoff) can fire. Fall through to
-        // normal enrichment handling below.
+        // the Galaxy-side synthetic turn here (opened by the
+        // optimistic startTurn in sendCommand) so the dot
+        // stops pulsing and the timeline bar closes. Auto-
+        // /handoff after these commands is gated separately on
+        // the session:ready event from on_clear / on_compact
+        // via waitForReady. Fall through to normal enrichment
+        // handling below.
         if Self.contextResetEvents.contains(envelope.event) {
             if let appSessionId =
                 ledgerSessionIdCache[envelope.ledgerSessionId],
