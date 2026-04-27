@@ -152,7 +152,7 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
             sendCR: { [weak sessionView] in
                 sessionView?.send([0x0D])
             },
-            disabledReason: { [weak self, weak s] in
+            disabledReason: { [weak s] in
                 guard let s = s else {
                     return "Session unavailable"
                 }
@@ -161,33 +161,12 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
                 if !s.isRunning || s.hasExited {
                     return "Resume the session first"
                 }
-                if self?.findSessionHostView()?
-                    .isScrollbackActive == true {
+                if s.sessionPaneScrollbackActive {
                     return "Close session scrollback first"
                 }
                 return nil
             }
         )
-    }
-
-    /// Walk the session terminal view's superview chain to
-    /// locate its `TerminalHostView`. Used by
-    /// `sendToClaudeTarget.disabledReason` to check the
-    /// session pane's live scrollback state without holding
-    /// a direct reference (which would risk a retain cycle
-    /// or stale handle across stop/resume). Returns nil when
-    /// the session isn't mounted in a host view — which
-    /// correctly falls through to "not blocked by session
-    /// scrollback".
-    private func findSessionHostView() -> TerminalHostView? {
-        var v: NSView? = session?.terminalView?.superview
-        while let curr = v {
-            if let host = curr as? TerminalHostView {
-                return host
-            }
-            v = curr.superview
-        }
-        return nil
     }
 
     // MARK: - Font size

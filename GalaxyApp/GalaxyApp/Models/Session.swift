@@ -98,6 +98,27 @@ class Session: Identifiable, ObservableObject {
     /// and `processDidExit` so each new lifecycle starts unready.
     @Published private(set) var isReady: Bool = false
 
+    /// True when this session's terminal pane has its scrollback
+    /// overlay open. Updated by the session pane's
+    /// TerminalHostView in createScrollback /
+    /// performScrollbackTeardown. Read by the shell pane's
+    /// send-to-claude target to gate the cross-pane send button —
+    /// sending into a paused buffer view would land out of order.
+    /// Source-of-truth lives on Session (not on the
+    /// TerminalHostView itself) so subscribers survive stop/resume
+    /// cycles, which destroy and recreate the host NSView.
+    /// Reset to false in processDidExit so a future resumed
+    /// lifecycle starts with a clean signal.
+    @Published private(set) var sessionPaneScrollbackActive: Bool
+        = false
+
+    /// Setter exposed for TerminalHostView, which is the only
+    /// legitimate writer. Call from the session pane's overlay
+    /// open/close code paths.
+    func setSessionPaneScrollbackActive(_ active: Bool) {
+        sessionPaneScrollbackActive = active
+    }
+
     /// Number of currently running agents. Maintained by
     /// EventCoordinator (increment on agent:started, decrement
     /// on agent:stopped/failed/abandoned). Seeded at startup
@@ -1192,6 +1213,14 @@ class Session: Identifiable, ObservableObject {
             // re-arms via session:ready.
             if self.isReady {
                 self.isReady = false
+            }
+
+            // A dead process can't have an active scrollback —
+            // the TerminalHostView is being torn down by SwiftUI
+            // as part of the hasExited transition. Reset
+            // defensively so any subscriber reflects clean state.
+            if self.sessionPaneScrollbackActive {
+                self.sessionPaneScrollbackActive = false
             }
 
             // Cancel any pending post-turn-end actions (e.g., a

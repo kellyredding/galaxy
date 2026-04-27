@@ -1066,6 +1066,17 @@ class TerminalHostView: NSView {
         addSubview(overlay, positioned: .above, relativeTo: dragHighlightView)
         scrollbackOverlay = overlay
 
+        // Publish scrollback-active state to the session model
+        // so cross-pane consumers (shell pane's send-to-claude
+        // gate) can subscribe via Combine instead of polling.
+        // Only the session pane writes this signal — shell-pane
+        // scrollbacks don't gate the cross-pane button.
+        if pane is SessionTerminalPane,
+           let session = self.session
+        {
+            session.setSessionPaneScrollbackActive(true)
+        }
+
         // Generate duration ID and fire scrollback:entered event
         let durationId = "scrollback--\(UUID().uuidString)"
         scrollbackDurationId = durationId
@@ -1189,6 +1200,15 @@ class TerminalHostView: NSView {
         scrollbackDurationId = nil
         currentSnapshot = nil
 
+        // Mirror the createScrollback path: clear the
+        // session-model scrollback flag for session-pane
+        // overlays so cross-pane consumers see the change.
+        if pane is SessionTerminalPane,
+           let session = self.session
+        {
+            session.setSessionPaneScrollbackActive(false)
+        }
+
         // Start cooldown to prevent trackpad momentum from
         // re-creating scrollback
         if SettingsManager.shared.settings
@@ -1221,17 +1241,15 @@ class TerminalHostView: NSView {
             .evaluateJavaScript(js)
     }
 
-    /// Wire the push/poll inputs that make the Send-button
-    /// state react live to blocker changes. Called from
+    /// Wire the push inputs that make the Send-button state
+    /// react live to blocker changes. Called from
     /// `createScrollback` after the web view is ready;
     /// cleared in `performScrollbackTeardown`.
     ///
     /// - Shell pane has two blockers: the owning session's
-    ///   running state (push via `@Published`) and the
-    ///   session pane's scrollback overlay state (poll at
-    ///   200ms — `isScrollbackActive` isn't published, and
-    ///   adding a publisher wrapper is more plumbing than a
-    ///   short-lived timer while a scrollback is open).
+    ///   running state and the session pane's scrollback
+    ///   overlay state. Both are now push-based via
+    ///   `@Published` properties on the Session model.
     /// - Session pane has one blocker (its own running
     ///   state), push-based. Future Session-pane blockers
     ///   can reuse this same subscription path.
@@ -1250,18 +1268,17 @@ class TerminalHostView: NSView {
             }
             .store(in: &sendButtonStateCancellables)
 
-            // Poll the session pane's scrollback state. Cost
-            // is negligible — 5 Hz, pure Swift property reads
-            // on the main thread, only while a shell
-            // scrollback is visible.
-            Timer.publish(
-                every: 0.2, on: .main, in: .common
-            )
-            .autoconnect()
-            .sink { [weak self] _ in
-                self?.refreshSendButtonState()
-            }
-            .store(in: &sendButtonStateCancellables)
+            // Push: session pane's scrollback overlay state.
+            // Subscription target is the durable Session model,
+            // which survives the stop/resume cycles that
+            // destroy and recreate the session pane's
+            // TerminalHostView.
+            session.$sessionPaneScrollbackActive
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in
+                    self?.refreshSendButtonState()
+                }
+                .store(in: &sendButtonStateCancellables)
         }
 
         if let sessionPane = pane as? SessionTerminalPane,
