@@ -629,7 +629,7 @@ struct TerminalSettingsTab: View {
 
                     HStack {
                         Toggle(
-                            "Visual flash",
+                            "Visual bell",
                             isOn: $settingsManager.settings
                                 .shellBellVisualFlash
                         )
@@ -737,7 +737,7 @@ struct NotificationsSettingsTab: View {
 
                     HStack {
                         Toggle(
-                            "Visual flash",
+                            "Visual bell",
                             isOn: $settingsManager.settings
                                 .bellVisualFlash
                         )
