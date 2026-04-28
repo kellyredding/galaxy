@@ -1,5 +1,16 @@
 import AppKit
-import SwiftTerm
+
+/// 16-bit RGB color used for the 16-entry ANSI palette installed on the
+/// terminal surface. Galaxy-owned so the `TerminalBackend` protocol can
+/// express the palette operation without naming SwiftTerm types.
+///
+/// Values are 0…65535 to preserve the precision the underlying SwiftTerm
+/// `Color` type uses; backend implementations convert at the boundary.
+struct TerminalPaletteColor: Equatable, Hashable {
+    let red: UInt16
+    let green: UInt16
+    let blue: UInt16
+}
 
 /// A terminal color theme defining foreground, background, and the 16
 /// standard ANSI colors. Designed for JSON serialization so user-defined
@@ -35,13 +46,14 @@ struct TerminalColorTheme: Codable, Identifiable {
         return Self.nsColor(from: ansiColors[15])
     }
 
-    /// Convert ANSI hex colors to SwiftTerm Color array for installColors()
-    var swiftTermPalette: [SwiftTerm.Color] {
+    /// Convert ANSI hex colors to a backend-agnostic 16-color palette.
+    /// Each backend converts to its own palette type at the boundary.
+    var terminalPalette: [TerminalPaletteColor] {
         ansiColors.map { hex in
             let ns = Self.nsColor(from: hex)
             var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
             ns.usingColorSpace(.sRGB)?.getRed(&r, green: &g, blue: &b, alpha: &a)
-            return SwiftTerm.Color(
+            return TerminalPaletteColor(
                 red: UInt16(r * 65535),
                 green: UInt16(g * 65535),
                 blue: UInt16(b * 65535)

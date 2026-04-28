@@ -264,8 +264,13 @@ final class SwiftTermBackend: NSObject, TerminalBackend,
         terminalView.terminal.changeHistorySize(lines)
     }
 
-    func installColors(_ palette: [SwiftTerm.Color]) {
-        terminalView.installColors(palette)
+    func installColors(_ palette: [TerminalPaletteColor]) {
+        let swiftTermPalette = palette.map {
+            SwiftTerm.Color(
+                red: $0.red, green: $0.green, blue: $0.blue
+            )
+        }
+        terminalView.installColors(swiftTermPalette)
     }
 
     func setForegroundColor(_ color: NSColor) {

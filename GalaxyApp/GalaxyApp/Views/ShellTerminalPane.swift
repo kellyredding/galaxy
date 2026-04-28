@@ -365,6 +365,6 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
         )
         backend.setForegroundColor(theme.foregroundColor)
         backend.setBackgroundColor(theme.backgroundColorValue)
-        backend.installColors(theme.swiftTermPalette)
+        backend.installColors(theme.terminalPalette)
     }
 }

@@ -1,7 +1,6 @@
 import Foundation
 import AppKit
 import Combine
-import SwiftTerm
 
 class Session: Identifiable, ObservableObject {
     /// Delay between sending command text and CR when invoking slash commands.
@@ -617,7 +616,7 @@ class Session: Identifiable, ObservableObject {
         )
         terminalView.nativeForegroundColor = theme.foregroundColor
         terminalView.nativeBackgroundColor = theme.backgroundColorValue
-        terminalView.installColors(theme.swiftTermPalette)
+        terminalView.installColors(theme.terminalPalette)
         terminalView.galaxyBoldForegroundColor = theme.boldForegroundColor
         NSLog("Session[%@]: Applied color theme '%@'", sessionRef, theme.name)
     }

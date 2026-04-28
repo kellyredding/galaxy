@@ -116,3 +116,19 @@ class GalaxyTerminalView: LocalProcessTerminalView {
         return true
     }
 }
+
+extension GalaxyTerminalView {
+    /// Install a 16-color ANSI palette using Galaxy's backend-
+    /// agnostic palette type. Wraps SwiftTerm's
+    /// `installColors([SwiftTerm.Color])` with conversion at the
+    /// boundary so callers (e.g. `Session.applyColorTheme`) don't
+    /// need to name SwiftTerm types.
+    func installColors(_ palette: [TerminalPaletteColor]) {
+        let swiftTermPalette = palette.map {
+            SwiftTerm.Color(
+                red: $0.red, green: $0.green, blue: $0.blue
+            )
+        }
+        installColors(swiftTermPalette)
+    }
+}

@@ -51,8 +51,10 @@ protocol TerminalBackend: AnyObject {
     /// Adjust scrollback history size at runtime.
     func changeHistorySize(_ lines: Int)
 
-    /// Install a 16-color ANSI palette.
-    func installColors(_ palette: [SwiftTerm.Color])
+    /// Install a 16-color ANSI palette. Implementations convert
+    /// `TerminalPaletteColor` to the backend's native color
+    /// representation at the boundary.
+    func installColors(_ palette: [TerminalPaletteColor])
 
     /// Set foreground / background colors.
     func setForegroundColor(_ color: NSColor)
