@@ -34,6 +34,34 @@ final class SocketListener {
     /// Track active connections for cleanup
     private var activeConnections: [NWConnection] = []
 
+    /// Per-connection accumulator for partial JSON lines. A
+    /// single envelope can span multiple `connection.receive`
+    /// callbacks when its serialized size exceeds the kernel's
+    /// per-callback chunk boundary — commonly observed with
+    /// `timeline.turn:completed` envelopes that carry the full
+    /// `user_message` and `assistant_response` in `detail_data`
+    /// (~25 KB+ for orchestrator/task-notification turns).
+    /// Bytes accumulate here until a newline arrives, at which
+    /// point complete lines are extracted and parsed. Keyed by
+    /// `ObjectIdentifier(connection)`. All mutations happen on
+    /// `queue` (the listener's serial DispatchQueue), so no
+    /// additional synchronization is needed.
+    private var connectionBuffers: [ObjectIdentifier: Data] = [:]
+
+    /// Per-connection receive-callback counter. Reset to 0
+    /// after each complete line is parsed; > 1 at parse time
+    /// means the envelope was reassembled from multiple chunks
+    /// (logged as `Reassembled envelope ...` to confirm the
+    /// framing fix is doing its job).
+    private var connectionChunks: [ObjectIdentifier: Int] = [:]
+
+    /// Safety cap on per-connection buffer growth. The Crystal
+    /// publisher always terminates with `\n`, so a buffer
+    /// larger than this without a newline indicates a
+    /// misbehaving sender (or memory-pressure attack); we drop
+    /// the buffer and log rather than grow unbounded.
+    private static let maxBufferBytes: Int = 10 * 1024 * 1024
+
     init(socketPath: String = SocketListener.defaultSocketPath) {
         self.socketPath = socketPath
     }
@@ -161,6 +189,9 @@ final class SocketListener {
 
     private func handleNewConnection(_ connection: NWConnection) {
         activeConnections.append(connection)
+        let key = ObjectIdentifier(connection)
+        connectionBuffers[key] = Data()
+        connectionChunks[key] = 0
 
         connection.stateUpdateHandler = { [weak self, weak connection] state in
             if case .cancelled = state {
@@ -181,15 +212,37 @@ final class SocketListener {
 
     private func removeConnection(_ connection: NWConnection) {
         activeConnections.removeAll { $0 === connection }
+        let key = ObjectIdentifier(connection)
+        // Surface unconsumed bytes at close. The publisher
+        // always terminates with `\n`, so partial data here
+        // means truncation (publisher crash mid-write, or
+        // kernel buffer drop). Loud signal that something
+        // upstream is misbehaving.
+        if let buffer = connectionBuffers[key], !buffer.isEmpty {
+            let preview = String(
+                data: buffer.prefix(200),
+                encoding: .utf8
+            ) ?? "<binary>"
+            GalaxyLog.socket(
+                "Connection closed with \(buffer.count)B"
+                + " unconsumed (no terminating newline)"
+                + " — preview: \(preview)"
+            )
+        }
+        connectionBuffers.removeValue(forKey: key)
+        connectionChunks.removeValue(forKey: key)
     }
 
     /// Read data from a connection, accumulating until a complete newline-delimited
     /// JSON line is received. Crystal's publisher writes one JSON line + newline
     /// per connection, then closes.
     private func receiveData(on connection: NWConnection) {
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, isComplete, error in
+        connection.receive(
+            minimumIncompleteLength: 1,
+            maximumLength: 65536
+        ) { [weak self] data, _, isComplete, error in
             if let data = data, !data.isEmpty {
-                self?.processReceivedData(data)
+                self?.processReceivedData(data, on: connection)
             }
 
             if isComplete || error != nil {
@@ -201,28 +254,107 @@ final class SocketListener {
         }
     }
 
-    /// Parse received data as newline-delimited JSON and decode event envelopes.
-    private func processReceivedData(_ data: Data) {
-        guard let text = String(data: data, encoding: .utf8) else {
-            GalaxyLog.socket("Failed to decode received data as UTF-8")
+    /// Parse received data as newline-delimited JSON and decode
+    /// event envelopes. Buffers per-connection because a single
+    /// envelope can arrive across multiple `connection.receive`
+    /// callbacks when its serialized size exceeds the kernel's
+    /// per-callback chunk boundary. Bytes accumulate in the
+    /// connection's slot in `connectionBuffers` until a newline
+    /// terminator arrives; complete lines are then parsed. Any
+    /// trailing partial line stays in the buffer for the next
+    /// callback.
+    private func processReceivedData(
+        _ data: Data,
+        on connection: NWConnection
+    ) {
+        let key = ObjectIdentifier(connection)
+        var buffer = connectionBuffers[key] ?? Data()
+        buffer.append(data)
+        connectionChunks[key, default: 0] += 1
+
+        // Sanity cap — drop runaway buffers rather than grow
+        // unbounded. Publisher always terminates with `\n`, so
+        // 10 MB without one means something upstream is broken.
+        if buffer.count > Self.maxBufferBytes {
+            GalaxyLog.socket(
+                "Buffer for connection exceeded"
+                + " \(Self.maxBufferBytes)B without newline"
+                + " — dropping (\(buffer.count)B accumulated)"
+            )
+            connectionBuffers[key] = Data()
+            connectionChunks[key] = 0
             return
         }
 
-        let lines = text.components(separatedBy: "\n")
-        for line in lines {
-            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else { continue }
+        let newline: UInt8 = 0x0A
+        var cursor = buffer.startIndex
 
-            guard let jsonData = trimmed.data(using: .utf8) else { continue }
+        while let nlIdx = buffer[cursor...]
+            .firstIndex(of: newline)
+        {
+            let lineRange = cursor..<nlIdx
+            cursor = buffer.index(after: nlIdx)
+
+            // Trim leading/trailing whitespace as before; an
+            // empty line (lone `\n` or whitespace-only) is
+            // skipped without resetting the chunk count.
+            let lineData = buffer[lineRange]
+            let trimmed = String(
+                data: lineData, encoding: .utf8
+            )?.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            ) ?? ""
+            guard !trimmed.isEmpty,
+                  let jsonData = trimmed.data(using: .utf8)
+            else { continue }
+
+            let chunks = connectionChunks[key] ?? 1
 
             do {
-                let envelope = try JSONDecoder().decode(EventEnvelope.self, from: jsonData)
+                let envelope = try JSONDecoder().decode(
+                    EventEnvelope.self,
+                    from: jsonData
+                )
+                if chunks > 1 {
+                    // Loud, positive signal that the
+                    // per-connection buffering reassembled a
+                    // fragmented envelope. Confirms the fix
+                    // is doing its job; not a problem.
+                    GalaxyLog.socket(
+                        "Reassembled envelope"
+                        + " event=\(envelope.event)"
+                        + " ledger_session_id="
+                        + "\(envelope.ledgerSessionId)"
+                        + " bytes=\(jsonData.count)"
+                        + " chunks=\(chunks)"
+                    )
+                }
                 DispatchQueue.main.async { [weak self] in
                     self?.onEvent?(envelope)
                 }
             } catch {
-                GalaxyLog.socket("Failed to decode envelope: \(error.localizedDescription) — line: \(trimmed)")
+                GalaxyLog.socket(
+                    "Failed to decode envelope"
+                    + " (\(jsonData.count)B,"
+                    + " chunks=\(chunks)):"
+                    + " \(error.localizedDescription)"
+                    + " — preview: "
+                    + "\(String(trimmed.prefix(200)))"
+                )
             }
+
+            // Reset chunk count after every complete line so
+            // a subsequent line on the same connection starts
+            // fresh. (Publisher writes one envelope per
+            // connection in practice, but be defensive.)
+            connectionChunks[key] = 0
+        }
+
+        // Retain any trailing partial line for the next callback.
+        if cursor < buffer.endIndex {
+            connectionBuffers[key] = Data(buffer[cursor...])
+        } else {
+            connectionBuffers[key] = Data()
         }
     }
 
