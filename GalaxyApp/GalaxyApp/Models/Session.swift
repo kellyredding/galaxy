@@ -559,12 +559,7 @@ class Session: Identifiable, ObservableObject {
     }
 
     private func configureTerminal() {
-        guard let terminalView = terminalView else { return }
-
-        // Disable custom block glyph rendering so block elements (U+2580-U+259F)
-        // and box drawing (U+2500-U+257F) fall through to CoreText font rendering.
-        // This lets the system font fallback produce glyphs that match Terminal.app.
-        terminalView.customBlockGlyphs = false
+        guard terminalView != nil else { return }
 
         // Apply color theme from settings
         applyColorTheme()

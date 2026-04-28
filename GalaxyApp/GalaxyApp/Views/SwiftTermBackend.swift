@@ -10,6 +10,21 @@ import SwiftTerm
 /// NSBeep every time the shell rings (e.g., backspace at
 /// line start).
 final class ScrollInterceptingTerminalView: LocalProcessTerminalView {
+    /// Disable custom block glyph rendering on construction so
+    /// block elements and box drawing fall through to CoreText
+    /// font rendering, matching Terminal.app and
+    /// `GalaxyTerminalView`'s behavior. Baked into init so
+    /// `SwiftTermBackend.init` doesn't need to remember to set it.
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        self.customBlockGlyphs = false
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        self.customBlockGlyphs = false
+    }
+
     /// Called on scroll-wheel-up. Return `true` to consume
     /// the event, `false` to pass through to `super`.
     var onScrollUp: ((NSEvent) -> Bool)?
@@ -169,9 +184,6 @@ final class SwiftTermBackend: NSObject, TerminalBackend,
             ScrollInterceptingTerminalView(frame: frame)
         super.init()
         self.terminalView.processDelegate = self
-        // Match GalaxyTerminalView's glyph-rendering
-        // decision for CoreText parity with Terminal.app.
-        self.terminalView.customBlockGlyphs = false
     }
 
     // MARK: - Process

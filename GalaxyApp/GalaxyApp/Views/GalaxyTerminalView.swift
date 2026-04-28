@@ -5,6 +5,21 @@ import SwiftTerm
 /// This allows us to intercept terminal events (like bell) without
 /// replacing the terminalDelegate, which breaks SwiftTerm's internal behavior.
 class GalaxyTerminalView: LocalProcessTerminalView {
+    /// Disable custom block glyph rendering on construction so
+    /// block elements (U+2580–U+259F) and box drawing
+    /// (U+2500–U+257F) fall through to CoreText font rendering,
+    /// matching Terminal.app. Baked into init so callers don't
+    /// have to remember to set it.
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        self.customBlockGlyphs = false
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        self.customBlockGlyphs = false
+    }
+
     /// Short-circuit key view traversal — same fix as InlineEditField.
     /// When any NSView becomes first responder, AppKit may walk
     /// previousValidKeyView / nextValidKeyView to validate the target.
