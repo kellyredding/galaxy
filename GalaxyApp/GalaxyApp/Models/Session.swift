@@ -128,6 +128,12 @@ class Session: Identifiable, ObservableObject {
     /// Used to compute turn duration for notification/unread gates.
     private var turnStartTime: Date?
 
+    /// Read-only accessor for the current turn's start time.
+    /// Returns nil when the session is not in a turn. Used by
+    /// EventCoordinator's heartbeat log to compute "BUSY for
+    /// Ns" without duplicating turn state.
+    var currentTurnStartedAt: Date? { turnStartTime }
+
     /// Persistent callback fired when a new turn starts
     /// (isInTurn goes true). Set by SessionManager to cancel
     /// pending idle notification timers.
@@ -859,11 +865,32 @@ class Session: Identifiable, ObservableObject {
     /// Called when a turn-start signal arrives (socket
     /// turn:initiated event, or sendCommand). Sets
     /// isInTurn and fires the onTurnStart callback.
-    func startTurn(source: String = "unknown") {
-        guard !isInTurn else { return }
+    ///
+    /// `ref` is the timeline event row ID (when called from
+    /// a socket event) — surfaced in the log so an agent can
+    /// `grep "ref=N"` to correlate state transitions with
+    /// `galaxy-timeline list --json` rows.
+    func startTurn(
+        source: String = "unknown",
+        ref: String? = nil
+    ) {
+        let refTag = ref.map { " ref=\($0)" } ?? ""
+        if isInTurn {
+            // Silent bail-out under the old code path;
+            // surfaced now so a stale-busy session that
+            // swallows fresh turn:initiated events leaves
+            // an obvious fingerprint in the log.
+            GalaxyLog.events(
+                "[\(sessionRef)] TurnState:"
+                + " startTurn IGNORED (already in turn)"
+                + "\(refTag) source=\(source)"
+            )
+            return
+        }
         GalaxyLog.events(
-            "[\(sessionRef)] TurnState:"
-            + " startTurn() source=\(source)"
+            "[\(sessionRef)] TurnState: startTurn"
+            + "\(refTag) source=\(source)"
+            + " isInTurn: false→true"
         )
         isInTurn = true
         turnStartTime = Date()
@@ -874,13 +901,32 @@ class Session: Identifiable, ObservableObject {
     /// arrives (socket event). Clears turn state and
     /// fires the onTurnEnd callback with the turn's
     /// duration.
-    func endTurn(source: String = "unknown") {
+    ///
+    /// `ref` mirrors `startTurn` — the timeline event row
+    /// ID, surfaced in the log for grep-based correlation
+    /// with the timeline DB.
+    func endTurn(
+        source: String = "unknown",
+        ref: String? = nil
+    ) {
+        let refTag = ref.map { " ref=\($0)" } ?? ""
+        if !isInTurn {
+            // Silent bail-out under the old code path;
+            // surfaced now so a stale-idle session that
+            // swallows turn:completed events leaves an
+            // obvious fingerprint.
+            GalaxyLog.events(
+                "[\(sessionRef)] TurnState:"
+                + " endTurn IGNORED (not in turn)"
+                + "\(refTag) source=\(source)"
+            )
+            return
+        }
         GalaxyLog.events(
-            "[\(sessionRef)] TurnState: endTurn()"
-            + " source=\(source)"
-            + " wasInTurn=\(isInTurn)"
+            "[\(sessionRef)] TurnState: endTurn"
+            + "\(refTag) source=\(source)"
+            + " isInTurn: true→false"
         )
-        guard isInTurn else { return }
         isInTurn = false
 
         let duration = turnStartTime.map {
