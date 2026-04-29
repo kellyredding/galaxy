@@ -2033,11 +2033,33 @@ private enum HunkEntry {
     case pair(GdiffLine, GdiffLine)
 }
 
-/// Walks a hunk's lines and pairs contiguous runs
-/// of deletes with contiguous runs of adds so we
-/// can character-diff them. When the run sizes
-/// don't match, we pair what we can 1:1 and leave
-/// leftovers as standalone add/delete rows.
+/// Walks a hunk's lines and decides, per
+/// delete/add run, whether to interleave the runs
+/// as paired rows (delete-then-add, with inline
+/// word-diff highlights) or to emit them GitHub-
+/// style as a contiguous deletes block followed by
+/// a contiguous adds block.
+///
+/// Pairing reads well only when each `dels[i]` is
+/// genuinely a rewrite of `adds[i]` — e.g. a rename
+/// applied across N lines. When the change is
+/// structural (N lines collapsed into 1, or 3 lines
+/// refactored into 5 unrelated lines), pairing
+/// places visually unrelated rows next to each
+/// other and the inline highlighter latches onto
+/// noise tokens like `.` or `:`. So we gate on
+/// similarity: every candidate pair must score at
+/// or above `pairSimilarityThreshold`. If any pair
+/// fails, the whole run renders as a block — easier
+/// to scan as "this code became that code" than as
+/// a series of unrelated del/add zips.
+///
+/// Uneven run sizes (more dels than adds, or vice
+/// versa) are still tolerated under pairing mode:
+/// pair what we can 1:1, leave leftovers as
+/// standalone rows. In block mode there's nothing
+/// to leave over — every del becomes a delete row
+/// and every add becomes an add row.
 private func pairDeleteAddLines(
     _ lines: [GdiffLine]
 ) -> [HunkEntry] {
@@ -2062,23 +2084,54 @@ private func pairDeleteAddLines(
                 adds.append(lines[i])
                 i += 1
             }
-            // Pair up
+            // Decide pair-mode vs block-mode for this
+            // run. Pair-mode requires every candidate
+            // pair (dels[p], adds[p]) to clear the
+            // similarity threshold; otherwise we fall
+            // back to the easier-to-scan block layout.
             let pairCount = min(dels.count, adds.count)
-            for p in 0..<pairCount {
-                result.append(
-                    .pair(dels[p], adds[p])
-                )
-            }
-            // Leftover deletes (more deletes than adds)
-            if dels.count > pairCount {
-                for d in pairCount..<dels.count {
-                    result.append(.delete(dels[d]))
+            var shouldPair = pairCount > 0
+            if shouldPair {
+                for p in 0..<pairCount {
+                    let sim = linePairSimilarity(
+                        dels[p].content,
+                        adds[p].content
+                    )
+                    if sim < pairSimilarityThreshold {
+                        shouldPair = false
+                        break
+                    }
                 }
             }
-            // Leftover adds (more adds than deletes)
-            if adds.count > pairCount {
-                for a in pairCount..<adds.count {
-                    result.append(.add(adds[a]))
+            if shouldPair {
+                // Pair-mode: interleave del/add rows
+                // and let renderRow apply inline
+                // word-diff highlights.
+                for p in 0..<pairCount {
+                    result.append(
+                        .pair(dels[p], adds[p])
+                    )
+                }
+                // Leftover deletes
+                if dels.count > pairCount {
+                    for d in pairCount..<dels.count {
+                        result.append(.delete(dels[d]))
+                    }
+                }
+                // Leftover adds
+                if adds.count > pairCount {
+                    for a in pairCount..<adds.count {
+                        result.append(.add(adds[a]))
+                    }
+                }
+            } else {
+                // Block-mode: all deletes, then all
+                // adds — GitHub's unified diff layout.
+                for d in dels {
+                    result.append(.delete(d))
+                }
+                for a in adds {
+                    result.append(.add(a))
                 }
             }
         } else if line.type == "add" {
@@ -2090,6 +2143,64 @@ private func pairDeleteAddLines(
         }
     }
     return result
+}
+
+/// Minimum similarity (0.0–1.0) for adjacent del/add
+/// lines to render as a paired row. Below this, the
+/// run falls back to GitHub-style block layout (all
+/// deletes, then all adds). 0.5 is the empirical
+/// sweet spot: single-line renames and small in-line
+/// edits comfortably clear it (typically 0.7+), while
+/// structural rewrites where the lines have nothing
+/// in common but stray punctuation score well below.
+private let pairSimilarityThreshold = 0.5
+
+/// Similarity ratio between two lines, computed as
+/// `2 · sharedChars / (lenA + lenB)` — the same
+/// formula as Python's `difflib.SequenceMatcher
+/// .ratio()`. `sharedChars` is the total character
+/// length of tokens that Myers' diff classifies as
+/// `.equal` between the two tokenized lines.
+///
+/// Tokenizing first (rather than diffing characters)
+/// keeps the cost cheap on long lines and matches
+/// the granularity of `characterLevelDiff` — so a
+/// pair this function deems "similar" is exactly a
+/// pair the inline highlighter can render cleanly.
+///
+/// Returns 0.0 if either line is empty or if the
+/// underlying Myers' diff bails on its deadline.
+/// Identical lines short-circuit to 1.0.
+private func linePairSimilarity(
+    _ a: String,
+    _ b: String
+) -> Double {
+    if a == b { return 1.0 }
+    if a.isEmpty || b.isEmpty { return 0.0 }
+
+    let aTokens = tokenize(a)
+    let bTokens = tokenize(b)
+
+    // 20ms cap — well under characterLevelDiff's 50ms
+    // budget so a slow similarity check can't starve
+    // the highlighter that follows in pair-mode.
+    let deadline = CFAbsoluteTimeGetCurrent() + 0.020
+    guard let ops = myersDiff(
+        aTokens, bTokens, deadline: deadline
+    ) else {
+        return 0.0
+    }
+
+    var sharedChars = 0
+    for op in ops {
+        if case .equal(let tok) = op {
+            sharedChars += String(tok).count
+        }
+    }
+
+    let total = a.count + b.count
+    if total == 0 { return 0.0 }
+    return 2.0 * Double(sharedChars) / Double(total)
 }
 
 // MARK: - Inline Diff
