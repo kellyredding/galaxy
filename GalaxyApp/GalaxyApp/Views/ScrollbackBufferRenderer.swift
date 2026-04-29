@@ -991,6 +991,10 @@ enum ScrollbackBufferRenderer {
                     '<span class="note-form-ref"></span>' +
                 '</div>' +
                 '<textarea class="note-textarea" ' +
+                    'spellcheck="false" ' +
+                    'autocorrect="off" ' +
+                    'autocapitalize="off" ' +
+                    'autocomplete="off" ' +
                     'placeholder="Add annotation\\u2026 (\\u2318Enter to save \\u00b7 Esc to dismiss)" ' +
                     'rows="1"></textarea>';
 
@@ -1312,6 +1316,10 @@ enum ScrollbackBufferRenderer {
 
             const ta = document.createElement('textarea');
             ta.className = 'note-edit-textarea';
+            ta.spellcheck = false;
+            ta.setAttribute('autocorrect', 'off');
+            ta.setAttribute('autocapitalize', 'off');
+            ta.setAttribute('autocomplete', 'off');
             ta.value = originalContent;
             ta.rows = 2;
             contentEl.appendChild(ta);

@@ -537,6 +537,10 @@ endBlock);
                 + '<span class="annotation-form-ref">'
                 + label + '</span></div>'
                 + '<textarea class="annotation-textarea"'
+                + ' spellcheck="false"'
+                + ' autocorrect="off"'
+                + ' autocapitalize="off"'
+                + ' autocomplete="off"'
                 + ' placeholder="Add annotation\\u2026'
                 + ' (\\u2318Enter to save'
                 + ' \\u00b7 Esc to dismiss)"'
@@ -789,6 +793,10 @@ state.expandedNumber);
                 + '<span class="annotation-form-ref">'
                 + '</span></div>'
                 + '<textarea class="annotation-textarea"'
+                + ' spellcheck="false"'
+                + ' autocorrect="off"'
+                + ' autocapitalize="off"'
+                + ' autocomplete="off"'
                 + ' placeholder="Add annotation\\u2026'
                 + ' (\\u2318Enter to save'
                 + ' \\u00b7 Esc to dismiss)"'
@@ -1581,6 +1589,10 @@ endVal);
 
             var ta = document.createElement('textarea');
             ta.className = 'annotation-edit-textarea';
+            ta.spellcheck = false;
+            ta.setAttribute('autocorrect', 'off');
+            ta.setAttribute('autocapitalize', 'off');
+            ta.setAttribute('autocomplete', 'off');
             ta.value = ann.content;
             contentDiv.replaceWith(ta);
 
