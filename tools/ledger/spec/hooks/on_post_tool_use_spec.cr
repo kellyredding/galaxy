@@ -1,5 +1,38 @@
 require "../spec_helper"
 
+# Build a galaxy-artifacts stub script that logs its args
+# to a file. Returns {stub_path, log_path}. The hook calls
+# `galaxy-artifacts save ...` synchronously when a Write
+# classifies as an artifact — this stub captures the exact
+# argument list so specs can assert on it.
+private def build_artifacts_logging_stub : {Path, Path}
+  log_path = SPEC_GALAXY_DIR / "artifacts_invocations.log"
+  stub_path = SPEC_GALAXY_DIR / "bin" / "galaxy-artifacts"
+
+  File.write(stub_path, <<-BASH)
+  #!/bin/bash
+  echo "$@" >> "#{log_path}"
+  exit 0
+  BASH
+  File.chmod(stub_path, 0o755)
+
+  {stub_path, log_path}
+end
+
+# Restore the default no-op artifacts stub so other specs
+# that don't care about this binary keep getting a clean
+# `exit 0`.
+private def restore_artifacts_noop
+  stub_path = SPEC_GALAXY_DIR / "bin" / "galaxy-artifacts"
+  File.write(stub_path, "#!/bin/sh\nexit 0\n")
+  File.chmod(stub_path, 0o755)
+end
+
+private def read_artifacts_log(log_path : Path) : Array(String)
+  return [] of String unless File.exists?(log_path)
+  File.read_lines(log_path).reject(&.empty?)
+end
+
 describe "OnPostToolUse GALAXY_SKIP_HOOKS" do
   it "returns early when GALAXY_SKIP_HOOKS=1 is set" do
     ENV["GALAXY_SKIP_HOOKS"] = "1"
@@ -272,6 +305,109 @@ describe GalaxyLedger::Hooks::OnPostToolUse do
 
         # Clean up
         GalaxyLedger::Database.delete_session(session_id)
+      end
+    end
+
+    describe "with Write tool that classifies as an artifact" do
+      it "passes --skip-event to galaxy-artifacts save" do
+        _, log_path = build_artifacts_logging_stub
+        File.delete(log_path) if File.exists?(log_path)
+
+        # Real file on disk so the hook's File.size check
+        # passes (size > 0 is required for the artifact
+        # save to fire).
+        artifact_path = "/tmp/galaxy-spec-artifact-#{rand(100000)}.csv"
+        File.write(artifact_path, "col1,col2\n1,2\n")
+
+        session_id = "post-tool-test-#{rand(100000)}"
+        ledger_session_id = GalaxyLedger::Database
+          .create_session(session_id)
+
+        input = {
+          "session_id" => session_id,
+          "tool_name"  => "Write",
+          "tool_input" => {
+            "file_path" => artifact_path,
+            "content"   => "col1,col2\n1,2\n",
+          },
+          "tool_response"   => "success",
+          "hook_event_name" => "PostToolUse",
+        }.to_json
+
+        result = run_binary(["on-post-tool-use"], stdin: input)
+        result[:status].should eq(0)
+
+        lines = read_artifacts_log(log_path)
+        lines.size.should eq(1)
+        lines.first.should contain("save")
+        lines.first.should contain("--skip-event")
+        lines.first.should contain("--artifact-type csv")
+        lines.first.should contain(
+          "--source-path #{artifact_path}"
+        )
+
+        # Session file row still recorded as before
+        files = GalaxyLedger::Database.session_files(
+          ledger_session_id
+        )
+        files.size.should eq(1)
+        files.first.is_written.should be_true
+
+        GalaxyLedger::Database.delete_session(session_id)
+      ensure
+        File.delete(artifact_path) if (
+                                        artifact_path && File.exists?(artifact_path)
+                                      )
+        restore_artifacts_noop
+      end
+
+      it "does not invoke galaxy-artifacts for excluded paths" do
+        # Implementation plans live in an excluded source
+        # path — the hook must not classify them, so no
+        # artifacts subprocess fires from the hook even
+        # though the agent's explicit save (per the plan
+        # guideline) still publishes the show event.
+        _, log_path = build_artifacts_logging_stub
+        File.delete(log_path) if File.exists?(log_path)
+
+        # The exclusion regex matches the literal substring
+        # "/implementation-plans/" — keep the unique suffix
+        # on the parent dir so that segment is exact.
+        parent_dir = "/tmp/galaxy-spec-#{rand(100000)}"
+        plan_dir = "#{parent_dir}/implementation-plans"
+        Dir.mkdir_p(plan_dir)
+        plan_path = "#{plan_dir}/2026-04-29_01_test-plan.md"
+        File.write(plan_path, "# Plan\n\nbody\n")
+
+        session_id = "post-tool-test-#{rand(100000)}"
+        GalaxyLedger::Database.create_session(session_id)
+
+        input = {
+          "session_id" => session_id,
+          "tool_name"  => "Write",
+          "tool_input" => {
+            "file_path" => plan_path,
+            "content"   => "# Plan\n\nbody\n",
+          },
+          "tool_response"   => "success",
+          "hook_event_name" => "PostToolUse",
+        }.to_json
+
+        result = run_binary(["on-post-tool-use"], stdin: input)
+        result[:status].should eq(0)
+
+        # The path lives under /implementation-plans/, which
+        # is in SOURCE_PATH_PATTERNS — classification returns
+        # nil and the artifacts binary is never invoked.
+        read_artifacts_log(log_path).should be_empty
+
+        GalaxyLedger::Database.delete_session(session_id)
+      ensure
+        File.delete(plan_path) if (
+                                    plan_path && File.exists?(plan_path)
+                                  )
+        FileUtils.rm_rf(parent_dir) if parent_dir
+        restore_artifacts_noop
       end
     end
 

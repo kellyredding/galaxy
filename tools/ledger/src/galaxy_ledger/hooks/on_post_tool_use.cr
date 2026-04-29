@@ -157,6 +157,15 @@ module GalaxyLedger
                          Digest::SHA256.hexdigest(File.read(file_path))
                        end
 
+        # Hook-classified writes are a side-effect of the
+        # agent's work (commit-message scratch files, /tmp/
+        # exports, etc.), not user-initiated saves. Suppress
+        # the artifact.show socket event so Galaxy.app
+        # doesn't auto-open a reader on the user. The
+        # artifact remains available in the Artifacts tab.
+        # Deliberate saves go through `galaxy-artifacts save`
+        # directly (skills, agents) and continue to fire the
+        # show event.
         cli_args = [
           "save",
           "--ledger-session-id", ledger_session_id.to_s,
@@ -165,6 +174,7 @@ module GalaxyLedger
           "--mime-type", classification.mime_type,
           "--content-hash", content_hash,
           "--file-size", file_size.to_s,
+          "--skip-event",
         ]
 
         Process.run(
