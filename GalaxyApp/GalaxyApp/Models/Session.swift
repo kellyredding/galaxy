@@ -634,7 +634,7 @@ class Session: Identifiable, ObservableObject {
                 ?? NSFont.monospacedSystemFont(ofSize: terminalFontSize, weight: .regular)
         }
         NSLog("Session[%@]: applyFont family=%@ -> fontName=%@ size=%.0f", sessionRef, family, font.fontName, terminalFontSize)
-        terminalView.font = font
+        terminalView.setFont(font)
     }
 
     /// Apply the scrollback buffer size from settings to the terminal view.
@@ -816,14 +816,14 @@ class Session: Identifiable, ObservableObject {
         }
 
         // Send command text first
-        terminalView?.send(txt: command)
+        terminalView?.send(text: command)
 
         // Small delay to ensure text is processed before CR
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.commandSubmitDelay) { [weak self] in
             guard let self = self, self.isRunning, !self.hasExited else { return }
 
             // Send CR (0x0D) - same byte as keyboard Return
-            self.terminalView?.send([0x0D])
+            self.terminalView?.send(bytes: [0x0D])
 
             // Skip verification if caller opted out, or if session
             // was already in a turn when we entered.
@@ -853,7 +853,7 @@ class Session: Identifiable, ObservableObject {
             }
 
             NSLog("Session: Command CR not accepted, resending (%d retries left)", retriesLeft)
-            self.terminalView?.send([0x0D])
+            self.terminalView?.send(bytes: [0x0D])
             self.verifyCommandSubmit(retriesLeft: retriesLeft - 1)
         }
     }

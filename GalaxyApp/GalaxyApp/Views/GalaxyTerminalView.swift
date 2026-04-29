@@ -237,4 +237,28 @@ extension GalaxyTerminalView {
     func changeHistorySize(_ lines: Int) {
         terminal.changeHistorySize(lines)
     }
+
+    /// Set the active terminal font. Wraps the inherited
+    /// `font` property write so the call site reads as a
+    /// Galaxy-named operation rather than a SwiftTerm property
+    /// assignment.
+    func setFont(_ font: NSFont) {
+        self.font = font
+    }
+
+    /// Send text to the PTY using the Galaxy-named `text:`
+    /// label. Wraps SwiftTerm's `send(txt:)` so call sites
+    /// match the convention used on the `TerminalBackend`
+    /// protocol and `pane.send(text:asPaste:)`.
+    func send(text: String) {
+        send(txt: text)
+    }
+
+    /// Send raw bytes to the PTY using the Galaxy-named
+    /// `bytes:` label. Wraps SwiftTerm's unlabeled
+    /// `send(_:)` so call sites read consistently with the
+    /// rest of the IO surface.
+    func send(bytes: [UInt8]) {
+        send(bytes)
+    }
 }
