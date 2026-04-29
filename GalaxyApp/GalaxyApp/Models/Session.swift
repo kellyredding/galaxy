@@ -612,10 +612,10 @@ class Session: Identifiable, ObservableObject {
         let theme = TerminalColorTheme.theme(
             named: SettingsManager.shared.settings.terminalColorThemeName
         )
-        terminalView.nativeForegroundColor = theme.foregroundColor
-        terminalView.nativeBackgroundColor = theme.backgroundColorValue
+        terminalView.setForegroundColor(theme.foregroundColor)
+        terminalView.setBackgroundColor(theme.backgroundColorValue)
         terminalView.installColors(theme.terminalPalette)
-        terminalView.galaxyBoldForegroundColor = theme.boldForegroundColor
+        terminalView.setBoldForegroundColor(theme.boldForegroundColor)
         NSLog("Session[%@]: Applied color theme '%@'", sessionRef, theme.name)
     }
 
@@ -643,7 +643,7 @@ class Session: Identifiable, ObservableObject {
     private func applyScrollbackSize() {
         guard let terminalView = terminalView else { return }
         let lines = SettingsManager.shared.settings.terminalScrollbackLines
-        terminalView.terminal.changeHistorySize(lines)
+        terminalView.changeHistorySize(lines)
         NSLog("Session[%@]: Applied scrollback size %d lines", sessionRef, lines)
     }
 

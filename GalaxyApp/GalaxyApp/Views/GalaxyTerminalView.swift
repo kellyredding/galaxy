@@ -207,4 +207,34 @@ extension GalaxyTerminalView {
         }
         installColors(swiftTermPalette)
     }
+
+    /// Set the default foreground color. Wraps SwiftTerm's
+    /// `nativeForegroundColor` property so callers
+    /// (e.g. `Session.applyColorTheme`) interact through a
+    /// Galaxy-named method instead of a SwiftTerm property.
+    func setForegroundColor(_ color: NSColor) {
+        nativeForegroundColor = color
+    }
+
+    /// Set the default background color. Wraps SwiftTerm's
+    /// `nativeBackgroundColor` property — Galaxy-named method
+    /// surface mirroring `setForegroundColor`.
+    func setBackgroundColor(_ color: NSColor) {
+        nativeBackgroundColor = color
+    }
+
+    /// Set the bold foreground color. Wraps the vendor-patched
+    /// `galaxyBoldForegroundColor` property so callers don't
+    /// reference the patch-specific name directly.
+    func setBoldForegroundColor(_ color: NSColor) {
+        galaxyBoldForegroundColor = color
+    }
+
+    /// Change the scrollback line cap at runtime. Wraps
+    /// SwiftTerm's `terminal.changeHistorySize(_:)` so callers
+    /// don't reach through `.terminal` (a SwiftTerm-typed
+    /// intermediate) to hit the underlying buffer.
+    func changeHistorySize(_ lines: Int) {
+        terminal.changeHistorySize(lines)
+    }
 }
