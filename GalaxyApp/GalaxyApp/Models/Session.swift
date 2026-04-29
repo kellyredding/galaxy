@@ -523,9 +523,6 @@ class Session: Identifiable, ObservableObject {
     let createdAt: Date
     let workingDirectory: String
 
-    // Keep a strong reference to the process handler so it doesn't get deallocated
-    var processHandler: TerminalProcessHandler?
-
     private var cancellables = Set<AnyCancellable>()
     private var terminalCancellables = Set<AnyCancellable>()
 
@@ -675,9 +672,13 @@ class Session: Identifiable, ObservableObject {
     func releaseTerminalView() {
         guard terminalView != nil else { return }
 
-        // Clear callbacks to break any retain cycles
+        // Clear callbacks to break any retain cycles. The
+        // processDelegate is an internal sidecar proxy on
+        // GalaxyTerminalView (set in its init), owned by the
+        // view, so it doesn't need explicit nil-out here —
+        // releasing the view drops the proxy automatically.
         terminalView?.onBell = nil
-        terminalView?.processDelegate = nil
+        terminalView?.onProcessTerminated = nil
 
         // Clear readiness — a future ensureTerminalView() +
         // startProcess() cycle will re-arm via session:ready.
@@ -692,9 +693,6 @@ class Session: Identifiable, ObservableObject {
         // Uses a dedicated set so non-terminal subscriptions in
         // cancellables are unaffected.
         terminalCancellables.removeAll()
-
-        // Clear process handler reference
-        processHandler = nil
 
         NSLog("Session[%@]: Released terminal view", sessionRef)
     }

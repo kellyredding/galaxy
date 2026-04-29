@@ -1,7 +1,6 @@
 import Foundation
 import AppKit
 import SwiftUI
-import SwiftTerm
 import Combine
 
 enum ListNavAction {
@@ -1517,13 +1516,19 @@ class SessionManager: ObservableObject {
         for session: Session,
         terminalView: GalaxyTerminalView
     ) {
-        // Process handler — strong ref on Session so it outlives
-        // the closure captures below.
-        let handler = TerminalProcessHandler(
-            session: session, sessionManager: self
-        )
-        session.processHandler = handler
-        terminalView.processDelegate = handler
+        // Process exit callback — GalaxyTerminalView wires its own
+        // internal sidecar proxy as `processDelegate` in init, and
+        // exposes a Galaxy-typed `onProcessTerminated` hook that
+        // we wire here. Closure captures session weakly because
+        // SessionManager owns the lifecycle; Session's strong
+        // hold on terminalView is what keeps the wiring alive.
+        terminalView.onProcessTerminated = {
+            [weak self, weak session] exitCode in
+            guard let self = self,
+                  let session = session else { return }
+            session.processDidExit(exitCode: exitCode)
+            self.handleSessionExited(sessionId: session.id)
+        }
 
         // Bell — delegates to the debounced pipeline in handleBell.
         terminalView.onBell = { [weak self, weak session] in
@@ -1633,43 +1638,3 @@ class SessionManager: ObservableObject {
 
 }
 
-// Handler for terminal process events
-class TerminalProcessHandler: NSObject, LocalProcessTerminalViewDelegate {
-    weak var session: Session?
-    weak var sessionManager: SessionManager?
-
-    init(session: Session, sessionManager: SessionManager) {
-        self.session = session
-        self.sessionManager = sessionManager
-        NSLog("TerminalProcessHandler: Created for session %@", session.sessionRef)
-    }
-
-    func processTerminated(source: SwiftTerm.TerminalView, exitCode: Int32?) {
-        NSLog("TerminalProcessHandler: processTerminated called! exitCode: %d", exitCode ?? -999)
-
-        guard let session = session else {
-            NSLog("TerminalProcessHandler: session is nil!")
-            return
-        }
-
-        NSLog("TerminalProcessHandler: Notifying session %@ of exit", session.sessionRef)
-        session.processDidExit(exitCode: exitCode ?? -1)
-
-        // Notify SessionManager to update menu state
-        sessionManager?.handleSessionExited(sessionId: session.id)
-
-        NSLog("TerminalProcessHandler: Session marked as stopped, kept in sidebar")
-    }
-
-    func sizeChanged(source: SwiftTerm.LocalProcessTerminalView, newCols: Int, newRows: Int) {
-        // Terminal size changed - handled automatically by SwiftTerm
-    }
-
-    func setTerminalTitle(source: SwiftTerm.LocalProcessTerminalView, title: String) {
-        NSLog("TerminalProcessHandler: setTerminalTitle: %@", title)
-    }
-
-    func hostCurrentDirectoryUpdate (source: SwiftTerm.TerminalView, directory: String?) {
-        NSLog("TerminalProcessHandler: hostCurrentDirectoryUpdate: %@", directory ?? "nil")
-    }
-}
