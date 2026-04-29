@@ -777,7 +777,7 @@ struct ArtifactsView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(ann.content)
-                .chromeFont(size: fontSize.caption2)
+                .chromeFontMono(size: fontSize.caption2)
                 .opacity(0.7)
 
             if let captured = ann.anchorData

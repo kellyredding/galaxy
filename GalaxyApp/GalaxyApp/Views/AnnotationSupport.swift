@@ -45,8 +45,8 @@ let annotationCSS: String = """
         border-radius: 4px;
         background: var(--bg);
         color: var(--fg);
-        font-family: -apple-system, sans-serif;
-        font-size: 13px;
+        font-family: var(--font-family-mono);
+        font-size: 12px;
         line-height: 1.5;
         resize: none;
         overflow: hidden;
@@ -165,6 +165,8 @@ let annotationCSS: String = """
     .annotation-card-content {
         line-height: 1.5;
         color: var(--fg);
+        font-family: var(--font-family-mono);
+        font-size: 12px;
     }
     .annotation-card-content.collapsed {
         max-height: 1.6em;
@@ -193,8 +195,8 @@ let annotationCSS: String = """
         border-radius: 4px;
         background: var(--bg);
         color: var(--fg);
-        font-family: -apple-system, sans-serif;
-        font-size: 13px;
+        font-family: var(--font-family-mono);
+        font-size: 12px;
         line-height: 1.5;
         resize: none;
         overflow: hidden;
@@ -292,6 +294,8 @@ let annotationCSS: String = """
 
 /// CSS variable definitions for annotation theming.
 func annotationCSSVars(isDark: Bool) -> String {
+    let monoFontStack = "\"SF Mono\", \"Menlo\", "
+        + "\"Monaco\", \"Courier New\", monospace"
     if isDark {
         return """
             --bg: #0d1117;
@@ -309,6 +313,7 @@ func annotationCSSVars(isDark: Bool) -> String {
             --annotation-active-block-border: \
         rgba(255, 220, 50, 0.35);
             --delete-color: #ff5252;
+            --font-family-mono: \(monoFontStack);
         """
     } else {
         return """
@@ -326,6 +331,7 @@ func annotationCSSVars(isDark: Bool) -> String {
             --annotation-active-block-border: \
         rgba(212, 160, 23, 0.6);
             --delete-color: #ff3b30;
+            --font-family-mono: \(monoFontStack);
         """
     }
 }

@@ -580,8 +580,8 @@ enum ScrollbackBufferRenderer {
             border-radius: 4px;
             background: var(--bg);
             color: var(--fg);
-            font-family: -apple-system, system-ui, sans-serif;
-            font-size: 13px;
+            font-family: var(--font-family);
+            font-size: 12px;
             line-height: 1.5;
             resize: none;
             overflow: hidden;
@@ -652,7 +652,8 @@ enum ScrollbackBufferRenderer {
         }
         .note-card-content {
             margin-top: 4px;
-            font-size: 13px;
+            font-family: var(--font-family);
+            font-size: 12px;
             line-height: 1.5;
             color: var(--fg);
         }
@@ -798,8 +799,8 @@ enum ScrollbackBufferRenderer {
             border: 1px solid \(inputBorder);
             border-radius: 4px;
             color: var(--fg);
-            font-family: -apple-system, system-ui, sans-serif;
-            font-size: 13px;
+            font-family: var(--font-family);
+            font-size: 12px;
             line-height: 1.4;
             padding: 6px 8px;
             resize: none;
