@@ -23,16 +23,18 @@ module GalaxyLedger
       ".gif"     => ExtInfo.new("image", "image/gif", :high),
       ".webp"    => ExtInfo.new("image", "image/webp", :high),
       ".html"    => ExtInfo.new("html", "text/html", :high),
+      ".htm"     => ExtInfo.new("html", "text/html", :high),
       ".xlsx"    => ExtInfo.new("spreadsheet", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", :high),
       ".xls"     => ExtInfo.new("spreadsheet", "application/vnd.ms-excel", :high),
       # Medium confidence — need path/content heuristics
-      ".md"   => ExtInfo.new("markdown", "text/markdown", :medium),
-      ".json" => ExtInfo.new("data", "application/json", :medium),
-      ".yaml" => ExtInfo.new("data", "text/yaml", :medium),
-      ".yml"  => ExtInfo.new("data", "text/yaml", :medium),
-      ".xml"  => ExtInfo.new("data", "application/xml", :medium),
-      ".txt"  => ExtInfo.new("text", "text/plain", :medium),
-      ".log"  => ExtInfo.new("text", "text/plain", :medium),
+      ".md"       => ExtInfo.new("markdown", "text/markdown", :medium),
+      ".markdown" => ExtInfo.new("markdown", "text/markdown", :medium),
+      ".json"     => ExtInfo.new("data", "application/json", :medium),
+      ".yaml"     => ExtInfo.new("data", "text/yaml", :medium),
+      ".yml"      => ExtInfo.new("data", "text/yaml", :medium),
+      ".xml"      => ExtInfo.new("data", "application/xml", :medium),
+      ".txt"      => ExtInfo.new("text", "text/plain", :medium),
+      ".log"      => ExtInfo.new("text", "text/plain", :medium),
     }
 
     # Source code extensions — never artifacts

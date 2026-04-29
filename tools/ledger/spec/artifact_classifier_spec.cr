@@ -61,6 +61,19 @@ describe GalaxyLedger::ArtifactClassifier do
       result.not_nil!.artifact_type.should eq("html")
     end
 
+    it "classifies .htm as html artifact" do
+      result = GalaxyLedger::ArtifactClassifier.classify("/tmp/legacy.htm")
+      result.should_not be_nil
+      result.not_nil!.artifact_type.should eq("html")
+      result.not_nil!.mime_type.should eq("text/html")
+    end
+
+    it "classifies .htm even in source code paths" do
+      result = GalaxyLedger::ArtifactClassifier.classify("/app/views/index.htm")
+      result.should_not be_nil
+      result.not_nil!.artifact_type.should eq("html")
+    end
+
     it "classifies .xlsx as spreadsheet artifact" do
       result = GalaxyLedger::ArtifactClassifier.classify("/tmp/data.xlsx")
       result.should_not be_nil
@@ -114,6 +127,13 @@ describe GalaxyLedger::ArtifactClassifier do
       result.not_nil!.artifact_type.should eq("markdown")
     end
 
+    it "classifies .markdown in /tmp/ as artifact" do
+      result = GalaxyLedger::ArtifactClassifier.classify("/tmp/analysis-report.markdown")
+      result.should_not be_nil
+      result.not_nil!.artifact_type.should eq("markdown")
+      result.not_nil!.mime_type.should eq("text/markdown")
+    end
+
     it "classifies .md in ~/Desktop/ as artifact" do
       result = GalaxyLedger::ArtifactClassifier.classify("/Users/user/Desktop/summary.md")
       result.should_not be_nil
@@ -155,6 +175,14 @@ describe GalaxyLedger::ArtifactClassifier do
 
     it "rejects .md in /implementation-plans/" do
       GalaxyLedger::ArtifactClassifier.classify("/proj/implementation-plans/plan.md").should be_nil
+    end
+
+    it "rejects .markdown in /implementation-plans/" do
+      GalaxyLedger::ArtifactClassifier.classify("/proj/implementation-plans/plan.markdown").should be_nil
+    end
+
+    it "rejects .markdown in /agent-guidelines/" do
+      GalaxyLedger::ArtifactClassifier.classify("/proj/agent-guidelines/rules.markdown").should be_nil
     end
 
     # Non-artifact filenames — rejected regardless of path
@@ -211,6 +239,10 @@ describe GalaxyLedger::ArtifactClassifier do
     # Medium confidence — no matching heuristics
     it "rejects .md with no artifact path or filename signals" do
       GalaxyLedger::ArtifactClassifier.classify("/home/user/notes.md").should be_nil
+    end
+
+    it "rejects .markdown with no artifact path or filename signals" do
+      GalaxyLedger::ArtifactClassifier.classify("/home/user/notes.markdown").should be_nil
     end
 
     it "rejects .txt with no artifact path or filename signals" do
