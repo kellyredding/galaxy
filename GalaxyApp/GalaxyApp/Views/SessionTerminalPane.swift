@@ -103,9 +103,16 @@ final class SessionTerminalPane: TerminalPane {
         self.galaxyView = galaxyView
     }
 
-    func snapshotBuffer() -> Buffer? {
-        galaxyView.terminal.snapshotBuffer(
+    func captureScrollbackSnapshot() -> ScrollbackSnapshot? {
+        // SwiftTerm's `snapshotBuffer(_:)` is non-optional —
+        // see `SwiftTermBackend.captureScrollbackSnapshot` for
+        // the same shape and rationale.
+        let buffer = galaxyView.terminal.snapshotBuffer(
             galaxyView.terminal.buffer
+        )
+        return SwiftTermScrollbackSnapshot(
+            buffer: buffer,
+            terminal: galaxyView.terminal
         )
     }
 

@@ -133,8 +133,8 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
         }
     }
 
-    func snapshotBuffer() -> Buffer? {
-        backend.snapshotBuffer()
+    func captureScrollbackSnapshot() -> ScrollbackSnapshot? {
+        backend.captureScrollbackSnapshot()
     }
 
     func send(text: String, asPaste: Bool) {

@@ -211,9 +211,12 @@ class TerminalHostView: NSView {
     /// createScrollback(), consumed in performScrollbackTeardown().
     private var scrollbackDurationId: String?
 
-    /// Retained buffer snapshot for settings-change rebuilds while scrollback
-    /// is active. Nil'd on dismiss to release the deep-copy buffer memory.
-    private var currentSnapshot: Buffer?
+    /// Retained scrollback snapshot for settings-change rebuilds while the
+    /// overlay is active. The snapshot freezes the buffer + renderer
+    /// inputs, so theme/font changes can call `snapshot.render(...)` again
+    /// without re-snapshotting the live (now-moved-on) terminal. Nil'd on
+    /// dismiss to release the deep-copy buffer memory.
+    private var currentSnapshot: ScrollbackSnapshot?
 
     /// True when the scrollback overlay is visible.
     var isScrollbackActive: Bool { scrollbackOverlay != nil }
@@ -889,13 +892,14 @@ class TerminalHostView: NSView {
 
     /// Create the scrollback overlay with an HTML rendering of the live terminal's buffer.
     private func createScrollback(initialScrollLine: Int? = nil) {
-        // HTML rendering still needs the SwiftTerm Terminal handle
-        // for grapheme lookup (passed to the renderer). The font,
-        // cell metrics, and bounds now come from the pane protocol;
-        // the renderer detox will retire the remaining lpView read
-        // in a later slice.
-        guard let lpView = self.localProcessView,
-              let snapshot = pane.snapshotBuffer() else { return }
+        // The pane produces an opaque `ScrollbackSnapshot` —
+        // chrome no longer reaches into SwiftTerm types to
+        // render. The snapshot itself carries the renderer
+        // call, so re-rendering on theme/font change is just
+        // another `snapshot.render(...)` invocation.
+        guard let snapshot = pane.captureScrollbackSnapshot() else {
+            return
+        }
         self.currentSnapshot = snapshot
 
         // Use provided scroll position, or default to bottom of buffer
@@ -909,14 +913,11 @@ class TerminalHostView: NSView {
         )
 
         // Render buffer to HTML
-        let html = ScrollbackBufferRenderer.render(
-            buffer: snapshot,
-            terminal: lpView.terminal,
+        let html = snapshot.render(
             theme: theme,
             fontFamily: font.fontName,
             fontSize: font.pointSize,
-            cellHeight: cellHeight,
-            cols: snapshot.cols
+            cellHeight: cellHeight
         )
 
         // Create web view with theme background for rubber-band overscroll
@@ -1463,12 +1464,6 @@ class TerminalHostView: NSView {
     private func applySettingsToScrollback() {
         guard let overlay = scrollbackOverlay else { return }
         guard let snapshot = currentSnapshot else { return }
-        // Font size comes from the pane (per-pane), and the
-        // Terminal object from the underlying SwiftTerm view —
-        // both panes provide these today.
-        guard let lpView = self.localProcessView else {
-            return
-        }
 
         // Save current scroll position before rebuilding
         overlay.scrollbackView.webView.evaluateJavaScript(
@@ -1498,14 +1493,11 @@ class TerminalHostView: NSView {
                     + CTFontGetLeading(ctFont)
             )
 
-            let html = ScrollbackBufferRenderer.render(
-                buffer: snapshot,
-                terminal: lpView.terminal,
+            let html = snapshot.render(
                 theme: theme,
                 fontFamily: font.fontName,
                 fontSize: size,
-                cellHeight: cellHeight,
-                cols: snapshot.cols
+                cellHeight: cellHeight
             )
 
             overlay.scrollbackView.reload(html: html, scrollToLine: scrollLine)

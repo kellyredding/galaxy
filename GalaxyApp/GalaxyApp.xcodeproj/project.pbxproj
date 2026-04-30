@@ -42,6 +42,7 @@
 		57F83F8FAFBFC9B625678AE5 /* PreferencesWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E9CD7B5767024AE0C85E433 /* PreferencesWindowController.swift */; };
 		59C4461354F92AEF376C88AA /* DragHandleNSView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43C2EE51F5ED8F5A44D27580 /* DragHandleNSView.swift */; };
 		5BE31FF52EF968E62B31F97C /* CircuitBreaker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3463B095E6622E31AF317063 /* CircuitBreaker.swift */; };
+		5C5B5A595857565554535251 /* ScrollbackSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A2A3A4A5A6A7A8A9AAABAC /* ScrollbackSnapshot.swift */; };
 		6210C70AA62A5D85BC8517FD /* TerminalPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11E12DAAF38722749AF0BEAD /* TerminalPane.swift */; };
 		64AB450ECD5FB1FF3D5E16EB /* EnrichmentService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260E4993B113CBAABADA519B /* EnrichmentService.swift */; };
 		69C769B61E2BA6F9BD8DA6FB /* MainWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEB9F0C617C86CE1FDD05FF3 /* MainWindowController.swift */; };
@@ -120,6 +121,7 @@
 		0663E09051C220DBD5E80CD2 /* EventCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventCoordinator.swift; sourceTree = "<group>"; };
 		0A75DD66617BDBF94F9175C9 /* CopyButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopyButton.swift; sourceTree = "<group>"; };
 		0B33E9ACBBBDE22688F8D808 /* ExpandedSessionSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpandedSessionSidebar.swift; sourceTree = "<group>"; };
+		A1A2A3A4A5A6A7A8A9AAABAC /* ScrollbackSnapshot.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollbackSnapshot.swift; sourceTree = "<group>"; };
 		11E12DAAF38722749AF0BEAD /* TerminalPane.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TerminalPane.swift; sourceTree = "<group>"; };
 		1222FD00CE1FBF7DC99BD683 /* EventDebouncer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventDebouncer.swift; sourceTree = "<group>"; };
 		1260117598D2E8A70DFB8B9F /* ShellPaneView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ShellPaneView.swift; sourceTree = "<group>"; };
@@ -278,6 +280,7 @@
 				899A0FEF2AD224B0D5701B42 /* WindowStatePersistence.swift */,
 				11E12DAAF38722749AF0BEAD /* TerminalPane.swift */,
 				E4CBBF9FDC8A51EF41F5EC65 /* TerminalBackend.swift */,
+				A1A2A3A4A5A6A7A8A9AAABAC /* ScrollbackSnapshot.swift */,
 				A5505134EB618051E5D135B2 /* ShellLauncher.swift */,
 			);
 			path = Models;
@@ -571,6 +574,7 @@
 				830B36A8A4CD211AC3DF03F3 /* main.swift in Sources */,
 				6210C70AA62A5D85BC8517FD /* TerminalPane.swift in Sources */,
 				409B8141601EFECEBD3ACCD9 /* TerminalBackend.swift in Sources */,
+				5C5B5A595857565554535251 /* ScrollbackSnapshot.swift in Sources */,
 				0A5587B002764BC4F0895665 /* ShellLauncher.swift in Sources */,
 				FDC71DF5F06D74418078C4C9 /* SwiftTermBackend.swift in Sources */,
 				469F6BF5AEB79E8BA44202D5 /* SessionTerminalPane.swift in Sources */,

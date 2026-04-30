@@ -9,10 +9,10 @@ import SwiftTerm
 ///
 /// The surface is intentionally minimal — just what the
 /// Shell pane needs (later phases). Buffer inspection calls
-/// beyond `snapshotBuffer()` (like `getLine`, mouse-mode
-/// queries, etc.) are deliberately not on the protocol;
-/// adding them would bloat the libghostty swap surface.
-/// Extend only when a concrete use appears.
+/// beyond `captureScrollbackSnapshot()` (like `getLine`,
+/// mouse-mode queries, etc.) are deliberately not on the
+/// protocol; adding them would bloat the libghostty swap
+/// surface. Extend only when a concrete use appears.
 protocol TerminalBackend: AnyObject {
     /// The terminal surface as an NSView.
     var view: NSView { get }
@@ -72,9 +72,13 @@ protocol TerminalBackend: AnyObject {
     /// it doesn't subscribe.
     func applyCursor(style: ShellCursorStyle, blink: Bool)
 
-    /// Snapshot the current buffer for scrollback
-    /// rendering. Returns nil if no buffer is available.
-    func snapshotBuffer() -> Buffer?
+    /// Capture the current scrollback buffer. Returns an
+    /// opaque `ScrollbackSnapshot` that freezes the buffer +
+    /// terminal state at this moment, suitable for rendering
+    /// now and re-rendering later (e.g. on theme/font change
+    /// while the overlay is open). Returns nil if no buffer
+    /// is available (pane teardown in progress, etc.).
+    func captureScrollbackSnapshot() -> ScrollbackSnapshot?
 
     /// Make the terminal surface first responder.
     func focus()

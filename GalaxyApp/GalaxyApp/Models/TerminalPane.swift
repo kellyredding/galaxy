@@ -20,10 +20,13 @@ protocol TerminalPane: AnyObject {
     /// The inner NSView that renders the terminal.
     var view: NSView { get }
 
-    /// Snapshot the current buffer for scrollback rendering.
-    /// Returns nil if not available (pane teardown in
-    /// progress, no active buffer, etc.).
-    func snapshotBuffer() -> Buffer?
+    /// Capture the current scrollback buffer for the overlay.
+    /// Returns an opaque `ScrollbackSnapshot` that the chrome
+    /// can render immediately and again on theme/font changes
+    /// to reflow the same captured state. Returns nil if not
+    /// available (pane teardown in progress, no active
+    /// buffer, etc.).
+    func captureScrollbackSnapshot() -> ScrollbackSnapshot?
 
     /// Send typed text. When `asPaste` is true and the terminal
     /// has bracketed-paste-mode enabled, the pane wraps the text

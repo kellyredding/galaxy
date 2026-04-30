@@ -319,9 +319,18 @@ final class SwiftTermBackend: NSObject, TerminalBackend,
         terminalView.terminal.setCursorStyle(mapped)
     }
 
-    func snapshotBuffer() -> Buffer? {
-        terminalView.terminal.snapshotBuffer(
+    func captureScrollbackSnapshot() -> ScrollbackSnapshot? {
+        // SwiftTerm's `snapshotBuffer(_:)` is non-optional —
+        // it deep-copies whatever buffer is handed in. The
+        // protocol return type stays optional so future
+        // backends (or pane-teardown races) can still bow
+        // out cleanly.
+        let buffer = terminalView.terminal.snapshotBuffer(
             terminalView.terminal.buffer
+        )
+        return SwiftTermScrollbackSnapshot(
+            buffer: buffer,
+            terminal: terminalView.terminal
         )
     }
 
@@ -372,5 +381,48 @@ final class SwiftTermBackend: NSObject, TerminalBackend,
         directory: String?
     ) {
         // No-op — Shell pane doesn't track cwd.
+    }
+}
+
+/// `ScrollbackSnapshot` impl over a SwiftTerm `Buffer +
+/// Terminal` pair. Captures both at construction so the
+/// underlying state is frozen — even if the live terminal
+/// moves on, the snapshot keeps rendering the same captured
+/// buffer.
+///
+/// `Terminal` is captured because the renderer needs
+/// `terminal.getCharacter(for:)` for extended grapheme
+/// lookup (CharData.code values >= maxRune). The terminal
+/// reference is kept private so chrome consumers can't reach
+/// back into SwiftTerm internals through it.
+final class SwiftTermScrollbackSnapshot: ScrollbackSnapshot {
+    private let buffer: Buffer
+    private let terminal: Terminal
+
+    let cols: Int
+    let yDisp: Int
+
+    init(buffer: Buffer, terminal: Terminal) {
+        self.buffer = buffer
+        self.terminal = terminal
+        self.cols = buffer.cols
+        self.yDisp = buffer.yDisp
+    }
+
+    func render(
+        theme: TerminalColorTheme,
+        fontFamily: String,
+        fontSize: CGFloat,
+        cellHeight: CGFloat
+    ) -> String {
+        ScrollbackBufferRenderer.render(
+            buffer: buffer,
+            terminal: terminal,
+            theme: theme,
+            fontFamily: fontFamily,
+            fontSize: fontSize,
+            cellHeight: cellHeight,
+            cols: cols
+        )
     }
 }
