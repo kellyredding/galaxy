@@ -1,5 +1,4 @@
 import AppKit
-import SwiftTerm
 
 /// Abstraction over the PTY + terminal rendering library.
 /// Implementations wrap a concrete library (SwiftTerm via

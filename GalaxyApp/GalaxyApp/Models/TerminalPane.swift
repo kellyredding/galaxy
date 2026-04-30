@@ -1,6 +1,5 @@
 import AppKit
 import Combine
-import SwiftTerm
 
 /// Contract for any terminal surface hostable by
 /// `TerminalHostView`. Abstracts the Session pane (Claude) vs

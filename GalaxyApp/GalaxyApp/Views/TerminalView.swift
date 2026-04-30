@@ -1,5 +1,4 @@
 import SwiftUI
-import SwiftTerm
 import AppKit
 import Combine
 
@@ -148,18 +147,6 @@ class TerminalHostView: NSView {
             return sp.session
         }
         return nil
-    }
-
-    /// Shared SwiftTerm accessor. Both panes ultimately wrap a
-    /// `LocalProcessTerminalView` — the Session pane via
-    /// `GalaxyTerminalView` (a subclass), the Shell pane via
-    /// `SwiftTermBackend`'s internal subclass. Scrollback rendering,
-    /// `selection`, `cellDimension`, `bracketedPasteMode`, and the
-    /// Terminal object all live here. Once a non-SwiftTerm backend
-    /// (e.g., libghostty) arrives, this accessor and its users need
-    /// an alternative.
-    private var localProcessView: LocalProcessTerminalView? {
-        pane.view as? LocalProcessTerminalView
     }
 
     // Track if this is the active session - controls drag-drop registration

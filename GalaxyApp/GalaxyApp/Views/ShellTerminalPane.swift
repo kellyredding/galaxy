@@ -1,6 +1,5 @@
 import AppKit
 import Combine
-import SwiftTerm
 
 /// Pair wrapper over (style, blink) so Combine can dedupe
 /// changes as a single unit. Without this, two independent
