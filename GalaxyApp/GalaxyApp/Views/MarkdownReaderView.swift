@@ -12,7 +12,7 @@ import Markdown
 /// to work without system beep noise — dictation itself operates
 /// through NSTextInputClient, not keyDown events.
 class SilentFunctionKeyWebView: WKWebView {
-    /// Short-circuit key view traversal — same fix as GalaxyTerminalView
+    /// Short-circuit key view traversal — same fix as GalaxySwiftTermView
     /// and InlineEditField. When makeFirstResponder targets this WKWebView
     /// (e.g. restoreWebViewFocus on session/tab switch), AppKit walks the
     /// key view chain across the full ZStack view tree.

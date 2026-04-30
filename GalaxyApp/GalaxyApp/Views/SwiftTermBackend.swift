@@ -1,112 +1,20 @@
 import AppKit
 import SwiftTerm
 
-/// Internal `LocalProcessTerminalView` subclass that adds
-/// a scroll-wheel interception hook and silences the
-/// default bell. Kept file-private since the only reason
-/// it exists is to let `SwiftTermBackend` satisfy
-/// `TerminalBackend.onScrollUp` and to stop
-/// SwiftTerm's default `bell(source:)` from firing an
-/// NSBeep every time the shell rings (e.g., backspace at
-/// line start).
-final class ScrollInterceptingTerminalView: LocalProcessTerminalView {
-    /// Disable custom block glyph rendering on construction so
-    /// block elements and box drawing fall through to CoreText
-    /// font rendering, matching Terminal.app and
-    /// `GalaxyTerminalView`'s behavior. Baked into init so
-    /// `SwiftTermBackend.init` doesn't need to remember to set it.
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        self.customBlockGlyphs = false
-    }
-
-    required init?(coder: NSCoder) {
-        super.init(coder: coder)
-        self.customBlockGlyphs = false
-    }
-
-    /// Called on scroll-wheel-up. Return `true` to consume
-    /// the event, `false` to pass through to `super`.
-    var onScrollUp: ((NSEvent) -> Bool)?
-
-    /// Called after a scroll motion that moved `yDisp`
-    /// downward (wheel, page, scroller knob — every path
-    /// funnels through `scrollTo`). Set by
-    /// `SwiftTermBackend` so the pane host can snap to the
-    /// bottom when the user lands within a couple of rows,
-    /// fixing the fractional-accumulator slop that
-    /// otherwise leaves `userScrolling` stuck true.
-    var onScrollDown: (() -> Void)?
-
-    /// Called when SwiftTerm parses a BEL byte. Set by
-    /// `SwiftTermBackend` (via a computed forward) so the
-    /// owning pane can apply shell-specific settings
-    /// (audible toggle + sound + local visual flash).
-    /// Deliberately skips `super.bell(source:)` so the
-    /// default NSBeep never fires — the pane's handler is
-    /// the sole source of truth for shell-bell side
-    /// effects.
-    var onBell: (() -> Void)?
-
-    override func scrollWheel(with event: NSEvent) {
-        if event.deltaY > 0,
-           let callback = onScrollUp,
-           callback(event) {
-            return
-        }
-        super.scrollWheel(with: event)
-    }
-
-    /// Single funnel for all viewport-positioning paths —
-    /// override here to detect downward motion regardless
-    /// of input source and notify the pane host.
-    override func scrollTo(
-        row: Int, notifyAccessibility: Bool = true
-    ) {
-        let before = terminal.displayBuffer.yDisp
-        super.scrollTo(
-            row: row, notifyAccessibility: notifyAccessibility
-        )
-        if terminal.displayBuffer.yDisp > before {
-            onScrollDown?()
-        }
-    }
-
-    /// Snap-to-bottom threshold check used by
-    /// `SwiftTermBackend.snapViewportToBottomIfWithin`.
-    /// See `GalaxyTerminalView.snapViewportToBottomIfWithin`
-    /// for the full contract — same shape, kept in sync.
-    @discardableResult
-    func snapViewportToBottomIfWithin(rows: Int) -> Bool {
-        let buf = terminal.displayBuffer
-        guard !selection.active else { return false }
-        guard buf.yDisp < buf.yBase else { return false }
-        guard buf.yDisp >= buf.yBase - rows else { return false }
-        terminal.userScrolling = false
-        buf.yDisp = buf.yBase
-        terminal.refresh(startRow: 0, endRow: terminal.rows)
-        setNeedsDisplay(bounds)
-        return true
-    }
-
-    override func bell(source: SwiftTerm.Terminal) {
-        onBell?()
-    }
-}
-
-/// `TerminalBackend` implementation using SwiftTerm's
-/// `LocalProcessTerminalView` directly (no Galaxy
-/// subclassing, no Claude-specific content monitor or turn
-/// state).
+/// `TerminalBackend` implementation backed by Galaxy's
+/// `GalaxySwiftTermView` — a `LocalProcessTerminalView`
+/// subclass that intercepts scroll events, suppresses the
+/// default bell NSBeep, and exposes focus-event quenching.
 ///
-/// Used by the Shell pane. The Session pane still touches
-/// SwiftTerm through `GalaxyTerminalView` directly — its
-/// migration to this backend is deferred until the
-/// libghostty swap actually happens.
+/// The Shell pane reaches the SwiftTerm engine through this
+/// backend. The Session pane currently constructs
+/// `GalaxySwiftTermView` directly via `Session.swift`; that
+/// path will migrate to a `TerminalBackend` reference in a
+/// follow-up slice of the terminal-backend unification work.
 final class SwiftTermBackend: NSObject, TerminalBackend,
     LocalProcessTerminalViewDelegate {
 
-    private let terminalView: ScrollInterceptingTerminalView
+    private let terminalView: GalaxySwiftTermView
 
     var view: NSView { terminalView }
     var onProcessTerminated: ((Int32) -> Void)?
@@ -180,9 +88,16 @@ final class SwiftTermBackend: NSObject, TerminalBackend,
     }
 
     init(frame: NSRect) {
-        self.terminalView =
-            ScrollInterceptingTerminalView(frame: frame)
+        self.terminalView = GalaxySwiftTermView(frame: frame)
         super.init()
+        // GalaxySwiftTermView's init installs its internal
+        // DelegateProxy as processDelegate (so a directly-
+        // owned view — the Session pane's path — can route
+        // process-exit through the subclass's stored
+        // callback). The Shell pane owns its view through
+        // the backend, so we override that assignment here
+        // and conform to LPTV directly. Both paths coexist
+        // until the Session pane migrates onto a backend.
         self.terminalView.processDelegate = self
     }
 

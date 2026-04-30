@@ -97,7 +97,7 @@ extension FocusableTerminalView: Equatable {
     /// (`SessionTerminalPane` or `ShellTerminalPane`), so
     /// `as AnyObject` reference equality is well-defined.
     /// `SessionPaneAdapterHolder` caches the adapter per
-    /// `GalaxyTerminalView`, so the reference flips exactly
+    /// `GalaxySwiftTermView`, so the reference flips exactly
     /// when stop/resume creates a new terminal view — i.e.,
     /// when we *want* a re-update.
     static func == (
@@ -111,7 +111,7 @@ extension FocusableTerminalView: Equatable {
 
 // Container that properly handles focus, drag-drop, and passes
 // events to a TerminalPane conformer. The pane abstracts away
-// whether the inner terminal is a GalaxyTerminalView (Session
+// whether the inner terminal is a GalaxySwiftTermView (Session
 // pane) or a plain LocalProcessTerminalView via SwiftTermBackend
 // (Shell pane, Phase 2).
 class TerminalHostView: NSView {
@@ -130,7 +130,7 @@ class TerminalHostView: NSView {
     /// populate them. Paths that hit these are Session-specific
     /// (Claude-side observers, caret hide) and stay that way.
     var session: Session? { sessionPane?.session }
-    private var galaxyView: GalaxyTerminalView? {
+    private var galaxyView: GalaxySwiftTermView? {
         sessionPane?.galaxyView
     }
 

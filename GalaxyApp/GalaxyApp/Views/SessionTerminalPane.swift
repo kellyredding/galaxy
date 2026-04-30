@@ -2,13 +2,13 @@ import AppKit
 import Combine
 
 /// `TerminalPane` conformer that wraps an existing
-/// `GalaxyTerminalView` + `Session`. Used for the top
+/// `GalaxySwiftTermView` + `Session`. Used for the top
 /// (Session) pane in the Terminal tab.
 ///
 /// Thin adapter — zero behavior change. All Claude-specific
 /// behavior (busy monitor, turn state, ledger enrichment,
 /// resume-marker polling, command verification) stays on
-/// `Session` and `GalaxyTerminalView`. This type just
+/// `Session` and `GalaxySwiftTermView`. This type just
 /// exposes them via the `TerminalPane` protocol so
 /// `TerminalHostView` can be generalized in Phase 1c.
 ///
@@ -16,7 +16,7 @@ import Combine
 /// constructs a `SessionTerminalPane` yet.
 final class SessionTerminalPane: TerminalPane {
     weak var session: Session?
-    let galaxyView: GalaxyTerminalView
+    let galaxyView: GalaxySwiftTermView
 
     var view: NSView { galaxyView }
     var paneKind: String { "session" }
@@ -33,7 +33,7 @@ final class SessionTerminalPane: TerminalPane {
     var onBell: (() -> Void)?
 
     /// Scroll-up interception forwards to
-    /// `GalaxyTerminalView.onScrollUp`, which fires from its
+    /// `GalaxySwiftTermView.onScrollUp`, which fires from its
     /// `scrollWheel` override.
     var onScrollUp: ((NSEvent) -> Bool)? {
         get { galaxyView.onScrollUp }
@@ -41,7 +41,7 @@ final class SessionTerminalPane: TerminalPane {
     }
 
     /// Scroll-down notification forwards to
-    /// `GalaxyTerminalView.onScrollDown`, which fires from
+    /// `GalaxySwiftTermView.onScrollDown`, which fires from
     /// its `scrollTo` override after any motion that moved
     /// `yDisp` downward. Same delegation pattern as
     /// `onScrollUp`.
@@ -90,7 +90,7 @@ final class SessionTerminalPane: TerminalPane {
             ?? Empty().eraseToAnyPublisher()
     }
 
-    init(session: Session, galaxyView: GalaxyTerminalView) {
+    init(session: Session, galaxyView: GalaxySwiftTermView) {
         self.session = session
         self.galaxyView = galaxyView
     }

@@ -653,7 +653,7 @@ class SessionManager: ObservableObject {
         // Callbacks are re-wired automatically by the subscription
         // set up in observeTerminalViewLifecycle when this session
         // was originally registered: ensureTerminalView() above
-        // assigned a fresh GalaxyTerminalView to session.terminalView,
+        // assigned a fresh GalaxySwiftTermView to session.terminalView,
         // which fired the subscription, which called
         // wireSessionCallbacks on the new view.
 
@@ -1514,9 +1514,9 @@ class SessionManager: ObservableObject {
     /// for parity with pre-refactor behavior.
     private func wireSessionCallbacks(
         for session: Session,
-        terminalView: GalaxyTerminalView
+        terminalView: GalaxySwiftTermView
     ) {
-        // Process exit callback — GalaxyTerminalView wires its own
+        // Process exit callback — GalaxySwiftTermView wires its own
         // internal sidecar proxy as `processDelegate` in init, and
         // exposes a Galaxy-typed `onProcessTerminated` hook that
         // we wire here. Closure captures session weakly because

@@ -70,7 +70,7 @@ class ScrollbackWebView: NSView {
     /// Weak proxy that breaks the WKUserContentController → self retain cycle.
     private let messageProxy: WeakMessageProxy
 
-    /// Short-circuit key view traversal — same fix as GalaxyTerminalView.
+    /// Short-circuit key view traversal — same fix as GalaxySwiftTermView.
     /// Without this, session switching while scrollback is first responder
     /// causes AppKit to walk thousands of SwiftUI-managed views (beach ball).
     override var previousValidKeyView: NSView? { nil }

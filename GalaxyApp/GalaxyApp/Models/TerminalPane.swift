@@ -7,7 +7,7 @@ import Combine
 /// scrollback, drag-drop, focus, and exit handling.
 ///
 /// Conformers (introduced across later phases):
-/// - `SessionTerminalPane` — wraps `GalaxyTerminalView` + `Session`
+/// - `SessionTerminalPane` — wraps `GalaxySwiftTermView` + `Session`
 /// - `ShellTerminalPane` — wraps `LocalProcessTerminalView` via
 ///   a `TerminalBackend`, no Claude coupling
 ///

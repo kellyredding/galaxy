@@ -514,12 +514,12 @@ class Session: Identifiable, ObservableObject {
         }
     }
 
-    /// The GalaxyTerminalView backing this session. Published so
+    /// The GalaxySwiftTermView backing this session. Published so
     /// SessionManager can observe lifecycle transitions (creation in
     /// `init`/`ensureTerminalView`, teardown in `releaseTerminalView`)
     /// and re-wire its callbacks without duplicating setup code at
     /// every call site. See `SessionManager.observeTerminalViewLifecycle`.
-    @Published private(set) var terminalView: GalaxyTerminalView?
+    @Published private(set) var terminalView: GalaxySwiftTermView?
     let createdAt: Date
     let workingDirectory: String
 
@@ -555,7 +555,7 @@ class Session: Identifiable, ObservableObject {
         self.terminalFontSize = SettingsManager.shared.settings.defaultTerminalFontSize
 
         // Create terminal view with default configuration
-        self.terminalView = GalaxyTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        self.terminalView = GalaxySwiftTermView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
 
         configureTerminal()
         applyScrollbackSize()
@@ -652,7 +652,7 @@ class Session: Identifiable, ObservableObject {
     /// Runs full configuration (theme, font, scrollback, observers).
     func ensureTerminalView() {
         guard terminalView == nil else { return }
-        terminalView = GalaxyTerminalView(
+        terminalView = GalaxySwiftTermView(
             frame: NSRect(x: 0, y: 0, width: 800, height: 600)
         )
         configureTerminal()
@@ -674,7 +674,7 @@ class Session: Identifiable, ObservableObject {
 
         // Clear callbacks to break any retain cycles. The
         // processDelegate is an internal sidecar proxy on
-        // GalaxyTerminalView (set in its init), owned by the
+        // GalaxySwiftTermView (set in its init), owned by the
         // view, so it doesn't need explicit nil-out here —
         // releasing the view drops the proxy automatically.
         terminalView?.onBell = nil

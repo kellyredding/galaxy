@@ -514,7 +514,7 @@ extension TabUnreadIndicator {
 /// Constructs a SessionTerminalPane adapter for the running
 /// branch, cached via a @StateObject so its identity is stable
 /// across SwiftUI re-renders and only rebuilt when the underlying
-/// GalaxyTerminalView changes (e.g., after a stop+resume cycle).
+/// GalaxySwiftTermView changes (e.g., after a stop+resume cycle).
 struct SessionPaneView: View {
     @ObservedObject var session: Session
     let isActive: Bool
@@ -545,7 +545,7 @@ struct SessionPaneView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onChange(of: session.hasExited) {
             // Release the cached adapter (and its strong reference
-            // to the old GalaxyTerminalView) when the session
+            // to the old GalaxySwiftTermView) when the session
             // stops. Without this, the ~32MB scrollback buffer
             // stays resident until the user either resumes the
             // session (which replaces the cached adapter) or
@@ -562,8 +562,8 @@ struct SessionPaneView: View {
 
 /// Caches a SessionTerminalPane adapter per SessionPaneView
 /// lifetime, returning the same instance for the same underlying
-/// GalaxyTerminalView. On view change (e.g., stop+resume creates
-/// a fresh GalaxyTerminalView), a new adapter is constructed.
+/// GalaxySwiftTermView. On view change (e.g., stop+resume creates
+/// a fresh GalaxySwiftTermView), a new adapter is constructed.
 ///
 /// The cached adapter is stored in a non-@Published property so
 /// mutating it during body evaluation doesn't re-trigger SwiftUI
@@ -573,7 +573,7 @@ private final class SessionPaneAdapterHolder: ObservableObject {
 
     func adapter(
         for session: Session,
-        view: GalaxyTerminalView
+        view: GalaxySwiftTermView
     ) -> SessionTerminalPane {
         if let cached, cached.galaxyView === view {
             return cached
@@ -585,7 +585,7 @@ private final class SessionPaneAdapterHolder: ObservableObject {
         return fresh
     }
 
-    /// Drop the cached adapter so the GalaxyTerminalView it holds
+    /// Drop the cached adapter so the GalaxySwiftTermView it holds
     /// strongly can be released. Called when the session stops so
     /// the scrollback buffer is freed at stop time rather than at
     /// resume or dismiss time.

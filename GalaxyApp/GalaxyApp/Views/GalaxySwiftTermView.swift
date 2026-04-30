@@ -4,7 +4,7 @@ import SwiftTerm
 /// Custom terminal view that extends LocalProcessTerminalView.
 /// This allows us to intercept terminal events (like bell) without
 /// replacing the terminalDelegate, which breaks SwiftTerm's internal behavior.
-class GalaxyTerminalView: LocalProcessTerminalView {
+class GalaxySwiftTermView: LocalProcessTerminalView {
     /// Disable custom block glyph rendering on construction so
     /// block elements (U+2580–U+259F) and box drawing
     /// (U+2500–U+257F) fall through to CoreText font rendering,
@@ -39,7 +39,7 @@ class GalaxyTerminalView: LocalProcessTerminalView {
     /// subclass can't directly conform to the protocol and
     /// implement them without override conflicts. A separate
     /// proxy object sidesteps this entirely and keeps the
-    /// SwiftTerm-typed delegate signatures off `GalaxyTerminalView`'s
+    /// SwiftTerm-typed delegate signatures off `GalaxySwiftTermView`'s
     /// interface.
     private let delegateProxy = DelegateProxy()
 
@@ -155,14 +155,14 @@ class GalaxyTerminalView: LocalProcessTerminalView {
     }
 
     /// Routes SwiftTerm's `LocalProcessTerminalViewDelegate`
-    /// callbacks into the owning `GalaxyTerminalView`'s
+    /// callbacks into the owning `GalaxySwiftTermView`'s
     /// Galaxy-typed event hooks. Lives as a sidecar object
     /// because the SwiftTerm class already implements (non-open)
     /// stubs of these methods, blocking direct conformance from
     /// a subclass.
     fileprivate final class DelegateProxy: NSObject,
         LocalProcessTerminalViewDelegate {
-        weak var owner: GalaxyTerminalView?
+        weak var owner: GalaxySwiftTermView?
 
         func processTerminated(
             source: SwiftTerm.TerminalView, exitCode: Int32?
@@ -193,7 +193,7 @@ class GalaxyTerminalView: LocalProcessTerminalView {
     }
 }
 
-extension GalaxyTerminalView {
+extension GalaxySwiftTermView {
     /// Install a 16-color ANSI palette using Galaxy's backend-
     /// agnostic palette type. Wraps SwiftTerm's
     /// `installColors([SwiftTerm.Color])` with conversion at the
