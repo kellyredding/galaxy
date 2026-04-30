@@ -208,6 +208,26 @@ final class SwiftTermBackend: NSObject, TerminalBackend,
         terminalView.nativeBackgroundColor = color
     }
 
+    func setBoldForegroundColor(_ color: NSColor) {
+        terminalView.galaxyBoldForegroundColor = color
+    }
+
+    func applySettings(_ settings: AppSettings) {
+        // Stub for protocol conformance — a follow-up slice
+        // collapses the Session-side per-property appliers
+        // and the Shell pane's per-property settings
+        // subscriptions into a single call here.
+    }
+
+    var suppressFocusEvents: Bool {
+        get { terminalView.suppressFocusEvents }
+        set { terminalView.suppressFocusEvents = newValue }
+    }
+
+    func feed(text: String) {
+        terminalView.feed(text: text)
+    }
+
     func setFont(_ font: NSFont) {
         terminalView.font = font
     }

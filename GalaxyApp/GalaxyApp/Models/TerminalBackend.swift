@@ -59,6 +59,42 @@ protocol TerminalBackend: AnyObject {
     func setForegroundColor(_ color: NSColor)
     func setBackgroundColor(_ color: NSColor)
 
+    /// Set the bold-rendering foreground color (the effective
+    /// foreground for cells with the SGR bold attribute set).
+    /// Wraps the vendor-patched `galaxyBoldForegroundColor` on
+    /// the SwiftTerm side; a future libghostty backend exposes
+    /// a config knob with equivalent semantics.
+    func setBoldForegroundColor(_ color: NSColor)
+
+    /// Apply the full Galaxy settings model to the backend.
+    /// Translates `AppSettings` to the backend's native config
+    /// shape — for SwiftTerm that's per-property writes (font,
+    /// palette, scrollback, etc.); for a future libghostty
+    /// backend that's a config blob plus an `update_config`
+    /// call.
+    ///
+    /// Idempotent and incremental: callers can fire on every
+    /// settings change; the backend is responsible for
+    /// skipping no-ops where it cares about that.
+    func applySettings(_ settings: AppSettings)
+
+    /// When true, the next `becomeFirstResponder` /
+    /// `resignFirstResponder` call suppresses focus-event
+    /// escape sequences (mode 1004) to the PTY. Self-clears
+    /// after each responder transition. Set during internal
+    /// session switching to prevent TUIs (Claude Code, shell
+    /// prompts that redraw on focus, etc.) from interpreting
+    /// the spurious focus event as a semantic signal.
+    var suppressFocusEvents: Bool { get set }
+
+    /// Inject text into the terminal as if it had arrived
+    /// from the PTY. Used for cleanup escape sequences during
+    /// internal pane handoffs (e.g. mode-1004 disable, screen
+    /// clear). Must NOT be used as a general-purpose IO path
+    /// — `send(text:asPaste:)` is the correct channel for
+    /// user-facing input.
+    func feed(text: String)
+
     /// Set the terminal font.
     func setFont(_ font: NSFont)
 
