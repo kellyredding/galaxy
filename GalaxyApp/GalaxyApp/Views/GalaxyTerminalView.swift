@@ -261,4 +261,70 @@ extension GalaxyTerminalView {
     func send(bytes: [UInt8]) {
         send(bytes)
     }
+
+    /// Send text to the PTY, with bracketed-paste-mode
+    /// wrapping when both `asPaste` is true and the terminal
+    /// has bracketed-paste-mode enabled. Mirrors
+    /// `SwiftTermBackend.send(text:asPaste:)` so the chrome
+    /// has a single uniform entry point regardless of which
+    /// pane it's hosting.
+    func send(text: String, asPaste: Bool) {
+        if asPaste, terminal.bracketedPasteMode {
+            send(Array(EscapeSequences.bracketedPasteStart))
+            send(txt: text)
+            send(Array(EscapeSequences.bracketedPasteEnd))
+        } else {
+            send(txt: text)
+        }
+    }
+
+    /// True when the scrollback buffer has content above the
+    /// viewport. Wraps the SwiftTerm read so callers don't
+    /// reach through `.terminal.displayBuffer.yBase` (a
+    /// chain of three SwiftTerm-typed intermediates).
+    var hasScrollbackContent: Bool {
+        terminal.displayBuffer.yBase > 0
+    }
+
+    /// Current viewport top row (`yDisp`). Used by chrome as
+    /// the initial scroll position when opening the
+    /// scrollback overlay so the overlay opens at the user's
+    /// current view rather than at the bottom.
+    var viewportRow: Int {
+        terminal.displayBuffer.yDisp
+    }
+
+    /// Clear any active text selection. Wraps SwiftTerm's
+    /// `selection.selectNone()` so callers don't reach
+    /// through the SwiftTerm-typed selection service.
+    func clearSelection() {
+        selection.selectNone()
+    }
+
+    /// Unconditionally snap the viewport to the bottom of
+    /// the scrollback buffer (`yDisp = yBase`) and clear the
+    /// `userScrolling` gate so subsequent output auto-
+    /// follows. Distinct from `snapViewportToBottomIfWithin`
+    /// — no threshold, no selection-active guard, no return
+    /// value. Mirrors `SwiftTermBackend.snapViewportToBottom`
+    /// shape-for-shape.
+    func snapViewportToBottom() {
+        let buf = terminal.displayBuffer
+        terminal.userScrolling = false
+        buf.yDisp = buf.yBase
+        setNeedsDisplay(bounds)
+    }
+
+    /// Capture the current scrollback buffer as a Galaxy-
+    /// typed `ScrollbackSnapshot` — opaque from the chrome's
+    /// POV. Wraps SwiftTerm's `terminal.snapshotBuffer(_:)`
+    /// and the `SwiftTermScrollbackSnapshot` initializer so
+    /// callers don't need to name SwiftTerm types or know
+    /// which concrete snapshot impl pairs with this view.
+    func captureScrollbackSnapshot() -> ScrollbackSnapshot? {
+        let buffer = terminal.snapshotBuffer(terminal.buffer)
+        return SwiftTermScrollbackSnapshot(
+            buffer: buffer, terminal: terminal
+        )
+    }
 }

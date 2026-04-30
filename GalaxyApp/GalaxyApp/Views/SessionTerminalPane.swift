@@ -1,6 +1,5 @@
 import AppKit
 import Combine
-import SwiftTerm
 
 /// `TerminalPane` conformer that wraps an existing
 /// `GalaxyTerminalView` + `Session`. Used for the top
@@ -56,16 +55,12 @@ final class SessionTerminalPane: TerminalPane {
     }
 
     var hasScrollbackContent: Bool {
-        galaxyView.terminal.displayBuffer.yBase > 0
+        galaxyView.hasScrollbackContent
     }
 
-    var viewportRow: Int {
-        galaxyView.terminal.displayBuffer.yDisp
-    }
+    var viewportRow: Int { galaxyView.viewportRow }
 
-    func clearSelection() {
-        galaxyView.selection.selectNone()
-    }
+    func clearSelection() { galaxyView.clearSelection() }
 
     var font: NSFont { galaxyView.font }
 
@@ -78,10 +73,7 @@ final class SessionTerminalPane: TerminalPane {
     }
 
     func snapViewportToBottom() {
-        let buf = galaxyView.terminal.displayBuffer
-        galaxyView.terminal.userScrolling = false
-        buf.yDisp = buf.yBase
-        galaxyView.setNeedsDisplay(galaxyView.bounds)
+        galaxyView.snapViewportToBottom()
     }
 
     /// Session pane reads font size from the owning Session
@@ -104,30 +96,11 @@ final class SessionTerminalPane: TerminalPane {
     }
 
     func captureScrollbackSnapshot() -> ScrollbackSnapshot? {
-        // SwiftTerm's `snapshotBuffer(_:)` is non-optional —
-        // see `SwiftTermBackend.captureScrollbackSnapshot` for
-        // the same shape and rationale.
-        let buffer = galaxyView.terminal.snapshotBuffer(
-            galaxyView.terminal.buffer
-        )
-        return SwiftTermScrollbackSnapshot(
-            buffer: buffer,
-            terminal: galaxyView.terminal
-        )
+        galaxyView.captureScrollbackSnapshot()
     }
 
     func send(text: String, asPaste: Bool) {
-        if asPaste, galaxyView.terminal.bracketedPasteMode {
-            galaxyView.send(
-                Array(EscapeSequences.bracketedPasteStart)
-            )
-            galaxyView.send(txt: text)
-            galaxyView.send(
-                Array(EscapeSequences.bracketedPasteEnd)
-            )
-        } else {
-            galaxyView.send(txt: text)
-        }
+        galaxyView.send(text: text, asPaste: asPaste)
     }
 
     func focus() {
@@ -156,8 +129,8 @@ final class SessionTerminalPane: TerminalPane {
         }
         let view = galaxyView
         return SendToClaudeTarget(
-            sendText: { text in view.send(txt: text) },
-            sendCR: { view.send([0x0D]) },
+            sendText: { text in view.send(text: text) },
+            sendCR: { view.send(bytes: [0x0D]) },
             disabledReason: { nil }
         )
     }
