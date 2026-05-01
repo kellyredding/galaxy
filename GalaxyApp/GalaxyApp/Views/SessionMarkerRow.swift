@@ -125,7 +125,12 @@ struct SessionMarkerRow: View {
                         fontWeight: .bold,
                         textColor: .labelColor,
                         onCommit: { commitNameEdit() },
-                        onCancel: { cancelNameEdit() }
+                        onCancel: { cancelNameEdit() },
+                        // Click-outside / app-deactivate → commit.
+                        // Slice B will extend the helper with an
+                        // `isPickerShowing` guard so picker-induced
+                        // blur doesn't terminate edit mode.
+                        onBlur: { onBlurAttemptCommit() }
                     )
                     .frame(
                         width: editorWidth,
@@ -231,5 +236,17 @@ struct SessionMarkerRow: View {
 
     private func cancelNameEdit() {
         isEditingName = false
+    }
+
+    /// Called by InlineNameEditor when the field loses first
+    /// responder for any reason other than Enter/Esc — i.e.
+    /// click-outside, app deactivation, programmatic focus shift.
+    ///
+    /// Slice A: always commit (mirrors SessionRow's behavior).
+    /// Slice B will extend this with an `isPickerShowing` guard so
+    /// the emoji picker stealing focus doesn't tear down edit mode
+    /// behind the user's back.
+    private func onBlurAttemptCommit() {
+        commitNameEdit()
     }
 }

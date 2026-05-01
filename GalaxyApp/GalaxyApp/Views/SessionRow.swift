@@ -17,6 +17,19 @@ class InlineEditField: NSTextField {
 /// NSViewRepresentable wrapping InlineEditField for inline session renaming.
 /// Uses AppKit's makeFirstResponder directly (~60ms) instead of SwiftUI's
 /// @FocusState, which triggers expensive view-tree reconciliation.
+///
+/// Three lifecycle callbacks signal end-of-editing:
+///   - `onCommit`: user pressed Enter (NSResponder.insertNewline:)
+///   - `onCancel`: user pressed Esc (NSResponder.cancelOperation:)
+///   - `onBlur`:   field lost first responder for ANY other reason —
+///                 click outside, app deactivation, programmatic focus
+///                 shift, etc. Fires from controlTextDidEndEditing
+///                 only when the movement reason is not Enter or Esc,
+///                 so no double-fire with onCommit/onCancel.
+///
+/// Owners decide what blur means in their context. SessionRow maps
+/// blur → commit (macOS save-on-blur). SessionMarkerRow maps blur →
+/// guarded commit, suppressed while the emoji picker steals focus.
 struct InlineNameEditor: NSViewRepresentable {
     @Binding var text: String
     let fontSize: CGFloat
@@ -24,6 +37,7 @@ struct InlineNameEditor: NSViewRepresentable {
     let textColor: NSColor
     let onCommit: () -> Void
     let onCancel: () -> Void
+    let onBlur: () -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -41,9 +55,19 @@ struct InlineNameEditor: NSViewRepresentable {
         field.usesSingleLineMode = true
         field.cell?.isScrollable = true
         field.delegate = context.coordinator
-        // Focus via AppKit once SwiftUI has placed the view in the window.
+        // Focus via AppKit once SwiftUI has placed the view in the
+        // window, then install a window-local mouse-down monitor so
+        // clicks on non-focusable SwiftUI views (sibling session
+        // rows, empty sidebar space, stopped-session view, etc.)
+        // also blur the field. Without the monitor, AppKit only
+        // resigns first responder when the click target itself is
+        // an NSResponder — which most SwiftUI tap-gesture targets
+        // are not — so save-on-blur silently doesn't fire on those
+        // clicks. The monitor fills that gap by surrendering first
+        // responder explicitly on outside clicks.
         DispatchQueue.main.async {
             field.window?.makeFirstResponder(field)
+            context.coordinator.installMouseMonitor(for: field)
         }
         return field
     }
@@ -59,9 +83,69 @@ struct InlineNameEditor: NSViewRepresentable {
 
     class Coordinator: NSObject, NSTextFieldDelegate {
         var parent: InlineNameEditor
+        weak var field: InlineEditField?
+        private var mouseMonitor: Any?
 
         init(_ parent: InlineNameEditor) {
             self.parent = parent
+        }
+
+        deinit {
+            removeMouseMonitor()
+        }
+
+        /// Install a window-local mouse-down monitor that surrenders
+        /// first responder on any click outside the field. Needed
+        /// because clicks on non-focusable SwiftUI views (which is
+        /// most of them) don't naturally steal first responder from
+        /// NSTextField, so AppKit's blur path doesn't fire on its
+        /// own. The monitor watches for left, right, and other-button
+        /// mouse-down events in our window; on a click outside the
+        /// field's frame, it calls makeFirstResponder(nil) which
+        /// kicks the editing-end notification chain (and therefore
+        /// onBlur) cleanly. The monitor is removed in
+        /// controlTextDidEndEditing — once editing is over, we don't
+        /// need it until the next edit cycle re-installs it.
+        func installMouseMonitor(for field: InlineEditField) {
+            self.field = field
+            removeMouseMonitor()  // Defensive against double install.
+            mouseMonitor = NSEvent.addLocalMonitorForEvents(
+                matching: [
+                    .leftMouseDown,
+                    .rightMouseDown,
+                    .otherMouseDown,
+                ]
+            ) { [weak self] event in
+                self?.handleMouseDown(event)
+                return event  // Always pass through.
+            }
+        }
+
+        func removeMouseMonitor() {
+            if let monitor = mouseMonitor {
+                NSEvent.removeMonitor(monitor)
+                mouseMonitor = nil
+            }
+        }
+
+        private func handleMouseDown(_ event: NSEvent) {
+            guard let field = field, let window = field.window
+            else { return }
+            // Only react to events targeting our field's window.
+            // Popovers (and other secondary windows) get their own
+            // event.window, so clicks there don't cause us to blur.
+            guard event.window === window else { return }
+
+            // Skip clicks inside the field — typing or
+            // cursor-positioning must not blur.
+            let locationInWindow = event.locationInWindow
+            let fieldFrame = field.convert(field.bounds, to: nil)
+            if fieldFrame.contains(locationInWindow) { return }
+
+            // Outside the field — surrender first responder. This
+            // fires controlTextDidEndEditing with movement = .other
+            // (raw 0), which our handler dispatches to onBlur.
+            window.makeFirstResponder(nil)
         }
 
         func controlTextDidChange(_ obj: Notification) {
@@ -79,6 +163,31 @@ struct InlineNameEditor: NSViewRepresentable {
                 return true
             }
             return false
+        }
+
+        /// Fires whenever the field stops being first responder —
+        /// after Enter/Esc commands, after click-outside, after the
+        /// app loses focus, etc. We dispatch to onBlur only when the
+        /// cause is NOT Enter or Esc (those already ran via
+        /// doCommandBy above), so the blur path covers click-outside
+        /// cleanly without double-firing onCommit/onCancel.
+        ///
+        /// macOS sets the NSTextMovement userInfo key to indicate why
+        /// editing ended. Pressing Enter sends `.return`, Esc sends
+        /// `.cancel`, anything else (focus shift, app deactivate, etc)
+        /// arrives as `.other` (raw 0).
+        func controlTextDidEndEditing(_ obj: Notification) {
+            let movement = (obj.userInfo?["NSTextMovement"] as? Int) ?? 0
+            let returnRaw = NSTextMovement.return.rawValue
+            let cancelRaw = NSTextMovement.cancel.rawValue
+            if movement != returnRaw && movement != cancelRaw {
+                parent.onBlur()
+            }
+            // Editing has ended — the next edit cycle's makeNSView
+            // re-installs the monitor. Cleaning up here avoids
+            // dangling monitors after the field is removed from the
+            // window (deinit also handles it for safety).
+            removeMouseMonitor()
         }
     }
 }
@@ -167,7 +276,11 @@ struct SessionRow: View {
                             fontWeight: .bold,
                             textColor: isSelected ? .white : .labelColor,
                             onCommit: { commitNameEdit() },
-                            onCancel: { cancelNameEdit() }
+                            onCancel: { cancelNameEdit() },
+                            // Click-outside, app-deactivate, focus
+                            // shift — all save the typed name, matching
+                            // every native macOS save-on-blur control.
+                            onBlur: { commitNameEdit() }
                         )
                         .frame(height: fontSize.caption1LineHeight)
                     } else {
