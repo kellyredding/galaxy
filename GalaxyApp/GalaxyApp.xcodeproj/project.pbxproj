@@ -44,6 +44,7 @@
 		571EE81ED88CE829C5C59BA8 /* TerminalBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 647FC24EF5503064016FE625 /* TerminalBackend.swift */; };
 		5726799F4CAC18544C8FB957 /* SessionRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 930CA7E2539E197A2DF03CE4 /* SessionRow.swift */; };
 		57F83F8FAFBFC9B625678AE5 /* PreferencesWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E9CD7B5767024AE0C85E433 /* PreferencesWindowController.swift */; };
+		5819A5A1B20A8D65742FC3D4 /* StatuslineANSIParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64214F269B6A3F7BB8350567 /* StatuslineANSIParser.swift */; };
 		59C4461354F92AEF376C88AA /* DragHandleNSView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43C2EE51F5ED8F5A44D27580 /* DragHandleNSView.swift */; };
 		5BE31FF52EF968E62B31F97C /* CircuitBreaker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3463B095E6622E31AF317063 /* CircuitBreaker.swift */; };
 		64AB450ECD5FB1FF3D5E16EB /* EnrichmentService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260E4993B113CBAABADA519B /* EnrichmentService.swift */; };
@@ -184,6 +185,7 @@
 		61AA98185E94AAFC4DA8F145 /* ScrollbackSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollbackSnapshot.swift; sourceTree = "<group>"; };
 		61F41A6FFADC96743100251A /* NavigationEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationEntry.swift; sourceTree = "<group>"; };
 		6416EF21214B040D05629012 /* ArtifactHTMLView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactHTMLView.swift; sourceTree = "<group>"; };
+		64214F269B6A3F7BB8350567 /* StatuslineANSIParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatuslineANSIParser.swift; sourceTree = "<group>"; };
 		647FC24EF5503064016FE625 /* TerminalBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalBackend.swift; sourceTree = "<group>"; };
 		651F643466B2D143C12A260D /* StatuslineConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatuslineConfig.swift; sourceTree = "<group>"; };
 		65EC5C46A6B9E07A2F81093F /* AgentsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentsView.swift; sourceTree = "<group>"; };
@@ -349,6 +351,7 @@
 		9C4755FFB163C1B725A0B116 /* Statusline */ = {
 			isa = PBXGroup;
 			children = (
+				64214F269B6A3F7BB8350567 /* StatuslineANSIParser.swift */,
 				651F643466B2D143C12A260D /* StatuslineConfig.swift */,
 				725F45E345F6FC24D63A50F7 /* StatuslineConfigService.swift */,
 				2AE5FFAF09889E289427AFAB /* StatuslineHookStatus.swift */,
@@ -625,6 +628,7 @@
 				D499F472C2F9A6CB0D02D493 /* SnapshotsView.swift in Sources */,
 				CC27D1B9C8318928AE6187FE /* SocketListener.swift in Sources */,
 				3F6C193D5824A2FC5BDB2792 /* StatusLineService.swift in Sources */,
+				5819A5A1B20A8D65742FC3D4 /* StatuslineANSIParser.swift in Sources */,
 				3742F0C4FB90095EC03FA9D2 /* StatuslineConfig.swift in Sources */,
 				18B3FD10CEE9BF58CA495504 /* StatuslineConfigService.swift in Sources */,
 				1398D7A28CD97955C6CF12EE /* StatuslineHookStatus.swift in Sources */,

@@ -25,7 +25,7 @@ enum SettingsTab: String, CaseIterable {
         case .general: return "gear"
         case .sessions: return "text.bubble"
         case .terminal: return "apple.terminal"
-        case .statusline: return "menubar.rectangle"
+        case .statusline: return "dock.rectangle"
         case .notifications: return "bell"
         }
     }

@@ -18,6 +18,10 @@ struct StatuslineSettingsTab: View {
                status.installed,
                status.matchesExpectedCommand,
                let config = service.config {
+                StatuslinePreviewSection(
+                    service: service,
+                    config: config
+                )
                 StatuslineDisplaySection(
                     service: service,
                     config: config
@@ -626,6 +630,70 @@ struct StatuslineColorRow: View {
             }
 
             Spacer(minLength: 0)
+        }
+    }
+}
+
+// MARK: - Preview section
+
+/// Live preview of the status line using the CLI's `preview`
+/// subcommand. Re-renders whenever the config changes, parses
+/// the ANSI-encoded output, and composes colored Text rows.
+///
+/// Visual layout mirrors ThemePreviewView: monospace, padded,
+/// rounded background that hints at a terminal pane.
+struct StatuslinePreviewSection: View {
+    @ObservedObject var service: StatuslineConfigService
+    let config: StatuslineConfig
+
+    @State private var lines: [[StatuslineANSIChunk]] = []
+
+    var body: some View {
+        SettingsCard(title: "Preview") {
+            VStack(alignment: .leading, spacing: 2) {
+                if lines.isEmpty {
+                    Text(" ")  // reserve a row of vertical space
+                } else {
+                    ForEach(lines.indices, id: \.self) { i in
+                        renderedLine(for: lines[i])
+                    }
+                }
+            }
+            .font(.system(size: 11, design: .monospaced))
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                Color(NSColor.textBackgroundColor).opacity(0.5)
+            )
+            .cornerRadius(6)
+        }
+        .task(id: config) {
+            await refresh()
+        }
+    }
+
+    /// Build a single Text from the chunks of one line by
+    /// folding `+` over each chunk's styled fragment. SwiftUI's
+    /// `Text.+` preserves attributes, so colors and bold survive
+    /// the concatenation into one rendered run.
+    private func renderedLine(
+        for chunks: [StatuslineANSIChunk]
+    ) -> some View {
+        let combined = chunks.reduce(Text("")) { acc, chunk in
+            acc + chunk.styledText()
+        }
+        return combined
+    }
+
+    private func refresh() async {
+        do {
+            let raw = try await service.renderSample()
+            lines = StatuslineANSIParser.parse(raw)
+        } catch {
+            // Swallow preview errors — surfacing them in the
+            // dedicated error band below the form is enough.
+            // Empty `lines` falls back to the placeholder row.
+            lines = []
         }
     }
 }

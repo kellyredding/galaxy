@@ -109,6 +109,16 @@ final class StatuslineConfigService: ObservableObject {
         }
     }
 
+    /// Render a fabricated sample status line via the CLI's
+    /// preview subcommand. Returns the raw ANSI-encoded output
+    /// for the caller to parse and display. Does NOT touch the
+    /// service's published state — preview is a derived view of
+    /// `config`, callers can re-invoke whenever they need.
+    func renderSample() async throws -> String {
+        let data = try await runCLI(args: ["preview"])
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
     // MARK: - Internal
 
     private func fetchHookStatus() async throws -> StatuslineHookStatus {
