@@ -1,4 +1,4 @@
-require "../spec_helper"
+require "./spec_helper"
 
 def strip_ansi(text : String) : String
   text.gsub(/\e\[[0-9;]*m/, "")

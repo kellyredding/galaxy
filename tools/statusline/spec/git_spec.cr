@@ -1,4 +1,4 @@
-require "../spec_helper"
+require "./spec_helper"
 
 # Helper to create a temporary git repo for testing
 private def create_temp_git_repo : String

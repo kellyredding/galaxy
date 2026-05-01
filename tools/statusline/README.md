@@ -1,46 +1,29 @@
 # galaxy-statusline
 
-A customizable status line for Claude Code sessions that displays working directory, git status, context usage, and model information.
+Customizable status line for Claude Code sessions. Renders the working
+directory, git status, context-window usage, model name, session cost, and
+current time on two width-adaptive lines that gracefully degrade on narrow
+terminals.
 
-## Features
+## Commands
 
-- **Working directory** with smart path abbreviation
-- **Git status** showing branch, ahead/behind, dirty/staged/stashed state
-- **Context usage** with visual progress bar and color thresholds
-- **Model name**, session cost, and current time (12-hour with AM/PM)
-- **Width-adaptive** layout that gracefully degrades on narrow terminals
-- **Fully configurable** colors, styles, and thresholds
+| Command | Description |
+|---------|-------------|
+| `render` | Render the status line (reads JSON from stdin) |
+| `config` | Show the current configuration |
+| `config help` | Full configuration documentation |
+| `config set KEY VAL` | Set a configuration value |
+| `config get KEY` | Get a configuration value |
+| `config reset` | Reset configuration to defaults |
+| `config path` | Show the config file location |
+| `update` | Update to the latest GitHub release |
+| `update preview` | Preview an update without making changes |
+| `update force` | Reinstall the latest release even if current |
+| `version` | Show the version |
+| `help` | Show CLI usage |
 
-## Installation
-
-Download the latest binary from [Releases](https://github.com/kellyredding/galaxy/releases) and place it in your PATH:
-
-```bash
-# Download tarball and checksum (check Releases page for latest version)
-# Use darwin-arm64 for Apple Silicon, darwin-amd64 for Intel
-curl -LO https://github.com/kellyredding/galaxy/releases/download/statusline-vX.X.X/galaxy-statusline-X.X.X-darwin-arm64.tar.gz
-curl -LO https://github.com/kellyredding/galaxy/releases/download/statusline-vX.X.X/galaxy-statusline-X.X.X-darwin-arm64.tar.gz.sha256
-
-# Verify checksum (should say "OK")
-shasum -a 256 -c galaxy-statusline-X.X.X-darwin-arm64.tar.gz.sha256
-
-# Extract and install
-tar -xzf galaxy-statusline-X.X.X-darwin-arm64.tar.gz
-mkdir -p ~/.claude/galaxy/bin
-mv galaxy-statusline-X.X.X-darwin-arm64 ~/.claude/galaxy/bin/galaxy-statusline
-chmod +x ~/.claude/galaxy/bin/galaxy-statusline
-
-# Clean up
-rm galaxy-statusline-X.X.X-darwin-arm64.tar.gz galaxy-statusline-X.X.X-darwin-arm64.tar.gz.sha256
-```
-
-Or build from source (requires Crystal):
-
-```bash
-git clone https://github.com/kellyredding/galaxy.git
-cd galaxy/tools/statusline
-make install
-```
+If invoked with no arguments and stdin has data, it renders implicitly
+(equivalent to `render`).
 
 ## Claude Code Integration
 
@@ -56,27 +39,7 @@ Add to `~/.claude/settings.json`:
 }
 ```
 
-## Usage
-
-### CLI Commands
-
-```bash
-galaxy-statusline                    # If stdin has data -> render, else -> help
-galaxy-statusline render             # Explicit render (reads stdin JSON)
-galaxy-statusline config             # Show current config
-galaxy-statusline config help        # Configuration documentation
-galaxy-statusline config set KEY VAL # Set a config value
-galaxy-statusline config get KEY     # Get a config value
-galaxy-statusline config reset       # Reset to defaults
-galaxy-statusline config path        # Show config file location
-galaxy-statusline update             # Update to latest version
-galaxy-statusline update preview     # Preview update without changes
-galaxy-statusline update force       # Reinstall latest version
-galaxy-statusline version            # Show version
-galaxy-statusline help               # Show help
-```
-
-### Example Output
+## Example Output
 
 ```
 WIDE (120+ cols):
@@ -92,13 +55,14 @@ VERY NARROW (<60 cols):
 [main=*] | ████░░ 78%
 ```
 
-The session line shrinks in this order: shrink the context bar →
-drop the time → drop the cost → drop the model. The context bar
-and percentage are always preserved.
+The session line shrinks in this order: shrink the context bar → drop
+the time → drop the cost → drop the model. The context bar and
+percentage are always preserved.
 
 ## Configuration
 
-Configuration is stored at `~/.claude/galaxy/statusline/config.json`.
+Configuration lives at `~/.claude/galaxy/statusline/config.json`. Run
+`galaxy-statusline config help` for the full reference.
 
 ### Branch Styles
 
@@ -115,12 +79,6 @@ Colors can be set to:
 - Bright variants: `bright_red`, `bright_green`, etc.
 - Bold modifier: `bold:green`, `bold:yellow`
 - Default terminal color: `default`
-
-### Configuration Reference
-
-```bash
-galaxy-statusline config help  # Full configuration documentation
-```
 
 ### Example Configuration
 
@@ -154,13 +112,45 @@ galaxy-statusline config help  # Full configuration documentation
 }
 ```
 
+## Installation
+
+Download the latest binary from
+[Releases](https://github.com/kellyredding/galaxy/releases) and place it
+in your PATH:
+
+```bash
+# Download tarball and checksum (check Releases page for latest version)
+# Use darwin-arm64 for Apple Silicon, darwin-amd64 for Intel
+curl -LO https://github.com/kellyredding/galaxy/releases/download/statusline-vX.X.X/galaxy-statusline-X.X.X-darwin-arm64.tar.gz
+curl -LO https://github.com/kellyredding/galaxy/releases/download/statusline-vX.X.X/galaxy-statusline-X.X.X-darwin-arm64.tar.gz.sha256
+
+# Verify checksum (should say "OK")
+shasum -a 256 -c galaxy-statusline-X.X.X-darwin-arm64.tar.gz.sha256
+
+# Extract and install
+tar -xzf galaxy-statusline-X.X.X-darwin-arm64.tar.gz
+mkdir -p ~/.claude/galaxy/bin
+mv galaxy-statusline-X.X.X-darwin-arm64 ~/.claude/galaxy/bin/galaxy-statusline
+chmod +x ~/.claude/galaxy/bin/galaxy-statusline
+
+# Clean up
+rm galaxy-statusline-X.X.X-darwin-arm64.tar.gz galaxy-statusline-X.X.X-darwin-arm64.tar.gz.sha256
+```
+
+Or build from source (requires Crystal):
+
+```bash
+git clone https://github.com/kellyredding/galaxy.git
+cd galaxy/tools/statusline
+make install
+```
+
 ## Development
 
 ```bash
-make check    # lint + build + test
-make dev      # build dev binary
-make test     # run tests only
-make format   # auto-format code
+cd tools/statusline
+make check    # Format, build dev binary, run specs, lint
+make install  # Build release and install to ~/.claude/galaxy/bin/
 ```
 
 ## License

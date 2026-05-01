@@ -1,4 +1,4 @@
-require "../spec_helper"
+require "./spec_helper"
 
 describe GalaxyStatusline::Config do
   describe ".default" do
