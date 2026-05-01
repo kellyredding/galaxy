@@ -5,6 +5,7 @@ module GalaxyStatusline
     def self.run(args : Array(String))
       show_help_flag = false
       show_version_flag = false
+      json_output = false
 
       parser = OptionParser.new do |p|
         p.banner = build_banner
@@ -14,6 +15,7 @@ module GalaxyStatusline
 
         p.on("-h", "--help", "Show this help") { show_help_flag = true }
         p.on("-v", "--version", "Show version") { show_version_flag = true }
+        p.on("--json", "Emit JSON output (where supported)") { json_output = true }
 
         p.invalid_option do |flag|
           STDERR.puts "Error: Unknown flag '#{flag}'"
@@ -57,6 +59,8 @@ module GalaxyStatusline
         render_status_line
       when "config"
         handle_config_command(rest)
+      when "hook"
+        handle_hook_command(rest, json_output)
       when "update"
         handle_update_command(rest)
       when "version"
@@ -84,6 +88,10 @@ module GalaxyStatusline
         config get KEY      Get a configuration value
         config reset        Reset to defaults
         config path         Show config file location
+        hook install        Install statusline hook in ~/.claude/settings.json
+        hook uninstall      Remove statusline hook
+        hook status         Show hook installation status
+        hook help           Hook command documentation
         update              Update to latest version
         update preview      Preview update without changes
         update force        Reinstall latest version
@@ -403,6 +411,90 @@ module GalaxyStatusline
 
       Update script: https://raw.githubusercontent.com/kellyredding/galaxy/main/tools/statusline/scripts/update.sh
       HELP
+    end
+
+    private def self.handle_hook_command(args : Array(String), json_output : Bool)
+      if args.empty?
+        show_hook_help
+        return
+      end
+
+      subcommand = args[0]
+
+      case subcommand
+      when "help"
+        show_hook_help
+      when "install"
+        hook_install(json_output)
+      when "uninstall"
+        hook_uninstall(json_output)
+      when "status"
+        hook_status(json_output)
+      else
+        STDERR.puts "Error: Unknown hook command '#{subcommand}'"
+        STDERR.puts "Run 'galaxy-statusline hook help' for usage"
+        exit(1)
+      end
+    end
+
+    private def self.show_hook_help
+      puts <<-HELP
+      galaxy-statusline hook - Manage the Claude Code statusline hook
+
+      USAGE:
+        galaxy-statusline hook install      Install the hook
+        galaxy-statusline hook uninstall    Remove the hook
+        galaxy-statusline hook status       Show installation status
+        galaxy-statusline hook help         Show this help
+
+      OPTIONS:
+        --json    Emit machine-readable JSON output (status/install/uninstall)
+
+      SETTINGS FILE:
+        ~/.claude/settings.json (top-level "statusLine" key)
+
+      The hook tells Claude Code to invoke galaxy-statusline to render
+      the status line. Uninstalling the hook leaves your configuration
+      intact at ~/.claude/galaxy/statusline/config.json — re-installing
+      restores your previous settings.
+      HELP
+    end
+
+    private def self.hook_install(json_output : Bool)
+      ok = HookManager.install
+      if json_output
+        puts HookManager.status.to_pretty_json
+      elsif ok
+        puts "Statusline hook installed in #{SETTINGS_FILE}"
+      end
+      exit(1) unless ok
+    end
+
+    private def self.hook_uninstall(json_output : Bool)
+      ok = HookManager.uninstall
+      if json_output
+        puts HookManager.status.to_pretty_json
+      elsif ok
+        puts "Statusline hook removed from #{SETTINGS_FILE}"
+      end
+      exit(1) unless ok
+    end
+
+    private def self.hook_status(json_output : Bool)
+      status = HookManager.status
+      if json_output
+        puts status.to_pretty_json
+      else
+        if status.installed
+          puts "Installed"
+          puts "  command:        #{status.command}"
+          puts "  matches galaxy: #{status.matches_expected_command}"
+        else
+          puts "Not installed"
+        end
+        puts "  expected:       #{status.expected_command}"
+        puts "  settings file:  #{status.settings_path}"
+      end
     end
   end
 end

@@ -21,6 +21,22 @@ module GalaxyStatusline
     )
   )
   CONFIG_FILE = CONFIG_DIR / "config.json"
+
+  # Claude Code settings directory and file. The statusline hook
+  # is registered as a top-level "statusLine" key in settings.json.
+  # CLAUDE_CONFIG_DIR may be overridden via environment variable
+  # (used by specs and for sandboxed CLI validation).
+  CLAUDE_CONFIG_DIR = Path.new(
+    ENV.fetch(
+      "CLAUDE_CONFIG_DIR",
+      (Path.home / ".claude").to_s
+    )
+  )
+  SETTINGS_FILE = CLAUDE_CONFIG_DIR / "settings.json"
+
+  # Canonical command path written by `hook install`. Anchored to
+  # GALAXY_DIR so test sandboxes get a sandbox-relative command.
+  HOOK_COMMAND = (GALAXY_DIR / "bin" / "galaxy-statusline").to_s
 end
 
 # Only run CLI when executed directly, not when required by specs

@@ -14,6 +14,12 @@ ENV["GALAXY_DIR"] = SPEC_GALAXY_DIR.to_s
 SPEC_CONFIG_DIR = SPEC_GALAXY_DIR / "statusline"
 ENV["GALAXY_STATUSLINE_CONFIG_DIR"] = SPEC_CONFIG_DIR.to_s
 
+# Isolate Claude Code's settings file for hook_manager specs so
+# we never touch the real ~/.claude/settings.json during tests.
+SPEC_CLAUDE_DIR = SPEC_GALAXY_DIR / "claude"
+ENV["CLAUDE_CONFIG_DIR"] = SPEC_CLAUDE_DIR.to_s
+Dir.mkdir_p(SPEC_CLAUDE_DIR.to_s)
+
 # Skip CLI auto-run when loading module for specs
 ENV["GALAXY_STATUSLINE_SKIP_CLI"] = "1"
 
@@ -43,6 +49,7 @@ def run_binary(
   # Set env vars for isolated testing - they'll be inherited by subprocess
   ENV["GALAXY_DIR"] = SPEC_GALAXY_DIR.to_s
   ENV["GALAXY_STATUSLINE_CONFIG_DIR"] = SPEC_CONFIG_DIR.to_s
+  ENV["CLAUDE_CONFIG_DIR"] = SPEC_CLAUDE_DIR.to_s
   # Unset skip cli so the binary runs normally
   ENV.delete("GALAXY_STATUSLINE_SKIP_CLI")
 
