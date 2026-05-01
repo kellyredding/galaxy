@@ -265,20 +265,20 @@ module GalaxyStatusline
                    bold:green, bold:yellow (with modifier)
                    "default" for terminal default
 
-          colors.directory           Directory path (default: bold:yellow)
-          colors.branch              Git branch name (default: green)
-          colors.upstream_behind     Behind indicator (default: cyan)
-          colors.upstream_ahead      Ahead indicator (default: cyan)
-          colors.upstream_synced     In sync indicator (default: green)
-          colors.dirty               Uncommitted changes (default: yellow)
-          colors.staged              Staged changes (default: green)
-          colors.stashed             Stashed changes (default: red)
+          colors.directory           Directory path (default: bright_yellow)
+          colors.branch              Git branch name (default: bright_green)
+          colors.upstream_behind     Behind indicator (default: bright_cyan)
+          colors.upstream_ahead      Ahead indicator (default: bright_cyan)
+          colors.upstream_synced     In sync indicator (default: bright_green)
+          colors.dirty               Uncommitted changes (default: bright_yellow)
+          colors.staged              Staged changes (default: bright_green)
+          colors.stashed             Stashed changes (default: bright_red)
           colors.context_normal      Context < warning (default: green)
           colors.context_warning     Context at warning (default: yellow)
           colors.context_critical    Context at critical (default: red)
-          colors.model               Model name (default: bright_cyan)
-          colors.cost                Cost display (default: bright_green)
-          colors.time                Current time (default: bold:red)
+          colors.model               Model name (default: cyan)
+          colors.cost                Cost display (default: green)
+          colors.time                Current time (default: bright_red)
 
         branch_style                 Git branch display format
           Accepts: symbolic, arrows, minimal

@@ -38,23 +38,23 @@ module GalaxyStatusline
       property cost : String
       # Optional in JSON for backwards-compat with pre-time configs.
       # Falls back to default when missing from disk.
-      property time : String = "bold:red"
+      property time : String = "bright_red"
 
       def initialize(
-        @directory = "bold:yellow",
-        @branch = "green",
-        @upstream_behind = "cyan",
-        @upstream_ahead = "cyan",
-        @upstream_synced = "green",
-        @dirty = "yellow",
-        @staged = "green",
-        @stashed = "red",
+        @directory = "bright_yellow",
+        @branch = "bright_green",
+        @upstream_behind = "bright_cyan",
+        @upstream_ahead = "bright_cyan",
+        @upstream_synced = "bright_green",
+        @dirty = "bright_yellow",
+        @staged = "bright_green",
+        @stashed = "bright_red",
         @context_normal = "green",
         @context_warning = "yellow",
         @context_critical = "red",
-        @model = "bright_cyan",
-        @cost = "bright_green",
-        @time = "bold:red",
+        @model = "cyan",
+        @cost = "green",
+        @time = "bright_red",
       )
       end
     end

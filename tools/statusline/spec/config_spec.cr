@@ -19,14 +19,14 @@ describe GalaxyStatusline::Config do
     it "creates config with default colors" do
       config = GalaxyStatusline::Config.default
 
-      config.colors.directory.should eq("bold:yellow")
-      config.colors.branch.should eq("green")
-      config.colors.dirty.should eq("yellow")
-      config.colors.staged.should eq("green")
+      config.colors.directory.should eq("bright_yellow")
+      config.colors.branch.should eq("bright_green")
+      config.colors.dirty.should eq("bright_yellow")
+      config.colors.staged.should eq("bright_green")
       config.colors.context_normal.should eq("green")
       config.colors.context_warning.should eq("yellow")
       config.colors.context_critical.should eq("red")
-      config.colors.time.should eq("bold:red")
+      config.colors.time.should eq("bright_red")
     end
   end
 
