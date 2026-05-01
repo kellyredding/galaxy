@@ -12,6 +12,7 @@ describe GalaxyStatusline::Config do
       config.layout.show_cost.should eq(true)
       config.layout.show_model.should eq(true)
       config.layout.show_time.should eq(true)
+      config.layout.time_format.should eq("%-I:%M %^p")
       config.layout.directory_style.should eq("smart")
     end
 
@@ -116,6 +117,26 @@ describe GalaxyStatusline::Config do
       config = GalaxyStatusline::Config.default
       expect_raises(Exception, /Unknown setting/) do
         config.set("nonexistent", "value")
+      end
+    end
+
+    it "sets and gets layout.time_format" do
+      config = GalaxyStatusline::Config.default
+      config.set("layout.time_format", "%H:%M")
+      config.get("layout.time_format").should eq("%H:%M")
+    end
+
+    it "rejects empty time_format" do
+      config = GalaxyStatusline::Config.default
+      expect_raises(Exception, /must not be empty/) do
+        config.set("layout.time_format", "")
+      end
+    end
+
+    it "rejects time_format longer than 64 chars" do
+      config = GalaxyStatusline::Config.default
+      expect_raises(Exception, /too long/) do
+        config.set("layout.time_format", "%H:%M" * 20)
       end
     end
   end

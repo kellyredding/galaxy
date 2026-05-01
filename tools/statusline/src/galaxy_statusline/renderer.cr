@@ -363,18 +363,12 @@ module GalaxyStatusline
     end
 
     private def render_time : String
-      # 12-hour format, no leading zero on hour, single space before AM/PM.
-      # Mirrors the user's PS1 \@ escape but trimmed to ~7 chars.
-      # Examples: "6:41 AM", "12:41 PM"
-      #
-      # Built manually because Crystal's Time#to_s does not support
-      # the GNU "%-I" no-pad directive, and "%p" is lowercase.
-      now = Time.local
-      hour_12 = now.hour % 12
-      hour_12 = 12 if hour_12 == 0
-      minute = now.minute.to_s.rjust(2, '0')
-      ampm = now.hour < 12 ? "AM" : "PM"
-      formatted = "#{hour_12}:#{minute} #{ampm}"
+      # Format string is user-configurable via layout.time_format.
+      # Default "%-I:%M %^p" reproduces the historical hardcoded
+      # output (e.g. "6:41 AM", "12:41 PM") via the TimeFormat
+      # helper, which expands the GNU/Ruby strftime extensions
+      # Crystal's stdlib does not handle natively.
+      formatted = TimeFormat.format(Time.local, @config.layout.time_format)
       Colors.colorize(formatted, @config.colors.time)
     end
 

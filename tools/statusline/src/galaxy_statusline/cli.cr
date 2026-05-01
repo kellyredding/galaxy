@@ -299,12 +299,18 @@ module GalaxyStatusline
           layout.show_cost               Show cost (default: true)
           layout.show_model              Show model (default: true)
           layout.show_time               Show current time (default: true)
+          layout.time_format             strftime format string for the time
+                                         segment (default: "%-I:%M %^p")
+                                         Common: "%H:%M" (24-hour),
+                                                 "%-I:%M %^p" (12-hour),
+                                                 "%H:%M:%S" (with seconds)
           layout.directory_style         full, smart, basename, short (default: smart)
 
       EXAMPLES:
         galaxy-statusline config set branch_style arrows
         galaxy-statusline config set context_thresholds.warning 50
         galaxy-statusline config set colors.dirty red
+        galaxy-statusline config set layout.time_format "%H:%M"
         galaxy-statusline config get branch_style
         galaxy-statusline config reset
       HELP

@@ -78,6 +78,11 @@ module GalaxyStatusline
       property show_model : Bool
       # Optional in JSON for backwards-compat with pre-time configs.
       property show_time : Bool = true
+      # strftime-style format string for the time segment. Default
+      # reproduces the historical hardcoded "6:41 AM" / "12:41 PM"
+      # output. Optional in JSON for backwards-compat with configs
+      # written before this field existed.
+      property time_format : String = "%-I:%M %^p"
       property directory_style : String
 
       def initialize(
@@ -86,6 +91,7 @@ module GalaxyStatusline
         @show_cost = true,
         @show_model = true,
         @show_time = true,
+        @time_format = "%-I:%M %^p",
         @directory_style = "smart",
       )
       end
@@ -285,6 +291,9 @@ module GalaxyStatusline
           raise "Invalid directory_style: #{value} (must be: #{VALID_DIRECTORY_STYLES.join(", ")})"
         end
         layout.directory_style = value
+      when "time_format"
+        validate_time_format(value)
+        layout.time_format = value
       else
         raise "Unknown layout field: layout.#{field}"
       end
@@ -300,6 +309,7 @@ module GalaxyStatusline
       when "show_model"            then layout.show_model.to_s
       when "show_time"             then layout.show_time.to_s
       when "directory_style"       then layout.directory_style
+      when "time_format"           then layout.time_format
       else
         raise "Unknown layout field: layout.#{field}"
       end
@@ -311,6 +321,20 @@ module GalaxyStatusline
 
       unless VALID_COLORS.includes?(color)
         raise "Invalid color: #{value} (must be: #{VALID_COLORS.join(", ")} or bold:COLOR)"
+      end
+    end
+
+    private def validate_time_format(value : String)
+      if value.empty?
+        raise "time_format must not be empty"
+      end
+      if value.size > 64
+        raise "time_format too long (max 64 chars)"
+      end
+      begin
+        TimeFormat.format(Time.local, value)
+      rescue ex
+        raise "Invalid time_format: #{value} (#{ex.message})"
       end
     end
 
