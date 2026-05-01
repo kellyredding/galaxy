@@ -526,6 +526,16 @@ class Session: Identifiable, ObservableObject {
     /// `ensureBackend` so a resumed session captures the current
     /// global setting fresh.
     private(set) var engine: TerminalEngine = .swiftTerm
+
+    /// Currently-open Shell pane attached to this session, or nil
+    /// when no shell is open. Held weakly because the pane's strong
+    /// owner is `SplitState` (per-session UI state) — Session just
+    /// needs visibility for cross-pane operations like the session-
+    /// switch focus-event suppression that
+    /// `SessionManager.suppressFocusEventsAcrossPanes` performs.
+    /// Auto-clears when SplitState releases its strong ref on close.
+    weak var shellPane: ShellTerminalPane?
+
     let createdAt: Date
     let workingDirectory: String
 

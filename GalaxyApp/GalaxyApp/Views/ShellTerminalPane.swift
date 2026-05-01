@@ -52,6 +52,18 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
     var onProcessExit: ((Int32) -> Void)?
     var onBell: (() -> Void)?
 
+    /// Forwarded from the backend so external coordinators
+    /// (`SessionManager.suppressFocusEventsAcrossPanes`) can
+    /// quench mode-1004 focus escapes during cross-session
+    /// switches without reaching past the Shell pane's
+    /// encapsulation. Self-clears at the next responder
+    /// transition; setting it has no effect outside that
+    /// window.
+    var suppressFocusEvents: Bool {
+        get { backend.suppressFocusEvents }
+        set { backend.suppressFocusEvents = newValue }
+    }
+
     var onScrollUp: ((NSEvent) -> Bool)? {
         get { backend.onScrollUp }
         set { backend.onScrollUp = newValue }

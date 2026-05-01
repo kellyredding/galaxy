@@ -16,24 +16,39 @@ class SessionManager: ObservableObject {
         didSet {
             guard activeSessionId != oldValue else { return }
 
-            // Suppress focus reporting (mode 1004) on the two terminals
-            // involved in this switch. Without this, makeFirstResponder
-            // triggers becomeFirstResponder/resignFirstResponder which
-            // send focus in/out escape sequences to the PTY — Claude Code
-            // responds to those, producing output that triggers false
-            // busy/idle state transitions (pulsing status dot, unread
-            // indicators, notifications).
+            // Suppress focus reporting (mode 1004) on every pane
+            // involved in this switch — both panes of the outgoing
+            // session and both panes of the incoming session.
+            // Without this, makeFirstResponder triggers
+            // becomeFirstResponder/resignFirstResponder which send
+            // focus in/out escape sequences to the PTY — Claude
+            // Code responds to those, producing output that
+            // triggers false busy/idle state transitions (pulsing
+            // status dot, unread indicators, notifications); shell
+            // prompts that highlight on focus (powerlevel10k, etc.)
+            // also redraw spuriously.
             if let oldId = oldValue,
                let oldSession = sessions.first(where: { $0.id == oldId })
             {
-                oldSession.backend?.suppressFocusEvents = true
+                suppressFocusEventsAcrossPanes(for: oldSession)
             }
             if let newId = activeSessionId,
                let newSession = sessions.first(where: { $0.id == newId })
             {
-                newSession.backend?.suppressFocusEvents = true
+                suppressFocusEventsAcrossPanes(for: newSession)
             }
         }
+    }
+
+    /// Set `suppressFocusEvents = true` on every backend in the
+    /// session — the session pane's backend plus any open Shell
+    /// pane's backend. Each backend's flag self-clears at its
+    /// next responder transition, so this is a one-shot quench
+    /// across the focus changes the session switch is about to
+    /// trigger.
+    private func suppressFocusEventsAcrossPanes(for session: Session) {
+        session.backend?.suppressFocusEvents = true
+        session.shellPane?.suppressFocusEvents = true
     }
 
     // Track whether the main window is focused (for bell indicator logic)

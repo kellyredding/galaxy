@@ -208,6 +208,13 @@ final class SplitState: ObservableObject {
         ratio = TerminalTabSplitView.configuredTopRatio()
         shellPane = pane
 
+        // Hand a weak ref back to the session so cross-pane
+        // coordinators (SessionManager's session-switch focus
+        // suppression) can find the shell pane from the session
+        // model alone. Auto-clears on close because
+        // `SplitState.shellPane = nil` is the strong release.
+        session.shellPane = pane
+
         // Focus the shell on open (user just asked for it).
         DispatchQueue.main.asyncAfter(
             deadline: .now() + 0.05
