@@ -158,8 +158,10 @@ class TooltipPanel {
 // MARK: - Collapsed Session Sidebar
 
 /// Collapsed session sidebar — compact counterpart to ExpandedSessionSidebar.
-/// Shows one status dot per session. Visible when sidebar is collapsed,
-/// providing at-a-glance session status without occupying full sidebar width.
+/// Shows one status dot per session and a centered horizontal line per
+/// marker. Visible when sidebar is collapsed, providing at-a-glance
+/// session status (and section structure via marker lines) without
+/// occupying full sidebar width.
 struct CollapsedSessionSidebar: View {
     @EnvironmentObject var sessionManager: SessionManager
     @ObservedObject var statusLineService = StatusLineService.shared
@@ -167,18 +169,8 @@ struct CollapsedSessionSidebar: View {
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
-                ForEach(sessionManager.sessions) { session in
-                    CollapsedSessionRow(
-                        session: session,
-                        isSelected: session.id == sessionManager.activeSessionId,
-                        isWindowFocused: sessionManager.isWindowFocused,
-                        isOnTerminalTab: sessionManager.activeTab == .terminal,
-                        statusInfo: statusLineService.statusInfo[session.id],
-                        sidebarPosition: SettingsManager.shared.settings.sidebarPosition
-                    )
-                    .onTapGesture {
-                        sessionManager.switchTo(sessionId: session.id)
-                    }
+                ForEach(sessionManager.sidebarItems) { item in
+                    rowView(for: item)
                 }
             }
         }
@@ -189,8 +181,36 @@ struct CollapsedSessionSidebar: View {
                 statusLineService.refreshSessions(sessionManager.sessions)
             }
         }
-        .onChange(of: sessionManager.sessions.count) { _, _ in
+        .onChange(of: sessionManager.sidebarItems.count) { _, _ in
             statusLineService.refreshSessions(sessionManager.sessions)
+        }
+    }
+
+    /// Dispatch a SidebarItem to the appropriate collapsed row.
+    /// Sessions are tappable and have rich hover tooltips; markers
+    /// render as a thin centered line and show a name-only tooltip.
+    @ViewBuilder
+    private func rowView(for item: SidebarItem) -> some View {
+        switch item {
+        case .session(let session):
+            CollapsedSessionRow(
+                session: session,
+                isSelected: session.id == sessionManager.activeSessionId,
+                isWindowFocused: sessionManager.isWindowFocused,
+                isOnTerminalTab: sessionManager.activeTab == .terminal,
+                statusInfo: statusLineService.statusInfo[session.id],
+                sidebarPosition: SettingsManager.shared.settings.sidebarPosition
+            )
+            .onTapGesture {
+                sessionManager.switchTo(sessionId: session.id)
+            }
+
+        case .marker(let marker):
+            CollapsedMarkerRow(
+                marker: marker,
+                sidebarPosition: SettingsManager.shared.settings.sidebarPosition
+            )
+            // Markers are not selectable — no tap gesture.
         }
     }
 }
@@ -451,5 +471,182 @@ struct CollapsedRowTooltip: View {
             return "~" + cwd.dropFirst(homePath.count)
         }
         return cwd
+    }
+}
+
+// MARK: - Collapsed Marker Row
+
+/// Compact counterpart to SessionMarkerRow. Renders just a thin
+/// horizontal line at vertical center with the same `.primary`
+/// color the expanded marker uses (white in dark mode, black in
+/// light mode). On hover, shows a floating tooltip with the
+/// marker's name (if non-empty) — same hover-tooltip mechanism
+/// sessions use, so the two row kinds feel consistent in the
+/// collapsed view.
+///
+/// Markers are not selectable, so no tap gesture and no selection
+/// background. The hover-X delete affordance is intentionally
+/// omitted from the collapsed view — users expand the sidebar to
+/// remove markers.
+struct CollapsedMarkerRow: View {
+    @ObservedObject var marker: SessionMarker
+    let sidebarPosition: SidebarPosition
+
+    @Environment(\.chromeFontSize) private var chromeFontSize
+    @State private var frameAnchor = RowFrameAnchor()
+
+    /// Match the collapsed session row height so markers align
+    /// vertically with adjacent session dots.
+    private var rowHeight: CGFloat {
+        let fs = ChromeFontSize(chromeFontSize)
+        return 17 + fs.caption2LineHeight + 2 * fs.tinyLineHeight
+    }
+
+    /// Horizontal inset on each side of the line so it doesn't
+    /// kiss the sidebar edges.
+    private static let lineInset: CGFloat = 4
+
+    var body: some View {
+        ZStack {
+            // Centered horizontal line — `.primary` matches the
+            // expanded marker so the two surfaces feel coordinated.
+            Rectangle()
+                .fill(Color.primary)
+                .frame(height: 1)
+                .padding(.horizontal, Self.lineInset)
+        }
+        .frame(width: 32, height: rowHeight)
+        .background(FrameAnchorView(anchor: frameAnchor))
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color.primary.opacity(0.15))
+                .frame(height: 1)
+        }
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            if hovering {
+                showTooltip()
+            } else {
+                TooltipPanel.shared.hide()
+            }
+        }
+        .onDisappear {
+            TooltipPanel.shared.hide()
+        }
+    }
+
+    private func showTooltip() {
+        // Skip the tooltip entirely for unnamed markers — there's
+        // nothing meaningful to show, and a "(unnamed marker)"
+        // placeholder would feel like noise.
+        guard !marker.name.isEmpty else { return }
+        guard
+            let window = NSApp.mainWindow ?? NSApp.keyWindow,
+            let rowScreenFrame = frameAnchor.currentScreenFrame()
+        else { return }
+
+        let tooltipContent = CollapsedMarkerTooltip(
+            marker: marker,
+            rowHeight: rowHeight
+        )
+
+        TooltipPanel.shared.show(
+            content: tooltipContent,
+            rowScreenFrame: rowScreenFrame,
+            preferredSide: sidebarPosition,
+            in: window
+        )
+    }
+}
+
+// MARK: - Collapsed Marker Tooltip
+
+/// Tooltip panel content shown on hover over a collapsed marker
+/// row. Mirrors the expanded marker's layout — flanking horizontal
+/// lines with a centered bold name — so the tooltip reads as the
+/// "expanded view" of the hovered row. Width is at least
+/// `minWidth` (the user's expanded sidebar width) but grows to fit
+/// long names; height is fixed to the collapsed row height so the
+/// tooltip lines up with the hovered row visually.
+struct CollapsedMarkerTooltip: View {
+    @ObservedObject var marker: SessionMarker
+
+    /// Match the collapsed row height that triggered this tooltip,
+    /// so the tooltip aligns top-to-bottom with the row.
+    let rowHeight: CGFloat
+
+    @Environment(\.chromeFontSize) private var chromeFontSize
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var fontSize: ChromeFontSize {
+        ChromeFontSize(chromeFontSize)
+    }
+    private var isDark: Bool { colorScheme == .dark }
+
+    private var strokeColor: Color {
+        isDark ? Color.white.opacity(0.15) : Color.black.opacity(0.2)
+    }
+
+    /// Same color scheme the expanded marker uses — both lines
+    /// and name are `.primary` so the marker reads as one
+    /// decorative element.
+    private var lineColor: Color { .primary }
+
+    /// Horizontal padding inside the panel — same proportions as
+    /// the existing CollapsedRowTooltip so the two tooltips feel
+    /// like siblings.
+    private static let horizontalPadding: CGFloat = 8
+
+    /// Static minimum tooltip width. Intentionally on the thinner
+    /// side — wide enough to show flanking lines around typical
+    /// kanban-style names ("DONE", "IN REVIEW", "BACKLOG") without
+    /// approaching the user's full expanded sidebar width.
+    /// Tooltip still grows beyond this for unusually long names.
+    private static let staticMinWidth: CGFloat = 160
+
+    /// Minimum width for each flanking horizontal line. Ensures
+    /// the lines stay clearly visible (the marker's section-header
+    /// silhouette) even when the name is long enough to push the
+    /// tooltip past `staticMinWidth`. Without this floor, a long
+    /// name would starve the lines to ~0pt.
+    private static let flankLineMinWidth: CGFloat = 24
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Rectangle()
+                .fill(lineColor)
+                .frame(height: 1)
+                .frame(
+                    minWidth: Self.flankLineMinWidth,
+                    maxWidth: .infinity
+                )
+
+            Text(marker.name)
+                .chromeFont(
+                    size: fontSize.caption1, weight: .bold
+                )
+                .lineLimit(1)
+                .foregroundColor(lineColor)
+                .fixedSize(horizontal: true, vertical: false)
+
+            Rectangle()
+                .fill(lineColor)
+                .frame(height: 1)
+                .frame(
+                    minWidth: Self.flankLineMinWidth,
+                    maxWidth: .infinity
+                )
+        }
+        .padding(.horizontal, Self.horizontalPadding)
+        .frame(minWidth: Self.staticMinWidth)
+        .frame(height: rowHeight)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color(NSColor.windowBackgroundColor))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(strokeColor, lineWidth: 0.5)
+                )
+        )
     }
 }

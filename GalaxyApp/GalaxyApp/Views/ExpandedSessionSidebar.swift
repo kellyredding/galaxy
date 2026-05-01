@@ -10,16 +10,18 @@ struct ExpandedSessionSidebar: View {
 
     @Environment(\.chromeFontSize) private var chromeFontSize
 
-    // Row height derived from fixed line heights (deterministic, font-independent)
+    /// Single source of truth for sidebar row height. Both
+    /// SessionRow and SessionMarkerRow consume the same value via
+    /// ChromeFontSize.sidebarRowHeight, so the drag coordinator's
+    /// uniform-height math stays valid across both row kinds.
     private var rowHeight: CGFloat {
-        let fontSize = ChromeFontSize(chromeFontSize)
-        // top(6) + caption1Line + spacing(2) + tinyLine + spacing(2) + tinyLine + bottom(7)
-        return 6 + fontSize.caption1LineHeight + 2 + fontSize.tinyLineHeight + 2 + fontSize.tinyLineHeight + 7
+        ChromeFontSize(chromeFontSize).sidebarRowHeight
     }
 
-    // Only show drag handles when there's more than one session
+    /// Show drag handles when there's more than one item in the
+    /// sidebar — sessions and markers count equally.
     private var showDragHandles: Bool {
-        sessionManager.sessions.count > 1
+        sessionManager.sidebarItems.count > 1
     }
 
     var body: some View {
@@ -27,34 +29,13 @@ struct ExpandedSessionSidebar: View {
             ScrollViewReader { scrollProxy in
                 ScrollView {
                     ZStack(alignment: .topLeading) {
-                        // Session list
+                        // Interleaved sidebar list (sessions + markers)
                         LazyVStack(spacing: 0) {
-                            ForEach(Array(sessionManager.sessions.enumerated()), id: \.element.id) { index, session in
-                                SessionRow(
-                                    session: session,
-                                    isSelected: session.id == sessionManager.activeSessionId,
-                                    isWindowFocused: sessionManager.isWindowFocused,
-                                    isOnTerminalTab: sessionManager.activeTab == .terminal,
-                                    onStop: {
-                                        sessionManager.confirmAndStopSession(sessionId: session.id)
-                                    },
-                                    onClose: {
-                                        sessionManager.confirmAndDismissSession(sessionId: session.id)
-                                    },
-                                    isPlaceholder: dragCoordinator.draggedSessionId == session.id,
-                                    rowIndex: index,
-                                    showDragHandle: showDragHandles,
-                                    isDragging: dragCoordinator.isDragging,
-                                    statusInfo: statusLineService.statusInfo[session.id],
-                                    sidebarWidth: sidebarWidth
-                                )
-                                .id(session.id)
-                                .animation(.easeInOut(duration: 0.2), value: showDragHandles)
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    sessionManager.switchTo(sessionId: session.id)
-                                }
-                                .animation(.easeInOut(duration: 0.15), value: index)
+                            ForEach(
+                                Array(sessionManager.sidebarItems.enumerated()),
+                                id: \.element.id
+                            ) { index, item in
+                                rowView(for: item, at: index)
                             }
                         }
                         .environmentObject(dragCoordinator)  // Inject for SessionRowDragHandle
@@ -63,22 +44,12 @@ struct ExpandedSessionSidebar: View {
                         // high-frequency offsetY updates only re-render
                         // the preview, not the entire sidebar.
                         if dragCoordinator.isDragging,
-                           let draggedId = dragCoordinator.draggedSessionId,
-                           let session = sessionManager.sessions.first(where: { $0.id == draggedId }) {
-
-                            DragPreviewOverlay(
-                                session: session,
-                                isSelected: session.id == sessionManager.activeSessionId,
-                                isWindowFocused: sessionManager.isWindowFocused,
-                                isOnTerminalTab: sessionManager.activeTab == .terminal,
-                                displayIndex: dragCoordinator.currentArrayIndex,
-                                dragStartIndex: dragCoordinator.dragStartIndex,
-                                rowHeight: rowHeight,
-                                statusInfo: statusLineService.statusInfo[session.id],
-                                sidebarWidth: sidebarWidth,
-                                previewPosition: dragCoordinator.previewPosition
-                            )
-                            .environmentObject(dragCoordinator)
+                           let draggedId = dragCoordinator.draggedItemId,
+                           let item = sessionManager.sidebarItems.first(
+                               where: { $0.id == draggedId }
+                           )
+                        {
+                            dragPreview(for: item)
                         }
                     }
                 }
@@ -107,20 +78,20 @@ struct ExpandedSessionSidebar: View {
             // Keep drag coordinator in sync when chrome font size changes
             dragCoordinator.rowHeight = rowHeight
         }
-        .onChange(of: sessionManager.sessions.count) { _, newCount in
-            // Update drag coordinator with new count and session IDs
-            dragCoordinator.totalSessionCount = newCount
-            dragCoordinator.sessionIds = sessionManager.sessions.map { $0.id }
+        .onChange(of: sessionManager.sidebarItems.count) { _, newCount in
+            // Update drag coordinator with new count and item IDs
+            dragCoordinator.totalItemCount = newCount
+            dragCoordinator.itemIds = sessionManager.sidebarItems.map { $0.id }
             // Refresh git status when session count changes
             statusLineService.refreshSessions(sessionManager.sessions)
         }
         .onAppear {
             // Configure drag coordinator
             dragCoordinator.rowHeight = rowHeight
-            dragCoordinator.totalSessionCount = sessionManager.sessions.count
-            dragCoordinator.sessionIds = sessionManager.sessions.map { $0.id }
+            dragCoordinator.totalItemCount = sessionManager.sidebarItems.count
+            dragCoordinator.itemIds = sessionManager.sidebarItems.map { $0.id }
             dragCoordinator.onSwapNeeded = { fromIndex, toIndex in
-                sessionManager.swapSessions(fromIndex, toIndex)
+                sessionManager.swapItems(fromIndex, toIndex)
             }
 
             // Initial git status fetch on appear
@@ -129,11 +100,100 @@ struct ExpandedSessionSidebar: View {
             }
         }
     }
+
+    // MARK: - Row dispatch
+
+    /// Returns the appropriate sidebar row view for a SidebarItem.
+    /// Sessions are tappable (switch active session) and have full
+    /// status content; markers are not selectable and just render
+    /// their name/lines.
+    @ViewBuilder
+    private func rowView(for item: SidebarItem, at index: Int) -> some View {
+        switch item {
+        case .session(let session):
+            SessionRow(
+                session: session,
+                isSelected: session.id == sessionManager.activeSessionId,
+                isWindowFocused: sessionManager.isWindowFocused,
+                isOnTerminalTab: sessionManager.activeTab == .terminal,
+                onStop: {
+                    sessionManager.confirmAndStopSession(sessionId: session.id)
+                },
+                onClose: {
+                    sessionManager.confirmAndDismissSession(sessionId: session.id)
+                },
+                isPlaceholder: dragCoordinator.draggedItemId == session.id,
+                rowIndex: index,
+                showDragHandle: showDragHandles,
+                isDragging: dragCoordinator.isDragging,
+                statusInfo: statusLineService.statusInfo[session.id],
+                sidebarWidth: sidebarWidth
+            )
+            .id(session.id)
+            .animation(.easeInOut(duration: 0.2), value: showDragHandles)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                sessionManager.switchTo(sessionId: session.id)
+            }
+            .animation(.easeInOut(duration: 0.15), value: index)
+
+        case .marker(let marker):
+            SessionMarkerRow(
+                marker: marker,
+                onRemove: {
+                    sessionManager.confirmAndRemoveMarker(markerId: marker.id)
+                },
+                isPlaceholder: dragCoordinator.draggedItemId == marker.id,
+                rowIndex: index,
+                showDragHandle: showDragHandles,
+                isDragging: dragCoordinator.isDragging,
+                sidebarWidth: sidebarWidth
+            )
+            .id(marker.id)
+            .animation(.easeInOut(duration: 0.2), value: showDragHandles)
+            // No onTapGesture — markers are not selectable.
+            .animation(.easeInOut(duration: 0.15), value: index)
+        }
+    }
+
+    /// Returns the floating drag preview overlay for the dragged
+    /// item. Dispatches on item kind so sessions and markers each
+    /// render their own row body during drag.
+    @ViewBuilder
+    private func dragPreview(for item: SidebarItem) -> some View {
+        switch item {
+        case .session(let session):
+            DragPreviewOverlay(
+                session: session,
+                isSelected: session.id == sessionManager.activeSessionId,
+                isWindowFocused: sessionManager.isWindowFocused,
+                isOnTerminalTab: sessionManager.activeTab == .terminal,
+                displayIndex: dragCoordinator.currentArrayIndex,
+                dragStartIndex: dragCoordinator.dragStartIndex,
+                rowHeight: rowHeight,
+                statusInfo: statusLineService.statusInfo[session.id],
+                sidebarWidth: sidebarWidth,
+                previewPosition: dragCoordinator.previewPosition
+            )
+            .environmentObject(dragCoordinator)
+
+        case .marker(let marker):
+            MarkerDragPreviewOverlay(
+                marker: marker,
+                displayIndex: dragCoordinator.currentArrayIndex,
+                dragStartIndex: dragCoordinator.dragStartIndex,
+                rowHeight: rowHeight,
+                sidebarWidth: sidebarWidth,
+                previewPosition: dragCoordinator.previewPosition
+            )
+            .environmentObject(dragCoordinator)
+        }
+    }
 }
 
-// MARK: - Drag Preview Overlay
+// MARK: - Drag Preview Overlays
 
-/// Floating preview row shown during drag-to-reorder.
+/// Floating preview row shown during drag-to-reorder for a session.
 /// Observes DragPreviewPosition (high-frequency offsetY) independently
 /// so per-frame mouse updates only re-render this single view —
 /// not the entire sidebar body and all session rows.
@@ -163,6 +223,42 @@ struct DragPreviewOverlay: View {
             showDragHandle: true,
             isDragging: true,
             statusInfo: statusInfo,
+            sidebarWidth: sidebarWidth
+        )
+        .background(Color(NSColor.windowBackgroundColor))
+        .overlay(
+            Rectangle()
+                .stroke(Color.secondary.opacity(0.5), lineWidth: 1)
+        )
+        .offset(
+            y: CGFloat(dragStartIndex) * rowHeight
+                + previewPosition.offsetY
+        )
+        .zIndex(1000)
+        .allowsHitTesting(false)
+    }
+}
+
+/// Floating preview row shown during drag-to-reorder for a marker.
+/// Mirrors DragPreviewOverlay's positioning math so sessions and
+/// markers feel identical to drag.
+struct MarkerDragPreviewOverlay: View {
+    @ObservedObject var marker: SessionMarker
+    let displayIndex: Int
+    let dragStartIndex: Int
+    let rowHeight: CGFloat
+    let sidebarWidth: CGFloat
+
+    @ObservedObject var previewPosition: DragPreviewPosition
+
+    var body: some View {
+        SessionMarkerRow(
+            marker: marker,
+            onRemove: {},
+            isPlaceholder: false,
+            rowIndex: displayIndex,
+            showDragHandle: true,
+            isDragging: true,
             sidebarWidth: sidebarWidth
         )
         .background(Color(NSColor.windowBackgroundColor))

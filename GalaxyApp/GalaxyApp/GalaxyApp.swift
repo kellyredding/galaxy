@@ -75,6 +75,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.showNewSession()
         }
 
+        // Observe new marker notification
+        NotificationCenter.default.addObserver(
+            forName: .showNewMarker,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.showNewMarker()
+        }
+
         // Observe restore session notification
         NotificationCenter.default.addObserver(
             forName: .showRestoreSession,
@@ -353,6 +362,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func showNewSession() {
         guard let window = mainWindowController?.window else { return }
         NewSessionSheetController.present(on: window)
+    }
+
+    // MARK: - New Marker
+
+    private func showNewMarker() {
+        guard let window = mainWindowController?.window else { return }
+        NewMarkerSheetController.present(on: window)
     }
 
     // MARK: - Restore Session

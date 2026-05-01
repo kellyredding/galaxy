@@ -10,41 +10,38 @@
 		0382B41CACCDA9E37EBABA4C /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 922A89B10E14E165A50C1F4F /* ContentView.swift */; };
 		07A73655BC0B63114B198088 /* AnchorData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 430095FE1E69CCC41062A06B /* AnchorData.swift */; };
 		09CDA5203DCF9553E640C102 /* AnnotationHTMLVisitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB1BD0B12AE09B3D09B6EE03 /* AnnotationHTMLVisitor.swift */; };
-		0A5587B002764BC4F0895665 /* ShellLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5505134EB618051E5D135B2 /* ShellLauncher.swift */; };
 		0B65699340045EFEC87EC44B /* SessionNavigationHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68F73B27BACDA34CA4574613 /* SessionNavigationHistory.swift */; };
 		0CD6D832A8614D6D935C1E0F /* AgentRun.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFFF3072B720C04EC59D3554 /* AgentRun.swift */; };
 		1613D6F4896F7B93513565A8 /* TimelineModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 676FCB50E852F5CD6E0E58B9 /* TimelineModels.swift */; };
+		1F1D225FC7871834B03189C0 /* SwiftTermBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51B8E1BFB0B4DFDEFE7B0043 /* SwiftTermBackend.swift */; };
 		21BC314DAABC67786341621F /* ExpandedSessionSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B33E9ACBBBDE22688F8D808 /* ExpandedSessionSidebar.swift */; };
-		26E946A878ECD6CFC126B99A /* ShellTerminalPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12A562FB3C726B3346DAACE0 /* ShellTerminalPane.swift */; };
 		287B04EB0B71772D4E0594CD /* SessionIDGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA542FF52DF4733279284AB3 /* SessionIDGenerator.swift */; };
 		2BC2B13218D48BB00EEF761B /* EventCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0663E09051C220DBD5E80CD2 /* EventCoordinator.swift */; };
 		2CB7FF5998603A0F4B3BC8DD /* AnnotationSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = C96C60D970F588050D34A070 /* AnnotationSupport.swift */; };
 		2D041547EED1E1552246781B /* ViewedFilesPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DEDF4AC4FD8C8D3201846CB /* ViewedFilesPersistence.swift */; };
 		2E43EDB8A5F035987D542121 /* ArtifactSourceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E148B0A37A8DF7761B9F69AC /* ArtifactSourceView.swift */; };
+		2E5A3E230567B0644A0FBE75 /* TerminalBackendFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8A4839736F22A842E1CD692 /* TerminalBackendFactory.swift */; };
+		32AFC050E2D6D3FF86440F4D /* NewMarkerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B700435C26C483E71A75B12 /* NewMarkerView.swift */; };
 		3439D34465B92507E427479C /* ScrollbackOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD1324D7665E5F848D1DDD90 /* ScrollbackOverlayView.swift */; };
 		387858C02EE4E33A8F927666 /* ArtifactsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 993B48FFA0D6A7E321422F63 /* ArtifactsView.swift */; };
 		38C56F31253D082C87C20D6D /* PersonaPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B94034611483F6B08D6C02B /* PersonaPicker.swift */; };
 		3E64891A1B570A169DFFA3FD /* TimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 592873EB089CA8C129A579A0 /* TimelineView.swift */; };
 		3F6C193D5824A2FC5BDB2792 /* StatusLineService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5702E8641291E687147723FD /* StatusLineService.swift */; };
 		3FCE06C0F8AE9134D99D090A /* TerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCE6073F39BD2A2E08FD007F /* TerminalView.swift */; };
-		409B8141601EFECEBD3ACCD9 /* TerminalBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4CBBF9FDC8A51EF41F5EC65 /* TerminalBackend.swift */; };
-		8410B4E697794DEDA25CC00C /* TerminalBackendFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6D223300B4C4FBC81C37F31 /* TerminalBackendFactory.swift */; };
 		45502A30E76464D22AB37E82 /* LedgerIdentifiersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF05B1CBD2C3553B1FCBA500 /* LedgerIdentifiersView.swift */; };
 		4654E5243D23D2B9C9E3F183 /* LedgerFilesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB66259FCA486462B2373B6A /* LedgerFilesView.swift */; };
-		469F6BF5AEB79E8BA44202D5 /* SessionTerminalPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12A4E49878DEEC829A9AF6B /* SessionTerminalPane.swift */; };
 		487179062AB63CC1EBAD20CB /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8930E8F0C6702946D87082BD /* Assets.xcassets */; };
-		492F05573CD5ABCF9DD8100F /* SwiftTermScrollbackRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AEB637C6B52293D40BD71B3 /* SwiftTermScrollbackRenderer.swift */; };
 		4A72123664AE5FA178DF46E3 /* TimelineService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DE3AC5A832EA301B3967F61 /* TimelineService.swift */; };
+		4B45DFD2525ED9C52B51C43E /* ShellPaneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82C612579CBA9EC59CD6F9F5 /* ShellPaneView.swift */; };
+		4C2CEC47290415299CCF27BB /* SidebarItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FFC389A3E4E6768A33D8345 /* SidebarItem.swift */; };
 		4CD689921E9F3C467D5A532C /* SessionStatusDot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A2B8AABAEE680386E0753B7 /* SessionStatusDot.swift */; };
 		4F20E648BBD3A845F21F64BB /* LedgerQueryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 352D8EE51F82B2AC7CD44C73 /* LedgerQueryService.swift */; };
-		51A10F722AB6150B8A30DB2F /* ShellPaneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1260117598D2E8A70DFB8B9F /* ShellPaneView.swift */; };
 		55C2F61C9B63ACCE613CBC37 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0269FFB63DF2EC261DC5B6A /* SettingsView.swift */; };
+		571EE81ED88CE829C5C59BA8 /* TerminalBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 647FC24EF5503064016FE625 /* TerminalBackend.swift */; };
 		5726799F4CAC18544C8FB957 /* SessionRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 930CA7E2539E197A2DF03CE4 /* SessionRow.swift */; };
 		57F83F8FAFBFC9B625678AE5 /* PreferencesWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E9CD7B5767024AE0C85E433 /* PreferencesWindowController.swift */; };
 		59C4461354F92AEF376C88AA /* DragHandleNSView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43C2EE51F5ED8F5A44D27580 /* DragHandleNSView.swift */; };
 		5BE31FF52EF968E62B31F97C /* CircuitBreaker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3463B095E6622E31AF317063 /* CircuitBreaker.swift */; };
-		5C5B5A595857565554535251 /* ScrollbackSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A2A3A4A5A6A7A8A9AAABAC /* ScrollbackSnapshot.swift */; };
-		6210C70AA62A5D85BC8517FD /* TerminalPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11E12DAAF38722749AF0BEAD /* TerminalPane.swift */; };
 		64AB450ECD5FB1FF3D5E16EB /* EnrichmentService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260E4993B113CBAABADA519B /* EnrichmentService.swift */; };
 		69C769B61E2BA6F9BD8DA6FB /* MainWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEB9F0C617C86CE1FDD05FF3 /* MainWindowController.swift */; };
 		6CDB5F73F547B05AF78CC58E /* ScrollbackWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2750A011DD00E7D1E06CE4CD /* ScrollbackWebView.swift */; };
@@ -62,18 +59,23 @@
 		82B876DF7C1A77E1A811C62A /* EventEnvelope.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBD7729C400FAFC8E4EFFE94 /* EventEnvelope.swift */; };
 		830B36A8A4CD211AC3DF03F3 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9DD26C1047DBD42B5051047 /* main.swift */; };
 		84D24F789857F731DB384052 /* LedgerLastActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3698A7E1AE87120B27E6EFD0 /* LedgerLastActivityView.swift */; };
+		85933707ECA44AD5029CDE10 /* SessionTerminalPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89A149D3A675BE23CCE82275 /* SessionTerminalPane.swift */; };
+		86445A7A24E45A6F456EAE72 /* ShellPaneBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2818423D59425A4F643B9444 /* ShellPaneBar.swift */; };
 		8675182D56EEB0ECEB09DAC0 /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = 90EB9F42DFBE78AC39BB94CA /* Markdown */; };
 		86AAE69F5441679CED101F09 /* MarkdownReaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E49CF9BDA2474BE2585001F5 /* MarkdownReaderView.swift */; };
-		87FFE54A9802FACDDA0F15D9 /* GalaxySwiftTermView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7704E47DFEE80B330501660 /* GalaxySwiftTermView.swift */; };
 		88A4F35CD2619FD120C1665B /* NavigationEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61F41A6FFADC96743100251A /* NavigationEntry.swift */; };
 		88B1D264363994AD24AC8CC6 /* SessionDragCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA80B868DED26B32D6DEB65D /* SessionDragCoordinator.swift */; };
 		88DE79720988D464B7FF45B0 /* CollapsedSessionSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9840B2A7E1AAB30A89612AFB /* CollapsedSessionSidebar.swift */; };
+		893ACB805E9653364EC07099 /* TerminalTabSplitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB21CE8358B19A102512C359 /* TerminalTabSplitView.swift */; };
 		89EE54398E22AEA37B416F21 /* WindowStatePersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 899A0FEF2AD224B0D5701B42 /* WindowStatePersistence.swift */; };
 		8AC008AB18921C162CE71353 /* ArtifactImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88AEEF810BE7BF77CA16E7C9 /* ArtifactImageView.swift */; };
 		8D426437F3B08DAFAAB8C876 /* ArtifactTranscriptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9618639704DFCC421FA87F5A /* ArtifactTranscriptView.swift */; };
+		8E2F1398A854DE4A5AB2B3FC /* SessionMarkerRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BBBE3E1A89D66542B032539 /* SessionMarkerRow.swift */; };
 		8E316F88952E7A506D8CEC53 /* emoji-data.js in Resources */ = {isa = PBXBuildFile; fileRef = 54F43AFBEA120EE7E58EB3CB /* emoji-data.js */; };
 		8E8BA29C687F96F1533D49E2 /* AgentsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65EC5C46A6B9E07A2F81093F /* AgentsView.swift */; };
+		8F1A01FA0FE89DC6E93A3A19 /* GalaxySwiftTermView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53AA901974E0BB844A437BA1 /* GalaxySwiftTermView.swift */; };
 		8FEC7393E89FE983EDCBA419 /* LedgerSuggestedNameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B4449037A4904D32821556A /* LedgerSuggestedNameView.swift */; };
+		9088021D2AABD52A071D9C34 /* ShellLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8883076FF135248E14D820C4 /* ShellLauncher.swift */; };
 		951191037547FFAFD104A99F /* StoppedSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C599534AAFC2570BC5F292A /* StoppedSessionView.swift */; };
 		9570B4EFEC53463C1B6A01E5 /* ChromeFontScaling.swift in Sources */ = {isa = PBXBuildFile; fileRef = A43C7742A36C8BAB7C4C6419 /* ChromeFontScaling.swift */; };
 		95B87341788CFD115DCAC557 /* GalaxyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFBB4BD044AC373BB324C7F7 /* GalaxyApp.swift */; };
@@ -81,25 +83,27 @@
 		9A7E8C74C205BD7E4329689D /* MainMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = D96AFD79CE59690C239E10B5 /* MainMenu.swift */; };
 		9AA9CE7723F2ABB70173493D /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 7CE7EDB3AA040F6F2534E97D /* SwiftTerm */; };
 		9C1BE8D8B5D26E04841D180D /* SheetAlert.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50B1BA689B62E9309B084C1 /* SheetAlert.swift */; };
-		A1B2C3D4E5F60718293A4B5C /* ModalState.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7E8F90A1B2C3D4E5F6A7B8C /* ModalState.swift */; };
 		9DF6C43FCF8057F92F9035DF /* RestoreSessionSheetController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A3E23B7649EB363652B3378 /* RestoreSessionSheetController.swift */; };
 		9EBBFFABF0552FDA783CAA6F /* BellIndicatorBehavior.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C3C1E1CDC72CB3FDF60D346 /* BellIndicatorBehavior.swift */; };
 		A20D4EC7B5F8E3D1DDBB8D4E /* SettingsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C7501DB8ABDB113A9CF35C8 /* SettingsManager.swift */; };
+		A4B01AE6D2489B6821615FC5 /* TerminalVisualBell.swift in Sources */ = {isa = PBXBuildFile; fileRef = A821292A1CB70C1A1893890C /* TerminalVisualBell.swift */; };
 		A57FC847EF77E79C3A30DD55 /* TimelineCanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2970A34038789BE966C7D25 /* TimelineCanvasView.swift */; };
+		A9010861B07AED4439323788 /* ScrollbackSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61AA98185E94AAFC4DA8F145 /* ScrollbackSnapshot.swift */; };
 		ADD7F5A8E6F13DAC9EDFAA58 /* TimelineLayoutEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FA0451CBAF29669536F429E /* TimelineLayoutEngine.swift */; };
 		B1E71F47DE9403A1808277EC /* WatermarkBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6658F001C5C56071EC60514E /* WatermarkBackground.swift */; };
 		B319DA9B78048A3DF36BED58 /* LedgerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B593B1A95489C385D8B403E7 /* LedgerView.swift */; };
 		BAA27B33BB1F6834A8BA302A /* LedgerSubTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D4122B312BBDD8690D21C4F /* LedgerSubTab.swift */; };
+		BAAA7C7850229F5F5BD9BAEF /* TerminalPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23348188C124E96FA5F0CC4B /* TerminalPane.swift */; };
 		BB911698AD4CE425B65FF0E7 /* emoji-autocomplete.js in Resources */ = {isa = PBXBuildFile; fileRef = EA90FB9B45E643E56114F655 /* emoji-autocomplete.js */; };
 		C27788ECAC3C2D2A1DA2024E /* GalaxyLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5D457946288879168E5D913 /* GalaxyLog.swift */; };
 		C3434D97E3E1783843E50797 /* SessionRowDragHandle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E474100EA691402E8DF51F3A /* SessionRowDragHandle.swift */; };
+		C4A02B407C34BA4A44996C98 /* SessionMarker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E7DDD862A4F5F6CA6BF6170 /* SessionMarker.swift */; };
 		C4E7D4A85BAB125419399231 /* RestoreSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3812822CEF0CE755762272D9 /* RestoreSessionView.swift */; };
-		C712BC35633C53B4F24FCD1C /* ShellPaneBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E81C1699D1612037E84FE65 /* ShellPaneBar.swift */; };
+		C52190FC4DA2882C6102855A /* SwiftTermScrollbackRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA5C08EF59AD1B2E8674EFA5 /* SwiftTermScrollbackRenderer.swift */; };
 		C72E6931FE46DAAFE486C09E /* Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = F36B97B02F23D9DBF2C2F2E2 /* Session.swift */; };
+		C7AF14CE931063853508C47D /* ModalState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11AC80464BCD652210A6E2A5 /* ModalState.swift */; };
 		C7C58C9749BA5147D39E5B17 /* NewSessionSheetController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8A53165AE008050CD86AE4F /* NewSessionSheetController.swift */; };
 		C81FA322757FF337EF9E18AC /* github-dark.min.css in Resources */ = {isa = PBXBuildFile; fileRef = 571E103D146B34A40CCC6E58 /* github-dark.min.css */; };
-		CA284F033220A4AD5EE21F09 /* TerminalTabSplitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC11C8CB88502C2AD6E56775 /* TerminalTabSplitView.swift */; };
-		E8A2FB4C9D6B5E3F1A7C8D2B /* TerminalVisualBell.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4F1A5B8C2E34D7E9B3F6A1C /* TerminalVisualBell.swift */; };
 		CC27D1B9C8318928AE6187FE /* SocketListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA7C61AE6C010B6F8091B0B3 /* SocketListener.swift */; };
 		CF28242E079441458AD5DF08 /* ArtifactQueryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B3D4BA58AA8141ED6BB4741 /* ArtifactQueryService.swift */; };
 		CF2878EF8B56C276182C86A2 /* SessionTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 132ABF5FFF205D134EED1EE4 /* SessionTab.swift */; };
@@ -114,29 +118,32 @@
 		F19AFC56BBDD37BD92E68719 /* SnapshotQueryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D98BE974E4671D9CFC645BF /* SnapshotQueryService.swift */; };
 		F208448C6AAFC6EDFC7FB9E3 /* github.min.css in Resources */ = {isa = PBXBuildFile; fileRef = B23520B930BCE47BABD544FF /* github.min.css */; };
 		F3B5D2B1C92AA107127C32E8 /* ArtifactDiffView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8180F1A6B6AAA96C11608AE /* ArtifactDiffView.swift */; };
+		F690A6B2CC3843DAB6808EF8 /* ShellTerminalPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26D5766E6F9E878E698DA46C /* ShellTerminalPane.swift */; };
 		F8120A8B00CCCBB7D87B8D97 /* TimelineQueryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC39AC5B7A009BF079447618 /* TimelineQueryService.swift */; };
-		FDC71DF5F06D74418078C4C9 /* SwiftTermBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AD8494FB5F36E97B2A3A71F /* SwiftTermBackend.swift */; };
+		FC9852AF879910CE3A323E99 /* NewMarkerSheetController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C066BF34C0F8B5E82A7D3679 /* NewMarkerSheetController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		0663E09051C220DBD5E80CD2 /* EventCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventCoordinator.swift; sourceTree = "<group>"; };
 		0A75DD66617BDBF94F9175C9 /* CopyButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopyButton.swift; sourceTree = "<group>"; };
 		0B33E9ACBBBDE22688F8D808 /* ExpandedSessionSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpandedSessionSidebar.swift; sourceTree = "<group>"; };
-		A1A2A3A4A5A6A7A8A9AAABAC /* ScrollbackSnapshot.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollbackSnapshot.swift; sourceTree = "<group>"; };
-		11E12DAAF38722749AF0BEAD /* TerminalPane.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TerminalPane.swift; sourceTree = "<group>"; };
+		11AC80464BCD652210A6E2A5 /* ModalState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModalState.swift; sourceTree = "<group>"; };
 		1222FD00CE1FBF7DC99BD683 /* EventDebouncer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventDebouncer.swift; sourceTree = "<group>"; };
-		1260117598D2E8A70DFB8B9F /* ShellPaneView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ShellPaneView.swift; sourceTree = "<group>"; };
-		12A562FB3C726B3346DAACE0 /* ShellTerminalPane.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ShellTerminalPane.swift; sourceTree = "<group>"; };
 		132ABF5FFF205D134EED1EE4 /* SessionTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionTab.swift; sourceTree = "<group>"; };
 		139EB2F2C31AF6EE70AFECF7 /* DirectoryField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectoryField.swift; sourceTree = "<group>"; };
 		15C1E3C296A1E84381807568 /* NavigationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationCoordinator.swift; sourceTree = "<group>"; };
 		19982622D2460FF2F8B4E33B /* UnreadIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnreadIndicator.swift; sourceTree = "<group>"; };
 		1B4449037A4904D32821556A /* LedgerSuggestedNameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerSuggestedNameView.swift; sourceTree = "<group>"; };
+		1BBBE3E1A89D66542B032539 /* SessionMarkerRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionMarkerRow.swift; sourceTree = "<group>"; };
 		1C7501DB8ABDB113A9CF35C8 /* SettingsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsManager.swift; sourceTree = "<group>"; };
 		1DE3AC5A832EA301B3967F61 /* TimelineService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineService.swift; sourceTree = "<group>"; };
+		1E7DDD862A4F5F6CA6BF6170 /* SessionMarker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionMarker.swift; sourceTree = "<group>"; };
 		1F39F262BB7D593079DE0602 /* GalaxyApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GalaxyApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		23348188C124E96FA5F0CC4B /* TerminalPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalPane.swift; sourceTree = "<group>"; };
 		260E4993B113CBAABADA519B /* EnrichmentService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnrichmentService.swift; sourceTree = "<group>"; };
+		26D5766E6F9E878E698DA46C /* ShellTerminalPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellTerminalPane.swift; sourceTree = "<group>"; };
 		2750A011DD00E7D1E06CE4CD /* ScrollbackWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollbackWebView.swift; sourceTree = "<group>"; };
+		2818423D59425A4F643B9444 /* ShellPaneBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellPaneBar.swift; sourceTree = "<group>"; };
 		29344914B2D95B3DADB11F4A /* SnapshotsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotsView.swift; sourceTree = "<group>"; };
 		2C599534AAFC2570BC5F292A /* StoppedSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoppedSessionView.swift; sourceTree = "<group>"; };
 		2E2A600723E28593174AA752 /* highlight.min.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = highlight.min.js; sourceTree = "<group>"; };
@@ -152,6 +159,8 @@
 		44DBB494CF22DA9A7DD449BE /* LongPressMenuButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LongPressMenuButton.swift; sourceTree = "<group>"; };
 		4A2B8AABAEE680386E0753B7 /* SessionStatusDot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStatusDot.swift; sourceTree = "<group>"; };
 		4D98BE974E4671D9CFC645BF /* SnapshotQueryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotQueryService.swift; sourceTree = "<group>"; };
+		51B8E1BFB0B4DFDEFE7B0043 /* SwiftTermBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftTermBackend.swift; sourceTree = "<group>"; };
+		53AA901974E0BB844A437BA1 /* GalaxySwiftTermView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySwiftTermView.swift; sourceTree = "<group>"; };
 		54F43AFBEA120EE7E58EB3CB /* emoji-data.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = "emoji-data.js"; sourceTree = "<group>"; };
 		5702E8641291E687147723FD /* StatusLineService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusLineService.swift; sourceTree = "<group>"; };
 		571E103D146B34A40CCC6E58 /* github-dark.min.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = "github-dark.min.css"; sourceTree = "<group>"; };
@@ -159,18 +168,22 @@
 		5B3D4BA58AA8141ED6BB4741 /* ArtifactQueryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactQueryService.swift; sourceTree = "<group>"; };
 		5B94034611483F6B08D6C02B /* PersonaPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonaPicker.swift; sourceTree = "<group>"; };
 		5DEDF4AC4FD8C8D3201846CB /* ViewedFilesPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewedFilesPersistence.swift; sourceTree = "<group>"; };
-		5E81C1699D1612037E84FE65 /* ShellPaneBar.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ShellPaneBar.swift; sourceTree = "<group>"; };
 		5FA0451CBAF29669536F429E /* TimelineLayoutEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineLayoutEngine.swift; sourceTree = "<group>"; };
+		5FFC389A3E4E6768A33D8345 /* SidebarItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarItem.swift; sourceTree = "<group>"; };
+		61AA98185E94AAFC4DA8F145 /* ScrollbackSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollbackSnapshot.swift; sourceTree = "<group>"; };
 		61F41A6FFADC96743100251A /* NavigationEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationEntry.swift; sourceTree = "<group>"; };
 		6416EF21214B040D05629012 /* ArtifactHTMLView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactHTMLView.swift; sourceTree = "<group>"; };
+		647FC24EF5503064016FE625 /* TerminalBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalBackend.swift; sourceTree = "<group>"; };
 		65EC5C46A6B9E07A2F81093F /* AgentsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentsView.swift; sourceTree = "<group>"; };
 		6658F001C5C56071EC60514E /* WatermarkBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatermarkBackground.swift; sourceTree = "<group>"; };
 		676FCB50E852F5CD6E0E58B9 /* TimelineModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineModels.swift; sourceTree = "<group>"; };
 		68F73B27BACDA34CA4574613 /* SessionNavigationHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionNavigationHistory.swift; sourceTree = "<group>"; };
-		7AD8494FB5F36E97B2A3A71F /* SwiftTermBackend.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SwiftTermBackend.swift; sourceTree = "<group>"; };
+		82C612579CBA9EC59CD6F9F5 /* ShellPaneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellPaneView.swift; sourceTree = "<group>"; };
+		8883076FF135248E14D820C4 /* ShellLauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellLauncher.swift; sourceTree = "<group>"; };
 		88AEEF810BE7BF77CA16E7C9 /* ArtifactImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactImageView.swift; sourceTree = "<group>"; };
 		8930E8F0C6702946D87082BD /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		899A0FEF2AD224B0D5701B42 /* WindowStatePersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowStatePersistence.swift; sourceTree = "<group>"; };
+		89A149D3A675BE23CCE82275 /* SessionTerminalPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionTerminalPane.swift; sourceTree = "<group>"; };
 		8A3E23B7649EB363652B3378 /* RestoreSessionSheetController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestoreSessionSheetController.swift; sourceTree = "<group>"; };
 		8CC9D0AFA07CC0E764CBDAE3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		8DE2A15976B77FC2E24FB3B7 /* SwiftTerm */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SwiftTerm; path = Vendor/SwiftTerm; sourceTree = SOURCE_ROOT; };
@@ -180,15 +193,16 @@
 		9840B2A7E1AAB30A89612AFB /* CollapsedSessionSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollapsedSessionSidebar.swift; sourceTree = "<group>"; };
 		993B48FFA0D6A7E321422F63 /* ArtifactsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactsView.swift; sourceTree = "<group>"; };
 		9A462903899D61A14DF35081 /* ArtifactMermaidView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactMermaidView.swift; sourceTree = "<group>"; };
-		9AEB637C6B52293D40BD71B3 /* SwiftTermScrollbackRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftTermScrollbackRenderer.swift; sourceTree = "<group>"; };
+		9B700435C26C483E71A75B12 /* NewMarkerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewMarkerView.swift; sourceTree = "<group>"; };
 		9C3C1E1CDC72CB3FDF60D346 /* BellIndicatorBehavior.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BellIndicatorBehavior.swift; sourceTree = "<group>"; };
 		9D4122B312BBDD8690D21C4F /* LedgerSubTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerSubTab.swift; sourceTree = "<group>"; };
 		9EB1B25ADB386E0B834FA6B0 /* SessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionManager.swift; sourceTree = "<group>"; };
 		A2970A34038789BE966C7D25 /* TimelineCanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineCanvasView.swift; sourceTree = "<group>"; };
 		A43C7742A36C8BAB7C4C6419 /* ChromeFontScaling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChromeFontScaling.swift; sourceTree = "<group>"; };
-		A5505134EB618051E5D135B2 /* ShellLauncher.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ShellLauncher.swift; sourceTree = "<group>"; };
 		A5D457946288879168E5D913 /* GalaxyLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxyLog.swift; sourceTree = "<group>"; };
+		A821292A1CB70C1A1893890C /* TerminalVisualBell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalVisualBell.swift; sourceTree = "<group>"; };
 		A8A53165AE008050CD86AE4F /* NewSessionSheetController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewSessionSheetController.swift; sourceTree = "<group>"; };
+		AB21CE8358B19A102512C359 /* TerminalTabSplitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalTabSplitView.swift; sourceTree = "<group>"; };
 		AB66259FCA486462B2373B6A /* LedgerFilesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerFilesView.swift; sourceTree = "<group>"; };
 		AFBB4BD044AC373BB324C7F7 /* GalaxyApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxyApp.swift; sourceTree = "<group>"; };
 		B23520B930BCE47BABD544FF /* github.min.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = github.min.css; sourceTree = "<group>"; };
@@ -197,37 +211,33 @@
 		BAD14A629CEF3AA730CD6237 /* TerminalColorTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalColorTheme.swift; sourceTree = "<group>"; };
 		BAEF4E4E06E2AD409BFED23F /* SessionPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionPersistence.swift; sourceTree = "<group>"; };
 		BB1BD0B12AE09B3D09B6EE03 /* AnnotationHTMLVisitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnnotationHTMLVisitor.swift; sourceTree = "<group>"; };
-		BC11C8CB88502C2AD6E56775 /* TerminalTabSplitView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TerminalTabSplitView.swift; sourceTree = "<group>"; };
-		D4F1A5B8C2E34D7E9B3F6A1C /* TerminalVisualBell.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TerminalVisualBell.swift; sourceTree = "<group>"; };
 		BC39AC5B7A009BF079447618 /* TimelineQueryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineQueryService.swift; sourceTree = "<group>"; };
 		BD1324D7665E5F848D1DDD90 /* ScrollbackOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollbackOverlayView.swift; sourceTree = "<group>"; };
 		BE3DAF1743A20920A57B236D /* NewSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewSessionView.swift; sourceTree = "<group>"; };
 		BFFF3072B720C04EC59D3554 /* AgentRun.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRun.swift; sourceTree = "<group>"; };
+		C066BF34C0F8B5E82A7D3679 /* NewMarkerSheetController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewMarkerSheetController.swift; sourceTree = "<group>"; };
 		C2C9905E81F2549614ADA8EE /* LedgerEntriesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerEntriesView.swift; sourceTree = "<group>"; };
 		C50B1BA689B62E9309B084C1 /* SheetAlert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SheetAlert.swift; sourceTree = "<group>"; };
-		D7E8F90A1B2C3D4E5F6A7B8C /* ModalState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModalState.swift; sourceTree = "<group>"; };
 		C694C8B104DEAC6605437941 /* AgentsQueryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentsQueryService.swift; sourceTree = "<group>"; };
-		C7704E47DFEE80B330501660 /* GalaxySwiftTermView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySwiftTermView.swift; sourceTree = "<group>"; };
 		C77E50164B4FCCB1E3C49395 /* NavigationRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationRoute.swift; sourceTree = "<group>"; };
 		C8180F1A6B6AAA96C11608AE /* ArtifactDiffView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactDiffView.swift; sourceTree = "<group>"; };
 		C96C60D970F588050D34A070 /* AnnotationSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnnotationSupport.swift; sourceTree = "<group>"; };
 		CA7C61AE6C010B6F8091B0B3 /* SocketListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocketListener.swift; sourceTree = "<group>"; };
 		CEB9F0C617C86CE1FDD05FF3 /* MainWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowController.swift; sourceTree = "<group>"; };
 		CF05B1CBD2C3553B1FCBA500 /* LedgerIdentifiersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerIdentifiersView.swift; sourceTree = "<group>"; };
-		D12A4E49878DEEC829A9AF6B /* SessionTerminalPane.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SessionTerminalPane.swift; sourceTree = "<group>"; };
 		D96AFD79CE59690C239E10B5 /* MainMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainMenu.swift; sourceTree = "<group>"; };
+		DA5C08EF59AD1B2E8674EFA5 /* SwiftTermScrollbackRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftTermScrollbackRenderer.swift; sourceTree = "<group>"; };
 		DCE6073F39BD2A2E08FD007F /* TerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalView.swift; sourceTree = "<group>"; };
 		E148B0A37A8DF7761B9F69AC /* ArtifactSourceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactSourceView.swift; sourceTree = "<group>"; };
 		E474100EA691402E8DF51F3A /* SessionRowDragHandle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRowDragHandle.swift; sourceTree = "<group>"; };
 		E49CF9BDA2474BE2585001F5 /* MarkdownReaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownReaderView.swift; sourceTree = "<group>"; };
-		E4CBBF9FDC8A51EF41F5EC65 /* TerminalBackend.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TerminalBackend.swift; sourceTree = "<group>"; };
-		A6D223300B4C4FBC81C37F31 /* TerminalBackendFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalBackendFactory.swift; sourceTree = "<group>"; };
 		EA542FF52DF4733279284AB3 /* SessionIDGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionIDGenerator.swift; sourceTree = "<group>"; };
 		EA80B868DED26B32D6DEB65D /* SessionDragCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionDragCoordinator.swift; sourceTree = "<group>"; };
 		EA90FB9B45E643E56114F655 /* emoji-autocomplete.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = "emoji-autocomplete.js"; sourceTree = "<group>"; };
 		F0269FFB63DF2EC261DC5B6A /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		F1F9F41AF028CB2338EDF0B1 /* mermaid.min.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = mermaid.min.js; sourceTree = "<group>"; };
 		F36B97B02F23D9DBF2C2F2E2 /* Session.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Session.swift; sourceTree = "<group>"; };
+		F8A4839736F22A842E1CD692 /* TerminalBackendFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalBackendFactory.swift; sourceTree = "<group>"; };
 		FBD7729C400FAFC8E4EFFE94 /* EventEnvelope.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventEnvelope.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -263,28 +273,30 @@
 				61F41A6FFADC96743100251A /* NavigationEntry.swift */,
 				C77E50164B4FCCB1E3C49395 /* NavigationRoute.swift */,
 				37E5B003AFED03C15A13FC2D /* NotificationService.swift */,
+				61AA98185E94AAFC4DA8F145 /* ScrollbackSnapshot.swift */,
 				F36B97B02F23D9DBF2C2F2E2 /* Session.swift */,
 				EA542FF52DF4733279284AB3 /* SessionIDGenerator.swift */,
 				9EB1B25ADB386E0B834FA6B0 /* SessionManager.swift */,
+				1E7DDD862A4F5F6CA6BF6170 /* SessionMarker.swift */,
 				68F73B27BACDA34CA4574613 /* SessionNavigationHistory.swift */,
 				BAEF4E4E06E2AD409BFED23F /* SessionPersistence.swift */,
 				132ABF5FFF205D134EED1EE4 /* SessionTab.swift */,
 				1C7501DB8ABDB113A9CF35C8 /* SettingsManager.swift */,
+				8883076FF135248E14D820C4 /* ShellLauncher.swift */,
+				5FFC389A3E4E6768A33D8345 /* SidebarItem.swift */,
 				4D98BE974E4671D9CFC645BF /* SnapshotQueryService.swift */,
 				CA7C61AE6C010B6F8091B0B3 /* SocketListener.swift */,
 				5702E8641291E687147723FD /* StatusLineService.swift */,
+				647FC24EF5503064016FE625 /* TerminalBackend.swift */,
+				F8A4839736F22A842E1CD692 /* TerminalBackendFactory.swift */,
 				BAD14A629CEF3AA730CD6237 /* TerminalColorTheme.swift */,
+				23348188C124E96FA5F0CC4B /* TerminalPane.swift */,
 				5FA0451CBAF29669536F429E /* TimelineLayoutEngine.swift */,
 				676FCB50E852F5CD6E0E58B9 /* TimelineModels.swift */,
 				BC39AC5B7A009BF079447618 /* TimelineQueryService.swift */,
 				1DE3AC5A832EA301B3967F61 /* TimelineService.swift */,
 				5DEDF4AC4FD8C8D3201846CB /* ViewedFilesPersistence.swift */,
 				899A0FEF2AD224B0D5701B42 /* WindowStatePersistence.swift */,
-				11E12DAAF38722749AF0BEAD /* TerminalPane.swift */,
-				E4CBBF9FDC8A51EF41F5EC65 /* TerminalBackend.swift */,
-				A6D223300B4C4FBC81C37F31 /* TerminalBackendFactory.swift */,
-				A1A2A3A4A5A6A7A8A9AAABAC /* ScrollbackSnapshot.swift */,
-				A5505134EB618051E5D135B2 /* ShellLauncher.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -331,7 +343,7 @@
 				139EB2F2C31AF6EE70AFECF7 /* DirectoryField.swift */,
 				43C2EE51F5ED8F5A44D27580 /* DragHandleNSView.swift */,
 				0B33E9ACBBBDE22688F8D808 /* ExpandedSessionSidebar.swift */,
-				C7704E47DFEE80B330501660 /* GalaxySwiftTermView.swift */,
+				53AA901974E0BB844A437BA1 /* GalaxySwiftTermView.swift */,
 				C2C9905E81F2549614ADA8EE /* LedgerEntriesView.swift */,
 				AB66259FCA486462B2373B6A /* LedgerFilesView.swift */,
 				CF05B1CBD2C3553B1FCBA500 /* LedgerIdentifiersView.swift */,
@@ -340,33 +352,35 @@
 				B593B1A95489C385D8B403E7 /* LedgerView.swift */,
 				44DBB494CF22DA9A7DD449BE /* LongPressMenuButton.swift */,
 				E49CF9BDA2474BE2585001F5 /* MarkdownReaderView.swift */,
+				11AC80464BCD652210A6E2A5 /* ModalState.swift */,
+				9B700435C26C483E71A75B12 /* NewMarkerView.swift */,
 				BE3DAF1743A20920A57B236D /* NewSessionView.swift */,
 				5B94034611483F6B08D6C02B /* PersonaPicker.swift */,
 				3812822CEF0CE755762272D9 /* RestoreSessionView.swift */,
-				9AEB637C6B52293D40BD71B3 /* SwiftTermScrollbackRenderer.swift */,
 				BD1324D7665E5F848D1DDD90 /* ScrollbackOverlayView.swift */,
 				2750A011DD00E7D1E06CE4CD /* ScrollbackWebView.swift */,
 				EA80B868DED26B32D6DEB65D /* SessionDragCoordinator.swift */,
+				1BBBE3E1A89D66542B032539 /* SessionMarkerRow.swift */,
 				930CA7E2539E197A2DF03CE4 /* SessionRow.swift */,
 				E474100EA691402E8DF51F3A /* SessionRowDragHandle.swift */,
 				4A2B8AABAEE680386E0753B7 /* SessionStatusDot.swift */,
+				89A149D3A675BE23CCE82275 /* SessionTerminalPane.swift */,
 				F0269FFB63DF2EC261DC5B6A /* SettingsView.swift */,
 				C50B1BA689B62E9309B084C1 /* SheetAlert.swift */,
-				D7E8F90A1B2C3D4E5F6A7B8C /* ModalState.swift */,
+				2818423D59425A4F643B9444 /* ShellPaneBar.swift */,
+				82C612579CBA9EC59CD6F9F5 /* ShellPaneView.swift */,
+				26D5766E6F9E878E698DA46C /* ShellTerminalPane.swift */,
 				29344914B2D95B3DADB11F4A /* SnapshotsView.swift */,
 				2C599534AAFC2570BC5F292A /* StoppedSessionView.swift */,
+				51B8E1BFB0B4DFDEFE7B0043 /* SwiftTermBackend.swift */,
+				DA5C08EF59AD1B2E8674EFA5 /* SwiftTermScrollbackRenderer.swift */,
+				AB21CE8358B19A102512C359 /* TerminalTabSplitView.swift */,
 				DCE6073F39BD2A2E08FD007F /* TerminalView.swift */,
+				A821292A1CB70C1A1893890C /* TerminalVisualBell.swift */,
 				A2970A34038789BE966C7D25 /* TimelineCanvasView.swift */,
 				592873EB089CA8C129A579A0 /* TimelineView.swift */,
 				19982622D2460FF2F8B4E33B /* UnreadIndicator.swift */,
 				6658F001C5C56071EC60514E /* WatermarkBackground.swift */,
-				7AD8494FB5F36E97B2A3A71F /* SwiftTermBackend.swift */,
-				D12A4E49878DEEC829A9AF6B /* SessionTerminalPane.swift */,
-				12A562FB3C726B3346DAACE0 /* ShellTerminalPane.swift */,
-				5E81C1699D1612037E84FE65 /* ShellPaneBar.swift */,
-				1260117598D2E8A70DFB8B9F /* ShellPaneView.swift */,
-				BC11C8CB88502C2AD6E56775 /* TerminalTabSplitView.swift */,
-				D4F1A5B8C2E34D7E9B3F6A1C /* TerminalVisualBell.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -398,6 +412,7 @@
 				B9DD26C1047DBD42B5051047 /* main.swift */,
 				D96AFD79CE59690C239E10B5 /* MainMenu.swift */,
 				CEB9F0C617C86CE1FDD05FF3 /* MainWindowController.swift */,
+				C066BF34C0F8B5E82A7D3679 /* NewMarkerSheetController.swift */,
 				A8A53165AE008050CD86AE4F /* NewSessionSheetController.swift */,
 				2E9CD7B5767024AE0C85E433 /* PreferencesWindowController.swift */,
 				8A3E23B7649EB363652B3378 /* RestoreSessionSheetController.swift */,
@@ -453,10 +468,9 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				76728E219694B808E74E176B /* XCRemoteSwiftPackageReference "swift-markdown" */,
-				5858678D19DE930848F64619 /* XCLocalSwiftPackageReference "SwiftTerm" */,
+				5858678D19DE930848F64619 /* XCLocalSwiftPackageReference "Vendor/SwiftTerm" */,
 			);
 			preferredProjectObjectVersion = 77;
-			productRefGroup = 391FB9CB30980D64BFD7727C /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -517,7 +531,7 @@
 				21BC314DAABC67786341621F /* ExpandedSessionSidebar.swift in Sources */,
 				95B87341788CFD115DCAC557 /* GalaxyApp.swift in Sources */,
 				C27788ECAC3C2D2A1DA2024E /* GalaxyLog.swift in Sources */,
-				87FFE54A9802FACDDA0F15D9 /* GalaxySwiftTermView.swift in Sources */,
+				8F1A01FA0FE89DC6E93A3A19 /* GalaxySwiftTermView.swift in Sources */,
 				7FA24AFDBEAAAA19CC64A1E4 /* LedgerEntriesView.swift in Sources */,
 				4654E5243D23D2B9C9E3F183 /* LedgerFilesView.swift in Sources */,
 				45502A30E76464D22AB37E82 /* LedgerIdentifiersView.swift in Sources */,
@@ -530,9 +544,12 @@
 				9A7E8C74C205BD7E4329689D /* MainMenu.swift in Sources */,
 				69C769B61E2BA6F9BD8DA6FB /* MainWindowController.swift in Sources */,
 				86AAE69F5441679CED101F09 /* MarkdownReaderView.swift in Sources */,
+				C7AF14CE931063853508C47D /* ModalState.swift in Sources */,
 				EDD17400C7F27572C4B6FE96 /* NavigationCoordinator.swift in Sources */,
 				88A4F35CD2619FD120C1665B /* NavigationEntry.swift in Sources */,
 				7ACB6628A08C02E67BFAFA4F /* NavigationRoute.swift in Sources */,
+				FC9852AF879910CE3A323E99 /* NewMarkerSheetController.swift in Sources */,
+				32AFC050E2D6D3FF86440F4D /* NewMarkerView.swift in Sources */,
 				C7C58C9749BA5147D39E5B17 /* NewSessionSheetController.swift in Sources */,
 				E94CFE702D0C74AFE0D80B81 /* NewSessionView.swift in Sources */,
 				71836A132E30E0F8CC17F3D8 /* NotificationService.swift in Sources */,
@@ -540,30 +557,44 @@
 				57F83F8FAFBFC9B625678AE5 /* PreferencesWindowController.swift in Sources */,
 				9DF6C43FCF8057F92F9035DF /* RestoreSessionSheetController.swift in Sources */,
 				C4E7D4A85BAB125419399231 /* RestoreSessionView.swift in Sources */,
-				492F05573CD5ABCF9DD8100F /* SwiftTermScrollbackRenderer.swift in Sources */,
 				3439D34465B92507E427479C /* ScrollbackOverlayView.swift in Sources */,
+				A9010861B07AED4439323788 /* ScrollbackSnapshot.swift in Sources */,
 				6CDB5F73F547B05AF78CC58E /* ScrollbackWebView.swift in Sources */,
 				C72E6931FE46DAAFE486C09E /* Session.swift in Sources */,
 				88B1D264363994AD24AC8CC6 /* SessionDragCoordinator.swift in Sources */,
 				287B04EB0B71772D4E0594CD /* SessionIDGenerator.swift in Sources */,
 				D1DBDDFE86F84375BCFD9078 /* SessionManager.swift in Sources */,
+				C4A02B407C34BA4A44996C98 /* SessionMarker.swift in Sources */,
+				8E2F1398A854DE4A5AB2B3FC /* SessionMarkerRow.swift in Sources */,
 				0B65699340045EFEC87EC44B /* SessionNavigationHistory.swift in Sources */,
 				6DBFAC1175B99C54309DF19A /* SessionPersistence.swift in Sources */,
 				5726799F4CAC18544C8FB957 /* SessionRow.swift in Sources */,
 				C3434D97E3E1783843E50797 /* SessionRowDragHandle.swift in Sources */,
 				4CD689921E9F3C467D5A532C /* SessionStatusDot.swift in Sources */,
 				CF2878EF8B56C276182C86A2 /* SessionTab.swift in Sources */,
+				85933707ECA44AD5029CDE10 /* SessionTerminalPane.swift in Sources */,
 				A20D4EC7B5F8E3D1DDBB8D4E /* SettingsManager.swift in Sources */,
 				55C2F61C9B63ACCE613CBC37 /* SettingsView.swift in Sources */,
 				9C1BE8D8B5D26E04841D180D /* SheetAlert.swift in Sources */,
-				A1B2C3D4E5F60718293A4B5C /* ModalState.swift in Sources */,
+				9088021D2AABD52A071D9C34 /* ShellLauncher.swift in Sources */,
+				86445A7A24E45A6F456EAE72 /* ShellPaneBar.swift in Sources */,
+				4B45DFD2525ED9C52B51C43E /* ShellPaneView.swift in Sources */,
+				F690A6B2CC3843DAB6808EF8 /* ShellTerminalPane.swift in Sources */,
+				4C2CEC47290415299CCF27BB /* SidebarItem.swift in Sources */,
 				F19AFC56BBDD37BD92E68719 /* SnapshotQueryService.swift in Sources */,
 				D499F472C2F9A6CB0D02D493 /* SnapshotsView.swift in Sources */,
 				CC27D1B9C8318928AE6187FE /* SocketListener.swift in Sources */,
 				3F6C193D5824A2FC5BDB2792 /* StatusLineService.swift in Sources */,
 				951191037547FFAFD104A99F /* StoppedSessionView.swift in Sources */,
+				1F1D225FC7871834B03189C0 /* SwiftTermBackend.swift in Sources */,
+				C52190FC4DA2882C6102855A /* SwiftTermScrollbackRenderer.swift in Sources */,
+				571EE81ED88CE829C5C59BA8 /* TerminalBackend.swift in Sources */,
+				2E5A3E230567B0644A0FBE75 /* TerminalBackendFactory.swift in Sources */,
 				7A28B8F016D429863BF35F22 /* TerminalColorTheme.swift in Sources */,
+				BAAA7C7850229F5F5BD9BAEF /* TerminalPane.swift in Sources */,
+				893ACB805E9653364EC07099 /* TerminalTabSplitView.swift in Sources */,
 				3FCE06C0F8AE9134D99D090A /* TerminalView.swift in Sources */,
+				A4B01AE6D2489B6821615FC5 /* TerminalVisualBell.swift in Sources */,
 				A57FC847EF77E79C3A30DD55 /* TimelineCanvasView.swift in Sources */,
 				ADD7F5A8E6F13DAC9EDFAA58 /* TimelineLayoutEngine.swift in Sources */,
 				1613D6F4896F7B93513565A8 /* TimelineModels.swift in Sources */,
@@ -575,18 +606,6 @@
 				B1E71F47DE9403A1808277EC /* WatermarkBackground.swift in Sources */,
 				89EE54398E22AEA37B416F21 /* WindowStatePersistence.swift in Sources */,
 				830B36A8A4CD211AC3DF03F3 /* main.swift in Sources */,
-				6210C70AA62A5D85BC8517FD /* TerminalPane.swift in Sources */,
-				409B8141601EFECEBD3ACCD9 /* TerminalBackend.swift in Sources */,
-				8410B4E697794DEDA25CC00C /* TerminalBackendFactory.swift in Sources */,
-				5C5B5A595857565554535251 /* ScrollbackSnapshot.swift in Sources */,
-				0A5587B002764BC4F0895665 /* ShellLauncher.swift in Sources */,
-				FDC71DF5F06D74418078C4C9 /* SwiftTermBackend.swift in Sources */,
-				469F6BF5AEB79E8BA44202D5 /* SessionTerminalPane.swift in Sources */,
-				26E946A878ECD6CFC126B99A /* ShellTerminalPane.swift in Sources */,
-				C712BC35633C53B4F24FCD1C /* ShellPaneBar.swift in Sources */,
-				51A10F722AB6150B8A30DB2F /* ShellPaneView.swift in Sources */,
-				CA284F033220A4AD5EE21F09 /* TerminalTabSplitView.swift in Sources */,
-				E8A2FB4C9D6B5E3F1A7C8D2B /* TerminalVisualBell.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -774,7 +793,7 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		5858678D19DE930848F64619 /* XCLocalSwiftPackageReference "SwiftTerm" */ = {
+		5858678D19DE930848F64619 /* XCLocalSwiftPackageReference "Vendor/SwiftTerm" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Vendor/SwiftTerm;
 		};

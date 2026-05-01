@@ -1,10 +1,12 @@
 import AppKit
 
-/// AppKit NSView that handles mouse events directly for smooth drag-to-reorder.
-/// This view renders the grip icon and handles cursor changes + drag callbacks.
+/// AppKit NSView that handles mouse events directly for smooth
+/// drag-to-reorder. This view renders the grip icon and handles
+/// cursor changes + drag callbacks. Shared by SessionRow and
+/// SessionMarkerRow — "item" refers to either kind of sidebar row.
 class DragHandleNSView: NSView {
-    var sessionId: UUID?
-    var sessionIndex: Int = 0
+    var itemId: UUID?
+    var itemIndex: Int = 0
     var onDragStart: ((UUID, Int, CGFloat) -> Void)?
     var onDragUpdate: ((CGFloat) -> Void)?
     var onDragEnd: (() -> Void)?
@@ -80,7 +82,7 @@ class DragHandleNSView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        guard let sessionId = sessionId else { return }
+        guard let itemId = itemId else { return }
 
         isDragging = true
         NSCursor.closedHand.set()
@@ -88,7 +90,7 @@ class DragHandleNSView: NSView {
         StatusLineService.shared.pauseUpdates()  // Pause for performance
 
         let screenY = NSEvent.mouseLocation.y
-        onDragStart?(sessionId, sessionIndex, screenY)
+        onDragStart?(itemId, itemIndex, screenY)
     }
 
     override func mouseDragged(with event: NSEvent) {

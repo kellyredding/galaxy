@@ -11,7 +11,34 @@ class SessionManager: ObservableObject {
     // Singleton instance for access from AppDelegate
     static let shared = SessionManager()
 
-    @Published var sessions: [Session] = []
+    /// Source of truth for sidebar order. Sessions and markers are
+    /// interleaved in a single ordered list. Reordering, persistence
+    /// and drag-to-reorder all operate against this array.
+    ///
+    /// Most existing call sites read `sessions` (computed below) and
+    /// don't need to change. Mutations must go through dedicated
+    /// helpers (`appendSession`, `removeSessionItem`, `swapItems`,
+    /// `createMarker`, `removeMarker`) so persistence stays in sync.
+    @Published var sidebarItems: [SidebarItem] = []
+
+    /// Read-only ordered list of sessions, derived from
+    /// `sidebarItems`. Existing call sites that read `sessions[i]`,
+    /// `sessions.first(where:)`, `sessions.firstIndex(where:)`,
+    /// `sessions.count`, `sessions.isEmpty`, `sessions.filter`, etc.
+    /// continue to work unchanged. Direct writes to `sessions`
+    /// (`sessions.append(...)`, `sessions = ...`) are no longer
+    /// possible — the compiler catches any holdouts.
+    var sessions: [Session] {
+        sidebarItems.compactMap { $0.session }
+    }
+
+    /// Read-only ordered list of markers, derived from
+    /// `sidebarItems`. Mostly used by tests and persistence; views
+    /// iterate `sidebarItems` directly so order is preserved.
+    var markers: [SessionMarker] {
+        sidebarItems.compactMap { $0.marker }
+    }
+
     @Published var activeSessionId: UUID? {
         didSet {
             guard activeSessionId != oldValue else { return }
@@ -185,27 +212,40 @@ class SessionManager: ObservableObject {
         )
         self.claudePersonaPath = SessionManager.findBinaryPath(name: "claude-persona")
 
-        // Restore persisted sessions (all as stopped)
+        // Restore persisted sidebar items (sessions + markers,
+        // interleaved in their saved order — all sessions arrive
+        // as stopped).
         if let persisted = SessionPersistence.shared.load() {
-            for state in persisted.sessions {
-                let session = Session(restoring: state)
-                sessions.append(session)
-                // Observe backend lifecycle even for stopped
-                // sessions — when the user resumes one,
-                // ensureBackend() fires the subscription and
-                // callbacks wire automatically. Restored sessions
-                // start with backend == nil, so the immediate
-                // sink fire is a no-op.
-                observeBackendLifecycle(for: session)
+            var restored: [SidebarItem] = []
+            for persistedItem in persisted.sidebarItems {
+                switch persistedItem {
+                case .session(let state):
+                    let session = Session(restoring: state)
+                    restored.append(.session(session))
+                    // Observe backend lifecycle even for stopped
+                    // sessions — when the user resumes one,
+                    // ensureBackend() fires the subscription and
+                    // callbacks wire automatically. Restored
+                    // sessions start with backend == nil, so the
+                    // immediate sink fire is a no-op.
+                    observeBackendLifecycle(for: session)
+                case .marker(let state):
+                    restored.append(.marker(
+                        SessionMarker(restoring: state)
+                    ))
+                }
             }
+            sidebarItems = restored
             if let activeId = persisted.activeSessionId {
                 activeSessionId = activeId
             }
             // Restore closed session archive
             closedSessions = persisted.closedSessions
             NSLog(
-                "SessionManager: Restored %d session(s) and %d closed session(s) from disk",
+                "SessionManager: Restored %d item(s) (%d session(s), %d marker(s)) and %d closed session(s) from disk",
+                sidebarItems.count,
                 sessions.count,
+                markers.count,
                 closedSessions.count
             )
         }
@@ -309,7 +349,7 @@ class SessionManager: ObservableObject {
         // Start the process
         session.startProcess(executablePath: executablePath, resume: isResume)
 
-        sessions.append(session)
+        sidebarItems.append(.session(session))
         saveViewState()
         activeSessionId = session.id
         activeTab = .terminal
@@ -1203,13 +1243,26 @@ class SessionManager: ObservableObject {
     }
 
     func closeSession(sessionId: UUID) {
-        guard let index = sessions.firstIndex(where: { $0.id == sessionId }) else { return }
+        // Filter-list index for "next session to select" math
+        // (skips markers, so closing a session next to a marker
+        // hops to the next/prev session, not the marker).
+        let sessionList = sessions
+        guard let sessionIndex = sessionList.firstIndex(
+            where: { $0.id == sessionId }
+        ) else { return }
+
+        // sidebarItems index for the actual removal (interleaved
+        // with markers — must come from the unified list so
+        // adjacent markers stay put when a session is removed).
+        guard let itemIndex = sidebarItems.firstIndex(where: {
+            $0.session?.id == sessionId
+        }) else { return }
 
         NSLog("SessionManager: closeSession called for session %@", sessionId.uuidString)
 
         // Archive the session before removal
         let archived = PersistedClosedSession(
-            session: sessions[index].toPersistedState(),
+            session: sessionList[sessionIndex].toPersistedState(),
             closedAt: Date()
         )
         closedSessions.insert(archived, at: 0)
@@ -1219,13 +1272,16 @@ class SessionManager: ObservableObject {
             closedSessions = Array(closedSessions.prefix(Self.closedSessionRetentionLimit))
         }
 
-        // Determine next session to select (prefer next, fall back to previous)
+        // Determine next session to select (prefer next, fall back to previous).
+        // Uses session-filter indexing so markers are skipped over
+        // — a session adjacent to a marker hops to the next real
+        // session, not to the marker (markers aren't selectable).
         var nextActiveId: UUID? = nil
-        if sessions.count > 1 {
-            if index < sessions.count - 1 {
-                nextActiveId = sessions[index + 1].id
+        if sessionList.count > 1 {
+            if sessionIndex < sessionList.count - 1 {
+                nextActiveId = sessionList[sessionIndex + 1].id
             } else {
-                nextActiveId = sessions[index - 1].id
+                nextActiveId = sessionList[sessionIndex - 1].id
             }
         }
 
@@ -1239,7 +1295,7 @@ class SessionManager: ObservableObject {
         NotificationService.shared.sessionClosed(sessionId)
 
         // Clear session callbacks to stop turn state machine activity
-        let session = sessions[index]
+        let session = sessionList[sessionIndex]
         session.onTurnStart = nil
         session.onTurnEnd = nil
 
@@ -1247,8 +1303,9 @@ class SessionManager: ObservableObject {
         // re-wire callbacks on any post-removal backend churn.
         backendSubs.removeValue(forKey: session.id)
 
-        // Remove the session (this will deallocate the backend, which kills the process)
-        sessions.remove(at: index)
+        // Remove the session item from the unified list (this
+        // deallocates the backend, which kills the process).
+        sidebarItems.remove(at: itemIndex)
         SessionPersistence.shared.markDirty()
         updateDockBadge()
 
@@ -1300,7 +1357,7 @@ class SessionManager: ObservableObject {
 
         // Create stopped session from persisted state
         let session = Session(restoring: closedSession.session)
-        sessions.append(session)
+        sidebarItems.append(.session(session))
         // Observe backend lifecycle so callbacks wire
         // automatically when the user later resumes this session.
         observeBackendLifecycle(for: session)
@@ -1399,12 +1456,63 @@ class SessionManager: ObservableObject {
         }
     }
 
-    /// Swap two sessions in the array (used during drag-to-reorder)
-    func swapSessions(_ indexA: Int, _ indexB: Int) {
-        guard indexA >= 0 && indexA < sessions.count else { return }
-        guard indexB >= 0 && indexB < sessions.count else { return }
-        sessions.swapAt(indexA, indexB)
+    /// Swap two items in the sidebar (used during drag-to-reorder).
+    /// Operates on sidebarItems, so sessions and markers swap
+    /// interchangeably — the drag coordinator's index-based math
+    /// stays valid because all rows have the same height.
+    func swapItems(_ indexA: Int, _ indexB: Int) {
+        guard indexA >= 0 && indexA < sidebarItems.count else { return }
+        guard indexB >= 0 && indexB < sidebarItems.count else { return }
+        sidebarItems.swapAt(indexA, indexB)
         SessionPersistence.shared.markDirty()
+    }
+
+    // MARK: - Marker CRUD
+
+    /// Append a new marker to the bottom of the sidebar.
+    /// Empty names are allowed and render as just the flanking
+    /// horizontal lines.
+    @discardableResult
+    func createMarker(name: String) -> SessionMarker {
+        let trimmed = name.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        let marker = SessionMarker(name: trimmed)
+        sidebarItems.append(.marker(marker))
+        SessionPersistence.shared.markDirty()
+        return marker
+    }
+
+    /// Remove a marker from the sidebar. Idempotent — no-ops if
+    /// the id is not found (e.g., double-click on the X).
+    func removeMarker(markerId: UUID) {
+        guard let idx = sidebarItems.firstIndex(where: {
+            $0.marker?.id == markerId
+        }) else { return }
+        sidebarItems.remove(at: idx)
+        SessionPersistence.shared.markDirty()
+    }
+
+    /// Present a confirmation dialog and remove the marker if
+    /// confirmed. Mirrors `confirmAndDismissSession`.
+    func confirmAndRemoveMarker(markerId: UUID) {
+        guard let marker = markers.first(where: {
+            $0.id == markerId
+        }) else { return }
+        guard let window = NSApp.keyWindow else { return }
+
+        let displayName = marker.name.isEmpty
+            ? "this marker"
+            : "\"\(marker.name)\""
+
+        SheetAlert.confirm(
+            in: window,
+            message: "Remove marker?",
+            detail: "\(displayName) will be removed from the sidebar.",
+            confirm: "Remove"
+        ) { [weak self] in
+            self?.removeMarker(markerId: markerId)
+        }
     }
 
     /// Update the dock badge to reflect the current unread session count.

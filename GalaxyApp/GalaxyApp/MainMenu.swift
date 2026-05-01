@@ -160,6 +160,19 @@ class MainMenu: NSObject, NSMenuDelegate {
         newItem.target = MenuActions.shared
         menu.addItem(newItem)
 
+        // New Marker (⇧⌘N) - sits between New Session and Restore.
+        // keyEquivalent uses lowercase "n"; the explicit
+        // keyEquivalentModifierMask adds Shift on top of the
+        // implicit Command, producing ⇧⌘N.
+        let newMarkerItem = NSMenuItem(
+            title: "New Marker...",
+            action: #selector(MenuActions.newMarker(_:)),
+            keyEquivalent: "n"
+        )
+        newMarkerItem.keyEquivalentModifierMask = [.command, .shift]
+        newMarkerItem.target = MenuActions.shared
+        menu.addItem(newMarkerItem)
+
         // Restore Session (⌘O) - always available
         let restoreItem = NSMenuItem(
             title: "Restore Session...",
@@ -687,6 +700,10 @@ class MenuActions: NSObject {
         NotificationCenter.default.post(name: .showNewSession, object: nil)
     }
 
+    @objc func newMarker(_ sender: Any?) {
+        NotificationCenter.default.post(name: .showNewMarker, object: nil)
+    }
+
     @objc func restoreSession(_ sender: Any?) {
         NotificationCenter.default.post(name: .showRestoreSession, object: nil)
     }
@@ -896,6 +913,7 @@ class MenuActions: NSObject {
 extension Notification.Name {
     static let showPreferences = Notification.Name("showPreferences")
     static let showNewSession = Notification.Name("showNewSession")
+    static let showNewMarker = Notification.Name("showNewMarker")
     static let showMainWindow = Notification.Name("showMainWindow")
     static let showRestoreSession = Notification.Name("showRestoreSession")
     static let restoreSessionNavigateUp = Notification.Name("restoreSessionNavigateUp")

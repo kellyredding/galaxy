@@ -138,11 +138,11 @@ struct SessionRow: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            // Drag handle (before status dot) - only show when multiple sessions
+            // Drag handle (before status dot) - only show when there's more than one item
             if showDragHandle {
                 SessionRowDragHandle(
-                    sessionId: session.id,
-                    sessionIndex: rowIndex
+                    itemId: session.id,
+                    itemIndex: rowIndex
                 )
                 .frame(width: 18, height: 32)  // Larger hit area, icon stays centered
                 .transition(.opacity.combined(with: .scale(scale: 0.8)))

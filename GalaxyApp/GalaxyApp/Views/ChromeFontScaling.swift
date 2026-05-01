@@ -70,6 +70,22 @@ struct ChromeFontSize {
     /// Line height for caption1 text (font size + 4pt padding)
     var caption1LineHeight: CGFloat { ceil(caption1) + 4 }
 
+    /// Total visual height of one sidebar row (session or marker).
+    /// Computed deterministically from line heights and padding so
+    /// the drag coordinator's uniform-height math stays valid as
+    /// the chrome font size changes.
+    ///
+    /// Layout: top(6) + caption1Line + spacing(2) + tinyLine
+    ///         + spacing(2) + tinyLine + bottom(7)
+    ///
+    /// Kept here (rather than at a sidebar-row site) so SessionRow,
+    /// SessionMarkerRow, ExpandedSessionSidebar, and
+    /// SessionDragCoordinator all share a single source of truth.
+    var sidebarRowHeight: CGFloat {
+        6 + caption1LineHeight + 2 + tinyLineHeight + 2
+            + tinyLineHeight + 7
+    }
+
     /// Icon sizes
     var iconSmall: CGFloat { 12 * scaleFactor }
     var iconMedium: CGFloat { 18 * scaleFactor }

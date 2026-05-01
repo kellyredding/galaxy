@@ -8,16 +8,22 @@ class DragPreviewPosition: ObservableObject {
     @Published var offsetY: CGFloat = 0
 }
 
-/// Manages drag state for session reordering in the sidebar.
-/// Tracks the dragged session, calculates swap thresholds, and triggers array swaps.
+/// Manages drag state for sidebar row reordering. Tracks the
+/// dragged item, computes swap targets, and fires swap callbacks.
 ///
-/// Low-frequency @Published properties live here (isDragging, draggedSessionId,
-/// currentArrayIndex) — they change at drag start/end and on row swaps.
-/// The high-frequency offsetY lives in DragPreviewPosition so only the
-/// preview overlay re-renders on every mouse frame.
+/// Low-frequency @Published properties live here (isDragging,
+/// draggedItemId, currentArrayIndex) — they change at drag
+/// start/end and on row swaps. The high-frequency offsetY lives
+/// in DragPreviewPosition so only the preview overlay re-renders
+/// on every mouse frame.
+///
+/// "Item" here means any sidebar row — session or marker. Both
+/// share a uniform row height (see ChromeFontSize.sidebarRowHeight),
+/// so the index-based swap math is unchanged from the sessions-only
+/// implementation.
 class SessionDragCoordinator: ObservableObject {
     @Published var isDragging: Bool = false
-    @Published var draggedSessionId: UUID?
+    @Published var draggedItemId: UUID?
     @Published var currentArrayIndex: Int = 0        // Current position in array (updates as swaps happen)
 
     /// High-frequency preview position — not @Published here to avoid
@@ -26,8 +32,8 @@ class SessionDragCoordinator: ObservableObject {
 
     var dragStartY: CGFloat = 0                      // Screen Y at drag start
     var dragStartIndex: Int = 0                      // Original array index
-    var rowHeight: CGFloat = 0                       // Height of one session row (set by ExpandedSessionSidebar)
-    var totalSessionCount: Int = 0                   // Total sessions (for boundary clamping)
+    var rowHeight: CGFloat = 0                       // Height of one row (set by ExpandedSessionSidebar)
+    var totalItemCount: Int = 0                      // Total sidebar items (for boundary clamping)
 
     /// Called when preview crosses 50% threshold and a swap is needed
     var onSwapNeeded: ((Int, Int) -> Void)?
@@ -40,11 +46,11 @@ class SessionDragCoordinator: ObservableObject {
     /// Edge zone size for triggering auto-scroll
     private let autoScrollEdgeZone: CGFloat = 50
 
-    /// Called when auto-scroll should happen (passes session ID to scroll to)
+    /// Called when auto-scroll should happen (passes item ID to scroll to)
     var onScrollToSession: ((UUID) -> Void)?
 
-    /// All session IDs in order (set by ExpandedSessionSidebar for scroll targeting)
-    var sessionIds: [UUID] = []
+    /// All sidebar item IDs in order (set by ExpandedSessionSidebar for scroll targeting)
+    var itemIds: [UUID] = []
 
     /// Timer for continuous auto-scrolling
     private var autoScrollTimer: Timer?
@@ -52,9 +58,9 @@ class SessionDragCoordinator: ObservableObject {
     /// Current auto-scroll direction: -1 = up, 0 = none, +1 = down
     private var autoScrollDirection: Int = 0
 
-    func startDrag(sessionId: UUID, index: Int, startY: CGFloat) {
+    func startDrag(itemId: UUID, index: Int, startY: CGFloat) {
         isDragging = true
-        draggedSessionId = sessionId
+        draggedItemId = itemId
         dragStartY = startY
         dragStartIndex = index
         currentArrayIndex = index
@@ -63,7 +69,7 @@ class SessionDragCoordinator: ObservableObject {
     }
 
     func updateDrag(currentY: CGFloat) {
-        guard isDragging, totalSessionCount > 0 else { return }
+        guard isDragging, totalItemCount > 0 else { return }
 
         // APPROACH 2: Decouple visual position from swap logic
         // Preview position follows mouse directly; swaps happen based on where preview IS
@@ -84,13 +90,13 @@ class SessionDragCoordinator: ObservableObject {
 
             // 4. Determine which row index the preview center is over
             let targetIndex = Int(previewCenterY / rowHeight)
-            let clampedTarget = max(0, min(totalSessionCount - 1, targetIndex))
+            let clampedTarget = max(0, min(totalItemCount - 1, targetIndex))
 
             // 5. Swap until placeholder catches up to where preview is
             // Use while loop to handle fast mouse movement that skips multiple rows
             while clampedTarget > currentArrayIndex {
                 let nextIndex = currentArrayIndex + 1
-                if nextIndex < totalSessionCount {
+                if nextIndex < totalItemCount {
                     onSwapNeeded?(currentArrayIndex, nextIndex)
                     currentArrayIndex = nextIndex
                 } else {
@@ -111,7 +117,7 @@ class SessionDragCoordinator: ObservableObject {
         // 6. Clamp visual offset so preview stays within list bounds
         // Preview is positioned at dragStartIndex, so clamp relative to that
         let minOffset = -CGFloat(dragStartIndex) * rowHeight  // Would put preview at top (index 0)
-        let maxOffset = CGFloat(totalSessionCount - 1 - dragStartIndex) * rowHeight  // Would put preview at bottom
+        let maxOffset = CGFloat(totalItemCount - 1 - dragStartIndex) * rowHeight  // Would put preview at bottom
 
         previewPosition.offsetY = max(minOffset, min(maxOffset, mouseDelta))
 
@@ -134,7 +140,7 @@ class SessionDragCoordinator: ObservableObject {
         if mouseScreenY > sidebarTop - autoScrollEdgeZone && currentArrayIndex > 0 {
             // Near top edge and can scroll up
             newDirection = -1
-        } else if mouseScreenY < sidebarBottom + autoScrollEdgeZone && currentArrayIndex < totalSessionCount - 1 {
+        } else if mouseScreenY < sidebarBottom + autoScrollEdgeZone && currentArrayIndex < totalItemCount - 1 {
             // Near bottom edge and can scroll down
             newDirection = 1
         } else {
@@ -160,7 +166,7 @@ class SessionDragCoordinator: ObservableObject {
 
     /// Scroll one session in the current auto-scroll direction
     private func performAutoScroll() {
-        guard autoScrollDirection != 0, !sessionIds.isEmpty else { return }
+        guard autoScrollDirection != 0, !itemIds.isEmpty else { return }
 
         let targetIndex: Int
         if autoScrollDirection < 0 {
@@ -168,11 +174,11 @@ class SessionDragCoordinator: ObservableObject {
             targetIndex = max(0, currentArrayIndex - 1)
         } else {
             // Scroll down - target the session below current
-            targetIndex = min(sessionIds.count - 1, currentArrayIndex + 1)
+            targetIndex = min(itemIds.count - 1, currentArrayIndex + 1)
         }
 
-        guard targetIndex >= 0 && targetIndex < sessionIds.count else { return }
-        let targetId = sessionIds[targetIndex]
+        guard targetIndex >= 0 && targetIndex < itemIds.count else { return }
+        let targetId = itemIds[targetIndex]
         onScrollToSession?(targetId)
 
         // Adjust dragStartY to compensate for scroll movement
@@ -190,7 +196,7 @@ class SessionDragCoordinator: ObservableObject {
 
     func endDrag() {
         isDragging = false
-        draggedSessionId = nil
+        draggedItemId = nil
         previewPosition.offsetY = 0
         currentArrayIndex = 0
         dragStartIndex = 0

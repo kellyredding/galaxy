@@ -41,29 +41,145 @@ struct PersistedClosedSession: Codable {
     let closedAt: Date
 }
 
+/// Codable representation of a session marker for disk persistence.
+/// Lightweight — markers are pure metadata with no associated state
+/// beyond their UUID and display name.
+struct PersistedSessionMarker: Codable {
+    let id: UUID
+    let name: String
+}
+
+/// One element of the sidebar's ordered list. The `kind`
+/// discriminator stabilizes the on-disk JSON shape regardless of
+/// Swift compiler version (Swift's synthesized enum Codable
+/// produces a less ergonomic shape).
+///
+/// On-disk JSON form:
+///     { "kind": "session", "session": { ... PersistedSession ... } }
+///     { "kind": "marker",  "marker":  { ... PersistedSessionMarker ... } }
+enum PersistedSidebarItem: Codable {
+    case session(PersistedSession)
+    case marker(PersistedSessionMarker)
+
+    private enum CodingKeys: String, CodingKey {
+        case kind, session, marker
+    }
+
+    private enum Kind: String, Codable {
+        case session, marker
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let kind = try c.decode(Kind.self, forKey: .kind)
+        switch kind {
+        case .session:
+            self = .session(try c.decode(
+                PersistedSession.self, forKey: .session
+            ))
+        case .marker:
+            self = .marker(try c.decode(
+                PersistedSessionMarker.self, forKey: .marker
+            ))
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .session(let s):
+            try c.encode(Kind.session, forKey: .kind)
+            try c.encode(s, forKey: .session)
+        case .marker(let m):
+            try c.encode(Kind.marker, forKey: .kind)
+            try c.encode(m, forKey: .marker)
+        }
+    }
+}
+
 /// Top-level persisted state: version, active session, ordered
-/// session list (array position = sidebar position), and archived
-/// closed sessions for recovery.
+/// sidebar item list (array position = sidebar position), and
+/// archived closed sessions for recovery.
+///
+/// v3 introduced `sidebarItems` to interleave sessions and markers
+/// in a single ordered list. The decoder transparently upgrades v2
+/// files (which had a flat `sessions` field) by wrapping each
+/// session as `.session(...)`. The first write after a v2 read
+/// produces a v3 file — no explicit migration step needed.
+///
+/// Old (v2) Galaxy builds cannot decode v3 files (missing required
+/// `sessions` field). This is an accepted one-way migration.
 struct PersistedSidebarState: Codable {
     let version: Int
     let activeSessionId: UUID?
-    let sessions: [PersistedSession]
+    let sidebarItems: [PersistedSidebarItem]
     let closedSessions: [PersistedClosedSession]
 
-    /// Coding keys with default for closedSessions (v1 migration)
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        version = try container.decode(Int.self, forKey: .version)
-        activeSessionId = try container.decodeIfPresent(UUID.self, forKey: .activeSessionId)
-        sessions = try container.decode([PersistedSession].self, forKey: .sessions)
-        closedSessions = try container.decodeIfPresent([PersistedClosedSession].self, forKey: .closedSessions) ?? []
+    /// Computed convenience for read-only consumers.
+    /// Filters sidebarItems down to sessions in order.
+    var sessions: [PersistedSession] {
+        sidebarItems.compactMap {
+            if case .session(let s) = $0 { return s }
+            return nil
+        }
     }
 
-    init(version: Int, activeSessionId: UUID?, sessions: [PersistedSession], closedSessions: [PersistedClosedSession]) {
+    private enum CodingKeys: String, CodingKey {
+        case version, activeSessionId, sidebarItems,
+             closedSessions, sessions
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decode(Int.self, forKey: .version)
+        activeSessionId = try c.decodeIfPresent(
+            UUID.self, forKey: .activeSessionId
+        )
+        closedSessions = try c.decodeIfPresent(
+            [PersistedClosedSession].self,
+            forKey: .closedSessions
+        ) ?? []
+
+        // v3: prefer sidebarItems if present.
+        // v2 fallback: build sidebarItems from the legacy
+        // sessions field. The next markDirty() rewrites in v3.
+        if let items = try c.decodeIfPresent(
+            [PersistedSidebarItem].self,
+            forKey: .sidebarItems
+        ) {
+            sidebarItems = items
+        } else {
+            let legacy = try c.decodeIfPresent(
+                [PersistedSession].self,
+                forKey: .sessions
+            ) ?? []
+            sidebarItems = legacy.map { .session($0) }
+        }
+    }
+
+    init(
+        version: Int,
+        activeSessionId: UUID?,
+        sidebarItems: [PersistedSidebarItem],
+        closedSessions: [PersistedClosedSession]
+    ) {
         self.version = version
         self.activeSessionId = activeSessionId
-        self.sessions = sessions
+        self.sidebarItems = sidebarItems
         self.closedSessions = closedSessions
+    }
+
+    /// Encode v3 only. Legacy `sessions` field is not written —
+    /// old Galaxy builds will fail to decode (acceptable per
+    /// migration plan).
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(version, forKey: .version)
+        try c.encodeIfPresent(
+            activeSessionId, forKey: .activeSessionId
+        )
+        try c.encode(sidebarItems, forKey: .sidebarItems)
+        try c.encode(closedSessions, forKey: .closedSessions)
     }
 }
 
@@ -185,12 +301,22 @@ final class SessionPersistence {
     }
 
     /// Snapshot current session state on the main thread.
+    /// Walks sidebarItems so sessions and markers are persisted in
+    /// their interleaved sidebar order.
     private func captureState() -> PersistedSidebarState {
         let manager = SessionManager.shared
+        let items: [PersistedSidebarItem] = manager.sidebarItems.map { item in
+            switch item {
+            case .session(let s):
+                return .session(s.toPersistedState())
+            case .marker(let m):
+                return .marker(m.toPersistedState())
+            }
+        }
         return PersistedSidebarState(
-            version: 2,
+            version: 3,
             activeSessionId: manager.activeSessionId,
-            sessions: manager.sessions.map { $0.toPersistedState() },
+            sidebarItems: items,
             closedSessions: manager.closedSessions
         )
     }
@@ -203,9 +329,14 @@ final class SessionPersistence {
             encoder.dateEncodingStrategy = .iso8601
             let data = try encoder.encode(state)
             try data.write(to: fileURL, options: .atomic)
+            let markerCount = state.sidebarItems.filter {
+                if case .marker = $0 { return true }
+                return false
+            }.count
             GalaxyLog.events(
                 "Session state persisted"
                 + " (\(state.sessions.count) session(s)"
+                + ", \(markerCount) marker(s)"
                 + ", \(state.closedSessions.count) closed)"
             )
         } catch {
