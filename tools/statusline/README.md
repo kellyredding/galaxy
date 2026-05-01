@@ -7,7 +7,7 @@ A customizable status line for Claude Code sessions that displays working direct
 - **Working directory** with smart path abbreviation
 - **Git status** showing branch, ahead/behind, dirty/staged/stashed state
 - **Context usage** with visual progress bar and color thresholds
-- **Model name** and session cost
+- **Model name**, session cost, and current time (12-hour with AM/PM)
 - **Width-adaptive** layout that gracefully degrades on narrow terminals
 - **Fully configurable** colors, styles, and thresholds
 
@@ -80,10 +80,10 @@ galaxy-statusline help               # Show help
 
 ```
 WIDE (120+ cols):
-~/projects/kajabi/kajabi-products[main=*] | ████████████████░░░░ 78% | Sonnet | $0.42
+~/projects/kajabi/kajabi-products[main=*] | ████████████████░░░░ 78% | Sonnet | $0.42 | 6:41 AM
 
 MEDIUM (80-119 cols):
-~/p/k/kajabi-products[main=*] | ██████████░░░░ 78% | Sonnet
+~/p/k/kajabi-products[main=*] | ██████████░░░░ 78% | Sonnet | $0.42
 
 NARROW (60-79 cols):
 kajabi-products[main=*] | ██████░░ 78% | Son
@@ -91,6 +91,10 @@ kajabi-products[main=*] | ██████░░ 78% | Son
 VERY NARROW (<60 cols):
 [main=*] | ████░░ 78%
 ```
+
+The session line shrinks in this order: shrink the context bar →
+drop the time → drop the cost → drop the model. The context bar
+and percentage are always preserved.
 
 ## Configuration
 
@@ -128,7 +132,10 @@ galaxy-statusline config help  # Full configuration documentation
     "branch": "green",
     "context_normal": "green",
     "context_warning": "yellow",
-    "context_critical": "red"
+    "context_critical": "red",
+    "model": "bright_cyan",
+    "cost": "bright_green",
+    "time": "bold:red"
   },
   "branch_style": "symbolic",
   "context_thresholds": {
@@ -141,6 +148,7 @@ galaxy-statusline config help  # Full configuration documentation
     "context_bar_max_width": 20,
     "show_cost": true,
     "show_model": true,
+    "show_time": true,
     "directory_style": "smart"
   }
 }

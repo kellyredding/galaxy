@@ -13,7 +13,8 @@
     "context_warning": "yellow",
     "context_critical": "red",
     "model": "default",
-    "cost": "default"
+    "cost": "default",
+    "time": "bold:red"
   },
   "branch_style": "symbolic",
   "context_thresholds": {
@@ -26,6 +27,7 @@
     "context_bar_max_width": 20,
     "show_cost": true,
     "show_model": true,
+    "show_time": true,
     "directory_style": "smart"
   }
 }

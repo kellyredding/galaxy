@@ -12,6 +12,7 @@ describe GalaxyStatusline::Config do
       config.layout.min_width.should eq(60)
       config.layout.show_cost.should eq(true)
       config.layout.show_model.should eq(true)
+      config.layout.show_time.should eq(true)
       config.layout.directory_style.should eq("smart")
     end
 
@@ -25,6 +26,7 @@ describe GalaxyStatusline::Config do
       config.colors.context_normal.should eq("green")
       config.colors.context_warning.should eq("yellow")
       config.colors.context_critical.should eq("red")
+      config.colors.time.should eq("bold:red")
     end
   end
 
@@ -64,6 +66,18 @@ describe GalaxyStatusline::Config do
       config = GalaxyStatusline::Config.default
       config.set("layout.show_cost", "false")
       config.get("layout.show_cost").should eq("false")
+    end
+
+    it "sets and gets layout.show_time" do
+      config = GalaxyStatusline::Config.default
+      config.set("layout.show_time", "false")
+      config.get("layout.show_time").should eq("false")
+    end
+
+    it "sets and gets colors.time" do
+      config = GalaxyStatusline::Config.default
+      config.set("colors.time", "cyan")
+      config.get("colors.time").should eq("cyan")
     end
 
     it "sets and gets layout directory_style" do

@@ -268,8 +268,9 @@ module GalaxyStatusline
           colors.context_normal      Context < warning (default: green)
           colors.context_warning     Context at warning (default: yellow)
           colors.context_critical    Context at critical (default: red)
-          colors.model               Model name (default: default)
-          colors.cost                Cost display (default: default)
+          colors.model               Model name (default: bright_cyan)
+          colors.cost                Cost display (default: bright_green)
+          colors.time                Current time (default: bold:red)
 
         branch_style                 Git branch display format
           Accepts: symbolic, arrows, minimal
@@ -290,6 +291,7 @@ module GalaxyStatusline
           layout.context_bar_max_width   Max context bar width (default: 50)
           layout.show_cost               Show cost (default: true)
           layout.show_model              Show model (default: true)
+          layout.show_time               Show current time (default: true)
           layout.directory_style         full, smart, basename, short (default: smart)
 
       EXAMPLES:

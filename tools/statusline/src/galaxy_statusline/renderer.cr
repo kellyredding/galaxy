@@ -98,25 +98,29 @@ module GalaxyStatusline
       result
     end
 
-    # Line 2: model | context_bar | cost (joined with separator)
-    # Shrink order: shrink context bar → drop cost → drop model
+    # Line 2: model | context_bar | cost | time (joined with separator)
+    # Shrink order: shrink context bar → drop time → drop cost → drop model
     private def render_session_line : String
       model_part = render_model
       cost_part = render_cost
+      time_part = render_time
 
       model_width = strip_ansi(model_part).size
       cost_width = strip_ansi(cost_part).size
+      time_width = strip_ansi(time_part).size
 
       bar_width = @config.layout.context_bar_max_width
       min_bar_width = @config.layout.context_bar_min_width
       include_cost = @config.layout.show_cost && !cost_part.empty?
       include_model = @config.layout.show_model && !model_part.empty?
+      include_time = @config.layout.show_time && !time_part.empty?
 
       loop do
         total = calculate_session_line_width(
           model_width: include_model ? model_width : 0,
           bar_width: bar_width,
           cost_width: include_cost ? cost_width : 0,
+          time_width: include_time ? time_width : 0,
         )
 
         break if total <= @max_status_width
@@ -124,6 +128,12 @@ module GalaxyStatusline
         # Shrink context bar
         if bar_width > min_bar_width
           bar_width -= 1
+          next
+        end
+
+        # Drop time (first, so cost survives longer)
+        if include_time
+          include_time = false
           next
         end
 
@@ -146,6 +156,7 @@ module GalaxyStatusline
       parts << model_part if include_model
       parts << render_context_bar(bar_width)
       parts << cost_part if include_cost
+      parts << time_part if include_time
       parts.join(SEPARATOR)
     end
 
@@ -153,6 +164,7 @@ module GalaxyStatusline
       model_width : Int32,
       bar_width : Int32,
       cost_width : Int32,
+      time_width : Int32,
     ) : Int32
       context_width = bar_width + 1 + 4 # " 100%" = 5 chars max
 
@@ -169,6 +181,11 @@ module GalaxyStatusline
 
       if cost_width > 0
         total += cost_width
+        parts_count += 1
+      end
+
+      if time_width > 0
+        total += time_width
         parts_count += 1
       end
 
@@ -343,6 +360,22 @@ module GalaxyStatusline
       # Format as currency
       formatted = "$#{sprintf("%.2f", cost)}"
       Colors.colorize(formatted, @config.colors.cost)
+    end
+
+    private def render_time : String
+      # 12-hour format, no leading zero on hour, single space before AM/PM.
+      # Mirrors the user's PS1 \@ escape but trimmed to ~7 chars.
+      # Examples: "6:41 AM", "12:41 PM"
+      #
+      # Built manually because Crystal's Time#to_s does not support
+      # the GNU "%-I" no-pad directive, and "%p" is lowercase.
+      now = Time.local
+      hour_12 = now.hour % 12
+      hour_12 = 12 if hour_12 == 0
+      minute = now.minute.to_s.rjust(2, '0')
+      ampm = now.hour < 12 ? "AM" : "PM"
+      formatted = "#{hour_12}:#{minute} #{ampm}"
+      Colors.colorize(formatted, @config.colors.time)
     end
 
     private def get_terminal_width : Int32

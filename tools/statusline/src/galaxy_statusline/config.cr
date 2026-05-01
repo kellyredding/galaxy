@@ -36,6 +36,9 @@ module GalaxyStatusline
       property context_critical : String
       property model : String
       property cost : String
+      # Optional in JSON for backwards-compat with pre-time configs.
+      # Falls back to default when missing from disk.
+      property time : String = "bold:red"
 
       def initialize(
         @directory = "bold:yellow",
@@ -51,6 +54,7 @@ module GalaxyStatusline
         @context_critical = "red",
         @model = "bright_cyan",
         @cost = "bright_green",
+        @time = "bold:red",
       )
       end
     end
@@ -73,6 +77,8 @@ module GalaxyStatusline
       property context_bar_max_width : Int32
       property show_cost : Bool
       property show_model : Bool
+      # Optional in JSON for backwards-compat with pre-time configs.
+      property show_time : Bool = true
       property directory_style : String
 
       def initialize(
@@ -81,6 +87,7 @@ module GalaxyStatusline
         @context_bar_max_width = 50,
         @show_cost = true,
         @show_model = true,
+        @show_time = true,
         @directory_style = "smart",
       )
       end
@@ -185,6 +192,7 @@ module GalaxyStatusline
       when "context_critical" then colors.context_critical = value
       when "model"            then colors.model = value
       when "cost"             then colors.cost = value
+      when "time"             then colors.time = value
       else
         raise "Unknown color field: colors.#{field}"
       end
@@ -207,6 +215,7 @@ module GalaxyStatusline
       when "context_critical" then colors.context_critical
       when "model"            then colors.model
       when "cost"             then colors.cost
+      when "time"             then colors.time
       else
         raise "Unknown color field: colors.#{field}"
       end
@@ -261,7 +270,7 @@ module GalaxyStatusline
         when "context_bar_min_width" then layout.context_bar_min_width = int_value
         when "context_bar_max_width" then layout.context_bar_max_width = int_value
         end
-      when "show_cost", "show_model"
+      when "show_cost", "show_model", "show_time"
         bool_value = case value.downcase
                      when "true", "1", "yes" then true
                      when "false", "0", "no" then false
@@ -272,6 +281,7 @@ module GalaxyStatusline
         case field
         when "show_cost"  then layout.show_cost = bool_value
         when "show_model" then layout.show_model = bool_value
+        when "show_time"  then layout.show_time = bool_value
         end
       when "directory_style"
         unless VALID_DIRECTORY_STYLES.includes?(value)
@@ -292,6 +302,7 @@ module GalaxyStatusline
       when "context_bar_max_width" then layout.context_bar_max_width.to_s
       when "show_cost"             then layout.show_cost.to_s
       when "show_model"            then layout.show_model.to_s
+      when "show_time"             then layout.show_time.to_s
       when "directory_style"       then layout.directory_style
       else
         raise "Unknown layout field: layout.#{field}"

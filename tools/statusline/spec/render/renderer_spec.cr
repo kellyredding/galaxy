@@ -121,6 +121,76 @@ describe GalaxyStatusline::Renderer do
     end
   end
 
+  describe "time display" do
+    # The test environment's /dev/tty falls back to 80 cols, giving a
+    # 40-char session-line budget. Shrink bar bounds so model+bar+cost+
+    # time all fit and we can verify ordering and presence.
+    narrow_session = -> {
+      run_binary(["config", "set", "layout.context_bar_max_width", "8"])
+      run_binary(["config", "set", "layout.context_bar_min_width", "4"])
+    }
+
+    it "renders current time in 12-hour format with AM/PM" do
+      narrow_session.call
+      json = read_fixture("claude_input/valid_complete.json")
+      result = run_binary(["render"], stdin: json)
+      output = strip_ansi(result[:output])
+
+      # 12-hour, no leading zero, single space before AM/PM
+      # e.g. "6:41 AM" or "12:41 PM"
+      output.should match(/\b\d{1,2}:\d{2} (AM|PM)\b/)
+      run_binary(["config", "reset"])
+    end
+
+    it "places time after cost on the session line" do
+      narrow_session.call
+      json = %({"cwd": "/x", "context_window": {"used_percentage": 50}, "cost": {"total_cost_usd": 1.23}})
+      result = run_binary(["render"], stdin: json)
+      output = strip_ansi(result[:output])
+
+      cost_idx = output.index("$1.23")
+      time_match = output.match(/\d{1,2}:\d{2} (AM|PM)/)
+
+      cost_idx.should_not be_nil
+      time_match.should_not be_nil
+
+      if cost_idx && time_match
+        time_idx = output.index(time_match[0])
+        time_idx.should_not be_nil
+        time_idx.not_nil!.should be > cost_idx
+      end
+      run_binary(["config", "reset"])
+    end
+
+    it "hides time when layout.show_time is false" do
+      narrow_session.call
+      run_binary(["config", "set", "layout.show_time", "false"])
+      json = read_fixture("claude_input/valid_complete.json")
+      result = run_binary(["render"], stdin: json)
+      output = strip_ansi(result[:output])
+
+      output.should_not match(/\b\d{1,2}:\d{2} (AM|PM)\b/)
+      run_binary(["config", "reset"])
+    end
+
+    it "drops time before cost when width is constrained" do
+      # Force a width-constrained scenario where exactly one of
+      # {time, cost} can fit. Time should drop first; cost survives.
+      run_binary(["config", "set", "layout.show_model", "false"])
+      run_binary(["config", "set", "layout.context_bar_max_width", "20"])
+      run_binary(["config", "set", "layout.context_bar_min_width", "20"])
+      json = %({"cwd": "/x", "context_window": {"used_percentage": 50}, "cost": {"total_cost_usd": 1.23}})
+      result = run_binary(["render"], stdin: json)
+      output = strip_ansi(result[:output])
+
+      # bar(20) + " 50%"(4) + " | "(3) + "$1.23"(5) = 32 ≤ 40
+      # adding " | X:XX AM"(10) = 42 > 40, so time must drop, cost stays
+      output.should contain("$1.23")
+      output.should_not match(/\b\d{1,2}:\d{2} (AM|PM)\b/)
+      run_binary(["config", "reset"])
+    end
+  end
+
   describe "separator handling" do
     it "uses | separator between session line components" do
       # Session line uses separator when cost is present alongside context bar
