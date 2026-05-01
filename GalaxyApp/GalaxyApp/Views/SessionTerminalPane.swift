@@ -1,24 +1,21 @@
 import AppKit
 import Combine
 
-/// `TerminalPane` conformer that wraps an existing
-/// `GalaxySwiftTermView` + `Session`. Used for the top
-/// (Session) pane in the Terminal tab.
+/// `TerminalPane` conformer that wraps a `TerminalBackend` +
+/// `Session`. Used for the top (Session) pane in the Terminal
+/// tab.
 ///
 /// Thin adapter — zero behavior change. All Claude-specific
 /// behavior (busy monitor, turn state, ledger enrichment,
 /// resume-marker polling, command verification) stays on
-/// `Session` and `GalaxySwiftTermView`. This type just
-/// exposes them via the `TerminalPane` protocol so
-/// `TerminalHostView` can be generalized in Phase 1c.
-///
-/// Defined but not wired in Phase 1b — no call site
-/// constructs a `SessionTerminalPane` yet.
+/// `Session`. This type just exposes the backend via the
+/// `TerminalPane` protocol so `TerminalHostView` can be used
+/// generically across pane kinds.
 final class SessionTerminalPane: TerminalPane {
     weak var session: Session?
-    let galaxyView: GalaxySwiftTermView
+    let backend: TerminalBackend
 
-    var view: NSView { galaxyView }
+    var view: NSView { backend.view }
     var paneKind: String { "session" }
     var ledgerSessionId: Int64? { session?.ledgerSessionId }
 
@@ -28,52 +25,45 @@ final class SessionTerminalPane: TerminalPane {
     var onProcessExit: ((Int32) -> Void)?
 
     /// Session pane ignores this — `SessionManager` wires
-    /// `galaxyView.onBell` directly to its bell pipeline.
+    /// `backend.onBell` directly to its bell pipeline.
     /// Do NOT double-install from here.
     var onBell: (() -> Void)?
 
-    /// Scroll-up interception forwards to
-    /// `GalaxySwiftTermView.onScrollUp`, which fires from its
-    /// `scrollWheel` override.
+    /// Scroll-up interception forwards to the backend, which
+    /// fires it from its underlying scroll-wheel override.
     var onScrollUp: ((NSEvent) -> Bool)? {
-        get { galaxyView.onScrollUp }
-        set { galaxyView.onScrollUp = newValue }
+        get { backend.onScrollUp }
+        set { backend.onScrollUp = newValue }
     }
 
-    /// Scroll-down notification forwards to
-    /// `GalaxySwiftTermView.onScrollDown`, which fires from
-    /// its `scrollTo` override after any motion that moved
-    /// `yDisp` downward. Same delegation pattern as
-    /// `onScrollUp`.
+    /// Scroll-down notification forwards to the backend,
+    /// which fires it after any motion that moved `yDisp`
+    /// downward. Same delegation pattern as `onScrollUp`.
     var onScrollDown: (() -> Void)? {
-        get { galaxyView.onScrollDown }
-        set { galaxyView.onScrollDown = newValue }
+        get { backend.onScrollDown }
+        set { backend.onScrollDown = newValue }
     }
 
     func snapViewportToBottomIfWithin(rows: Int) -> Bool {
-        galaxyView.snapViewportToBottomIfWithin(rows: rows)
+        backend.snapViewportToBottomIfWithin(rows: rows)
     }
 
     var hasScrollbackContent: Bool {
-        galaxyView.hasScrollbackContent
+        backend.hasScrollbackContent
     }
 
-    var viewportRow: Int { galaxyView.viewportRow }
+    var viewportRow: Int { backend.viewportRow }
 
-    func clearSelection() { galaxyView.clearSelection() }
+    func clearSelection() { backend.clearSelection() }
 
-    var font: NSFont { galaxyView.font }
+    var font: NSFont { backend.font }
 
-    var cellHeight: CGFloat {
-        galaxyView.cellDimension!.height
-    }
+    var cellHeight: CGFloat { backend.cellHeight }
 
-    func redraw() {
-        galaxyView.setNeedsDisplay(galaxyView.bounds)
-    }
+    func redraw() { backend.redraw() }
 
     func snapViewportToBottom() {
-        galaxyView.snapViewportToBottom()
+        backend.snapViewportToBottom()
     }
 
     /// Session pane reads font size from the owning Session
@@ -90,21 +80,21 @@ final class SessionTerminalPane: TerminalPane {
             ?? Empty().eraseToAnyPublisher()
     }
 
-    init(session: Session, galaxyView: GalaxySwiftTermView) {
+    init(session: Session, backend: TerminalBackend) {
         self.session = session
-        self.galaxyView = galaxyView
+        self.backend = backend
     }
 
     func captureScrollbackSnapshot() -> ScrollbackSnapshot? {
-        galaxyView.captureScrollbackSnapshot()
+        backend.captureScrollbackSnapshot()
     }
 
     func send(text: String, asPaste: Bool) {
-        galaxyView.send(text: text, asPaste: asPaste)
+        backend.send(text: text, asPaste: asPaste)
     }
 
     func focus() {
-        galaxyView.window?.makeFirstResponder(galaxyView)
+        backend.focus()
     }
 
     var isAcceptingInput: Bool {
@@ -127,10 +117,12 @@ final class SessionTerminalPane: TerminalPane {
                 disabledReason: { "Resume the session first" }
             )
         }
-        let view = galaxyView
+        let backend = self.backend
         return SendToClaudeTarget(
-            sendText: { text in view.send(text: text) },
-            sendCR: { view.send(bytes: [0x0D]) },
+            sendText: { text in
+                backend.send(text: text, asPaste: false)
+            },
+            sendCR: { backend.send(bytes: [0x0D]) },
             disabledReason: { nil }
         )
     }

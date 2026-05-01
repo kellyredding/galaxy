@@ -514,12 +514,18 @@ class Session: Identifiable, ObservableObject {
         }
     }
 
-    /// The GalaxySwiftTermView backing this session. Published so
+    /// The terminal backend backing this session. Published so
     /// SessionManager can observe lifecycle transitions (creation in
-    /// `init`/`ensureTerminalView`, teardown in `releaseTerminalView`)
-    /// and re-wire its callbacks without duplicating setup code at
-    /// every call site. See `SessionManager.observeTerminalViewLifecycle`.
-    @Published private(set) var terminalView: GalaxySwiftTermView?
+    /// `init`/`ensureBackend`, teardown in `releaseBackend`) and
+    /// re-wire its callbacks without duplicating setup code at every
+    /// call site. See `SessionManager.observeBackendLifecycle`.
+    @Published private(set) var backend: TerminalBackend?
+
+    /// Terminal engine pinned at this session's construction time
+    /// (D-pane). In-memory only — not persisted. Re-set by
+    /// `ensureBackend` so a resumed session captures the current
+    /// global setting fresh.
+    private(set) var engine: TerminalEngine = .swiftTerm
     let createdAt: Date
     let workingDirectory: String
 
@@ -554,15 +560,22 @@ class Session: Identifiable, ObservableObject {
         // Initialize terminal font size from settings default
         self.terminalFontSize = SettingsManager.shared.settings.defaultTerminalFontSize
 
-        // Create terminal view with default configuration
-        self.terminalView = GalaxySwiftTermView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        // Create terminal backend with default configuration.
+        // Engine is pinned to whichever was active at construction
+        // time and stays for this session lifecycle.
+        self.engine = SettingsManager.shared.settings.terminalEngine
+        self.backend = TerminalBackendFactory.make(
+            engine: self.engine,
+            kind: .session,
+            frame: NSRect(x: 0, y: 0, width: 800, height: 600)
+        )
 
         configureTerminal()
         applyScrollbackSize()
     }
 
     private func configureTerminal() {
-        guard terminalView != nil else { return }
+        guard backend != nil else { return }
 
         // Apply color theme from settings
         applyColorTheme()
@@ -606,22 +619,22 @@ class Session: Identifiable, ObservableObject {
             .store(in: &terminalCancellables)
     }
 
-    /// Apply the selected color theme to the terminal view.
+    /// Apply the selected color theme to the terminal backend.
     private func applyColorTheme() {
-        guard let terminalView = terminalView else { return }
+        guard let backend = backend else { return }
         let theme = TerminalColorTheme.theme(
             named: SettingsManager.shared.settings.terminalColorThemeName
         )
-        terminalView.setForegroundColor(theme.foregroundColor)
-        terminalView.setBackgroundColor(theme.backgroundColorValue)
-        terminalView.installColors(theme.terminalPalette)
-        terminalView.setBoldForegroundColor(theme.boldForegroundColor)
+        backend.setForegroundColor(theme.foregroundColor)
+        backend.setBackgroundColor(theme.backgroundColorValue)
+        backend.installColors(theme.terminalPalette)
+        backend.setBoldForegroundColor(theme.boldForegroundColor)
         NSLog("Session[%@]: Applied color theme '%@'", sessionRef, theme.name)
     }
 
-    /// Apply the current terminal font to the terminal view
+    /// Apply the current terminal font to the terminal backend.
     private func applyTerminalFontSize() {
-        guard let terminalView = terminalView else { return }
+        guard let backend = backend else { return }
         let family = SettingsManager.shared.settings.terminalFontFamily
         let font: NSFont
         if family == "SF Mono" {
@@ -634,67 +647,79 @@ class Session: Identifiable, ObservableObject {
                 ?? NSFont.monospacedSystemFont(ofSize: terminalFontSize, weight: .regular)
         }
         NSLog("Session[%@]: applyFont family=%@ -> fontName=%@ size=%.0f", sessionRef, family, font.fontName, terminalFontSize)
-        terminalView.setFont(font)
+        backend.setFont(font)
     }
 
-    /// Apply the scrollback buffer size from settings to the terminal view.
-    /// Uses SwiftTerm's changeHistorySize() which supports runtime changes —
-    /// increasing preserves existing history, decreasing trims oldest lines.
+    /// Apply the scrollback buffer size from settings to the terminal
+    /// backend. Backends that wrap SwiftTerm use `changeHistorySize` —
+    /// increasing preserves existing history, decreasing trims oldest
+    /// lines.
     private func applyScrollbackSize() {
-        guard let terminalView = terminalView else { return }
+        guard let backend = backend else { return }
         let lines = SettingsManager.shared.settings.terminalScrollbackLines
-        terminalView.changeHistorySize(lines)
+        backend.changeHistorySize(lines)
         NSLog("Session[%@]: Applied scrollback size %d lines", sessionRef, lines)
     }
 
-    /// Create the terminal view if it doesn't exist yet.
+    /// Create the terminal backend if it doesn't exist yet.
     /// Called by SessionManager before resuming a stopped session.
-    /// Runs full configuration (theme, font, scrollback, observers).
-    func ensureTerminalView() {
-        guard terminalView == nil else { return }
-        terminalView = GalaxySwiftTermView(
+    /// Re-pins the session's engine to the current global setting
+    /// (so a resume after the user flipped engines picks up the
+    /// new choice) and runs full configuration (theme, font,
+    /// scrollback, observers).
+    func ensureBackend() {
+        guard backend == nil else { return }
+        self.engine = SettingsManager.shared.settings.terminalEngine
+        self.backend = TerminalBackendFactory.make(
+            engine: self.engine,
+            kind: .session,
             frame: NSRect(x: 0, y: 0, width: 800, height: 600)
         )
         configureTerminal()
         applyScrollbackSize()
-        NSLog("Session[%@]: Created terminal view on demand", sessionRef)
+        NSLog(
+            "Session[%@]: Created terminal backend on demand "
+            + "(engine=%@)",
+            sessionRef, self.engine.rawValue
+        )
     }
 
-    /// Release the terminal view to free memory (~32MB scrollback buffer).
-    /// Called after a session exits and the terminal is no longer needed.
-    /// Safe to call multiple times. A subsequent ensureTerminalView()
-    /// will recreate everything.
+    /// Release the terminal backend to free memory (~32MB
+    /// scrollback buffer). Called after a session exits and the
+    /// terminal is no longer needed. Safe to call multiple times.
+    /// A subsequent `ensureBackend()` will recreate everything.
     ///
-    /// Does NOT call removeFromSuperview() — SwiftUI manages the view
-    /// hierarchy. The TerminalHostView holds its own strong reference
-    /// and releases it when SwiftUI tears down the FocusableTerminalView
-    /// during the hasExited transition.
-    func releaseTerminalView() {
-        guard terminalView != nil else { return }
+    /// Does NOT call `removeFromSuperview()` on the backend's view —
+    /// SwiftUI manages the view hierarchy. The TerminalHostView
+    /// holds its own strong reference and releases it when SwiftUI
+    /// tears down the FocusableTerminalView during the hasExited
+    /// transition.
+    func releaseBackend() {
+        guard backend != nil else { return }
 
-        // Clear callbacks to break any retain cycles. The
-        // processDelegate is an internal sidecar proxy on
-        // GalaxySwiftTermView (set in its init), owned by the
-        // view, so it doesn't need explicit nil-out here —
-        // releasing the view drops the proxy automatically.
-        terminalView?.onBell = nil
-        terminalView?.onProcessTerminated = nil
+        // Clear callbacks to break any retain cycles. The backend
+        // owns its own LPTV delegate plumbing internally (e.g.
+        // `SwiftTermBackend` conforms to LPTV directly), so
+        // releasing the backend drops that automatically.
+        backend?.onBell = nil
+        backend?.onProcessTerminated = nil
 
-        // Clear readiness — a future ensureTerminalView() +
+        // Clear readiness — a future ensureBackend() +
         // startProcess() cycle will re-arm via session:ready.
         isReady = false
 
-        // Release the view — TerminalHostView retains its own copy
-        // until SwiftUI tears it down via the hasExited transition.
-        terminalView = nil
+        // Release the backend — TerminalHostView retains its own
+        // copy of the underlying view until SwiftUI tears it down
+        // via the hasExited transition.
+        backend = nil
 
         // Cancel terminal-specific Combine subscriptions only.
-        // ensureTerminalView() will re-subscribe via configureTerminal().
+        // ensureBackend() will re-subscribe via configureTerminal().
         // Uses a dedicated set so non-terminal subscriptions in
         // cancellables are unaffected.
         terminalCancellables.removeAll()
 
-        NSLog("Session[%@]: Released terminal view", sessionRef)
+        NSLog("Session[%@]: Released terminal backend", sessionRef)
     }
 
     /// Increase terminal font size by one step
@@ -816,14 +841,14 @@ class Session: Identifiable, ObservableObject {
         }
 
         // Send command text first
-        terminalView?.send(text: command)
+        backend?.send(text: command, asPaste: false)
 
         // Small delay to ensure text is processed before CR
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.commandSubmitDelay) { [weak self] in
             guard let self = self, self.isRunning, !self.hasExited else { return }
 
             // Send CR (0x0D) - same byte as keyboard Return
-            self.terminalView?.send(bytes: [0x0D])
+            self.backend?.send(bytes: [0x0D])
 
             // Skip verification if caller opted out, or if session
             // was already in a turn when we entered.
@@ -853,7 +878,7 @@ class Session: Identifiable, ObservableObject {
             }
 
             NSLog("Session: Command CR not accepted, resending (%d retries left)", retriesLeft)
-            self.terminalView?.send(bytes: [0x0D])
+            self.backend?.send(bytes: [0x0D])
             self.verifyCommandSubmit(retriesLeft: retriesLeft - 1)
         }
     }
@@ -1087,9 +1112,9 @@ class Session: Identifiable, ObservableObject {
         self.terminalFontSize = SettingsManager.shared
             .settings.defaultTerminalFontSize
 
-        // No terminal view — stopped sessions don't need one.
-        // ensureTerminalView() creates it on resume.
-        self.terminalView = nil
+        // No backend — stopped sessions don't need one.
+        // ensureBackend() creates it on resume.
+        self.backend = nil
 
         // Restore Galaxy-only state
         self.givenName = state.givenName
@@ -1205,10 +1230,10 @@ class Session: Identifiable, ObservableObject {
             envArray.append("CLAUDE_CLI_SESSION_ID=\(claudeSessionId)")
         }
 
-        // Start process directly (not via shell) so SwiftTerm can properly monitor it
-        // SwiftTerm 1.10+ supports currentDirectory parameter directly
-        guard let terminalView = terminalView else {
-            NSLog("Session: Cannot start process - no terminal view")
+        // Start process directly (not via shell) so the backend
+        // can properly monitor it.
+        guard let backend = backend else {
+            NSLog("Session: Cannot start process - no backend")
             return
         }
         // Reset readiness — each new lifecycle starts unready.
@@ -1217,7 +1242,7 @@ class Session: Identifiable, ObservableObject {
         // to true via markReady().
         isReady = false
 
-        terminalView.startProcess(
+        backend.startProcess(
             executable: executablePath,
             args: args,
             environment: envArray,
@@ -1272,9 +1297,9 @@ class Session: Identifiable, ObservableObject {
             // for any future resumed lifecycle anyway.
             self.pendingReadyActions.removeAll()
 
-            // Release terminal view to free ~32MB scrollback buffer.
+            // Release the backend to free ~32MB scrollback buffer.
             // The view shows StoppedSessionView now, not the terminal.
-            self.releaseTerminalView()
+            self.releaseBackend()
         }
     }
 

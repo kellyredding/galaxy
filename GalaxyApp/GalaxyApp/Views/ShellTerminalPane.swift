@@ -158,14 +158,14 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
     /// into a paused buffer view would land out-of-order.
     var sendToClaudeTarget: SendToClaudeTarget? {
         guard let s = session else { return nil }
-        let sessionView = s.terminalView
+        let sessionBackend = s.backend
 
         return SendToClaudeTarget(
-            sendText: { [weak sessionView] text in
-                sessionView?.send(txt: text)
+            sendText: { text in
+                sessionBackend?.send(text: text, asPaste: false)
             },
-            sendCR: { [weak sessionView] in
-                sessionView?.send([0x0D])
+            sendCR: {
+                sessionBackend?.send(bytes: [0x0D])
             },
             disabledReason: { [weak s] in
                 guard let s = s else {

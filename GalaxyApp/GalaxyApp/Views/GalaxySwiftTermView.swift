@@ -2,46 +2,27 @@ import AppKit
 import SwiftTerm
 
 /// Custom terminal view that extends LocalProcessTerminalView.
-/// This allows us to intercept terminal events (like bell) without
-/// replacing the terminalDelegate, which breaks SwiftTerm's internal behavior.
+/// Intercepts terminal events (bell, scroll) without replacing
+/// `terminalDelegate`, which would break SwiftTerm's internal
+/// behavior. Process-lifecycle delegation is handled by the
+/// owning `SwiftTermBackend` (which conforms to
+/// `LocalProcessTerminalViewDelegate` and assigns itself as
+/// `processDelegate` after constructing this view).
 class GalaxySwiftTermView: LocalProcessTerminalView {
     /// Disable custom block glyph rendering on construction so
     /// block elements (U+2580–U+259F) and box drawing
     /// (U+2500–U+257F) fall through to CoreText font rendering,
     /// matching Terminal.app. Baked into init so callers don't
-    /// have to remember to set it. Also installs an internal
-    /// `DelegateProxy` as the `processDelegate` so SwiftTerm's
-    /// process-lifecycle callbacks fire into Galaxy-typed event
-    /// hooks (`onProcessTerminated`) instead of routing through
-    /// a separate sidecar handler defined elsewhere.
+    /// have to remember to set it.
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         self.customBlockGlyphs = false
-        self.delegateProxy.owner = self
-        self.processDelegate = self.delegateProxy
     }
 
     required init?(coder: NSCoder) {
         super.init(coder: coder)
         self.customBlockGlyphs = false
-        self.delegateProxy.owner = self
-        self.processDelegate = self.delegateProxy
     }
-
-    /// Called when the child process exits. Set by
-    /// `SessionManager.wireSessionCallbacks`. Mirrors
-    /// `SwiftTermBackend.onProcessTerminated` for symmetry.
-    var onProcessTerminated: ((Int32) -> Void)?
-
-    /// Internal delegate proxy. SwiftTerm's
-    /// `LocalProcessTerminalView` already implements (non-open)
-    /// stubs of the delegate methods on the class itself, so a
-    /// subclass can't directly conform to the protocol and
-    /// implement them without override conflicts. A separate
-    /// proxy object sidesteps this entirely and keeps the
-    /// SwiftTerm-typed delegate signatures off `GalaxySwiftTermView`'s
-    /// interface.
-    private let delegateProxy = DelegateProxy()
 
     /// Short-circuit key view traversal — same fix as InlineEditField.
     /// When any NSView becomes first responder, AppKit may walk
@@ -152,44 +133,6 @@ class GalaxySwiftTermView: LocalProcessTerminalView {
         terminal.refresh(startRow: 0, endRow: terminal.rows)
         setNeedsDisplay(bounds)
         return true
-    }
-
-    /// Routes SwiftTerm's `LocalProcessTerminalViewDelegate`
-    /// callbacks into the owning `GalaxySwiftTermView`'s
-    /// Galaxy-typed event hooks. Lives as a sidecar object
-    /// because the SwiftTerm class already implements (non-open)
-    /// stubs of these methods, blocking direct conformance from
-    /// a subclass.
-    fileprivate final class DelegateProxy: NSObject,
-        LocalProcessTerminalViewDelegate {
-        weak var owner: GalaxySwiftTermView?
-
-        func processTerminated(
-            source: SwiftTerm.TerminalView, exitCode: Int32?
-        ) {
-            owner?.onProcessTerminated?(exitCode ?? -1)
-        }
-
-        func sizeChanged(
-            source: SwiftTerm.LocalProcessTerminalView,
-            newCols: Int, newRows: Int
-        ) {
-            // SwiftTerm reflows internally; nothing for Galaxy
-            // to do.
-        }
-
-        func setTerminalTitle(
-            source: SwiftTerm.LocalProcessTerminalView,
-            title: String
-        ) {
-            // Galaxy doesn't display per-pane terminal titles.
-        }
-
-        func hostCurrentDirectoryUpdate(
-            source: SwiftTerm.TerminalView, directory: String?
-        ) {
-            // Galaxy doesn't track per-pane cwd.
-        }
     }
 }
 

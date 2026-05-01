@@ -130,8 +130,16 @@ class TerminalHostView: NSView {
     /// populate them. Paths that hit these are Session-specific
     /// (Claude-side observers, caret hide) and stay that way.
     var session: Session? { sessionPane?.session }
+
+    /// Concrete-typed reach-through to the underlying SwiftTerm
+    /// subclass for Session-pane chrome that pokes engine
+    /// internals not surfaced on `TerminalBackend` (today: caret
+    /// hiding for Claude Code's self-rendered cursor). Cast is
+    /// nil-safe — if a future engine swaps in, the Session-pane
+    /// chrome that depends on this either no-ops or grows its
+    /// own engine-specific equivalent.
     private var galaxyView: GalaxySwiftTermView? {
-        sessionPane?.galaxyView
+        sessionPane?.backend.view as? GalaxySwiftTermView
     }
 
     /// The owning session regardless of pane type.

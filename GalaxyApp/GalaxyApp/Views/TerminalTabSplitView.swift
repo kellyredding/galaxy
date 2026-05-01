@@ -110,10 +110,7 @@ struct TerminalTabSplitView: View {
             TerminalTabCommands.shared.focusSession
         ) { sessionId in
             guard sessionId == session.id else { return }
-            if let galaxyView = session.terminalView {
-                galaxyView.window?
-                    .makeFirstResponder(galaxyView)
-            }
+            session.backend?.focus()
         }
         .onReceive(
             TerminalTabCommands.shared.closeFocusedShell
@@ -229,10 +226,7 @@ final class SplitState: ObservableObject {
         DispatchQueue.main.asyncAfter(
             deadline: .now() + 0.05
         ) {
-            if let galaxyView = session.terminalView {
-                galaxyView.window?
-                    .makeFirstResponder(galaxyView)
-            }
+            session.backend?.focus()
         }
     }
 

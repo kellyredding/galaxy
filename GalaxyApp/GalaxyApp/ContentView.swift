@@ -514,7 +514,7 @@ extension TabUnreadIndicator {
 /// Constructs a SessionTerminalPane adapter for the running
 /// branch, cached via a @StateObject so its identity is stable
 /// across SwiftUI re-renders and only rebuilt when the underlying
-/// GalaxySwiftTermView changes (e.g., after a stop+resume cycle).
+/// backend changes (e.g., after a stop+resume cycle).
 struct SessionPaneView: View {
     @ObservedObject var session: Session
     let isActive: Bool
@@ -527,7 +527,7 @@ struct SessionPaneView: View {
             if session.hasExited {
                 // Show stopped session UI
                 StoppedSessionView(session: session, onResume: onResume)
-            } else if let galaxyView = session.terminalView {
+            } else if let backend = session.backend {
                 // Show terminal via TerminalPane abstraction.
                 // `.equatable()` opts into our Equatable
                 // conformance for SwiftUI's diff, guaranteeing
@@ -535,7 +535,7 @@ struct SessionPaneView: View {
                 // and isActive flag haven't changed.
                 FocusableTerminalView(
                     pane: adapterHolder.adapter(
-                        for: session, view: galaxyView
+                        for: session, backend: backend
                     ),
                     isActive: isActive
                 )
@@ -545,14 +545,13 @@ struct SessionPaneView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onChange(of: session.hasExited) {
             // Release the cached adapter (and its strong reference
-            // to the old GalaxySwiftTermView) when the session
-            // stops. Without this, the ~32MB scrollback buffer
-            // stays resident until the user either resumes the
-            // session (which replaces the cached adapter) or
-            // dismisses it (which tears down the whole
-            // SessionPaneView). With it, Session.releaseTerminalView
-            // can actually free the buffer at stop time, matching
-            // pre-refactor behavior.
+            // to the old backend) when the session stops. Without
+            // this, the ~32MB scrollback buffer stays resident
+            // until the user either resumes the session (which
+            // replaces the cached adapter) or dismisses it (which
+            // tears down the whole SessionPaneView). With it,
+            // Session.releaseBackend can actually free the buffer
+            // at stop time, matching pre-refactor behavior.
             if session.hasExited {
                 adapterHolder.release()
             }
@@ -562,8 +561,8 @@ struct SessionPaneView: View {
 
 /// Caches a SessionTerminalPane adapter per SessionPaneView
 /// lifetime, returning the same instance for the same underlying
-/// GalaxySwiftTermView. On view change (e.g., stop+resume creates
-/// a fresh GalaxySwiftTermView), a new adapter is constructed.
+/// backend. On backend change (e.g., stop+resume creates a fresh
+/// backend), a new adapter is constructed.
 ///
 /// The cached adapter is stored in a non-@Published property so
 /// mutating it during body evaluation doesn't re-trigger SwiftUI
@@ -573,21 +572,21 @@ private final class SessionPaneAdapterHolder: ObservableObject {
 
     func adapter(
         for session: Session,
-        view: GalaxySwiftTermView
+        backend: TerminalBackend
     ) -> SessionTerminalPane {
-        if let cached, cached.galaxyView === view {
+        if let cached, cached.backend === backend {
             return cached
         }
         let fresh = SessionTerminalPane(
-            session: session, galaxyView: view
+            session: session, backend: backend
         )
         cached = fresh
         return fresh
     }
 
-    /// Drop the cached adapter so the GalaxySwiftTermView it holds
-    /// strongly can be released. Called when the session stops so
-    /// the scrollback buffer is freed at stop time rather than at
+    /// Drop the cached adapter so the backend it holds strongly
+    /// can be released. Called when the session stops so the
+    /// scrollback buffer is freed at stop time rather than at
     /// resume or dismiss time.
     func release() {
         cached = nil

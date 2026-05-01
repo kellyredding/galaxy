@@ -90,14 +90,9 @@ final class SwiftTermBackend: NSObject, TerminalBackend,
     init(frame: NSRect) {
         self.terminalView = GalaxySwiftTermView(frame: frame)
         super.init()
-        // GalaxySwiftTermView's init installs its internal
-        // DelegateProxy as processDelegate (so a directly-
-        // owned view — the Session pane's path — can route
-        // process-exit through the subclass's stored
-        // callback). The Shell pane owns its view through
-        // the backend, so we override that assignment here
-        // and conform to LPTV directly. Both paths coexist
-        // until the Session pane migrates onto a backend.
+        // Conform to LPTV directly — process-lifecycle
+        // callbacks land on `processTerminated(source:exitCode:)`
+        // below.
         self.terminalView.processDelegate = self
     }
 

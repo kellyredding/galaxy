@@ -26,12 +26,12 @@ class SessionManager: ObservableObject {
             if let oldId = oldValue,
                let oldSession = sessions.first(where: { $0.id == oldId })
             {
-                oldSession.terminalView?.suppressFocusEvents = true
+                oldSession.backend?.suppressFocusEvents = true
             }
             if let newId = activeSessionId,
                let newSession = sessions.first(where: { $0.id == newId })
             {
-                newSession.terminalView?.suppressFocusEvents = true
+                newSession.backend?.suppressFocusEvents = true
             }
         }
     }
@@ -127,11 +127,11 @@ class SessionManager: ObservableObject {
     /// session goes busy again before the timer fires (minimum idle duration).
     private var pendingIdleNotificationTimers: [UUID: Timer] = [:]
 
-    /// Per-session Combine subscription to
-    /// `session.$terminalView`. Fires `wireSessionCallbacks` every
-    /// time the terminal view transitions to non-nil (session
-    /// start, resume). Torn down when the session is removed.
-    private var terminalViewSubs: [UUID: AnyCancellable] = [:]
+    /// Per-session Combine subscription to `session.$backend`.
+    /// Fires `wireSessionCallbacks` every time the backend
+    /// transitions to non-nil (session start, resume). Torn down
+    /// when the session is removed.
+    private var backendSubs: [UUID: AnyCancellable] = [:]
 
     /// Minimum seconds between auto-clears for the same session.
     private static let autoClearCooldown: TimeInterval = 30
@@ -175,13 +175,13 @@ class SessionManager: ObservableObject {
             for state in persisted.sessions {
                 let session = Session(restoring: state)
                 sessions.append(session)
-                // Observe terminalView lifecycle even for stopped
+                // Observe backend lifecycle even for stopped
                 // sessions — when the user resumes one,
-                // ensureTerminalView() fires the subscription and
+                // ensureBackend() fires the subscription and
                 // callbacks wire automatically. Restored sessions
-                // start with terminalView == nil, so the immediate
+                // start with backend == nil, so the immediate
                 // sink fire is a no-op.
-                observeTerminalViewLifecycle(for: session)
+                observeBackendLifecycle(for: session)
             }
             if let activeId = persisted.activeSessionId {
                 activeSessionId = activeId
@@ -280,13 +280,13 @@ class SessionManager: ObservableObject {
             executablePath = claudePath
         }
 
-        // Observe the session's terminalView lifecycle. Fires
+        // Observe the session's backend lifecycle. Fires
         // immediately with the current (just-created-in-init)
-        // view, which triggers wireSessionCallbacks → sets up
-        // the bell, processDelegate, and session-level turn
+        // backend, which triggers wireSessionCallbacks → sets up
+        // the bell, process-exit, and session-level turn
         // callbacks. The same subscription handles future
         // recreations on resume.
-        observeTerminalViewLifecycle(for: session)
+        observeBackendLifecycle(for: session)
 
         // Determine if this is a resume (resumeSessionId provided means URL had resume param)
         let isResume = resumeSessionId != nil
@@ -625,11 +625,11 @@ class SessionManager: ObservableObject {
         activeTab = .terminal
         activeLedgerSubTab = session.lastActiveLedgerSubTab
 
-        // Create terminal view BEFORE resetting hasExited.
+        // Create the terminal backend BEFORE resetting hasExited.
         // Setting hasExited = false triggers SwiftUI to swap
         // StoppedSessionView → FocusableTerminalView, which
-        // needs session.terminalView to exist.
-        session.ensureTerminalView()
+        // needs session.backend to exist.
+        session.ensureBackend()
 
         // Reset session state
         session.hasExited = false
@@ -638,24 +638,24 @@ class SessionManager: ObservableObject {
         session.userInitiatedStop = false
 
         // Disable focus reporting (mode 1004) before the view transition.
-        // Claude Code enables mode 1004 so SwiftTerm sends ESC[I on focus-in.
+        // Claude Code enables mode 1004 so the terminal sends ESC[I on focus-in.
         // During resume, the view swap triggers a focus event before the new
         // process is ready to parse it, leaking a stray "I" into the input.
         // The new Claude process will re-enable mode 1004 when it initializes.
-        session.terminalView?.feed(text: "\u{1b}[?1004l")
+        session.backend?.feed(text: "\u{1b}[?1004l")
 
         // Clear the visible screen before resuming so Claude redraws cleanly.
         // ESC[2J = clear screen, ESC[H = cursor home.
         // Note: ESC[3J (clear scrollback) is intentionally omitted to preserve
         // scroll history across resumes.
-        session.terminalView?.feed(text: "\u{1b}[2J\u{1b}[H")
+        session.backend?.feed(text: "\u{1b}[2J\u{1b}[H")
 
         // Callbacks are re-wired automatically by the subscription
-        // set up in observeTerminalViewLifecycle when this session
-        // was originally registered: ensureTerminalView() above
-        // assigned a fresh GalaxySwiftTermView to session.terminalView,
-        // which fired the subscription, which called
-        // wireSessionCallbacks on the new view.
+        // set up in observeBackendLifecycle when this session was
+        // originally registered: ensureBackend() above assigned a
+        // fresh backend to session.backend, which fired the
+        // subscription, which called wireSessionCallbacks on the
+        // new backend.
 
         // Determine executable path: claude-persona for persona sessions, claude for vanilla
         let executablePath: String
@@ -1228,11 +1228,11 @@ class SessionManager: ObservableObject {
         session.onTurnStart = nil
         session.onTurnEnd = nil
 
-        // Cancel the terminalView lifecycle observer so it doesn't
-        // re-wire callbacks on any post-removal terminalView churn.
-        terminalViewSubs.removeValue(forKey: session.id)
+        // Cancel the backend lifecycle observer so it doesn't
+        // re-wire callbacks on any post-removal backend churn.
+        backendSubs.removeValue(forKey: session.id)
 
-        // Remove the session (this will deallocate the terminal view which kills the process)
+        // Remove the session (this will deallocate the backend, which kills the process)
         sessions.remove(at: index)
         SessionPersistence.shared.markDirty()
         updateDockBadge()
@@ -1286,9 +1286,9 @@ class SessionManager: ObservableObject {
         // Create stopped session from persisted state
         let session = Session(restoring: closedSession.session)
         sessions.append(session)
-        // Observe terminalView lifecycle so callbacks wire
+        // Observe backend lifecycle so callbacks wire
         // automatically when the user later resumes this session.
-        observeTerminalViewLifecycle(for: session)
+        observeBackendLifecycle(for: session)
 
         // Save outgoing session's view state, then activate restored session
         saveViewState()
@@ -1483,46 +1483,47 @@ class SessionManager: ObservableObject {
     private static let bellPipelineDuration: TimeInterval =
         (0.375 * 3) + (0.1 * 2)
 
-    /// Subscribe to a session's `$terminalView` so the callback set
+    /// Subscribe to a session's `$backend` so the callback set
     /// below (`wireSessionCallbacks`) fires automatically whenever
-    /// the view is (re)created. One subscription per session,
+    /// the backend is (re)created. One subscription per session,
     /// established when the session is first registered. Survives
-    /// stop → resume cycles — `releaseTerminalView` writes nil
-    /// (subscriber ignores) and `ensureTerminalView` writes a new
-    /// view (subscriber re-wires). Removed in `removeSession`.
-    private func observeTerminalViewLifecycle(for session: Session) {
-        terminalViewSubs[session.id] = session.$terminalView
-            .sink { [weak self, weak session] newView in
+    /// stop → resume cycles — `releaseBackend` writes nil
+    /// (subscriber ignores) and `ensureBackend` writes a new
+    /// backend (subscriber re-wires). Removed in `removeSession`.
+    private func observeBackendLifecycle(for session: Session) {
+        backendSubs[session.id] = session.$backend
+            .sink { [weak self, weak session] newBackend in
                 guard let self = self,
                       let session = session,
-                      let view = newView else { return }
+                      let backend = newBackend else { return }
                 self.wireSessionCallbacks(
-                    for: session, terminalView: view
+                    for: session, backend: backend
                 )
             }
     }
 
     /// Single source of truth for wiring SessionManager-owned
-    /// callbacks on a session's terminal view. Called by the
-    /// observer set up in `observeTerminalViewLifecycle(for:)`
-    /// every time `session.terminalView` transitions to non-nil.
+    /// callbacks on a session's terminal backend. Called by the
+    /// observer set up in `observeBackendLifecycle(for:)` every
+    /// time `session.backend` transitions to non-nil.
     ///
     /// Idempotent: each call replaces any prior wiring on the
-    /// current view, so stacking calls doesn't leak handlers.
+    /// current backend, so stacking calls doesn't leak handlers.
     /// Session-level callbacks (onTurnStart, onTurnEnd) persist
-    /// across terminalView recreation but are re-assigned here
-    /// for parity with pre-refactor behavior.
+    /// across backend recreation but are re-assigned here for
+    /// parity with pre-refactor behavior.
     private func wireSessionCallbacks(
         for session: Session,
-        terminalView: GalaxySwiftTermView
+        backend: TerminalBackend
     ) {
-        // Process exit callback — GalaxySwiftTermView wires its own
-        // internal sidecar proxy as `processDelegate` in init, and
-        // exposes a Galaxy-typed `onProcessTerminated` hook that
-        // we wire here. Closure captures session weakly because
-        // SessionManager owns the lifecycle; Session's strong
-        // hold on terminalView is what keeps the wiring alive.
-        terminalView.onProcessTerminated = {
+        // Process exit callback — the backend conforms to
+        // `LocalProcessTerminalViewDelegate` directly (e.g.
+        // `SwiftTermBackend`) and exposes a Galaxy-typed
+        // `onProcessTerminated` hook that we wire here. Closure
+        // captures session weakly because SessionManager owns the
+        // lifecycle; Session's strong hold on backend is what
+        // keeps the wiring alive.
+        backend.onProcessTerminated = {
             [weak self, weak session] exitCode in
             guard let self = self,
                   let session = session else { return }
@@ -1531,7 +1532,7 @@ class SessionManager: ObservableObject {
         }
 
         // Bell — delegates to the debounced pipeline in handleBell.
-        terminalView.onBell = { [weak self, weak session] in
+        backend.onBell = { [weak self, weak session] in
             guard let self = self,
                   let session = session else { return }
             self.handleBell(for: session)
@@ -1563,7 +1564,7 @@ class SessionManager: ObservableObject {
     ///
     /// Called from the `onBell` closure wired in
     /// `wireSessionCallbacks`, and from the debug bell shortcut
-    /// via `session.terminalView?.onBell?()`.
+    /// via `session.backend?.onBell?()`.
     private func handleBell(for session: Session) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
@@ -1591,7 +1592,7 @@ class SessionManager: ObservableObject {
             // sidebar continues its 3-flash cadence.
             if settings.bellVisualFlash {
                 self.triggerVisualBell(for: session)
-                if let view = session.terminalView {
+                if let view = session.backend?.view {
                     TerminalVisualBell.pulse(over: view)
                 }
             }
