@@ -178,4 +178,35 @@ describe "CLI Integration" do
       File.exists?(bridge_file).should eq(false)
     end
   end
+
+  describe "preview subcommand" do
+    it "emits a fabricated sample without stdin" do
+      result = run_binary(["preview"])
+      result[:status].should eq(0)
+      lines = result[:output].split("\n", remove_empty: true)
+      lines.size.should eq(2)
+    end
+
+    it "includes the fabricated branch name in the location line" do
+      result = run_binary(["preview"])
+      result[:output].should contain("main")
+    end
+
+    it "includes the fabricated context percentage in the session line" do
+      result = run_binary(["preview"])
+      result[:output].should contain("35%")
+    end
+
+    it "drops the cost segment when layout.show_cost is false" do
+      run_binary(["config", "set", "layout.show_cost", "false"])
+      result = run_binary(["preview"])
+      result[:output].should_not contain("$0.42")
+    end
+
+    it "drops the model segment when layout.show_model is false" do
+      run_binary(["config", "set", "layout.show_model", "false"])
+      result = run_binary(["preview"])
+      result[:output].should_not contain("Sonnet")
+    end
+  end
 end

@@ -57,6 +57,8 @@ module GalaxyStatusline
       case command
       when "render"
         render_status_line
+      when "preview"
+        render_sample
       when "config"
         handle_config_command(rest)
       when "hook"
@@ -82,6 +84,7 @@ module GalaxyStatusline
 
       Commands:
         render              Render status line (reads JSON from stdin)
+        preview             Render a fabricated sample (no stdin input)
         config              Show current configuration
         config help         Configuration documentation
         config set KEY VAL  Set a configuration value
@@ -107,6 +110,93 @@ module GalaxyStatusline
     private def self.stdin_has_data? : Bool
       # Check if stdin is a TTY (interactive) or has data piped
       !STDIN.tty?
+    end
+
+    # Render a fabricated sample status line using the current
+    # config — synthesizes location and session lines without
+    # consulting real git/cwd state. Used by the Settings UI's
+    # preview pane and useful for documentation screenshots.
+    private def self.render_sample
+      config = Config.load
+      puts render_sample_location(config)
+      puts render_sample_session(config)
+    end
+
+    private def self.render_sample_location(config : Config) : String
+      dir = case config.layout.directory_style
+            when "full"     then "/Users/you/example/project"
+            when "basename" then "project"
+            when "short"    then "~/e/project"
+            else                 "~/example/project"
+            end
+
+      git = case config.branch_style
+            when "arrows"  then render_sample_arrows_git(config)
+            when "minimal" then render_sample_minimal_git(config)
+            else                render_sample_symbolic_git(config)
+            end
+
+      Colors.colorize(dir, config.colors.directory) + git
+    end
+
+    private def self.render_sample_symbolic_git(config : Config) : String
+      branch = Colors.colorize("main", config.colors.branch)
+      synced = Colors.colorize("=", config.colors.upstream_synced)
+      dirty = Colors.colorize("*", config.colors.dirty)
+      "[#{branch}#{synced}#{dirty}]"
+    end
+
+    private def self.render_sample_arrows_git(config : Config) : String
+      branch = Colors.colorize("main", config.colors.branch)
+      ahead = Colors.colorize("↑2", config.colors.upstream_ahead)
+      behind = Colors.colorize("↓1", config.colors.upstream_behind)
+      dirty = Colors.colorize("*", config.colors.dirty)
+      "[#{branch}#{ahead}#{behind}#{dirty}]"
+    end
+
+    private def self.render_sample_minimal_git(config : Config) : String
+      branch = Colors.colorize("main", config.colors.branch)
+      dirty = Colors.colorize("*", config.colors.dirty)
+      "[#{branch}#{dirty}]"
+    end
+
+    private def self.render_sample_session(config : Config) : String
+      parts = [] of String
+
+      if config.layout.show_model
+        parts << Colors.colorize("Sonnet", config.colors.model)
+      end
+
+      parts << render_sample_context_bar(35.0, config)
+
+      if config.layout.show_cost
+        parts << Colors.colorize("$0.42", config.colors.cost)
+      end
+
+      if config.layout.show_time
+        formatted = TimeFormat.format(Time.local, config.layout.time_format)
+        parts << Colors.colorize(formatted, config.colors.time)
+      end
+
+      parts.join(" | ")
+    end
+
+    private def self.render_sample_context_bar(percentage : Float64, config : Config) : String
+      color = if percentage >= config.context_thresholds.critical
+                config.colors.context_critical
+              elsif percentage >= config.context_thresholds.warning
+                config.colors.context_warning
+              else
+                config.colors.context_normal
+              end
+
+      width = 25
+      filled = ((percentage / 100.0) * width).round.to_i
+      filled = filled.clamp(0, width)
+      bar = "█" * filled + "░" * (width - filled)
+      pct = "#{percentage.to_i}%"
+
+      "#{Colors.colorize(bar, color)} #{Colors.colorize(pct, color)}"
     end
 
     private def self.render_status_line
