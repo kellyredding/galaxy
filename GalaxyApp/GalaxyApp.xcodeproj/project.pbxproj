@@ -12,7 +12,9 @@
 		09CDA5203DCF9553E640C102 /* AnnotationHTMLVisitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB1BD0B12AE09B3D09B6EE03 /* AnnotationHTMLVisitor.swift */; };
 		0B65699340045EFEC87EC44B /* SessionNavigationHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68F73B27BACDA34CA4574613 /* SessionNavigationHistory.swift */; };
 		0CD6D832A8614D6D935C1E0F /* AgentRun.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFFF3072B720C04EC59D3554 /* AgentRun.swift */; };
+		1398D7A28CD97955C6CF12EE /* StatuslineHookStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AE5FFAF09889E289427AFAB /* StatuslineHookStatus.swift */; };
 		1613D6F4896F7B93513565A8 /* TimelineModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 676FCB50E852F5CD6E0E58B9 /* TimelineModels.swift */; };
+		18B3FD10CEE9BF58CA495504 /* StatuslineConfigService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 725F45E345F6FC24D63A50F7 /* StatuslineConfigService.swift */; };
 		1F1D225FC7871834B03189C0 /* SwiftTermBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51B8E1BFB0B4DFDEFE7B0043 /* SwiftTermBackend.swift */; };
 		21BC314DAABC67786341621F /* ExpandedSessionSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B33E9ACBBBDE22688F8D808 /* ExpandedSessionSidebar.swift */; };
 		287B04EB0B71772D4E0594CD /* SessionIDGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA542FF52DF4733279284AB3 /* SessionIDGenerator.swift */; };
@@ -23,12 +25,14 @@
 		2E5A3E230567B0644A0FBE75 /* TerminalBackendFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8A4839736F22A842E1CD692 /* TerminalBackendFactory.swift */; };
 		32AFC050E2D6D3FF86440F4D /* NewMarkerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B700435C26C483E71A75B12 /* NewMarkerView.swift */; };
 		3439D34465B92507E427479C /* ScrollbackOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD1324D7665E5F848D1DDD90 /* ScrollbackOverlayView.swift */; };
+		3742F0C4FB90095EC03FA9D2 /* StatuslineConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 651F643466B2D143C12A260D /* StatuslineConfig.swift */; };
 		387858C02EE4E33A8F927666 /* ArtifactsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 993B48FFA0D6A7E321422F63 /* ArtifactsView.swift */; };
 		38C56F31253D082C87C20D6D /* PersonaPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B94034611483F6B08D6C02B /* PersonaPicker.swift */; };
 		3E64891A1B570A169DFFA3FD /* TimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 592873EB089CA8C129A579A0 /* TimelineView.swift */; };
 		3F6C193D5824A2FC5BDB2792 /* StatusLineService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5702E8641291E687147723FD /* StatusLineService.swift */; };
 		3FCE06C0F8AE9134D99D090A /* TerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCE6073F39BD2A2E08FD007F /* TerminalView.swift */; };
 		45502A30E76464D22AB37E82 /* LedgerIdentifiersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF05B1CBD2C3553B1FCBA500 /* LedgerIdentifiersView.swift */; };
+		4600C3FC98C689FED1C0826A /* StatuslineSettingsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 192DF8FB0BAE6D628529EBB3 /* StatuslineSettingsTab.swift */; };
 		4654E5243D23D2B9C9E3F183 /* LedgerFilesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB66259FCA486462B2373B6A /* LedgerFilesView.swift */; };
 		487179062AB63CC1EBAD20CB /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8930E8F0C6702946D87082BD /* Assets.xcassets */; };
 		4A72123664AE5FA178DF46E3 /* TimelineService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DE3AC5A832EA301B3967F61 /* TimelineService.swift */; };
@@ -135,6 +139,7 @@
 		132ABF5FFF205D134EED1EE4 /* SessionTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionTab.swift; sourceTree = "<group>"; };
 		139EB2F2C31AF6EE70AFECF7 /* DirectoryField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectoryField.swift; sourceTree = "<group>"; };
 		15C1E3C296A1E84381807568 /* NavigationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationCoordinator.swift; sourceTree = "<group>"; };
+		192DF8FB0BAE6D628529EBB3 /* StatuslineSettingsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatuslineSettingsTab.swift; sourceTree = "<group>"; };
 		19982622D2460FF2F8B4E33B /* UnreadIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnreadIndicator.swift; sourceTree = "<group>"; };
 		1B4449037A4904D32821556A /* LedgerSuggestedNameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerSuggestedNameView.swift; sourceTree = "<group>"; };
 		1BBBE3E1A89D66542B032539 /* SessionMarkerRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionMarkerRow.swift; sourceTree = "<group>"; };
@@ -149,6 +154,7 @@
 		2750A011DD00E7D1E06CE4CD /* ScrollbackWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollbackWebView.swift; sourceTree = "<group>"; };
 		2818423D59425A4F643B9444 /* ShellPaneBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellPaneBar.swift; sourceTree = "<group>"; };
 		29344914B2D95B3DADB11F4A /* SnapshotsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotsView.swift; sourceTree = "<group>"; };
+		2AE5FFAF09889E289427AFAB /* StatuslineHookStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatuslineHookStatus.swift; sourceTree = "<group>"; };
 		2C599534AAFC2570BC5F292A /* StoppedSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoppedSessionView.swift; sourceTree = "<group>"; };
 		2E2A600723E28593174AA752 /* highlight.min.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = highlight.min.js; sourceTree = "<group>"; };
 		2E9CD7B5767024AE0C85E433 /* PreferencesWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesWindowController.swift; sourceTree = "<group>"; };
@@ -179,10 +185,12 @@
 		61F41A6FFADC96743100251A /* NavigationEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationEntry.swift; sourceTree = "<group>"; };
 		6416EF21214B040D05629012 /* ArtifactHTMLView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactHTMLView.swift; sourceTree = "<group>"; };
 		647FC24EF5503064016FE625 /* TerminalBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalBackend.swift; sourceTree = "<group>"; };
+		651F643466B2D143C12A260D /* StatuslineConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatuslineConfig.swift; sourceTree = "<group>"; };
 		65EC5C46A6B9E07A2F81093F /* AgentsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentsView.swift; sourceTree = "<group>"; };
 		6658F001C5C56071EC60514E /* WatermarkBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatermarkBackground.swift; sourceTree = "<group>"; };
 		676FCB50E852F5CD6E0E58B9 /* TimelineModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineModels.swift; sourceTree = "<group>"; };
 		68F73B27BACDA34CA4574613 /* SessionNavigationHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionNavigationHistory.swift; sourceTree = "<group>"; };
+		725F45E345F6FC24D63A50F7 /* StatuslineConfigService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatuslineConfigService.swift; sourceTree = "<group>"; };
 		82C612579CBA9EC59CD6F9F5 /* ShellPaneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellPaneView.swift; sourceTree = "<group>"; };
 		8883076FF135248E14D820C4 /* ShellLauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellLauncher.swift; sourceTree = "<group>"; };
 		88AEEF810BE7BF77CA16E7C9 /* ArtifactImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactImageView.swift; sourceTree = "<group>"; };
@@ -304,6 +312,7 @@
 				1DE3AC5A832EA301B3967F61 /* TimelineService.swift */,
 				5DEDF4AC4FD8C8D3201846CB /* ViewedFilesPersistence.swift */,
 				899A0FEF2AD224B0D5701B42 /* WindowStatePersistence.swift */,
+				9C4755FFB163C1B725A0B116 /* Statusline */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -314,6 +323,14 @@
 				1F39F262BB7D593079DE0602 /* GalaxyApp.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		50A26412F6AF5D78EC7772A3 /* Statusline */ = {
+			isa = PBXGroup;
+			children = (
+				192DF8FB0BAE6D628529EBB3 /* StatuslineSettingsTab.swift */,
+			);
+			path = Statusline;
 			sourceTree = "<group>";
 		};
 		8D98DBB6657E4D9DEE141CCC /* Resources */ = {
@@ -327,6 +344,16 @@
 				F1F9F41AF028CB2338EDF0B1 /* mermaid.min.js */,
 			);
 			path = Resources;
+			sourceTree = "<group>";
+		};
+		9C4755FFB163C1B725A0B116 /* Statusline */ = {
+			isa = PBXGroup;
+			children = (
+				651F643466B2D143C12A260D /* StatuslineConfig.swift */,
+				725F45E345F6FC24D63A50F7 /* StatuslineConfigService.swift */,
+				2AE5FFAF09889E289427AFAB /* StatuslineHookStatus.swift */,
+			);
+			path = Statusline;
 			sourceTree = "<group>";
 		};
 		A4E9EEB1DC67FF88728B219F /* Views */ = {
@@ -390,6 +417,7 @@
 				592873EB089CA8C129A579A0 /* TimelineView.swift */,
 				19982622D2460FF2F8B4E33B /* UnreadIndicator.swift */,
 				6658F001C5C56071EC60514E /* WatermarkBackground.swift */,
+				50A26412F6AF5D78EC7772A3 /* Statusline */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -597,6 +625,10 @@
 				D499F472C2F9A6CB0D02D493 /* SnapshotsView.swift in Sources */,
 				CC27D1B9C8318928AE6187FE /* SocketListener.swift in Sources */,
 				3F6C193D5824A2FC5BDB2792 /* StatusLineService.swift in Sources */,
+				3742F0C4FB90095EC03FA9D2 /* StatuslineConfig.swift in Sources */,
+				18B3FD10CEE9BF58CA495504 /* StatuslineConfigService.swift in Sources */,
+				1398D7A28CD97955C6CF12EE /* StatuslineHookStatus.swift in Sources */,
+				4600C3FC98C689FED1C0826A /* StatuslineSettingsTab.swift in Sources */,
 				951191037547FFAFD104A99F /* StoppedSessionView.swift in Sources */,
 				1F1D225FC7871834B03189C0 /* SwiftTermBackend.swift in Sources */,
 				C52190FC4DA2882C6102855A /* SwiftTermScrollbackRenderer.swift in Sources */,

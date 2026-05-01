@@ -7,6 +7,7 @@ enum SettingsTab: String, CaseIterable {
     case general
     case sessions
     case terminal
+    case statusline
     case notifications
 
     var title: String {
@@ -14,6 +15,7 @@ enum SettingsTab: String, CaseIterable {
         case .general: return "General"
         case .sessions: return "Sessions"
         case .terminal: return "Terminal"
+        case .statusline: return "Statusline"
         case .notifications: return "Notifications"
         }
     }
@@ -23,6 +25,7 @@ enum SettingsTab: String, CaseIterable {
         case .general: return "gear"
         case .sessions: return "text.bubble"
         case .terminal: return "apple.terminal"
+        case .statusline: return "menubar.rectangle"
         case .notifications: return "bell"
         }
     }
@@ -68,6 +71,8 @@ struct SettingsView: View {
                     )
                 case .notifications:
                     NotificationsSettingsTab(settingsManager: settingsManager)
+                case .statusline:
+                    StatuslineSettingsTab()
                 }
             }
         }
