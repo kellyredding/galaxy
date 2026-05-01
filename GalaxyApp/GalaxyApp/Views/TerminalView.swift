@@ -97,9 +97,9 @@ extension FocusableTerminalView: Equatable {
     /// (`SessionTerminalPane` or `ShellTerminalPane`), so
     /// `as AnyObject` reference equality is well-defined.
     /// `SessionPaneAdapterHolder` caches the adapter per
-    /// `GalaxySwiftTermView`, so the reference flips exactly
-    /// when stop/resume creates a new terminal view — i.e.,
-    /// when we *want* a re-update.
+    /// backend, so the reference flips exactly when
+    /// stop/resume creates a new backend — i.e., when we
+    /// *want* a re-update.
     static func == (
         lhs: FocusableTerminalView,
         rhs: FocusableTerminalView
@@ -111,36 +111,23 @@ extension FocusableTerminalView: Equatable {
 
 // Container that properly handles focus, drag-drop, and passes
 // events to a TerminalPane conformer. The pane abstracts away
-// whether the inner terminal is a GalaxySwiftTermView (Session
-// pane) or a plain LocalProcessTerminalView via SwiftTermBackend
-// (Shell pane, Phase 2).
+// the underlying terminal backend so this view never has to
+// know which engine is rendering.
 class TerminalHostView: NSView {
     let pane: TerminalPane
 
     /// Downcast to SessionTerminalPane for Session-pane-specific
-    /// behavior (font observers, scrollback unsaved-work checks,
-    /// SwiftTerm internals like cellDimension / bracketedPasteMode
-    /// / selection / caretView). Nil for non-Session panes.
+    /// behavior (font observers, scrollback unsaved-work checks).
+    /// Nil for non-Session panes.
     private var sessionPane: SessionTerminalPane? {
         pane as? SessionTerminalPane
     }
 
-    /// Convenience accessors derived from `sessionPane`. Kept as
-    /// optionals because non-Session panes (Shell pane) don't
-    /// populate them. Paths that hit these are Session-specific
-    /// (Claude-side observers, caret hide) and stay that way.
+    /// Convenience accessor derived from `sessionPane`. Kept as
+    /// an optional because non-Session panes (Shell pane) don't
+    /// populate it. Paths that hit it are Session-specific
+    /// (Claude-side observers).
     var session: Session? { sessionPane?.session }
-
-    /// Concrete-typed reach-through to the underlying SwiftTerm
-    /// subclass for Session-pane chrome that pokes engine
-    /// internals not surfaced on `TerminalBackend` (today: caret
-    /// hiding for Claude Code's self-rendered cursor). Cast is
-    /// nil-safe — if a future engine swaps in, the Session-pane
-    /// chrome that depends on this either no-ops or grows its
-    /// own engine-specific equivalent.
-    private var galaxyView: GalaxySwiftTermView? {
-        sessionPane?.backend.view as? GalaxySwiftTermView
-    }
 
     /// The owning session regardless of pane type.
     /// `self.session` above only resolves for the Session
@@ -387,11 +374,11 @@ class TerminalHostView: NSView {
         addSubview(pane.view)
 
         // Session-pane-specific chrome: Claude Code renders its
-        // own cursor so we hide SwiftTerm's caret. Shell pane
-        // keeps the native caret.
-        if let galaxyView = self.galaxyView {
-            galaxyView.caretView.isHidden = true
-        }
+        // own cursor so we hide the engine's native caret. Shell
+        // pane keeps the native caret. Routed through the
+        // backend so the chrome doesn't need to know which
+        // engine is underneath.
+        sessionPane?.backend.setCaretHidden(true)
 
         // Scroll-up interception — pane-generic. Both session
         // and shell panes route scroll-up through the pane

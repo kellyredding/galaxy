@@ -107,6 +107,16 @@ protocol TerminalBackend: AnyObject {
     /// it doesn't subscribe.
     func applyCursor(style: ShellCursorStyle, blink: Bool)
 
+    /// Hide or show the engine's native text caret. The
+    /// Session pane sets this true at setup because Claude
+    /// Code self-renders the cursor and the engine's caret
+    /// would double up; other panes leave it at the default
+    /// (false). Each engine implements this against its own
+    /// caret view — SwiftTerm exposes `caretView.isHidden`
+    /// on `MacTerminalView`, libghostty exposes a similar
+    /// config knob.
+    func setCaretHidden(_ hidden: Bool)
+
     /// Capture the current scrollback buffer. Returns an
     /// opaque `ScrollbackSnapshot` that freezes the buffer +
     /// terminal state at this moment, suitable for rendering

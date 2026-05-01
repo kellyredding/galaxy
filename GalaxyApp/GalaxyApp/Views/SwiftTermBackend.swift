@@ -338,6 +338,10 @@ final class SwiftTermBackend: NSObject, TerminalBackend,
         terminalView.terminal.setCursorStyle(mapped)
     }
 
+    func setCaretHidden(_ hidden: Bool) {
+        terminalView.caretView.isHidden = hidden
+    }
+
     func captureScrollbackSnapshot() -> ScrollbackSnapshot? {
         // SwiftTerm's `snapshotBuffer(_:)` is non-optional —
         // it deep-copies whatever buffer is handed in. The
