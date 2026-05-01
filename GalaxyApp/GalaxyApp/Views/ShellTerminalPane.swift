@@ -17,13 +17,17 @@ private struct ShellCursorConfig: Hashable {
 /// and opens in the session's resolved cwd
 /// (`ShellLauncher.resolveCwd`).
 ///
-/// Owns a `SwiftTermBackend` for the PTY + rendering. No
-/// `Session` coupling beyond a weak reference used for
-/// routing bell events into the session-bell pipeline and
-/// targeting the session's terminal for "Send to Claude"
-/// pastes.
+/// Owns a `TerminalBackend` for the PTY + rendering — the
+/// concrete engine (SwiftTerm today; libghostty in the
+/// future) is selected by `TerminalBackendFactory` from the
+/// global `AppSettings.terminalEngine` setting at
+/// construction time and pinned for the pane's lifetime
+/// (D-pane). No `Session` coupling beyond a weak reference
+/// used for routing bell events into the session-bell
+/// pipeline and targeting the session's terminal for
+/// "Send to Claude" pastes.
 final class ShellTerminalPane: TerminalPane, ObservableObject {
-    private let backend: SwiftTermBackend
+    private let backend: TerminalBackend
 
     /// Weak ref to the owning Claude session. Used for bell
     /// routing and as the Send-to-Claude target.
@@ -79,7 +83,10 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
 
     init(session: Session) {
         self.session = session
-        self.backend = SwiftTermBackend(
+        let engine = SettingsManager.shared.settings.terminalEngine
+        self.backend = TerminalBackendFactory.make(
+            engine: engine,
+            kind: .shell,
             frame: NSRect(x: 0, y: 0, width: 800, height: 400)
         )
         self.fontSize = session.terminalFontSize

@@ -28,6 +28,7 @@
 		3F6C193D5824A2FC5BDB2792 /* StatusLineService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5702E8641291E687147723FD /* StatusLineService.swift */; };
 		3FCE06C0F8AE9134D99D090A /* TerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCE6073F39BD2A2E08FD007F /* TerminalView.swift */; };
 		409B8141601EFECEBD3ACCD9 /* TerminalBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4CBBF9FDC8A51EF41F5EC65 /* TerminalBackend.swift */; };
+		8410B4E697794DEDA25CC00C /* TerminalBackendFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6D223300B4C4FBC81C37F31 /* TerminalBackendFactory.swift */; };
 		45502A30E76464D22AB37E82 /* LedgerIdentifiersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF05B1CBD2C3553B1FCBA500 /* LedgerIdentifiersView.swift */; };
 		4654E5243D23D2B9C9E3F183 /* LedgerFilesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB66259FCA486462B2373B6A /* LedgerFilesView.swift */; };
 		469F6BF5AEB79E8BA44202D5 /* SessionTerminalPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12A4E49878DEEC829A9AF6B /* SessionTerminalPane.swift */; };
@@ -220,6 +221,7 @@
 		E474100EA691402E8DF51F3A /* SessionRowDragHandle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRowDragHandle.swift; sourceTree = "<group>"; };
 		E49CF9BDA2474BE2585001F5 /* MarkdownReaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownReaderView.swift; sourceTree = "<group>"; };
 		E4CBBF9FDC8A51EF41F5EC65 /* TerminalBackend.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TerminalBackend.swift; sourceTree = "<group>"; };
+		A6D223300B4C4FBC81C37F31 /* TerminalBackendFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalBackendFactory.swift; sourceTree = "<group>"; };
 		EA542FF52DF4733279284AB3 /* SessionIDGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionIDGenerator.swift; sourceTree = "<group>"; };
 		EA80B868DED26B32D6DEB65D /* SessionDragCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionDragCoordinator.swift; sourceTree = "<group>"; };
 		EA90FB9B45E643E56114F655 /* emoji-autocomplete.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = "emoji-autocomplete.js"; sourceTree = "<group>"; };
@@ -280,6 +282,7 @@
 				899A0FEF2AD224B0D5701B42 /* WindowStatePersistence.swift */,
 				11E12DAAF38722749AF0BEAD /* TerminalPane.swift */,
 				E4CBBF9FDC8A51EF41F5EC65 /* TerminalBackend.swift */,
+				A6D223300B4C4FBC81C37F31 /* TerminalBackendFactory.swift */,
 				A1A2A3A4A5A6A7A8A9AAABAC /* ScrollbackSnapshot.swift */,
 				A5505134EB618051E5D135B2 /* ShellLauncher.swift */,
 			);
@@ -574,6 +577,7 @@
 				830B36A8A4CD211AC3DF03F3 /* main.swift in Sources */,
 				6210C70AA62A5D85BC8517FD /* TerminalPane.swift in Sources */,
 				409B8141601EFECEBD3ACCD9 /* TerminalBackend.swift in Sources */,
+				8410B4E697794DEDA25CC00C /* TerminalBackendFactory.swift in Sources */,
 				5C5B5A595857565554535251 /* ScrollbackSnapshot.swift in Sources */,
 				0A5587B002764BC4F0895665 /* ShellLauncher.swift in Sources */,
 				FDC71DF5F06D74418078C4C9 /* SwiftTermBackend.swift in Sources */,

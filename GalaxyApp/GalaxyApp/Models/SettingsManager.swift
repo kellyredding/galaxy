@@ -161,6 +161,14 @@ struct AppSettings: Codable {
     // Terminal scrollback settings
     var terminalScrollbackLines: Int = 10_000  // Scrollback buffer size in lines
 
+    /// Active terminal engine. Global default; each pane
+    /// pins to whichever engine was active at its construction
+    /// time (D-pane). Flipping this never affects already-
+    /// running panes — see `TerminalBackendFactory`. No UI
+    /// surface yet; the toggle ships when libghostty
+    /// integration ships.
+    var terminalEngine: TerminalEngine = .swiftTerm
+
     // Shell pane settings
     /// Default split ratio for a newly opened shell pane,
     /// expressed as the shell's fraction of total height
@@ -330,6 +338,9 @@ struct AppSettings: Codable {
         defaultTerminalFontSize = try container.decodeIfPresent(CGFloat.self, forKey: .defaultTerminalFontSize) ?? 13.0
         terminalColorThemeName = try container.decodeIfPresent(String.self, forKey: .terminalColorThemeName) ?? "terminal-classic"
         terminalScrollbackLines = try container.decodeIfPresent(Int.self, forKey: .terminalScrollbackLines) ?? 10_000
+        terminalEngine = try container.decodeIfPresent(
+            TerminalEngine.self, forKey: .terminalEngine
+        ) ?? .swiftTerm
         gitStatusStyle = try container.decodeIfPresent(GitStatusStyle.self, forKey: .gitStatusStyle) ?? .symbolic
         autoClearEnabled = try container.decodeIfPresent(Bool.self, forKey: .autoClearEnabled) ?? true
         autoClearThreshold = try container.decodeIfPresent(Int.self, forKey: .autoClearThreshold) ?? 97
