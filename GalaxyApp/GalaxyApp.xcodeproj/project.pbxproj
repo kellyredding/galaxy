@@ -33,7 +33,7 @@
 		4654E5243D23D2B9C9E3F183 /* LedgerFilesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB66259FCA486462B2373B6A /* LedgerFilesView.swift */; };
 		469F6BF5AEB79E8BA44202D5 /* SessionTerminalPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12A4E49878DEEC829A9AF6B /* SessionTerminalPane.swift */; };
 		487179062AB63CC1EBAD20CB /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8930E8F0C6702946D87082BD /* Assets.xcassets */; };
-		492F05573CD5ABCF9DD8100F /* ScrollbackBufferRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AEB637C6B52293D40BD71B3 /* ScrollbackBufferRenderer.swift */; };
+		492F05573CD5ABCF9DD8100F /* SwiftTermScrollbackRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AEB637C6B52293D40BD71B3 /* SwiftTermScrollbackRenderer.swift */; };
 		4A72123664AE5FA178DF46E3 /* TimelineService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DE3AC5A832EA301B3967F61 /* TimelineService.swift */; };
 		4CD689921E9F3C467D5A532C /* SessionStatusDot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A2B8AABAEE680386E0753B7 /* SessionStatusDot.swift */; };
 		4F20E648BBD3A845F21F64BB /* LedgerQueryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 352D8EE51F82B2AC7CD44C73 /* LedgerQueryService.swift */; };
@@ -180,7 +180,7 @@
 		9840B2A7E1AAB30A89612AFB /* CollapsedSessionSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollapsedSessionSidebar.swift; sourceTree = "<group>"; };
 		993B48FFA0D6A7E321422F63 /* ArtifactsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactsView.swift; sourceTree = "<group>"; };
 		9A462903899D61A14DF35081 /* ArtifactMermaidView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactMermaidView.swift; sourceTree = "<group>"; };
-		9AEB637C6B52293D40BD71B3 /* ScrollbackBufferRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollbackBufferRenderer.swift; sourceTree = "<group>"; };
+		9AEB637C6B52293D40BD71B3 /* SwiftTermScrollbackRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftTermScrollbackRenderer.swift; sourceTree = "<group>"; };
 		9C3C1E1CDC72CB3FDF60D346 /* BellIndicatorBehavior.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BellIndicatorBehavior.swift; sourceTree = "<group>"; };
 		9D4122B312BBDD8690D21C4F /* LedgerSubTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerSubTab.swift; sourceTree = "<group>"; };
 		9EB1B25ADB386E0B834FA6B0 /* SessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionManager.swift; sourceTree = "<group>"; };
@@ -343,7 +343,7 @@
 				BE3DAF1743A20920A57B236D /* NewSessionView.swift */,
 				5B94034611483F6B08D6C02B /* PersonaPicker.swift */,
 				3812822CEF0CE755762272D9 /* RestoreSessionView.swift */,
-				9AEB637C6B52293D40BD71B3 /* ScrollbackBufferRenderer.swift */,
+				9AEB637C6B52293D40BD71B3 /* SwiftTermScrollbackRenderer.swift */,
 				BD1324D7665E5F848D1DDD90 /* ScrollbackOverlayView.swift */,
 				2750A011DD00E7D1E06CE4CD /* ScrollbackWebView.swift */,
 				EA80B868DED26B32D6DEB65D /* SessionDragCoordinator.swift */,
@@ -540,7 +540,7 @@
 				57F83F8FAFBFC9B625678AE5 /* PreferencesWindowController.swift in Sources */,
 				9DF6C43FCF8057F92F9035DF /* RestoreSessionSheetController.swift in Sources */,
 				C4E7D4A85BAB125419399231 /* RestoreSessionView.swift in Sources */,
-				492F05573CD5ABCF9DD8100F /* ScrollbackBufferRenderer.swift in Sources */,
+				492F05573CD5ABCF9DD8100F /* SwiftTermScrollbackRenderer.swift in Sources */,
 				3439D34465B92507E427479C /* ScrollbackOverlayView.swift in Sources */,
 				6CDB5F73F547B05AF78CC58E /* ScrollbackWebView.swift in Sources */,
 				C72E6931FE46DAAFE486C09E /* Session.swift in Sources */,

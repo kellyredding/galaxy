@@ -438,7 +438,7 @@ final class SwiftTermScrollbackSnapshot: ScrollbackSnapshot {
         fontSize: CGFloat,
         cellHeight: CGFloat
     ) -> String {
-        ScrollbackBufferRenderer.render(
+        SwiftTermScrollbackRenderer.render(
             buffer: buffer,
             terminal: terminal,
             theme: theme,

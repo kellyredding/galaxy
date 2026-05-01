@@ -8,7 +8,7 @@ import SwiftTerm
 /// The HTML includes embedded CSS (font, colors, line-height matching the
 /// terminal) and a JavaScript `ScrollbackManager` that handles keyboard
 /// navigation, scroll position, and Swift ↔ WKWebView communication.
-enum ScrollbackBufferRenderer {
+enum SwiftTermScrollbackRenderer {
 
     // MARK: - Public API
 
@@ -1609,7 +1609,7 @@ enum ScrollbackBufferRenderer {
 
 // MARK: - Color Resolver
 
-extension ScrollbackBufferRenderer {
+extension SwiftTermScrollbackRenderer {
 
     /// Resolves `Attribute.Color` values to CSS hex strings using the same
     /// logic as SwiftTerm's `mapColor()` in AppleTerminalView. The first 16
