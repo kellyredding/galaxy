@@ -6,10 +6,10 @@ import Combine
 /// Shell pane differences into a uniform interface for
 /// scrollback, drag-drop, focus, and exit handling.
 ///
-/// Conformers (introduced across later phases):
-/// - `SessionTerminalPane` — wraps `GalaxySwiftTermView` + `Session`
-/// - `ShellTerminalPane` — wraps `LocalProcessTerminalView` via
-///   a `TerminalBackend`, no Claude coupling
+/// Conformers:
+/// - `SessionTerminalPane` — wraps a `TerminalBackend` + `Session`
+/// - `ShellTerminalPane` — wraps a `TerminalBackend` directly,
+///   no Claude coupling
 ///
 /// This is the libghostty swap seam at the chrome boundary.
 /// Backends (PTY + rendering library) swap via

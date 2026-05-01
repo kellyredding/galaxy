@@ -93,8 +93,8 @@ class Session: Identifiable, ObservableObject {
     /// the `session:ready` socket event emitted by the Crystal
     /// hook. Replaces the legacy buffer-scan path that polled
     /// SwiftTerm's `terminal.buffer` for a literal marker line.
-    /// Reset to false on `startProcess`, `releaseTerminalView`,
-    /// and `processDidExit` so each new lifecycle starts unready.
+    /// Reset to false on `startProcess`, `releaseBackend`, and
+    /// `processDidExit` so each new lifecycle starts unready.
     @Published private(set) var isReady: Bool = false
 
     /// True when this session's terminal pane has its scrollback
@@ -942,8 +942,8 @@ class Session: Identifiable, ObservableObject {
     /// socket event (refs: resume / clear / compact).
     /// Idempotent — repeat calls during the same lifecycle
     /// are no-ops. Reset to false on `startProcess`,
-    /// `releaseTerminalView`, `processDidExit`, and
-    /// inside `sendCommand` for context-reset commands.
+    /// `releaseBackend`, `processDidExit`, and inside
+    /// `sendCommand` for context-reset commands.
     func markReady() {
         DispatchQueue.main.async { [weak self] in
             guard let self = self,
@@ -1054,8 +1054,8 @@ class Session: Identifiable, ObservableObject {
     }
 
     /// Restore a session from persisted state. Creates in stopped
-    /// state with no terminal view and no running process.
-    /// Terminal is lazily created by ensureTerminalView() on resume.
+    /// state with no backend and no running process. The backend
+    /// is lazily created by ensureBackend() on resume.
     init(restoring state: PersistedSession) {
         self.id = state.id
         self.sessionRef = state.sessionRef

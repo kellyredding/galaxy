@@ -17,10 +17,10 @@ struct ScrollbackNote: Identifiable {
 
 // MARK: - ScrollbackWebView
 
-/// WKWebView wrapper that renders the frozen terminal buffer as HTML.
-/// Replaces `ScrollbackTerminalView` for scrollback mode. Handles keyboard
-/// navigation via embedded JavaScript and communicates dismiss/ready events
-/// back to Swift through `WKScriptMessageHandler`.
+/// WKWebView wrapper that renders the frozen terminal buffer as HTML
+/// for scrollback mode. Handles keyboard navigation via embedded
+/// JavaScript and communicates dismiss/ready events back to Swift
+/// through `WKScriptMessageHandler`.
 ///
 /// Uses a weak message handler proxy to avoid the retain cycle inherent in
 /// `WKUserContentController.add(_:name:)` which retains its handler strongly.
