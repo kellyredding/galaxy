@@ -9,7 +9,6 @@ describe GalaxyStatusline::Config do
       config.branch_style.should eq("symbolic")
       config.context_thresholds.warning.should eq(60)
       config.context_thresholds.critical.should eq(80)
-      config.layout.min_width.should eq(60)
       config.layout.show_cost.should eq(true)
       config.layout.show_model.should eq(true)
       config.layout.show_time.should eq(true)

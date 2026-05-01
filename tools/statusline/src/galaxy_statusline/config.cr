@@ -72,7 +72,6 @@ module GalaxyStatusline
     class Layout
       include JSON::Serializable
 
-      property min_width : Int32
       property context_bar_min_width : Int32
       property context_bar_max_width : Int32
       property show_cost : Bool
@@ -82,7 +81,6 @@ module GalaxyStatusline
       property directory_style : String
 
       def initialize(
-        @min_width = 60,
         @context_bar_min_width = 25,
         @context_bar_max_width = 50,
         @show_cost = true,
@@ -256,17 +254,16 @@ module GalaxyStatusline
     end
 
     private def set_layout(field : String?, value : String)
-      raise "Missing layout field (e.g., layout.min_width)" unless field
+      raise "Missing layout field (e.g., layout.context_bar_min_width)" unless field
 
       case field
-      when "min_width", "context_bar_min_width", "context_bar_max_width"
+      when "context_bar_min_width", "context_bar_max_width"
         int_value = value.to_i? || raise "Invalid layout value: #{value} (must be integer)"
         if int_value < 1
           raise "Layout value must be positive"
         end
 
         case field
-        when "min_width"             then layout.min_width = int_value
         when "context_bar_min_width" then layout.context_bar_min_width = int_value
         when "context_bar_max_width" then layout.context_bar_max_width = int_value
         end
@@ -294,10 +291,9 @@ module GalaxyStatusline
     end
 
     private def get_layout(field : String?) : String
-      raise "Missing layout field (e.g., layout.min_width)" unless field
+      raise "Missing layout field (e.g., layout.context_bar_min_width)" unless field
 
       case field
-      when "min_width"             then layout.min_width.to_s
       when "context_bar_min_width" then layout.context_bar_min_width.to_s
       when "context_bar_max_width" then layout.context_bar_max_width.to_s
       when "show_cost"             then layout.show_cost.to_s

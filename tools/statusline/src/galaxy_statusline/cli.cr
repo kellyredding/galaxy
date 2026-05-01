@@ -286,7 +286,6 @@ module GalaxyStatusline
           context_thresholds.critical    Red threshold (default: 80)
 
         layout.*                     Display options
-          layout.min_width               Collapse threshold (default: 60)
           layout.context_bar_min_width   Min context bar width (default: 25)
           layout.context_bar_max_width   Max context bar width (default: 50)
           layout.show_cost               Show cost (default: true)
