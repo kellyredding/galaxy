@@ -42,11 +42,16 @@ struct PersistedClosedSession: Codable {
 }
 
 /// Codable representation of a session marker for disk persistence.
-/// Lightweight — markers are pure metadata with no associated state
-/// beyond their UUID and display name.
+/// Lightweight — markers are pure metadata. `emoji` is optional for
+/// backward compatibility with v3 files written before the emoji
+/// feature shipped; old marker entries decode with `emoji = nil`
+/// and resolve to empty string in the in-memory model. New writes
+/// always include the field. No schema version bump needed —
+/// `decodeIfPresent` is the migration.
 struct PersistedSessionMarker: Codable {
     let id: UUID
     let name: String
+    let emoji: String?
 }
 
 /// One element of the sidebar's ordered list. The `kind`

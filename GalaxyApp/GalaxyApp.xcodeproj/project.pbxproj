@@ -62,6 +62,7 @@
 		85933707ECA44AD5029CDE10 /* SessionTerminalPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89A149D3A675BE23CCE82275 /* SessionTerminalPane.swift */; };
 		86445A7A24E45A6F456EAE72 /* ShellPaneBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2818423D59425A4F643B9444 /* ShellPaneBar.swift */; };
 		8675182D56EEB0ECEB09DAC0 /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = 90EB9F42DFBE78AC39BB94CA /* Markdown */; };
+		86A2969F180D21CBA351A965 /* EmojiSlotButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4422A9D66A4267B06F564734 /* EmojiSlotButton.swift */; };
 		86AAE69F5441679CED101F09 /* MarkdownReaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E49CF9BDA2474BE2585001F5 /* MarkdownReaderView.swift */; };
 		88A4F35CD2619FD120C1665B /* NavigationEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61F41A6FFADC96743100251A /* NavigationEntry.swift */; };
 		88B1D264363994AD24AC8CC6 /* SessionDragCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA80B868DED26B32D6DEB65D /* SessionDragCoordinator.swift */; };
@@ -69,6 +70,7 @@
 		893ACB805E9653364EC07099 /* TerminalTabSplitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB21CE8358B19A102512C359 /* TerminalTabSplitView.swift */; };
 		89EE54398E22AEA37B416F21 /* WindowStatePersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 899A0FEF2AD224B0D5701B42 /* WindowStatePersistence.swift */; };
 		8AC008AB18921C162CE71353 /* ArtifactImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88AEEF810BE7BF77CA16E7C9 /* ArtifactImageView.swift */; };
+		8BEB662ADED57F8B062B801A /* EmojiPickerData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C724552F2B31DBFAA8FD5AF /* EmojiPickerData.swift */; };
 		8D426437F3B08DAFAAB8C876 /* ArtifactTranscriptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9618639704DFCC421FA87F5A /* ArtifactTranscriptView.swift */; };
 		8E2F1398A854DE4A5AB2B3FC /* SessionMarkerRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BBBE3E1A89D66542B032539 /* SessionMarkerRow.swift */; };
 		8E316F88952E7A506D8CEC53 /* emoji-data.js in Resources */ = {isa = PBXBuildFile; fileRef = 54F43AFBEA120EE7E58EB3CB /* emoji-data.js */; };
@@ -82,6 +84,7 @@
 		95F19176C288F27770586014 /* mermaid.min.js in Resources */ = {isa = PBXBuildFile; fileRef = F1F9F41AF028CB2338EDF0B1 /* mermaid.min.js */; };
 		9A7E8C74C205BD7E4329689D /* MainMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = D96AFD79CE59690C239E10B5 /* MainMenu.swift */; };
 		9AA9CE7723F2ABB70173493D /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 7CE7EDB3AA040F6F2534E97D /* SwiftTerm */; };
+		9C017770A0413E798897CE1A /* EmojiPickerPopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26D4DCA501162986E69269EF /* EmojiPickerPopover.swift */; };
 		9C1BE8D8B5D26E04841D180D /* SheetAlert.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50B1BA689B62E9309B084C1 /* SheetAlert.swift */; };
 		9DF6C43FCF8057F92F9035DF /* RestoreSessionSheetController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A3E23B7649EB363652B3378 /* RestoreSessionSheetController.swift */; };
 		9EBBFFABF0552FDA783CAA6F /* BellIndicatorBehavior.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C3C1E1CDC72CB3FDF60D346 /* BellIndicatorBehavior.swift */; };
@@ -141,6 +144,7 @@
 		1F39F262BB7D593079DE0602 /* GalaxyApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GalaxyApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		23348188C124E96FA5F0CC4B /* TerminalPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalPane.swift; sourceTree = "<group>"; };
 		260E4993B113CBAABADA519B /* EnrichmentService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnrichmentService.swift; sourceTree = "<group>"; };
+		26D4DCA501162986E69269EF /* EmojiPickerPopover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiPickerPopover.swift; sourceTree = "<group>"; };
 		26D5766E6F9E878E698DA46C /* ShellTerminalPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellTerminalPane.swift; sourceTree = "<group>"; };
 		2750A011DD00E7D1E06CE4CD /* ScrollbackWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollbackWebView.swift; sourceTree = "<group>"; };
 		2818423D59425A4F643B9444 /* ShellPaneBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellPaneBar.swift; sourceTree = "<group>"; };
@@ -156,6 +160,7 @@
 		41FE31D51753FACEA48714CD /* ArtifactTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactTableView.swift; sourceTree = "<group>"; };
 		430095FE1E69CCC41062A06B /* AnchorData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnchorData.swift; sourceTree = "<group>"; };
 		43C2EE51F5ED8F5A44D27580 /* DragHandleNSView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragHandleNSView.swift; sourceTree = "<group>"; };
+		4422A9D66A4267B06F564734 /* EmojiSlotButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiSlotButton.swift; sourceTree = "<group>"; };
 		44DBB494CF22DA9A7DD449BE /* LongPressMenuButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LongPressMenuButton.swift; sourceTree = "<group>"; };
 		4A2B8AABAEE680386E0753B7 /* SessionStatusDot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStatusDot.swift; sourceTree = "<group>"; };
 		4D98BE974E4671D9CFC645BF /* SnapshotQueryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotQueryService.swift; sourceTree = "<group>"; };
@@ -195,6 +200,7 @@
 		9A462903899D61A14DF35081 /* ArtifactMermaidView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactMermaidView.swift; sourceTree = "<group>"; };
 		9B700435C26C483E71A75B12 /* NewMarkerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewMarkerView.swift; sourceTree = "<group>"; };
 		9C3C1E1CDC72CB3FDF60D346 /* BellIndicatorBehavior.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BellIndicatorBehavior.swift; sourceTree = "<group>"; };
+		9C724552F2B31DBFAA8FD5AF /* EmojiPickerData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiPickerData.swift; sourceTree = "<group>"; };
 		9D4122B312BBDD8690D21C4F /* LedgerSubTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerSubTab.swift; sourceTree = "<group>"; };
 		9EB1B25ADB386E0B834FA6B0 /* SessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionManager.swift; sourceTree = "<group>"; };
 		A2970A34038789BE966C7D25 /* TimelineCanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineCanvasView.swift; sourceTree = "<group>"; };
@@ -262,6 +268,7 @@
 				430095FE1E69CCC41062A06B /* AnchorData.swift */,
 				5B3D4BA58AA8141ED6BB4741 /* ArtifactQueryService.swift */,
 				3463B095E6622E31AF317063 /* CircuitBreaker.swift */,
+				9C724552F2B31DBFAA8FD5AF /* EmojiPickerData.swift */,
 				260E4993B113CBAABADA519B /* EnrichmentService.swift */,
 				0663E09051C220DBD5E80CD2 /* EventCoordinator.swift */,
 				1222FD00CE1FBF7DC99BD683 /* EventDebouncer.swift */,
@@ -342,6 +349,8 @@
 				0A75DD66617BDBF94F9175C9 /* CopyButton.swift */,
 				139EB2F2C31AF6EE70AFECF7 /* DirectoryField.swift */,
 				43C2EE51F5ED8F5A44D27580 /* DragHandleNSView.swift */,
+				26D4DCA501162986E69269EF /* EmojiPickerPopover.swift */,
+				4422A9D66A4267B06F564734 /* EmojiSlotButton.swift */,
 				0B33E9ACBBBDE22688F8D808 /* ExpandedSessionSidebar.swift */,
 				53AA901974E0BB844A437BA1 /* GalaxySwiftTermView.swift */,
 				C2C9905E81F2549614ADA8EE /* LedgerEntriesView.swift */,
@@ -524,6 +533,9 @@
 				E4F32D6040F1D92456F3DB5B /* CopyButton.swift in Sources */,
 				E5935CB38B847641A8281925 /* DirectoryField.swift in Sources */,
 				59C4461354F92AEF376C88AA /* DragHandleNSView.swift in Sources */,
+				8BEB662ADED57F8B062B801A /* EmojiPickerData.swift in Sources */,
+				9C017770A0413E798897CE1A /* EmojiPickerPopover.swift in Sources */,
+				86A2969F180D21CBA351A965 /* EmojiSlotButton.swift in Sources */,
 				64AB450ECD5FB1FF3D5E16EB /* EnrichmentService.swift in Sources */,
 				2BC2B13218D48BB00EEF761B /* EventCoordinator.swift in Sources */,
 				D1752B86BB1A44AFB5E75F00 /* EventDebouncer.swift in Sources */,

@@ -20,6 +20,16 @@ import AppKit
 final class RowFrameAnchor {
     weak var view: NSView?
 
+    /// Frame in the host window's coordinate space (bottom-left
+    /// origin — matches `NSEvent.locationInWindow`). Returns nil
+    /// if the view has been removed from its window.
+    /// Used by the marker emoji slot to whitelist its frame
+    /// against the inline editor's mouse-down monitor.
+    func currentWindowFrame() -> NSRect? {
+        guard let view = view else { return nil }
+        return view.convert(view.bounds, to: nil)
+    }
+
     func currentScreenFrame() -> NSRect? {
         guard let view, let window = view.window else { return nil }
         let frameInWindow = view.convert(view.bounds, to: nil)
@@ -508,12 +518,24 @@ struct CollapsedMarkerRow: View {
 
     var body: some View {
         ZStack {
-            // Centered horizontal line — `.primary` matches the
-            // expanded marker so the two surfaces feel coordinated.
-            Rectangle()
-                .fill(Color.primary)
-                .frame(height: 1)
-                .padding(.horizontal, Self.lineInset)
+            if !marker.emoji.isEmpty {
+                // Emoji replaces the line entirely when set —
+                // the emoji *is* the section identifier in
+                // collapsed mode. Same size as the expanded
+                // marker row and the hover tooltip so the glyph
+                // reads identically across all three surfaces.
+                Text(marker.emoji)
+                    .font(
+                        .system(size: SessionMarkerRow.emojiGlyphSize)
+                    )
+            } else {
+                // Default: centered horizontal line, matching
+                // the expanded marker's `.primary` color.
+                Rectangle()
+                    .fill(Color.primary)
+                    .frame(height: 1)
+                    .padding(.horizontal, Self.lineInset)
+            }
         }
         .frame(width: 32, height: rowHeight)
         .background(FrameAnchorView(anchor: frameAnchor))
@@ -536,10 +558,11 @@ struct CollapsedMarkerRow: View {
     }
 
     private func showTooltip() {
-        // Skip the tooltip entirely for unnamed markers — there's
-        // nothing meaningful to show, and a "(unnamed marker)"
-        // placeholder would feel like noise.
-        guard !marker.name.isEmpty else { return }
+        // Skip the tooltip when neither name nor emoji is set —
+        // nothing meaningful to show. Emoji-only markers still
+        // get a tooltip (the emoji IS the identifier).
+        guard !marker.name.isEmpty || !marker.emoji.isEmpty
+        else { return }
         guard
             let window = NSApp.mainWindow ?? NSApp.keyWindow,
             let rowScreenFrame = frameAnchor.currentScreenFrame()
@@ -621,13 +644,30 @@ struct CollapsedMarkerTooltip: View {
                     maxWidth: .infinity
                 )
 
-            Text(marker.name)
-                .chromeFont(
-                    size: fontSize.caption1, weight: .bold
-                )
-                .lineLimit(1)
-                .foregroundColor(lineColor)
-                .fixedSize(horizontal: true, vertical: false)
+            // Emoji prefix + name in a tight cluster — flanking
+            // lines fill remaining space on either side of it.
+            // Emoji is rendered at the canonical marker emoji
+            // size (defined on SessionMarkerRow) so the same
+            // glyph reads identically across all three marker
+            // surfaces — expanded row, collapsed row, and this
+            // tooltip.
+            HStack(spacing: 4) {
+                if !marker.emoji.isEmpty {
+                    Text(marker.emoji)
+                        .font(
+                            .system(size: SessionMarkerRow.emojiGlyphSize)
+                        )
+                }
+                if !marker.name.isEmpty {
+                    Text(marker.name)
+                        .chromeFont(
+                            size: fontSize.caption1, weight: .bold
+                        )
+                        .lineLimit(1)
+                        .foregroundColor(lineColor)
+                }
+            }
+            .fixedSize(horizontal: true, vertical: false)
 
             Rectangle()
                 .fill(lineColor)

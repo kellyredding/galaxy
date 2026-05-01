@@ -39,6 +39,21 @@ struct InlineNameEditor: NSViewRepresentable {
     let onCancel: () -> Void
     let onBlur: () -> Void
 
+    /// Optional inclusion check the mouse-down monitor consults
+    /// before forcing blur on outside clicks. If the closure
+    /// returns true for the click point (in the field window's
+    /// coordinate space — bottom-left origin, same as
+    /// `NSEvent.locationInWindow`), the click is treated as
+    /// "still inside the editing surface" and the field stays
+    /// first responder. Used by `SessionMarkerRow` to whitelist
+    /// the emoji slot's frame so clicks on it open the picker
+    /// popover instead of committing the name and tearing down
+    /// edit mode behind the user's back.
+    ///
+    /// Defaults to nil — only the field's own frame counts as
+    /// "inside" when no closure is supplied (Slice A behavior).
+    var isClickInsideEditingSurface: ((CGPoint) -> Bool)? = nil
+
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
@@ -141,6 +156,15 @@ struct InlineNameEditor: NSViewRepresentable {
             let locationInWindow = event.locationInWindow
             let fieldFrame = field.convert(field.bounds, to: nil)
             if fieldFrame.contains(locationInWindow) { return }
+
+            // Owner-supplied additional inclusion (e.g., the
+            // marker row's emoji slot). If true, treat the click
+            // as "inside the editing surface" — let it pass
+            // through without forcing blur.
+            if parent.isClickInsideEditingSurface?(locationInWindow)
+                == true {
+                return
+            }
 
             // Outside the field — surrender first responder. This
             // fires controlTextDidEndEditing with movement = .other

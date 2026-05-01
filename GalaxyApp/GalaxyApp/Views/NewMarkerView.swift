@@ -12,6 +12,7 @@ struct NewMarkerView: View {
     @FocusState private var focusedField: FocusField?
 
     @State private var markerName: String = ""
+    @State private var markerEmoji: String = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -20,12 +21,31 @@ struct NewMarkerView: View {
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.secondary)
 
-                TextField(
-                    "e.g. DONE, IN REVIEW, TODO",
-                    text: $markerName
-                )
-                .textFieldStyle(.roundedBorder)
-                .focused($focusedField, equals: .name)
+                HStack(spacing: 8) {
+                    EmojiSlotButton(
+                        emoji: $markerEmoji,
+                        preferredEdge: .top
+                    )
+                    .frame(width: 32, height: 28)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(Color(NSColor.controlBackgroundColor))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .stroke(
+                                        Color(NSColor.separatorColor),
+                                        lineWidth: 0.5
+                                    )
+                            )
+                    )
+
+                    TextField(
+                        "e.g. DONE, IN REVIEW, TODO",
+                        text: $markerName
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .focused($focusedField, equals: .name)
+                }
             }
 
             HStack {
@@ -44,7 +64,9 @@ struct NewMarkerView: View {
     }
 
     private func submit() {
-        SessionManager.shared.createMarker(name: markerName)
+        SessionManager.shared.createMarker(
+            name: markerName, emoji: markerEmoji
+        )
         onDismiss()
     }
 }

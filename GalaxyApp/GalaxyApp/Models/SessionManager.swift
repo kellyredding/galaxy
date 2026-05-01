@@ -1470,14 +1470,17 @@ class SessionManager: ObservableObject {
     // MARK: - Marker CRUD
 
     /// Append a new marker to the bottom of the sidebar.
-    /// Empty names are allowed and render as just the flanking
+    /// Empty names and empty emojis are both allowed; an empty
+    /// marker (no name, no emoji) renders as just the flanking
     /// horizontal lines.
     @discardableResult
-    func createMarker(name: String) -> SessionMarker {
+    func createMarker(
+        name: String, emoji: String = ""
+    ) -> SessionMarker {
         let trimmed = name.trimmingCharacters(
             in: .whitespacesAndNewlines
         )
-        let marker = SessionMarker(name: trimmed)
+        let marker = SessionMarker(name: trimmed, emoji: emoji)
         sidebarItems.append(.marker(marker))
         SessionPersistence.shared.markDirty()
         return marker
@@ -1494,16 +1497,25 @@ class SessionManager: ObservableObject {
     }
 
     /// Present a confirmation dialog and remove the marker if
-    /// confirmed. Mirrors `confirmAndDismissSession`.
+    /// confirmed. Mirrors `confirmAndDismissSession`. Includes
+    /// the emoji in the displayed name when set, so the user
+    /// can confirm they're deleting the right marker.
     func confirmAndRemoveMarker(markerId: UUID) {
         guard let marker = markers.first(where: {
             $0.id == markerId
         }) else { return }
         guard let window = NSApp.keyWindow else { return }
 
-        let displayName = marker.name.isEmpty
-            ? "this marker"
-            : "\"\(marker.name)\""
+        let displayName: String
+        if !marker.emoji.isEmpty && !marker.name.isEmpty {
+            displayName = "\"\(marker.emoji) \(marker.name)\""
+        } else if !marker.emoji.isEmpty {
+            displayName = "\"\(marker.emoji)\""
+        } else if !marker.name.isEmpty {
+            displayName = "\"\(marker.name)\""
+        } else {
+            displayName = "this marker"
+        }
 
         SheetAlert.confirm(
             in: window,
