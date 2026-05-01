@@ -1,7 +1,9 @@
 require "./galaxy_statusline/*"
 
 module GalaxyStatusline
-  VERSION = "0.1.0"
+  # Version is read from version.txt at compile time.
+  # Source of truth is version.txt; bin/release also syncs shard.yml.
+  VERSION = {{ read_file("#{__DIR__}/../version.txt").strip }}
 
   # Galaxy-level directory (shared between tools)
   GALAXY_DIR = Path.new(

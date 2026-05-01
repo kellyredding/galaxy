@@ -1,10 +1,10 @@
 #!/bin/bash
 set -e
 
-# Reads version from VERSION.txt, builds, tags, and creates GitHub release
+# Reads version from version.txt, builds, tags, and creates GitHub release
 # Usage: bin/release
 
-VERSION_FILE="VERSION.txt"
+VERSION_FILE="version.txt"
 BINARY="galaxy-statusline"
 BUILD_DIR="build"
 RELEASE_DIR="releases"
@@ -52,12 +52,9 @@ if git rev-parse "$TAG" >/dev/null 2>&1; then
 fi
 
 # Sync version to shard.yml (portable sed - works on macOS and Linux)
+# Source code reads version.txt at compile time via a macro.
 echo "==> Syncing version to shard.yml"
 sed "s/^version: .*/version: $VERSION/" shard.yml > shard.yml.tmp && mv shard.yml.tmp shard.yml
-
-# Sync version to source
-echo "==> Syncing version to source"
-sed "s/VERSION = \".*\"/VERSION = \"$VERSION\"/" src/galaxy_statusline.cr > src/galaxy_statusline.cr.tmp && mv src/galaxy_statusline.cr.tmp src/galaxy_statusline.cr
 
 # Build release binary
 echo "==> Building release binary"
@@ -84,7 +81,7 @@ cd ..
 # Commit if there are changes
 if [ -n "$(git status --porcelain)" ]; then
   echo "==> Committing version $VERSION"
-  git add VERSION.txt shard.yml src/galaxy_statusline.cr
+  git add version.txt shard.yml
   git commit -m "Release statusline $VERSION"
 fi
 

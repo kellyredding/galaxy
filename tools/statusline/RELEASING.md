@@ -29,10 +29,10 @@ chmod +x bin/release bin/release-add
 
 ### 1. Update the Version
 
-Edit `VERSION.txt` with the new version number:
+Edit `version.txt` with the new version number:
 
 ```bash
-echo "0.1.0" > VERSION.txt
+echo "0.1.0" > version.txt
 ```
 
 Version must be in `X.Y.Z` format (semver).
@@ -46,7 +46,7 @@ bin/release
 ```
 
 This will:
-- Sync version to `shard.yml` and source code
+- Sync version to `shard.yml` (source code reads `version.txt` at compile time)
 - Build optimized release binary
 - Run test suite
 - Create tarball with SHA256 checksum
@@ -109,10 +109,12 @@ shasum -a 256 -c galaxy-statusline-0.1.0-darwin-arm64.tar.gz.sha256
 
 ## Version Locations
 
-Version is defined in three places, kept in sync by `bin/release`:
-- `VERSION.txt` - Source of truth
+Version is defined in two places, kept in sync by `bin/release`:
+- `version.txt` - Source of truth
 - `shard.yml` - Crystal package version
-- `src/galaxy_statusline.cr` - `VERSION` constant
+
+The `VERSION` constant in `src/galaxy_statusline.cr` is read from
+`version.txt` at compile time via a macro, so it never drifts.
 
 ## Self-Update
 

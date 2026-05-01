@@ -4,7 +4,7 @@ set -e
 # Builds and uploads a binary for the current platform to an existing release
 # Usage: bin/release-add
 
-VERSION_FILE="VERSION.txt"
+VERSION_FILE="version.txt"
 BINARY="galaxy-statusline"
 BUILD_DIR="build"
 RELEASE_DIR="releases"
