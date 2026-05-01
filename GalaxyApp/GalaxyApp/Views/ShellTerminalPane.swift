@@ -128,27 +128,18 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
         )
     }
 
-    /// Send SIGTERM via the backend. SwiftTermBackend's current
-    /// implementation maps this to a full `terminate()` (signal
-    /// arg is ignored — see its TODO). Shell process exit fires
-    /// `onProcessTerminated` which clears `isRunning`, prompting
-    /// teardown.
+    /// Request that the shell exit. Sends SIGHUP via the
+    /// backend; the backend escalates to SIGTERM after 0.5s
+    /// and SIGKILL after 1s if the shell doesn't exit. SIGHUP
+    /// is the canonical "terminal hangup" signal — most
+    /// shells exit gracefully and save state (history, etc.)
+    /// in response, while still having SIGTERM/SIGKILL as
+    /// fallbacks for misbehaving plugins. Shell process exit
+    /// fires `onProcessTerminated` which clears `isRunning`,
+    /// prompting teardown.
     func requestClose() {
         guard isRunning else { return }
-        backend.terminateProcess(signal: SIGTERM)
-        // Escalate to SIGKILL if the shell doesn't exit within
-        // 250ms. Today this is also mapped to plain terminate()
-        // by SwiftTermBackend, so it's redundant — but once
-        // signal-level control lands (Phase 2.5 or later), this
-        // will be the real kill path.
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + 0.25
-        ) { [weak self] in
-            guard let self = self, self.isRunning else {
-                return
-            }
-            self.backend.terminateProcess(signal: SIGKILL)
-        }
+        backend.terminateProcess(signal: SIGHUP)
     }
 
     func captureScrollbackSnapshot() -> ScrollbackSnapshot? {

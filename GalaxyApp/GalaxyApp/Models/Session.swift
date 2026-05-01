@@ -492,12 +492,6 @@ class Session: Identifiable, ObservableObject {
     /// Whether vibe mode was active at launch
     let isVibe: Bool
 
-    /// Expected direct child process name for PID tracking
-    /// "claude-persona" for persona sessions, "claude" for vanilla sessions
-    var expectedProcessName: String {
-        personaName != nil ? "claude-persona" : "claude"
-    }
-
     /// One-shot closures fired on the next endTurn() call, then
     /// cleared. Used by post-turn workflows (e.g. snapshot/artifact
     /// review-message send after a /galaxy:resume turn completes).
@@ -553,9 +547,6 @@ class Session: Identifiable, ObservableObject {
     ///      that were waiting on the prior lifecycle's
     ///      `session:ready` event.
     private var pendingReadyActions = [UUID: AnyCancellable]()
-
-    // Track the child process PID for termination (SwiftTerm doesn't expose this)
-    private var childPid: pid_t = 0
 
     init(workingDirectory: String, sessionRef: String, personaName: String? = nil, isVibe: Bool = false, resumeSessionId: UUID? = nil) {
         // Use provided resume UUID if resuming a specific session, otherwise generate new
@@ -1216,11 +1207,6 @@ class Session: Identifiable, ObservableObject {
 
         isRunning = true
         NSLog("Session: Started process for %@ in %@", sessionRef, workingDirectory)
-
-        // Capture the child PID after a short delay to allow fork to complete
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-            self?.captureChildPid()
-        }
     }
 
     func processDidExit(exitCode: Int32) {
@@ -1228,7 +1214,6 @@ class Session: Identifiable, ObservableObject {
             self.isRunning = false
             self.hasExited = true
             self.exitCode = exitCode
-            self.childPid = 0
 
             // Clear turn state — a dead process can't be in a turn.
             if self.isInTurn {
@@ -1267,60 +1252,19 @@ class Session: Identifiable, ObservableObject {
         }
     }
 
-    /// Terminate the child process gracefully
-    /// Tries SIGHUP first (terminal hangup), falls back to SIGTERM if needed
+    /// Terminate the Claude process gracefully. Routes through
+    /// the backend, which performs the SIGHUP → SIGTERM →
+    /// SIGKILL escalation. SIGHUP first because it's the
+    /// canonical "terminal hangup" signal — Claude Code,
+    /// claude-persona, and vibe sessions all exit cleanly on
+    /// SIGHUP and have a chance to flush state; the harder
+    /// signals fire only if the process refuses to exit
+    /// within bounded grace periods.
     func terminateProcess() {
-        guard childPid > 0 else {
-            NSLog("Session: Cannot terminate - no child PID tracked")
+        guard let backend = backend else {
+            NSLog("Session: Cannot terminate - no backend")
             return
         }
-
-        let pid = childPid
-
-        // First try SIGHUP (graceful terminal hangup)
-        NSLog("Session: Sending SIGHUP to PID %d", pid)
-        kill(pid, SIGHUP)
-
-        // Check after a short delay if process is still running
-        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.5) {
-            // kill with signal 0 just checks if process exists
-            if kill(pid, 0) == 0 {
-                // Process still running, escalate to SIGTERM
-                NSLog("Session: Process %d still running after SIGHUP, sending SIGTERM", pid)
-                kill(pid, SIGTERM)
-            } else {
-                NSLog("Session: Process %d terminated after SIGHUP", pid)
-            }
-        }
-    }
-
-    /// Find the direct child process that belongs to this session
-    /// Uses expectedProcessName to target "claude-persona" for persona sessions
-    /// or "claude" for vanilla sessions.
-    func captureChildPid() {
-        let processName = expectedProcessName
-        let task = Process()
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = FileHandle.nullDevice
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
-        // -P: parent PID, -n: newest match, -x: exact name match
-        task.arguments = ["-P", String(getpid()), "-n", "-x", processName]
-
-        do {
-            try task.run()
-            task.waitUntilExit()
-
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            if let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-               let pid = Int32(output), pid > 0 {
-                self.childPid = pid
-                NSLog("Session: Captured child PID %d for %@", pid, sessionRef)
-            } else {
-                NSLog("Session: Could not find child PID for %@", sessionRef)
-            }
-        } catch {
-            NSLog("Session: Error running pgrep: %@", error.localizedDescription)
-        }
+        backend.terminateProcess(signal: SIGHUP)
     }
 }

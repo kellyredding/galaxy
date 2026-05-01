@@ -140,45 +140,79 @@ final class SwiftTermBackend: NSObject, TerminalBackend,
         )
     }
 
-    /// Terminate the running subprocess.
+    /// Terminate the running subprocess with internal
+    /// escalation. The caller passes the *first* signal to
+    /// send; the backend handles bounded escalation if the
+    /// process doesn't exit:
     ///
-    /// SwiftTerm's `LocalProcessTerminalView.terminate()`
-    /// sends `kill(shellPid, SIGTERM)` directly and ignores
-    /// the signal argument — there's no path through it for
-    /// SIGKILL or anything else. We accept the argument for
-    /// protocol conformance and, when the caller actually
-    /// asks for something other than SIGTERM, send the kill
-    /// ourselves via the captured `shellPid` (forkpty path
-    /// only — the Subprocess path leaves `shellPid` at 0
-    /// and relies on its own cancellation chain).
+    /// - `SIGHUP`  → escalate to `SIGTERM` after 0.5s, then
+    ///   `SIGKILL` after 1.0s.
+    /// - `SIGTERM` → escalate to `SIGKILL` after 0.5s.
+    /// - Any other signal: send once, no escalation.
+    ///
+    /// `kill(pid, 0)` checks process liveness without
+    /// signaling, so each escalation step is a no-op if the
+    /// process already exited from a prior signal. We bypass
+    /// SwiftTerm's `terminate()` (which hard-codes SIGTERM)
+    /// and send the signals ourselves via
+    /// `terminalView.process.shellPid` so the caller's
+    /// initial-signal choice is honored exactly.
     ///
     /// SwiftTerm's exit-detection — `DispatchSourceProcess`
     /// on the forkpty path, the `await Subprocess.run`
     /// continuation on the Subprocess path — does not
-    /// reliably fire after an explicit `terminate()`. The
-    /// downstream chain (`onProcessTerminated` →
-    /// `ShellTerminalPane` → `SplitState.closeShell`) hangs
-    /// on the missed callback, so the shell pane stays
-    /// visible after Cmd+W even though the kill went
-    /// through. We schedule a guaranteed delegate fire
-    /// after a short grace period; SwiftTerm's natural path
-    /// dedupes via `fireProcessTerminatedOnce` if it wins
-    /// the race.
+    /// reliably fire after an explicit kill. The downstream
+    /// chain (`onProcessTerminated` → `ShellTerminalPane` →
+    /// `SplitState.closeShell`) hangs on the missed callback,
+    /// so the pane stays visible after Cmd+W even though the
+    /// kill went through. We schedule a guaranteed delegate
+    /// fire after a short grace period; SwiftTerm's natural
+    /// path dedupes via `fireProcessTerminatedOnce` if it
+    /// wins the race.
     func terminateProcess(signal: Int32) {
         let pid = terminalView.process.shellPid
-        NSLog(
-            "SwiftTermBackend: terminateProcess signal=%d "
-            + "shellPid=%d",
-            signal, pid
-        )
-        terminalView.terminate()
-        if pid > 0 && signal != SIGTERM {
-            // SwiftTerm only ever sends SIGTERM; honor any
-            // other requested signal directly. SIGKILL in
-            // particular is what unblocks shells that ignore
-            // SIGTERM (interactive zsh with plugins, etc.).
-            kill(pid, signal)
+        guard pid > 0 else {
+            NSLog(
+                "SwiftTermBackend: no shellPid to terminate"
+            )
+            return
         }
+
+        // Initial signal — caller's choice.
+        kill(pid, signal)
+
+        // Escalation timeline. Empty for signals other than
+        // SIGHUP/SIGTERM, so an explicit SIGKILL caller is a
+        // single-shot.
+        let escalations:
+            [(deadline: TimeInterval, signal: Int32)] = {
+            switch signal {
+            case SIGHUP:
+                return [(0.5, SIGTERM), (1.0, SIGKILL)]
+            case SIGTERM:
+                return [(0.5, SIGKILL)]
+            default:
+                return []
+            }
+        }()
+
+        for (deadline, escalateSignal) in escalations {
+            DispatchQueue.global(qos: .userInitiated)
+                .asyncAfter(deadline: .now() + deadline) {
+                    [weak self] in
+                    guard self != nil else { return }
+                    // `kill(pid, 0)` — liveness check.
+                    // Returns 0 if the process exists; non-
+                    // zero (errno=ESRCH) if it has already
+                    // exited from a prior signal in this
+                    // escalation chain.
+                    guard kill(pid, 0) == 0 else { return }
+                    kill(pid, escalateSignal)
+                }
+        }
+
+        // Failsafe: ensure processTerminated fires even if
+        // SwiftTerm's natural exit-detection misses.
         DispatchQueue.main.asyncAfter(
             deadline: .now() + 0.3
         ) { [weak self] in
