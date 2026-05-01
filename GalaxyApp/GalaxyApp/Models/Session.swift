@@ -510,7 +510,7 @@ class Session: Identifiable, ObservableObject {
     /// Current terminal font size for this session (transient, not persisted)
     @Published var terminalFontSize: CGFloat {
         didSet {
-            applyTerminalFontSize()
+            applyPerSessionFontSize()
         }
     }
 
@@ -571,94 +571,49 @@ class Session: Identifiable, ObservableObject {
         )
 
         configureTerminal()
-        applyScrollbackSize()
     }
 
+    /// Push the current `AppSettings` model into the backend
+    /// and subscribe to future changes so they apply
+    /// automatically. Called from `init` and `ensureBackend`
+    /// after the backend is constructed; the per-pane font-
+    /// size override is applied separately because
+    /// `applySettings` uses the global default size.
     private func configureTerminal() {
-        guard backend != nil else { return }
-
-        // Apply color theme from settings
-        applyColorTheme()
-
-        // Apply initial font
-        applyTerminalFontSize()
-
-        // Re-apply font when the font family setting changes.
-        // Stored in terminalCancellables so releaseTerminalView() can cancel
-        // these independently without affecting non-terminal subscriptions.
-        SettingsManager.shared.$settings
-            .map(\.terminalFontFamily)
-            .removeDuplicates()
-            .dropFirst()  // Skip initial value (already applied above)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.applyTerminalFontSize()
-            }
-            .store(in: &terminalCancellables)
-
-        // Observe color theme changes
-        SettingsManager.shared.$settings
-            .map(\.terminalColorThemeName)
-            .removeDuplicates()
-            .dropFirst()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.applyColorTheme()
-            }
-            .store(in: &terminalCancellables)
-
-        // Observe scrollback size changes
-        SettingsManager.shared.$settings
-            .map(\.terminalScrollbackLines)
-            .removeDuplicates()
-            .dropFirst()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.applyScrollbackSize()
-            }
-            .store(in: &terminalCancellables)
-    }
-
-    /// Apply the selected color theme to the terminal backend.
-    private func applyColorTheme() {
         guard let backend = backend else { return }
-        let theme = TerminalColorTheme.theme(
-            named: SettingsManager.shared.settings.terminalColorThemeName
-        )
-        backend.setForegroundColor(theme.foregroundColor)
-        backend.setBackgroundColor(theme.backgroundColorValue)
-        backend.installColors(theme.terminalPalette)
-        backend.setBoldForegroundColor(theme.boldForegroundColor)
-        NSLog("Session[%@]: Applied color theme '%@'", sessionRef, theme.name)
+
+        // Initial apply of the full settings model + per-
+        // session font size override.
+        backend.applySettings(SettingsManager.shared.settings)
+        applyPerSessionFontSize()
+
+        // Re-apply on every settings change. Stored in
+        // `terminalCancellables` so `releaseBackend()` can
+        // cancel these independently of non-terminal
+        // subscriptions.
+        SettingsManager.shared.$settings
+            .removeDuplicates()
+            .dropFirst()  // Skip current value (already applied above)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] settings in
+                self?.backend?.applySettings(settings)
+                self?.applyPerSessionFontSize()
+            }
+            .store(in: &terminalCancellables)
     }
 
-    /// Apply the current terminal font to the terminal backend.
-    private func applyTerminalFontSize() {
+    /// Apply the per-session font-size override (set via
+    /// ⌘+/⌘−) to the backend. `backend.applySettings(_:)` uses
+    /// the global default size; this overrides with the
+    /// session's per-pane value.
+    private func applyPerSessionFontSize() {
         guard let backend = backend else { return }
         let family = SettingsManager.shared.settings.terminalFontFamily
-        let font: NSFont
-        if family == "SF Mono" {
-            // SF Mono is only available via the system monospaced font API.
-            // .medium weight matches Terminal.app's rendering more closely than .regular,
-            // which Apple maps to an unexpectedly light weight for this font.
-            font = NSFont.monospacedSystemFont(ofSize: terminalFontSize, weight: .medium)
-        } else {
-            font = NSFont(name: family, size: terminalFontSize)
-                ?? NSFont.monospacedSystemFont(ofSize: terminalFontSize, weight: .regular)
-        }
-        NSLog("Session[%@]: applyFont family=%@ -> fontName=%@ size=%.0f", sessionRef, family, font.fontName, terminalFontSize)
-        backend.setFont(font)
-    }
-
-    /// Apply the scrollback buffer size from settings to the terminal
-    /// backend. Backends that wrap SwiftTerm use `changeHistorySize` —
-    /// increasing preserves existing history, decreasing trims oldest
-    /// lines.
-    private func applyScrollbackSize() {
-        guard let backend = backend else { return }
-        let lines = SettingsManager.shared.settings.terminalScrollbackLines
-        backend.changeHistorySize(lines)
-        NSLog("Session[%@]: Applied scrollback size %d lines", sessionRef, lines)
+        backend.setFont(
+            resolveTerminalFont(
+                family: family, size: terminalFontSize
+            )
+        )
     }
 
     /// Create the terminal backend if it doesn't exist yet.
@@ -676,7 +631,6 @@ class Session: Identifiable, ObservableObject {
             frame: NSRect(x: 0, y: 0, width: 800, height: 600)
         )
         configureTerminal()
-        applyScrollbackSize()
         NSLog(
             "Session[%@]: Created terminal backend on demand "
             + "(engine=%@)",

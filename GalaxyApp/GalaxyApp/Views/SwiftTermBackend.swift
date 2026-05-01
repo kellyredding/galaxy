@@ -1,6 +1,32 @@
 import AppKit
 import SwiftTerm
 
+/// Resolve a Galaxy font-family setting to a concrete `NSFont`
+/// at the given point size. SF Mono resolves via the system
+/// monospaced API (`.medium` weight matches Terminal.app's
+/// rendering more closely than `.regular`, which Apple maps
+/// to an unexpectedly light weight for SF Mono). Everything
+/// else resolves via `NSFont(name:size:)` with a monospaced
+/// fallback, so an invalid family name yields a usable
+/// terminal font instead of a system default proportional
+/// font. Free function rather than a backend method so
+/// pane-side consumers (Session, ShellTerminalPane) can apply
+/// per-pane font-size overrides without naming a concrete
+/// backend type.
+internal func resolveTerminalFont(
+    family: String, size: CGFloat
+) -> NSFont {
+    if family == "SF Mono" {
+        return NSFont.monospacedSystemFont(
+            ofSize: size, weight: .medium
+        )
+    }
+    return NSFont(name: family, size: size)
+        ?? NSFont.monospacedSystemFont(
+            ofSize: size, weight: .regular
+        )
+}
+
 /// `TerminalBackend` implementation backed by Galaxy's
 /// `GalaxySwiftTermView` — a `LocalProcessTerminalView`
 /// subclass that intercepts scroll events, suppresses the
@@ -208,10 +234,39 @@ final class SwiftTermBackend: NSObject, TerminalBackend,
     }
 
     func applySettings(_ settings: AppSettings) {
-        // Stub for protocol conformance — a follow-up slice
-        // collapses the Session-side per-property appliers
-        // and the Shell pane's per-property settings
-        // subscriptions into a single call here.
+        // Theme.
+        let theme = TerminalColorTheme.theme(
+            named: settings.terminalColorThemeName
+        )
+        setForegroundColor(theme.foregroundColor)
+        setBackgroundColor(theme.backgroundColorValue)
+        setBoldForegroundColor(theme.boldForegroundColor)
+        installColors(theme.terminalPalette)
+
+        // Font (uses the global default size; per-pane size
+        // overrides are applied separately by the consumer
+        // that owns the override — Session via
+        // `applyPerSessionFontSize`, ShellTerminalPane via
+        // `applyPerPaneFontSize`).
+        setFont(
+            resolveTerminalFont(
+                family: settings.terminalFontFamily,
+                size: settings.defaultTerminalFontSize
+            )
+        )
+
+        // Scrollback.
+        changeHistorySize(settings.terminalScrollbackLines)
+
+        // NOTE: cursor styling is intentionally NOT applied
+        // here. `shellCursorStyle` / `shellCursorBlink` are
+        // Shell-only — the Shell pane subscribes to those via
+        // its own deduplication wrapper. The Session pane
+        // keeps SwiftTerm's caret hidden (Claude Code self-
+        // renders the cursor), so applying cursor settings on
+        // every Session-pane settings change would be churn at
+        // best, and risks the cursor-style delegate hook
+        // re-touching caret view state we want to stay hidden.
     }
 
     var suppressFocusEvents: Bool {

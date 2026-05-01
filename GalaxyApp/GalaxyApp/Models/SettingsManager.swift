@@ -139,7 +139,7 @@ enum ShellCursorStyle: String, Codable, CaseIterable {
 }
 
 /// Persistent settings for the Galaxy app
-struct AppSettings: Codable {
+struct AppSettings: Codable, Equatable {
     var sidebarPosition: SidebarPosition = .left
     var sidebarWidth: CGFloat = 220.0  // Width of sessions panel
     var isSidebarVisible: Bool = true  // Sidebar expanded/collapsed state

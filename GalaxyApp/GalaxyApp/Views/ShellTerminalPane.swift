@@ -190,14 +190,14 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
         let step = AppSettings.terminalFontSizeStep
         let range = AppSettings.terminalFontSizeRange
         fontSize = min(fontSize + step, range.upperBound)
-        applyFont()
+        applyPerPaneFontSize()
     }
 
     func decreaseFontSize() {
         let step = AppSettings.terminalFontSizeStep
         let range = AppSettings.terminalFontSizeRange
         fontSize = max(fontSize - step, range.lowerBound)
-        applyFont()
+        applyPerPaneFontSize()
     }
 
     var canIncreaseFontSize: Bool {
@@ -285,38 +285,30 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
     private func subscribeToSettings() {
         let mgr = SettingsManager.shared
 
-        // Font family (global — applies to both panes).
+        // Re-apply the full settings model on any change.
+        // `backend.applySettings(_:)` covers theme, font
+        // family, and scrollback; per-pane font size is the
+        // one piece outside the AppSettings model and is
+        // applied separately. `dropFirst()` skips the initial
+        // value — `applyInitialAppearance` pushes it
+        // explicitly at start time.
         mgr.$settings
-            .map(\.terminalFontFamily)
             .removeDuplicates()
+            .dropFirst()
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.applyFont() }
-            .store(in: &cancellables)
-
-        // Color theme (global).
-        mgr.$settings
-            .map(\.terminalColorThemeName)
-            .removeDuplicates()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.applyColors() }
-            .store(in: &cancellables)
-
-        // Scrollback size (global).
-        mgr.$settings
-            .map(\.terminalScrollbackLines)
-            .removeDuplicates()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] lines in
-                self?.backend.changeHistorySize(lines)
+            .sink { [weak self] settings in
+                self?.backend.applySettings(settings)
+                self?.applyPerPaneFontSize()
             }
             .store(in: &cancellables)
 
-        // Cursor (shell-only). SwiftTerm's `CursorStyle`
-        // fuses shape + blink, so dedupe on the pair to
-        // avoid redundant applies — two separate
-        // subscriptions would fire twice on init. Routed
-        // through the backend's `applyCursor` to keep the
-        // mapping in one place.
+        // Cursor (shell-only). Kept separate from
+        // `applySettings` because the Session pane's caret
+        // is hidden — applying cursor settings on every
+        // change for that backend would risk un-hiding it.
+        // SwiftTerm's `CursorStyle` fuses shape + blink, so
+        // dedupe on the pair via `ShellCursorConfig` to avoid
+        // two separate subscriptions firing on init.
         mgr.$settings
             .map {
                 ShellCursorConfig(
@@ -335,42 +327,24 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
     }
 
     private func applyInitialAppearance() {
-        applyColors()
-        applyFont()
-        backend.changeHistorySize(
-            SettingsManager.shared.settings.terminalScrollbackLines
-        )
-        let s = SettingsManager.shared.settings
+        let settings = SettingsManager.shared.settings
+        backend.applySettings(settings)
+        applyPerPaneFontSize()
         backend.applyCursor(
-            style: s.shellCursorStyle,
-            blink: s.shellCursorBlink
+            style: settings.shellCursorStyle,
+            blink: settings.shellCursorBlink
         )
     }
 
-    private func applyFont() {
+    /// Apply the per-pane font-size override (set via ⌘+/⌘−)
+    /// to the backend. `backend.applySettings(_:)` uses the
+    /// global default size; this overrides with the pane's
+    /// per-instance value.
+    private func applyPerPaneFontSize() {
         let family =
             SettingsManager.shared.settings.terminalFontFamily
-        let font: NSFont
-        if family == "SF Mono" {
-            font = NSFont.monospacedSystemFont(
-                ofSize: fontSize, weight: .medium
-            )
-        } else {
-            font = NSFont(name: family, size: fontSize)
-                ?? NSFont.monospacedSystemFont(
-                    ofSize: fontSize, weight: .regular
-                )
-        }
-        backend.setFont(font)
-    }
-
-    private func applyColors() {
-        let theme = TerminalColorTheme.theme(
-            named: SettingsManager.shared
-                .settings.terminalColorThemeName
+        backend.setFont(
+            resolveTerminalFont(family: family, size: fontSize)
         )
-        backend.setForegroundColor(theme.foregroundColor)
-        backend.setBackgroundColor(theme.backgroundColorValue)
-        backend.installColors(theme.terminalPalette)
     }
 }
