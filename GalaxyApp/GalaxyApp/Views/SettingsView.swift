@@ -388,7 +388,7 @@ struct TerminalSettingsTab: View {
             // Scrollback settings
             SettingsCard(title: "Scrollback") {
                 VStack(alignment: .leading, spacing: 6) {
-                    SettingsRow(label: "History size") {
+                    SettingsRow(label: "Buffer size") {
                         HStack(spacing: 4) {
                             TextField("", text: $scrollbackText)
                                 .textFieldStyle(.roundedBorder)
