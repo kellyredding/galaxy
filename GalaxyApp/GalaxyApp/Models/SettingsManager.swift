@@ -156,7 +156,7 @@ struct AppSettings: Codable, Equatable {
     var defaultTerminalFontSize: CGFloat = 13.0  // Default font size for new terminal sessions
 
     // Terminal color settings
-    var terminalColorThemeName: String = "terminal-classic"  // Active color theme
+    var terminalColorThemeName: String = "galaxy-default"  // Active color theme
 
     // Terminal scrollback settings
     var terminalScrollbackLines: Int = 10_000  // Scrollback buffer size in lines
@@ -336,7 +336,14 @@ struct AppSettings: Codable, Equatable {
         terminalFontFamily = try container.decodeIfPresent(String.self, forKey: .terminalFontFamily) ?? "SF Mono"
         chromeFontSize = try container.decodeIfPresent(CGFloat.self, forKey: .chromeFontSize) ?? 13.0
         defaultTerminalFontSize = try container.decodeIfPresent(CGFloat.self, forKey: .defaultTerminalFontSize) ?? 13.0
-        terminalColorThemeName = try container.decodeIfPresent(String.self, forKey: .terminalColorThemeName) ?? "terminal-classic"
+        terminalColorThemeName = try container.decodeIfPresent(String.self, forKey: .terminalColorThemeName) ?? "galaxy-default"
+        // Migration: rename the old "terminal-classic" id to
+        // "galaxy-default". Existing settings would still resolve
+        // correctly via the theme(named:) fallback, but normalizing
+        // here means the next save persists the new id.
+        if terminalColorThemeName == "terminal-classic" {
+            terminalColorThemeName = "galaxy-default"
+        }
         terminalScrollbackLines = try container.decodeIfPresent(Int.self, forKey: .terminalScrollbackLines) ?? 10_000
         terminalEngine = try container.decodeIfPresent(
             TerminalEngine.self, forKey: .terminalEngine

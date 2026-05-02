@@ -16,8 +16,8 @@ struct TerminalPaletteColor: Equatable, Hashable {
 /// standard ANSI colors. Designed for JSON serialization so user-defined
 /// themes can be stored in settings in the future.
 struct TerminalColorTheme: Codable, Identifiable {
-    let id: String          // e.g. "terminal-classic"
-    let name: String        // e.g. "Terminal Classic"
+    let id: String          // e.g. "galaxy-default"
+    let name: String        // e.g. "Galaxy Default"
     let foreground: String  // Hex "#RRGGBB"
     let background: String  // Hex "#RRGGBB"
     let ansiColors: [String] // 16 hex values, indices 0-7 normal, 8-15 bright
@@ -78,8 +78,10 @@ struct TerminalColorTheme: Codable, Identifiable {
 // MARK: - Built-in Themes
 
 extension TerminalColorTheme {
-    /// All built-in themes, alphabetized by name
+    /// Built-in themes. Galaxy Default is pinned at the top as the
+    /// app's bundled default; the rest are alphabetized by name.
     static let builtIn: [TerminalColorTheme] = [
+        .galaxyDefault,
         .alacrittyDefault,
         .catppuccinMocha,
         .dracula,
@@ -92,22 +94,23 @@ extension TerminalColorTheme {
         .solarizedLight,
         .swiftTermDark,
         .swiftTermLight,
-        .terminalClassic,
     ]
 
-    /// Find a theme by ID, falling back to Terminal Classic
+    /// Find a theme by ID, falling back to Galaxy Default
     static func theme(named id: String) -> TerminalColorTheme {
-        builtIn.first { $0.id == id } ?? .terminalClassic
+        builtIn.first { $0.id == id } ?? .galaxyDefault
     }
 
-    // MARK: Terminal Classic
-    // Pixel-sampled from Terminal.app on macOS 15, with ANSI 4 / 12
-    // overridden to match Kelly's Terminal.app blues (VS Code Dark+
-    // base blue and a more-saturated bright blue). Bold uses pure
-    // white.
-    static let terminalClassic = TerminalColorTheme(
-        id: "terminal-classic",
-        name: "Terminal Classic",
+    // MARK: Galaxy Default
+    // Galaxy's bundled default theme. Originated as a pixel-sample
+    // of macOS Terminal.app's default palette (macOS 15) and now
+    // diverges in the blue slots — ANSI 4 (#569CD6, VS Code Dark+
+    // base blue) and ANSI 12 (#82B8FF, a more-saturated bright
+    // blue) — for better legibility on a black background. Bold
+    // default-fg renders as pure white.
+    static let galaxyDefault = TerminalColorTheme(
+        id: "galaxy-default",
+        name: "Galaxy Default",
         foreground: "#EBEBEB",
         background: "#000000",
         ansiColors: [
