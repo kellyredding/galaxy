@@ -101,7 +101,10 @@ extension TerminalColorTheme {
     }
 
     // MARK: Terminal Classic
-    // Pixel-sampled from Terminal.app on macOS 15. Bold uses pure white.
+    // Pixel-sampled from Terminal.app on macOS 15, with ANSI 4 / 12
+    // overridden to match Kelly's Terminal.app blues (VS Code Dark+
+    // base blue and a more-saturated bright blue). Bold uses pure
+    // white.
     static let terminalClassic = TerminalColorTheme(
         id: "terminal-classic",
         name: "Terminal Classic",
@@ -109,9 +112,9 @@ extension TerminalColorTheme {
         background: "#000000",
         ansiColors: [
             "#000000", "#8C1B10", "#4AA32E", "#99992F",
-            "#0000AB", "#A320AC", "#4AA3B0", "#BFBFBF",
+            "#569CD6", "#A320AC", "#4AA3B0", "#BFBFBF",
             "#666666", "#D32D1F", "#62D640", "#E5E54B",
-            "#0000F5", "#D32DDE", "#69E2E3", "#E5E5E5",
+            "#82B8FF", "#D32DDE", "#69E2E3", "#E5E5E5",
         ],
         boldForeground: "#FFFFFF"
     )
