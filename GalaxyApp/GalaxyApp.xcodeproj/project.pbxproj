@@ -14,6 +14,7 @@
 		0CD6D832A8614D6D935C1E0F /* AgentRun.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFFF3072B720C04EC59D3554 /* AgentRun.swift */; };
 		1398D7A28CD97955C6CF12EE /* StatuslineHookStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AE5FFAF09889E289427AFAB /* StatuslineHookStatus.swift */; };
 		1613D6F4896F7B93513565A8 /* TimelineModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 676FCB50E852F5CD6E0E58B9 /* TimelineModels.swift */; };
+		18007C05516C1A0A5F916234 /* FindBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C8F6C1B8D1FA7F81ECA801D /* FindBarView.swift */; };
 		18B3FD10CEE9BF58CA495504 /* StatuslineConfigService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 725F45E345F6FC24D63A50F7 /* StatuslineConfigService.swift */; };
 		1F1D225FC7871834B03189C0 /* SwiftTermBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51B8E1BFB0B4DFDEFE7B0043 /* SwiftTermBackend.swift */; };
 		21BC314DAABC67786341621F /* ExpandedSessionSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B33E9ACBBBDE22688F8D808 /* ExpandedSessionSidebar.swift */; };
@@ -50,6 +51,7 @@
 		64AB450ECD5FB1FF3D5E16EB /* EnrichmentService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260E4993B113CBAABADA519B /* EnrichmentService.swift */; };
 		69C769B61E2BA6F9BD8DA6FB /* MainWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEB9F0C617C86CE1FDD05FF3 /* MainWindowController.swift */; };
 		6CDB5F73F547B05AF78CC58E /* ScrollbackWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2750A011DD00E7D1E06CE4CD /* ScrollbackWebView.swift */; };
+		6D5F396A028AFE8BA22FDECD /* WKWebViewConfiguration+GalaxyFind.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22795DFA3B0DBBFD865FB0FA /* WKWebViewConfiguration+GalaxyFind.swift */; };
 		6DBFAC1175B99C54309DF19A /* SessionPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAEF4E4E06E2AD409BFED23F /* SessionPersistence.swift */; };
 		71836A132E30E0F8CC17F3D8 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37E5B003AFED03C15A13FC2D /* NotificationService.swift */; };
 		71E17A427557DEC4A0100B47 /* UnreadIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19982622D2460FF2F8B4E33B /* UnreadIndicator.swift */; };
@@ -93,6 +95,7 @@
 		9C1BE8D8B5D26E04841D180D /* SheetAlert.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50B1BA689B62E9309B084C1 /* SheetAlert.swift */; };
 		9DF6C43FCF8057F92F9035DF /* RestoreSessionSheetController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A3E23B7649EB363652B3378 /* RestoreSessionSheetController.swift */; };
 		9EBBFFABF0552FDA783CAA6F /* BellIndicatorBehavior.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C3C1E1CDC72CB3FDF60D346 /* BellIndicatorBehavior.swift */; };
+		A12EDDE8E4F1C9AACA198412 /* WebViewFindController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7A6B3AA9BFBF0BAEE3180DF /* WebViewFindController.swift */; };
 		A20D4EC7B5F8E3D1DDBB8D4E /* SettingsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C7501DB8ABDB113A9CF35C8 /* SettingsManager.swift */; };
 		A4B01AE6D2489B6821615FC5 /* TerminalVisualBell.swift in Sources */ = {isa = PBXBuildFile; fileRef = A821292A1CB70C1A1893890C /* TerminalVisualBell.swift */; };
 		A57FC847EF77E79C3A30DD55 /* TimelineCanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2970A34038789BE966C7D25 /* TimelineCanvasView.swift */; };
@@ -102,6 +105,7 @@
 		B319DA9B78048A3DF36BED58 /* LedgerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B593B1A95489C385D8B403E7 /* LedgerView.swift */; };
 		BAA27B33BB1F6834A8BA302A /* LedgerSubTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D4122B312BBDD8690D21C4F /* LedgerSubTab.swift */; };
 		BAAA7C7850229F5F5BD9BAEF /* TerminalPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23348188C124E96FA5F0CC4B /* TerminalPane.swift */; };
+		BABF944CB19880A0109DF871 /* GalaxyFindJS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 412B0F6729BA76B88D7E8F20 /* GalaxyFindJS.swift */; };
 		BB911698AD4CE425B65FF0E7 /* emoji-autocomplete.js in Resources */ = {isa = PBXBuildFile; fileRef = EA90FB9B45E643E56114F655 /* emoji-autocomplete.js */; };
 		C27788ECAC3C2D2A1DA2024E /* GalaxyLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5D457946288879168E5D913 /* GalaxyLog.swift */; };
 		C3434D97E3E1783843E50797 /* SessionRowDragHandle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E474100EA691402E8DF51F3A /* SessionRowDragHandle.swift */; };
@@ -148,6 +152,7 @@
 		1DE3AC5A832EA301B3967F61 /* TimelineService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineService.swift; sourceTree = "<group>"; };
 		1E7DDD862A4F5F6CA6BF6170 /* SessionMarker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionMarker.swift; sourceTree = "<group>"; };
 		1F39F262BB7D593079DE0602 /* GalaxyApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GalaxyApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		22795DFA3B0DBBFD865FB0FA /* WKWebViewConfiguration+GalaxyFind.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WKWebViewConfiguration+GalaxyFind.swift"; sourceTree = "<group>"; };
 		23348188C124E96FA5F0CC4B /* TerminalPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalPane.swift; sourceTree = "<group>"; };
 		260E4993B113CBAABADA519B /* EnrichmentService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnrichmentService.swift; sourceTree = "<group>"; };
 		26D4DCA501162986E69269EF /* EmojiPickerPopover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiPickerPopover.swift; sourceTree = "<group>"; };
@@ -164,6 +169,7 @@
 		3698A7E1AE87120B27E6EFD0 /* LedgerLastActivityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerLastActivityView.swift; sourceTree = "<group>"; };
 		37E5B003AFED03C15A13FC2D /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
 		3812822CEF0CE755762272D9 /* RestoreSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestoreSessionView.swift; sourceTree = "<group>"; };
+		412B0F6729BA76B88D7E8F20 /* GalaxyFindJS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxyFindJS.swift; sourceTree = "<group>"; };
 		41FE31D51753FACEA48714CD /* ArtifactTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactTableView.swift; sourceTree = "<group>"; };
 		430095FE1E69CCC41062A06B /* AnchorData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnchorData.swift; sourceTree = "<group>"; };
 		43C2EE51F5ED8F5A44D27580 /* DragHandleNSView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragHandleNSView.swift; sourceTree = "<group>"; };
@@ -211,6 +217,7 @@
 		9B700435C26C483E71A75B12 /* NewMarkerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewMarkerView.swift; sourceTree = "<group>"; };
 		9C3C1E1CDC72CB3FDF60D346 /* BellIndicatorBehavior.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BellIndicatorBehavior.swift; sourceTree = "<group>"; };
 		9C724552F2B31DBFAA8FD5AF /* EmojiPickerData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiPickerData.swift; sourceTree = "<group>"; };
+		9C8F6C1B8D1FA7F81ECA801D /* FindBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FindBarView.swift; sourceTree = "<group>"; };
 		9D4122B312BBDD8690D21C4F /* LedgerSubTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerSubTab.swift; sourceTree = "<group>"; };
 		9EB1B25ADB386E0B834FA6B0 /* SessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionManager.swift; sourceTree = "<group>"; };
 		A2970A34038789BE966C7D25 /* TimelineCanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineCanvasView.swift; sourceTree = "<group>"; };
@@ -236,6 +243,7 @@
 		C50B1BA689B62E9309B084C1 /* SheetAlert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SheetAlert.swift; sourceTree = "<group>"; };
 		C694C8B104DEAC6605437941 /* AgentsQueryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentsQueryService.swift; sourceTree = "<group>"; };
 		C77E50164B4FCCB1E3C49395 /* NavigationRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationRoute.swift; sourceTree = "<group>"; };
+		C7A6B3AA9BFBF0BAEE3180DF /* WebViewFindController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebViewFindController.swift; sourceTree = "<group>"; };
 		C8180F1A6B6AAA96C11608AE /* ArtifactDiffView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactDiffView.swift; sourceTree = "<group>"; };
 		C96C60D970F588050D34A070 /* AnnotationSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnnotationSupport.swift; sourceTree = "<group>"; };
 		CA7C61AE6C010B6F8091B0B3 /* SocketListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocketListener.swift; sourceTree = "<group>"; };
@@ -335,6 +343,17 @@
 			path = Statusline;
 			sourceTree = "<group>";
 		};
+		7F6E96BCBC8BECCD912E4270 /* Find */ = {
+			isa = PBXGroup;
+			children = (
+				9C8F6C1B8D1FA7F81ECA801D /* FindBarView.swift */,
+				412B0F6729BA76B88D7E8F20 /* GalaxyFindJS.swift */,
+				C7A6B3AA9BFBF0BAEE3180DF /* WebViewFindController.swift */,
+				22795DFA3B0DBBFD865FB0FA /* WKWebViewConfiguration+GalaxyFind.swift */,
+			);
+			path = Find;
+			sourceTree = "<group>";
+		};
 		8D98DBB6657E4D9DEE141CCC /* Resources */ = {
 			isa = PBXGroup;
 			children = (
@@ -420,6 +439,7 @@
 				592873EB089CA8C129A579A0 /* TimelineView.swift */,
 				19982622D2460FF2F8B4E33B /* UnreadIndicator.swift */,
 				6658F001C5C56071EC60514E /* WatermarkBackground.swift */,
+				7F6E96BCBC8BECCD912E4270 /* Find */,
 				50A26412F6AF5D78EC7772A3 /* Statusline */,
 			);
 			path = Views;
@@ -572,7 +592,9 @@
 				D1752B86BB1A44AFB5E75F00 /* EventDebouncer.swift in Sources */,
 				82B876DF7C1A77E1A811C62A /* EventEnvelope.swift in Sources */,
 				21BC314DAABC67786341621F /* ExpandedSessionSidebar.swift in Sources */,
+				18007C05516C1A0A5F916234 /* FindBarView.swift in Sources */,
 				95B87341788CFD115DCAC557 /* GalaxyApp.swift in Sources */,
+				BABF944CB19880A0109DF871 /* GalaxyFindJS.swift in Sources */,
 				C27788ECAC3C2D2A1DA2024E /* GalaxyLog.swift in Sources */,
 				8F1A01FA0FE89DC6E93A3A19 /* GalaxySwiftTermView.swift in Sources */,
 				7FA24AFDBEAAAA19CC64A1E4 /* LedgerEntriesView.swift in Sources */,
@@ -651,7 +673,9 @@
 				3E64891A1B570A169DFFA3FD /* TimelineView.swift in Sources */,
 				71E17A427557DEC4A0100B47 /* UnreadIndicator.swift in Sources */,
 				2D041547EED1E1552246781B /* ViewedFilesPersistence.swift in Sources */,
+				6D5F396A028AFE8BA22FDECD /* WKWebViewConfiguration+GalaxyFind.swift in Sources */,
 				B1E71F47DE9403A1808277EC /* WatermarkBackground.swift in Sources */,
+				A12EDDE8E4F1C9AACA198412 /* WebViewFindController.swift in Sources */,
 				89EE54398E22AEA37B416F21 /* WindowStatePersistence.swift in Sources */,
 				830B36A8A4CD211AC3DF03F3 /* main.swift in Sources */,
 			);
