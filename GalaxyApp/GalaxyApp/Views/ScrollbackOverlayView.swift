@@ -1,10 +1,22 @@
 import AppKit
+import Combine
+import SwiftUI
 
 /// Container NSView that holds a ScrollbackWebView and a floating pill
 /// indicator. Draws a 2px accent-color border around the entire view.
 class ScrollbackOverlayView: NSView {
     let scrollbackView: ScrollbackWebView
     private let pillLabel: NSTextField
+
+    /// Cmd+F find controller bound to the inner web view. Reverse
+    /// mode flips iteration so the first match presented is the
+    /// most-recent occurrence walking up — Terminal.app/iTerm
+    /// behavior. Activated by the slice-4 dispatcher via
+    /// `activateFind()`.
+    let findController: WebViewFindController
+
+    private var findHostingView: NSHostingView<FindBarView>?
+    private var findVisibilityCancellable: AnyCancellable?
 
     /// Alpha applied to the border + pill background when
     /// the overlay's pane has lost focus. Visually de-
@@ -29,6 +41,10 @@ class ScrollbackOverlayView: NSView {
     init(frame: NSRect, scrollbackView: ScrollbackWebView) {
         self.scrollbackView = scrollbackView
         self.pillLabel = NSTextField(labelWithString: "Scrollback · Esc to exit")
+        self.findController = WebViewFindController(
+            webView: scrollbackView.webView,
+            reverse: true
+        )
         super.init(frame: frame)
         wantsLayer = true
 
@@ -39,6 +55,14 @@ class ScrollbackOverlayView: NSView {
 
         // Configure pill indicator
         configurePill()
+
+        // Configure Cmd+F find bar (hidden until activateFind()
+        // is called). Anchored to the same top-right slot as the
+        // pill; the pill hides while find is visible to avoid
+        // collision and to retire its now-misleading "Esc to exit"
+        // hint (Esc closes the find bar instead of the overlay
+        // while find is open).
+        configureFindBar()
 
         // Draw 2px accent-color border (focus-aware via
         // applyFocusedState so the alpha is honored even on
@@ -136,5 +160,46 @@ class ScrollbackOverlayView: NSView {
             .withAlphaComponent(alpha)
         layer?.borderColor = tinted.cgColor
         pillLabel.backgroundColor = tinted
+    }
+
+    // MARK: - Find Bar
+
+    /// Configure the Cmd+F find bar overlay. Hidden by default;
+    /// the slice-4 dispatcher will flip `findController.isVisible`
+    /// via `activateFind()`. Pinned to the top-right corner with
+    /// a small inset; the pill hides while the bar is visible.
+    private func configureFindBar() {
+        let host = NSHostingView(
+            rootView: FindBarView(controller: findController)
+        )
+        host.translatesAutoresizingMaskIntoConstraints = false
+        host.isHidden = true
+        addSubview(host, positioned: .above, relativeTo: pillLabel)
+        NSLayoutConstraint.activate([
+            host.topAnchor.constraint(
+                equalTo: topAnchor, constant: 8
+            ),
+            host.trailingAnchor.constraint(
+                equalTo: trailingAnchor, constant: -8
+            ),
+        ])
+        findHostingView = host
+
+        // Mirror controller.isVisible to host visibility AND
+        // pill visibility so they don't compete for the
+        // top-right corner. Pill returns when find closes.
+        findVisibilityCancellable = findController.$isVisible
+            .receive(on: RunLoop.main)
+            .sink { [weak self] visible in
+                self?.findHostingView?.isHidden = !visible
+                self?.pillLabel.isHidden = visible
+            }
+    }
+
+    /// Bring up the find bar in this overlay. Called by the
+    /// Cmd+F dispatcher (slice 4) when this overlay is the
+    /// active surface.
+    func activateFind() {
+        findController.isVisible = true
     }
 }

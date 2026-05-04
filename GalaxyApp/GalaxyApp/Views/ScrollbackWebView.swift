@@ -85,6 +85,10 @@ class ScrollbackWebView: NSView {
         let userContentController = WKUserContentController()
         config.userContentController = userContentController
 
+        // Install Cmd+F find module. Driven by WebViewFindController
+        // owned by the overlay parent.
+        config.installGalaxyFindUserScript()
+
         self.webView = ScrollbackDropWebView(
             frame: NSRect(origin: .zero, size: frame.size),
             configuration: config
