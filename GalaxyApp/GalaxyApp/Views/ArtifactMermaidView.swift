@@ -19,6 +19,7 @@ struct ArtifactMermaidView: NSViewRepresentable {
         context: Context
     ) -> SilentFunctionKeyWebView {
         let config = WKWebViewConfiguration()
+        config.installGalaxyFindUserScript()
         config.userContentController.add(
             context.coordinator, name: "annotation"
         )

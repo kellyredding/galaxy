@@ -44,6 +44,12 @@ struct SnapshotsView: View {
     @State private var annotationHTMLMap: [Int32: String] = [:]
     @State private var webViewRef: WKWebView? = nil
 
+    // Cmd+F find state. Controller owns the find bar's
+    // visibility, query, and match counters; the slice-4
+    // dispatcher will flip `isVisible` via activateFind().
+    @StateObject private var findController =
+        WebViewFindController(webView: nil, reverse: false)
+
     // Review state
     @State private var hasUnreviewedAnnotations: Bool = false
 
@@ -479,6 +485,35 @@ struct SnapshotsView: View {
                 baseUrlName: "snapshot-reader"
             )
         }
+        .overlay(alignment: .topTrailing) {
+            findBarOverlay
+        }
+        .onChange(of: webViewRef) { _, newView in
+            findController.bind(to: newView)
+        }
+        .onChange(of: openSnapshot?.number) { _, _ in
+            findController.isVisible = false
+        }
+    }
+
+    /// Find bar overlay sits at the top-right of the reader
+    /// content. Padded down to clear the header bar; no-op
+    /// (transparent + non-hit-testing) when hidden.
+    @ViewBuilder
+    private var findBarOverlay: some View {
+        if findController.isVisible {
+            FindBarView(controller: findController)
+                .padding(.top, 40)
+                .padding(.trailing, 12)
+                .transition(.move(edge: .top))
+        }
+    }
+
+    /// Bring up the find bar in the open snapshot reader.
+    /// Called by the slice-4 Cmd+F dispatcher.
+    func activateFind() {
+        guard openSnapshot != nil else { return }
+        findController.isVisible = true
     }
 
     // MARK: - Data Lifecycle

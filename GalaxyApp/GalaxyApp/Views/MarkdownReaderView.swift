@@ -258,6 +258,7 @@ struct MarkdownReaderView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
+        config.installGalaxyFindUserScript()
         config.userContentController.add(context.coordinator, name: "annotation")
         let webView = SilentFunctionKeyWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
