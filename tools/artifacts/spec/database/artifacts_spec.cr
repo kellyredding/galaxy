@@ -163,6 +163,24 @@ describe GalaxyArtifacts::Database do
       artifacts.size.should eq(2)
     end
 
+    # Regression for the silent-truncation bug: the prior signature
+    # defaulted `limit` to 50, so sessions with >50 artifacts had
+    # rows beyond #50 dropped from the index view. Nil limit must
+    # return every row for the session.
+    it "returns all artifacts when no limit is set" do
+      60.times do |i|
+        GalaxyArtifacts::Database.save_artifact(
+          1_i64, title: "Art #{i}", artifact_type: "text", mime_type: "text/plain",
+          original_filename: "#{i}.txt", stored_path: "", source_path: "/tmp/#{i}.txt",
+          file_size: 10_i64, content_hash: "h#{i}",
+        )
+      end
+
+      artifacts = GalaxyArtifacts::Database.list_artifacts(1_i64)
+      artifacts.size.should eq(60)
+      artifacts.last.number.should eq(60)
+    end
+
     it "returns empty array for session with no artifacts" do
       artifacts = GalaxyArtifacts::Database.list_artifacts(999_i64)
       artifacts.should be_empty

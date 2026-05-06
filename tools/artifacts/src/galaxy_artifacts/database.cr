@@ -311,28 +311,33 @@ module GalaxyArtifacts
     end
 
     # List all artifacts for a session, ordered by number.
+    # `limit` is opt-in — nil returns every artifact for the
+    # session. Matches the pattern in galaxy-agents'
+    # list_agents and avoids the silent-truncation bug that the
+    # previous default limit of 50 caused for sessions with
+    # many artifacts.
     def self.list_artifacts(
       ledger_session_id : Int64,
-      limit : Int32 = 50,
+      limit : Int32? = nil,
     ) : Array(Artifact)
       artifacts = [] of Artifact
       return artifacts if ledger_session_id <= 0
 
       begin
         open do |db|
+          sql = <<-SQL
+            SELECT id, ledger_session_id, number, created_at,
+                   updated_at, title, artifact_type, mime_type,
+                   original_filename, stored_path, source_path,
+                   file_size, content_hash, description, metadata
+            FROM artifacts
+            WHERE ledger_session_id = ?
+            ORDER BY number ASC
+          SQL
+          sql += " LIMIT #{limit}" if limit
           db.query(
-            <<-SQL,
-              SELECT id, ledger_session_id, number, created_at,
-                     updated_at, title, artifact_type, mime_type,
-                     original_filename, stored_path, source_path,
-                     file_size, content_hash, description, metadata
-              FROM artifacts
-              WHERE ledger_session_id = ?
-              ORDER BY number ASC
-              LIMIT ?
-            SQL
+            sql,
             ledger_session_id,
-            limit,
           ) do |rs|
             rs.each do
               artifacts << Artifact.from_row(rs)
