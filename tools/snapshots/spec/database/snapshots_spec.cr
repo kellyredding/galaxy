@@ -100,6 +100,20 @@ describe GalaxySnapshots::Database do
       snapshots.size.should eq(2)
     end
 
+    # Regression for the silent-truncation bug: the prior signature
+    # defaulted `limit` to 50, so sessions with >50 snapshots had
+    # rows beyond #50 dropped from the index view. Nil limit must
+    # return every row for the session.
+    it "returns all snapshots when no limit is set" do
+      60.times do |i|
+        GalaxySnapshots::Database.save_snapshot(1_i64, "Snap #{i}", "content #{i}")
+      end
+
+      snapshots = GalaxySnapshots::Database.list_snapshots(1_i64)
+      snapshots.size.should eq(60)
+      snapshots.last.number.should eq(60)
+    end
+
     it "returns empty array for session with no snapshots" do
       snapshots = GalaxySnapshots::Database.list_snapshots(1_i64)
       snapshots.should be_empty
@@ -304,6 +318,17 @@ describe GalaxySnapshots::Database do
 
       items = GalaxySnapshots::Database.list_snapshots_with_counts(1_i64, limit: 2)
       items.size.should eq(2)
+    end
+
+    # Regression for the silent-truncation bug.
+    it "returns all snapshots when no limit is set" do
+      60.times do |i|
+        GalaxySnapshots::Database.save_snapshot(1_i64, "Snap #{i}", "content #{i}")
+      end
+
+      items = GalaxySnapshots::Database.list_snapshots_with_counts(1_i64)
+      items.size.should eq(60)
+      items.last.number.should eq(60)
     end
 
     it "returns correct fields on SnapshotListItem" do

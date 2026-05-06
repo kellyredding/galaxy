@@ -202,23 +202,26 @@ module GalaxySnapshots
     end
 
     # List all snapshots for a session, ordered by number (chronological).
-    def self.list_snapshots(ledger_session_id : Int64, limit : Int32 = 50) : Array(Snapshot)
+    # `limit` is opt-in — nil returns every snapshot for the session.
+    # Matches galaxy-agents' list_agents pattern and fixes the
+    # silent-truncation bug from the previous default limit of 50.
+    def self.list_snapshots(ledger_session_id : Int64, limit : Int32? = nil) : Array(Snapshot)
       snapshots = [] of Snapshot
       return snapshots if ledger_session_id <= 0
 
       begin
         open do |db|
+          sql = <<-SQL
+            SELECT id, ledger_session_id, number, created_at, updated_at,
+                   title, content, exchange_count, char_count, metadata
+            FROM snapshots
+            WHERE ledger_session_id = ?
+            ORDER BY number ASC
+          SQL
+          sql += " LIMIT #{limit}" if limit
           db.query(
-            <<-SQL,
-              SELECT id, ledger_session_id, number, created_at, updated_at,
-                     title, content, exchange_count, char_count, metadata
-              FROM snapshots
-              WHERE ledger_session_id = ?
-              ORDER BY number ASC
-              LIMIT ?
-            SQL
+            sql,
             ledger_session_id,
-            limit,
           ) do |rs|
             rs.each do
               snapshots << Snapshot.from_row(rs)
@@ -232,31 +235,32 @@ module GalaxySnapshots
     end
 
     # List snapshots with review counts for the index view.
+    # `limit` is opt-in — nil returns every snapshot for the session.
     def self.list_snapshots_with_counts(
       ledger_session_id : Int64,
-      limit : Int32 = 50,
+      limit : Int32? = nil,
     ) : Array(SnapshotListItem)
       items = [] of SnapshotListItem
       return items if ledger_session_id <= 0
 
       begin
         open do |db|
+          sql = <<-SQL
+            SELECT s.id, s.ledger_session_id, s.number,
+                   s.created_at, s.title,
+                   s.exchange_count, s.char_count,
+                   COUNT(sr.id) AS review_count
+            FROM snapshots s
+            LEFT JOIN snapshot_reviews sr
+              ON s.id = sr.snapshot_id
+            WHERE s.ledger_session_id = ?
+            GROUP BY s.id
+            ORDER BY s.number ASC
+          SQL
+          sql += " LIMIT #{limit}" if limit
           db.query(
-            <<-SQL,
-              SELECT s.id, s.ledger_session_id, s.number,
-                     s.created_at, s.title,
-                     s.exchange_count, s.char_count,
-                     COUNT(sr.id) AS review_count
-              FROM snapshots s
-              LEFT JOIN snapshot_reviews sr
-                ON s.id = sr.snapshot_id
-              WHERE s.ledger_session_id = ?
-              GROUP BY s.id
-              ORDER BY s.number ASC
-              LIMIT ?
-            SQL
+            sql,
             ledger_session_id,
-            limit,
           ) do |rs|
             rs.each do
               items << SnapshotListItem.from_row(rs)
