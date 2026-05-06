@@ -150,12 +150,21 @@ class SessionManager: ObservableObject {
     /// that tab — silently no-ops, matching the prior behavior
     /// where the per-view gate would early-return.
     func activateFind() {
-        findActivationCounter &+= 1
         switch activeTab {
         case .artifacts:
             artifactsFindHandler?()
         case .snapshots:
             snapshotsFindHandler?()
+        case .terminal:
+            // The terminal-tab Cmd+F path goes through Combine in
+            // TerminalHostView for historical reasons (it's the
+            // only AppKit-side surface). Bumping the counter only
+            // when the terminal tab is actually active prevents
+            // a stale scrollback overlay from grabbing Cmd+F when
+            // the user is on Artifacts/Snapshots — which would
+            // bind the find-bar panel to the wrong WebView and
+            // make the user think highlights are broken.
+            findActivationCounter &+= 1
         default:
             break
         }

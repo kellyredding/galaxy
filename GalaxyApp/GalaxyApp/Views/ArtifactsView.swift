@@ -741,33 +741,32 @@ struct ArtifactsView: View {
                 )
             }
         }
-        .overlay(alignment: .topTrailing) {
-            findBarOverlay
-        }
         .onChange(of: webViewRef) { _, newView in
             findController.bind(to: newView)
         }
         .onChange(of: openArtifact?.number) { _, _ in
             findController.isVisible = false
         }
+        .onChange(of: findController.isVisible) { _, visible in
+            syncFindBarPanel(visible: visible)
+        }
     }
 
-    /// Find bar overlay sits at the top-right of the reader
-    /// content. Padded down to clear the header bar.
-    ///
-    /// Kept always-attached and toggled via opacity rather
-    /// than conditionally constructed (`if isVisible`) — the
-    /// conditional path forced SwiftUI to rebuild the view
-    /// tree on every open, which combined with WebKit's
-    /// first-mutation cost produced a 2–3s pause on first
-    /// Cmd+F per reader. With the bar pre-rendered, the open
-    /// is instant.
-    private var findBarOverlay: some View {
-        FindBarView(controller: findController)
-            .padding(.top, 40)
-            .padding(.trailing, 12)
-            .opacity(findController.isVisible ? 1 : 0)
-            .allowsHitTesting(findController.isVisible)
+    /// Show or hide the shared find-bar panel for this reader.
+    /// The panel is anchored to the WKWebView's top-right so it
+    /// renders in the same place to the user's eye as the prior
+    /// inline overlay. See FindBarPanel for why the bar lives
+    /// in a separate window instead of inline.
+    private func syncFindBarPanel(visible: Bool) {
+        guard visible else {
+            FindBarPanelController.shared.dismiss()
+            return
+        }
+        guard let anchor = webViewRef else { return }
+        FindBarPanelController.shared.present(
+            controller: findController,
+            anchorView: anchor
+        )
     }
 
     /// Bring up the find bar in the open artifact reader.

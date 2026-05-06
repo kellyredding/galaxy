@@ -15,7 +15,6 @@ class ScrollbackOverlayView: NSView {
     /// `activateFind()`.
     let findController: WebViewFindController
 
-    private var findHostingView: NSHostingView<FindBarView>?
     private var findVisibilityCancellable: AnyCancellable?
 
     /// AppKit-level Esc monitor. SwiftUI's
@@ -174,85 +173,31 @@ class ScrollbackOverlayView: NSView {
 
     // MARK: - Find Bar
 
-    /// Configure the Cmd+F find bar overlay. Hidden by default;
-    /// the slice-4 dispatcher will flip `findController.isVisible`
-    /// via `activateFind()`. Pinned to the top-right corner with
-    /// a small inset; the pill hides while the bar is visible.
+    /// Mirror `findController.isVisible` into the panel and the
+    /// pill: showing the find panel hides the pill so they don't
+    /// compete for the top-right corner; closing the panel
+    /// returns the pill. Also tells the page's `ScrollbackManager`
+    /// to suspend its document-level keydown handler so Esc and
+    /// arrows don't fight the find bar — without this, the JS
+    /// would handle Esc as "dismiss scrollback" instead of "close
+    /// find." Focus return to the scrollback WebView on close is
+    /// handled by `FindBarPanelController.dismiss()` via the
+    /// prior-first-responder it captured at present time.
     private func configureFindBar() {
-        let host = NSHostingView(
-            rootView: FindBarView(controller: findController)
-        )
-        host.translatesAutoresizingMaskIntoConstraints = false
-        host.isHidden = true
-        addSubview(host, positioned: .above, relativeTo: pillLabel)
-        NSLayoutConstraint.activate([
-            host.topAnchor.constraint(
-                equalTo: topAnchor, constant: 8
-            ),
-            host.trailingAnchor.constraint(
-                equalTo: trailingAnchor, constant: -8
-            ),
-        ])
-        findHostingView = host
-
-        // Mirror controller.isVisible to host visibility AND
-        // pill visibility so they don't compete for the
-        // top-right corner. Pill returns when find closes.
-        // Also tells the page's ScrollbackManager to suspend
-        // its document-level keydown handler so Esc/arrows
-        // don't fight the find bar — without this, the JS
-        // would handle Esc as "dismiss scrollback" instead
-        // of "close find."
-        //
-        // On close, return firstResponder to the scrollback
-        // WebView so the next Esc reaches the JS handleKey
-        // path (which dismisses the overlay). Without this,
-        // focus is left on the now-hidden SwiftUI text field
-        // and the next keystroke beeps because nothing in the
-        // chain accepts it.
         findVisibilityCancellable = findController.$isVisible
             .receive(on: RunLoop.main)
             .sink { [weak self] visible in
                 guard let self = self else { return }
 
-                // Responder-chain priming. AppKit's implicit
-                // resign path inside -[NSView setHidden:] does
-                // ~800ms+ of synchronous work when the FR is a
-                // descendant of the view being hidden — same
-                // bug FocusableTerminalView documents on
-                // session-switch. Doing the makeFirstResponder
-                // call ourselves takes <1ms.
-                //
-                // Closing: pre-move FR back to the WebView so
-                // the imminent isHidden=true on the host view
-                // doesn't trigger the slow auto-resign.
-                // Opening: pre-resign WebView so SwiftUI
-                // @FocusState's makeFirstResponder(textField)
-                // doesn't have to walk through WebView's
-                // resign path. Symmetric prophylactic — the
-                // open-side savings are theoretical pending
-                // instrumentation.
-                if !visible {
-                    if let host = self.findHostingView,
-                       let responder = self.window?.firstResponder
-                            as? NSView,
-                       responder.isDescendant(of: host) {
-                        self.window?.makeFirstResponder(
-                            self.scrollbackView.webView
-                        )
-                    }
+                if visible {
+                    FindBarPanelController.shared.present(
+                        controller: self.findController,
+                        anchorView: self
+                    )
                 } else {
-                    if let responder = self.window?.firstResponder
-                            as? NSView,
-                       responder === self.scrollbackView.webView
-                        || responder.isDescendant(
-                            of: self.scrollbackView.webView
-                        ) {
-                        self.window?.makeFirstResponder(nil)
-                    }
+                    FindBarPanelController.shared.dismiss()
                 }
 
-                self.findHostingView?.isHidden = !visible
                 self.pillLabel.isHidden = visible
                 self.scrollbackView.webView.evaluateJavaScript(
                     "if (typeof ScrollbackManager !== "

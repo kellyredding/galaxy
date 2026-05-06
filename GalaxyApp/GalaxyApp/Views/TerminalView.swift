@@ -900,12 +900,16 @@ class TerminalHostView: NSView {
     /// gates as enterScrollbackFromMenu so only the focused
     /// pane in the active session responds.
     private func activateFindOnScrollback() {
+        // Gate the existing-overlay early-return on isActive too.
+        // Otherwise a scrollback overlay alive in a non-active
+        // session pane (or this pane while a different tab is
+        // showing) eagerly grabs Cmd+F and binds the find-bar
+        // panel to the wrong controller.
+        guard isActive else { return }
         if let overlay = scrollbackOverlay {
             overlay.activateFind()
             return
         }
-
-        guard isActive else { return }
         guard window?.firstResponder === pane.view else { return }
 
         let scrollPosition = pane.viewportRow

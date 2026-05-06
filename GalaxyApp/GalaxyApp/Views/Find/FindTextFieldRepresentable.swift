@@ -4,30 +4,28 @@ import SwiftUI
 /// Bridges an `NSTextField` into SwiftUI for the find bar.
 ///
 /// **Why an AppKit text field, not SwiftUI's `TextField`?**
-/// SwiftUI's TextField bridges through `_SystemTextFieldFieldEditor`,
-/// a private subclass of NSTextView that lazily initializes a heavy
-/// stack of macOS subsystems on first focus per instance —
-/// TextKit, NSSpellChecker dictionaries, NSTextInputContext, Touch
-/// Bar candidate-list, system text replacements, etc. Measured
-/// ~3 seconds of blocked main thread on first Cmd+F per artifact
-/// reader / scrollback overlay.
+/// SwiftUI's TextField bridges through a private subclass of
+/// NSTextView that lazily initializes a heavy stack of macOS
+/// subsystems on first focus per instance — TextKit, IME context,
+/// Touch Bar candidate-list, system text replacements, etc.
+/// `NSTextField` uses the cheaper shared NSTextView field editor
+/// on NSWindow, which we additionally pre-warm at app launch via
+/// `TextInputWarmup`.
 ///
-/// `NSTextField` uses a much cheaper code path (the shared NSTextView
-/// field editor on NSWindow) which we additionally pre-warm at app
-/// launch via `TextInputWarmup`. Empirically that brings first-time
-/// focus from ~3000ms down to <50ms.
+/// **Focus management is intentionally not handled here.** The
+/// owning panel controller (`FindBarPanelController`) calls
+/// `makeFirstResponder` directly when the panel is presented and
+/// dismissed. Routing focus through a SwiftUI `@Binding` here is
+/// what produced "loses focus while typing": each keystroke
+/// triggered a body recompute, the binding briefly read stale
+/// (false) values, and `updateNSView` dispatched
+/// `makeFirstResponder(nil)` async, killing focus. Removing the
+/// binding eliminates the race.
 ///
-/// The bridge is intentionally narrow — single-line plain text, two
-/// keyboard shortcuts (Enter / Shift+Enter), and Esc-to-cancel.
+/// The bridge is intentionally narrow — single-line plain text,
+/// two keyboard shortcuts (Enter / Shift+Enter), and Esc-to-cancel.
 struct FindTextFieldRepresentable: NSViewRepresentable {
     @Binding var text: String
-
-    /// Two-way focus binding. Set true to request focus; reads
-    /// false when the field has resigned. The coordinator
-    /// reflects user-driven focus changes back through this
-    /// binding, so the parent view can keep its own state in
-    /// sync without polling AppKit.
-    @Binding var focused: Bool
 
     let placeholder: String
     let font: NSFont
@@ -78,34 +76,12 @@ struct FindTextFieldRepresentable: NSViewRepresentable {
             tf.stringValue = text
         }
 
-        // Drive AppKit firstResponder from the SwiftUI binding.
-        // Dispatched async so any in-flight SwiftUI render
-        // completes before we mutate the responder chain.
-        let wantsFocus = focused
-        let isCurrentlyFocused = tf.window?.firstResponder === tf
-            || (tf.currentEditor() != nil
-                && tf.window?.firstResponder
-                    === tf.currentEditor())
-
-        if wantsFocus && !isCurrentlyFocused {
-            DispatchQueue.main.async { [weak tf] in
-                guard let tf = tf, let window = tf.window
-                else { return }
-                _ = window.makeFirstResponder(tf)
-            }
-        } else if !wantsFocus && isCurrentlyFocused {
-            DispatchQueue.main.async { [weak tf] in
-                guard let tf = tf, let window = tf.window
-                else { return }
-                _ = window.makeFirstResponder(nil)
-            }
-        }
+        // No focus mutation here. See type doc-comment.
     }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
             text: $text,
-            focused: $focused,
             onSubmit: onSubmit,
             onShiftSubmit: onShiftSubmit,
             onCancel: onCancel
@@ -114,20 +90,17 @@ struct FindTextFieldRepresentable: NSViewRepresentable {
 
     final class Coordinator: NSObject, NSTextFieldDelegate {
         @Binding var text: String
-        @Binding var focused: Bool
         var onSubmit: () -> Void
         var onShiftSubmit: () -> Void
         var onCancel: () -> Void
 
         init(
             text: Binding<String>,
-            focused: Binding<Bool>,
             onSubmit: @escaping () -> Void,
             onShiftSubmit: @escaping () -> Void,
             onCancel: @escaping () -> Void
         ) {
             self._text = text
-            self._focused = focused
             self.onSubmit = onSubmit
             self.onShiftSubmit = onShiftSubmit
             self.onCancel = onCancel
@@ -141,21 +114,6 @@ struct FindTextFieldRepresentable: NSViewRepresentable {
             // is allowed (we're already on main); SwiftUI will
             // schedule the dependent updates on its own cycle.
             text = tf.stringValue
-        }
-
-        func controlTextDidBeginEditing(_ obj: Notification) {
-            // Reflect AppKit-driven focus back into the binding
-            // so the parent view's focus state stays consistent
-            // when the user clicks the field directly.
-            DispatchQueue.main.async { [weak self] in
-                self?.focused = true
-            }
-        }
-
-        func controlTextDidEndEditing(_ obj: Notification) {
-            DispatchQueue.main.async { [weak self] in
-                self?.focused = false
-            }
         }
 
         func control(

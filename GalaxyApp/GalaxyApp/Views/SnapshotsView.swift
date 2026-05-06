@@ -489,27 +489,30 @@ struct SnapshotsView: View {
                 baseUrlName: "snapshot-reader"
             )
         }
-        .overlay(alignment: .topTrailing) {
-            findBarOverlay
-        }
         .onChange(of: webViewRef) { _, newView in
             findController.bind(to: newView)
         }
         .onChange(of: openSnapshot?.number) { _, _ in
             findController.isVisible = false
         }
+        .onChange(of: findController.isVisible) { _, visible in
+            syncFindBarPanel(visible: visible)
+        }
     }
 
-    /// Find bar overlay sits at the top-right of the reader
-    /// content. Padded down to clear the header bar.
-    /// Always-attached + opacity-toggled — see ArtifactsView
-    /// for rationale.
-    private var findBarOverlay: some View {
-        FindBarView(controller: findController)
-            .padding(.top, 40)
-            .padding(.trailing, 12)
-            .opacity(findController.isVisible ? 1 : 0)
-            .allowsHitTesting(findController.isVisible)
+    /// Show or hide the shared find-bar panel for this reader.
+    /// Anchored to the WKWebView's top-right; see FindBarPanel
+    /// for why the bar lives in a separate window.
+    private func syncFindBarPanel(visible: Bool) {
+        guard visible else {
+            FindBarPanelController.shared.dismiss()
+            return
+        }
+        guard let anchor = webViewRef else { return }
+        FindBarPanelController.shared.present(
+            controller: findController,
+            anchorView: anchor
+        )
     }
 
     /// Bring up the find bar in the open snapshot reader.

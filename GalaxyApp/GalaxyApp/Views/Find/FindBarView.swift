@@ -10,13 +10,13 @@ import SwiftUI
 /// when to flip that flag (typically a Cmd+F dispatcher).
 ///
 /// Uses an AppKit-backed `FindTextFieldRepresentable` instead of
-/// SwiftUI's `TextField` to avoid the ~3-second cold-init cost
-/// SwiftUI's text field pays the first time it gets focus. See
-/// the doc-comment on `FindTextFieldRepresentable` for the
-/// detailed rationale.
+/// SwiftUI's `TextField` to avoid the latter's heavier cold-init
+/// cost. The bar itself is hosted in a separate `NSPanel` (see
+/// `FindBarPanel`) so AppKit's password-autofill heuristic walks
+/// the panel's tiny view tree on first-responder transitions
+/// instead of the parent window's full SwiftUI hierarchy.
 struct FindBarView: View {
     @ObservedObject var controller: WebViewFindController
-    @State private var fieldFocused: Bool = false
     @Environment(\.chromeFontSize) private var chromeFontSize
 
     private var fontSize: ChromeFontSize {
@@ -31,7 +31,6 @@ struct FindBarView: View {
 
             FindTextFieldRepresentable(
                 text: $controller.query,
-                focused: $fieldFocused,
                 placeholder: "Find",
                 font: NSFont.monospacedSystemFont(
                     ofSize: fontSize.caption,
@@ -95,21 +94,6 @@ struct FindBarView: View {
                 .fill(Color(NSColor.controlBackgroundColor))
                 .shadow(radius: 4, y: 2)
         )
-        // The bar is kept always-attached in reader views
-        // (opacity-toggled), so onAppear fires when the reader
-        // opens — not when find opens. Gate by visibility so
-        // we don't steal focus from the reader's own initial
-        // first responder.
-        .onAppear {
-            if controller.isVisible { fieldFocused = true }
-        }
-        .onChange(of: controller.isVisible) { _, visible in
-            // Mirror visibility into the focus binding both
-            // directions: opening claims focus, closing yields
-            // it. The representable handles the
-            // makeFirstResponder dispatch off the binding.
-            fieldFocused = visible
-        }
     }
 
     private var matchLabel: String {

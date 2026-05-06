@@ -16,6 +16,7 @@
 		1613D6F4896F7B93513565A8 /* TimelineModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 676FCB50E852F5CD6E0E58B9 /* TimelineModels.swift */; };
 		18007C05516C1A0A5F916234 /* FindBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C8F6C1B8D1FA7F81ECA801D /* FindBarView.swift */; };
 		18B3FD10CEE9BF58CA495504 /* StatuslineConfigService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 725F45E345F6FC24D63A50F7 /* StatuslineConfigService.swift */; };
+		18ED9CF993E18D37DFF86A67 /* FindBarPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FD92154D0F0B3B8F8E00E90 /* FindBarPanel.swift */; };
 		1F1D225FC7871834B03189C0 /* SwiftTermBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51B8E1BFB0B4DFDEFE7B0043 /* SwiftTermBackend.swift */; };
 		21BC314DAABC67786341621F /* ExpandedSessionSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B33E9ACBBBDE22688F8D808 /* ExpandedSessionSidebar.swift */; };
 		287B04EB0B71772D4E0594CD /* SessionIDGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA542FF52DF4733279284AB3 /* SessionIDGenerator.swift */; };
@@ -189,6 +190,7 @@
 		5B94034611483F6B08D6C02B /* PersonaPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonaPicker.swift; sourceTree = "<group>"; };
 		5DEDF4AC4FD8C8D3201846CB /* ViewedFilesPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewedFilesPersistence.swift; sourceTree = "<group>"; };
 		5FA0451CBAF29669536F429E /* TimelineLayoutEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineLayoutEngine.swift; sourceTree = "<group>"; };
+		5FD92154D0F0B3B8F8E00E90 /* FindBarPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FindBarPanel.swift; sourceTree = "<group>"; };
 		5FFC389A3E4E6768A33D8345 /* SidebarItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarItem.swift; sourceTree = "<group>"; };
 		61AA98185E94AAFC4DA8F145 /* ScrollbackSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollbackSnapshot.swift; sourceTree = "<group>"; };
 		61F41A6FFADC96743100251A /* NavigationEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationEntry.swift; sourceTree = "<group>"; };
@@ -350,6 +352,7 @@
 		7F6E96BCBC8BECCD912E4270 /* Find */ = {
 			isa = PBXGroup;
 			children = (
+				5FD92154D0F0B3B8F8E00E90 /* FindBarPanel.swift */,
 				9C8F6C1B8D1FA7F81ECA801D /* FindBarView.swift */,
 				63C26023EEF1D1835185E7F4 /* FindTextFieldRepresentable.swift */,
 				412B0F6729BA76B88D7E8F20 /* GalaxyFindJS.swift */,
@@ -598,6 +601,7 @@
 				D1752B86BB1A44AFB5E75F00 /* EventDebouncer.swift in Sources */,
 				82B876DF7C1A77E1A811C62A /* EventEnvelope.swift in Sources */,
 				21BC314DAABC67786341621F /* ExpandedSessionSidebar.swift in Sources */,
+				18ED9CF993E18D37DFF86A67 /* FindBarPanel.swift in Sources */,
 				18007C05516C1A0A5F916234 /* FindBarView.swift in Sources */,
 				55A439B969B9BF7007A48539 /* FindTextFieldRepresentable.swift in Sources */,
 				95B87341788CFD115DCAC557 /* GalaxyApp.swift in Sources */,

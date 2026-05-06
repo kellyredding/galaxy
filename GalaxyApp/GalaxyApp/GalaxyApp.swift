@@ -27,13 +27,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // grammar, link/data detection) on every NSTextView field editor
         // in the app. Each of those features triggers a synchronous
         // XPC roundtrip into a system service the first time a field
-        // editor with the feature enabled gets focus — measured at
-        // ~2.8s of nested-runloop main-thread blocking on first Cmd+F
-        // (see runloop instrumentation in FindInstrumentation.swift).
-        // Galaxy is terminal-first; none of these features are useful
-        // anywhere we accept text input (find bar, session rename,
-        // marker name, new-session sheet, settings fields), so we kill
-        // them globally for our app. The two-step write below covers
+        // editor with the feature enabled gets focus, and Galaxy is
+        // terminal-first — none of these features are useful anywhere
+        // we accept text input (find bar, session rename, marker name,
+        // new-session sheet, settings fields), so we kill them globally
+        // for our app. The two-step write below covers
         // the priority chain: `register` lays down a fallback for any
         // key the user hasn't customized, and `set(forKey:)` writes to
         // our app's domain so it overrides any value the user has
