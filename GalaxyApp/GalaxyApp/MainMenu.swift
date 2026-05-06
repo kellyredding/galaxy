@@ -18,6 +18,7 @@ class MainMenu: NSObject, NSMenuDelegate {
     private var sessionsMenu: NSMenu?
     private var viewMenu: NSMenu?
     private var fileMenu: NSMenu?
+    private var editMenu: NSMenu?
 
     init(sessionManager: SessionManager = .shared, settingsManager: SettingsManager = .shared) {
         self.sessionManager = sessionManager
@@ -72,11 +73,15 @@ class MainMenu: NSObject, NSMenuDelegate {
         self.fileMenu = fileMenu
         buildFileMenu(fileMenu)
 
-        // Edit menu (standard)
+        // Edit menu — use delegate to rebuild just before
+        // display so the Find item's enabled state reflects
+        // the current active tab + reader sub-state.
         let editMenu = NSMenu(title: "Edit")
+        editMenu.delegate = self
         let editMenuItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
         editMenuItem.submenu = editMenu
         mainMenu.addItem(editMenuItem)
+        self.editMenu = editMenu
         buildEditMenu(editMenu)
 
         // Sessions menu - use delegate to rebuild just before display
@@ -266,6 +271,8 @@ class MainMenu: NSObject, NSMenuDelegate {
     // MARK: - Edit Menu
 
     private func buildEditMenu(_ menu: NSMenu) {
+        menu.removeAllItems()
+
         menu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
         menu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
         menu.addItem(.separator())
@@ -273,6 +280,41 @@ class MainMenu: NSObject, NSMenuDelegate {
         menu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         menu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         menu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+
+        menu.addItem(.separator())
+
+        // Find (⌘F) — enabled when the active tab can host a
+        // find bar (terminal with a session, or a snapshot/
+        // artifact reader open). The action increments
+        // SessionManager.findActivationCounter; surface-side
+        // observers do the actual work based on their own
+        // gates.
+        let findItem = NSMenuItem(
+            title: "Find…",
+            action: #selector(MenuActions.find(_:)),
+            keyEquivalent: "f"
+        )
+        findItem.target = MenuActions.shared
+        findItem.isEnabled = canActivateFind
+        menu.addItem(findItem)
+    }
+
+    /// Whether the active tab + sub-state can host a find
+    /// session. Used to gate the Edit ▸ Find menu item.
+    /// Per-surface activation handlers double-check their
+    /// own state when the counter ticks, so this is purely
+    /// for the visible menu state.
+    private var canActivateFind: Bool {
+        switch sessionManager.activeTab {
+        case .terminal:
+            return sessionManager.activeSession != nil
+        case .artifacts:
+            return sessionManager.isArtifactReaderOpen
+        case .snapshots:
+            return sessionManager.isSnapshotReaderOpen
+        case .agents, .ledger, .timeline:
+            return false
+        }
     }
 
     // MARK: - Sessions Menu
@@ -680,6 +722,8 @@ class MainMenu: NSObject, NSMenuDelegate {
             buildSessionsMenu(menu)
         } else if menu === viewMenu {
             buildViewMenu(menu)
+        } else if menu === editMenu {
+            buildEditMenu(menu)
         }
     }
 }
@@ -904,6 +948,16 @@ class MenuActions: NSObject {
 
     @objc func showPreferences(_ sender: Any?) {
         NotificationCenter.default.post(name: .showPreferences, object: nil)
+    }
+
+    // MARK: - Edit Menu Actions
+
+    /// Bumps SessionManager's find-activation counter; the
+    /// active surface (terminal host, artifact reader frame,
+    /// snapshot reader frame) observes the bump and brings up
+    /// its find bar based on its own gates.
+    @objc func find(_ sender: Any?) {
+        SessionManager.shared.activateFind()
     }
 
 }

@@ -121,6 +121,46 @@ class SessionManager: ObservableObject {
     /// Whether the artifact reader is open (used by views that need to know).
     @Published var isArtifactReaderOpen: Bool = false
 
+    /// Cmd+F activation counter. Incremented by `activateFind()`
+    /// when MainMenu fires the Find menu item. The Combine path
+    /// in `TerminalHostView` observes this via `$findActivationCounter`
+    /// — that host is per-active-pane (only one instance exists
+    /// in the view tree at a time), so broadcast is fine there.
+    /// SwiftUI surfaces (artifact reader, snapshot reader) used
+    /// to observe the same counter via `.onChange`, but those
+    /// views are instantiated per-session — with N sessions, one
+    /// Cmd+F fanned out to 2×N observed events, of which all but
+    /// one were discarded by surface-side gates. Those surfaces
+    /// now register a slot on `SessionManager` and `activateFind()`
+    /// dispatches directly via the slot matching `activeTab`.
+    @Published var findActivationCounter: Int = 0
+
+    /// Activation slots populated by the active SwiftUI surface
+    /// in its appear/onChange handlers. `activateFind()` calls
+    /// the slot whose tab matches `activeTab`. Slots are plain
+    /// (non-`@Published`) properties — they're pure dispatch
+    /// targets, not state observed by views.
+    var artifactsFindHandler: (() -> Void)?
+    var snapshotsFindHandler: (() -> Void)?
+
+    /// Fire the Cmd+F dispatcher. Bumps the Combine counter for
+    /// the terminal scrollback path (single subscriber, no
+    /// fan-out concern) and routes directly to the active SwiftUI
+    /// surface's slot. Slots may be nil if no reader is open on
+    /// that tab — silently no-ops, matching the prior behavior
+    /// where the per-view gate would early-return.
+    func activateFind() {
+        findActivationCounter &+= 1
+        switch activeTab {
+        case .artifacts:
+            artifactsFindHandler?()
+        case .snapshots:
+            snapshotsFindHandler?()
+        default:
+            break
+        }
+    }
+
     /// Artifact number to auto-open/show when switching to artifacts tab.
     /// Set by EventCoordinator on artifact.show, cleared by ArtifactsView after opening.
     @Published var pendingArtifactShow: Int32? = nil

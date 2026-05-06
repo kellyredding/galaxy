@@ -129,6 +129,7 @@ struct ArtifactsView: View {
         .onChange(of: openArtifact != nil) {
             syncReaderOpenState()
             updateEscapeMonitor()
+            syncFindHandler()
 
             if openArtifact == nil,
                session.id
@@ -143,6 +144,7 @@ struct ArtifactsView: View {
             syncReaderOpenState()
             updateEscapeMonitor()
             restoreWebViewFocus()
+            syncFindHandler()
 
             if session.id
                 != sessionManager.activeSessionId
@@ -163,6 +165,7 @@ struct ArtifactsView: View {
             syncReaderOpenState()
             updateEscapeMonitor()
             restoreWebViewFocus()
+            syncFindHandler()
 
             if sessionManager.activeTab == .artifacts,
                session.id
@@ -181,6 +184,7 @@ struct ArtifactsView: View {
         }
         .onAppear {
             fetchArtifactList()
+            syncFindHandler()
         }
         .onChange(of: sessionManager.listNavAction) {
             guard session.id
@@ -749,16 +753,21 @@ struct ArtifactsView: View {
     }
 
     /// Find bar overlay sits at the top-right of the reader
-    /// content. Padded down to clear the header bar; no-op
-    /// (transparent + non-hit-testing) when hidden.
-    @ViewBuilder
+    /// content. Padded down to clear the header bar.
+    ///
+    /// Kept always-attached and toggled via opacity rather
+    /// than conditionally constructed (`if isVisible`) — the
+    /// conditional path forced SwiftUI to rebuild the view
+    /// tree on every open, which combined with WebKit's
+    /// first-mutation cost produced a 2–3s pause on first
+    /// Cmd+F per reader. With the bar pre-rendered, the open
+    /// is instant.
     private var findBarOverlay: some View {
-        if findController.isVisible {
-            FindBarView(controller: findController)
-                .padding(.top, 40)
-                .padding(.trailing, 12)
-                .transition(.move(edge: .top))
-        }
+        FindBarView(controller: findController)
+            .padding(.top, 40)
+            .padding(.trailing, 12)
+            .opacity(findController.isVisible ? 1 : 0)
+            .allowsHitTesting(findController.isVisible)
     }
 
     /// Bring up the find bar in the open artifact reader.
@@ -767,10 +776,32 @@ struct ArtifactsView: View {
     /// no-op on them.
     func activateFind() {
         guard let artifact = openArtifact else { return }
-        if isImageExtension(artifact.originalFilename) {
-            return
-        }
+        if isImageExtension(artifact.originalFilename) { return }
         findController.isVisible = true
+    }
+
+    /// Register this view as `SessionManager.artifactsFindHandler`
+    /// when it's the active surface (active session + artifacts
+    /// tab). Re-registered from each onChange that affects either
+    /// gate, plus onAppear for initial mount. The closure captures
+    /// the stable `findController` (`@StateObject`) and the live
+    /// `openArtifact` snapshot via `self`-of-this-view-instance —
+    /// SwiftUI Views are structs, but @State and @StateObject
+    /// internally hold class-backed storage that survives struct
+    /// copies, so reads inside the closure see current values.
+    /// We do not clear the slot when this view is no longer
+    /// active: the next active surface (a different session's
+    /// view, or another tab's handler) overwrites it. Stale
+    /// closures referencing dead state are harmless because
+    /// `activateFind()` switches on `activeTab` before
+    /// dispatching.
+    private func syncFindHandler() {
+        guard sessionManager.activeSessionId == session.id,
+              sessionManager.activeTab == .artifacts
+        else { return }
+        sessionManager.artifactsFindHandler = {
+            activateFind()
+        }
     }
 
     // MARK: - Stale Annotations
@@ -2779,6 +2810,15 @@ struct ArtifactsView: View {
                             == .artifacts
                     else {
                         return event
+                    }
+
+                    // Two-stage Esc: while find is open, the
+                    // first Esc closes find; subsequent Esc
+                    // falls through to the annotation/reader
+                    // close path below.
+                    if findController.isVisible {
+                        findController.isVisible = false
+                        return nil
                     }
 
                     webViewRef?.evaluateJavaScript(

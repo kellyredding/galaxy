@@ -288,6 +288,24 @@ enum SwiftTermScrollbackRenderer {
         totalLines: 0,
         container: null,
 
+        // While the Cmd+F find bar is visible, the chrome flips
+        // this true via suspendInput() so handleKey ignores
+        // arrow / page / Esc keys (otherwise Esc would dismiss
+        // the whole overlay instead of just closing find, and
+        // arrow keys would scroll the buffer underneath while
+        // the user is typing in the find field).
+        inputSuspended: false,
+
+        suspendInput(flag) {
+            this.inputSuspended = !!flag;
+            const cls = 'galaxy-find-active';
+            if (this.inputSuspended) {
+                document.body.classList.add(cls);
+            } else {
+                document.body.classList.remove(cls);
+            }
+        },
+
         initialize() {
             // Use the document scrolling element (document-level scroll)
             // so WKWebView's native scroll indicator is visible.
@@ -320,6 +338,10 @@ enum SwiftTermScrollbackRenderer {
         },
 
         handleKey(e) {
+            // Suspended while the Cmd+F find bar is open; the
+            // bar owns Esc/arrow keys for that duration.
+            if (this.inputSuspended) return;
+
             // Let textareas handle their own arrow/cursor keys
             if (e.target.tagName === 'TEXTAREA') return;
 

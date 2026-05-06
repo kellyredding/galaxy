@@ -104,6 +104,7 @@ struct SnapshotsView: View {
         .onChange(of: openSnapshot != nil) {
             syncReaderOpenState()
             updateEscapeMonitor()
+            syncFindHandler()
 
             // Re-fetch index after reader closes if data was nilled
             // during a session switch while the reader was open.
@@ -118,6 +119,7 @@ struct SnapshotsView: View {
             syncReaderOpenState()
             updateEscapeMonitor()
             restoreWebViewFocus()
+            syncFindHandler()
 
             // Nil index data for inactive sessions — always safe
             // since the reader replaces the index view entirely,
@@ -137,6 +139,7 @@ struct SnapshotsView: View {
             syncReaderOpenState()
             updateEscapeMonitor()
             restoreWebViewFocus()
+            syncFindHandler()
             // Refresh snapshot list when returning to snapshots tab
             if sessionManager.activeTab == .snapshots,
                session.id == sessionManager.activeSessionId,
@@ -158,6 +161,7 @@ struct SnapshotsView: View {
             } else {
                 fetchSnapshotList()
             }
+            syncFindHandler()
         }
         .onChange(of: sessionManager.pendingSnapshotNumber) {
             guard session.id == sessionManager.activeSessionId else { return }
@@ -497,16 +501,15 @@ struct SnapshotsView: View {
     }
 
     /// Find bar overlay sits at the top-right of the reader
-    /// content. Padded down to clear the header bar; no-op
-    /// (transparent + non-hit-testing) when hidden.
-    @ViewBuilder
+    /// content. Padded down to clear the header bar.
+    /// Always-attached + opacity-toggled — see ArtifactsView
+    /// for rationale.
     private var findBarOverlay: some View {
-        if findController.isVisible {
-            FindBarView(controller: findController)
-                .padding(.top, 40)
-                .padding(.trailing, 12)
-                .transition(.move(edge: .top))
-        }
+        FindBarView(controller: findController)
+            .padding(.top, 40)
+            .padding(.trailing, 12)
+            .opacity(findController.isVisible ? 1 : 0)
+            .allowsHitTesting(findController.isVisible)
     }
 
     /// Bring up the find bar in the open snapshot reader.
@@ -514,6 +517,22 @@ struct SnapshotsView: View {
     func activateFind() {
         guard openSnapshot != nil else { return }
         findController.isVisible = true
+    }
+
+    /// Register this view as `SessionManager.snapshotsFindHandler`
+    /// when it's the active surface (active session + snapshots
+    /// tab). Re-registered from each onChange that affects either
+    /// gate, plus onAppear for initial mount. See the matching
+    /// note in `ArtifactsView.syncFindHandler` for the rationale
+    /// — same per-instance fan-out fix; only the active surface's
+    /// closure ends up in the slot.
+    private func syncFindHandler() {
+        guard sessionManager.activeSessionId == session.id,
+              sessionManager.activeTab == .snapshots
+        else { return }
+        sessionManager.snapshotsFindHandler = {
+            activateFind()
+        }
     }
 
     // MARK: - Data Lifecycle
@@ -756,6 +775,15 @@ struct SnapshotsView: View {
                 guard session.id == sessionManager.activeSessionId,
                       sessionManager.activeTab == .snapshots else {
                     return event
+                }
+
+                // Two-stage Esc: while find is open, the
+                // first Esc closes find; subsequent Esc
+                // falls through to the annotation/reader
+                // close path below.
+                if findController.isVisible {
+                    findController.isVisible = false
+                    return nil
                 }
 
                 // Query JS for current annotation context

@@ -15,14 +15,24 @@ import WebKit
 /// default forward mode.
 @MainActor
 final class WebViewFindController: NSObject, ObservableObject {
-    @Published var query: String = "" {
-        didSet { applyQuery() }
-    }
+    /// Live text in the find field. The Combine pipeline below
+    /// debounces this and forwards into the page's GalaxyFind
+    /// module; do NOT call `applyQuery()` directly from a
+    /// `didSet` here — every keystroke would rerun the full DOM
+    /// walk and the WebView would feel like it's beach-balling.
+    @Published var query: String = ""
     @Published private(set) var matchCount: Int = 0
     @Published private(set) var matchIndex: Int = -1
     @Published var isVisible: Bool = false {
         didSet {
-            if !isVisible { closeFind() }
+            if isVisible {
+                // Reopening with a non-empty query already typed:
+                // re-apply immediately rather than waiting for the
+                // debounce, which only fires on value changes.
+                applyQuery()
+            } else {
+                closeFind()
+            }
         }
     }
 
@@ -32,12 +42,32 @@ final class WebViewFindController: NSObject, ObservableObject {
     let reverse: Bool
 
     private weak var webView: WKWebView?
+    private var queryCancellable: AnyCancellable?
+
+    /// Debounce window before a query change fires another
+    /// full DOM walk. 250ms is the smallest value where typing
+    /// "function" doesn't queue 8 redundant searches; pushing
+    /// higher (500+) makes the bar feel laggy.
+    private static let queryDebounce = 0.25
 
     init(webView: WKWebView?, reverse: Bool = false) {
         self.webView = webView
         self.reverse = reverse
         super.init()
         attachMessageHandler()
+        attachQueryPipeline()
+    }
+
+    private func attachQueryPipeline() {
+        queryCancellable = $query
+            .debounce(
+                for: .seconds(Self.queryDebounce),
+                scheduler: DispatchQueue.main
+            )
+            .removeDuplicates()
+            .sink { [weak self] _ in
+                self?.applyQuery()
+            }
     }
 
     /// Re-bind the controller to a different WKWebView (e.g.,
@@ -85,7 +115,8 @@ final class WebViewFindController: NSObject, ObservableObject {
     }
 
     fileprivate func handle(_ body: [String: Any]) {
-        guard body["event"] as? String == "matches" else { return }
+        let event = body["event"] as? String ?? ""
+        guard event == "matches" else { return }
         matchCount = body["count"] as? Int ?? 0
         matchIndex = body["index"] as? Int ?? -1
     }

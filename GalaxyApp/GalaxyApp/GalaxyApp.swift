@@ -21,9 +21,45 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // lowest-priority domain (no on-disk persistence), and Will-finish
         // is early enough to run before any window or text input context
         // initializes.
-        UserDefaults.standard.register(defaults: [
+        //
+        // The text-input keys below disable AppKit's auto-features
+        // (spell-check, autocorrect, smart quotes/dashes, capitalization,
+        // grammar, link/data detection) on every NSTextView field editor
+        // in the app. Each of those features triggers a synchronous
+        // XPC roundtrip into a system service the first time a field
+        // editor with the feature enabled gets focus — measured at
+        // ~2.8s of nested-runloop main-thread blocking on first Cmd+F
+        // (see runloop instrumentation in FindInstrumentation.swift).
+        // Galaxy is terminal-first; none of these features are useful
+        // anywhere we accept text input (find bar, session rename,
+        // marker name, new-session sheet, settings fields), so we kill
+        // them globally for our app. The two-step write below covers
+        // the priority chain: `register` lays down a fallback for any
+        // key the user hasn't customized, and `set(forKey:)` writes to
+        // our app's domain so it overrides any value the user has
+        // previously set in NSGlobalDomain via System Settings →
+        // Keyboard. Defaults persist in
+        // ~/Library/Preferences/com.kellyredding.GalaxyApp.plist; if
+        // we ever revert, `defaults delete com.kellyredding.GalaxyApp
+        // <key>` cleans them up.
+        let textInputDefaults: [String: Any] = [
             "ApplePressAndHoldEnabled": false,
-        ])
+            "NSAutomaticSpellingCorrectionEnabled": false,
+            "NSAutomaticTextReplacementEnabled": false,
+            "NSAutomaticQuoteSubstitutionEnabled": false,
+            "NSAutomaticDashSubstitutionEnabled": false,
+            "NSAutomaticPeriodSubstitutionEnabled": false,
+            "NSAutomaticCapitalizationEnabled": false,
+            "NSContinuousSpellCheckingEnabled": false,
+            "NSGrammarCheckingEnabled": false,
+            "NSAutomaticLinkDetectionEnabled": false,
+            "NSAutomaticDataDetectionEnabled": false,
+        ]
+        UserDefaults.standard.register(defaults: textInputDefaults)
+        for (key, value) in textInputDefaults
+        where key != "ApplePressAndHoldEnabled" {
+            UserDefaults.standard.set(value, forKey: key)
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -56,6 +92,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         mainWindowController = MainWindowController()
         mainWindowController?.showWindow(nil)
         mainWindowController?.window?.makeKeyAndOrderFront(nil)
+
+        // Pre-warm AppKit's lazy text-input infrastructure
+        // (TextKit, NSSpellChecker, NSTextInputContext, Touch
+        // Bar / IME bundles) at launch so the cold-start cost
+        // is paid alongside the rest of app boot rather than
+        // surfacing as a stall on the user's first Cmd+F or
+        // session-rename. Deferred to the next runloop tick so
+        // the window paints first.
+        if let window = mainWindowController?.window {
+            TextInputWarmup.run(in: window)
+        }
 
         // Observe preferences notification
         NotificationCenter.default.addObserver(

@@ -203,6 +203,15 @@ class TerminalHostView: NSView {
     /// True when the scrollback overlay is visible.
     var isScrollbackActive: Bool { scrollbackOverlay != nil }
 
+    /// One-shot flag: when scrollback is opened by Cmd+F, the
+    /// dispatcher sets this true right before createScrollback,
+    /// and the existing onReady callback consumes it to bring up
+    /// the find bar after the overlay has finished painting.
+    /// Cleared in dismissScrollback as a belt-and-suspenders
+    /// guard against the flag persisting if scrollback creation
+    /// fails internally.
+    private var pendingFindActivation: Bool = false
+
     /// Cooldown flag — when true, scroll-wheel-up is ignored to prevent
     /// trackpad momentum from immediately re-creating the scrollback view.
     private var scrollbackCooldown = false
@@ -530,6 +539,18 @@ class TerminalHostView: NSView {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.enterScrollbackFromMenu()
+            }
+            .store(in: &cancellables)
+
+        // Observe Cmd+F find activation. If scrollback is already
+        // open in this host, focus its find bar; otherwise open
+        // scrollback at the current viewport and queue the find
+        // bar to appear once the WebView signals ready.
+        SessionManager.shared.$findActivationCounter
+            .receive(on: DispatchQueue.main)
+            .dropFirst()  // ignore initial value
+            .sink { [weak self] _ in
+                self?.activateFindOnScrollback()
             }
             .store(in: &cancellables)
 
@@ -872,6 +893,28 @@ class TerminalHostView: NSView {
         createScrollback(initialScrollLine: scrollPosition)
     }
 
+    /// Cmd+F entry point. Routes to the existing overlay's find
+    /// bar if the overlay is already open; otherwise opens a
+    /// fresh overlay at the current viewport and queues find
+    /// activation for after onReady fires. Same focus/active
+    /// gates as enterScrollbackFromMenu so only the focused
+    /// pane in the active session responds.
+    private func activateFindOnScrollback() {
+        if let overlay = scrollbackOverlay {
+            overlay.activateFind()
+            return
+        }
+
+        guard isActive else { return }
+        guard window?.firstResponder === pane.view else { return }
+
+        let scrollPosition = pane.viewportRow
+        pane.clearSelection()
+
+        pendingFindActivation = true
+        createScrollback(initialScrollLine: scrollPosition)
+    }
+
     /// Create the scrollback overlay with an HTML rendering of the live terminal's buffer.
     private func createScrollback(initialScrollLine: Int? = nil) {
         // The pane produces an opaque `ScrollbackSnapshot` —
@@ -936,6 +979,16 @@ class TerminalHostView: NSView {
             // automatically — but the overlay just spawned
             // and needs its starting tint set.
             self.refreshFocusState()
+
+            // If scrollback was opened by Cmd+F, bring up the
+            // find bar now that the overlay has finished
+            // painting. Single-shot — flag is cleared so a
+            // subsequent overlay open via menu/scroll-wheel
+            // doesn't spuriously activate find.
+            if self.pendingFindActivation {
+                self.pendingFindActivation = false
+                self.scrollbackOverlay?.activateFind()
+            }
         }
         webView.onConfirmDismiss = { [weak self] in
             self?.showDismissConfirmation()
@@ -1081,6 +1134,11 @@ class TerminalHostView: NSView {
     private func performScrollbackTeardown(
         reason: ScrollbackExitReason
     ) {
+        // Belt-and-suspenders: never let a stale
+        // pendingFindActivation flag leak past the lifetime
+        // of the overlay it was set for.
+        pendingFindActivation = false
+
         guard let overlay = scrollbackOverlay else { return }
 
         // Fire scrollback:exited timeline event before teardown

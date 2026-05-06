@@ -41,6 +41,7 @@
 		4C2CEC47290415299CCF27BB /* SidebarItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FFC389A3E4E6768A33D8345 /* SidebarItem.swift */; };
 		4CD689921E9F3C467D5A532C /* SessionStatusDot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A2B8AABAEE680386E0753B7 /* SessionStatusDot.swift */; };
 		4F20E648BBD3A845F21F64BB /* LedgerQueryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 352D8EE51F82B2AC7CD44C73 /* LedgerQueryService.swift */; };
+		55A439B969B9BF7007A48539 /* FindTextFieldRepresentable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63C26023EEF1D1835185E7F4 /* FindTextFieldRepresentable.swift */; };
 		55C2F61C9B63ACCE613CBC37 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0269FFB63DF2EC261DC5B6A /* SettingsView.swift */; };
 		571EE81ED88CE829C5C59BA8 /* TerminalBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 647FC24EF5503064016FE625 /* TerminalBackend.swift */; };
 		5726799F4CAC18544C8FB957 /* SessionRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 930CA7E2539E197A2DF03CE4 /* SessionRow.swift */; };
@@ -48,6 +49,7 @@
 		5819A5A1B20A8D65742FC3D4 /* StatuslineANSIParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64214F269B6A3F7BB8350567 /* StatuslineANSIParser.swift */; };
 		59C4461354F92AEF376C88AA /* DragHandleNSView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43C2EE51F5ED8F5A44D27580 /* DragHandleNSView.swift */; };
 		5BE31FF52EF968E62B31F97C /* CircuitBreaker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3463B095E6622E31AF317063 /* CircuitBreaker.swift */; };
+		622970D9571815B0BC3AAA8B /* TextInputWarmup.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD77F58ACC597504154F3F92 /* TextInputWarmup.swift */; };
 		64AB450ECD5FB1FF3D5E16EB /* EnrichmentService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260E4993B113CBAABADA519B /* EnrichmentService.swift */; };
 		69C769B61E2BA6F9BD8DA6FB /* MainWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEB9F0C617C86CE1FDD05FF3 /* MainWindowController.swift */; };
 		6CDB5F73F547B05AF78CC58E /* ScrollbackWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2750A011DD00E7D1E06CE4CD /* ScrollbackWebView.swift */; };
@@ -190,6 +192,7 @@
 		5FFC389A3E4E6768A33D8345 /* SidebarItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarItem.swift; sourceTree = "<group>"; };
 		61AA98185E94AAFC4DA8F145 /* ScrollbackSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollbackSnapshot.swift; sourceTree = "<group>"; };
 		61F41A6FFADC96743100251A /* NavigationEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationEntry.swift; sourceTree = "<group>"; };
+		63C26023EEF1D1835185E7F4 /* FindTextFieldRepresentable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FindTextFieldRepresentable.swift; sourceTree = "<group>"; };
 		6416EF21214B040D05629012 /* ArtifactHTMLView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactHTMLView.swift; sourceTree = "<group>"; };
 		64214F269B6A3F7BB8350567 /* StatuslineANSIParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatuslineANSIParser.swift; sourceTree = "<group>"; };
 		647FC24EF5503064016FE625 /* TerminalBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalBackend.swift; sourceTree = "<group>"; };
@@ -247,6 +250,7 @@
 		C8180F1A6B6AAA96C11608AE /* ArtifactDiffView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactDiffView.swift; sourceTree = "<group>"; };
 		C96C60D970F588050D34A070 /* AnnotationSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnnotationSupport.swift; sourceTree = "<group>"; };
 		CA7C61AE6C010B6F8091B0B3 /* SocketListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocketListener.swift; sourceTree = "<group>"; };
+		CD77F58ACC597504154F3F92 /* TextInputWarmup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextInputWarmup.swift; sourceTree = "<group>"; };
 		CEB9F0C617C86CE1FDD05FF3 /* MainWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowController.swift; sourceTree = "<group>"; };
 		CF05B1CBD2C3553B1FCBA500 /* LedgerIdentifiersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerIdentifiersView.swift; sourceTree = "<group>"; };
 		D96AFD79CE59690C239E10B5 /* MainMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainMenu.swift; sourceTree = "<group>"; };
@@ -347,7 +351,9 @@
 			isa = PBXGroup;
 			children = (
 				9C8F6C1B8D1FA7F81ECA801D /* FindBarView.swift */,
+				63C26023EEF1D1835185E7F4 /* FindTextFieldRepresentable.swift */,
 				412B0F6729BA76B88D7E8F20 /* GalaxyFindJS.swift */,
+				CD77F58ACC597504154F3F92 /* TextInputWarmup.swift */,
 				C7A6B3AA9BFBF0BAEE3180DF /* WebViewFindController.swift */,
 				22795DFA3B0DBBFD865FB0FA /* WKWebViewConfiguration+GalaxyFind.swift */,
 			);
@@ -593,6 +599,7 @@
 				82B876DF7C1A77E1A811C62A /* EventEnvelope.swift in Sources */,
 				21BC314DAABC67786341621F /* ExpandedSessionSidebar.swift in Sources */,
 				18007C05516C1A0A5F916234 /* FindBarView.swift in Sources */,
+				55A439B969B9BF7007A48539 /* FindTextFieldRepresentable.swift in Sources */,
 				95B87341788CFD115DCAC557 /* GalaxyApp.swift in Sources */,
 				BABF944CB19880A0109DF871 /* GalaxyFindJS.swift in Sources */,
 				C27788ECAC3C2D2A1DA2024E /* GalaxyLog.swift in Sources */,
@@ -665,6 +672,7 @@
 				893ACB805E9653364EC07099 /* TerminalTabSplitView.swift in Sources */,
 				3FCE06C0F8AE9134D99D090A /* TerminalView.swift in Sources */,
 				A4B01AE6D2489B6821615FC5 /* TerminalVisualBell.swift in Sources */,
+				622970D9571815B0BC3AAA8B /* TextInputWarmup.swift in Sources */,
 				A57FC847EF77E79C3A30DD55 /* TimelineCanvasView.swift in Sources */,
 				ADD7F5A8E6F13DAC9EDFAA58 /* TimelineLayoutEngine.swift in Sources */,
 				1613D6F4896F7B93513565A8 /* TimelineModels.swift in Sources */,
