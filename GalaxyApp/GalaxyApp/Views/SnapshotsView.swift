@@ -520,6 +520,14 @@ struct SnapshotsView: View {
     func activateFind() {
         guard openSnapshot != nil else { return }
         findController.isVisible = true
+        // Also call the panel sync directly. SwiftUI's
+        // `.onChange(of: isVisible)` only fires on transitions,
+        // so a re-press of Cmd+F while the bar is already
+        // visible wouldn't otherwise reach the panel — and we
+        // need it to reach the panel so the field gets
+        // re-focused (Cmd+F when already open is the
+        // refocus gesture).
+        syncFindBarPanel(visible: true)
     }
 
     /// Register this view as `SessionManager.snapshotsFindHandler`

@@ -97,7 +97,17 @@ final class FindBarPanelController {
         guard let parent = anchorView.window else { return }
 
         if currentController === controller, panel != nil {
+            // Find bar already up for this controller. Re-anchor
+            // in case the surface's layout shifted, then re-key
+            // the panel and re-focus the field — the user just
+            // pressed Cmd+F, so they want the bar focused even
+            // if focus had drifted (e.g., they clicked into the
+            // WebView). Standard macOS find-UI behavior.
             reanchor(to: anchorView, in: parent)
+            if let p = self.panel, let hosting = self.hostingView {
+                p.makeKeyAndOrderFront(nil)
+                focusFirstTextField(in: hosting, panel: p)
+            }
             return
         }
 
