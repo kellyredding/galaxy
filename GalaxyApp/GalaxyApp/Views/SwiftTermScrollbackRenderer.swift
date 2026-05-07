@@ -1262,6 +1262,23 @@ enum SwiftTermScrollbackRenderer {
                 self.handleDelete(note.id);
             });
 
+            // Suppress the 2nd click of a double-click so it doesn't
+            // toggle expand. Capture phase + stopImmediatePropagation
+            // ensures this runs before the bubble-phase toggle handler
+            // and prevents it from firing on the 2nd click.
+            card.addEventListener('click', (e) => {
+                if (e.detail >= 2) e.stopImmediatePropagation();
+            }, true);
+
+            // Double-click anywhere on the card → enter edit, same path
+            // as the pencil icon. Same exclusions as the toggle handler.
+            card.addEventListener('dblclick', (e) => {
+                if (e.target.closest('.note-btn-edit') ||
+                    e.target.closest('.note-btn-delete') ||
+                    e.target.closest('.note-edit-textarea')) return;
+                self.startEdit(note.id);
+            });
+
             return card;
         },
 

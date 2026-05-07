@@ -682,6 +682,36 @@ annotation.number);
                 });
             }
 
+            // Suppress the 2nd click of a double-click so it
+            // doesn't toggle expand. Capture phase +
+            // stopImmediatePropagation ensures this runs before
+            // the bubble-phase toggle handler and prevents it
+            // from firing on the 2nd click.
+            card.addEventListener('click', function(e) {
+                if (e.detail >= 2) {
+                    e.stopImmediatePropagation();
+                }
+            }, true);
+
+            // Double-click anywhere on the card → enter edit,
+            // same path as the pencil icon. Same exclusions as
+            // the toggle handler. Gated on editBtn matching the
+            // existing edit-button gate (review-locked
+            // annotations have no editBtn and no edit path).
+            if (editBtn) {
+                card.addEventListener(\
+'dblclick', function(e) {
+                    if (e.target.closest(\
+'.annotation-btn-edit') ||
+                        e.target.closest(\
+'.annotation-btn-delete') ||
+                        e.target.closest(\
+'.annotation-edit-textarea'))
+                        return;
+                    self.startEdit(annotation.number);
+                });
+            }
+
             if (this.formElement &&
                 this.formElement.parentNode ===
                     this.wholeContainer) {
@@ -1332,6 +1362,34 @@ annotation.number);
 annotation.number);
                     }
                 );
+            }
+
+            // Suppress the 2nd click of a double-click so it
+            // doesn't toggle expand. Capture phase +
+            // stopImmediatePropagation ensures this runs before
+            // the bubble-phase toggle handler and prevents it
+            // from firing on the 2nd click.
+            card.addEventListener('click', function(e) {
+                if (e.detail >= 2) {
+                    e.stopImmediatePropagation();
+                }
+            }, true);
+
+            // Double-click anywhere on the card → enter edit,
+            // same path as the pencil icon. Same exclusions as
+            // the toggle handler. Gated on !hasReview matching
+            // the existing edit-button gate (review-locked
+            // annotations have no edit affordance).
+            if (!hasReview) {
+                card.addEventListener(\
+'dblclick', function(e) {
+                    if (e.target.closest(\
+'.annotation-card-actions') ||
+                        e.target.closest(\
+'.annotation-edit-textarea'))
+                        return;
+                    self.startEdit(annotation.number);
+                });
             }
 
             var insertBefore = block\
