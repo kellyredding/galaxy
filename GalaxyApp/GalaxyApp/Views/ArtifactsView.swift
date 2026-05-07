@@ -1288,7 +1288,7 @@ struct ArtifactsView: View {
                 var htmlMap: [Int32: String] = [:]
                 for ann in annotations {
                     htmlMap[ann.number]
-                        = renderAnnotationHTML(
+                        = escapeAnnotationContent(
                             ann.content
                         )
                 }
@@ -1329,7 +1329,7 @@ struct ArtifactsView: View {
                     var htmlMap: [Int32: String] = [:]
                     for ann in annotations {
                         htmlMap[ann.number]
-                            = renderAnnotationHTML(
+                            = escapeAnnotationContent(
                                 ann.content
                             )
                     }
@@ -1519,7 +1519,7 @@ struct ArtifactsView: View {
                 var htmlMap: [Int32: String] = [:]
                 for ann in annotations {
                     htmlMap[ann.number]
-                        = renderAnnotationHTML(
+                        = escapeAnnotationContent(
                             ann.content
                         )
                 }
@@ -1590,7 +1590,7 @@ struct ArtifactsView: View {
                 var htmlMap: [Int32: String] = [:]
                 for ann in annotations {
                     htmlMap[ann.number]
-                        = renderAnnotationHTML(
+                        = escapeAnnotationContent(
                             ann.content
                         )
                 }
@@ -2282,7 +2282,7 @@ struct ArtifactsView: View {
                         anchorData: anchorData,
                         content: content
                     )
-                let html = renderAnnotationHTML(
+                let html = escapeAnnotationContent(
                     ann.content
                 )
                 await MainActor.run {
@@ -2345,7 +2345,7 @@ struct ArtifactsView: View {
                         number: number,
                         content: content
                     )
-                let html = renderAnnotationHTML(
+                let html = escapeAnnotationContent(
                     ann.content
                 )
                 await MainActor.run {
@@ -2585,7 +2585,7 @@ struct ArtifactsView: View {
             var htmlMap: [Int32: String] = [:]
             for ann in annotations {
                 htmlMap[ann.number]
-                    = renderAnnotationHTML(ann.content)
+                    = escapeAnnotationContent(ann.content)
             }
 
             await MainActor.run {

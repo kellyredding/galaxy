@@ -592,7 +592,7 @@ struct SnapshotsView: View {
                 // Pre-render annotation markdown to HTML
                 var htmlMap: [Int32: String] = [:]
                 for ann in annotations {
-                    htmlMap[ann.number] = renderAnnotationHTML(ann.content)
+                    htmlMap[ann.number] = escapeAnnotationContent(ann.content)
                 }
 
                 await MainActor.run {
@@ -966,7 +966,7 @@ struct SnapshotsView: View {
 
                 var htmlMap: [Int32: String] = [:]
                 for ann in annotations {
-                    htmlMap[ann.number] = renderAnnotationHTML(ann.content)
+                    htmlMap[ann.number] = escapeAnnotationContent(ann.content)
                 }
 
                 await MainActor.run {
@@ -1063,7 +1063,7 @@ struct SnapshotsView: View {
                             endLine: endLine,
                             content: content
                         )
-                    let html = renderAnnotationHTML(annotation.content)
+                    let html = escapeAnnotationContent(annotation.content)
                     await MainActor.run {
                         openAnnotations.append(annotation)
                         openAnnotations.sort {
@@ -1095,7 +1095,7 @@ struct SnapshotsView: View {
                             number: number,
                             content: content
                         )
-                    let html = renderAnnotationHTML(annotation.content)
+                    let html = escapeAnnotationContent(annotation.content)
                     await MainActor.run {
                         if let idx = openAnnotations.firstIndex(where: {
                             $0.number == number
@@ -1346,7 +1346,7 @@ struct SnapshotsView: View {
 
             var htmlMap: [Int32: String] = [:]
             for ann in annotations {
-                htmlMap[ann.number] = renderAnnotationHTML(ann.content)
+                htmlMap[ann.number] = escapeAnnotationContent(ann.content)
             }
 
             await MainActor.run {

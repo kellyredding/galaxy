@@ -10,6 +10,7 @@
 		0382B41CACCDA9E37EBABA4C /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 922A89B10E14E165A50C1F4F /* ContentView.swift */; };
 		07A73655BC0B63114B198088 /* AnchorData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 430095FE1E69CCC41062A06B /* AnchorData.swift */; };
 		09CDA5203DCF9553E640C102 /* AnnotationHTMLVisitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB1BD0B12AE09B3D09B6EE03 /* AnnotationHTMLVisitor.swift */; };
+		AABBCCDD11223344EEFF5566 /* VerbatimCardStyles.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1122AABB3344CCDD5566EEFF /* VerbatimCardStyles.swift */; };
 		0B65699340045EFEC87EC44B /* SessionNavigationHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68F73B27BACDA34CA4574613 /* SessionNavigationHistory.swift */; };
 		0CD6D832A8614D6D935C1E0F /* AgentRun.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFFF3072B720C04EC59D3554 /* AgentRun.swift */; };
 		1398D7A28CD97955C6CF12EE /* StatuslineHookStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AE5FFAF09889E289427AFAB /* StatuslineHookStatus.swift */; };
@@ -239,6 +240,7 @@
 		BAD14A629CEF3AA730CD6237 /* TerminalColorTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalColorTheme.swift; sourceTree = "<group>"; };
 		BAEF4E4E06E2AD409BFED23F /* SessionPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionPersistence.swift; sourceTree = "<group>"; };
 		BB1BD0B12AE09B3D09B6EE03 /* AnnotationHTMLVisitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnnotationHTMLVisitor.swift; sourceTree = "<group>"; };
+		1122AABB3344CCDD5566EEFF /* VerbatimCardStyles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VerbatimCardStyles.swift; sourceTree = "<group>"; };
 		BC39AC5B7A009BF079447618 /* TimelineQueryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineQueryService.swift; sourceTree = "<group>"; };
 		BD1324D7665E5F848D1DDD90 /* ScrollbackOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollbackOverlayView.swift; sourceTree = "<group>"; };
 		BE3DAF1743A20920A57B236D /* NewSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewSessionView.swift; sourceTree = "<group>"; };
@@ -418,6 +420,7 @@
 				1B4449037A4904D32821556A /* LedgerSuggestedNameView.swift */,
 				B593B1A95489C385D8B403E7 /* LedgerView.swift */,
 				44DBB494CF22DA9A7DD449BE /* LongPressMenuButton.swift */,
+				1122AABB3344CCDD5566EEFF /* VerbatimCardStyles.swift */,
 				E49CF9BDA2474BE2585001F5 /* MarkdownReaderView.swift */,
 				11AC80464BCD652210A6E2A5 /* ModalState.swift */,
 				9B700435C26C483E71A75B12 /* NewMarkerView.swift */,
@@ -619,6 +622,7 @@
 				75234D2CFD7593C91B00A322 /* LongPressMenuButton.swift in Sources */,
 				9A7E8C74C205BD7E4329689D /* MainMenu.swift in Sources */,
 				69C769B61E2BA6F9BD8DA6FB /* MainWindowController.swift in Sources */,
+				AABBCCDD11223344EEFF5566 /* VerbatimCardStyles.swift in Sources */,
 				86AAE69F5441679CED101F09 /* MarkdownReaderView.swift in Sources */,
 				C7AF14CE931063853508C47D /* ModalState.swift in Sources */,
 				EDD17400C7F27572C4B6FE96 /* NavigationCoordinator.swift in Sources */,

@@ -209,6 +209,7 @@ enum SwiftTermScrollbackRenderer {
             --fg: \(theme.foreground);
             --bg: \(theme.background);
             --font-family: \(cssFontFamily);
+            --font-family-mono: "SF Mono", "Menlo", "Monaco", "Courier New", monospace;
             --font-size: \(fontSize)px;
             --line-height: \(cellHeight)px;
             --delete-color: #d63031;
@@ -674,7 +675,6 @@ enum SwiftTermScrollbackRenderer {
         }
         .note-card-content {
             margin-top: 4px;
-            font-family: var(--font-family);
             font-size: 12px;
             line-height: 1.5;
             color: var(--fg);
@@ -683,6 +683,7 @@ enum SwiftTermScrollbackRenderer {
             max-height: 1.5em;
             overflow: hidden;
         }
+        \(verbatimCardCSS)
         .note-expand-hint {
             display: block;
             font-size: 11px;
@@ -1172,12 +1173,18 @@ enum SwiftTermScrollbackRenderer {
             if (idx >= 0) {
                 this.items[idx].content = note.content;
             }
-            // Update card content display (use innerHTML for <br> newlines)
+            // Update card content display. Splice the Swift-rendered
+            // markdown HTML straight into the body — same pipeline that
+            // feeds artifact/snapshot annotation cards.
+            const idx2 = this.items.findIndex(n => n.id === note.id);
+            if (idx2 >= 0) {
+                this.items[idx2].renderedHTML = note.renderedHTML;
+            }
             const card = document.querySelector('[data-note-id=\"' + note.id + '\"]');
             if (card) {
                 const contentEl = card.querySelector('.note-card-content');
                 if (contentEl) {
-                    contentEl.innerHTML = this.escapeHTML(note.content);
+                    contentEl.innerHTML = note.renderedHTML;
                 }
             }
             this.editingId = null;
@@ -1237,8 +1244,8 @@ enum SwiftTermScrollbackRenderer {
                             self.deleteIconSVG + '</button>' +
                     '</span>' +
                 '</div>' +
-                '<div class="note-card-content collapsed">' +
-                    self.escapeHTML(note.content) +
+                '<div class="note-card-content verbatim-card-content collapsed">' +
+                    note.renderedHTML +
                 '</div>' +
                 '<span class="note-expand-hint">Click to expand</span>';
 

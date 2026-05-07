@@ -165,28 +165,13 @@ let annotationCSS: String = """
     .annotation-card-content {
         line-height: 1.5;
         color: var(--fg);
-        font-family: var(--font-family-mono);
         font-size: 12px;
     }
     .annotation-card-content.collapsed {
         max-height: 1.6em;
         overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
     }
-    .annotation-card-content.collapsed p {
-        display: inline;
-        margin: 0;
-    }
-    .annotation-card-content ul,
-    .annotation-card-content ol {
-        margin-top: 0;
-        margin-bottom: 8px;
-        padding-left: 2em;
-    }
-    .annotation-card-content li + li {
-        margin-top: 0.25em;
-    }
+    \(verbatimCardCSS)
     .annotation-edit-textarea {
         width: 100%;
         min-height: 1.6em;
@@ -642,7 +627,8 @@ annotation.review_reviewed_at);
                     + metaText + '</span>' +
                     actionsHTML +
                 '</div>' +
-                '<div class="annotation-card-content'
+                '<div class=\
+"annotation-card-content verbatim-card-content'
                 + (isExpanded ? '' : ' collapsed') + '">'
                 + renderedHTML + '</div>' +
                 '<span class="annotation-expand-hint"'
@@ -1324,7 +1310,8 @@ annotation.review_reviewed_at);
                     + metaText + '</span>' +
                     actionsHTML +
                 '</div>' +
-                '<div class="annotation-card-content'
+                '<div class=\
+"annotation-card-content verbatim-card-content'
                 + (isExpanded ? '' : ' collapsed')
                 + '">' +
                     renderedHTML +
@@ -2017,7 +2004,8 @@ data.annotation.number]
                     var contentDiv
                         = document.createElement('div');
                     contentDiv.className
-                        = 'annotation-card-content';
+                        = 'annotation-card-content '
+                        + 'verbatim-card-content';
                     contentDiv.innerHTML
                         = data.renderedHTML;
                     ta.replaceWith(contentDiv);
