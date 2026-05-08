@@ -256,6 +256,7 @@ enum SwiftTermScrollbackRenderer {
         </div>
         <script>\(emojiDataJS)</script>
         <script>\(emojiAutocompleteJS)</script>
+        <script>\(clipboardCopyJS)</script>
         <script>
         \(scrollbackManagerJS)
         \(noteManagerJS)
@@ -673,6 +674,50 @@ enum SwiftTermScrollbackRenderer {
         .note-card:has(.note-edit-textarea) .note-card-actions {
             display: none;
         }
+
+        /* Copy-lines affordance — sits inline next to the
+           line-reference label in the form/card header.
+           The host header is display:flex so the button
+           slots in as a flex item. */
+        .copy-button.note-copy-lines {
+            background: transparent;
+            border: 0;
+            padding: 0 4px;
+            margin: 0;
+            cursor: pointer;
+            color: \(textColor);
+            line-height: 1;
+            opacity: 0.6;
+            transition: opacity 120ms ease, color 120ms ease;
+            display: inline-flex;
+            align-items: center;
+        }
+        .copy-button.note-copy-lines:hover {
+            opacity: 1;
+            color: var(--fg);
+        }
+        .copy-button.note-copy-lines.copied {
+            color: #2ea043;
+            opacity: 1;
+        }
+        .copy-button.note-copy-lines .copy-icon {
+            display: block;
+        }
+        .note-form-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .note-form-header .note-form-ref {
+            flex: 0 1 auto;
+        }
+        /* Edit-mode hides the action row but keeps the
+           header — copy lives in the header so it stays
+           visible. */
+        .note-card:has(.note-edit-textarea)
+            .copy-button.note-copy-lines {
+            opacity: 1;
+        }
         .note-card-content {
             margin-top: 4px;
             font-size: 12px;
@@ -1009,9 +1054,21 @@ enum SwiftTermScrollbackRenderer {
         createForm() {
             this.formElement = document.createElement('div');
             this.formElement.className = 'note-form';
+            // The form is display:none until a selection
+            // is made (see startNoteAt → updateFormRef →
+            // formElement.style.display = 'block'), so the
+            // copy button is naturally invisible until
+            // there's a range to copy.
+            const formCopyHTML =
+                (typeof window.GalaxyClipboard
+                    === 'undefined')
+                    ? ''
+                    : window.GalaxyClipboard.buttonHTML(
+                        'note-copy-lines', 'Copy lines');
             this.formElement.innerHTML =
                 '<div class="note-form-header">' +
                     '<span class="note-form-ref"></span>' +
+                    formCopyHTML +
                 '</div>' +
                 '<textarea class="note-textarea" ' +
                     'spellcheck="false" ' +
@@ -1024,6 +1081,19 @@ enum SwiftTermScrollbackRenderer {
             // Don't append to DOM yet — positionForm() will place it
             const self = this;
             const ta = this.formElement.querySelector('textarea');
+
+            // Wire the form's copy-lines button. Reads the
+            // pending selection's text via pendingFormText.
+            const formCopyBtn = this.formElement
+                .querySelector('.note-copy-lines');
+            if (formCopyBtn
+                && window.GalaxyClipboard) {
+                window.GalaxyClipboard.bindCopyButton(
+                    formCopyBtn,
+                    () => self.pendingFormText(),
+                    'Copy lines'
+                );
+            }
 
             // Keyboard handling — emoji handleKeyDown must be first
             ta.addEventListener('keydown', (e) => {
@@ -1112,6 +1182,28 @@ enum SwiftTermScrollbackRenderer {
             }
         },
 
+        // Lift text from the rendered scrollback for the
+        // current pending selection. Single source of
+        // truth for both submitNote (sent to Swift as the
+        // note's lineContent) and the form's copy-lines
+        // affordance (so what the user copies pre-submit
+        // matches exactly what gets saved).
+        pendingFormText() {
+            if (this.formStartLine == null
+                || this.formEndLine == null) return '';
+            let out = '';
+            for (let i = this.formStartLine;
+                 i <= this.formEndLine; i++) {
+                const line = document.querySelector(
+                    '[data-line=\"' + i + '\"]');
+                if (line) {
+                    if (out) out += '\\n';
+                    out += line.textContent;
+                }
+            }
+            return out;
+        },
+
         submitNote() {
             if (this.submitting) return;
 
@@ -1121,15 +1213,10 @@ enum SwiftTermScrollbackRenderer {
 
             this.submitting = true;
 
-            // Extract line content from DOM
-            let lineContent = '';
-            for (let i = this.formStartLine; i <= this.formEndLine; i++) {
-                const line = document.querySelector('[data-line=\"' + i + '\"]');
-                if (line) {
-                    if (lineContent) lineContent += '\\n';
-                    lineContent += line.textContent;
-                }
-            }
+            // Extract line content from DOM via the
+            // shared helper (also used by the copy-lines
+            // affordance so the two paths stay in sync).
+            const lineContent = this.pendingFormText();
 
             // Post to Swift
             window.webkit.messageHandlers.scrollback.postMessage({
@@ -1233,10 +1320,21 @@ enum SwiftTermScrollbackRenderer {
                 ? 'Line ' + (note.startLine + 1)
                 : 'Lines ' + (note.startLine + 1) + '–' + (note.endLine + 1);
 
+            // Copy-lines button — placed between the
+            // meta `#N` span and the action row so it
+            // juxtaposes the line-reference label.
+            const cardCopyHTML =
+                (typeof window.GalaxyClipboard
+                    === 'undefined')
+                    ? ''
+                    : window.GalaxyClipboard.buttonHTML(
+                        'note-copy-lines', 'Copy lines');
+
             card.innerHTML =
                 '<div class="note-card-header">' +
                     '<span class="note-card-ref">' + refText + '</span>' +
                     '<span class="note-card-meta">#' + note.number + '</span>' +
+                    cardCopyHTML +
                     '<span class="note-card-actions">' +
                         '<button class="note-btn-edit" title="Edit">' +
                             self.editIconSVG + '</button>' +
@@ -1244,15 +1342,16 @@ enum SwiftTermScrollbackRenderer {
                             self.deleteIconSVG + '</button>' +
                     '</span>' +
                 '</div>' +
-                '<div class="note-card-content verbatim-card-content collapsed">' +
+                '<pre class="note-card-content verbatim-card-content collapsed">' +
                     note.renderedHTML +
-                '</div>' +
+                '</pre>' +
                 '<span class="note-expand-hint">Click to expand</span>';
 
             // Click to expand/collapse
             card.addEventListener('click', (e) => {
                 if (e.target.closest('.note-btn-edit') ||
                     e.target.closest('.note-btn-delete') ||
+                    e.target.closest('.note-copy-lines') ||
                     e.target.closest('.note-edit-textarea')) return;
                 self.toggleExpand(note.id);
             });
@@ -1269,6 +1368,21 @@ enum SwiftTermScrollbackRenderer {
                 self.handleDelete(note.id);
             });
 
+            // Copy-lines button. Notes always carry
+            // lineContent because they always anchor to a
+            // line range — read it directly off the note
+            // object.
+            const cardCopyBtn = card.querySelector(
+                '.note-copy-lines');
+            if (cardCopyBtn
+                && window.GalaxyClipboard) {
+                window.GalaxyClipboard.bindCopyButton(
+                    cardCopyBtn,
+                    () => note.lineContent || '',
+                    'Copy lines'
+                );
+            }
+
             // Suppress the 2nd click of a double-click so it doesn't
             // toggle expand. Capture phase + stopImmediatePropagation
             // ensures this runs before the bubble-phase toggle handler
@@ -1282,6 +1396,7 @@ enum SwiftTermScrollbackRenderer {
             card.addEventListener('dblclick', (e) => {
                 if (e.target.closest('.note-btn-edit') ||
                     e.target.closest('.note-btn-delete') ||
+                    e.target.closest('.note-copy-lines') ||
                     e.target.closest('.note-edit-textarea')) return;
                 self.startEdit(note.id);
             });

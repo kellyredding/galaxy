@@ -52,7 +52,8 @@ struct ArtifactSourceView: NSViewRepresentable {
             refPrefix: "Line",
             itemLabel: itemLabel,
             annotations: activeAnns,
-            htmlMap: annotationHTMLMap
+            htmlMap: annotationHTMLMap,
+            artifactContent: content
         )
         context.coordinator.pendingInitJS = initJS
         context.coordinator.onAnnotationMessage =
@@ -109,7 +110,8 @@ struct ArtifactSourceView: NSViewRepresentable {
                     refPrefix: "Line",
                     itemLabel: itemLabel,
                     annotations: activeAnns,
-                    htmlMap: annotationHTMLMap
+                    htmlMap: annotationHTMLMap,
+                    artifactContent: content
                 )
                 if let stateJSON = result as? String {
                     initJS += "; AnnotationManager"
@@ -292,6 +294,7 @@ private func buildSourceHTML(
             });
     }
     </script>
+    <script>\(clipboardCopyJS)</script>
     <script>
     \(annotationManagerJS)
     </script>

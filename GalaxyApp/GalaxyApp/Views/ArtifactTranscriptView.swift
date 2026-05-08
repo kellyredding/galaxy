@@ -933,6 +933,7 @@ private func buildTranscriptHTML(
     """)
         \(stepsHTML)
     </div>
+    <script>\(clipboardCopyJS)</script>
     <script>
     \(annotationManagerJS)
     </script>

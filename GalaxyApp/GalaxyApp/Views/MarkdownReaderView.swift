@@ -285,6 +285,7 @@ struct MarkdownReaderView: NSViewRepresentable {
         context.coordinator.pendingAnnotations = self.annotations
         context.coordinator.pendingAnnotationHTMLMap = self.annotationHTMLMap
         context.coordinator.pendingItemLabel = self.itemLabel
+        context.coordinator.pendingArtifactContent = self.markdown
 
         let baseURL = URL(
             string: "galaxy://\(self.baseUrlName)"
@@ -333,6 +334,9 @@ struct MarkdownReaderView: NSViewRepresentable {
         var pendingAnnotations: [SnapshotAnnotation]?
         var pendingAnnotationHTMLMap: [Int32: String]?
         var pendingItemLabel: String?
+        /// Raw markdown source used to slice line_content
+        /// for the form's copy-lines affordance.
+        var pendingArtifactContent: String?
 
         /// Form state saved before a theme-change reload.
         var savedFormState: String?
@@ -405,6 +409,7 @@ struct MarkdownReaderView: NSViewRepresentable {
                 pendingAnnotations = nil
                 pendingAnnotationHTMLMap = nil
                 pendingItemLabel = nil
+                pendingArtifactContent = nil
                 return
             }
 
@@ -421,13 +426,15 @@ struct MarkdownReaderView: NSViewRepresentable {
                     refPrefix: "Line",
                     itemLabel: label,
                     annotations: annotations,
-                    htmlMap: htmlMap
+                    htmlMap: htmlMap,
+                    artifactContent: pendingArtifactContent
                 )
                 webView.evaluateJavaScript(initJS)
 
                 pendingAnnotations = nil
                 pendingAnnotationHTMLMap = nil
                 pendingItemLabel = nil
+                pendingArtifactContent = nil
             }
 
             // Restore form state after theme-change reload
@@ -500,6 +507,8 @@ private func buildFullHTML(
     <style>
     :root {
         color-scheme: light dark;
+        --font-family-mono: "SF Mono", "Menlo", "Monaco",
+            "Courier New", monospace;
     }
     body.dark {
         --bg: #1e1e1e;
@@ -689,6 +698,7 @@ private func buildFullHTML(
     \(bodyHTML)
     <script>\(highlightJS)</script>
     <script>if(typeof hljs !== 'undefined') hljs.highlightAll();</script>
+    <script>\(clipboardCopyJS)</script>
     <script>\(annotationManagerJS)</script>
     <script>\(emojiDataJS)</script>
     <script>\(emojiAutocompleteJS)</script>

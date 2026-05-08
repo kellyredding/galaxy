@@ -193,6 +193,7 @@ private func buildMermaidHTML(
         mermaid.run();
     }
     </script>
+    <script>\(clipboardCopyJS)</script>
     <script>\(annotationManagerJS)</script>
     <script>\(emojiDataJS)</script>
     <script>\(emojiAutocompleteJS)</script>

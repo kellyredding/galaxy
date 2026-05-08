@@ -1123,6 +1123,7 @@ private func buildDiffHTML(
     <script>
     \(tocNavJS)
     </script>
+    <script>\(clipboardCopyJS)</script>
     <script>
     \(annotationManagerJS)
     </script>

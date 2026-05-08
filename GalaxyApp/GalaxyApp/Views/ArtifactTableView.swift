@@ -48,7 +48,8 @@ struct ArtifactTableView: NSViewRepresentable {
             refPrefix: "Row",
             itemLabel: itemLabel,
             annotations: activeAnns,
-            htmlMap: annotationHTMLMap
+            htmlMap: annotationHTMLMap,
+            artifactContent: content
         )
         context.coordinator.pendingInitJS = initJS
         context.coordinator.onAnnotationMessage =
@@ -103,7 +104,8 @@ struct ArtifactTableView: NSViewRepresentable {
                     refPrefix: "Row",
                     itemLabel: itemLabel,
                     annotations: activeAnns,
-                    htmlMap: annotationHTMLMap
+                    htmlMap: annotationHTMLMap,
+                    artifactContent: content
                 )
                 if let stateJSON = result as? String {
                     initJS += "; AnnotationManager"
@@ -245,6 +247,7 @@ private func buildTableHTML(
     <tbody>\(bodyHTML)</tbody>
     </table>
     </div>
+    <script>\(clipboardCopyJS)</script>
     <script>
     \(annotationManagerJS)
     </script>

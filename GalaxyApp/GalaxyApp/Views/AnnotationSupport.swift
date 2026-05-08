@@ -131,6 +131,49 @@ let annotationCSS: String = """
         .annotation-btn-edit {
         display: none;
     }
+    /* Copy-lines affordance — sits inline next to the
+       line-reference label in the form/card header. The
+       host card-header is display:flex so the button
+       slots in as a flex item. */
+    .copy-button.annotation-copy-lines {
+        background: transparent;
+        border: 0;
+        padding: 0 4px;
+        margin: 0;
+        cursor: pointer;
+        color: var(--blockquote-fg);
+        line-height: 1;
+        opacity: 0.6;
+        transition: opacity 120ms ease, color 120ms ease;
+        display: inline-flex;
+        align-items: center;
+    }
+    .copy-button.annotation-copy-lines:hover {
+        opacity: 1;
+        color: var(--fg);
+    }
+    .copy-button.annotation-copy-lines.copied {
+        color: #2ea043;
+        opacity: 1;
+    }
+    .copy-button.annotation-copy-lines .copy-icon {
+        display: block;
+    }
+    .annotation-form-header {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .annotation-form-header .annotation-form-ref {
+        flex: 0 1 auto;
+    }
+    /* In edit mode the textarea hides the action row but
+       keeps the header — the copy button lives in the
+       header so it stays visible. */
+    .annotation-card:has(.annotation-edit-textarea)
+        .copy-button.annotation-copy-lines {
+        opacity: 1;
+    }
     .annotation-card:has(.annotation-edit-textarea)
         .annotation-card-actions {
         display: none;
@@ -351,6 +394,7 @@ let annotationManagerJS: String = """
         highlightEnd: 0,
         annotations: [],
         annotationHTMLMap: {},
+        artifactContent: null,
         formElement: null,
         formSpacer: null,
         formSpacerRow: null,
@@ -395,6 +439,10 @@ d="M8 6V4h8v2"/><path d="M5 6v14a1 1 0 001 1h12a1 \
             this.itemLabel = data.itemLabel || '';
             this.annotations = data.annotations || [];
             this.annotationHTMLMap = data.htmlMap || {};
+            this.artifactContent =
+                typeof data.artifactContent === 'string'
+                    ? data.artifactContent
+                    : null;
 
             // Whole-type mode: no blocks, form/cards
             // appended to a container at the bottom
@@ -627,10 +675,10 @@ annotation.review_reviewed_at);
                     + metaText + '</span>' +
                     actionsHTML +
                 '</div>' +
-                '<div class=\
+                '<pre class=\
 "annotation-card-content verbatim-card-content'
                 + (isExpanded ? '' : ' collapsed') + '">'
-                + renderedHTML + '</div>' +
+                + renderedHTML + '</pre>' +
                 '<span class="annotation-expand-hint"'
                 + (isExpanded
                     ? ' style="display:none"' : '')
@@ -804,10 +852,25 @@ state.expandedNumber);
             form.className = 'annotation-form';
             form.id = 'annotation-form';
             form.style.display = 'none';
+            // Whole-artifact annotations have no "lines" to
+            // copy — skip the affordance there. Ranged
+            // forms are display:none until a selection is
+            // made, so the button is effectively hidden
+            // until a range exists.
+            var copyBtnHTML =
+                (this.anchorType === 'whole' ||
+                 typeof window.GalaxyClipboard
+                     === 'undefined')
+                    ? ''
+                    : window.GalaxyClipboard.buttonHTML(
+                        'annotation-copy-lines',
+                        'Copy lines');
             form.innerHTML =
                 '<div class="annotation-form-header">'
                 + '<span class="annotation-form-ref">'
-                + '</span></div>'
+                + '</span>'
+                + copyBtnHTML
+                + '</div>'
                 + '<textarea class="annotation-textarea"'
                 + ' spellcheck="false"'
                 + ' autocorrect="off"'
@@ -841,6 +904,25 @@ ta, e)) {
             if (typeof EmojiAutocomplete \
 !== 'undefined') {
                 EmojiAutocomplete.attach(ta);
+            }
+
+            // Wire the form's copy-lines button (omitted
+            // for whole-anchor mode in the innerHTML
+            // above — querySelector returns null there
+            // and we no-op).
+            var formCopyBtn = form.querySelector(
+                '.annotation-copy-lines');
+            if (formCopyBtn
+                && window.GalaxyClipboard) {
+                var managerRef = AnnotationManager;
+                window.GalaxyClipboard.bindCopyButton(
+                    formCopyBtn,
+                    function() {
+                        return managerRef
+                            .capturedTextForForm();
+                    },
+                    'Copy lines'
+                );
             }
 
             this.formElement = form;
@@ -1240,6 +1322,18 @@ annotation.review_reviewed_at);
                         + '</button>' +
                 '</span>';
 
+            // Copy-lines button. Lives outside the
+            // hasReview gate — copy is read-only and stays
+            // available on review-locked cards (which
+            // hide edit + delete).
+            var copyBtnHTML =
+                (typeof window.GalaxyClipboard
+                    === 'undefined')
+                    ? ''
+                    : window.GalaxyClipboard.buttonHTML(
+                        'annotation-copy-lines',
+                        'Copy lines');
+
             var card = document.createElement('div');
             card.className = 'annotation-card'
                 + (isExpanded ? ' expanded' : '');
@@ -1308,14 +1402,15 @@ annotation.review_reviewed_at);
                     '<span class=\
 "annotation-card-meta">'
                     + metaText + '</span>' +
+                    copyBtnHTML +
                     actionsHTML +
                 '</div>' +
-                '<div class=\
+                '<pre class=\
 "annotation-card-content verbatim-card-content'
                 + (isExpanded ? '' : ' collapsed')
                 + '">' +
                     renderedHTML +
-                '</div>' +
+                '</pre>' +
                 '<span class=\
 "annotation-expand-hint"'
                 + (isExpanded
@@ -1326,6 +1421,8 @@ annotation.review_reviewed_at);
             card.addEventListener('click', function(e) {
                 if (e.target.closest(\
 '.annotation-card-actions') ||
+                    e.target.closest(\
+'.annotation-copy-lines') ||
                     e.target.closest(\
 '.annotation-edit-textarea')) return;
                 self.expandAnnotation(\
@@ -1351,6 +1448,24 @@ annotation.number);
                 );
             }
 
+            // Wire the copy-lines button. Renders for
+            // every ranged annotation (including
+            // review-locked) — copy is read-only.
+            var cardCopyBtn = card.querySelector(
+                '.annotation-copy-lines');
+            if (cardCopyBtn
+                && window.GalaxyClipboard) {
+                window.GalaxyClipboard.bindCopyButton(
+                    cardCopyBtn,
+                    function() {
+                        return self
+                            .capturedTextForAnnotation(
+                                annotation);
+                    },
+                    'Copy lines'
+                );
+            }
+
             // Suppress the 2nd click of a double-click so it
             // doesn't toggle expand. Capture phase +
             // stopImmediatePropagation ensures this runs before
@@ -1372,6 +1487,8 @@ annotation.number);
 'dblclick', function(e) {
                     if (e.target.closest(\
 '.annotation-card-actions') ||
+                        e.target.closest(\
+'.annotation-copy-lines') ||
                         e.target.closest(\
 '.annotation-edit-textarea'))
                         return;
@@ -1419,6 +1536,197 @@ annotation.number);
                 case 'block_range': return 'end_block';
                 default: return 'end_line';
             }
+        },
+
+        // Returns the captured source text for an existing
+        // annotation. Prefers the field that was persisted
+        // at save time (line_content / row_content /
+        // block_content — see ArtifactsView.swift's
+        // create-annotation handler ~L1895-L2055). Falls
+        // back to slicing this.artifactContent for
+        // surfaces that don't ship the captured fields
+        // (snapshots — SnapshotAnnotation has no
+        // anchorData), then to a DOM scan as last resort.
+        capturedTextForAnnotation(annotation) {
+            if (!annotation) return '';
+            if (typeof annotation.line_content === 'string'
+                && annotation.line_content.length > 0) {
+                return annotation.line_content;
+            }
+            if (typeof annotation.row_content === 'string'
+                && annotation.row_content.length > 0) {
+                return annotation.row_content;
+            }
+            if (typeof annotation.block_content
+                === 'string'
+                && annotation.block_content.length > 0) {
+                return annotation.block_content;
+            }
+            var startKey = this.anchorStartKey();
+            var endKey = this.anchorEndKey();
+            var s = annotation[startKey];
+            var e = annotation[endKey];
+            if (typeof s !== 'number'
+                || typeof e !== 'number') return '';
+            // Prefer the source artifact content (1:1
+            // with what Swift would persist) for line /
+            // row ranges. Falls through to the DOM scan
+            // for block_range and for surfaces where
+            // artifactContent wasn't plumbed.
+            if (this.anchorType === 'line_range'
+                || this.anchorType === 'row_range') {
+                var sliced = this.sliceArtifactContent(
+                    s, e);
+                if (sliced) return sliced;
+            }
+            return this.extractTextForRange(s, e);
+        },
+
+        // Returns the captured source text for the form's
+        // currently-selected range. Produces the same
+        // string Swift would persist as line_content /
+        // row_content / block_content if the user hit
+        // submit right now. Branches by anchor type:
+        //   - line_range diff: use the diff-row prefix
+        //     extraction (mirrors createDiffRange)
+        //   - line_range / row_range: slice the source
+        //     artifactContent
+        //   - block_range: textContent of selected blocks
+        //     (mirrors submitCreate's blockContent)
+        //   - whole: no captured text
+        capturedTextForForm() {
+            if (this.anchorType === 'whole') return '';
+            if (this.highlightStart < 0
+                || this.highlightEnd < 0) return '';
+            var range = this.getLineRange(
+                this.highlightStart,
+                this.highlightEnd);
+            if (this.anchorType === 'line_range') {
+                var diffText = this.extractDiffRangeText(
+                    range.startLine, range.endLine);
+                if (diffText !== null) return diffText;
+                var sliced = this.sliceArtifactContent(
+                    range.startLine, range.endLine);
+                if (sliced) return sliced;
+                // Last-resort DOM fallback for line_range
+                // surfaces that didn't ship
+                // artifactContent and aren't a diff.
+                return this.extractTextForRange(
+                    range.startLine, range.endLine);
+            }
+            if (this.anchorType === 'row_range') {
+                var rowSliced = this.sliceArtifactContent(
+                    range.startLine, range.endLine);
+                if (rowSliced) return rowSliced;
+                return this.extractTextForRange(
+                    range.startLine, range.endLine);
+            }
+            // block_range: matches submitCreate's
+            // blockContent build.
+            var blocks = this.blocks.slice(
+                this.highlightStart,
+                this.highlightEnd + 1);
+            return blocks.map(function(b) {
+                return (b.textContent || '').trim();
+            }).join('\\n');
+        },
+
+        // Slice this.artifactContent (the raw source of
+        // the artifact / snapshot) by 1-based line or
+        // row number. Returns null when artifactContent
+        // wasn't plumbed in via init.
+        //
+        // Mirrors the Swift slice in:
+        //   ArtifactsView.swift `case .create` (line)
+        //   ArtifactsView.swift `case .createRowRange`
+        //   SnapshotsView.swift create-annotation handler
+        //
+        // For row_range, Swift uses csvLines[start...end]
+        // where start = 1 means "first data row" (csv
+        // line index 1, since csvLines[0] is the header).
+        // The end-exclusive vs end-inclusive distinction
+        // also differs from line_range — see the
+        // anchor-type branch below.
+        sliceArtifactContent(startVal, endVal) {
+            if (typeof this.artifactContent !== 'string'
+                || this.artifactContent.length === 0) {
+                return null;
+            }
+            var lines = this.artifactContent.split('\\n');
+            var startIdx;
+            var endIdxExclusive;
+            if (this.anchorType === 'row_range') {
+                // Row 1 = csvLines[1] (first data row).
+                // Range is end-inclusive in Swift, so
+                // produce the same shape here.
+                startIdx = startVal;
+                endIdxExclusive = Math.min(
+                    endVal + 1, lines.length);
+            } else {
+                // line_range / diff_range: 1-based
+                // start, end-inclusive.
+                startIdx = Math.max(startVal - 1, 0);
+                endIdxExclusive = Math.min(
+                    endVal, lines.length);
+            }
+            if (startIdx >= endIdxExclusive) return '';
+            return lines.slice(
+                startIdx, endIdxExclusive
+            ).join('\\n');
+        },
+
+        // For diff views: walk the rendered .code-line
+        // rows in [startVal, endVal] (data-line counter
+        // values) and produce the prefix-encoded string
+        // that matches what Swift persists for diff_range
+        // (see ArtifactsView.swift `case .createDiffRange`
+        // ~L1895-L1933). Returns null when the selection
+        // contains no diff rows (i.e. this isn't a diff
+        // view) so the caller can fall through to the
+        // generic line-range path.
+        extractDiffRangeText(startVal, endVal) {
+            var pieces = [];
+            var sawDiffRow = false;
+            for (var v = startVal; v <= endVal; v++) {
+                var tr = document.querySelector(
+                    '[data-line="' + v + '"]');
+                if (!tr) continue;
+                var kind = tr.getAttribute('data-kind');
+                if (!kind) continue;
+                sawDiffRow = true;
+                var prefix;
+                switch (kind) {
+                    case 'add': prefix = '+ '; break;
+                    case 'delete': prefix = '- '; break;
+                    case 'context': prefix = '  '; break;
+                    default: continue;
+                }
+                var ce = tr.querySelector(
+                    '.line-content');
+                var text = ce ? (ce.textContent || '') : '';
+                pieces.push(prefix + text);
+            }
+            return sawDiffRow ? pieces.join('\\n') : null;
+        },
+
+        // Last-resort DOM scan for line / row / block
+        // ranges when neither the persisted field nor
+        // artifactContent is available. Used by
+        // capturedTextForAnnotation for surfaces (mainly
+        // snapshots before artifactContent plumbing) and
+        // for line_range views without artifactContent.
+        extractTextForRange(startVal, endVal) {
+            var attr = (this.anchorType === 'row_range'
+                || this.anchorType === 'block_range')
+                ? this.lineAttr
+                : 'data-line';
+            var pieces = [];
+            for (var v = startVal; v <= endVal; v++) {
+                var el = document.querySelector(
+                    '[' + attr + '="' + v + '"]');
+                if (el) pieces.push(el.textContent || '');
+            }
+            return pieces.join('\\n');
         },
 
         expandAnnotation(number) {
@@ -2002,7 +2310,7 @@ data.annotation.number]
                     }
                     ta.blur();
                     var contentDiv
-                        = document.createElement('div');
+                        = document.createElement('pre');
                     contentDiv.className
                         = 'annotation-card-content '
                         + 'verbatim-card-content';
@@ -2508,6 +2816,17 @@ enum AnnotationMessage {
 /// Core builder — takes annotation dictionaries directly
 /// so different domain types (artifact, snapshot) can feed
 /// into the same JS module via small adapter overloads.
+///
+/// `artifactContent` is the raw source text of the artifact
+/// (or snapshot) — markdown source, code source, CSV, etc.
+/// When provided, the form's copy-lines affordance slices
+/// this string by line/row number to produce the same text
+/// Swift would persist as `line_content` / `row_content` on
+/// submit. Without it, the JS falls back to scanning the
+/// rendered DOM, which can be wrong for views where the
+/// rendered text differs from the source (markdown tables
+/// concatenate cell text without separators; diff rows
+/// include line-number gutters; etc.).
 func buildAnnotationInitJS(
     anchorType: String,
     blockSelector: String,
@@ -2516,7 +2835,8 @@ func buildAnnotationInitJS(
     refPrefix: String,
     itemLabel: String,
     annotationDicts: [[String: Any]],
-    htmlMap: [Int32: String]
+    htmlMap: [Int32: String],
+    artifactContent: String? = nil
 ) -> String {
     let htmlMapDict: [String: String] = {
         var d: [String: String] = [:]
@@ -2526,7 +2846,7 @@ func buildAnnotationInitJS(
         return d
     }()
 
-    let payload: [String: Any] = [
+    var payload: [String: Any] = [
         "anchorType": anchorType,
         "blockSelector": blockSelector,
         "lineAttr": lineAttr,
@@ -2536,6 +2856,9 @@ func buildAnnotationInitJS(
         "annotations": annotationDicts,
         "htmlMap": htmlMapDict,
     ]
+    if let content = artifactContent {
+        payload["artifactContent"] = content
+    }
 
     guard let data = try? JSONSerialization.data(
         withJSONObject: payload
@@ -2559,7 +2882,8 @@ func buildAnnotationInitJS(
     refPrefix: String,
     itemLabel: String,
     annotations: [ArtifactAnnotation],
-    htmlMap: [Int32: String]
+    htmlMap: [Int32: String],
+    artifactContent: String? = nil
 ) -> String {
     let dicts: [[String: Any]] = annotations.map { a in
         var dict: [String: Any] = [
@@ -2577,6 +2901,9 @@ func buildAnnotationInitJS(
             if let el = a.anchorData.endLine {
                 dict["end_line"] = el
             }
+            if let lc = a.anchorData.lineContent {
+                dict["line_content"] = lc
+            }
         case .diffRange:
             // Keep the global data-line values —
             // DOM anchoring still uses them — and
@@ -2590,6 +2917,9 @@ func buildAnnotationInitJS(
             }
             if let el = a.anchorData.endLine {
                 dict["end_line"] = el
+            }
+            if let lc = a.anchorData.lineContent {
+                dict["line_content"] = lc
             }
             if let fp = a.anchorData.filePath {
                 dict["file_path"] = fp
@@ -2610,12 +2940,18 @@ func buildAnnotationInitJS(
             if let er = a.anchorData.endRow {
                 dict["end_row"] = er
             }
+            if let rc = a.anchorData.rowContent {
+                dict["row_content"] = rc
+            }
         case .blockRange:
             if let sb = a.anchorData.startBlock {
                 dict["start_block"] = sb
             }
             if let eb = a.anchorData.endBlock {
                 dict["end_block"] = eb
+            }
+            if let bc = a.anchorData.blockContent {
+                dict["block_content"] = bc
             }
         case .whole:
             break
@@ -2637,7 +2973,8 @@ func buildAnnotationInitJS(
         refPrefix: refPrefix,
         itemLabel: itemLabel,
         annotationDicts: dicts,
-        htmlMap: htmlMap
+        htmlMap: htmlMap,
+        artifactContent: artifactContent
     )
 }
 
@@ -2652,7 +2989,8 @@ func buildAnnotationInitJS(
     refPrefix: String,
     itemLabel: String,
     annotations: [SnapshotAnnotation],
-    htmlMap: [Int32: String]
+    htmlMap: [Int32: String],
+    artifactContent: String? = nil
 ) -> String {
     let dicts: [[String: Any]] = annotations.map { a in
         var dict: [String: Any] = [
@@ -2681,6 +3019,7 @@ func buildAnnotationInitJS(
         refPrefix: refPrefix,
         itemLabel: itemLabel,
         annotationDicts: dicts,
-        htmlMap: htmlMap
+        htmlMap: htmlMap,
+        artifactContent: artifactContent
     )
 }

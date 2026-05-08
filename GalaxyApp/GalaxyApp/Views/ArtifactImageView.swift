@@ -216,6 +216,7 @@ private func buildImageHTML(
     <div class="image-container">
     \(imageElement)
     </div>
+    <script>\(clipboardCopyJS)</script>
     <script>\(annotationManagerJS)</script>
     <script>\(emojiDataJS)</script>
     <script>\(emojiAutocompleteJS)</script>
