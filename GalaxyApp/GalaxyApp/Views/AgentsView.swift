@@ -234,13 +234,55 @@ struct AgentsView: View {
             } else if let agents = agents,
                       agents.isEmpty
             {
-                Spacer()
-                Text("No agents")
-                    .chromeFont(
-                        size: fontSize.body
+                VStack(spacing: 12) {
+                    Spacer()
+                    Image(systemName: "person.3")
+                        .chromeFont(
+                            size: fontSize.iconLarge
+                        )
+                        .foregroundColor(.secondary)
+                    Text("No agents")
+                        .chromeFont(
+                            size: fontSize.title2
+                        )
+                        .foregroundColor(.primary)
+                    Text(
+                        "Sub-agent runs appear here when "
+                        + "Claude delegates a task"
                     )
+                    .chromeFont(size: fontSize.body)
                     .foregroundColor(.secondary)
-                Spacer()
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity)
+            } else if agents == nil {
+                // Same empty state for the post-load /
+                // never-populated case — mirrors the
+                // Snapshots and Artifacts indexes so the
+                // user never sees a blank pane while a
+                // ledger session ID is still resolving or
+                // a fetch hasn't returned its first batch.
+                VStack(spacing: 12) {
+                    Spacer()
+                    Image(systemName: "person.3")
+                        .chromeFont(
+                            size: fontSize.iconLarge
+                        )
+                        .foregroundColor(.secondary)
+                    Text("No agents")
+                        .chromeFont(
+                            size: fontSize.title2
+                        )
+                        .foregroundColor(.primary)
+                    Text(
+                        "Sub-agent runs appear here when "
+                        + "Claude delegates a task"
+                    )
+                    .chromeFont(size: fontSize.body)
+                    .foregroundColor(.secondary)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity)
             } else {
                 ScrollViewReader { scrollProxy in
                     ScrollView {
