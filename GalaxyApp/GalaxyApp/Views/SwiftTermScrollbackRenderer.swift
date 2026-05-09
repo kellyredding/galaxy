@@ -257,6 +257,7 @@ enum SwiftTermScrollbackRenderer {
         <script>\(emojiDataJS)</script>
         <script>\(emojiAutocompleteJS)</script>
         <script>\(clipboardCopyJS)</script>
+        <script>\(suggestionInsertJS)</script>
         <script>
         \(scrollbackManagerJS)
         \(noteManagerJS)
@@ -718,6 +719,41 @@ enum SwiftTermScrollbackRenderer {
             .copy-button.note-copy-lines {
             opacity: 1;
         }
+        /* Add-a-suggestion affordance — only shown in
+           new (form) and edit states, never in show.
+           Inserts the captured source text into the
+           active textarea wrapped in a `suggestion`
+           fenced block. */
+        .suggest-button.note-suggest {
+            background: transparent;
+            border: 0;
+            padding: 0 4px;
+            margin: 0;
+            cursor: pointer;
+            color: \(textColor);
+            line-height: 1;
+            opacity: 0.7;
+            transition: opacity 120ms ease,
+                color 120ms ease;
+            display: none;
+            align-items: center;
+        }
+        .suggest-button.note-suggest:hover {
+            opacity: 1;
+            color: var(--fg);
+        }
+        .suggest-button.note-suggest .suggest-icon {
+            display: block;
+        }
+        .note-form-header
+            .suggest-button.note-suggest {
+            display: inline-flex;
+        }
+        .note-card:has(.note-edit-textarea)
+            .suggest-button.note-suggest {
+            display: inline-flex;
+            opacity: 1;
+        }
         .note-card-content {
             margin-top: 4px;
             font-size: 12px;
@@ -1065,10 +1101,18 @@ enum SwiftTermScrollbackRenderer {
                     ? ''
                     : window.GalaxyClipboard.buttonHTML(
                         'note-copy-lines', 'Copy lines');
+            const formSuggestHTML =
+                (typeof window.GalaxySuggestion
+                    === 'undefined')
+                    ? ''
+                    : window.GalaxySuggestion.buttonHTML(
+                        'note-suggest',
+                        'Add a suggestion');
             this.formElement.innerHTML =
                 '<div class="note-form-header">' +
                     '<span class="note-form-ref"></span>' +
                     formCopyHTML +
+                    formSuggestHTML +
                 '</div>' +
                 '<textarea class="note-textarea" ' +
                     'spellcheck="false" ' +
@@ -1092,6 +1136,22 @@ enum SwiftTermScrollbackRenderer {
                     formCopyBtn,
                     () => self.pendingFormText(),
                     'Copy lines'
+                );
+            }
+
+            // Wire the form's suggestion-insert button.
+            // Reuses pendingFormText so the suggestion
+            // block matches the would-be saved
+            // lineContent byte-for-byte.
+            const formSuggestBtn = this.formElement
+                .querySelector('.note-suggest');
+            if (formSuggestBtn
+                && window.GalaxySuggestion) {
+                window.GalaxySuggestion.bindSuggestionButton(
+                    formSuggestBtn,
+                    () => self.pendingFormText(),
+                    () => this.formElement
+                        .querySelector('textarea')
                 );
             }
 
@@ -1329,12 +1389,23 @@ enum SwiftTermScrollbackRenderer {
                     ? ''
                     : window.GalaxyClipboard.buttonHTML(
                         'note-copy-lines', 'Copy lines');
+            // Suggestion-insert button. Always rendered;
+            // CSS hides it in the show state and reveals
+            // it only while an edit textarea is active.
+            const cardSuggestHTML =
+                (typeof window.GalaxySuggestion
+                    === 'undefined')
+                    ? ''
+                    : window.GalaxySuggestion.buttonHTML(
+                        'note-suggest',
+                        'Add a suggestion');
 
             card.innerHTML =
                 '<div class="note-card-header">' +
                     '<span class="note-card-ref">' + refText + '</span>' +
                     '<span class="note-card-meta">#' + note.number + '</span>' +
                     cardCopyHTML +
+                    cardSuggestHTML +
                     '<span class="note-card-actions">' +
                         '<button class="note-btn-edit" title="Edit">' +
                             self.editIconSVG + '</button>' +
@@ -1352,6 +1423,7 @@ enum SwiftTermScrollbackRenderer {
                 if (e.target.closest('.note-btn-edit') ||
                     e.target.closest('.note-btn-delete') ||
                     e.target.closest('.note-copy-lines') ||
+                    e.target.closest('.note-suggest') ||
                     e.target.closest('.note-edit-textarea')) return;
                 self.toggleExpand(note.id);
             });
@@ -1383,6 +1455,21 @@ enum SwiftTermScrollbackRenderer {
                 );
             }
 
+            // Suggestion-insert button. Looks up the
+            // edit textarea at click time so it picks up
+            // whatever startEdit just mounted.
+            const cardSuggestBtn = card.querySelector(
+                '.note-suggest');
+            if (cardSuggestBtn
+                && window.GalaxySuggestion) {
+                window.GalaxySuggestion.bindSuggestionButton(
+                    cardSuggestBtn,
+                    () => note.lineContent || '',
+                    () => card.querySelector(
+                        '.note-edit-textarea')
+                );
+            }
+
             // Suppress the 2nd click of a double-click so it doesn't
             // toggle expand. Capture phase + stopImmediatePropagation
             // ensures this runs before the bubble-phase toggle handler
@@ -1397,6 +1484,7 @@ enum SwiftTermScrollbackRenderer {
                 if (e.target.closest('.note-btn-edit') ||
                     e.target.closest('.note-btn-delete') ||
                     e.target.closest('.note-copy-lines') ||
+                    e.target.closest('.note-suggest') ||
                     e.target.closest('.note-edit-textarea')) return;
                 self.startEdit(note.id);
             });

@@ -129,6 +129,7 @@
 		DDD9EF413A5241ACDB016875 /* AgentsQueryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C694C8B104DEAC6605437941 /* AgentsQueryService.swift */; };
 		E4F32D6040F1D92456F3DB5B /* CopyButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A75DD66617BDBF94F9175C9 /* CopyButton.swift */; };
 		C0B0FF1100BD05082026CB01 /* ClipboardCopyJS.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0B0FF1100BD05082026CB02 /* ClipboardCopyJS.swift */; };
+		C0B0FF1100BD05082026CB03 /* SuggestionInsertJS.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0B0FF1100BD05082026CB04 /* SuggestionInsertJS.swift */; };
 		E5935CB38B847641A8281925 /* DirectoryField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 139EB2F2C31AF6EE70AFECF7 /* DirectoryField.swift */; };
 		E94CFE702D0C74AFE0D80B81 /* NewSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE3DAF1743A20920A57B236D /* NewSessionView.swift */; };
 		EDD17400C7F27572C4B6FE96 /* NavigationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15C1E3C296A1E84381807568 /* NavigationCoordinator.swift */; };
@@ -144,6 +145,7 @@
 		0663E09051C220DBD5E80CD2 /* EventCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventCoordinator.swift; sourceTree = "<group>"; };
 		0A75DD66617BDBF94F9175C9 /* CopyButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopyButton.swift; sourceTree = "<group>"; };
 		C0B0FF1100BD05082026CB02 /* ClipboardCopyJS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardCopyJS.swift; sourceTree = "<group>"; };
+		C0B0FF1100BD05082026CB04 /* SuggestionInsertJS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuggestionInsertJS.swift; sourceTree = "<group>"; };
 		0B33E9ACBBBDE22688F8D808 /* ExpandedSessionSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpandedSessionSidebar.swift; sourceTree = "<group>"; };
 		11AC80464BCD652210A6E2A5 /* ModalState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModalState.swift; sourceTree = "<group>"; };
 		1222FD00CE1FBF7DC99BD683 /* EventDebouncer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventDebouncer.swift; sourceTree = "<group>"; };
@@ -409,6 +411,7 @@
 				A43C7742A36C8BAB7C4C6419 /* ChromeFontScaling.swift */,
 				9840B2A7E1AAB30A89612AFB /* CollapsedSessionSidebar.swift */,
 				C0B0FF1100BD05082026CB02 /* ClipboardCopyJS.swift */,
+				C0B0FF1100BD05082026CB04 /* SuggestionInsertJS.swift */,
 				0A75DD66617BDBF94F9175C9 /* CopyButton.swift */,
 				139EB2F2C31AF6EE70AFECF7 /* DirectoryField.swift */,
 				43C2EE51F5ED8F5A44D27580 /* DragHandleNSView.swift */,
@@ -598,6 +601,7 @@
 				0382B41CACCDA9E37EBABA4C /* ContentView.swift in Sources */,
 				E4F32D6040F1D92456F3DB5B /* CopyButton.swift in Sources */,
 				C0B0FF1100BD05082026CB01 /* ClipboardCopyJS.swift in Sources */,
+				C0B0FF1100BD05082026CB03 /* SuggestionInsertJS.swift in Sources */,
 				E5935CB38B847641A8281925 /* DirectoryField.swift in Sources */,
 				59C4461354F92AEF376C88AA /* DragHandleNSView.swift in Sources */,
 				8BEB662ADED57F8B062B801A /* EmojiPickerData.swift in Sources */,

@@ -174,6 +174,44 @@ let annotationCSS: String = """
         .copy-button.annotation-copy-lines {
         opacity: 1;
     }
+    /* Add-a-suggestion affordance — only shown in
+       new/edit states, never in show. Inserts the
+       captured source text into the active textarea
+       wrapped in a `suggestion` fenced block. */
+    .suggest-button.annotation-suggest {
+        background: transparent;
+        border: 0;
+        padding: 0 4px;
+        margin: 0;
+        cursor: pointer;
+        color: var(--blockquote-fg);
+        line-height: 1;
+        opacity: 0.7;
+        transition: opacity 120ms ease,
+            color 120ms ease;
+        display: none;
+        align-items: center;
+    }
+    .suggest-button.annotation-suggest:hover {
+        opacity: 1;
+        color: var(--fg);
+    }
+    .suggest-button.annotation-suggest .suggest-icon {
+        display: block;
+    }
+    /* Visible whenever the form is up — the form is
+       only shown for new/edit. */
+    .annotation-form-header
+        .suggest-button.annotation-suggest {
+        display: inline-flex;
+    }
+    /* Visible on a card only while an edit textarea
+       is active. Show state hides it. */
+    .annotation-card:has(.annotation-edit-textarea)
+        .suggest-button.annotation-suggest {
+        display: inline-flex;
+        opacity: 1;
+    }
     .annotation-card:has(.annotation-edit-textarea)
         .annotation-card-actions {
         display: none;
@@ -865,11 +903,24 @@ state.expandedNumber);
                     : window.GalaxyClipboard.buttonHTML(
                         'annotation-copy-lines',
                         'Copy lines');
+            // Suggestion-insert affordance — same gate
+            // as copy. Inserts the captured text into the
+            // form textarea wrapped in a `suggestion`
+            // fenced block.
+            var suggestBtnHTML =
+                (this.anchorType === 'whole' ||
+                 typeof window.GalaxySuggestion
+                     === 'undefined')
+                    ? ''
+                    : window.GalaxySuggestion.buttonHTML(
+                        'annotation-suggest',
+                        'Add a suggestion');
             form.innerHTML =
                 '<div class="annotation-form-header">'
                 + '<span class="annotation-form-ref">'
                 + '</span>'
                 + copyBtnHTML
+                + suggestBtnHTML
                 + '</div>'
                 + '<textarea class="annotation-textarea"'
                 + ' spellcheck="false"'
@@ -922,6 +973,29 @@ ta, e)) {
                             .capturedTextForForm();
                     },
                     'Copy lines'
+                );
+            }
+
+            // Wire the form's suggestion-insert button
+            // (omitted in whole-anchor mode by the same
+            // gate as copy). Reuses capturedTextForForm
+            // so the suggestion block matches what would
+            // be copied or persisted byte-for-byte.
+            var formSuggestBtn = form.querySelector(
+                '.annotation-suggest');
+            if (formSuggestBtn
+                && window.GalaxySuggestion) {
+                var suggestManagerRef = AnnotationManager;
+                window.GalaxySuggestion.bindSuggestionButton(
+                    formSuggestBtn,
+                    function() {
+                        return suggestManagerRef
+                            .capturedTextForForm();
+                    },
+                    function() {
+                        return form.querySelector(
+                            '.annotation-textarea');
+                    }
                 );
             }
 
@@ -1333,6 +1407,18 @@ annotation.review_reviewed_at);
                     : window.GalaxyClipboard.buttonHTML(
                         'annotation-copy-lines',
                         'Copy lines');
+            // Suggestion-insert button. Always rendered;
+            // CSS hides it in the show state and reveals
+            // it once an edit textarea is active. Review-
+            // locked cards never reach edit so the button
+            // never surfaces there.
+            var suggestBtnHTML =
+                (typeof window.GalaxySuggestion
+                    === 'undefined')
+                    ? ''
+                    : window.GalaxySuggestion.buttonHTML(
+                        'annotation-suggest',
+                        'Add a suggestion');
 
             var card = document.createElement('div');
             card.className = 'annotation-card'
@@ -1403,6 +1489,7 @@ annotation.review_reviewed_at);
 "annotation-card-meta">'
                     + metaText + '</span>' +
                     copyBtnHTML +
+                    suggestBtnHTML +
                     actionsHTML +
                 '</div>' +
                 '<pre class=\
@@ -1423,6 +1510,8 @@ annotation.review_reviewed_at);
 '.annotation-card-actions') ||
                     e.target.closest(\
 '.annotation-copy-lines') ||
+                    e.target.closest(\
+'.annotation-suggest') ||
                     e.target.closest(\
 '.annotation-edit-textarea')) return;
                 self.expandAnnotation(\
@@ -1466,6 +1555,30 @@ annotation.number);
                 );
             }
 
+            // Wire the suggestion-insert button. CSS
+            // hides this in the show state, reveals it
+            // when an edit textarea is active. Target
+            // textarea is looked up at click time so it
+            // picks up the freshly-mounted edit textarea
+            // created by startEdit.
+            var cardSuggestBtn = card.querySelector(
+                '.annotation-suggest');
+            if (cardSuggestBtn
+                && window.GalaxySuggestion) {
+                window.GalaxySuggestion.bindSuggestionButton(
+                    cardSuggestBtn,
+                    function() {
+                        return self
+                            .capturedTextForAnnotation(
+                                annotation);
+                    },
+                    function() {
+                        return card.querySelector(
+                            '.annotation-edit-textarea');
+                    }
+                );
+            }
+
             // Suppress the 2nd click of a double-click so it
             // doesn't toggle expand. Capture phase +
             // stopImmediatePropagation ensures this runs before
@@ -1489,6 +1602,8 @@ annotation.number);
 '.annotation-card-actions') ||
                         e.target.closest(\
 '.annotation-copy-lines') ||
+                        e.target.closest(\
+'.annotation-suggest') ||
                         e.target.closest(\
 '.annotation-edit-textarea'))
                         return;

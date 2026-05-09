@@ -295,6 +295,7 @@ private func buildSourceHTML(
     }
     </script>
     <script>\(clipboardCopyJS)</script>
+    <script>\(suggestionInsertJS)</script>
     <script>
     \(annotationManagerJS)
     </script>

@@ -699,6 +699,7 @@ private func buildFullHTML(
     <script>\(highlightJS)</script>
     <script>if(typeof hljs !== 'undefined') hljs.highlightAll();</script>
     <script>\(clipboardCopyJS)</script>
+    <script>\(suggestionInsertJS)</script>
     <script>\(annotationManagerJS)</script>
     <script>\(emojiDataJS)</script>
     <script>\(emojiAutocompleteJS)</script>

@@ -194,6 +194,7 @@ private func buildMermaidHTML(
     }
     </script>
     <script>\(clipboardCopyJS)</script>
+    <script>\(suggestionInsertJS)</script>
     <script>\(annotationManagerJS)</script>
     <script>\(emojiDataJS)</script>
     <script>\(emojiAutocompleteJS)</script>

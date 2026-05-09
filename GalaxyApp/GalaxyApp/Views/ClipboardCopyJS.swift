@@ -19,8 +19,8 @@ let clipboardCopyJS: String = """
     if (window.GalaxyClipboard) return;
 
     var COPY_ICON_SVG =
-        '<svg class="copy-icon" width="12"'
-        + ' height="12" viewBox="0 0 16 16"'
+        '<svg class="copy-icon" width="14"'
+        + ' height="14" viewBox="0 0 16 16"'
         + ' aria-hidden="true">'
         + '<path fill="currentColor"'
         + ' d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75'
@@ -39,8 +39,8 @@ let clipboardCopyJS: String = """
         + '</svg>';
 
     var CHECK_ICON_SVG =
-        '<svg class="copy-icon" width="12"'
-        + ' height="12" viewBox="0 0 16 16"'
+        '<svg class="copy-icon" width="14"'
+        + ' height="14" viewBox="0 0 16 16"'
         + ' aria-hidden="true">'
         + '<path fill="currentColor"'
         + ' d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25'
