@@ -12,6 +12,40 @@ import AppKit
 /// mouse-mode queries, etc.) are deliberately not on the
 /// protocol; adding them would bloat the libghostty swap
 /// surface. Extend only when a concrete use appears.
+///
+/// ## Auto-follow invariants
+///
+/// Two invariants any conforming backend must uphold so that
+/// "viewport stays stuck to the bottom while output streams"
+/// works consistently across the chrome:
+///
+/// 1. **Bottom-stick across size changes.** When the
+///    viewport is at the bottom and no user scroll has
+///    intervened, the implementation must keep the viewport
+///    at the bottom across pixel-size changes (sidebar drag,
+///    window resize, font size change). Column changes
+///    recompute wrapped lines and can leave the viewport
+///    short of the new bottom even without any user intent
+///    to scroll up — the resize path is responsible for
+///    re-pinning to the bottom.
+///
+/// 2. **Selection freezes the viewport.** While the user has
+///    an active text selection, output must NOT auto-follow.
+///    New lines extend the buffer, but the viewport stays
+///    anchored so the selected region keeps pointing at the
+///    same cells. On selection clear, the implementation
+///    re-evaluates the viewport's position relative to the
+///    bottom: if still at the bottom, resume auto-follow; if
+///    not (output drifted past during the selection), stay
+///    frozen — the user is now in implicit scrollback and
+///    must scroll back to the bottom themselves to resume
+///    auto-follow.
+///
+/// SwiftTerm implements both via its `userScrolling` flag —
+/// active selection sets it true; resize and selection-clear
+/// re-evaluate it. A libghostty backend may use a different
+/// internal mechanism, but the observable behavior must
+/// match.
 protocol TerminalBackend: AnyObject {
     /// The terminal surface as an NSView.
     var view: NSView { get }
