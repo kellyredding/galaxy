@@ -609,28 +609,32 @@ class MainMenu: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        // Terminal font size
-        let activeSession = sessionManager.activeSession
-        let hasActiveRunningSession = activeSession != nil && activeSession?.hasExited != true
-
+        // Terminal font size. Enable state is computed
+        // dynamically by `MenuActions.validateMenuItem` —
+        // gated on the focused pane being a terminal pane,
+        // not on whether a session merely exists. Static
+        // `isEnabled` would go stale between buildViewMenu
+        // calls (the View menu only rebuilds on visual open),
+        // which dropped the menu's key equivalents on the
+        // floor and let SwiftTerm consume the keystroke.
         let defaultTerminalItem = NSMenuItem(title: "Default terminal font size", action: #selector(MenuActions.defaultTerminalFontSize(_:)), keyEquivalent: "0")
         defaultTerminalItem.target = MenuActions.shared
-        defaultTerminalItem.isEnabled = hasActiveRunningSession
         menu.addItem(defaultTerminalItem)
 
         let biggerTerminalItem = NSMenuItem(title: "Bigger", action: #selector(MenuActions.biggerTerminalFontSize(_:)), keyEquivalent: "=")
         biggerTerminalItem.target = MenuActions.shared
-        biggerTerminalItem.isEnabled = hasActiveRunningSession && (activeSession?.canIncreaseTerminalFontSize ?? false)
         menu.addItem(biggerTerminalItem)
 
         let smallerTerminalItem = NSMenuItem(title: "Smaller", action: #selector(MenuActions.smallerTerminalFontSize(_:)), keyEquivalent: "-")
         smallerTerminalItem.target = MenuActions.shared
-        smallerTerminalItem.isEnabled = hasActiveRunningSession && (activeSession?.canDecreaseTerminalFontSize ?? false)
         menu.addItem(smallerTerminalItem)
 
         menu.addItem(.separator())
 
-        // Chrome font size
+        // Chrome font size. Bounds-checked dynamically by
+        // `MenuActions.validateMenuItem` so the keyboard
+        // shortcut stops firing at the upper / lower limit
+        // without a buildViewMenu rebuild.
         let defaultChromeItem = NSMenuItem(title: "Default chrome font size", action: #selector(MenuActions.defaultChromeFontSize(_:)), keyEquivalent: "0")
         defaultChromeItem.target = MenuActions.shared
         defaultChromeItem.keyEquivalentModifierMask = [.command, .shift]
@@ -639,13 +643,11 @@ class MainMenu: NSObject, NSMenuDelegate {
         let biggerChromeItem = NSMenuItem(title: "Bigger", action: #selector(MenuActions.biggerChromeFontSize(_:)), keyEquivalent: "=")
         biggerChromeItem.target = MenuActions.shared
         biggerChromeItem.keyEquivalentModifierMask = [.command, .shift]
-        biggerChromeItem.isEnabled = settingsManager.settings.chromeFontSize < AppSettings.chromeFontSizeRange.upperBound
         menu.addItem(biggerChromeItem)
 
         let smallerChromeItem = NSMenuItem(title: "Smaller", action: #selector(MenuActions.smallerChromeFontSize(_:)), keyEquivalent: "-")
         smallerChromeItem.target = MenuActions.shared
         smallerChromeItem.keyEquivalentModifierMask = [.command, .shift]
-        smallerChromeItem.isEnabled = settingsManager.settings.chromeFontSize > AppSettings.chromeFontSizeRange.lowerBound
         menu.addItem(smallerChromeItem)
 
         menu.addItem(.separator())
@@ -863,26 +865,23 @@ class MenuActions: NSObject {
         SessionManager.shared.listNavAction = .activate
     }
 
+    /// View ▸ Default / Bigger / Smaller terminal font size
+    /// route through the focused `TerminalPane` so the chrome
+    /// layer never reaches into a backend-specific zoom path.
+    /// `validateMenuItem` already gates these on a terminal
+    /// pane being the first responder; the no-op guard here
+    /// is belt-and-suspenders for the (unreachable) case
+    /// where validation is bypassed.
     @objc func defaultTerminalFontSize(_ sender: Any?) {
-        SessionManager.shared.activeSession?.resetTerminalFontSize()
+        Self.focusedTerminalPane()?.resetFontSize()
     }
 
     @objc func biggerTerminalFontSize(_ sender: Any?) {
-        if let shellPane = Self.focusedShellPane() {
-            shellPane.increaseFontSize()
-        } else {
-            SessionManager.shared.activeSession?
-                .increaseTerminalFontSize()
-        }
+        Self.focusedTerminalPane()?.increaseFontSize()
     }
 
     @objc func smallerTerminalFontSize(_ sender: Any?) {
-        if let shellPane = Self.focusedShellPane() {
-            shellPane.decreaseFontSize()
-        } else {
-            SessionManager.shared.activeSession?
-                .decreaseTerminalFontSize()
-        }
+        Self.focusedTerminalPane()?.decreaseFontSize()
     }
 
     @objc func openShell(_ sender: Any?) {
@@ -904,20 +903,23 @@ class MenuActions: NSObject {
     }
 
     /// Walk up from the current first responder looking for
-    /// a `TerminalHostView` hosting a `ShellTerminalPane`.
-    /// Used by ⌘+/⌘- to route font size changes to the focused
-    /// pane — shell pane when it's focused, session pane
-    /// otherwise. Returns nil when the focus is elsewhere.
-    private static func focusedShellPane() -> ShellTerminalPane? {
+    /// a `TerminalHostView` and return its hosted
+    /// `TerminalPane` (Session or Shell). Used by the View ▸
+    /// terminal-font menu items to gate their key
+    /// equivalents on a terminal pane actually being focused
+    /// — pressing ⌘+/⌘- from the Snapshots / Artifacts /
+    /// Agents / Ledger tab no longer silently zooms the
+    /// background session pane. Returns nil when focus is
+    /// elsewhere (sidebar, modal sheet, non-terminal tab).
+    static func focusedTerminalPane() -> TerminalPane? {
         guard let window = NSApp.keyWindow,
               let responder =
                 window.firstResponder as? NSView
         else { return nil }
         var view: NSView? = responder
         while let v = view {
-            if let host = v as? TerminalHostView,
-               let shell = host.pane as? ShellTerminalPane {
-                return shell
+            if let host = v as? TerminalHostView {
+                return host.pane
             }
             view = v.superview
         }
@@ -960,6 +962,66 @@ class MenuActions: NSObject {
         SessionManager.shared.activateFind()
     }
 
+}
+
+// MARK: - Menu Validation
+
+/// Dynamic enable/disable for menu items whose state can
+/// shift between `buildXxxMenu` calls — primarily the View
+/// ▸ font-size shortcuts. AppKit calls `validateMenuItem`
+/// both on visual menu open and on key-equivalent dispatch,
+/// so the keyboard shortcut and the visible menu state stay
+/// in lockstep without reactive Combine rebuilds for each
+/// underlying signal (active session, per-pane font size,
+/// chrome font size, first responder).
+///
+/// Items not handled here defer to the explicit `isEnabled`
+/// set inside the matching `buildXxxMenu` — that preserves
+/// the existing build-time logic for every other action
+/// (Find, Back/Forward, Hide/Show sessions, list-nav, etc.).
+extension MenuActions: NSMenuItemValidation {
+    func validateMenuItem(
+        _ menuItem: NSMenuItem
+    ) -> Bool {
+        switch menuItem.action {
+        // Terminal font items: only fire when the first
+        // responder is inside a `TerminalHostView`.
+        // `focusedTerminalPane()` returns the protocol-typed
+        // pane (Session or Shell) so neither this gate nor
+        // the action handlers couple to SwiftTerm.
+        case #selector(defaultTerminalFontSize(_:)):
+            return Self.focusedTerminalPane() != nil
+        case #selector(biggerTerminalFontSize(_:)):
+            return Self.focusedTerminalPane()?
+                .canIncreaseFontSize ?? false
+        case #selector(smallerTerminalFontSize(_:)):
+            return Self.focusedTerminalPane()?
+                .canDecreaseFontSize ?? false
+
+        // Chrome font items: bound-checked against the live
+        // settings value, never gated on focus — the user
+        // wants ⌘⇧+/⌘⇧-/⌘⇧0 working from any tab.
+        case #selector(biggerChromeFontSize(_:)):
+            return SettingsManager.shared.settings
+                .chromeFontSize
+                < AppSettings.chromeFontSizeRange.upperBound
+        case #selector(smallerChromeFontSize(_:)):
+            return SettingsManager.shared.settings
+                .chromeFontSize
+                > AppSettings.chromeFontSizeRange.lowerBound
+        case #selector(defaultChromeFontSize(_:)):
+            return true
+
+        // For everything else, the explicit `isEnabled` set
+        // by the relevant `buildXxxMenu` IS the answer. Once
+        // a target conforms to NSMenuItemValidation, AppKit
+        // routes every item targeting it through this method
+        // — returning `menuItem.isEnabled` keeps that logic
+        // intact rather than forcing a parallel reimpl here.
+        default:
+            return menuItem.isEnabled
+        }
+    }
 }
 
 // MARK: - Notifications

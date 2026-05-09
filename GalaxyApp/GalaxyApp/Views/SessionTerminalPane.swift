@@ -80,6 +80,31 @@ final class SessionTerminalPane: TerminalPane {
             ?? Empty().eraseToAnyPublisher()
     }
 
+    /// Session-pane font size lives on the Session model so
+    /// it persists across pane teardown (e.g. resume). Forward
+    /// to the existing per-session mutators so the publisher
+    /// fires and any subscribed views (TerminalHostView's
+    /// scrollback overlay, etc.) re-render.
+    func increaseFontSize() {
+        session?.increaseTerminalFontSize()
+    }
+
+    func decreaseFontSize() {
+        session?.decreaseTerminalFontSize()
+    }
+
+    func resetFontSize() {
+        session?.resetTerminalFontSize()
+    }
+
+    var canIncreaseFontSize: Bool {
+        session?.canIncreaseTerminalFontSize ?? false
+    }
+
+    var canDecreaseFontSize: Bool {
+        session?.canDecreaseTerminalFontSize ?? false
+    }
+
     init(session: Session, backend: TerminalBackend) {
         self.session = session
         self.backend = backend

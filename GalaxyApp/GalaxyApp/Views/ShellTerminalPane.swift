@@ -203,6 +203,15 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
         applyPerPaneFontSize()
     }
 
+    /// Reset to the global default terminal font size. Mirrors
+    /// `Session.resetTerminalFontSize()` so the View ▸ Default
+    /// menu action behaves identically across pane kinds.
+    func resetFontSize() {
+        fontSize = SettingsManager.shared.settings
+            .defaultTerminalFontSize
+        applyPerPaneFontSize()
+    }
+
     var canIncreaseFontSize: Bool {
         fontSize < AppSettings.terminalFontSizeRange.upperBound
     }

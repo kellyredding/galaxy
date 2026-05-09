@@ -158,6 +158,30 @@ protocol TerminalPane: AnyObject {
     /// overlay with updated font metrics, without caring
     /// whether the source is a session or a shell pane.
     var fontSizePublisher: AnyPublisher<CGFloat, Never> { get }
+
+    /// Bump this pane's terminal font size by one step, up to
+    /// the global terminal font-size ceiling. The View ▸
+    /// Bigger menu action routes here so the chrome layer
+    /// never reaches into a backend-specific zoom path.
+    func increaseFontSize()
+
+    /// Drop this pane's terminal font size by one step, down
+    /// to the global terminal font-size floor.
+    func decreaseFontSize()
+
+    /// Reset this pane's terminal font size to the default
+    /// from `AppSettings.defaultTerminalFontSize`.
+    func resetFontSize()
+
+    /// Whether the pane's font size is below the ceiling and
+    /// can take another increase step. Drives the View ▸
+    /// Bigger menu item's enabled state.
+    var canIncreaseFontSize: Bool { get }
+
+    /// Whether the pane's font size is above the floor and
+    /// can take another decrease step. Drives the View ▸
+    /// Smaller menu item's enabled state.
+    var canDecreaseFontSize: Bool { get }
 }
 
 /// Describes where a "Send to Claude" action should route
