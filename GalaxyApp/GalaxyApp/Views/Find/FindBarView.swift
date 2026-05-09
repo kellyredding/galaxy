@@ -48,7 +48,15 @@ struct FindBarView: View {
                 .foregroundColor(.secondary)
                 .frame(minWidth: 60, alignment: .trailing)
 
-            Button(action: { controller.prev() }) {
+            // Up arrow always walks visually UP. In forward
+            // mode (artifact / snapshot readers) that maps to
+            // controller.prev(); in reverse mode (scrollback,
+            // where the JS pipeline iterates from the most
+            // recent match back through history) it maps to
+            // controller.next(). Icon position stays fixed —
+            // up on the left, down on the right — to match
+            // every other macOS find UI.
+            Button(action: walkUpAction) {
                 Image(systemName: "chevron.up")
                     .chromeFont(size: fontSize.iconSmall)
                     .frame(width: 24, height: 24)
@@ -61,9 +69,9 @@ struct FindBarView: View {
             // shortcut covers the case where focus has drifted
             // elsewhere (e.g., after a click outside).
             .keyboardShortcut(.return, modifiers: .shift)
-            .help("Previous match (⇧↩)")
+            .help(walkUpHelp)
 
-            Button(action: { controller.next() }) {
+            Button(action: walkDownAction) {
                 Image(systemName: "chevron.down")
                     .chromeFont(size: fontSize.iconSmall)
                     .frame(width: 24, height: 24)
@@ -71,7 +79,7 @@ struct FindBarView: View {
             }
             .buttonStyle(.plain)
             .disabled(controller.matchCount == 0)
-            .help("Next match (↩)")
+            .help(walkDownHelp)
 
             Button(action: { controller.isVisible = false }) {
                 Image(systemName: "xmark")
@@ -101,5 +109,46 @@ struct FindBarView: View {
         if controller.matchCount == 0 { return "No matches" }
         return "\(controller.matchIndex + 1) "
             + "of \(controller.matchCount)"
+    }
+
+    /// Action for the up-arrow button. The button always walks
+    /// visually UP; which controller method that corresponds to
+    /// depends on whether the surface iterates forward or
+    /// reverse. The JS pipeline's reverseMode flips next/prev's
+    /// step direction, so calling next in a reverse-mode
+    /// controller actually walks UP.
+    private func walkUpAction() {
+        if controller.reverse {
+            controller.next()
+        } else {
+            controller.prev()
+        }
+    }
+
+    /// Action for the down-arrow button — symmetric to walkUp.
+    private func walkDownAction() {
+        if controller.reverse {
+            controller.prev()
+        } else {
+            controller.next()
+        }
+    }
+
+    /// Tooltip on the up-arrow button. The shortcut hint
+    /// reflects which keyboard chord triggers the same motion
+    /// from the field: in forward mode walking up is the
+    /// secondary action (Shift+Return), in reverse mode it's
+    /// the primary action (Return).
+    private var walkUpHelp: String {
+        controller.reverse
+            ? "Next match (↩)"
+            : "Previous match (⇧↩)"
+    }
+
+    /// Tooltip on the down-arrow button — symmetric to walkUp.
+    private var walkDownHelp: String {
+        controller.reverse
+            ? "Previous match (⇧↩)"
+            : "Next match (↩)"
     }
 }
