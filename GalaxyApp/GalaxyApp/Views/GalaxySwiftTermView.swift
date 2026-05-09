@@ -111,11 +111,70 @@ class GalaxySwiftTermView: LocalProcessTerminalView {
     /// overlay created), false to let the parent proceed normally.
     var onScrollUp: ((NSEvent) -> Bool)?
 
+    /// Trackpad gesture lock: latched the moment yDisp reaches yBase
+    /// during a scroll gesture; cleared on the next `phase == .began`.
+    /// While set, all remaining events in the gesture (continued
+    /// active scrolling, momentum tail, inertial rebound) are dropped
+    /// — the viewport stays pinned to the bottom regardless of what
+    /// inertia would have done. See the auto-follow invariants doc on
+    /// `TerminalBackend` (invariant 3) for the contract this satisfies.
+    ///
+    /// Mouse wheel and knob drag don't use this latch. Wheel events
+    /// have no `phase` data and no inertia; each click is a discrete
+    /// intent. Knob drag goes through `scroll(toPosition:)` and
+    /// `NSScroller`'s clamp at 1.0 makes the existing vendor path
+    /// deterministic via the `atBottom` post-block in `scrollTo`.
+    private var gestureLockedAtBottom: Bool = false
+
     public override func scrollWheel(with event: NSEvent) {
         if event.deltaY > 0, let callback = onScrollUp, callback(event) {
             return
         }
+
+        let isTrackpadGesture =
+            event.phase != [] || event.momentumPhase != []
+
+        // Reset on a fresh trackpad gesture so the prior gesture's
+        // lock doesn't carry over.
+        if isTrackpadGesture && event.phase == .began {
+            gestureLockedAtBottom = false
+        }
+
+        // Once locked, drop everything else from this trackpad
+        // gesture. Mouse wheel events (no phase data) bypass this
+        // guard since they're stateless per click.
+        if isTrackpadGesture && gestureLockedAtBottom {
+            return
+        }
+
+        let yDispBefore = terminal.displayBuffer.yDisp
         super.scrollWheel(with: event)
+
+        let buf = terminal.displayBuffer
+        // Only treat this event as "reach-bottom" if yDisp
+        // actually moved downward this event AND landed at or
+        // past yBase. Without the `> yDispBefore` half, an
+        // at-bottom user starting a scroll-up gesture would
+        // re-trigger the lock on every sub-line event (where
+        // super ran but yDisp did not move), trapping them at
+        // the bottom and blocking scrollback entirely.
+        if buf.yDisp > yDispBefore && buf.yDisp >= buf.yBase {
+            // Reached the bottom mid-gesture — snap (defensive
+            // belt-and-suspenders; vendor scrollTo's atBottom
+            // post-block already does this for the common case),
+            // clear the auto-follow gate, and (for trackpad
+            // only) lock the rest of this gesture so momentum
+            // tail and rebound can't drift us back off.
+            buf.yDisp = buf.yBase
+            terminal.userScrolling = false
+            terminal.refresh(
+                startRow: 0, endRow: terminal.rows
+            )
+            setNeedsDisplay(bounds)
+            if isTrackpadGesture {
+                gestureLockedAtBottom = true
+            }
+        }
     }
 }
 

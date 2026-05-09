@@ -15,9 +15,9 @@ import AppKit
 ///
 /// ## Auto-follow invariants
 ///
-/// Two invariants any conforming backend must uphold so that
-/// "viewport stays stuck to the bottom while output streams"
-/// works consistently across the chrome:
+/// Three invariants any conforming backend must uphold so
+/// that "viewport stays stuck to the bottom while output
+/// streams" works consistently across the chrome:
 ///
 /// 1. **Bottom-stick across size changes.** When the
 ///    viewport is at the bottom and no user scroll has
@@ -41,11 +41,46 @@ import AppKit
 ///    must scroll back to the bottom themselves to resume
 ///    auto-follow.
 ///
-/// SwiftTerm implements both via its `userScrolling` flag —
-/// active selection sets it true; resize and selection-clear
-/// re-evaluate it. A libghostty backend may use a different
-/// internal mechanism, but the observable behavior must
-/// match.
+/// 3. **Trackpad inertia must not undo reach-bottom.** When
+///    a downward trackpad gesture reaches the buffer bottom
+///    mid-gesture, the implementation must hold the viewport
+///    there for the remainder of the gesture and ignore
+///    inertial rebound deltas that would otherwise drift it
+///    off by one or two rows. Without this defense, hard
+///    trackpad flicks land the user at the bottom
+///    momentarily and then a tail-end upward delta nudges
+///    them off — the user sees themselves at the bottom but
+///    auto-follow has silently disengaged, and new output
+///    streams in below the visible region.
+///
+/// SwiftTerm implementation:
+/// - Invariants 1 and 2 are satisfied by the `Terminal`
+///   class's `userScrolling` flag plus Galaxy vendor
+///   patches in `processSizeChange`, `selectionChanged`,
+///   and `feedPrepare`. The flag is true while a selection
+///   is active or the user is in scrollback, false
+///   otherwise; `Terminal.scroll()` only pins yDisp to
+///   yBase on each appended line when the flag is false.
+/// - Invariant 3 is satisfied by a subclass-level latch in
+///   `GalaxySwiftTermView.scrollWheel`. When a trackpad
+///   gesture event moves `yDisp` downward to land at or
+///   past `yBase`, the subclass snaps to the bottom, clears
+///   `userScrolling`, and ignores all further events in the
+///   same gesture (active continuation, momentum tail,
+///   rebound) until the next `phase == .began`. The
+///   downward-motion qualifier is essential — without it,
+///   an at-bottom user starting a scroll-up gesture would
+///   re-trigger the lock on every sub-line event (where
+///   `yDisp` is at `yBase` but did not move) and become
+///   unable to enter scrollback. Mouse wheel and knob drag
+///   do not need this defense — wheel clicks are discrete
+///   with no inertia, and `NSScroller` clamps `doubleValue`
+///   at `1.0` so vendor `scroll(toPosition: 1.0)` lands
+///   `yDisp` exactly at `yBase` and the `atBottom`
+///   post-block in `scrollTo` clears `userScrolling`.
+///
+/// A libghostty backend may use different internal
+/// mechanisms but the observable behavior must match.
 protocol TerminalBackend: AnyObject {
     /// The terminal surface as an NSView.
     var view: NSView { get }
