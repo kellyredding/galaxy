@@ -36,18 +36,6 @@ final class SessionTerminalPane: TerminalPane {
         set { backend.onScrollUp = newValue }
     }
 
-    /// Scroll-down notification forwards to the backend,
-    /// which fires it after any motion that moved `yDisp`
-    /// downward. Same delegation pattern as `onScrollUp`.
-    var onScrollDown: (() -> Void)? {
-        get { backend.onScrollDown }
-        set { backend.onScrollDown = newValue }
-    }
-
-    func snapViewportToBottomIfWithin(rows: Int) -> Bool {
-        backend.snapViewportToBottomIfWithin(rows: rows)
-    }
-
     var hasScrollbackContent: Bool {
         backend.hasScrollbackContent
     }

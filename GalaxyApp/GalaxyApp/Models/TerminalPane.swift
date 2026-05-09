@@ -82,28 +82,6 @@ protocol TerminalPane: AnyObject {
     /// panes.
     var onScrollUp: ((NSEvent) -> Bool)? { get set }
 
-    /// Callback invoked after any user-initiated scroll
-    /// motion that moved the viewport downward (wheel,
-    /// page-down, scroller knob drag). Set by
-    /// `TerminalHostView` to invoke
-    /// `snapViewportToBottomIfWithin` and lock auto-follow
-    /// when the user has scrolled to or near the bottom.
-    /// Direction is detected at the source so a 1-row
-    /// scroll-up doesn't bounce back to bottom.
-    var onScrollDown: (() -> Void)? { get set }
-
-    /// If the viewport is within `rows` lines of the
-    /// buffer bottom but not exactly at it, snap to the
-    /// bottom and clear the underlying terminal's
-    /// auto-follow gate so subsequent output streams
-    /// pin to the latest line. Returns true if the snap
-    /// fired, false otherwise (already at bottom, far
-    /// from bottom, or selection active). Pane impls
-    /// forward to whichever subsystem owns the snap
-    /// (the backend for Shell, the SwiftTerm subclass
-    /// directly for Session).
-    func snapViewportToBottomIfWithin(rows: Int) -> Bool
-
     /// True when the underlying terminal has scrollback
     /// content above the viewport. Both panes forward to
     /// their respective surfaces; chrome consumes via
@@ -141,11 +119,9 @@ protocol TerminalPane: AnyObject {
 
     /// Unconditionally snap the viewport to the bottom of
     /// the scrollback buffer and clear the `userScrolling`
-    /// gate so subsequent output auto-follows. Distinct
-    /// from `snapViewportToBottomIfWithin(rows:)` — no
-    /// threshold, no selection-active guard, no return
-    /// value. Used by the scrollback overlay's `onReady`
-    /// hook.
+    /// gate so subsequent output auto-follows. No threshold,
+    /// no selection-active guard, no return value. Used by
+    /// the scrollback overlay's `onReady` hook.
     func snapViewportToBottom()
 
     /// Current font size for this pane's terminal. Per-pane

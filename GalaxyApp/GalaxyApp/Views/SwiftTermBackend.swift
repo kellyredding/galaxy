@@ -58,19 +58,6 @@ final class SwiftTermBackend: NSObject, TerminalBackend,
         set { terminalView.onScrollUp = newValue }
     }
 
-    /// Forward to the subclass's stored property — mirror
-    /// of `onScrollUp`. Lets `TerminalHostView` wire its
-    /// snap-to-bottom hook through the backend without
-    /// reaching past the protocol.
-    var onScrollDown: (() -> Void)? {
-        get { terminalView.onScrollDown }
-        set { terminalView.onScrollDown = newValue }
-    }
-
-    func snapViewportToBottomIfWithin(rows: Int) -> Bool {
-        terminalView.snapViewportToBottomIfWithin(rows: rows)
-    }
-
     var hasScrollbackContent: Bool {
         terminalView.terminal.displayBuffer.yBase > 0
     }

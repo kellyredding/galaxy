@@ -45,7 +45,7 @@ index deca240..4f8f287 100644
          dependencies: [
              "SwiftTerm",
 diff --git a/Sources/SwiftTerm/Apple/AppleTerminalView.swift b/Sources/SwiftTerm/Apple/AppleTerminalView.swift
-index 553a94c..3884223 100644
+index 553a94c..9f80729 100644
 --- a/Sources/SwiftTerm/Apple/AppleTerminalView.swift
 +++ b/Sources/SwiftTerm/Apple/AppleTerminalView.swift
 @@ -14,6 +14,13 @@ import ImageIO
@@ -231,40 +231,59 @@ index 553a94c..3884223 100644
          if newScrollPosition < 0 {
              newScrollPosition = 0
          }
-@@ -1488,27 +1558,12 @@ extension TerminalView {
+@@ -1488,18 +1558,20 @@ extension TerminalView {
          if newScrollPosition != oldPosition {
              scrollTo(row: newScrollPosition)
          }
 -        userScrolling = false
--    }
--    
--    func scrollTo (row: Int, notifyAccessibility: Bool = true)
--    {
--        let displayBuffer = terminal.displayBuffer
--        if row != displayBuffer.yDisp {
--            terminal.setViewYDisp (row)
--            
--            // tell the terminal we want to refresh all the rows
--            terminal.refresh (startRow: 0, endRow: terminal.rows)
--            
--            // do the display update
--            updateDisplay (notifyAccessibility: notifyAccessibility)
--            //selectionView.notifyScrolled(source: terminal)
--            terminalDelegate?.scrolled (source: self, position: scrollPosition)
--            updateScroller()
--            setNeedsDisplay(frame)
--        }
      }
 -    
 +
-+    // GALAXY: scrollTo(row:notifyAccessibility:) relocated to
-+    // MacTerminalView.swift class body (marked open) so subclasses
-+    // in other modules can override it for post-scroll hooks.
++    /// Scrolls the viewport so that `row` becomes the top displayed line.
++    /// Updates `userScrolling` based on whether the resulting position is
++    /// at the bottom of the buffer.
+     func scrollTo (row: Int, notifyAccessibility: Bool = true)
+     {
+         let displayBuffer = terminal.displayBuffer
+         if row != displayBuffer.yDisp {
+             terminal.setViewYDisp (row)
+-            
++
+             // tell the terminal we want to refresh all the rows
+             terminal.refresh (startRow: 0, endRow: terminal.rows)
+-            
++
+             // do the display update
+             updateDisplay (notifyAccessibility: notifyAccessibility)
+             //selectionView.notifyScrolled(source: terminal)
+@@ -1507,8 +1579,25 @@ extension TerminalView {
+             updateScroller()
+             setNeedsDisplay(frame)
+         }
++
++        // GALAXY: Update the terminal's userScrolling flag based on whether
++        // the viewport is at the bottom. When the user scrolls up, this
++        // prevents Terminal.scroll() from snapping yDisp back to yBase
++        // on each new line of output. Cleared when the user scrolls
++        // back to the bottom, resuming auto-follow behavior.
++        //
++        // Don't update userScrolling while a selection is active.
++        // selectionChanged owns userScrolling during selection — it
++        // freezes the viewport on selection start and evaluates scroll
++        // position on selection clear. Without this guard, scrollTo
++        // (called by auto-scroll during drag, or trackpad scrolling
++        // during selection) would override the freeze.
++        let atBottom = displayBuffer.yDisp >= displayBuffer.yBase
++        if !selection.active {
++            terminal.userScrolling = !atBottom
++        }
+     }
+-    
 +
      /// Scrolls the content of the terminal one page up
      public func pageUp()
      {
-@@ -1547,13 +1602,46 @@ extension TerminalView {
+@@ -1547,13 +1636,46 @@ extension TerminalView {
      func feedPrepare()
      {
          search.invalidate()
@@ -313,7 +332,7 @@ index 553a94c..3884223 100644
          queuePendingDisplay()
      }
      
-@@ -1573,33 +1661,11 @@ extension TerminalView {
+@@ -1573,33 +1695,10 @@ extension TerminalView {
          feedFinish()
      }
           
@@ -344,8 +363,7 @@ index 553a94c..3884223 100644
 -        terminalDelegate?.send (source: self, data: data)
 -    }
 -    
-+    // GALAXY: resize(cols:rows:), send(data:), and
-+    // scrollTo(row:notifyAccessibility:) relocated to
++    // GALAXY: resize(cols:rows:) and send(data:) relocated to
 +    // MacTerminalView.swift class body (marked open) so subclasses
 +    // in other modules can override them.
 +
@@ -688,7 +706,7 @@ index 90402c0..d53edd9 100644
                          blue: CGFloat (color.blue) / 65535.0,
                          alpha: 1.0)
 diff --git a/Sources/SwiftTerm/Mac/MacTerminalView.swift b/Sources/SwiftTerm/Mac/MacTerminalView.swift
-index 412b95a..d38bf6a 100644
+index 412b95a..8014769 100644
 --- a/Sources/SwiftTerm/Mac/MacTerminalView.swift
 +++ b/Sources/SwiftTerm/Mac/MacTerminalView.swift
 @@ -15,6 +15,27 @@ import AppKit
@@ -1215,7 +1233,7 @@ index 412b95a..d38bf6a 100644
      public override func resetCursorRects() {
          addCursorRect(bounds, cursor: .iBeam)
      }
-@@ -1422,6 +1665,70 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
+@@ -1422,6 +1665,31 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations,
      public func iTermContent (source: Terminal, content: ArraySlice<UInt8>) {
          terminalDelegate?.iTermContent(source: self, content: content)
      }
@@ -1244,45 +1262,6 @@ index 412b95a..d38bf6a 100644
 +        terminalDelegate?.send (source: self, data: data)
 +    }
 +
-+    /**
-+     * Scrolls the viewport so that `row` becomes the top displayed line.
-+     * Updates `userScrolling` based on whether the resulting position is
-+     * at the bottom of the buffer.
-+     */
-+    open func scrollTo (row: Int, notifyAccessibility: Bool = true)
-+    {
-+        let displayBuffer = terminal.displayBuffer
-+        if row != displayBuffer.yDisp {
-+            terminal.setViewYDisp (row)
-+
-+            // tell the terminal we want to refresh all the rows
-+            terminal.refresh (startRow: 0, endRow: terminal.rows)
-+
-+            // do the display update
-+            updateDisplay (notifyAccessibility: notifyAccessibility)
-+            //selectionView.notifyScrolled(source: terminal)
-+            terminalDelegate?.scrolled (source: self, position: scrollPosition)
-+            updateScroller()
-+            setNeedsDisplay(frame)
-+        }
-+
-+        // Update the terminal's userScrolling flag based on whether the
-+        // viewport is at the bottom. When the user scrolls up, this
-+        // prevents Terminal.scroll() from snapping yDisp back to yBase
-+        // on each new line of output. Cleared when the user scrolls
-+        // back to the bottom, resuming auto-follow behavior.
-+        //
-+        // GALAXY: Don't update userScrolling while a selection is active.
-+        // selectionChanged owns userScrolling during selection — it
-+        // freezes the viewport on selection start and evaluates scroll
-+        // position on selection clear. Without this guard, scrollTo
-+        // (called by auto-scroll during drag, or trackpad scrolling
-+        // during selection) would override the freeze.
-+        let atBottom = displayBuffer.yDisp >= displayBuffer.yBase
-+        if !selection.active {
-+            terminal.userScrolling = !atBottom
-+        }
-+    }
  }
  
  

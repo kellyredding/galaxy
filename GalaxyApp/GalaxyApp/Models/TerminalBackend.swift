@@ -175,26 +175,6 @@ protocol TerminalBackend: AnyObject {
     /// let normal scrolling proceed.
     var onScrollUp: ((NSEvent) -> Bool)? { get set }
 
-    /// Called after any user-initiated scroll lands at a
-    /// new viewport position (wheel, page-down, scroller
-    /// drag — anything routed through `scrollTo`). Fires
-    /// only when the resulting `yDisp` actually moved
-    /// downward, so a scroll-up landing one row above
-    /// bottom doesn't trigger a near-bottom snap. Used
-    /// by `TerminalHostView` to invoke
-    /// `snapViewportToBottomIfWithin` and lock auto-follow.
-    var onScrollDown: (() -> Void)? { get set }
-
-    /// If the viewport is within `rows` lines of the
-    /// buffer bottom but not exactly at it, snap to the
-    /// bottom and clear `userScrolling` so subsequent
-    /// output auto-follows. Returns true if the snap
-    /// fired, false otherwise (already at bottom, far
-    /// from bottom, or selection active). Selection-
-    /// active calls are no-ops to preserve the
-    /// `selectionChanged` viewport-freeze contract.
-    func snapViewportToBottomIfWithin(rows: Int) -> Bool
-
     /// True when the scrollback buffer has any content
     /// above the current viewport (i.e. `yBase > 0`).
     /// Used by chrome to gate scrollback overlay creation
@@ -240,10 +220,9 @@ protocol TerminalBackend: AnyObject {
     /// Unconditionally snap the viewport to the bottom of
     /// the scrollback buffer (`yDisp = yBase`) and clear
     /// the `userScrolling` gate so subsequent output auto-
-    /// follows. Distinct from `snapViewportToBottomIfWithin`
-    /// — no threshold, no selection-active guard, no return
-    /// value. Used by the scrollback overlay's `onReady`
-    /// hook to scroll the live terminal underneath after
-    /// the overlay has fully painted.
+    /// follows. No threshold, no selection-active guard, no
+    /// return value. Used by the scrollback overlay's
+    /// `onReady` hook to scroll the live terminal
+    /// underneath after the overlay has fully painted.
     func snapViewportToBottom()
 }

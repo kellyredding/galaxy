@@ -69,15 +69,6 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
         set { backend.onScrollUp = newValue }
     }
 
-    var onScrollDown: (() -> Void)? {
-        get { backend.onScrollDown }
-        set { backend.onScrollDown = newValue }
-    }
-
-    func snapViewportToBottomIfWithin(rows: Int) -> Bool {
-        backend.snapViewportToBottomIfWithin(rows: rows)
-    }
-
     var hasScrollbackContent: Bool { backend.hasScrollbackContent }
     var viewportRow: Int { backend.viewportRow }
     func clearSelection() { backend.clearSelection() }

@@ -396,22 +396,6 @@ class TerminalHostView: NSView {
             self?.handleScrollUp(event: event) ?? false
         }
 
-        // Scroll-down snap — pane-generic. Fixes the
-        // long-standing "I scrolled to the bottom but it
-        // doesn't stick" bug: trackpad fractional-accumulator
-        // slop + yBase advancing during the gesture both
-        // leave `yDisp` short of `yBase`, which leaves
-        // `userScrolling` stuck true and kills auto-follow.
-        // Snapping when within 2 rows covers fractional
-        // residue (1 row) plus 1 line of mid-gesture yBase
-        // movement; landings further than that are treated
-        // as intentional "stop reading 3+ rows above bottom"
-        // and left alone.
-        pane.onScrollDown = { [weak self] in
-            guard let self = self else { return }
-            _ = self.pane.snapViewportToBottomIfWithin(rows: 2)
-        }
-
         // Font-size re-renders for the scrollback overlay —
         // pane-generic. Session pane's size lives on
         // `session.$terminalFontSize`; shell pane's lives on
