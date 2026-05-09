@@ -337,6 +337,89 @@ class MainMenu: NSObject, NSMenuDelegate {
 
         // Stop/Close/Resume session with ⌘W/⌘R is in File menu
 
+        menu.addItem(.separator())
+
+        // Previous / Next session — vim-style ⌘K/⌘J with arrow
+        // alternates ⌘↑/⌘↓. Enable state is dynamic via
+        // `MenuActions.validateMenuItem`, which the Sessions
+        // menu only rebuilds on visual open — pressing the
+        // shortcut after creating a second session no longer
+        // skips the dispatch on a stale-disabled item.
+        let prevTitle = "Previous session"
+        let nextTitle = "Next session"
+
+        let prevItem = NSMenuItem(title: prevTitle, action: #selector(MenuActions.previousSession(_:)), keyEquivalent: "k")
+        prevItem.target = MenuActions.shared
+        menu.addItem(prevItem)
+
+        let prevArrowItem = NSMenuItem(title: prevTitle, action: #selector(MenuActions.previousSession(_:)), keyEquivalent: String(UnicodeScalar(NSUpArrowFunctionKey)!))
+        prevArrowItem.target = MenuActions.shared
+        prevArrowItem.keyEquivalentModifierMask = .command
+        prevArrowItem.isAlternate = true
+        menu.addItem(prevArrowItem)
+
+        let nextItem = NSMenuItem(title: nextTitle, action: #selector(MenuActions.nextSession(_:)), keyEquivalent: "j")
+        nextItem.target = MenuActions.shared
+        menu.addItem(nextItem)
+
+        let nextArrowItem = NSMenuItem(title: nextTitle, action: #selector(MenuActions.nextSession(_:)), keyEquivalent: String(UnicodeScalar(NSDownArrowFunctionKey)!))
+        nextArrowItem.target = MenuActions.shared
+        nextArrowItem.keyEquivalentModifierMask = .command
+        nextArrowItem.isAlternate = true
+        menu.addItem(nextArrowItem)
+
+        menu.addItem(.separator())
+
+        // Hide / Show sessions sidebar — keys flip with sidebar
+        // position (⌘⇧[ = "toward the panel", ⌘⇧] = "away
+        // from the panel"). Enable state is dynamic via
+        // `MenuActions.validateMenuItem`, so toggling visibility
+        // doesn't strand the inverse shortcut on a stale flag.
+        let panelOnLeft = settingsManager.settings.sidebarPosition == .left
+        let hideItem = NSMenuItem(
+            title: "Hide sessions",
+            action: #selector(MenuActions.hideSessions(_:)),
+            keyEquivalent: panelOnLeft ? "[" : "]"
+        )
+        hideItem.target = MenuActions.shared
+        hideItem.keyEquivalentModifierMask = [.command, .shift]
+        menu.addItem(hideItem)
+
+        let showItem = NSMenuItem(
+            title: "Show sessions",
+            action: #selector(MenuActions.showSessions(_:)),
+            keyEquivalent: panelOnLeft ? "]" : "["
+        )
+        showItem.target = MenuActions.shared
+        showItem.keyEquivalentModifierMask = [.command, .shift]
+        menu.addItem(showItem)
+
+        menu.addItem(.separator())
+
+        // Terminal-tab pane controls. Both shortcuts always
+        // navigate to the Terminal tab first, regardless of
+        // which tab the user is on. ⌘T then focuses the
+        // Claude session pane (if a session exists); ⌘⇧T
+        // opens-or-focuses the shell pane. With no active
+        // session the shortcuts still switch to the Terminal
+        // tab and otherwise no-op.
+        let focusSessionItem = NSMenuItem(
+            title: "Focus Session Pane",
+            action: #selector(MenuActions.focusSessionPane(_:)),
+            keyEquivalent: "t"
+        )
+        focusSessionItem.target = MenuActions.shared
+        menu.addItem(focusSessionItem)
+
+        let openShellItem = NSMenuItem(
+            title: "Open Shell Pane",
+            action: #selector(MenuActions.openShell(_:)),
+            keyEquivalent: "t"
+        )
+        openShellItem.target = MenuActions.shared
+        openShellItem.keyEquivalentModifierMask = [.command, .shift]
+        menu.addItem(openShellItem)
+
         let activeSession = sessionManager.activeSession
 
         // Scrollback: available when active session exists, disabled when not on Terminal tab
@@ -376,9 +459,6 @@ class MainMenu: NSObject, NSMenuDelegate {
     private func buildViewMenu(_ menu: NSMenu) {
         menu.removeAllItems()
 
-        let panelOnLeft = settingsManager.settings.sidebarPosition == .left
-        let isVisible = settingsManager.settings.isSidebarVisible
-
         // Back / Forward in session navigation history
         let backItem = NSMenuItem(
             title: "Back",
@@ -397,62 +477,6 @@ class MainMenu: NSObject, NSMenuDelegate {
         forwardItem.target = MenuActions.shared
         forwardItem.isEnabled = sessionManager.canNavigateForward
         menu.addItem(forwardItem)
-
-        menu.addItem(.separator())
-
-        // Hide sessions: ⌘⇧[ if panel on left, ⌘⇧] if panel on right
-        let hideItem = NSMenuItem(
-            title: "Hide sessions",
-            action: #selector(MenuActions.hideSessions(_:)),
-            keyEquivalent: panelOnLeft ? "[" : "]"
-        )
-        hideItem.target = MenuActions.shared
-        hideItem.keyEquivalentModifierMask = [.command, .shift]
-        hideItem.isEnabled = isVisible
-        menu.addItem(hideItem)
-
-        // Show sessions: ⌘⇧] if panel on left, ⌘⇧[ if panel on right
-        let showItem = NSMenuItem(
-            title: "Show sessions",
-            action: #selector(MenuActions.showSessions(_:)),
-            keyEquivalent: panelOnLeft ? "]" : "["
-        )
-        showItem.target = MenuActions.shared
-        showItem.keyEquivalentModifierMask = [.command, .shift]
-        showItem.isEnabled = !isVisible
-        menu.addItem(showItem)
-
-        menu.addItem(.separator())
-
-        // Session switching - vim style (⌘k/j)
-        let canGoPrev = sessionManager.canSwitchToPreviousSession
-        let canGoNext = sessionManager.canSwitchToNextSession
-        let prevTitle = "Previous session"
-        let nextTitle = "Next session"
-
-        let prevItem = NSMenuItem(title: prevTitle, action: #selector(MenuActions.previousSession(_:)), keyEquivalent: "k")
-        prevItem.target = MenuActions.shared
-        prevItem.isEnabled = canGoPrev
-        menu.addItem(prevItem)
-
-        let prevArrowItem = NSMenuItem(title: prevTitle, action: #selector(MenuActions.previousSession(_:)), keyEquivalent: String(UnicodeScalar(NSUpArrowFunctionKey)!))
-        prevArrowItem.target = MenuActions.shared
-        prevArrowItem.keyEquivalentModifierMask = .command
-        prevArrowItem.isEnabled = canGoPrev
-        prevArrowItem.isAlternate = true
-        menu.addItem(prevArrowItem)
-
-        let nextItem = NSMenuItem(title: nextTitle, action: #selector(MenuActions.nextSession(_:)), keyEquivalent: "j")
-        nextItem.target = MenuActions.shared
-        nextItem.isEnabled = canGoNext
-        menu.addItem(nextItem)
-
-        let nextArrowItem = NSMenuItem(title: nextTitle, action: #selector(MenuActions.nextSession(_:)), keyEquivalent: String(UnicodeScalar(NSDownArrowFunctionKey)!))
-        nextArrowItem.target = MenuActions.shared
-        nextArrowItem.keyEquivalentModifierMask = .command
-        nextArrowItem.isEnabled = canGoNext
-        nextArrowItem.isAlternate = true
-        menu.addItem(nextArrowItem)
 
         menu.addItem(.separator())
 
@@ -595,16 +619,20 @@ class MainMenu: NSObject, NSMenuDelegate {
         focusNextArrowItem.isAlternate = true
         menu.addItem(focusNextArrowItem)
 
-        // Activate focused item: Enter (snapshots index only, disabled when reader open)
+        // Activate focused item: Enter. The action is consumed
+        // by Snapshots / Artifacts / Agents / Ledger surfaces
+        // via `SessionManager.listNavAction = .activate`, so
+        // the menu title flips to whatever the focused list
+        // would open. `MenuActions.validateMenuItem` provides
+        // the live enable gate; this build-time title is just
+        // what the user sees when they open the View menu.
         let activateItem = NSMenuItem(
-            title: "Open snapshot",
+            title: MenuActions.openFocusedItemDescriptor().title,
             action: #selector(MenuActions.activateFocusedListItem(_:)),
             keyEquivalent: "\r"
         )
         activateItem.target = MenuActions.shared
         activateItem.keyEquivalentModifierMask = []
-        activateItem.isEnabled = (sessionManager.activeTab == .snapshots && !sessionManager.isSnapshotReaderOpen)
-            || (sessionManager.activeTab == .artifacts && !sessionManager.isArtifactReaderOpen)
         menu.addItem(activateItem)
 
         menu.addItem(.separator())
@@ -652,38 +680,11 @@ class MainMenu: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        // Terminal tab shell pane controls.
-        // Both shortcuts always navigate to the Terminal tab
-        // first, regardless of which tab the user is on.
-        // Cmd+T then focuses the Claude session pane (if a
-        // session exists); Cmd+Shift+T opens-or-focuses the
-        // shell pane (if a session exists). With no active
-        // session the shortcuts still switch to the Terminal
-        // tab and otherwise no-op.
-        let focusSessionItem = NSMenuItem(
-            title: "Focus Session Pane",
-            action: #selector(MenuActions.focusSessionPane(_:)),
-            keyEquivalent: "t"
-        )
-        focusSessionItem.target = MenuActions.shared
-        menu.addItem(focusSessionItem)
-
-        let openShellItem = NSMenuItem(
-            title: "Open Shell Pane",
-            action: #selector(MenuActions.openShell(_:)),
-            keyEquivalent: "t"
-        )
-        openShellItem.target = MenuActions.shared
-        openShellItem.keyEquivalentModifierMask =
-            [.command, .shift]
-        menu.addItem(openShellItem)
-
-        menu.addItem(.separator())
-
         // Standard view items
         menu.addItem(withTitle: "Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
             .keyEquivalentModifierMask = [.command, .control]
     }
+
 
     // MARK: - Window Menu
 
@@ -1012,6 +1013,39 @@ extension MenuActions: NSMenuItemValidation {
         case #selector(defaultChromeFontSize(_:)):
             return true
 
+        // Sessions ▸ Previous / Next session. Live gates on
+        // SessionManager so creating a second session
+        // immediately makes the shortcuts dispatch — the
+        // Sessions menu only rebuilds on visual open and
+        // would otherwise leave both items stale-disabled
+        // through the entire keyboard-only workflow.
+        case #selector(previousSession(_:)):
+            return SessionManager.shared
+                .canSwitchToPreviousSession
+        case #selector(nextSession(_:)):
+            return SessionManager.shared
+                .canSwitchToNextSession
+
+        // Sessions ▸ Hide / Show sessions sidebar. The
+        // visible state flips with every dispatch, so the
+        // inverse shortcut needs to come live again
+        // immediately. Reading the live setting here matches
+        // what `hideSessions` / `showSessions` mutate.
+        case #selector(hideSessions(_:)):
+            return SettingsManager.shared.settings
+                .isSidebarVisible
+        case #selector(showSessions(_:)):
+            return !SettingsManager.shared.settings
+                .isSidebarVisible
+
+        // View ▸ Open <thing>. Source of truth is
+        // `openFocusedItemDescriptor`, also consumed by
+        // buildViewMenu for the menu title — so the wording
+        // and the enable gate are guaranteed to agree about
+        // which surfaces own the Enter shortcut.
+        case #selector(activateFocusedListItem(_:)):
+            return Self.openFocusedItemDescriptor().enabled
+
         // For everything else, the explicit `isEnabled` set
         // by the relevant `buildXxxMenu` IS the answer. Once
         // a target conforms to NSMenuItemValidation, AppKit
@@ -1020,6 +1054,44 @@ extension MenuActions: NSMenuItemValidation {
         // intact rather than forcing a parallel reimpl here.
         default:
             return menuItem.isEnabled
+        }
+    }
+
+    /// Title and enable gate for the View ▸ Open <thing>
+    /// menu item, derived from the active tab and (for
+    /// Ledger) sub-tab. Single source of truth: buildViewMenu
+    /// reads `.title` for the visible label, validateMenuItem
+    /// reads `.enabled` for the dispatch gate. The active
+    /// surfaces — Snapshots, Artifacts, Agents, Ledger Files
+    /// / Entries — are the ones whose `.onChange` handlers
+    /// consume `SessionManager.listNavAction = .activate`.
+    /// All other tabs (Terminal, Timeline, the read-only
+    /// Ledger sub-tabs) collapse to a neutral disabled "Open".
+    static func openFocusedItemDescriptor() -> (
+        title: String, enabled: Bool
+    ) {
+        let sm = SessionManager.shared
+        switch sm.activeTab {
+        case .snapshots:
+            return (
+                "Open snapshot", !sm.isSnapshotReaderOpen
+            )
+        case .artifacts:
+            return (
+                "Open artifact", !sm.isArtifactReaderOpen
+            )
+        case .agents:
+            return ("Open agent run", true)
+        case .ledger:
+            switch sm.activeLedgerSubTab {
+            case .files: return ("Open file", true)
+            case .entries: return ("Open entry", true)
+            case .identifiers, .lastActivity,
+                 .suggestedName:
+                return ("Open", false)
+            }
+        case .terminal, .timeline:
+            return ("Open", false)
         }
     }
 }
