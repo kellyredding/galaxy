@@ -10,7 +10,6 @@
 		0382B41CACCDA9E37EBABA4C /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 922A89B10E14E165A50C1F4F /* ContentView.swift */; };
 		07A73655BC0B63114B198088 /* AnchorData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 430095FE1E69CCC41062A06B /* AnchorData.swift */; };
 		09CDA5203DCF9553E640C102 /* AnnotationHTMLVisitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB1BD0B12AE09B3D09B6EE03 /* AnnotationHTMLVisitor.swift */; };
-		AABBCCDD11223344EEFF5566 /* VerbatimCardStyles.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1122AABB3344CCDD5566EEFF /* VerbatimCardStyles.swift */; };
 		0B65699340045EFEC87EC44B /* SessionNavigationHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68F73B27BACDA34CA4574613 /* SessionNavigationHistory.swift */; };
 		0CD6D832A8614D6D935C1E0F /* AgentRun.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFFF3072B720C04EC59D3554 /* AgentRun.swift */; };
 		1398D7A28CD97955C6CF12EE /* StatuslineHookStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AE5FFAF09889E289427AFAB /* StatuslineHookStatus.swift */; };
@@ -28,6 +27,7 @@
 		2E5A3E230567B0644A0FBE75 /* TerminalBackendFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8A4839736F22A842E1CD692 /* TerminalBackendFactory.swift */; };
 		32AFC050E2D6D3FF86440F4D /* NewMarkerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B700435C26C483E71A75B12 /* NewMarkerView.swift */; };
 		3439D34465B92507E427479C /* ScrollbackOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD1324D7665E5F848D1DDD90 /* ScrollbackOverlayView.swift */; };
+		346D873FA0C1E69B9EACF0E9 /* SuggestionInsertJS.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1F272F85A7A78423606E44B /* SuggestionInsertJS.swift */; };
 		3742F0C4FB90095EC03FA9D2 /* StatuslineConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 651F643466B2D143C12A260D /* StatuslineConfig.swift */; };
 		387858C02EE4E33A8F927666 /* ArtifactsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 993B48FFA0D6A7E321422F63 /* ArtifactsView.swift */; };
 		38C56F31253D082C87C20D6D /* PersonaPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B94034611483F6B08D6C02B /* PersonaPicker.swift */; };
@@ -42,6 +42,7 @@
 		4B45DFD2525ED9C52B51C43E /* ShellPaneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82C612579CBA9EC59CD6F9F5 /* ShellPaneView.swift */; };
 		4C2CEC47290415299CCF27BB /* SidebarItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FFC389A3E4E6768A33D8345 /* SidebarItem.swift */; };
 		4CD689921E9F3C467D5A532C /* SessionStatusDot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A2B8AABAEE680386E0753B7 /* SessionStatusDot.swift */; };
+		4D1880654A17265DD6A06855 /* TerminalDisplayThrottle.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD9F73FC61300762B39168A9 /* TerminalDisplayThrottle.swift */; };
 		4F20E648BBD3A845F21F64BB /* LedgerQueryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 352D8EE51F82B2AC7CD44C73 /* LedgerQueryService.swift */; };
 		55A439B969B9BF7007A48539 /* FindTextFieldRepresentable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63C26023EEF1D1835185E7F4 /* FindTextFieldRepresentable.swift */; };
 		55C2F61C9B63ACCE613CBC37 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0269FFB63DF2EC261DC5B6A /* SettingsView.swift */; };
@@ -60,6 +61,7 @@
 		71836A132E30E0F8CC17F3D8 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37E5B003AFED03C15A13FC2D /* NotificationService.swift */; };
 		71E17A427557DEC4A0100B47 /* UnreadIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19982622D2460FF2F8B4E33B /* UnreadIndicator.swift */; };
 		72CDCC14672170C4EFC4FFE3 /* ArtifactHTMLView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6416EF21214B040D05629012 /* ArtifactHTMLView.swift */; };
+		73B44B776EC648358461B6DD /* SidebarPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D6A95B41F6BD5B1C21091B3 /* SidebarPreferences.swift */; };
 		75234D2CFD7593C91B00A322 /* LongPressMenuButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44DBB494CF22DA9A7DD449BE /* LongPressMenuButton.swift */; };
 		78BA35B8C1445B8FBB3B3F1D /* highlight.min.js in Resources */ = {isa = PBXBuildFile; fileRef = 2E2A600723E28593174AA752 /* highlight.min.js */; };
 		7A28B8F016D429863BF35F22 /* TerminalColorTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAD14A629CEF3AA730CD6237 /* TerminalColorTheme.swift */; };
@@ -126,13 +128,13 @@
 		D1752B86BB1A44AFB5E75F00 /* EventDebouncer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1222FD00CE1FBF7DC99BD683 /* EventDebouncer.swift */; };
 		D1DBDDFE86F84375BCFD9078 /* SessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EB1B25ADB386E0B834FA6B0 /* SessionManager.swift */; };
 		D499F472C2F9A6CB0D02D493 /* SnapshotsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29344914B2D95B3DADB11F4A /* SnapshotsView.swift */; };
+		D6A3E91ACACD7AA4B7312F4D /* ClipboardCopyJS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96674C055F78732674FE5BCC /* ClipboardCopyJS.swift */; };
 		DDD9EF413A5241ACDB016875 /* AgentsQueryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C694C8B104DEAC6605437941 /* AgentsQueryService.swift */; };
 		E4F32D6040F1D92456F3DB5B /* CopyButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A75DD66617BDBF94F9175C9 /* CopyButton.swift */; };
-		C0B0FF1100BD05082026CB01 /* ClipboardCopyJS.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0B0FF1100BD05082026CB02 /* ClipboardCopyJS.swift */; };
-		C0B0FF1100BD05082026CB03 /* SuggestionInsertJS.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0B0FF1100BD05082026CB04 /* SuggestionInsertJS.swift */; };
 		E5935CB38B847641A8281925 /* DirectoryField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 139EB2F2C31AF6EE70AFECF7 /* DirectoryField.swift */; };
 		E94CFE702D0C74AFE0D80B81 /* NewSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE3DAF1743A20920A57B236D /* NewSessionView.swift */; };
 		EDD17400C7F27572C4B6FE96 /* NavigationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15C1E3C296A1E84381807568 /* NavigationCoordinator.swift */; };
+		F0F67270546949954FE96E98 /* VerbatimCardStyles.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03A6BE0F12CE6340087B1A34 /* VerbatimCardStyles.swift */; };
 		F19AFC56BBDD37BD92E68719 /* SnapshotQueryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D98BE974E4671D9CFC645BF /* SnapshotQueryService.swift */; };
 		F208448C6AAFC6EDFC7FB9E3 /* github.min.css in Resources */ = {isa = PBXBuildFile; fileRef = B23520B930BCE47BABD544FF /* github.min.css */; };
 		F3B5D2B1C92AA107127C32E8 /* ArtifactDiffView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8180F1A6B6AAA96C11608AE /* ArtifactDiffView.swift */; };
@@ -142,10 +144,9 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		03A6BE0F12CE6340087B1A34 /* VerbatimCardStyles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VerbatimCardStyles.swift; sourceTree = "<group>"; };
 		0663E09051C220DBD5E80CD2 /* EventCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventCoordinator.swift; sourceTree = "<group>"; };
 		0A75DD66617BDBF94F9175C9 /* CopyButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopyButton.swift; sourceTree = "<group>"; };
-		C0B0FF1100BD05082026CB02 /* ClipboardCopyJS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardCopyJS.swift; sourceTree = "<group>"; };
-		C0B0FF1100BD05082026CB04 /* SuggestionInsertJS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuggestionInsertJS.swift; sourceTree = "<group>"; };
 		0B33E9ACBBBDE22688F8D808 /* ExpandedSessionSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpandedSessionSidebar.swift; sourceTree = "<group>"; };
 		11AC80464BCD652210A6E2A5 /* ModalState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModalState.swift; sourceTree = "<group>"; };
 		1222FD00CE1FBF7DC99BD683 /* EventDebouncer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventDebouncer.swift; sourceTree = "<group>"; };
@@ -170,6 +171,7 @@
 		29344914B2D95B3DADB11F4A /* SnapshotsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotsView.swift; sourceTree = "<group>"; };
 		2AE5FFAF09889E289427AFAB /* StatuslineHookStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatuslineHookStatus.swift; sourceTree = "<group>"; };
 		2C599534AAFC2570BC5F292A /* StoppedSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoppedSessionView.swift; sourceTree = "<group>"; };
+		2D6A95B41F6BD5B1C21091B3 /* SidebarPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarPreferences.swift; sourceTree = "<group>"; };
 		2E2A600723E28593174AA752 /* highlight.min.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = highlight.min.js; sourceTree = "<group>"; };
 		2E9CD7B5767024AE0C85E433 /* PreferencesWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesWindowController.swift; sourceTree = "<group>"; };
 		3463B095E6622E31AF317063 /* CircuitBreaker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CircuitBreaker.swift; sourceTree = "<group>"; };
@@ -221,6 +223,7 @@
 		922A89B10E14E165A50C1F4F /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		930CA7E2539E197A2DF03CE4 /* SessionRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRow.swift; sourceTree = "<group>"; };
 		9618639704DFCC421FA87F5A /* ArtifactTranscriptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactTranscriptView.swift; sourceTree = "<group>"; };
+		96674C055F78732674FE5BCC /* ClipboardCopyJS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardCopyJS.swift; sourceTree = "<group>"; };
 		9840B2A7E1AAB30A89612AFB /* CollapsedSessionSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollapsedSessionSidebar.swift; sourceTree = "<group>"; };
 		993B48FFA0D6A7E321422F63 /* ArtifactsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactsView.swift; sourceTree = "<group>"; };
 		9A462903899D61A14DF35081 /* ArtifactMermaidView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactMermaidView.swift; sourceTree = "<group>"; };
@@ -237,14 +240,15 @@
 		A8A53165AE008050CD86AE4F /* NewSessionSheetController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewSessionSheetController.swift; sourceTree = "<group>"; };
 		AB21CE8358B19A102512C359 /* TerminalTabSplitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalTabSplitView.swift; sourceTree = "<group>"; };
 		AB66259FCA486462B2373B6A /* LedgerFilesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerFilesView.swift; sourceTree = "<group>"; };
+		AD9F73FC61300762B39168A9 /* TerminalDisplayThrottle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalDisplayThrottle.swift; sourceTree = "<group>"; };
 		AFBB4BD044AC373BB324C7F7 /* GalaxyApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxyApp.swift; sourceTree = "<group>"; };
+		B1F272F85A7A78423606E44B /* SuggestionInsertJS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuggestionInsertJS.swift; sourceTree = "<group>"; };
 		B23520B930BCE47BABD544FF /* github.min.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = github.min.css; sourceTree = "<group>"; };
 		B593B1A95489C385D8B403E7 /* LedgerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerView.swift; sourceTree = "<group>"; };
 		B9DD26C1047DBD42B5051047 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		BAD14A629CEF3AA730CD6237 /* TerminalColorTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalColorTheme.swift; sourceTree = "<group>"; };
 		BAEF4E4E06E2AD409BFED23F /* SessionPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionPersistence.swift; sourceTree = "<group>"; };
 		BB1BD0B12AE09B3D09B6EE03 /* AnnotationHTMLVisitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnnotationHTMLVisitor.swift; sourceTree = "<group>"; };
-		1122AABB3344CCDD5566EEFF /* VerbatimCardStyles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VerbatimCardStyles.swift; sourceTree = "<group>"; };
 		BC39AC5B7A009BF079447618 /* TimelineQueryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineQueryService.swift; sourceTree = "<group>"; };
 		BD1324D7665E5F848D1DDD90 /* ScrollbackOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollbackOverlayView.swift; sourceTree = "<group>"; };
 		BE3DAF1743A20920A57B236D /* NewSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewSessionView.swift; sourceTree = "<group>"; };
@@ -321,12 +325,14 @@
 				1C7501DB8ABDB113A9CF35C8 /* SettingsManager.swift */,
 				8883076FF135248E14D820C4 /* ShellLauncher.swift */,
 				5FFC389A3E4E6768A33D8345 /* SidebarItem.swift */,
+				2D6A95B41F6BD5B1C21091B3 /* SidebarPreferences.swift */,
 				4D98BE974E4671D9CFC645BF /* SnapshotQueryService.swift */,
 				CA7C61AE6C010B6F8091B0B3 /* SocketListener.swift */,
 				5702E8641291E687147723FD /* StatusLineService.swift */,
 				647FC24EF5503064016FE625 /* TerminalBackend.swift */,
 				F8A4839736F22A842E1CD692 /* TerminalBackendFactory.swift */,
 				BAD14A629CEF3AA730CD6237 /* TerminalColorTheme.swift */,
+				AD9F73FC61300762B39168A9 /* TerminalDisplayThrottle.swift */,
 				23348188C124E96FA5F0CC4B /* TerminalPane.swift */,
 				5FA0451CBAF29669536F429E /* TimelineLayoutEngine.swift */,
 				676FCB50E852F5CD6E0E58B9 /* TimelineModels.swift */,
@@ -409,9 +415,8 @@
 				9618639704DFCC421FA87F5A /* ArtifactTranscriptView.swift */,
 				9C3C1E1CDC72CB3FDF60D346 /* BellIndicatorBehavior.swift */,
 				A43C7742A36C8BAB7C4C6419 /* ChromeFontScaling.swift */,
+				96674C055F78732674FE5BCC /* ClipboardCopyJS.swift */,
 				9840B2A7E1AAB30A89612AFB /* CollapsedSessionSidebar.swift */,
-				C0B0FF1100BD05082026CB02 /* ClipboardCopyJS.swift */,
-				C0B0FF1100BD05082026CB04 /* SuggestionInsertJS.swift */,
 				0A75DD66617BDBF94F9175C9 /* CopyButton.swift */,
 				139EB2F2C31AF6EE70AFECF7 /* DirectoryField.swift */,
 				43C2EE51F5ED8F5A44D27580 /* DragHandleNSView.swift */,
@@ -426,7 +431,6 @@
 				1B4449037A4904D32821556A /* LedgerSuggestedNameView.swift */,
 				B593B1A95489C385D8B403E7 /* LedgerView.swift */,
 				44DBB494CF22DA9A7DD449BE /* LongPressMenuButton.swift */,
-				1122AABB3344CCDD5566EEFF /* VerbatimCardStyles.swift */,
 				E49CF9BDA2474BE2585001F5 /* MarkdownReaderView.swift */,
 				11AC80464BCD652210A6E2A5 /* ModalState.swift */,
 				9B700435C26C483E71A75B12 /* NewMarkerView.swift */,
@@ -448,6 +452,7 @@
 				26D5766E6F9E878E698DA46C /* ShellTerminalPane.swift */,
 				29344914B2D95B3DADB11F4A /* SnapshotsView.swift */,
 				2C599534AAFC2570BC5F292A /* StoppedSessionView.swift */,
+				B1F272F85A7A78423606E44B /* SuggestionInsertJS.swift */,
 				51B8E1BFB0B4DFDEFE7B0043 /* SwiftTermBackend.swift */,
 				DA5C08EF59AD1B2E8674EFA5 /* SwiftTermScrollbackRenderer.swift */,
 				AB21CE8358B19A102512C359 /* TerminalTabSplitView.swift */,
@@ -456,6 +461,7 @@
 				A2970A34038789BE966C7D25 /* TimelineCanvasView.swift */,
 				592873EB089CA8C129A579A0 /* TimelineView.swift */,
 				19982622D2460FF2F8B4E33B /* UnreadIndicator.swift */,
+				03A6BE0F12CE6340087B1A34 /* VerbatimCardStyles.swift */,
 				6658F001C5C56071EC60514E /* WatermarkBackground.swift */,
 				7F6E96BCBC8BECCD912E4270 /* Find */,
 				50A26412F6AF5D78EC7772A3 /* Statusline */,
@@ -597,11 +603,10 @@
 				9EBBFFABF0552FDA783CAA6F /* BellIndicatorBehavior.swift in Sources */,
 				9570B4EFEC53463C1B6A01E5 /* ChromeFontScaling.swift in Sources */,
 				5BE31FF52EF968E62B31F97C /* CircuitBreaker.swift in Sources */,
+				D6A3E91ACACD7AA4B7312F4D /* ClipboardCopyJS.swift in Sources */,
 				88DE79720988D464B7FF45B0 /* CollapsedSessionSidebar.swift in Sources */,
 				0382B41CACCDA9E37EBABA4C /* ContentView.swift in Sources */,
 				E4F32D6040F1D92456F3DB5B /* CopyButton.swift in Sources */,
-				C0B0FF1100BD05082026CB01 /* ClipboardCopyJS.swift in Sources */,
-				C0B0FF1100BD05082026CB03 /* SuggestionInsertJS.swift in Sources */,
 				E5935CB38B847641A8281925 /* DirectoryField.swift in Sources */,
 				59C4461354F92AEF376C88AA /* DragHandleNSView.swift in Sources */,
 				8BEB662ADED57F8B062B801A /* EmojiPickerData.swift in Sources */,
@@ -630,7 +635,6 @@
 				75234D2CFD7593C91B00A322 /* LongPressMenuButton.swift in Sources */,
 				9A7E8C74C205BD7E4329689D /* MainMenu.swift in Sources */,
 				69C769B61E2BA6F9BD8DA6FB /* MainWindowController.swift in Sources */,
-				AABBCCDD11223344EEFF5566 /* VerbatimCardStyles.swift in Sources */,
 				86AAE69F5441679CED101F09 /* MarkdownReaderView.swift in Sources */,
 				C7AF14CE931063853508C47D /* ModalState.swift in Sources */,
 				EDD17400C7F27572C4B6FE96 /* NavigationCoordinator.swift in Sources */,
@@ -669,6 +673,7 @@
 				4B45DFD2525ED9C52B51C43E /* ShellPaneView.swift in Sources */,
 				F690A6B2CC3843DAB6808EF8 /* ShellTerminalPane.swift in Sources */,
 				4C2CEC47290415299CCF27BB /* SidebarItem.swift in Sources */,
+				73B44B776EC648358461B6DD /* SidebarPreferences.swift in Sources */,
 				F19AFC56BBDD37BD92E68719 /* SnapshotQueryService.swift in Sources */,
 				D499F472C2F9A6CB0D02D493 /* SnapshotsView.swift in Sources */,
 				CC27D1B9C8318928AE6187FE /* SocketListener.swift in Sources */,
@@ -679,11 +684,13 @@
 				1398D7A28CD97955C6CF12EE /* StatuslineHookStatus.swift in Sources */,
 				4600C3FC98C689FED1C0826A /* StatuslineSettingsTab.swift in Sources */,
 				951191037547FFAFD104A99F /* StoppedSessionView.swift in Sources */,
+				346D873FA0C1E69B9EACF0E9 /* SuggestionInsertJS.swift in Sources */,
 				1F1D225FC7871834B03189C0 /* SwiftTermBackend.swift in Sources */,
 				C52190FC4DA2882C6102855A /* SwiftTermScrollbackRenderer.swift in Sources */,
 				571EE81ED88CE829C5C59BA8 /* TerminalBackend.swift in Sources */,
 				2E5A3E230567B0644A0FBE75 /* TerminalBackendFactory.swift in Sources */,
 				7A28B8F016D429863BF35F22 /* TerminalColorTheme.swift in Sources */,
+				4D1880654A17265DD6A06855 /* TerminalDisplayThrottle.swift in Sources */,
 				BAAA7C7850229F5F5BD9BAEF /* TerminalPane.swift in Sources */,
 				893ACB805E9653364EC07099 /* TerminalTabSplitView.swift in Sources */,
 				3FCE06C0F8AE9134D99D090A /* TerminalView.swift in Sources */,
@@ -696,6 +703,7 @@
 				4A72123664AE5FA178DF46E3 /* TimelineService.swift in Sources */,
 				3E64891A1B570A169DFFA3FD /* TimelineView.swift in Sources */,
 				71E17A427557DEC4A0100B47 /* UnreadIndicator.swift in Sources */,
+				F0F67270546949954FE96E98 /* VerbatimCardStyles.swift in Sources */,
 				2D041547EED1E1552246781B /* ViewedFilesPersistence.swift in Sources */,
 				6D5F396A028AFE8BA22FDECD /* WKWebViewConfiguration+GalaxyFind.swift in Sources */,
 				B1E71F47DE9403A1808277EC /* WatermarkBackground.swift in Sources */,

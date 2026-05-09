@@ -480,9 +480,68 @@ class SettingsManager: ObservableObject {
         }
     }
 
+    /// Background-queue serializer for narrow disk-only
+    /// writes that bypass the fat `@Published var settings`
+    /// publisher. Keeps the in-memory model untouched while
+    /// still patching the on-disk JSON.
+    private static let narrowPersistQueue = DispatchQueue(
+        label: "com.galaxy.SettingsManager.narrowPersist"
+    )
+
+    /// Patch one field of the on-disk settings.json
+    /// without mutating `settings` in memory. Used by
+    /// `SidebarPreferences` so a sidebar toggle never
+    /// fires the fat `objectWillChange` cascade. Read-
+    /// modify-write on a serial background queue so
+    /// concurrent narrow writes are ordered and never
+    /// race the main-thread `save()` path.
+    func persistSidebarVisibility(_ value: Bool) {
+        let url = settingsURL
+        Self.narrowPersistQueue.async {
+            // Read current JSON dict, patch the one
+            // field, encode back. Skips the @Published
+            // wrapper entirely — the fat publisher does
+            // NOT fire, no observer of SettingsManager
+            // re-evaluates.
+            guard
+                let data = try? Data(contentsOf: url),
+                var dict = try? JSONSerialization
+                    .jsonObject(with: data)
+                    as? [String: Any]
+            else { return }
+            dict["isSidebarVisible"] = value
+            guard
+                let merged = try? JSONSerialization
+                    .data(withJSONObject: dict)
+            else { return }
+            do {
+                try merged.write(
+                    to: url, options: .atomic
+                )
+            } catch {
+                NSLog(
+                    "SettingsManager: narrow persist "
+                    + "failed: %@",
+                    error.localizedDescription
+                )
+            }
+        }
+    }
+
     private func save() {
+        // Mirror narrow publishers' values into the
+        // serialized struct so a save triggered by an
+        // unrelated field change (e.g., font size step)
+        // doesn't clobber the freshly-patched on-disk
+        // sidebar value. The in-memory `settings.isSidebarVisible`
+        // is intentionally not kept in sync with
+        // `SidebarPreferences` to keep toggles off the fat
+        // publisher; this snapshot is the rendezvous point.
+        var settingsToSave = settings
+        settingsToSave.isSidebarVisible =
+            SidebarPreferences.shared.isVisible
         do {
-            let data = try JSONEncoder().encode(settings)
+            let data = try JSONEncoder().encode(settingsToSave)
             try data.write(to: settingsURL, options: .atomic)
             NSLog("SettingsManager: Settings saved")
         } catch {

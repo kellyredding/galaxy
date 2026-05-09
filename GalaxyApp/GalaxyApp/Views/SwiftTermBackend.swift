@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftTerm
 
 /// Resolve a Galaxy font-family setting to a concrete `NSFont`
@@ -113,6 +114,20 @@ final class SwiftTermBackend: NSObject, TerminalBackend,
         set { terminalView.onBell = newValue }
     }
 
+    /// Subscription to `TerminalDisplayThrottle.shared`
+    /// that mediates between the chrome-driven throttle
+    /// signal and the view's invalidation behavior. Lives
+    /// on the backend (rather than inside the view) so
+    /// `GalaxySwiftTermView` doesn't need to know that the
+    /// throttle, SidebarPreferences, or Combine exist —
+    /// the view exposes a backend-agnostic `displayPaused`
+    /// flag, and this subscription is what flips it. A
+    /// future libghostty backend would have an analogous
+    /// subscription in its own init translating
+    /// `$isPaused` into whatever its rendering layer
+    /// supports.
+    private var displayThrottleCancellable: AnyCancellable?
+
     init(frame: NSRect) {
         self.terminalView = GalaxySwiftTermView(frame: frame)
         super.init()
@@ -120,6 +135,35 @@ final class SwiftTermBackend: NSObject, TerminalBackend,
         // callbacks land on `processTerminated(source:exitCode:)`
         // below.
         self.terminalView.processDelegate = self
+        observeDisplayThrottle()
+    }
+
+    /// Mirror `TerminalDisplayThrottle.shared.isPaused`
+    /// into the view's `displayPaused` flag, and on the
+    /// trailing edge (paused → resumed) fire a single
+    /// catch-up redraw covering the full bounds. Because
+    /// the catch-up runs *after* `displayPaused` flips
+    /// false, the override in `GalaxySwiftTermView`
+    /// forwards that single `setNeedsDisplay` to super,
+    /// rendering whatever buffer changes accumulated
+    /// during the pause.
+    private func observeDisplayThrottle() {
+        displayThrottleCancellable =
+            TerminalDisplayThrottle.shared.$isPaused
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] paused in
+                    guard let self = self else { return }
+                    self.terminalView.displayPaused = paused
+                    if !paused {
+                        // Catch-up redraw covers any cell
+                        // changes that accumulated while
+                        // the override was suppressing
+                        // setNeedsDisplay calls.
+                        self.terminalView.setNeedsDisplay(
+                            self.terminalView.bounds
+                        )
+                    }
+                }
     }
 
     // MARK: - Process

@@ -1,6 +1,5 @@
 import AppKit
 import Combine
-import SwiftUI  // For withAnimation
 import Carbon.HIToolbox
 
 /// Builds and manages the application's menu bar using AppKit NSMenu.
@@ -809,15 +808,11 @@ class MenuActions: NSObject {
     // MARK: - View Menu Actions
 
     @objc func hideSessions(_ sender: Any?) {
-        withAnimation(.easeInOut(duration: 0.2)) {
-            SessionManager.shared.isSidebarVisible = false
-        }
+        SidebarPreferences.shared.isVisible = false
     }
 
     @objc func showSessions(_ sender: Any?) {
-        withAnimation(.easeInOut(duration: 0.2)) {
-            SessionManager.shared.isSidebarVisible = true
-        }
+        SidebarPreferences.shared.isVisible = true
     }
 
     @objc func historyBack(_ sender: Any?) {
@@ -1029,14 +1024,13 @@ extension MenuActions: NSMenuItemValidation {
         // Sessions ▸ Hide / Show sessions sidebar. The
         // visible state flips with every dispatch, so the
         // inverse shortcut needs to come live again
-        // immediately. Reading the live setting here matches
-        // what `hideSessions` / `showSessions` mutate.
+        // immediately. Reads the narrow `SidebarPreferences`
+        // publisher — same source the action handlers
+        // mutate, so the gate and the dispatch agree.
         case #selector(hideSessions(_:)):
-            return SettingsManager.shared.settings
-                .isSidebarVisible
+            return SidebarPreferences.shared.isVisible
         case #selector(showSessions(_:)):
-            return !SettingsManager.shared.settings
-                .isSidebarVisible
+            return !SidebarPreferences.shared.isVisible
 
         // View ▸ Open <thing>. Source of truth is
         // `openFocusedItemDescriptor`, also consumed by

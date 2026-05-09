@@ -7,6 +7,14 @@ struct ContentView: View {
     @EnvironmentObject var settingsManager: SettingsManager
     @Environment(\.chromeFontSize) private var chromeFontSize
 
+    /// Narrow publisher for sidebar visibility. Observes only
+    /// the visibility flip — not the rest of the settings
+    /// model — so toggling no longer invalidates every
+    /// SettingsManager consumer in the tree. See
+    /// `SidebarPreferences` for the rationale.
+    @ObservedObject private var sidebarPrefs
+        = SidebarPreferences.shared
+
     // Track width during drag (nil when not dragging, uses settings value)
     @State private var draggingWidth: CGFloat? = nil
 
@@ -22,7 +30,7 @@ struct ContentView: View {
     private let historyNavButtonsWidth: CGFloat = 54
 
     private var isSidebarVisible: Bool {
-        settingsManager.settings.isSidebarVisible
+        sidebarPrefs.isVisible
     }
 
     private var sidebarWidth: CGFloat {
@@ -91,9 +99,7 @@ struct ContentView: View {
 
     private var sidebarToggleButton: some View {
         Button(action: {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                settingsManager.settings.isSidebarVisible.toggle()
-            }
+            sidebarPrefs.isVisible.toggle()
         }) {
             Image(systemName: sidebarOnLeft ? "sidebar.left" : "sidebar.right")
                 .font(.system(size: 14))
@@ -106,10 +112,31 @@ struct ContentView: View {
     private var sidebarColumn: some View {
         VStack(spacing: 0) {
             sidebarControlBar
-            if isSidebarVisible {
-                ExpandedSessionSidebar(sidebarWidth: sidebarColumnWidth)
-            } else {
+            // Both sidebar views stay in the tree at all
+            // times; visibility is gated by opacity rather
+            // than a conditional swap. The previous
+            // `if isSidebarVisible { … } else { … }`
+            // forced SwiftUI to construct the destination
+            // subtree (20 rows + layout + NSHostingView
+            // wrapping) synchronously before `withAnimation`
+            // could compute a start/end pair to interpolate.
+            // With both subtrees pre-built, toggling is a
+            // pure opacity animation that starts on frame 1.
+            //
+            // Lifecycle note: `onAppear` / `onDisappear` on
+            // these two children fire once at parent load,
+            // not on every toggle. New code that needs
+            // per-show work must observe `isSidebarVisible`
+            // explicitly rather than relying on the appear
+            // hooks.
+            ZStack {
+                ExpandedSessionSidebar()
+                .opacity(isSidebarVisible ? 1 : 0)
+                .allowsHitTesting(isSidebarVisible)
+
                 CollapsedSessionSidebar()
+                    .opacity(isSidebarVisible ? 0 : 1)
+                    .allowsHitTesting(!isSidebarVisible)
             }
         }
         .frame(width: sidebarColumnWidth)

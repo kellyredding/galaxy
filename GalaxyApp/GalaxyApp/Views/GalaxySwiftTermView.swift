@@ -24,6 +24,35 @@ class GalaxySwiftTermView: LocalProcessTerminalView {
         self.customBlockGlyphs = false
     }
 
+    /// Backend-agnostic flag honored by the
+    /// `setNeedsDisplay(_:)` override below. The owning
+    /// backend (`SwiftTermBackend`) flips this in response
+    /// to `TerminalDisplayThrottle` events; the view
+    /// itself has no knowledge of the throttle, of
+    /// SidebarPreferences, or of why it's being paused.
+    /// A future libghostty backend would expose an
+    /// equivalent flag on its own view layer (or use
+    /// libghostty's native pause API) and consume the same
+    /// throttle from its backend init.
+    var displayPaused: Bool = false
+
+    /// Suppress display invalidation when the backend has
+    /// flagged us as paused. SwiftTerm fires this every
+    /// time the buffer changes (per-PTY-chunk on a
+    /// streaming session); with an active Claude session,
+    /// that invalidation cadence keeps the runloop busy
+    /// and competes with the SwiftUI commit during the
+    /// sidebar toggle window. While `displayPaused` is
+    /// true, drops silently; the backend triggers a
+    /// catch-up redraw covering the full bounds when it
+    /// unpauses.
+    public override func setNeedsDisplay(_ invalidRect: NSRect) {
+        if displayPaused {
+            return
+        }
+        super.setNeedsDisplay(invalidRect)
+    }
+
     /// Short-circuit key view traversal — same fix as InlineEditField.
     /// When any NSView becomes first responder, AppKit may walk
     /// previousValidKeyView / nextValidKeyView to validate the target.

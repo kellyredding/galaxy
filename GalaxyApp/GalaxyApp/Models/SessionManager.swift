@@ -85,8 +85,15 @@ class SessionManager: ObservableObject {
     // SettingsManager. Computed property delegates read/write so
     // existing view code (ContentView, MainMenu) works unchanged.
     var isSidebarVisible: Bool {
-        get { SettingsManager.shared.settings.isSidebarVisible }
-        set { SettingsManager.shared.settings.isSidebarVisible = newValue }
+        // Routed through the narrow publisher
+        // (`SidebarPreferences`) so legacy callers don't
+        // re-introduce the fat-publisher invalidation
+        // cascade that gated the toggle animation. The
+        // SidebarPreferences sink mirrors the value back
+        // into `settings.isSidebarVisible` on a deferred
+        // runloop tick for persistence.
+        get { SidebarPreferences.shared.isVisible }
+        set { SidebarPreferences.shared.isVisible = newValue }
     }
 
     // Active tab in the views area — driven by the active session.

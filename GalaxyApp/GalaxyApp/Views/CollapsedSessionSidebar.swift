@@ -186,14 +186,15 @@ struct CollapsedSessionSidebar: View {
         }
         .frame(maxHeight: .infinity)
         .background(Color(NSColor.windowBackgroundColor))
-        .onAppear {
-            if !sessionManager.sessions.isEmpty {
-                statusLineService.refreshSessions(sessionManager.sessions)
-            }
-        }
-        .onChange(of: sessionManager.sidebarItems.count) { _, _ in
-            statusLineService.refreshSessions(sessionManager.sessions)
-        }
+        // Status-line refresh is intentionally NOT
+        // triggered from this view. Both sidebars now
+        // stay alive simultaneously (opacity-gated), so
+        // `ExpandedSessionSidebar.onAppear` and its
+        // `onChange(of: sidebarItems.count)` cover the
+        // full lifecycle for both rendering modes.
+        // Calling `refreshSessions` from here too would
+        // just duplicate the background-queue work and
+        // overwrite the first call's result.
     }
 
     /// Dispatch a SidebarItem to the appropriate collapsed row.
@@ -211,6 +212,11 @@ struct CollapsedSessionSidebar: View {
                 statusInfo: statusLineService.statusInfo[session.id],
                 sidebarPosition: SettingsManager.shared.settings.sidebarPosition
             )
+            // Opt into Equatable short-circuit, same as
+            // SessionRow in the expanded sidebar — see the
+            // `extension CollapsedSessionRow: Equatable`
+            // block at the bottom of this file.
+            .equatable()
             .onTapGesture {
                 sessionManager.switchTo(sessionId: session.id)
             }
@@ -220,6 +226,7 @@ struct CollapsedSessionSidebar: View {
                 marker: marker,
                 sidebarPosition: SettingsManager.shared.settings.sidebarPosition
             )
+            .equatable()
             // Markers are not selectable — no tap gesture.
         }
     }
@@ -688,5 +695,40 @@ struct CollapsedMarkerTooltip: View {
                         .stroke(strokeColor, lineWidth: 0.5)
                 )
         )
+    }
+}
+
+// MARK: - Equatable conformance for short-circuited diffs
+
+/// See the matching comment on `SessionRow`'s extension.
+/// `CollapsedSessionRow` and `CollapsedMarkerRow` both
+/// re-evaluate on every parent body run by default,
+/// because their parent (`CollapsedSessionSidebar`)
+/// re-evaluates whenever ContentView's body re-evaluates
+/// — which happens on every drag event, even when the
+/// row's own inputs haven't changed. The explicit `==`
+/// + `.equatable()` at the call site lets SwiftUI
+/// short-circuit those redundant body re-evals.
+extension CollapsedSessionRow: Equatable {
+    static func == (
+        lhs: CollapsedSessionRow,
+        rhs: CollapsedSessionRow
+    ) -> Bool {
+        lhs.session === rhs.session
+            && lhs.isSelected == rhs.isSelected
+            && lhs.isWindowFocused == rhs.isWindowFocused
+            && lhs.isOnTerminalTab == rhs.isOnTerminalTab
+            && lhs.statusInfo == rhs.statusInfo
+            && lhs.sidebarPosition == rhs.sidebarPosition
+    }
+}
+
+extension CollapsedMarkerRow: Equatable {
+    static func == (
+        lhs: CollapsedMarkerRow,
+        rhs: CollapsedMarkerRow
+    ) -> Bool {
+        lhs.marker === rhs.marker
+            && lhs.sidebarPosition == rhs.sidebarPosition
     }
 }

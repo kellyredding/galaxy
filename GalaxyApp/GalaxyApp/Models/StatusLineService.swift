@@ -13,7 +13,7 @@ class StatusLineService: ObservableObject {
     private var isPaused: Bool = false
     private var pendingStatusInfo: [UUID: SessionStatusInfo]?
 
-    struct SessionStatusInfo {
+    struct SessionStatusInfo: Equatable {
         let gitBranch: String?
         let isDirty: Bool
         let hasStaged: Bool

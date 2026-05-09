@@ -23,7 +23,12 @@ struct SessionMarkerRow: View {
     let showDragHandle: Bool
     let isDragging: Bool
 
-    let sidebarWidth: CGFloat
+    // `sidebarWidth` previously declared here was unused —
+    // the marker row never read it, only inherited the
+    // parameter from SessionRow's interface when the two
+    // were kept symmetrical. Removed alongside the
+    // SessionRow refactor that moved adaptive truncation
+    // to ViewThatFits.
 
     @Environment(\.chromeFontSize) private var chromeFontSize
     @Environment(\.colorScheme) private var colorScheme
@@ -362,5 +367,26 @@ struct SessionMarkerRow: View {
     private func onBlurAttemptCommit() {
         if isPickerShowing { return }
         commitEdit()
+    }
+}
+
+// MARK: - Equatable conformance
+
+/// Same rationale as `SessionRow`'s extension — short-circuit
+/// SwiftUI body re-evals on parent invalidations when the
+/// marker's own visible inputs haven't changed. `onRemove`
+/// is excluded from the comparison; it's a closure
+/// recreated on every parent eval but captures only stable
+/// values.
+extension SessionMarkerRow: Equatable {
+    static func == (
+        lhs: SessionMarkerRow,
+        rhs: SessionMarkerRow
+    ) -> Bool {
+        lhs.marker === rhs.marker
+            && lhs.isPlaceholder == rhs.isPlaceholder
+            && lhs.rowIndex == rhs.rowIndex
+            && lhs.showDragHandle == rhs.showDragHandle
+            && lhs.isDragging == rhs.isDragging
     }
 }

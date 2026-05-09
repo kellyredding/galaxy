@@ -233,8 +233,15 @@ struct SessionRow: View {
     // Status info passed from ExpandedSessionSidebar (not observed to prevent mass re-renders)
     let statusInfo: StatusLineService.SessionStatusInfo?
 
-    // Sidebar width for adaptive CWD truncation
-    let sidebarWidth: CGFloat
+    // Note: `sidebarWidth` is intentionally NOT a field on
+    // this row. The adaptive CWD truncation below uses
+    // `ViewThatFits` to pick a tier at SwiftUI layout time
+    // based on whatever horizontal space the row is given.
+    // Holding `sidebarWidth` here would force a body re-eval
+    // on every resize-drag mouseDragged event (~42 row evals
+    // per drag tick × 20 sessions), saturating main and
+    // producing the "drag → lock → snap" pattern measured
+    // in the dbg log on 2026-05-09.
 
     @Environment(\.chromeFontSize) private var chromeFontSize
     @Environment(\.colorScheme) private var colorScheme
@@ -327,8 +334,14 @@ struct SessionRow: View {
                         .foregroundColor(isSelected ? .white.opacity(0.8) : personaColor)
                         .frame(height: fontSize.tinyLineHeight)
 
-                    // Line 3: CWD + git status (always occupies height)
-                    buildLine3(info: statusInfo)
+                    // Line 3: CWD + git status (always occupies height).
+                    // ViewThatFits picks the largest tier whose natural
+                    // size fits in the proposed horizontal space; SwiftUI
+                    // measures at layout time so width changes don't
+                    // re-evaluate the row's body. .lineLimit(1) +
+                    // .truncationMode(.tail) clips the basename tier if
+                    // even that overflows.
+                    line3View(info: statusInfo)
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .frame(height: fontSize.tinyLineHeight)
@@ -434,41 +447,65 @@ struct SessionRow: View {
 
     // MARK: - Line 3: CWD + Git Status
 
-    /// Build styled line 3 with color-coded segments.
-    /// Uses adaptive 3-tier CWD truncation matching the statusline algorithm:
+    /// Adaptive 3-tier CWD line wrapped in `ViewThatFits`.
+    /// SwiftUI's layout system picks the largest tier whose
+    /// natural size fits the proposed horizontal space:
     ///   Tier 1: full path — ~/projects/kajabi/products
     ///   Tier 2: abbreviated — ~/p/k/products
     ///   Tier 3: basename only — products
-    /// Git portion is never truncated. After tier 3, .truncationMode(.tail) clips.
-    private func buildLine3(
+    /// Tier 3 is the fallback when even the basename is
+    /// wider than the proposal; the caller's
+    /// `.truncationMode(.tail)` clips from there.
+    ///
+    /// Critical perf property: this function builds three
+    /// styled `Text` variants every body eval, but the
+    /// row's body itself does NOT depend on `sidebarWidth`,
+    /// so a resize drag no longer cascades into 20 row
+    /// body re-evaluations per `mouseDragged` event.
+    @ViewBuilder
+    private func line3View(
+        info: StatusLineService.SessionStatusInfo?
+    ) -> some View {
+        let mono = Font.system(
+            size: fontSize.tiny,
+            weight: .regular,
+            design: .monospaced
+        )
+        if let cwd = session.ledgerCwd {
+            let homePath = NSHomeDirectory()
+            let fullPath = cwd.hasPrefix(homePath)
+                ? "~" + cwd.dropFirst(homePath.count)
+                : cwd
+            let abbreviated = abbreviatePath(fullPath)
+            let basename =
+                (cwd as NSString).lastPathComponent
+            ViewThatFits(in: .horizontal) {
+                buildLine3Styled(
+                    displayPath: fullPath, info: info
+                )
+                buildLine3Styled(
+                    displayPath: abbreviated, info: info
+                )
+                buildLine3Styled(
+                    displayPath: basename, info: info
+                )
+            }
+        } else {
+            Text("").font(mono)
+        }
+    }
+
+    /// Build line 3's styled `Text` for a specific
+    /// `displayPath` (one of the three CWD tiers). The
+    /// git suffix rendering is identical across all
+    /// tiers — only the leading CWD portion differs.
+    private func buildLine3Styled(
+        displayPath: String,
         info: StatusLineService.SessionStatusInfo?
     ) -> Text {
         let mono = Font.system(size: fontSize.tiny, weight: .regular, design: .monospaced)
         let monoBold = Font.system(size: fontSize.tiny, weight: .bold, design: .monospaced)
         let bracketColor: Color = isSelected ? .white.opacity(0.5) : .secondary
-
-        guard let cwd = session.ledgerCwd else {
-            return Text("").font(mono)
-        }
-
-        // Build git suffix string for width measurement
-        let gitSuffix = buildGitSuffix(info: info)
-
-        // Available pixel width for line 3 text content
-        let textBudget = availableTextWidth
-
-        // Measure font for width calculations
-        let measureFont = NSFont.monospacedSystemFont(
-            ofSize: fontSize.tiny, weight: .regular
-        )
-
-        // Pick the best CWD display tier that fits
-        let displayPath = adaptiveCwdDisplay(
-            cwd: cwd,
-            gitSuffix: gitSuffix,
-            budget: textBudget,
-            font: measureFont
-        )
 
         // Render CWD with styling
         var result = Text(displayPath)
@@ -538,43 +575,6 @@ struct SessionRow: View {
 
     // MARK: - Adaptive CWD Truncation
 
-    /// Available pixel width for line 3 text, accounting for row layout chrome.
-    private var availableTextWidth: CGFloat {
-        // HStack(spacing: 6): leading(4) + trailing(8) + circle(8) + spacing(6)
-        // With drag handle: + handle(18) + extra spacing(6)
-        let chrome: CGFloat = showDragHandle ? 50 : 26
-        return max(sidebarWidth - chrome, 0)
-    }
-
-    /// Pick the best CWD display string using 3-tier cascade.
-    /// Tries full path → abbreviated → basename, always appending git suffix
-    /// for width measurement. Returns only the CWD portion (git is styled separately).
-    private func adaptiveCwdDisplay(
-        cwd: String,
-        gitSuffix: String,
-        budget: CGFloat,
-        font: NSFont
-    ) -> String {
-        let homePath = NSHomeDirectory()
-        let fullPath = cwd.hasPrefix(homePath)
-            ? "~" + cwd.dropFirst(homePath.count)
-            : cwd
-
-        // Tier 1: full path
-        if measureWidth(fullPath + gitSuffix, font: font) <= budget {
-            return fullPath
-        }
-
-        // Tier 2: abbreviated intermediates (first char), full basename
-        let abbreviated = abbreviatePath(fullPath)
-        if measureWidth(abbreviated + gitSuffix, font: font) <= budget {
-            return abbreviated
-        }
-
-        // Tier 3 (floor): basename only — .truncationMode(.tail) clips from here
-        return (cwd as NSString).lastPathComponent
-    }
-
     /// Abbreviate path: first char of each intermediate dir, keep full basename.
     /// ~/projects/kajabi/products → ~/p/k/products
     private func abbreviatePath(_ path: String) -> String {
@@ -587,65 +587,6 @@ struct SessionRow: View {
         abbreviated.append(String(parts.last!))
 
         return abbreviated.joined(separator: "/")
-    }
-
-    /// Build the plain-text git suffix for width measurement.
-    /// Mirrors the styled rendering logic but as a single string.
-    private func buildGitSuffix(
-        info: StatusLineService.SessionStatusInfo?
-    ) -> String {
-        guard let branch = info?.gitBranch, !branch.isEmpty else {
-            return ""
-        }
-
-        let style = SettingsManager.shared.settings.gitStatusStyle
-        var suffix = "[\(branch)"
-        if let info = info {
-            switch style {
-            case .symbolic:
-                if info.hasStashed { suffix += "^" }
-                if info.behindCount > 0 && info.aheadCount > 0 { suffix += "<>" }
-                else if info.behindCount > 0 { suffix += "<" }
-                else if info.aheadCount > 0 { suffix += ">" }
-                if info.hasStaged { suffix += "+" }
-                if info.isDirty { suffix += "*" }
-            case .arrows:
-                if info.hasStashed { suffix += "^" }
-                if info.behindCount > 0 { suffix += "↓\(info.behindCount)" }
-                if info.aheadCount > 0 { suffix += "↑\(info.aheadCount)" }
-                if info.hasStaged { suffix += "+" }
-                if info.isDirty { suffix += "*" }
-            case .minimal:
-                if info.isDirty || info.hasStaged { suffix += "*" }
-            }
-        }
-        suffix += "]"
-        return suffix
-    }
-
-    /// Cached monospaced character widths keyed by font point size.
-    /// Avoids repeated CoreText calls that can crash after long uptime
-    /// due to stale system font caches (see: Galaxy-2026-03-04-213819.ips).
-    private static var monoCharWidthCache: [CGFloat: CGFloat] = [:]
-
-    /// Get the character width for a monospaced font at the given size.
-    /// Measures once per font size and caches the result.
-    private static func monoCharWidth(forSize size: CGFloat) -> CGFloat {
-        if let cached = monoCharWidthCache[size] {
-            return cached
-        }
-        let font = NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
-        let width = ("M" as NSString).size(
-            withAttributes: [.font: font]
-        ).width
-        monoCharWidthCache[size] = width
-        return width
-    }
-
-    /// Measure string width using cached monospaced character width.
-    /// Since the font is monospaced, width = character count × char width.
-    private func measureWidth(_ string: String, font: NSFont) -> CGFloat {
-        return CGFloat(string.count) * Self.monoCharWidth(forSize: font.pointSize)
     }
 
     // MARK: - Name Editing
@@ -686,5 +627,44 @@ struct SessionRow: View {
             guard !session.hasExited else { return }
             session.restorePreferredPaneFocus()
         }
+    }
+}
+
+// MARK: - Equatable conformance
+
+/// SwiftUI re-evaluates a view's body whenever its parent's
+/// body re-evaluates and the new struct's stored properties
+/// differ from the previous instance. Without explicit
+/// Equatable conformance, that diff is structural and
+/// closures (which are non-Equatable function values) cause
+/// SwiftUI to assume "different" every time a parent body
+/// runs — producing a body re-evaluation per row per parent
+/// invalidation.
+///
+/// Diagnostic confirmed this for the resize-drag path:
+/// 22 drag events × ~42 row body evals = ~929 row evals
+/// observed in the sidebar dbg log. With this conformance
+/// + `.equatable()` at the call site, SwiftUI uses our
+/// `==` to short-circuit identical rows; rows only
+/// re-evaluate when something they actually display
+/// (`statusInfo`, `isSelected`, etc.) actually changes.
+///
+/// `onStop` / `onClose` are intentionally excluded from
+/// the comparison — they're closures recreated on every
+/// parent body eval but capture only stable values
+/// (`session.id`, the `SessionManager` singleton), so the
+/// stored old closure remains correct when SwiftUI keeps
+/// the previous body output.
+extension SessionRow: Equatable {
+    static func == (lhs: SessionRow, rhs: SessionRow) -> Bool {
+        lhs.session === rhs.session
+            && lhs.isSelected == rhs.isSelected
+            && lhs.isWindowFocused == rhs.isWindowFocused
+            && lhs.isOnTerminalTab == rhs.isOnTerminalTab
+            && lhs.isPlaceholder == rhs.isPlaceholder
+            && lhs.rowIndex == rhs.rowIndex
+            && lhs.showDragHandle == rhs.showDragHandle
+            && lhs.isDragging == rhs.isDragging
+            && lhs.statusInfo == rhs.statusInfo
     }
 }

@@ -2,7 +2,14 @@ import SwiftUI
 import AppKit
 
 struct ExpandedSessionSidebar: View {
-    let sidebarWidth: CGFloat
+    // `sidebarWidth` removed — the rows beneath this view
+    // (SessionRow, SessionMarkerRow) no longer need an
+    // explicit width parameter; their adaptive truncation
+    // is driven by SwiftUI layout via ViewThatFits. The
+    // outer container's width is managed by ContentView's
+    // `.frame(width: sidebarColumnWidth)` and SwiftUI's
+    // HStack distribution; nothing inside this view tree
+    // reads an explicit width any more.
 
     @EnvironmentObject var sessionManager: SessionManager
     @ObservedObject var statusLineService = StatusLineService.shared
@@ -126,9 +133,14 @@ struct ExpandedSessionSidebar: View {
                 rowIndex: index,
                 showDragHandle: showDragHandles,
                 isDragging: dragCoordinator.isDragging,
-                statusInfo: statusLineService.statusInfo[session.id],
-                sidebarWidth: sidebarWidth
+                statusInfo: statusLineService.statusInfo[session.id]
             )
+            // Opt into SwiftUI's Equatable short-circuit so
+            // parent body re-evals during a sidebar resize
+            // drag don't cascade into 20 SessionRow body
+            // re-evals when none of the row's inputs
+            // actually changed.
+            .equatable()
             .id(session.id)
             .animation(.easeInOut(duration: 0.2), value: showDragHandles)
             .contentShape(Rectangle())
@@ -146,9 +158,9 @@ struct ExpandedSessionSidebar: View {
                 isPlaceholder: dragCoordinator.draggedItemId == marker.id,
                 rowIndex: index,
                 showDragHandle: showDragHandles,
-                isDragging: dragCoordinator.isDragging,
-                sidebarWidth: sidebarWidth
+                isDragging: dragCoordinator.isDragging
             )
+            .equatable()
             .id(marker.id)
             .animation(.easeInOut(duration: 0.2), value: showDragHandles)
             // No onTapGesture — markers are not selectable.
@@ -172,7 +184,6 @@ struct ExpandedSessionSidebar: View {
                 dragStartIndex: dragCoordinator.dragStartIndex,
                 rowHeight: rowHeight,
                 statusInfo: statusLineService.statusInfo[session.id],
-                sidebarWidth: sidebarWidth,
                 previewPosition: dragCoordinator.previewPosition
             )
             .environmentObject(dragCoordinator)
@@ -183,7 +194,6 @@ struct ExpandedSessionSidebar: View {
                 displayIndex: dragCoordinator.currentArrayIndex,
                 dragStartIndex: dragCoordinator.dragStartIndex,
                 rowHeight: rowHeight,
-                sidebarWidth: sidebarWidth,
                 previewPosition: dragCoordinator.previewPosition
             )
             .environmentObject(dragCoordinator)
@@ -206,7 +216,6 @@ struct DragPreviewOverlay: View {
     let dragStartIndex: Int
     let rowHeight: CGFloat
     let statusInfo: StatusLineService.SessionStatusInfo?
-    let sidebarWidth: CGFloat
 
     @ObservedObject var previewPosition: DragPreviewPosition
 
@@ -222,8 +231,7 @@ struct DragPreviewOverlay: View {
             rowIndex: displayIndex,
             showDragHandle: true,
             isDragging: true,
-            statusInfo: statusInfo,
-            sidebarWidth: sidebarWidth
+            statusInfo: statusInfo
         )
         .background(Color(NSColor.windowBackgroundColor))
         .overlay(
@@ -247,7 +255,6 @@ struct MarkerDragPreviewOverlay: View {
     let displayIndex: Int
     let dragStartIndex: Int
     let rowHeight: CGFloat
-    let sidebarWidth: CGFloat
 
     @ObservedObject var previewPosition: DragPreviewPosition
 
@@ -258,8 +265,7 @@ struct MarkerDragPreviewOverlay: View {
             isPlaceholder: false,
             rowIndex: displayIndex,
             showDragHandle: true,
-            isDragging: true,
-            sidebarWidth: sidebarWidth
+            isDragging: true
         )
         .background(Color(NSColor.windowBackgroundColor))
         .overlay(
