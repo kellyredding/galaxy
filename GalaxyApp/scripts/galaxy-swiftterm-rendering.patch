@@ -45,7 +45,7 @@ index deca240..4f8f287 100644
          dependencies: [
              "SwiftTerm",
 diff --git a/Sources/SwiftTerm/Apple/AppleTerminalView.swift b/Sources/SwiftTerm/Apple/AppleTerminalView.swift
-index 553a94c..9f80729 100644
+index 553a94c..eebb218 100644
 --- a/Sources/SwiftTerm/Apple/AppleTerminalView.swift
 +++ b/Sources/SwiftTerm/Apple/AppleTerminalView.swift
 @@ -14,6 +14,13 @@ import ImageIO
@@ -215,7 +215,74 @@ index 553a94c..9f80729 100644
                      CTFontDrawGlyphs(runFont, runGlyphs, &positions, positions.count, context)
  
                      // Draw other attributes
-@@ -1471,13 +1542,12 @@ extension TerminalView {
+@@ -1297,17 +1368,59 @@ extension TerminalView {
+         }
+ 
+         terminal.clearUpdateRange ()
+-                
++
+         #if os(macOS)
++        // GALAXY: getUpdateRange() returns dirty rows in TERMINAL-row
++        // coordinates anchored to yBase + cursor.y. The view renders
++        // with bufferOffset = yDisp; when the user is scrolled up
++        // (yDisp < yBase), terminal row N corresponds to viewport row
++        // N + (yBase - yDisp). Without compensating for this offset,
++        // every in-place cell write — animated spinners, status-bar
++        // updates, anything that doesn't trigger a full scroll —
++        // invalidates the wrong screen rows. AppKit redraws stale
++        // cells (drawTerminalContents reads buffer at yDisp + screenRow,
++        // which hasn't changed for those rows) while the actually-
++        // changed cell at viewport row N + (yBase - yDisp) stays
++        // unpainted until something forces a full-bounds invalidation
++        // (a click, a session switch, a `\n` that calls
++        // `terminal.refresh(0, rows-1)` and dirties the whole screen).
++        // Compensating for the offset corrects the screen-row
++        // calculation so partial-region invalidation works while
++        // scrolled up.
++        let buffer = terminal.displayBuffer
++        let viewportOffset = buffer.yBase - buffer.yDisp
++        let viewportRowStart = max(0, rowStart + viewportOffset)
++        let viewportRowEnd = min(
++            terminal.rows - 1, rowEnd + viewportOffset
++        )
++        // If the entire dirty range has drifted below the viewport
++        // (cursor row + offset > rows-1), there's nothing to paint
++        // here. Drop through to the function's normal completion
++        // path so pendingDisplay still resets and the next feed
++        // schedules fresh.
++        guard viewportRowEnd >= viewportRowStart else {
++            pendingDisplay = false
++            updateDebugDisplay()
++            if (notifyAccessibility) {
++                accessibility.invalidate()
++                NSAccessibility.post(element: self, notification: .valueChanged)
++                NSAccessibility.post(element: self, notification: .selectedTextChanged)
++            }
++            return
++        }
++
+         let baseLine = frame.height
+         var region = CGRect (x: 0,
+-                             y: baseLine - (cellDimension.height + CGFloat(rowEnd) * cellDimension.height),
++                             y: baseLine - (cellDimension.height + CGFloat(viewportRowEnd) * cellDimension.height),
+                              width: frame.width,
+-                             height: CGFloat(rowEnd-rowStart + 1) * cellDimension.height)
+-        
+-        // If we are the last line, we should also queue a refresh for the "remaining" bits at the
+-        // end which can be redrawn by large unicode
+-        if rowEnd == terminal.rows - 1 {
++                             height: CGFloat(viewportRowEnd-viewportRowStart + 1) * cellDimension.height)
++
++        // If we are the last viewport line, we should also queue a refresh
++        // for the "remaining" bits at the end which can be redrawn by
++        // large unicode. Check viewport row (not terminal row) so the
++        // "remaining bits" extension only fires when the dirty range
++        // genuinely reaches the bottom of the visible viewport.
++        if viewportRowEnd == terminal.rows - 1 {
+             let oh = region.height
+             let oy = region.origin.y
+             region = CGRect (x: 0, y: 0, width: frame.width, height: oh + oy)
+@@ -1471,13 +1584,12 @@ extension TerminalView {
      
      public func scroll (toPosition: Double)
      {
@@ -231,7 +298,7 @@ index 553a94c..9f80729 100644
          if newScrollPosition < 0 {
              newScrollPosition = 0
          }
-@@ -1488,18 +1558,20 @@ extension TerminalView {
+@@ -1488,18 +1600,20 @@ extension TerminalView {
          if newScrollPosition != oldPosition {
              scrollTo(row: newScrollPosition)
          }
@@ -256,7 +323,7 @@ index 553a94c..9f80729 100644
              // do the display update
              updateDisplay (notifyAccessibility: notifyAccessibility)
              //selectionView.notifyScrolled(source: terminal)
-@@ -1507,8 +1579,25 @@ extension TerminalView {
+@@ -1507,8 +1621,25 @@ extension TerminalView {
              updateScroller()
              setNeedsDisplay(frame)
          }
@@ -283,7 +350,7 @@ index 553a94c..9f80729 100644
      /// Scrolls the content of the terminal one page up
      public func pageUp()
      {
-@@ -1547,13 +1636,46 @@ extension TerminalView {
+@@ -1547,13 +1678,46 @@ extension TerminalView {
      func feedPrepare()
      {
          search.invalidate()
@@ -332,7 +399,7 @@ index 553a94c..9f80729 100644
          queuePendingDisplay()
      }
      
-@@ -1573,33 +1695,10 @@ extension TerminalView {
+@@ -1573,33 +1737,10 @@ extension TerminalView {
          feedFinish()
      }
           
