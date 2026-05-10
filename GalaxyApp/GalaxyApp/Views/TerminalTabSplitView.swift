@@ -229,11 +229,16 @@ final class SplitState: ObservableObject {
             return
         }
         shellPane = nil
-        // Return focus to the session pane.
+        // Return focus to the session pane. Routes through
+        // the session host's `requestFocus()` so an open
+        // scrollback overlay receives focus rather than the
+        // hidden live terminal underneath — without this,
+        // Esc would have nowhere to go and the user would
+        // be stuck in scrollback.
         DispatchQueue.main.asyncAfter(
             deadline: .now() + 0.05
         ) {
-            session.backend?.focus()
+            session.restoreSessionPaneFocus()
         }
     }
 
