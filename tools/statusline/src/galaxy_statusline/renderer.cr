@@ -17,6 +17,8 @@ module GalaxyStatusline
       end
 
       fun ioctl(fd : Int32, request : UInt64, ...) : Int32
+      fun getppid : Int32
+      fun getsid(pid : Int32) : Int32
     end
 
     @input : ClaudeInput
@@ -372,21 +374,96 @@ module GalaxyStatusline
       Colors.colorize(formatted, @config.colors.time)
     end
 
+    # Resolve the columns of the controlling terminal. Tries four
+    # tiers in order; only the slow paths (ps forks) run when the
+    # cheap controlling-TTY lookup fails.
+    #
+    # Tier 0: GALAXY_STATUSLINE_FORCE_WIDTH env override. Primarily
+    # an escape hatch for tests (deterministic width regardless of
+    # host TTY state); also useful in detached-process setups where
+    # neither detection tier can reach a real PTY.
+    #
+    # Tier 1: ioctl on /dev/tty. Zero-cost when the hook subprocess
+    # still has a controlling TTY.
+    #
+    # Tier 2: getsid(getppid()) → ps → ioctl. Deterministic single
+    # hop to the parent's session leader. Handles the typical
+    # detached-hook case where claude inherited the shell's TTY
+    # and the shell is still the session leader.
+    #
+    # Tier 3: walk ancestors until we find one whose ps tty column
+    # is a real PTY name, then ioctl that. Crosses setsid
+    # boundaries that tier 2 cannot — the user's actual terminal
+    # TTY may be held by an older-session ancestor when an
+    # intermediate process created its own session. Bounded at 10
+    # hops as defense against pathological process trees.
     private def get_terminal_width : Int32
-      # Open /dev/tty directly to get terminal width
-      # This works even when stdin/stdout/stderr are all piped
-      begin
-        File.open("/dev/tty", "r") do |tty|
-          ws = TerminalLib::Winsize.new
-          result = TerminalLib.ioctl(tty.fd, TIOCGWINSZ, pointerof(ws))
-          if result == 0 && ws.ws_col > 0
-            return ws.ws_col.to_i32
+      if forced = ENV["GALAXY_STATUSLINE_FORCE_WIDTH"]?
+        cols = forced.to_i?
+        return cols if cols && cols > 0
+      end
+
+      if cols = read_tty_width("/dev/tty")
+        return cols
+      end
+
+      if cols = session_leader_tty_width
+        return cols
+      end
+
+      if cols = ancestor_tty_width
+        return cols
+      end
+
+      80
+    end
+
+    private def read_tty_width(path : String) : Int32?
+      File.open(path, "r") do |tty|
+        ws = TerminalLib::Winsize.new
+        result = TerminalLib.ioctl(tty.fd, TIOCGWINSZ, pointerof(ws))
+        return ws.ws_col.to_i32 if result == 0 && ws.ws_col > 0
+      end
+      nil
+    rescue
+      nil
+    end
+
+    private def session_leader_tty_width : Int32?
+      sid = TerminalLib.getsid(TerminalLib.getppid)
+      return nil if sid <= 1
+      pid_tty_width(sid)
+    rescue
+      nil
+    end
+
+    private def ancestor_tty_width : Int32?
+      pid = TerminalLib.getppid
+      10.times do
+        break if pid <= 1
+        line = `ps -o tty=,ppid= -p #{pid} 2>/dev/null`.strip
+        break if line.empty?
+
+        tty, _, ppid_str = line.partition(/\s+/)
+        if !tty.empty? && tty != "??" && tty != "-"
+          if cols = read_tty_width("/dev/#{tty}")
+            return cols
           end
         end
-      rescue
-        # /dev/tty not available
+
+        next_pid = ppid_str.strip.to_i?
+        break unless next_pid
+        pid = next_pid
       end
-      80 # Fallback
+      nil
+    rescue
+      nil
+    end
+
+    private def pid_tty_width(pid : Int32) : Int32?
+      line = `ps -o tty= -p #{pid} 2>/dev/null`.strip
+      return nil if line.empty? || line == "??" || line == "-"
+      read_tty_width("/dev/#{line}")
     end
 
     private def strip_ansi(text : String) : String

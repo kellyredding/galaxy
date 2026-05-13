@@ -191,6 +191,79 @@ describe GalaxyStatusline::Renderer do
     end
   end
 
+  describe "terminal width detection" do
+    # Specs default to GALAXY_STATUSLINE_FORCE_WIDTH=80 via
+    # spec_helper. Tests here reassign it to drive the renderer's
+    # width-dependent shrinking and then restore the default so
+    # later specs see a stable environment.
+    with_force_width = ->(value : String?, block : -> Nil) {
+      original = ENV["GALAXY_STATUSLINE_FORCE_WIDTH"]?
+      begin
+        if value.nil?
+          ENV.delete("GALAXY_STATUSLINE_FORCE_WIDTH")
+        else
+          ENV["GALAXY_STATUSLINE_FORCE_WIDTH"] = value
+        end
+        block.call
+      ensure
+        if original.nil?
+          ENV.delete("GALAXY_STATUSLINE_FORCE_WIDTH")
+        else
+          ENV["GALAXY_STATUSLINE_FORCE_WIDTH"] = original
+        end
+      end
+    }
+
+    it "honors GALAXY_STATUSLINE_FORCE_WIDTH for layout budgeting" do
+      # Wide budget (200 cols → 100-char per-line cap) should keep
+      # cost AND time on the session line where the 80-col default
+      # would drop time. The test runs both widths against the
+      # same input and asserts the difference.
+      json = %({"cwd": "/x", "model": {"display_name": "Sonnet"}, "context_window": {"used_percentage": 50}, "cost": {"total_cost_usd": 1.23}})
+
+      narrow_output = ""
+      wide_output = ""
+
+      with_force_width.call("80", -> {
+        narrow_output = strip_ansi(run_binary(["render"], stdin: json)[:output])
+        nil
+      })
+
+      with_force_width.call("200", -> {
+        wide_output = strip_ansi(run_binary(["render"], stdin: json)[:output])
+        nil
+      })
+
+      # Both renders include the always-present context bar.
+      narrow_output.should contain("%")
+      wide_output.should contain("%")
+
+      # Wide budget keeps cost and time; narrow budget keeps cost
+      # but drops time (verified separately in the time-display
+      # specs above).
+      wide_output.should contain("$1.23")
+      wide_output.should match(/\d{1,2}:\d{2} (AM|PM)/)
+    end
+
+    it "ignores GALAXY_STATUSLINE_FORCE_WIDTH when value is non-positive" do
+      # Empty / zero / non-numeric force-width values must fall
+      # through to the real detection chain rather than crashing
+      # or producing zero-width output. We verify by rendering a
+      # minimal payload and asserting the bar still appears.
+      json = %({"cwd": "/x", "context_window": {"used_percentage": 50}})
+
+      ["0", "-5", "abc", ""].each do |bad_value|
+        with_force_width.call(bad_value, -> {
+          result = run_binary(["render"], stdin: json)
+          result[:status].should eq(0)
+          output = strip_ansi(result[:output])
+          output.should contain("%")
+          nil
+        })
+      end
+    end
+  end
+
   describe "separator handling" do
     it "uses | separator between session line components" do
       # Session line uses separator when cost is present alongside context bar

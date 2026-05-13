@@ -20,6 +20,14 @@ SPEC_CLAUDE_DIR = SPEC_GALAXY_DIR / "claude"
 ENV["CLAUDE_CONFIG_DIR"] = SPEC_CLAUDE_DIR.to_s
 Dir.mkdir_p(SPEC_CLAUDE_DIR.to_s)
 
+# Pin terminal width during specs so layout assertions are
+# deterministic regardless of where `crystal spec` runs (terminal,
+# CI, IDE). The renderer's detection chain would otherwise probe
+# /dev/tty and the parent session leader, both of which vary by
+# host. Individual specs can override by reassigning this env var
+# before calling run_binary; they're responsible for restoring it.
+ENV["GALAXY_STATUSLINE_FORCE_WIDTH"] = "80"
+
 # Skip CLI auto-run when loading module for specs
 ENV["GALAXY_STATUSLINE_SKIP_CLI"] = "1"
 
