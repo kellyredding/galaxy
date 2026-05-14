@@ -145,6 +145,14 @@ struct ArtifactsView: View {
             updateEscapeMonitor()
             restoreWebViewFocus()
             syncFindHandler()
+            // Re-evaluate find-panel ownership: if we just
+            // became the active surface and our controller was
+            // visible, re-present; if we're no longer active,
+            // yield the panel (`dismiss(if:)` no-ops when the
+            // panel is already bound to a different controller,
+            // so this can't steal the panel from the incoming
+            // active surface).
+            syncFindBarPanel()
 
             if session.id
                 != sessionManager.activeSessionId
@@ -166,6 +174,9 @@ struct ArtifactsView: View {
             updateEscapeMonitor()
             restoreWebViewFocus()
             syncFindHandler()
+            // Re-evaluate find-panel ownership on tab change.
+            // See note in the activeSessionId onChange.
+            syncFindBarPanel()
 
             if sessionManager.activeTab == .artifacts,
                session.id
@@ -747,8 +758,8 @@ struct ArtifactsView: View {
         .onChange(of: openArtifact?.number) { _, _ in
             findController.isVisible = false
         }
-        .onChange(of: findController.isVisible) { _, visible in
-            syncFindBarPanel(visible: visible)
+        .onChange(of: findController.isVisible) { _, _ in
+            syncFindBarPanel()
         }
     }
 
@@ -757,12 +768,27 @@ struct ArtifactsView: View {
     /// renders in the same place to the user's eye as the prior
     /// inline overlay. See FindBarPanel for why the bar lives
     /// in a separate window instead of inline.
-    private func syncFindBarPanel(visible: Bool) {
-        guard visible else {
-            FindBarPanelController.shared.dismiss()
+    ///
+    /// Self-gating: presents only when this view is the active
+    /// surface (active session × artifacts tab) AND the
+    /// controller's intent is visible AND the WKWebView anchor
+    /// exists. Otherwise yields the panel using `dismiss(if:)`,
+    /// which is a no-op when the panel is already bound to a
+    /// different controller — so this is safe to call from any
+    /// tab/session-change observer without racing whichever
+    /// surface just took ownership.
+    private func syncFindBarPanel() {
+        let amActive =
+            sessionManager.activeSessionId == session.id
+            && sessionManager.activeTab == .artifacts
+        guard amActive,
+              findController.isVisible,
+              let anchor = webViewRef
+        else {
+            FindBarPanelController.shared
+                .dismiss(if: findController)
             return
         }
-        guard let anchor = webViewRef else { return }
         FindBarPanelController.shared.present(
             controller: findController,
             anchorView: anchor
@@ -784,7 +810,7 @@ struct ArtifactsView: View {
         // need it to reach the panel so the field gets
         // re-focused (Cmd+F when already open is the
         // refocus gesture).
-        syncFindBarPanel(visible: true)
+        syncFindBarPanel()
     }
 
     /// Register this view as `SessionManager.artifactsFindHandler`

@@ -538,6 +538,34 @@ class TerminalHostView: NSView {
             }
             .store(in: &cancellables)
 
+        // Re-evaluate find-bar-panel ownership on tab and
+        // session changes. The scrollback overlay's
+        // `findController.isVisible` survives switches (the
+        // overlay isn't torn down when the user leaves the
+        // terminal tab), so without this the shared panel
+        // remains visible bound to a no-longer-active surface
+        // until the user navigates back and explicitly
+        // dismisses it. `refreshFindBarPanelPresentation` uses
+        // `dismiss(if:)` internally, so when both old and new
+        // active surfaces fire their observers, only the truly
+        // active one wins.
+        SessionManager.shared.$activeTab
+            .receive(on: DispatchQueue.main)
+            .dropFirst()
+            .sink { [weak self] _ in
+                self?.scrollbackOverlay?
+                    .refreshFindBarPanelPresentation()
+            }
+            .store(in: &cancellables)
+        SessionManager.shared.$activeSessionId
+            .receive(on: DispatchQueue.main)
+            .dropFirst()
+            .sink { [weak self] _ in
+                self?.scrollbackOverlay?
+                    .refreshFindBarPanelPresentation()
+            }
+            .store(in: &cancellables)
+
         // Observe main-window-becomes-key. SwiftTerm's display
         // refresh appears to stall while the window is inactive;
         // when it regains key, force a redraw so the current
@@ -1061,8 +1089,24 @@ class TerminalHostView: NSView {
         // host — avoiding the up-left / down-right shift on
         // enter / exit that happened when the overlay was sized
         // to the full (unpadded) host bounds.
+        //
+        // The `isActiveSurface` predicate lets the overlay
+        // self-gate whether it currently owns the shared find
+        // panel. The combine subscriptions installed in
+        // `setupCombineSubscriptions` call back into
+        // `refreshFindBarPanelPresentation` so the overlay
+        // re-evaluates on every tab / session switch.
         let overlay = ScrollbackOverlayView(
-            frame: paddedBounds(), scrollbackView: webView
+            frame: paddedBounds(),
+            scrollbackView: webView,
+            isActiveSurface: { [weak self] in
+                guard let self = self,
+                      let mySessionId = self.owningSession?.id
+                else { return false }
+                let manager = SessionManager.shared
+                return manager.activeTab == .terminal
+                    && manager.activeSessionId == mySessionId
+            }
         )
         overlay.autoresizingMask = []
 

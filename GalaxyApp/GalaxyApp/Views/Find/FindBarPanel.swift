@@ -204,6 +204,18 @@ final class FindBarPanelController {
         }
     }
 
+    /// Hide the panel only if it's currently bound to
+    /// `controller`. Used by surfaces that observe their own
+    /// visibility state and want to yield the shared panel
+    /// without stealing it from whichever surface just took
+    /// ownership. Order-independent: a surface that has just
+    /// become inactive can call this without risking a teardown
+    /// of the newly-active surface's panel.
+    func dismiss(if controller: WebViewFindController) {
+        guard currentController === controller else { return }
+        dismiss()
+    }
+
     /// Hide the panel and return first responder to whoever
     /// held it before `present` was called.
     func dismiss() {

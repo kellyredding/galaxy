@@ -120,6 +120,11 @@ struct SnapshotsView: View {
             updateEscapeMonitor()
             restoreWebViewFocus()
             syncFindHandler()
+            // Re-evaluate find-panel ownership: see note in
+            // ArtifactsView.syncFindBarPanel — `dismiss(if:)`
+            // makes this race-free when both old and new
+            // surfaces fire their onChange in either order.
+            syncFindBarPanel()
 
             // Nil index data for inactive sessions — always safe
             // since the reader replaces the index view entirely,
@@ -140,6 +145,9 @@ struct SnapshotsView: View {
             updateEscapeMonitor()
             restoreWebViewFocus()
             syncFindHandler()
+            // Re-evaluate find-panel ownership on tab change.
+            // See note in the activeSessionId onChange.
+            syncFindBarPanel()
             // Refresh snapshot list when returning to snapshots tab
             if sessionManager.activeTab == .snapshots,
                session.id == sessionManager.activeSessionId,
@@ -495,20 +503,35 @@ struct SnapshotsView: View {
         .onChange(of: openSnapshot?.number) { _, _ in
             findController.isVisible = false
         }
-        .onChange(of: findController.isVisible) { _, visible in
-            syncFindBarPanel(visible: visible)
+        .onChange(of: findController.isVisible) { _, _ in
+            syncFindBarPanel()
         }
     }
 
     /// Show or hide the shared find-bar panel for this reader.
     /// Anchored to the WKWebView's top-right; see FindBarPanel
     /// for why the bar lives in a separate window.
-    private func syncFindBarPanel(visible: Bool) {
-        guard visible else {
-            FindBarPanelController.shared.dismiss()
+    ///
+    /// Self-gating: presents only when this view is the active
+    /// surface (active session × snapshots tab) AND the
+    /// controller's intent is visible AND the WKWebView anchor
+    /// exists. Otherwise yields the panel using `dismiss(if:)`,
+    /// which is a no-op when the panel is already bound to a
+    /// different controller — safe to call from any
+    /// tab/session-change observer without racing whichever
+    /// surface just took ownership.
+    private func syncFindBarPanel() {
+        let amActive =
+            sessionManager.activeSessionId == session.id
+            && sessionManager.activeTab == .snapshots
+        guard amActive,
+              findController.isVisible,
+              let anchor = webViewRef
+        else {
+            FindBarPanelController.shared
+                .dismiss(if: findController)
             return
         }
-        guard let anchor = webViewRef else { return }
         FindBarPanelController.shared.present(
             controller: findController,
             anchorView: anchor
@@ -527,7 +550,7 @@ struct SnapshotsView: View {
         // need it to reach the panel so the field gets
         // re-focused (Cmd+F when already open is the
         // refocus gesture).
-        syncFindBarPanel(visible: true)
+        syncFindBarPanel()
     }
 
     /// Register this view as `SessionManager.snapshotsFindHandler`

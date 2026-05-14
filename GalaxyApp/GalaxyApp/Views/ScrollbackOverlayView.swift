@@ -15,6 +15,18 @@ class ScrollbackOverlayView: NSView {
     /// `activateFind()`.
     let findController: WebViewFindController
 
+    /// Predicate the host installs at construction time so the
+    /// overlay can self-gate whether it currently "owns" the
+    /// shared `FindBarPanel`. True when the user is on the
+    /// terminal tab AND looking at this overlay's session. The
+    /// overlay is an `NSView` deep in the AppKit hierarchy with
+    /// no direct view into `SessionManager`'s active-tab /
+    /// active-session state; this closure is its hook into them.
+    /// Called from the visibility sink and from
+    /// `refreshFindBarPanelPresentation()` whenever the host
+    /// detects the active surface may have changed.
+    private let isActiveSurface: () -> Bool
+
     private var findVisibilityCancellable: AnyCancellable?
 
     /// AppKit-level Esc monitor. SwiftUI's
@@ -46,13 +58,18 @@ class ScrollbackOverlayView: NSView {
         }
     }
 
-    init(frame: NSRect, scrollbackView: ScrollbackWebView) {
+    init(
+        frame: NSRect,
+        scrollbackView: ScrollbackWebView,
+        isActiveSurface: @escaping () -> Bool = { true }
+    ) {
         self.scrollbackView = scrollbackView
         self.pillLabel = NSTextField(labelWithString: "Scrollback · Esc to exit")
         self.findController = WebViewFindController(
             webView: scrollbackView.webView,
             reverse: true
         )
+        self.isActiveSurface = isActiveSurface
         super.init(frame: frame)
         wantsLayer = true
 
@@ -189,14 +206,7 @@ class ScrollbackOverlayView: NSView {
             .sink { [weak self] visible in
                 guard let self = self else { return }
 
-                if visible {
-                    FindBarPanelController.shared.present(
-                        controller: self.findController,
-                        anchorView: self
-                    )
-                } else {
-                    FindBarPanelController.shared.dismiss()
-                }
+                self.syncFindBarPanel()
 
                 self.pillLabel.isHidden = visible
                 self.scrollbackView.webView.evaluateJavaScript(
@@ -206,6 +216,33 @@ class ScrollbackOverlayView: NSView {
                     + "}"
                 )
             }
+    }
+
+    /// Re-evaluate whether this overlay should currently hold
+    /// the shared `FindBarPanel` and present or yield
+    /// accordingly. The visibility sink in `configureFindBar`
+    /// calls this when the controller's `isVisible` flips; the
+    /// host (`TerminalHostView`) calls it on
+    /// `SessionManager.activeTab` / `activeSessionId` changes,
+    /// which this `NSView` can't observe directly.
+    ///
+    /// Yielding uses `dismiss(if:)` so a no-longer-active
+    /// overlay can't tear down the panel of whichever surface
+    /// just took ownership.
+    func refreshFindBarPanelPresentation() {
+        syncFindBarPanel()
+    }
+
+    private func syncFindBarPanel() {
+        guard isActiveSurface(), findController.isVisible else {
+            FindBarPanelController.shared
+                .dismiss(if: findController)
+            return
+        }
+        FindBarPanelController.shared.present(
+            controller: findController,
+            anchorView: self
+        )
     }
 
     /// Bring up the find bar in this overlay. Called by the
@@ -220,13 +257,24 @@ class ScrollbackOverlayView: NSView {
     /// the second Esc (with find already closed) falls through
     /// to the WebView, where ScrollbackManager.handleKey
     /// dismisses the overlay as usual.
+    ///
+    /// Also gated by `isActiveSurface()` so an inactive
+    /// overlay's monitor doesn't steal Esc from whichever
+    /// surface currently owns the find panel. The monitor is
+    /// app-wide (`addLocalMonitorForEvents` isn't view-scoped),
+    /// and `findController.isVisible` deliberately survives
+    /// tab/session switches so find can restore on return —
+    /// without this gate, a backgrounded overlay with a
+    /// retained `isVisible == true` would swallow the first
+    /// Esc the user types into the foreground find bar.
     private func installFindEscapeMonitor() {
         findEscapeMonitor = NSEvent.addLocalMonitorForEvents(
             matching: .keyDown
         ) { [weak self] event in
             guard let self = self,
                   event.keyCode == 53,           // Esc
-                  self.findController.isVisible
+                  self.findController.isVisible,
+                  self.isActiveSurface()
             else { return event }
             self.findController.isVisible = false
             return nil
