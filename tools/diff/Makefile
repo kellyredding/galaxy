@@ -6,10 +6,11 @@ LOCAL_BINDIR ?= $(HOME)/.local/bin
 BUILDDIR ?= build
 
 # Dependencies
-deps: shard.lock
+deps: lib/.shards-installed
 
-shard.lock: shard.yml
+lib/.shards-installed: shard.yml
 	shards install
+	@touch lib/.shards-installed
 
 # Development
 test: format
