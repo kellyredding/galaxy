@@ -1,9 +1,15 @@
-.PHONY: build install clean test lint format check dev
+.PHONY: build install clean test lint format check dev deps
 
 PREFIX ?= $(HOME)/.claude/galaxy
 BINDIR ?= $(PREFIX)/bin
 LOCAL_BINDIR ?= $(HOME)/.local/bin
 BUILDDIR ?= build
+
+# Dependencies
+deps: shard.lock
+
+shard.lock: shard.yml
+	shards install
 
 # Development
 test:
@@ -18,14 +24,13 @@ format:
 # check builds dev binary first (integration specs need it)
 check: lint dev test
 
-dev:
+dev: deps
 	@mkdir -p $(BUILDDIR)
 	crystal build -o $(BUILDDIR)/galaxy src/galaxy.cr
 
 # Release
-build:
+build: deps
 	@mkdir -p $(BUILDDIR)
-	shards install
 	crystal build --release --no-debug -o $(BUILDDIR)/galaxy src/galaxy.cr
 
 install: build
