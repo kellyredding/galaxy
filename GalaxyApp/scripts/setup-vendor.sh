@@ -77,13 +77,20 @@ fi
 # Apply Galaxy font rendering patch (FillStroke thickening + bold brightening + block element boundary fix)
 RENDERING_PATCH="$SCRIPT_DIR/galaxy-swiftterm-rendering.patch"
 if [ -f "$RENDERING_PATCH" ]; then
-    echo "==> Applying Galaxy font rendering patch..."
+    echo "==> Checking Galaxy font rendering patch..."
     cd "$VENDOR_DIR/SwiftTerm"
-    if git apply --check "$RENDERING_PATCH" 2>/dev/null; then
+    if git apply --reverse --check "$RENDERING_PATCH" 2>/dev/null; then
+        echo "    Rendering patch already applied"
+    elif git apply --check "$RENDERING_PATCH" 2>/dev/null; then
+        echo "==> Applying Galaxy font rendering patch..."
         git apply "$RENDERING_PATCH"
         echo "    Rendering patch applied successfully"
     else
-        echo "    Rendering patch already applied or cannot be applied cleanly"
+        echo "    ERROR: rendering patch cannot be applied cleanly"
+        echo "    SwiftTerm at: $(git describe --tags --exact-match 2>/dev/null || echo unknown)"
+        echo "    Patch:        $RENDERING_PATCH"
+        echo "    To investigate: cd $VENDOR_DIR/SwiftTerm && git apply -v $RENDERING_PATCH"
+        exit 1
     fi
 fi
 
