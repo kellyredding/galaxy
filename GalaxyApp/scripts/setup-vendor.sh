@@ -2,10 +2,12 @@
 #
 # Setup script for GalaxyApp vendored dependencies
 #
-# This script clones SwiftTerm v1.10.1 and applies a patch to fix
-# Swift Package Manager compatibility issues (trailing commas in
-# function arguments are a Swift 5.9+ feature, but SPM compiles
-# Package.swift manifests with -swift-version 5).
+# This script clones SwiftTerm v1.10.1 and applies the Galaxy
+# customization patch. The patch covers both Galaxy's rendering
+# changes (FillStroke thickening, bold brightening, block element
+# boundary fix) and SPM compatibility tweaks to Package.swift
+# (trailing commas, executable-target spacing — Swift 5.9+
+# parser-tolerant syntax that SPM's older parser rejects).
 #
 # Usage: ./scripts/setup-vendor.sh
 #
@@ -42,39 +44,11 @@ else
     echo "    Cloned successfully"
 fi
 
-# Apply patch to fix SPM compatibility
-echo "==> Applying SPM compatibility patch..."
-PACKAGE_SWIFT="$VENDOR_DIR/SwiftTerm/Package.swift"
-
-if grep -q 'exclude: platformExcludes + \["Mac/README.md"\],' "$PACKAGE_SWIFT" 2>/dev/null; then
-    echo "    Removing trailing commas from function arguments..."
-
-    # macOS sed requires different syntax
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        # Fix trailing commas in function argument lists (Swift 5.9+ feature not supported by SPM)
-        sed -i '' 's/exclude: platformExcludes + \["Mac\/README.md"\],/exclude: platformExcludes + ["Mac\/README.md"]/g' "$PACKAGE_SWIFT"
-        # Remove spaces before ( in .executableTarget
-        sed -i '' 's/\.executableTarget (/.executableTarget(/g' "$PACKAGE_SWIFT"
-        # Remove commented-out code blocks that might cause issues
-        sed -i '' '/\/\/.*dependencies:/d' "$PACKAGE_SWIFT"
-        sed -i '' '/\/\/.*\.product(name: "Subprocess"/d' "$PACKAGE_SWIFT"
-        sed -i '' '/\/\/.*swiftSettings:/d' "$PACKAGE_SWIFT"
-        sed -i '' '/\/\/.*\.unsafeFlags/d' "$PACKAGE_SWIFT"
-        sed -i '' '/\/\/[[:space:]]*\]/d' "$PACKAGE_SWIFT"
-        sed -i '' '/\/\/[[:space:]]*We can not use Swift Subprocess/d' "$PACKAGE_SWIFT"
-        sed -i '' '/\/\/[[:space:]]*be a controlling terminal/d' "$PACKAGE_SWIFT"
-    else
-        # Linux sed
-        sed -i 's/exclude: platformExcludes + \["Mac\/README.md"\],/exclude: platformExcludes + ["Mac\/README.md"]/g' "$PACKAGE_SWIFT"
-        sed -i 's/\.executableTarget (/.executableTarget(/g' "$PACKAGE_SWIFT"
-    fi
-
-    echo "    Patch applied successfully"
-else
-    echo "    Package.swift already patched or structure changed"
-fi
-
-# Apply Galaxy font rendering patch (FillStroke thickening + bold brightening + block element boundary fix)
+# Apply Galaxy customization patch. Touches Package.swift (SPM
+# compatibility tweaks) plus 9 Sources/SwiftTerm/*.swift files (font
+# rendering: FillStroke thickening, bold brightening, block element
+# boundary fix). Single source of truth for all Galaxy-side changes
+# to the vendored SwiftTerm checkout.
 RENDERING_PATCH="$SCRIPT_DIR/galaxy-swiftterm-rendering.patch"
 if [ -f "$RENDERING_PATCH" ]; then
     echo "==> Checking Galaxy font rendering patch..."
