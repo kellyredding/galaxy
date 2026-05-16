@@ -1244,7 +1244,16 @@ struct VScrollAtBottomReader: NSViewRepresentable {
             let newAtBottom =
                 visibleMax >= docHeight - 20
 
-            if docGrew && wasAtBottom && !newAtBottom {
+            // No !newAtBottom guard: the at-bottom slop
+            // equals one hash slot's pixel height, so a
+            // single-hash growth keeps newAtBottom true
+            // even though the doc grew under the
+            // viewport. Skipping that check fires the
+            // snap on every doc growth while the user
+            // was near the previous bottom — the docGrew
+            // && wasAtBottom pair already filters out
+            // idle polls and user-scrolled-away cases.
+            if docGrew && wasAtBottom {
                 let maxY = max(
                     0,
                     docHeight - clip.bounds.height
