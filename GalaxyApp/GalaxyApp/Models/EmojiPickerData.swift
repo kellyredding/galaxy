@@ -154,6 +154,8 @@ enum EmojiPickerData {
                    keywords: ["robot", "bot", "ai", "automated"]),
         EmojiEntry(emoji: "👻", category: .faces,
                    keywords: ["ghost", "spooky", "haunted"]),
+        EmojiEntry(emoji: "🤑", category: .faces,
+                   keywords: ["money mouth", "money", "greedy", "rich", "dollar"]),
 
         // ----------------------------------------------------------------
         // OBJECTS — tools / artifacts / hardware
@@ -202,6 +204,20 @@ enum EmojiPickerData {
                    keywords: ["battery", "power", "energy"]),
         EmojiEntry(emoji: "🧰", category: .objects,
                    keywords: ["toolbox", "tools", "utilities"]),
+        EmojiEntry(emoji: "💰", category: .objects,
+                   keywords: ["money", "bag", "cash", "wealth", "treasure"]),
+        EmojiEntry(emoji: "💵", category: .objects,
+                   keywords: ["dollar", "money", "cash", "banknote", "bill"]),
+        EmojiEntry(emoji: "💸", category: .objects,
+                   keywords: ["money", "flying", "spending", "expense", "loss"]),
+        EmojiEntry(emoji: "👛", category: .objects,
+                   keywords: ["purse", "money", "wallet", "coins"]),
+        EmojiEntry(emoji: "🏧", category: .objects,
+                   keywords: ["atm", "money", "bank", "cash", "withdraw"]),
+        EmojiEntry(emoji: "📈", category: .objects,
+                   keywords: ["chart up", "growth", "increase", "rising", "money"]),
+        EmojiEntry(emoji: "📉", category: .objects,
+                   keywords: ["chart down", "decrease", "falling", "loss", "money"]),
 
         // ----------------------------------------------------------------
         // NATURE — color, season, mood
