@@ -925,8 +925,15 @@ struct TimelineView: View {
                         self.layout = nil
                     }
                     self.isLoading = false
-                    self.programmaticScrollY =
-                        .infinity
+                    // Initial scroll to bottom is
+                    // handled by the
+                    // VScrollAtBottomReader's
+                    // currentScrollState() when the
+                    // document view's frame grows from
+                    // zero to its laid-out size. Same
+                    // mechanism that handles refresh-
+                    // tail, so the two paths share one
+                    // animation and don't fight.
                     startPolling()
                 }
             } catch {
@@ -976,10 +983,16 @@ struct TimelineView: View {
                     } else {
                         self.layout = nil
                     }
-                    if self.isAtBottom {
-                        self.programmaticScrollY =
-                            .infinity
-                    }
+                    // Follow-tail handled inside the
+                    // VScrollAtBottomReader's
+                    // currentScrollState() — it sees the
+                    // doc grow and re-snaps if the user
+                    // was at bottom. Avoid setting
+                    // programmaticScrollY here because
+                    // doing so reads the doc height
+                    // before AppKit lays out the new
+                    // content and clamps to the stale
+                    // bottom.
                 }
             } catch {
                 // Silently ignore refresh errors —
@@ -1051,23 +1064,13 @@ struct VScrollAtBottomReader: NSViewRepresentable {
         view.coordinator = context.coordinator
         context.coordinator.updateBinding = {
             [weak view] in
-            guard let view = view,
-                let scrollView =
-                    view.enclosingScrollView
+            guard let state =
+                view?.currentScrollState()
             else { return }
-            let clip = scrollView.contentView
-            let docHeight =
-                scrollView.documentView?
-                .frame.height ?? 0
-            let visibleMax =
-                clip.bounds.origin.y
-                + clip.bounds.height
-            self.isAtBottom =
-                visibleMax >= docHeight - 20
-            self.scrollOffset =
-                clip.bounds.origin.y
+            self.isAtBottom = state.isAtBottom
+            self.scrollOffset = state.scrollOffset
             self.viewportHeight =
-                clip.bounds.height
+                state.viewportHeight
         }
         return view
     }
@@ -1078,23 +1081,13 @@ struct VScrollAtBottomReader: NSViewRepresentable {
     ) {
         context.coordinator.updateBinding = {
             [weak nsView] in
-            guard let nsView = nsView,
-                let scrollView =
-                    nsView.enclosingScrollView
+            guard let state =
+                nsView?.currentScrollState()
             else { return }
-            let clip = scrollView.contentView
-            let docHeight =
-                scrollView.documentView?
-                .frame.height ?? 0
-            let visibleMax =
-                clip.bounds.origin.y
-                + clip.bounds.height
-            self.isAtBottom =
-                visibleMax >= docHeight - 20
-            self.scrollOffset =
-                clip.bounds.origin.y
+            self.isAtBottom = state.isAtBottom
+            self.scrollOffset = state.scrollOffset
             self.viewportHeight =
-                clip.bounds.height
+                state.viewportHeight
         }
 
         // Handle programmatic scroll requests
@@ -1144,6 +1137,11 @@ struct VScrollAtBottomReader: NSViewRepresentable {
         weak var coordinator: Coordinator?
         private var boundsObs: Any?
         private var frameObs: Any?
+        /// Last observed document height. Used to detect
+        /// "doc grew while user was at bottom" so the
+        /// follow-tail re-snap fires independently of the
+        /// polling-based programmaticScrollY channel.
+        private var lastDocHeight: CGFloat = 0
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
@@ -1205,6 +1203,83 @@ struct VScrollAtBottomReader: NSViewRepresentable {
                             .updateBinding?()
                     }
             }
+        }
+
+        /// Snapshot the current scroll state and, if the
+        /// document just grew while the user was at (or
+        /// within slop of) the previous bottom, re-snap
+        /// the clip view to the new bottom. Returns the
+        /// values the SwiftUI bindings should be updated
+        /// to, or nil if the scroll view isn't ready.
+        ///
+        /// Decouples follow-tail from the polling-based
+        /// scrollToY channel so a stale doc-height read
+        /// can't strand the viewport above new content.
+        func currentScrollState() -> (
+            isAtBottom: Bool,
+            scrollOffset: CGFloat,
+            viewportHeight: CGFloat
+        )? {
+            guard let scrollView = enclosingScrollView
+            else { return nil }
+            let clip = scrollView.contentView
+            let docHeight =
+                scrollView.documentView?
+                .frame.height ?? 0
+            let visibleMax =
+                clip.bounds.origin.y
+                + clip.bounds.height
+
+            // "Was the user at (or within slop of) the
+            // previous bottom?" On the first call
+            // lastDocHeight is 0 — treat that as yes so
+            // the initial layout pass animates to bottom.
+            let wasAtBottom =
+                lastDocHeight > 0
+                ? (visibleMax >= lastDocHeight - 20)
+                : true
+            let docGrew =
+                docHeight > lastDocHeight + 0.5
+
+            let newAtBottom =
+                visibleMax >= docHeight - 20
+
+            if docGrew && wasAtBottom && !newAtBottom {
+                let maxY = max(
+                    0,
+                    docHeight - clip.bounds.height
+                )
+                // Animate, don't snap. The animator
+                // emits intermediate bounds-change
+                // notifications across its duration; each
+                // re-runs currentScrollState and writes
+                // the binding through to vScrollOffset,
+                // so the viewport-windowed segments re-
+                // render at the new clip position. An
+                // instant setBoundsOrigin moves the clip
+                // before SwiftUI can update vScrollOffset
+                // and leaves the viewport rendering
+                // spacers instead of real content.
+                NSAnimationContext.runAnimationGroup {
+                    ctx in
+                    ctx.duration = 0.2
+                    ctx.timingFunction =
+                        CAMediaTimingFunction(
+                            name: .easeOut
+                        )
+                    clip.animator().setBoundsOrigin(
+                        NSPoint(x: 0, y: maxY)
+                    )
+                }
+            }
+
+            lastDocHeight = docHeight
+
+            return (
+                isAtBottom: newAtBottom,
+                scrollOffset: clip.bounds.origin.y,
+                viewportHeight: clip.bounds.height
+            )
         }
 
         deinit {
