@@ -50,6 +50,38 @@ struct NewSessionView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            // Session name
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Name (optional)")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.secondary)
+
+                TextField("Eventually auto-generated if none given", text: $givenName)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($focusedField, equals: .name)
+            }
+
+            // Persona picker (only if claude-persona is installed)
+            if hasClaudePersona {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Persona")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.secondary)
+
+                    PersonaPicker(
+                        personas: availablePersonas,
+                        selection: $selectedPersona,
+                        bridge: personaBridge
+                    )
+                    .focusable()
+                    .focused($focusedField, equals: .persona)
+                    .onKeyPress(.space) {
+                        personaBridge.performClick?()
+                        return .handled
+                    }
+                }
+            }
+
             // Start directory
             VStack(alignment: .leading, spacing: 6) {
                 Text("Start directory")
@@ -94,38 +126,6 @@ struct NewSessionView: View {
                 errorMessage = nil
             }
 
-            // Persona picker (only if claude-persona is installed)
-            if hasClaudePersona {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Persona")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.secondary)
-
-                    PersonaPicker(
-                        personas: availablePersonas,
-                        selection: $selectedPersona,
-                        bridge: personaBridge
-                    )
-                    .focusable()
-                    .focused($focusedField, equals: .persona)
-                    .onKeyPress(.space) {
-                        personaBridge.performClick?()
-                        return .handled
-                    }
-                }
-            }
-
-            // Session name
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Name (optional)")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.secondary)
-
-                TextField("Eventually auto-generated if none given", text: $givenName)
-                    .textFieldStyle(.roundedBorder)
-                    .focused($focusedField, equals: .name)
-            }
-
             // Vibe mode checkbox
             Toggle("Vibe (dangerously skip permissions)", isOn: $isVibe)
                 .toggleStyle(.checkbox)
@@ -154,7 +154,11 @@ struct NewSessionView: View {
         }
         .padding(20)
         .frame(width: 460)
-        .defaultFocus($focusedField, .persona)
+        .onAppear {
+            DispatchQueue.main.async {
+                focusedField = .name
+            }
+        }
     }
 
     // MARK: - Actions
