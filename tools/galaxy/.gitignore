@@ -1,7 +1,6 @@
 # Crystal
 /lib/
 /.shards/
-/shard.lock
 
 # Build artifacts
 /build/
