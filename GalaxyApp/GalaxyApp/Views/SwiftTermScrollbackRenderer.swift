@@ -1741,10 +1741,14 @@ enum SwiftTermScrollbackRenderer {
         sendToClaude() {
             if (this.items.length === 0) return;
 
-            const sorted = [...this.items].sort((a, b) => a.startLine - b.startLine);
-            const message = sorted.map(note => {
-                return '```\\n' + note.lineContent + '\\n```\\n' + note.content;
-            }).join('\\n\\n');
+            const sorted = [...this.items].sort((a, b) =>
+                a.endLine - b.endLine || a.startLine - b.startLine);
+            const message = sorted.map((note, i) => {
+                const n = i + 1;
+                return '[' + n + ']\\n'
+                    + '```\\n' + note.lineContent + '\\n```\\n'
+                    + note.content;
+            }).join('\\n\\n\\n');
 
             window.webkit.messageHandlers.scrollback.postMessage({
                 action: 'sendToClaude',
