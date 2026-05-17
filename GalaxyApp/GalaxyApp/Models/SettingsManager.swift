@@ -411,6 +411,14 @@ struct AppSettings: Codable, Equatable {
     }
 }
 
+/// Conformance to the engine bridge's configuration seam. The
+/// `GalacticConfiguration` protocol's member set is a strict
+/// subset of `AppSettings` with identical names and types, so
+/// the conformance is empty. See `GalacticConfiguration.swift`
+/// for the protocol surface and the reasoning behind matching
+/// `AppSettings`'s naming verbatim.
+extension AppSettings: GalacticConfiguration { }
+
 /// Manages app settings with persistence to disk
 class SettingsManager: ObservableObject {
     static let shared = SettingsManager()

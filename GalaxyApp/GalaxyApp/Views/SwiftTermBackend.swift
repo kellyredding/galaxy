@@ -29,19 +29,19 @@ internal func resolveTerminalFont(
 }
 
 /// `TerminalBackend` implementation backed by Galaxy's
-/// `GalaxySwiftTermView` — a `LocalProcessTerminalView`
+/// `GalacticSwiftTermView` — a `LocalProcessTerminalView`
 /// subclass that intercepts scroll events, suppresses the
 /// default bell NSBeep, and exposes focus-event quenching.
 ///
 /// The Shell pane reaches the SwiftTerm engine through this
 /// backend. The Session pane currently constructs
-/// `GalaxySwiftTermView` directly via `Session.swift`; that
+/// `GalacticSwiftTermView` directly via `Session.swift`; that
 /// path will migrate to a `TerminalBackend` reference in a
 /// follow-up slice of the terminal-backend unification work.
 final class SwiftTermBackend: NSObject, TerminalBackend,
     LocalProcessTerminalViewDelegate {
 
-    private let terminalView: GalaxySwiftTermView
+    private let terminalView: GalacticSwiftTermView
 
     var view: NSView { terminalView }
     var onProcessTerminated: ((Int32) -> Void)?
@@ -105,7 +105,7 @@ final class SwiftTermBackend: NSObject, TerminalBackend,
     /// that mediates between the chrome-driven throttle
     /// signal and the view's invalidation behavior. Lives
     /// on the backend (rather than inside the view) so
-    /// `GalaxySwiftTermView` doesn't need to know that the
+    /// `GalacticSwiftTermView` doesn't need to know that the
     /// throttle, SidebarPreferences, or Combine exist —
     /// the view exposes a backend-agnostic `displayPaused`
     /// flag, and this subscription is what flips it. A
@@ -116,7 +116,7 @@ final class SwiftTermBackend: NSObject, TerminalBackend,
     private var displayThrottleCancellable: AnyCancellable?
 
     init(frame: NSRect) {
-        self.terminalView = GalaxySwiftTermView(frame: frame)
+        self.terminalView = GalacticSwiftTermView(frame: frame)
         super.init()
         // Conform to LPTV directly — process-lifecycle
         // callbacks land on `processTerminated(source:exitCode:)`
@@ -130,7 +130,7 @@ final class SwiftTermBackend: NSObject, TerminalBackend,
     /// trailing edge (paused → resumed) fire a single
     /// catch-up redraw covering the full bounds. Because
     /// the catch-up runs *after* `displayPaused` flips
-    /// false, the override in `GalaxySwiftTermView`
+    /// false, the override in `GalacticSwiftTermView`
     /// forwards that single `setNeedsDisplay` to super,
     /// rendering whatever buffer changes accumulated
     /// during the pause.
@@ -298,7 +298,7 @@ final class SwiftTermBackend: NSObject, TerminalBackend,
         terminalView.galaxyBoldForegroundColor = color
     }
 
-    func applySettings(_ settings: AppSettings) {
+    func applySettings(_ settings: GalacticConfiguration) {
         // Theme.
         let theme = TerminalColorTheme.theme(
             named: settings.terminalColorThemeName

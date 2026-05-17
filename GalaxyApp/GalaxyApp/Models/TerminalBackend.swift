@@ -62,7 +62,7 @@ import AppKit
 ///   otherwise; `Terminal.scroll()` only pins yDisp to
 ///   yBase on each appended line when the flag is false.
 /// - Invariant 3 is satisfied by a subclass-level latch in
-///   `GalaxySwiftTermView.scrollWheel`. When a trackpad
+///   `GalacticSwiftTermView.scrollWheel`. When a trackpad
 ///   gesture event moves `yDisp` downward to land at or
 ///   past `yBase`, the subclass snaps to the bottom, clears
 ///   `userScrolling`, and ignores all further events in the
@@ -135,17 +135,22 @@ protocol TerminalBackend: AnyObject {
     /// a config knob with equivalent semantics.
     func setBoldForegroundColor(_ color: NSColor)
 
-    /// Apply the full Galaxy settings model to the backend.
-    /// Translates `AppSettings` to the backend's native config
-    /// shape — for SwiftTerm that's per-property writes (font,
-    /// palette, scrollback, etc.); for a future libghostty
-    /// backend that's a config blob plus an `update_config`
-    /// call.
+    /// Apply the host app's terminal configuration to the
+    /// backend. Reads through the `GalacticConfiguration`
+    /// protocol so the engine bridge does not bind to any
+    /// specific settings-storage type. Galaxy's `AppSettings`
+    /// conforms directly (empty extension); other host apps
+    /// can conform their own settings type or build an adapter.
+    /// Translates the protocol values into the backend's native
+    /// config shape — for SwiftTerm that's per-property writes
+    /// (font, palette, scrollback, etc.); for a future
+    /// libghostty backend that's a config blob plus an
+    /// `update_config` call.
     ///
     /// Idempotent and incremental: callers can fire on every
     /// settings change; the backend is responsible for
     /// skipping no-ops where it cares about that.
-    func applySettings(_ settings: AppSettings)
+    func applySettings(_ settings: GalacticConfiguration)
 
     /// When true, the next `becomeFirstResponder` /
     /// `resignFirstResponder` call suppresses focus-event

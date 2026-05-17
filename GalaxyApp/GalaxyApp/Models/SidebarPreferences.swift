@@ -38,7 +38,18 @@ final class SidebarPreferences: ObservableObject {
     /// True when the session sidebar is expanded. Observers
     /// of this property re-render on flip; observers of
     /// `SettingsManager` do not.
-    @Published var isVisible: Bool
+    ///
+    /// `didSet` fires the terminal display throttle so each
+    /// toggle pauses PTY-driven invalidation for the slide
+    /// animation's duration. Swift skips `didSet` during
+    /// init, so the launch-time seed assignment below does
+    /// not trigger the throttle — only subsequent
+    /// (user-driven) toggles do.
+    @Published var isVisible: Bool {
+        didSet {
+            TerminalDisplayThrottle.shared.pause(for: 0.25)
+        }
+    }
 
     private var cancellables = Set<AnyCancellable>()
 

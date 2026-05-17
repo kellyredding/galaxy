@@ -8,7 +8,7 @@ import SwiftTerm
 /// owning `SwiftTermBackend` (which conforms to
 /// `LocalProcessTerminalViewDelegate` and assigns itself as
 /// `processDelegate` after constructing this view).
-class GalaxySwiftTermView: LocalProcessTerminalView {
+class GalacticSwiftTermView: LocalProcessTerminalView {
     /// Disable custom block glyph rendering on construction so
     /// block elements (U+2580–U+259F) and box drawing
     /// (U+2500–U+257F) fall through to CoreText font rendering,
