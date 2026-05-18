@@ -13,6 +13,7 @@
 | [timeline](tools/timeline/) | Session timeline event recording for Claude Code | Active |
 | [agents](tools/agents/) | Subagent lifecycle tracking for Claude Code | Active |
 | [diff](tools/diff/) | Structured diff capture for code review in Galaxy.app | Active |
+| [galaxy](tools/galaxy/) | Terminal CLI launcher for Galaxy.app sessions (directory-aware, URL-scheme integration, self-updating) | Active |
 
 ## Quick Install
 
@@ -29,6 +30,7 @@ make artifacts-install
 make timeline-install
 make agents-install
 make diff-install
+make galaxy-install
 ```
 
 Or build individual tools:
@@ -125,7 +127,8 @@ galaxy/
     ├── artifacts/            # Session artifact management
     ├── timeline/             # Session timeline events
     ├── agents/               # Subagent lifecycle tracking
-    └── diff/                 # Structured diff capture
+    ├── diff/                 # Structured diff capture
+    └── galaxy/               # Terminal CLI launcher for Galaxy.app
 ```
 
 ## License
