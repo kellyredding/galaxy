@@ -7,10 +7,6 @@
 *~
 .vscode/
 
-# Vendored dependencies (cloned locally, not committed)
-# See GalaxyApp/SETUP.md for instructions to set up
-GalaxyApp/Vendor/
-
 # Xcode build output (from xcodebuild -derivedDataPath build)
 GalaxyApp/build/
 
