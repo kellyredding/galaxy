@@ -15,34 +15,9 @@
 | [diff](tools/diff/) | Structured diff capture for code review in Galaxy.app | Active |
 | [galaxy](tools/galaxy/) | Terminal CLI launcher for Galaxy.app sessions (directory-aware, URL-scheme integration, self-updating) | Active |
 
-## Quick Install
+## Installation
 
-```bash
-# Clone and build
-git clone https://github.com/kellyredding/galaxy.git
-cd galaxy
-
-# Build and install all tools
-make statusline-install
-make ledger-install
-make snapshots-install
-make artifacts-install
-make timeline-install
-make agents-install
-make diff-install
-make galaxy-install
-```
-
-Or build individual tools:
-
-```bash
-cd tools/statusline
-make install
-```
-
-**Installation locations:**
-- Binaries: `~/.claude/galaxy/bin/`
-- Symlinks: `~/.bin/local/` (add to your PATH for easy access)
+See [SETUP.md](SETUP.md) for the full setup guide — prerequisites, CLI tool installs, and Galaxy.app build.
 
 ## Tool Overview
 
