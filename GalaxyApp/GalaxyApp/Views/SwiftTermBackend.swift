@@ -441,20 +441,24 @@ final class SwiftTermBackend: NSObject, TerminalBackend,
 /// `ScrollbackSnapshot` impl over a SwiftTerm `Buffer +
 /// Terminal` pair. Captures both at construction so the
 /// underlying state is frozen — even if the live terminal
-/// moves on, the snapshot keeps rendering the same captured
-/// buffer.
+/// moves on, the snapshot keeps yielding the same captured
+/// cells.
 ///
-/// `Terminal` is captured because the renderer needs
+/// `Terminal` is captured because cell iteration needs
 /// `terminal.getCharacter(for:)` for extended grapheme
-/// lookup (CharData.code values >= maxRune). The terminal
-/// reference is kept private so chrome consumers can't reach
-/// back into SwiftTerm internals through it.
+/// lookup (CharData.code values >= maxRune). Both the buffer
+/// and terminal references are kept private — chrome
+/// consumers see only the engine-agnostic `ScrollbackCell`
+/// stream yielded through `enumerateCells(line:visit:)`,
+/// without any reach-through into SwiftTerm types.
 final class SwiftTermScrollbackSnapshot: ScrollbackSnapshot {
     private let buffer: Buffer
     private let terminal: Terminal
 
     let cols: Int
     let yDisp: Int
+
+    var lineCount: Int { buffer.lines.count }
 
     init(buffer: Buffer, terminal: Terminal) {
         self.buffer = buffer
@@ -463,20 +467,86 @@ final class SwiftTermScrollbackSnapshot: ScrollbackSnapshot {
         self.yDisp = buffer.yDisp
     }
 
-    func render(
-        theme: TerminalColorTheme,
-        fontFamily: String,
-        fontSize: CGFloat,
-        cellHeight: CGFloat
-    ) -> String {
-        SwiftTermScrollbackRenderer.render(
-            buffer: buffer,
-            terminal: terminal,
-            theme: theme,
-            fontFamily: fontFamily,
-            fontSize: fontSize,
-            cellHeight: cellHeight,
-            cols: cols
+    func enumerateCells(
+        line lineIndex: Int,
+        visit: (ScrollbackCell) -> Void
+    ) {
+        guard lineIndex >= 0, lineIndex < buffer.lines.count else {
+            return
+        }
+        let line = buffer.lines[lineIndex]
+        let cellCount = min(cols, line.count)
+        for col in 0..<cellCount {
+            let cell = line[col]
+            visit(Self.convert(cell: cell, terminal: terminal))
+        }
+    }
+
+    /// Convert one SwiftTerm `CharData` cell into the engine-
+    /// agnostic `ScrollbackCell` representation. Resolves
+    /// extended grapheme clusters via the captured terminal
+    /// and translates SwiftTerm's `Attribute` shape into
+    /// `ScrollbackColor` + `ScrollbackAttributes`.
+    private static func convert(
+        cell: CharData, terminal: Terminal
+    ) -> ScrollbackCell {
+        // Character resolution. Null cells become a single
+        // space; in-range codepoints become the corresponding
+        // Unicode scalar; out-of-range codes are extended
+        // grapheme clusters fetched from the terminal.
+        let character: String
+        if cell.code == 0 && cell.width == 1 {
+            character = " "
+        } else if cell.code < Int32(CharData.maxRune) {
+            if let scalar = Unicode.Scalar(UInt32(cell.code)) {
+                character = String(Character(scalar))
+            } else {
+                character = " "
+            }
+        } else {
+            character = String(terminal.getCharacter(for: cell))
+        }
+
+        let attr = cell.attribute
+        let style = ScrollbackCellStyle(
+            foreground: convert(color: attr.fg),
+            background: convert(color: attr.bg),
+            attributes: convert(style: attr.style)
         )
+        return ScrollbackCell(
+            character: character,
+            columnWidth: Int(cell.width),
+            style: style
+        )
+    }
+
+    private static func convert(
+        color: Attribute.Color
+    ) -> ScrollbackColor {
+        switch color {
+        case .defaultColor:
+            return .defaultColor
+        case .defaultInvertedColor:
+            return .defaultInvertedColor
+        case .ansi256(let code):
+            return .ansi256(code)
+        case .trueColor(let r, let g, let b):
+            return .trueColor(red: r, green: g, blue: b)
+        }
+    }
+
+    private static func convert(
+        style: CharacterStyle
+    ) -> ScrollbackAttributes {
+        var out: ScrollbackAttributes = []
+        if style.contains(.bold)       { out.insert(.bold) }
+        if style.contains(.italic)     { out.insert(.italic) }
+        if style.contains(.underline)  { out.insert(.underline) }
+        if style.contains(.inverse)    { out.insert(.inverse) }
+        if style.contains(.dim)        { out.insert(.dim) }
+        if style.contains(.invisible)  { out.insert(.invisible) }
+        if style.contains(.crossedOut) { out.insert(.crossedOut) }
+        if style.contains(.blink)      { out.insert(.blink) }
+        return out
     }
 }

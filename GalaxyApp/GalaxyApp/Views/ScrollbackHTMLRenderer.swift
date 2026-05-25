@@ -1,45 +1,42 @@
 import Foundation
-import SwiftTerm
 
-/// Converts a frozen SwiftTerm `Buffer` snapshot into a complete HTML document
-/// that visually matches the live terminal rendering. Each `BufferLine` becomes
+/// Converts a frozen `ScrollbackSnapshot` into a complete HTML document
+/// that visually matches the live terminal rendering. Each snapshot line becomes
 /// a `<div class="tl">` with styled `<span>` runs for each attribute group.
 ///
 /// The HTML includes embedded CSS (font, colors, line-height matching the
 /// terminal) and a JavaScript `ScrollbackManager` that handles keyboard
 /// navigation, scroll position, and Swift ↔ WKWebView communication.
-enum SwiftTermScrollbackRenderer {
+enum ScrollbackHTMLRenderer {
 
     // MARK: - Public API
 
-    /// Render a frozen buffer snapshot to a complete HTML document string.
+    /// Render a frozen `ScrollbackSnapshot` to a complete HTML document string.
     ///
     /// - Parameters:
-    ///   - buffer: Deep-copy buffer from `terminal.snapshotBuffer()`
-    ///   - terminal: The terminal instance (needed for extended grapheme lookup)
+    ///   - snapshot: Engine-agnostic scrollback snapshot. Iteration yields
+    ///     `ScrollbackCell` instances translated from whichever backend
+    ///     produced the snapshot.
     ///   - theme: Current color theme for default/ANSI colors
     ///   - fontFamily: CSS font-family value (e.g. "SF Mono", "Menlo")
     ///   - fontSize: Font size in points
     ///   - cellHeight: Pixel height of one terminal line (from cellDimension.height)
-    ///   - cols: Column count of the buffer
     static func render(
-        buffer: Buffer,
-        terminal: Terminal,
+        snapshot: ScrollbackSnapshot,
         theme: TerminalColorTheme,
         fontFamily: String,
         fontSize: CGFloat,
-        cellHeight: CGFloat,
-        cols: Int
+        cellHeight: CGFloat
     ) -> String {
         let resolver = ColorResolver(theme: theme)
         var html = ""
-        html.reserveCapacity(buffer.lines.count * cols * 4)  // rough estimate
+        let lineCount = snapshot.lineCount
+        html.reserveCapacity(lineCount * snapshot.cols * 4)  // rough estimate
 
-        let lineCount = buffer.lines.count
         for lineIdx in 0..<lineCount {
-            let line = buffer.lines[lineIdx]
-            html.append(renderLine(line, lineIndex: lineIdx, cols: cols,
-                                   terminal: terminal, resolver: resolver))
+            html.append(renderLine(lineIndex: lineIdx,
+                                   snapshot: snapshot,
+                                   resolver: resolver))
         }
 
         return wrapDocument(
@@ -54,57 +51,37 @@ enum SwiftTermScrollbackRenderer {
     // MARK: - Line Rendering
 
     private static func renderLine(
-        _ line: BufferLine,
         lineIndex: Int,
-        cols: Int,
-        terminal: Terminal,
+        snapshot: ScrollbackSnapshot,
         resolver: ColorResolver
     ) -> String {
         var spans = ""
-        var currentAttr: Attribute? = nil
+        var currentStyle: ScrollbackCellStyle? = nil
         var currentText = ""
         var currentStartCol = 0  // column where current span starts
         var currentCol = 0       // current column position
-        let cellCount = min(cols, line.count)
 
-        for col in 0..<cellCount {
-            let cell = line[col]
+        snapshot.enumerateCells(line: lineIndex) { cell in
+            // Skip continuation cells (wide character second column).
+            // The leading half at column N-1 already spans N-1 and N.
+            if cell.columnWidth == 0 { return }
 
-            // Skip continuation cells (wide character second column)
-            if cell.width == 0 { continue }
+            let char = htmlEscape(cell.character)
+            let colSpan = cell.columnWidth
 
-            let char: String
-            if cell.code == 0 && cell.width == 1 {
-                // Null cell — emit space
-                char = " "
-            } else if cell.code < Int32(CharData.maxRune) {
-                if let scalar = Unicode.Scalar(UInt32(cell.code)) {
-                    char = htmlEscape(String(Character(scalar)))
-                } else {
-                    char = " "
-                }
-            } else {
-                // Extended grapheme cluster
-                let character = terminal.getCharacter(for: cell)
-                char = htmlEscape(String(character))
-            }
-
-            // cell.width is the column span (1 for normal, 2 for wide chars)
-            let colSpan = Int(cell.width)
-
-            if cell.attribute == currentAttr {
+            if cell.style == currentStyle {
                 currentText.append(char)
                 currentCol += colSpan
             } else {
                 // Flush previous run with absolute position
-                if let attr = currentAttr, !currentText.isEmpty {
+                if let style = currentStyle, !currentText.isEmpty {
                     let colCount = currentCol - currentStartCol
-                    spans.append(spanTag(for: attr, text: currentText,
+                    spans.append(spanTag(for: style, text: currentText,
                                          startCol: currentStartCol,
                                          colCount: colCount,
                                          resolver: resolver))
                 }
-                currentAttr = cell.attribute
+                currentStyle = cell.style
                 currentText = char
                 currentStartCol = currentCol
                 currentCol += colSpan
@@ -112,9 +89,9 @@ enum SwiftTermScrollbackRenderer {
         }
 
         // Flush final run
-        if let attr = currentAttr, !currentText.isEmpty {
+        if let style = currentStyle, !currentText.isEmpty {
             let colCount = currentCol - currentStartCol
-            spans.append(spanTag(for: attr, text: currentText,
+            spans.append(spanTag(for: style, text: currentText,
                                  startCol: currentStartCol,
                                  colCount: colCount,
                                  resolver: resolver))
@@ -129,19 +106,19 @@ enum SwiftTermScrollbackRenderer {
     // MARK: - Span Generation
 
     private static func spanTag(
-        for attr: Attribute,
+        for style: ScrollbackCellStyle,
         text: String,
         startCol: Int,
         colCount: Int,
         resolver: ColorResolver
     ) -> String {
-        let style = attr.style
-        let isBold = style.contains(.bold)
-        let isInverse = style.contains(.inverse)
+        let attrs = style.attributes
+        let isBold = attrs.contains(.bold)
+        let isInverse = attrs.contains(.inverse)
 
         // Resolve colors (handle inverse swap)
-        var fgHex = resolver.fgColor(attr.fg, isBold: isBold)
-        var bgHex = resolver.bgColor(attr.bg)
+        var fgHex = resolver.fgColor(style.foreground, isBold: isBold)
+        var bgHex = resolver.bgColor(style.background)
 
         if isInverse {
             let tmpFg = fgHex ?? resolver.theme.foreground
@@ -162,14 +139,14 @@ enum SwiftTermScrollbackRenderer {
         // Text (used by SwiftTerm) renders bold by thickening strokes at
         // fixed glyph positions — text-stroke replicates that behavior.
         if isBold { css.append("-webkit-text-stroke:0.5px currentColor;") }
-        if style.contains(.italic) { css.append("font-style:italic;") }
-        if style.contains(.dim) { css.append("opacity:0.5;") }
-        if style.contains(.invisible) { css.append("visibility:hidden;") }
+        if attrs.contains(.italic) { css.append("font-style:italic;") }
+        if attrs.contains(.dim) { css.append("opacity:0.5;") }
+        if attrs.contains(.invisible) { css.append("visibility:hidden;") }
 
         // Text decoration (combine underline + strikethrough)
         var decorations: [String] = []
-        if style.contains(.underline) { decorations.append("underline") }
-        if style.contains(.crossedOut) { decorations.append("line-through") }
+        if attrs.contains(.underline) { decorations.append("underline") }
+        if attrs.contains(.crossedOut) { decorations.append("line-through") }
         if !decorations.isEmpty {
             css.append("text-decoration:\(decorations.joined(separator: " "));")
         }
@@ -1862,9 +1839,9 @@ enum SwiftTermScrollbackRenderer {
 
 // MARK: - Color Resolver
 
-extension SwiftTermScrollbackRenderer {
+extension ScrollbackHTMLRenderer {
 
-    /// Resolves `Attribute.Color` values to CSS hex strings using the same
+    /// Resolves `ScrollbackColor` values to CSS hex strings using the same
     /// logic as SwiftTerm's `mapColor()` in AppleTerminalView. The first 16
     /// palette entries come from the theme's `ansiColors`; 16-231 are the
     /// 6×6×6 RGB cube; 232-255 are the grayscale ramp.
@@ -1904,7 +1881,7 @@ extension SwiftTermScrollbackRenderer {
         }
 
         /// Resolve foreground color. Returns nil to use the CSS default (--fg).
-        func fgColor(_ color: Attribute.Color, isBold: Bool) -> String? {
+        func fgColor(_ color: ScrollbackColor, isBold: Bool) -> String? {
             switch color {
             case .defaultColor:
                 // Bold + default fg → use bold foreground color from theme
@@ -1934,7 +1911,7 @@ extension SwiftTermScrollbackRenderer {
         }
 
         /// Resolve background color. Returns nil for transparent (theme default bg).
-        func bgColor(_ color: Attribute.Color) -> String? {
+        func bgColor(_ color: ScrollbackColor) -> String? {
             switch color {
             case .defaultColor, .defaultInvertedColor:
                 return nil  // Transparent — inherits body background

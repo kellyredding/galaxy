@@ -194,10 +194,10 @@ class TerminalHostView: NSView {
     private var scrollbackDurationId: String?
 
     /// Retained scrollback snapshot for settings-change rebuilds while the
-    /// overlay is active. The snapshot freezes the buffer + renderer
-    /// inputs, so theme/font changes can call `snapshot.render(...)` again
-    /// without re-snapshotting the live (now-moved-on) terminal. Nil'd on
-    /// dismiss to release the deep-copy buffer memory.
+    /// overlay is active. The snapshot freezes the buffer at capture time,
+    /// so theme/font changes re-render via `ScrollbackHTMLRenderer.render(
+    /// snapshot:...)` without re-snapshotting the live (now-moved-on)
+    /// terminal. Nil'd on dismiss to release the captured buffer memory.
     private var currentSnapshot: ScrollbackSnapshot?
 
     /// True when the scrollback overlay is visible.
@@ -934,10 +934,11 @@ class TerminalHostView: NSView {
     /// Create the scrollback overlay with an HTML rendering of the live terminal's buffer.
     private func createScrollback(initialScrollLine: Int? = nil) {
         // The pane produces an opaque `ScrollbackSnapshot` —
-        // chrome no longer reaches into SwiftTerm types to
-        // render. The snapshot itself carries the renderer
-        // call, so re-rendering on theme/font change is just
-        // another `snapshot.render(...)` invocation.
+        // chrome doesn't reach into SwiftTerm types to render.
+        // The renderer iterates the snapshot's engine-agnostic
+        // cell stream, so re-rendering on theme/font change is
+        // just another `ScrollbackHTMLRenderer.render(snapshot:
+        // ...)` invocation against the same frozen snapshot.
         guard let snapshot = pane.captureScrollbackSnapshot() else {
             return
         }
@@ -954,7 +955,8 @@ class TerminalHostView: NSView {
         )
 
         // Render buffer to HTML
-        let html = snapshot.render(
+        let html = ScrollbackHTMLRenderer.render(
+            snapshot: snapshot,
             theme: theme,
             fontFamily: font.fontName,
             fontSize: font.pointSize,
@@ -1565,7 +1567,8 @@ class TerminalHostView: NSView {
                     + CTFontGetLeading(ctFont)
             )
 
-            let html = snapshot.render(
+            let html = ScrollbackHTMLRenderer.render(
+                snapshot: snapshot,
                 theme: theme,
                 fontFamily: font.fontName,
                 fontSize: size,
