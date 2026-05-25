@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import Galactic
 
 /// Narrow publisher for sidebar visibility, deliberately
 /// split off from `SettingsManager`'s fat `@Published var

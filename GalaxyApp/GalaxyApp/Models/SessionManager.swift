@@ -2,6 +2,7 @@ import Foundation
 import AppKit
 import SwiftUI
 import Combine
+import Galactic
 
 enum ListNavAction {
     case up, down, activate

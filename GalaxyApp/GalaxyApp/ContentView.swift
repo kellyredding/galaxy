@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import Combine
+import Galactic
 
 struct ContentView: View {
     @EnvironmentObject var sessionManager: SessionManager

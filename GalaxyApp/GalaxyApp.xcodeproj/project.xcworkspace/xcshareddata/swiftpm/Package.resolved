@@ -1,13 +1,22 @@
 {
-  "originHash" : "f645e0d944bcaea81be33653f6fece56e9d6228051e1644d263568715deba0ed",
+  "originHash" : "8fc1b35bebdd41bdc60828f0c717eb35252f90365bd952c841a0487e85688b1e",
   "pins" : [
+    {
+      "identity" : "galactic",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/kellyredding/Galactic.git",
+      "state" : {
+        "revision" : "a955f65402dc37ce1b848d5dff33f7b91d59ee17",
+        "version" : "0.1.0"
+      }
+    },
     {
       "identity" : "swift-argument-parser",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-argument-parser",
       "state" : {
-        "revision" : "626b5b7b2f45e1b0b1c6f4a309296d1d21d7311b",
-        "version" : "1.7.1"
+        "revision" : "5e0406d68a4937f21ae5f670b8f89dad1d156a1c",
+        "version" : "1.8.0"
       }
     },
     {

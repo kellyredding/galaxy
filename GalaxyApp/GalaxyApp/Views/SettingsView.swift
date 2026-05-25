@@ -1,5 +1,6 @@
 import SwiftUI
 import UserNotifications
+import Galactic
 
 // MARK: - Settings Tab Definition
 

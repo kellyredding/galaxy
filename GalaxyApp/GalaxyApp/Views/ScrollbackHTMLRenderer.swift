@@ -1,4 +1,6 @@
 import Foundation
+import AppKit
+import Galactic
 
 /// Converts a frozen `ScrollbackSnapshot` into a complete HTML document
 /// that visually matches the live terminal rendering. Each snapshot line becomes

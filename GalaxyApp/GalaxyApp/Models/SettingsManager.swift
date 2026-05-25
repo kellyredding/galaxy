@@ -3,6 +3,7 @@ import SwiftUI
 import Combine
 import AVFoundation
 import UserNotifications
+import Galactic
 
 /// Sidebar position preference
 enum SidebarPosition: String, Codable, CaseIterable {

@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import Galactic
 
 /// Pair wrapper over (style, blink) so Combine can dedupe
 /// changes as a single unit. Without this, two independent

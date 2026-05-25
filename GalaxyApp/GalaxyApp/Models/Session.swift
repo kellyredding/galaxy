@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import Combine
+import Galactic
 
 class Session: Identifiable, ObservableObject {
     /// Delay between sending command text and CR when invoking slash commands.

@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import Galactic
 
 /// Contract for any terminal surface hostable by
 /// `TerminalHostView`. Abstracts the Session pane (Claude) vs

@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import Combine
+import Galactic
 
 extension Notification.Name {
     static let enterScrollback = Notification.Name("enterScrollback")

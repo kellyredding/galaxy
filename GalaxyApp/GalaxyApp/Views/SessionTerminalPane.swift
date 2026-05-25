@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import Galactic
 
 /// `TerminalPane` conformer that wraps a `TerminalBackend` +
 /// `Session`. Used for the top (Session) pane in the Terminal
