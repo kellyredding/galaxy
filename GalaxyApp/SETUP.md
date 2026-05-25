@@ -20,7 +20,7 @@ xcodegen generate
 make build
 ```
 
-No pre-step is needed for dependencies — SwiftPM handles SwiftTerm and
+No pre-step is needed for dependencies — SwiftPM handles Galactic and
 Markdown automatically when Xcode opens the generated project or
 `make build` runs.
 
@@ -34,56 +34,36 @@ Makefile.
 
 GalaxyApp consumes two SPM packages, declared in `project.yml`:
 
-| Package    | Source                                              | Pin                              |
-|------------|-----------------------------------------------------|----------------------------------|
-| SwiftTerm  | https://github.com/kellyredding/SwiftTerm.git       | `exactVersion: 1.13.0-galactic.4`|
-| Markdown   | https://github.com/swiftlang/swift-markdown.git     | `from: 0.5.0`                    |
+| Package    | Source                                              | Pin                     |
+|------------|-----------------------------------------------------|-------------------------|
+| Galactic   | https://github.com/kellyredding/Galactic.git        | `exactVersion: 0.1.0`   |
+| Markdown   | https://github.com/swiftlang/swift-markdown.git     | `from: 0.5.0`           |
 
-### SwiftTerm — the Galactic fork
+Galactic is the terminal engine bridge — `TerminalBackend`,
+`ScrollbackSnapshot`, the color theme value types, and the rest of
+the chrome-engine seam. It also owns a downstream pin on a SwiftTerm
+fork (`kellyredding/SwiftTerm`), which arrives as a transitive
+dependency. From GalaxyApp's perspective the SwiftTerm fork is an
+implementation detail of Galactic — chrome code imports `Galactic`,
+not `SwiftTerm`.
 
-`kellyredding/SwiftTerm` is a personal fork of
-[migueldeicaza/SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) carrying
-Galactic-specific customization patches on top of upstream tagged releases.
-The fork publishes immutable `v<upstream>-galactic.<rev>` tags so SwiftPM's
-cache stays consistent across consumers.
+The fork rationale, patch table, and bump workflow live in
+[Galactic's MAINTAINING.md](https://github.com/kellyredding/Galactic/blob/main/MAINTAINING.md).
 
-The bump workflow (adopting a newer upstream SwiftTerm or re-cutting a patch
-revision) is documented in the fork's own `MAINTAINING.md`. From GalaxyApp's
-perspective, a bump is a one-line `exactVersion:` update in `project.yml`
-followed by `xcodegen generate` to refresh the Xcode project's resolved
-dependency graph.
+### Updating Galactic
 
-A branch pin (`branch: bump/v<target>`) can be used in `project.yml`
-temporarily while iterating on fork-side changes during a bump — but
-the default consumer state is an `exactVersion:` tag pin, which gives
-SwiftPM a deterministic resolution every consumer can share.
+To pull a newer Galactic version into GalaxyApp:
 
-#### Why a fork at all?
-
-A small set of patches lives on top of upstream that we need for the
-Galactic rendering surface:
-
-| Patch                            | Purpose                                                                |
-|----------------------------------|------------------------------------------------------------------------|
-| `galacticBoldForegroundColor`    | Per-theme bold-text foreground override                                |
-| Auto-follow rendering invariants | Keep scrollback pinned to live output unless user has scrolled up      |
-| `makeBackingLayer` visibility    | Allow Galaxy's cross-module override                                   |
-| Pixel-snap skip, FillStroke tune | Visual parity with the scrollback overlay's WebKit rendering           |
-
-These live as a permanent customization commit on top of each upstream
-version bump in the fork. See the fork's `MAINTAINING.md` and
-`PATCHES.md` for the full rationale, the per-release patch log, and
-the bump workflow.
-
-### Updating SwiftTerm
-
-To pull a newer SwiftTerm version into GalaxyApp:
-
-1. Bump the fork (see the fork's `MAINTAINING.md` — produces a tag
-   like `v<upstream>-galactic.<rev>`).
-2. Update `project.yml`'s SwiftTerm pin to the new tag.
+1. Confirm the target Galactic release exists on
+   [kellyredding/Galactic](https://github.com/kellyredding/Galactic/releases).
+2. Update `project.yml`'s Galactic pin (`exactVersion: <new-tag>`).
 3. `xcodegen generate && make build`.
 4. Smoke-test running Galaxy.app.
+
+If the Galactic bump rolls in a new SwiftTerm fork pin under the hood
+(typically the case for a Galactic patch release), exercise the
+auto-follow + rendering surface during smoke test — that's where
+fork-side regressions surface.
 
 ## Project Structure
 
@@ -99,7 +79,7 @@ GalaxyApp/
 
 ## Troubleshooting
 
-### "No such module 'SwiftTerm'"
+### "No such module 'Galactic'"
 
 The Xcode project needs regeneration:
 
@@ -107,7 +87,10 @@ The Xcode project needs regeneration:
 xcodegen generate
 ```
 
-### SwiftPM resolution fails to find the SwiftTerm package
+If that doesn't resolve it, the SwiftPM workspace under
+`build/` may be stale — see the next entry.
+
+### SwiftPM resolution fails to find the Galactic package
 
 Wipe the project-local SPM state and regenerate. The Makefile builds
 into `build/` via `-derivedDataPath`, so the workspace state lives
@@ -121,13 +104,13 @@ make build
 
 ### `Revision X does not match previously recorded value Y`
 
-SwiftPM caches `(repo URL, version) → revision` globally and rejects a
-resolve that returns a different revision for the same version. This
-happens if a fork tag was retargeted to a new commit, or if local SPM
-state predates the current tag. The fork's `MAINTAINING.md` forbids
-re-pointing published tags for this exact reason — but if you hit the
-error, clear the global SwiftPM cache plus the project-local state and
-rebuild:
+SwiftPM caches `(repo URL, version) → revision` globally and rejects
+a resolve that returns a different revision for the same version.
+This happens if a tag was retargeted to a new commit, or if local
+SPM state predates the current tag. Galactic and its upstream
+SwiftTerm fork both forbid re-pointing published tags for this exact
+reason — but if you hit the error, clear the global SwiftPM cache
+plus the project-local state and rebuild:
 
 ```bash
 rm -rf ~/Library/Caches/org.swift.swiftpm

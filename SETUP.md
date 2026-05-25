@@ -78,7 +78,7 @@ xcodebuild \
     build
 ```
 
-The first build resolves SwiftPM dependencies (SwiftTerm and Markdown);
+The first build resolves SwiftPM dependencies (Galactic and Markdown);
 subsequent builds reuse the SwiftPM cache.
 
 For Mac-app-specific details (dependency pinning, SwiftPM cache recovery,
