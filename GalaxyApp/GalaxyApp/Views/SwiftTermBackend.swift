@@ -295,7 +295,7 @@ final class SwiftTermBackend: NSObject, TerminalBackend,
     }
 
     func setBoldForegroundColor(_ color: NSColor) {
-        terminalView.galaxyBoldForegroundColor = color
+        terminalView.galacticBoldForegroundColor = color
     }
 
     func applySettings(_ settings: GalacticConfiguration) {

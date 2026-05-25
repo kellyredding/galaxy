@@ -130,7 +130,7 @@ protocol TerminalBackend: AnyObject {
 
     /// Set the bold-rendering foreground color (the effective
     /// foreground for cells with the SGR bold attribute set).
-    /// Wraps the vendor-patched `galaxyBoldForegroundColor` on
+    /// Wraps the fork-patched `galacticBoldForegroundColor` on
     /// the SwiftTerm side; a future libghostty backend exposes
     /// a config knob with equivalent semantics.
     func setBoldForegroundColor(_ color: NSColor)
