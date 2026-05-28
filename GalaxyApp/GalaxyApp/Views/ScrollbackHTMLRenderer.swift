@@ -1068,6 +1068,55 @@ enum ScrollbackHTMLRenderer {
             });
         },
 
+        // Per-textarea auto-grow. Defers the layout work to
+        // requestAnimationFrame and only does it when the field
+        // could actually have changed height.
+        //
+        // The textarea lives inside the scrollback document,
+        // which holds the entire frozen terminal buffer (up
+        // to 100K lines per the terminalScrollbackLines
+        // setting). Reading scrollHeight forces a synchronous
+        // layout across that whole DOM, so the naive per-
+        // input resize causes keystroke lag on long-running
+        // sessions whose buffer has filled up.
+        //
+        // The layout runs when the newline count changes OR when
+        // the value grew/shrank by more than one character — a
+        // bulk edit from dictation, paste, drop, or autocomplete.
+        // Single-character typing within a line skips the layout,
+        // keeping the per-keystroke fast path; bulk inserts that
+        // wrap without adding a newline still grow the field
+        // (dictation drops a whole phrase with no \\n).
+        //
+        // The trackers update on every input — including skipped
+        // ones — so the next delta is measured against the true
+        // previous length rather than drifting.
+        installAutosize(ta) {
+            let lastNewlineCount =
+                (ta.value.match(/\\n/g) || []).length;
+            let lastLength = ta.value.length;
+            let pendingFrame = null;
+
+            ta.addEventListener('input', () => {
+                const newlineCount =
+                    (ta.value.match(/\\n/g) || []).length;
+                const length = ta.value.length;
+                const newlineChanged =
+                    newlineCount !== lastNewlineCount;
+                const bulkEdit =
+                    Math.abs(length - lastLength) !== 1;
+                lastNewlineCount = newlineCount;
+                lastLength = length;
+                if (!newlineChanged && !bulkEdit) return;
+                if (pendingFrame !== null) return;
+                pendingFrame = requestAnimationFrame(() => {
+                    pendingFrame = null;
+                    ta.style.height = 'auto';
+                    ta.style.height = ta.scrollHeight + 'px';
+                });
+            });
+        },
+
         createForm() {
             this.formElement = document.createElement('div');
             this.formElement.className = 'note-form';
@@ -1154,11 +1203,10 @@ enum ScrollbackHTMLRenderer {
                 }
             });
 
-            // Auto-grow/shrink textarea
-            ta.addEventListener('input', () => {
-                ta.style.height = 'auto';
-                ta.style.height = ta.scrollHeight + 'px';
-            });
+            // Auto-grow/shrink textarea via the rAF-deferred
+            // helper so per-keystroke scrollHeight reads don't
+            // block typing in long-buffer sessions.
+            this.installAutosize(ta);
 
             // Attach emoji autocomplete
             if (typeof EmojiAutocomplete !== 'undefined') {
@@ -1591,10 +1639,10 @@ enum ScrollbackHTMLRenderer {
                 }
             });
 
-            ta.addEventListener('input', () => {
-                ta.style.height = 'auto';
-                ta.style.height = ta.scrollHeight + 'px';
-            });
+            // Auto-grow/shrink textarea via the rAF-deferred
+            // helper so per-keystroke scrollHeight reads don't
+            // block typing in long-buffer sessions.
+            this.installAutosize(ta);
 
             // Attach emoji autocomplete
             if (typeof EmojiAutocomplete !== 'undefined') {
