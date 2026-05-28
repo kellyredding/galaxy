@@ -70,16 +70,27 @@ class PreferencesWindowController: NSWindowController {
         // Set window delegate
         window.delegate = self
 
-        // Create the hosting view once — never recreated on theme changes
+        // Host SettingsView in an NSHostingController so SwiftUI's
+        // preferred content size drives the window's content size in
+        // both directions — grow on tab switch to a taller pane AND
+        // shrink back when switching to a shorter one.
+        //
+        // .preferredContentSize is the bidirectional channel: it
+        // creates Auto Layout constraints from the SwiftUI content's
+        // ideal size and feeds the controller's preferredContentSize,
+        // which NSWindow then uses to update contentMinSize and
+        // contentMaxSize. The default .standardBounds propagates
+        // grows via the intrinsic-content-size channel but does not
+        // actively shrink when SwiftUI's preferred size contracts —
+        // the window would stay stuck at the tallest tab's height.
         let settingsView = SettingsView()
             .environmentObject(SettingsManager.shared)
-        let hostingView = NSHostingView(rootView: settingsView)
-        hostingView.translatesAutoresizingMaskIntoConstraints = false
-        window.contentView = hostingView
+        let hostingController = NSHostingController(rootView: settingsView)
+        hostingController.sizingOptions = [.preferredContentSize]
+        window.contentViewController = hostingController
 
-        // Size window to fit content and center on first show
-        let fittingSize = hostingView.fittingSize
-        window.setContentSize(fittingSize)
+        // Center on first show — content size lands automatically via
+        // the hosting controller's preferred content size.
         window.center()
 
         // Apply initial appearance
