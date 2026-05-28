@@ -415,6 +415,7 @@ func annotationCSSVars(isDark: Bool) -> String {
 ///   - itemLabel: header label ('Artifact #3', etc.)
 ///   - annotations: array of annotation objects
 ///   - htmlMap: map of number -> rendered HTML
+// js-validate
 let annotationManagerJS: String = """
     function autoGrow(el) {
         el.style.height = 'auto';

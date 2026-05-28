@@ -18,6 +18,7 @@ import Foundation
 /// the first match presented is the most-recent occurrence
 /// walking up — matching Terminal.app and iTerm behavior.
 enum GalaxyFindJS {
+    // js-validate
     static let userScriptSource: String = """
     (function() {
       if (window.GalaxyFind) return; // idempotent

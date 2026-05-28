@@ -145,6 +145,7 @@ struct ArtifactHTMLView: NSViewRepresentable {
 /// data-block-index + annotatable-block class to
 /// block-level elements. Must run after page load,
 /// before AnnotationManager.initialize().
+// js-validate
 private let blockIndexDOMWalkJS: String = """
 (function() {
     // Leaf selectors — the actual annotatable

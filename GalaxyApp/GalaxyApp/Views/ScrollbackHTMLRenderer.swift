@@ -264,6 +264,7 @@ enum ScrollbackHTMLRenderer {
 
     // MARK: - JavaScript
 
+    // js-validate
     private static let scrollbackManagerJS = """
     const ScrollbackManager = {
         lineHeight: 0,
@@ -946,6 +947,7 @@ enum ScrollbackHTMLRenderer {
 
     // MARK: - Note Manager JavaScript
 
+    // js-validate
     private static let noteManagerJS = """
     ScrollbackManager.notes = {
         items: [],

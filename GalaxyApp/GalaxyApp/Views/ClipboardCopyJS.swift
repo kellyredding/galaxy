@@ -14,6 +14,7 @@ import Foundation
 // .GalaxyClipboard) return;` so a second injection is a
 // no-op.
 
+// js-validate
 let clipboardCopyJS: String = """
 (function() {
     if (window.GalaxyClipboard) return;

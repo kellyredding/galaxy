@@ -2965,6 +2965,7 @@ private func htmlEscape(_ s: String) -> String {
 /// GAP_EXPAND_STEP / GAP_THRESHOLD are kept in sync
 /// with the Swift-side `gapExpandStep` /
 /// `gapCollapseThreshold` constants above.
+// js-validate
 private let gapExpansionJS: String = """
 (function() {
     var GAP_EXPAND_STEP = 30;
@@ -3342,6 +3343,7 @@ private let gapExpansionJS: String = """
 /// against the card's 6px border-radius) would clip
 /// any in-card tooltip on the left edge and entirely
 /// below collapsed cards.
+// js-validate
 private let fileCollapseJS: String = """
 (function() {
     var tooltipEl = null;
@@ -3650,6 +3652,7 @@ private let fileCollapseJS: String = """
 /// the "Viewed" checkbox for a reason) — it scrolls
 /// to the card header and leaves it up to the user
 /// to click the chevron if they want to re-expand.
+// js-validate
 private let tocNavJS: String = """
 (function() {
     document.querySelectorAll('.toc-folder-label')

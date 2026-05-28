@@ -26,6 +26,7 @@ import Foundation
 // Idempotent — calls through `if (window.GalaxySuggestion)
 // return;` so a second injection is a no-op.
 
+// js-validate
 let suggestionInsertJS: String = """
 (function() {
     if (window.GalaxySuggestion) return;
