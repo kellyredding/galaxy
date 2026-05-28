@@ -2386,6 +2386,137 @@ describe GalaxyLedger::Database do
       result = GalaxyLedger::Database.record_oneshot_usage(0_i64, 0.10, 3000_i64)
       result.should be_false
     end
+
+    it "seeds baseline from prev day's current when a oneshot creates today's row" do
+      # Bug repro: a multi-day session crosses UTC midnight. The first
+      # event on the new day is a one-shot (extraction LLM call from
+      # UserPromptSubmit / Stop / name suggestion) — it fires before
+      # any status line tick.
+      #
+      # Without seeding, the INSERT writes baseline_cost_usd = 0, and
+      # the next status line tick computes cost_diff = cost_val - 0 =
+      # full session lifetime cost, dumping the entire lifetime into
+      # today's cumulative as if it were new spend.
+      #
+      # With seeding, baseline + current carry over from yesterday's
+      # current values, and the next status line tick produces a sane
+      # diff (today's actual incremental spend).
+      lid = GalaxyLedger::Database.create_session("sess-oneshot-crossday-seed")
+      today = Time.utc.to_s("%Y-%m-%d")
+      yesterday = (Time.utc - 1.day).to_s("%Y-%m-%d")
+
+      # Simulate yesterday: session ended with lifetime cost $73.87,
+      # context at 497077 tokens.
+      GalaxyLedger::Database.open do |db|
+        db.exec(
+          <<-SQL,
+            INSERT INTO ledger_session_daily_usages (
+              ledger_session_id, date,
+              baseline_cost_usd, current_cost_usd, cumulative_cost_usd,
+              baseline_tokens, current_tokens, cumulative_tokens
+            ) VALUES (?, ?, 73.87, 73.87, 9.99, 497077, 497077, 18000)
+          SQL
+          lid, yesterday,
+        )
+      end
+
+      # Today: one-shot fires first (no status line tick yet).
+      GalaxyLedger::Database.record_oneshot_usage(lid, 0.15, 5000_i64)
+
+      # Verify the freshly-inserted row carries yesterday's lifetime
+      # forward as baseline + current. Cumulative stays 0 because no
+      # status line tick has been observed today yet.
+      GalaxyLedger::Database.open do |db|
+        row = db.query_one?(
+          <<-SQL,
+            SELECT baseline_cost_usd, current_cost_usd, cumulative_cost_usd,
+                   baseline_tokens, current_tokens, cumulative_tokens,
+                   oneshot_cost_usd, oneshot_tokens
+            FROM ledger_session_daily_usages
+            WHERE ledger_session_id = ? AND date = ?
+          SQL
+          lid, today,
+        ) do |rs|
+          {
+            baseline_cost:   rs.read(Float64),
+            current_cost:    rs.read(Float64),
+            cumulative_cost: rs.read(Float64),
+            baseline_tok:    rs.read(Int64),
+            current_tok:     rs.read(Int64),
+            cumulative_tok:  rs.read(Int64),
+            oneshot_cost:    rs.read(Float64),
+            oneshot_tok:     rs.read(Int64),
+          }
+        end
+        row.should_not be_nil
+        row = row.not_nil!
+
+        # Baseline + current seeded from yesterday's lifetime carry-over.
+        row[:baseline_cost].should eq(73.87)
+        row[:current_cost].should eq(73.87)
+        row[:baseline_tok].should eq(497077_i64)
+        row[:current_tok].should eq(497077_i64)
+
+        # Cumulative stays at 0 — no observed statusline spend yet today.
+        row[:cumulative_cost].should eq(0.0)
+        row[:cumulative_tok].should eq(0_i64)
+
+        # Oneshot column populated as before.
+        row[:oneshot_cost].should eq(0.15)
+        row[:oneshot_tok].should eq(5000_i64)
+      end
+
+      # Status line tick: session lifetime cost has grown to $76.98
+      # (a $3.11 increment), context now 522077 tokens (+25000).
+      status = GalaxyLedger::ContextStatus.from_json(
+        %({"context":{"tokens_used":522077},"cost":{"usd":76.98}})
+      )
+      GalaxyLedger::Database.update_session_metrics(lid, status)
+
+      # Today's daily total should reflect just the incremental spend
+      # plus the oneshot — NOT the full session lifetime.
+      daily = GalaxyLedger::Database.spend_daily(today, today)
+      daily.size.should eq(1)
+      # cost: $3.11 cumulative + $0.15 oneshot = $3.26
+      daily[0].cost.should be_close(3.26, 0.001)
+      # tokens: 25000 cumulative + 5000 oneshot = 30000
+      daily[0].tokens.should eq(30000_i64)
+    end
+
+    it "seeds baseline as 0 when no prior day exists (first-day session)" do
+      # When a session has no prior daily_usage row at all, a oneshot
+      # that creates the first row should still default baseline to 0,
+      # matching the prior (pre-fix) behavior for brand-new sessions.
+      lid = GalaxyLedger::Database.create_session("sess-oneshot-firstday-seed")
+      today = Time.utc.to_s("%Y-%m-%d")
+
+      GalaxyLedger::Database.record_oneshot_usage(lid, 0.15, 5000_i64)
+
+      GalaxyLedger::Database.open do |db|
+        row = db.query_one?(
+          <<-SQL,
+            SELECT baseline_cost_usd, current_cost_usd,
+                   baseline_tokens, current_tokens
+            FROM ledger_session_daily_usages
+            WHERE ledger_session_id = ? AND date = ?
+          SQL
+          lid, today,
+        ) do |rs|
+          {
+            baseline_cost: rs.read(Float64),
+            current_cost:  rs.read(Float64),
+            baseline_tok:  rs.read(Int64),
+            current_tok:   rs.read(Int64),
+          }
+        end
+        row.should_not be_nil
+        row = row.not_nil!
+        row[:baseline_cost].should eq(0.0)
+        row[:current_cost].should eq(0.0)
+        row[:baseline_tok].should eq(0_i64)
+        row[:current_tok].should eq(0_i64)
+      end
+    end
   end
 
   # ============================================================
