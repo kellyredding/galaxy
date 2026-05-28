@@ -20,12 +20,6 @@ module GalaxyLedger
     # Database file path
     DATABASE_PATH = GalaxyLedger::GALAXY_DIR / "data" / "ledger.db"
 
-    # Diagnostic log file for record_daily_usage cost-tracking ticks.
-    # JSONL — one object per tick. Temporary instrumentation for the
-    # cumulative-cost-inflation investigation. Safe to delete the file
-    # and the corresponding helper + call site once the bug is fixed.
-    COST_DEBUG_LOG_PATH = GalaxyLedger::GALAXY_DIR / "cost-debug.log"
-
     # Internal entry types excluded from all public-facing queries (list, search, count, etc.).
     # These are used for internal tracking only and should never be exposed to CLI users.
     INTERNAL_ENTRY_TYPES = [
@@ -691,17 +685,6 @@ module GalaxyLedger
         }
       end
 
-      # Scratch vars for diagnostic logging (captured below at end of method)
-      branch = ""
-      prev_day_cost = nil.as(Float64?)
-      prev_day_tokens = nil.as(Int64?)
-      cost_diff_observed = 0.0
-      token_diff_observed = 0_i64
-      cumulative_cost = 0.0
-      cumulative_tokens = 0_i64
-      new_baseline_cost = cost_val
-      new_baseline_tokens = tokens_val
-
       if existing.nil?
         # --- New day record ---
         # Look up previous day's current values as baseline
@@ -719,24 +702,17 @@ module GalaxyLedger
 
         prev_cost = prev ? prev[:cost] : 0.0
         prev_tokens = prev ? prev[:tokens] : 0_i64
-        prev_day_cost = prev.try &.[:cost]
-        prev_day_tokens = prev.try &.[:tokens]
 
         # Cost: initial diff from previous day's final value
         cost_diff = cost_val - prev_cost
-        cost_diff_observed = cost_diff
         if cost_diff < 0
           # Reset happened between days — cost_val is from a fresh process
           cost_diff = cost_val
-          branch = "insert_reset"
-        else
-          branch = "insert_normal"
         end
         cumulative_cost = cost_diff
 
         # Tokens: handle potential cross-day compaction
         token_diff = tokens_val - prev_tokens
-        token_diff_observed = token_diff
         if token_diff < 0
           # Compaction happened between days — reset baseline
           token_diff = 0_i64
@@ -746,8 +722,6 @@ module GalaxyLedger
         # Store baselines as current values for dynamic diffing
         insert_baseline_cost = cost_val
         insert_baseline_tokens = tokens_val
-        new_baseline_cost = cost_val
-        new_baseline_tokens = tokens_val
 
         db.exec(
           <<-SQL,
@@ -766,23 +740,19 @@ module GalaxyLedger
 
         # Cost: incremental diff from dynamic baseline
         cost_diff = cost_val - existing[:baseline_cost_usd]
-        cost_diff_observed = cost_diff
         if cost_diff >= 0
           cumulative_cost = existing[:cumulative_cost_usd] + cost_diff
           new_baseline_cost = cost_val
-          branch = "update_normal"
         else
           # Cost counter reset (new process) — preserve accumulated total
           # and add the new process's initial cost (already incurred but
           # not yet counted since this is our first observation of it)
           cumulative_cost = existing[:cumulative_cost_usd] + cost_val
           new_baseline_cost = cost_val
-          branch = "update_reset"
         end
 
         # Tokens: incremental diff from dynamic baseline
         token_diff = tokens_val - existing[:baseline_tokens]
-        token_diff_observed = token_diff
         if token_diff >= 0
           cumulative_tokens = existing[:cumulative_tokens] + token_diff
           new_baseline_tokens = tokens_val
@@ -809,44 +779,6 @@ module GalaxyLedger
           existing[:id],
         )
       end
-
-      # Diagnostic logging — temporary instrumentation for the
-      # cumulative-cost-inflation investigation. See COST_DEBUG_LOG_PATH.
-      log_daily_usage_tick({
-        ts:                         Time.utc.to_rfc3339(fraction_digits: 3),
-        ledger_session_id:          ledger_session_id,
-        claude_session_id:          status.session_id,
-        date:                       today,
-        branch:                     branch,
-        cost_val:                   cost_val,
-        tokens_val:                 tokens_val,
-        existing_baseline_cost:     existing.try &.[:baseline_cost_usd],
-        existing_cumulative_cost:   existing.try &.[:cumulative_cost_usd],
-        existing_baseline_tokens:   existing.try &.[:baseline_tokens],
-        existing_cumulative_tokens: existing.try &.[:cumulative_tokens],
-        prev_day_cost:              prev_day_cost,
-        prev_day_tokens:            prev_day_tokens,
-        cost_diff:                  cost_diff_observed,
-        token_diff:                 token_diff_observed,
-        new_cumulative_cost:        cumulative_cost,
-        new_baseline_cost:          new_baseline_cost,
-        new_cumulative_tokens:      cumulative_tokens,
-        new_baseline_tokens:        new_baseline_tokens,
-        cwd:                        status.cwd,
-        project_dir:                status.project_dir,
-        model_id:                   status.model_id,
-      })
-    end
-
-    # Append one JSONL line to COST_DEBUG_LOG_PATH for each
-    # record_daily_usage call. Best-effort — never raises, never
-    # blocks the ledger.
-    private def self.log_daily_usage_tick(entry)
-      File.open(COST_DEBUG_LOG_PATH, "a") do |f|
-        f.puts(entry.to_json)
-      end
-    rescue
-      # Diagnostic logging must never break update_session_metrics.
     end
 
     # Record one-shot usage (cost and tokens) for a session.
