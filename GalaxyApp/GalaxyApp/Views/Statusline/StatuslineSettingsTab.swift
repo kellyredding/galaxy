@@ -10,50 +10,83 @@ import SwiftUI
 struct StatuslineSettingsTab: View {
     @StateObject private var service = StatuslineConfigService()
 
+    /// Width of a single settings card / column. Wider than the other
+    /// tabs' standard column so each color row can fit its label, color
+    /// picker, and inline Bold checkbox on one line.
+    private static let columnWidth: CGFloat = 420
+
+    /// Cap the scrollable region to the visible screen height (less an
+    /// allowance for the title bar, tab bar, and margins). Below the
+    /// cap the window sizes to content; beyond it the content scrolls
+    /// rather than running off the bottom of the display.
+    private var maxContentHeight: CGFloat {
+        (NSScreen.main?.visibleFrame.height ?? 900) - 160
+    }
+
     var body: some View {
-        VStack(spacing: 16) {
-            StatuslineInstallationSection(service: service)
+        ScrollView {
+            VStack(spacing: 16) {
+                // Hook + Preview stay full-card width, stacked and
+                // centered above the two columns.
+                StatuslineInstallationSection(service: service)
+                    .frame(width: Self.columnWidth)
 
-            if let status = service.hookStatus,
-               status.installed,
-               status.matchesExpectedCommand,
-               let config = service.config {
-                StatuslinePreviewSection(
-                    service: service,
-                    config: config
-                )
-                StatuslineDisplaySection(
-                    service: service,
-                    config: config
-                )
-                StatuslineLayoutSection(
-                    service: service,
-                    config: config
-                )
-                StatuslineThresholdsSection(
-                    service: service,
-                    config: config
-                )
-                StatuslineColorsSection(
-                    service: service,
-                    config: config
-                )
-                StatuslineFooterSection(service: service)
-            }
-
-            if let err = service.lastError {
-                Text(err.localizedDescription)
-                    .font(.system(size: 11))
-                    .foregroundColor(.red)
-                    .padding(.horizontal, 12)
-                    .frame(
-                        maxWidth: .infinity, alignment: .leading
+                if let status = service.hookStatus,
+                   status.installed,
+                   status.matchesExpectedCommand,
+                   let config = service.config {
+                    StatuslinePreviewSection(
+                        service: service,
+                        config: config
                     )
-            }
+                    .frame(width: Self.columnWidth)
 
-            Spacer(minLength: 0)
+                    HStack(alignment: .top, spacing: 20) {
+                        // Left column: Display, Layout, thresholds.
+                        VStack(spacing: 16) {
+                            StatuslineDisplaySection(
+                                service: service,
+                                config: config
+                            )
+                            StatuslineLayoutSection(
+                                service: service,
+                                config: config
+                            )
+                            StatuslineThresholdsSection(
+                                service: service,
+                                config: config
+                            )
+                        }
+                        .frame(width: Self.columnWidth)
+
+                        // Right column: Colors.
+                        VStack(spacing: 16) {
+                            StatuslineColorsSection(
+                                service: service,
+                                config: config
+                            )
+                        }
+                        .frame(width: Self.columnWidth)
+                    }
+
+                    StatuslineFooterSection(service: service)
+                        .frame(width: Self.columnWidth)
+                }
+
+                if let err = service.lastError {
+                    Text(err.localizedDescription)
+                        .font(.system(size: 11))
+                        .foregroundColor(.red)
+                        .frame(
+                            width: Self.columnWidth, alignment: .leading
+                        )
+                }
+            }
+            .padding(20)
+            .frame(maxWidth: .infinity)
         }
-        .padding(20)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxHeight: maxContentHeight)
         .task {
             await service.refresh()
         }
@@ -151,89 +184,100 @@ struct StatuslineInstallationSection: View {
 
 // MARK: - Display section
 
+private let statuslineLabelWidth: CGFloat = 150
+
+/// A label + trailing-aligned control row for the statusline tab's
+/// left column. The fixed-width label keeps every label flush at the
+/// same left edge, and the control hugs the trailing edge — so the
+/// time-format field, the style pickers, and the width steppers all
+/// share one right edge regardless of their individual widths.
+private struct StatuslineFormRow<Control: View>: View {
+    let label: String
+    @ViewBuilder let control: Control
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .frame(width: statuslineLabelWidth, alignment: .leading)
+            control
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+    }
+}
+
 struct StatuslineDisplaySection: View {
     @ObservedObject var service: StatuslineConfigService
     let config: StatuslineConfig
-    @State private var expanded: Bool = false
 
     var body: some View {
         SettingsCard(title: "Display") {
-            DisclosureGroup(
-                isExpanded: $expanded,
-                content: {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Toggle(
-                            "Show cost",
-                            isOn: bindBool(
-                                \.layout.showCost,
-                                key: "layout.show_cost"
-                            )
+            VStack(alignment: .leading, spacing: 12) {
+                Toggle(
+                    "Show cost",
+                    isOn: bindBool(
+                        \.layout.showCost,
+                        key: "layout.show_cost"
+                    )
+                )
+                .toggleStyle(.checkbox)
+
+                Toggle(
+                    "Show model",
+                    isOn: bindBool(
+                        \.layout.showModel,
+                        key: "layout.show_model"
+                    )
+                )
+                .toggleStyle(.checkbox)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle(
+                        "Show time",
+                        isOn: bindBool(
+                            \.layout.showTime,
+                            key: "layout.show_time"
                         )
-                        .toggleStyle(.checkbox)
+                    )
+                    .toggleStyle(.checkbox)
 
-                        Toggle(
-                            "Show model",
-                            isOn: bindBool(
-                                \.layout.showModel,
-                                key: "layout.show_model"
-                            )
-                        )
-                        .toggleStyle(.checkbox)
-
-                        VStack(alignment: .leading, spacing: 8) {
-                            Toggle(
-                                "Show time",
-                                isOn: bindBool(
-                                    \.layout.showTime,
-                                    key: "layout.show_time"
-                                )
-                            )
-                            .toggleStyle(.checkbox)
-
-                            if config.layout.showTime {
-                                SettingsRow(label: "Format") {
-                                    StatuslineTimeFormatField(
-                                        value: config.layout.timeFormat,
-                                        onCommit: { newValue in
-                                            Task {
-                                                await service.setConfigKey(
-                                                    "layout.time_format",
-                                                    value: newValue
-                                                )
-                                            }
-                                        }
-                                    )
+                    if config.layout.showTime {
+                        StatuslineFormRow(label: "Format") {
+                            StatuslineTimeFormatField(
+                                value: config.layout.timeFormat,
+                                onCommit: { newValue in
+                                    Task {
+                                        await service.setConfigKey(
+                                            "layout.time_format",
+                                            value: newValue
+                                        )
+                                    }
                                 }
-                                .padding(.leading, 20)
-                            }
-                        }
-
-                        SettingsRow(label: "Directory style") {
-                            enumPicker(
-                                \.layout.directoryStyle,
-                                key: "layout.directory_style",
-                                options: [
-                                    "full", "smart", "basename", "short",
-                                ]
                             )
-                            .frame(width: 140)
-                        }
-
-                        SettingsRow(label: "Branch style") {
-                            enumPicker(
-                                \.branchStyle,
-                                key: "branch_style",
-                                options: [
-                                    "symbolic", "arrows", "minimal",
-                                ]
-                            )
-                            .frame(width: 140)
                         }
                     }
-                    .padding(.top, 8)
-                },
-                label: { Text("Show display settings") }
-            )
+                }
+
+                StatuslineFormRow(label: "Directory style") {
+                    enumPicker(
+                        \.layout.directoryStyle,
+                        key: "layout.directory_style",
+                        options: [
+                            "full", "smart", "basename", "short",
+                        ]
+                    )
+                }
+
+                StatuslineFormRow(label: "Branch style") {
+                    enumPicker(
+                        \.branchStyle,
+                        key: "branch_style",
+                        options: [
+                            "symbolic", "arrows", "minimal",
+                        ]
+                    )
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .disabled(service.inFlight > 0)
     }
@@ -330,30 +374,29 @@ struct StatuslineLayoutSection: View {
     var body: some View {
         SettingsCard(title: "Layout") {
             VStack(alignment: .leading, spacing: 12) {
-                SettingsRow(label: "Context bar min width") {
+                StatuslineFormRow(label: "Context bar min width") {
                     Stepper(
-                        "\(config.layout.contextBarMinWidth)",
+                        "\(config.layout.contextBarMinWidth)%",
                         value: bindInt(
                             \.layout.contextBarMinWidth,
                             key: "layout.context_bar_min_width"
                         ),
                         in: 1...200
                     )
-                    .frame(width: 120)
                 }
 
-                SettingsRow(label: "Context bar max width") {
+                StatuslineFormRow(label: "Context bar max width") {
                     Stepper(
-                        "\(config.layout.contextBarMaxWidth)",
+                        "\(config.layout.contextBarMaxWidth)%",
                         value: bindInt(
                             \.layout.contextBarMaxWidth,
                             key: "layout.context_bar_max_width"
                         ),
                         in: 1...200
                     )
-                    .frame(width: 120)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .disabled(service.inFlight > 0)
     }
@@ -431,7 +474,6 @@ struct StatuslineThresholdsSection: View {
 struct StatuslineColorsSection: View {
     @ObservedObject var service: StatuslineConfigService
     let config: StatuslineConfig
-    @State private var expanded: Bool = false
 
     private struct ColorField {
         let label: String
@@ -527,47 +569,40 @@ struct StatuslineColorsSection: View {
 
     var body: some View {
         SettingsCard(title: "Colors") {
-            DisclosureGroup(
-                isExpanded: $expanded,
-                content: {
-                    VStack(alignment: .leading, spacing: 14) {
-                        ForEach(Self.groups, id: \.title) { group in
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text(group.title)
-                                    .font(
-                                        .system(
-                                            size: 11,
-                                            weight: .medium
-                                        )
-                                    )
-                                    .foregroundColor(.secondary)
-                                ForEach(
-                                    group.fields, id: \.key
-                                ) { field in
-                                    StatuslineColorRow(
-                                        label: field.label,
-                                        rawValue:
-                                            config.colors[
-                                                keyPath: field.keyPath
-                                            ],
-                                        onCommit: { newValue in
-                                            Task {
-                                                await service
-                                                    .setConfigKey(
-                                                        field.key,
-                                                        value: newValue
-                                                    )
-                                            }
-                                        }
-                                    )
+            VStack(alignment: .leading, spacing: 14) {
+                ForEach(Self.groups, id: \.title) { group in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(group.title)
+                            .font(
+                                .system(
+                                    size: 11,
+                                    weight: .medium
+                                )
+                            )
+                            .foregroundColor(.secondary)
+                        ForEach(
+                            group.fields, id: \.key
+                        ) { field in
+                            StatuslineColorRow(
+                                label: field.label,
+                                rawValue:
+                                    config.colors[
+                                        keyPath: field.keyPath
+                                    ],
+                                onCommit: { newValue in
+                                    Task {
+                                        await service
+                                            .setConfigKey(
+                                                field.key,
+                                                value: newValue
+                                            )
+                                    }
                                 }
-                            }
+                            )
                         }
                     }
-                    .padding(.top, 8)
-                },
-                label: { Text("Show color settings") }
-            )
+                }
+            }
         }
         .disabled(service.inFlight > 0)
     }
@@ -583,51 +618,51 @@ struct StatuslineColorRow: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(spacing: 8) {
             Text(label)
                 .frame(width: 130, alignment: .leading)
-                .padding(.top, 3)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Picker(
-                    "",
-                    selection: Binding(
-                        get: { parsed.color },
-                        set: { newColor in
-                            let next = StatuslineColorValue(
-                                color: newColor, bold: parsed.bold
-                            )
-                            onCommit(next.wireValue)
-                        }
-                    )
-                ) {
-                    ForEach(StatuslineColorName.allCases) { name in
-                        HStack(spacing: 6) {
-                            Circle()
-                                .fill(name.swatch)
-                                .frame(width: 10, height: 10)
-                            Text(name.displayName)
-                        }
-                        .tag(name)
+            Picker(
+                "",
+                selection: Binding(
+                    get: { parsed.color },
+                    set: { newColor in
+                        let next = StatuslineColorValue(
+                            color: newColor, bold: parsed.bold
+                        )
+                        onCommit(next.wireValue)
                     }
-                }
-                .labelsHidden()
-                .frame(width: 170)
-
-                Toggle(
-                    "Bold",
-                    isOn: Binding(
-                        get: { parsed.bold },
-                        set: { newBold in
-                            let next = StatuslineColorValue(
-                                color: parsed.color, bold: newBold
-                            )
-                            onCommit(next.wireValue)
-                        }
-                    )
                 )
-                .toggleStyle(.checkbox)
+            ) {
+                ForEach(StatuslineColorName.allCases) { name in
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(name.swatch)
+                            .frame(width: 10, height: 10)
+                        Text(name.displayName)
+                    }
+                    .tag(name)
+                }
             }
+            .labelsHidden()
+            .frame(width: 170)
+
+            // Bold sits inline to the right of the color picker so each
+            // color setting is a single row — halving the Colors
+            // column height versus stacking Bold beneath the picker.
+            Toggle(
+                "Bold",
+                isOn: Binding(
+                    get: { parsed.bold },
+                    set: { newBold in
+                        let next = StatuslineColorValue(
+                            color: parsed.color, bold: newBold
+                        )
+                        onCommit(next.wireValue)
+                    }
+                )
+            )
+            .toggleStyle(.checkbox)
 
             Spacer(minLength: 0)
         }

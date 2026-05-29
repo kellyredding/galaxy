@@ -30,6 +30,19 @@ enum SettingsTab: String, CaseIterable {
         case .notifications: return "bell"
         }
     }
+
+    /// Width of the settings window's content for this tab. Most tabs
+    /// use the standard narrow column; the statusline tab is dense
+    /// enough to lay its sections out in two side-by-side columns, so
+    /// it needs roughly double the width. The window follows this via
+    /// the hosting controller's preferred content size — growing for
+    /// statusline and shrinking back for the others.
+    var contentWidth: CGFloat {
+        switch self {
+        case .statusline: return 900
+        default: return 420
+        }
+    }
 }
 
 struct SettingsView: View {
@@ -41,7 +54,10 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Icon tab bar
+            // Icon tab bar — capped to the standard column width and
+            // centered, so the icons stay a clustered group rather
+            // than spreading out when the window widens for the
+            // statusline tab.
             HStack(spacing: 0) {
                 ForEach(SettingsTab.allCases, id: \.self) { tab in
                     SettingsTabButton(tab: tab, isSelected: selectedTab == tab) {
@@ -52,6 +68,8 @@ struct SettingsView: View {
             .padding(.horizontal, 16)
             .padding(.top, 8)
             .padding(.bottom, 4)
+            .frame(maxWidth: 420)
+            .frame(maxWidth: .infinity)
 
             Divider()
 
@@ -77,7 +95,7 @@ struct SettingsView: View {
                 }
             }
         }
-        .frame(width: 420)
+        .frame(width: selectedTab.contentWidth)
     }
 }
 

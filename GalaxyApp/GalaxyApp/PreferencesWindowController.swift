@@ -133,4 +133,14 @@ extension PreferencesWindowController: NSWindowDelegate {
         dismiss()
         return false
     }
+
+    /// The window is not user-resizable, so every resize is content-
+    /// driven — switching to the wide statusline tab and back narrows
+    /// or widens the SwiftUI content, which the hosting controller
+    /// propagates to the window. Re-center on each resize so the
+    /// window grows from its center rather than anchoring its left
+    /// edge and expanding rightward.
+    func windowDidResize(_ notification: Notification) {
+        window?.center()
+    }
 }
