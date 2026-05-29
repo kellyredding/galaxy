@@ -30,7 +30,9 @@ class Session: Identifiable, ObservableObject {
     /// When set, displayName shows "givenName (sessionRef)".
     @Published var givenName: String?
 
-    /// Display string for user-facing contexts (sidebar, menu, stopped screen).
+    /// Display string for user-facing contexts that benefit from the
+    /// disambiguating session ref (menu, dialogs, notifications,
+    /// stopped screen). The sidebar uses `sidebarTitle` instead.
     ///
     /// Three-state givenName logic:
     /// - givenName is non-empty string → "givenName (sessionRef)"
@@ -38,11 +40,27 @@ class Session: Identifiable, ObservableObject {
     /// - givenName is nil + no suggested name → bare sessionRef
     /// - givenName is "" (explicitly cleared) → bare sessionRef
     var displayName: String {
+        formattedName(includeRef: true)
+    }
+
+    /// Sidebar variant of `displayName` that omits the "(sessionRef)"
+    /// suffix once the row carries a custom or suggested name — the
+    /// ref is redundant there and crowds a narrow, single-line,
+    /// tail-truncated column. Unnamed sessions still fall through to
+    /// the bare sessionRef, which is their only label.
+    var sidebarTitle: String {
+        formattedName(includeRef: false)
+    }
+
+    /// Builds the three-state name string. When `includeRef` is false
+    /// the "(sessionRef)" suffix is dropped from the two named cases;
+    /// the unnamed case still returns the bare ref regardless.
+    private func formattedName(includeRef: Bool) -> String {
         if let name = givenName, !name.isEmpty {
-            return "\(name) (\(sessionRef))"
+            return includeRef ? "\(name) (\(sessionRef))" : name
         }
         if givenName == nil, let suggested = ledgerSuggestedName, !suggested.isEmpty {
-            return "\(suggested) (\(sessionRef))"
+            return includeRef ? "\(suggested) (\(sessionRef))" : suggested
         }
         return sessionRef
     }

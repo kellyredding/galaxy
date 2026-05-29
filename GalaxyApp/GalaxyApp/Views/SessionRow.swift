@@ -315,7 +315,7 @@ struct SessionRow: View {
                         )
                         .frame(height: fontSize.caption1LineHeight)
                     } else {
-                        Text(session.displayName)
+                        Text(session.sidebarTitle)
                             .chromeFont(size: fontSize.caption1, weight: .bold)
                             .lineLimit(1)
                             .truncationMode(.tail)

@@ -372,7 +372,7 @@ struct CollapsedRowTooltip: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             // Line 1: Session name
-            Text(session.displayName)
+            Text(session.sidebarTitle)
                 .chromeFont(size: fontSize.caption1, weight: .bold)
                 .lineLimit(1)
                 .foregroundColor(nameColor)
