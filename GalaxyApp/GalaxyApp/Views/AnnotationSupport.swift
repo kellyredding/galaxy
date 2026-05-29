@@ -426,6 +426,47 @@ let annotationManagerJS: String = """
         }
     }
 
+    // Gate autoGrow off the keystroke path. autoGrow reads
+    // scrollHeight and then repositions every annotation card via
+    // syncAllPositions — a forced layout whose cost scales with the
+    // host artifact/snapshot size and the annotation count. Running
+    // it on every input lags typing on large items with several
+    // annotations.
+    //
+    // The layout runs when the newline count changes OR when the
+    // value grew/shrank by more than one character — a bulk edit
+    // from dictation, paste, drop, or autocomplete. Single-character
+    // typing within a line skips it. The bulk-edit branch is what
+    // keeps dictation working: it drops a whole phrase in one input
+    // event with no \\n, which a newline-only gate would miss.
+    //
+    // Trackers update on every input — including skipped ones — so
+    // the next delta is measured against the true previous length.
+    function installAutoGrow(ta) {
+        var lastNewlineCount =
+            (ta.value.match(/\\n/g) || []).length;
+        var lastLength = ta.value.length;
+        var pendingFrame = null;
+
+        ta.addEventListener('input', function() {
+            var newlineCount =
+                (ta.value.match(/\\n/g) || []).length;
+            var length = ta.value.length;
+            var newlineChanged =
+                newlineCount !== lastNewlineCount;
+            var bulkEdit =
+                Math.abs(length - lastLength) !== 1;
+            lastNewlineCount = newlineCount;
+            lastLength = length;
+            if (!newlineChanged && !bulkEdit) return;
+            if (pendingFrame !== null) return;
+            pendingFrame = requestAnimationFrame(function() {
+                pendingFrame = null;
+                autoGrow(ta);
+            });
+        });
+    }
+
     const AnnotationManager = {
         blocks: [],
         currentBlockIndex: 0,
@@ -619,9 +660,7 @@ endBlock);
                 + ' rows="1"></textarea>';
 
             var ta = form.querySelector('textarea');
-            ta.addEventListener('input', function() {
-                autoGrow(ta);
-            });
+            installAutoGrow(ta);
             ta.addEventListener('keydown', function(e) {
                 if (typeof EmojiAutocomplete \
 !== 'undefined' &&
@@ -937,9 +976,7 @@ state.expandedNumber);
             ta.addEventListener('focus', function() {
                 AnnotationManager.collapseExpanded();
             });
-            ta.addEventListener('input', function() {
-                autoGrow(ta);
-            });
+            installAutoGrow(ta);
             ta.addEventListener('keydown', function(e) {
                 if (typeof EmojiAutocomplete \
 !== 'undefined' &&
@@ -2066,9 +2103,7 @@ endVal);
             contentDiv.replaceWith(ta);
 
             autoGrow(ta);
-            ta.addEventListener('input', function() {
-                autoGrow(ta);
-            });
+            installAutoGrow(ta);
             ta.addEventListener('keydown', function(e) {
                 if (typeof EmojiAutocomplete \
 !== 'undefined' &&
