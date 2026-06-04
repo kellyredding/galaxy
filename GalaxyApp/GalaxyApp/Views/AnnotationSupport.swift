@@ -426,44 +426,75 @@ let annotationManagerJS: String = """
         }
     }
 
-    // Gate autoGrow off the keystroke path. autoGrow reads
-    // scrollHeight and then repositions every annotation card via
-    // syncAllPositions — a forced layout whose cost scales with the
-    // host artifact/snapshot size and the annotation count. Running
-    // it on every input lags typing on large items with several
-    // annotations.
+    // Resize off the keystroke hot path. autoGrow reads scrollHeight
+    // and then repositions every annotation card via syncAllPositions
+    // — a forced layout whose cost scales with the host
+    // artifact/snapshot size and the annotation count, so running it
+    // on every keystroke lags typing on large items.
     //
-    // The layout runs when the newline count changes OR when the
-    // value grew/shrank by more than one character — a bulk edit
-    // from dictation, paste, drop, or autocomplete. Single-character
-    // typing within a line skips it. The bulk-edit branch is what
-    // keeps dictation working: it drops a whole phrase in one input
-    // event with no \\n, which a newline-only gate would miss.
+    // Structural edits resize immediately: a typed newline, or a bulk
+    // insert from paste/dictation/drop where the length jumps by more
+    // than one. These are cheap to detect and the user expects an
+    // instant jump.
     //
-    // Trackers update on every input — including skipped ones — so
-    // the next delta is measured against the true previous length.
+    // Ordinary single-character typing is debounced — the resize fires
+    // WAIT ms after the last keystroke, so a continuous burst or a held
+    // key-repeat coalesces into a single layout once typing settles. A
+    // soft wrap mid-line therefore grows the field on the next pause,
+    // not on the keystroke that crossed the edge. MAX_WAIT caps the
+    // debounce: through an unbroken burst that never pauses for WAIT
+    // ms, the resize is still forced at least every MAX_WAIT ms, which
+    // bounds how long a freshly wrapped line sits clipped behind
+    // overflow:hidden. Both values are tuned for feel, not correctness.
+    //
+    // Trackers update on every input so the next delta is measured
+    // against the true previous length.
     function installAutoGrow(ta) {
+        var WAIT = 250;
+        var MAX_WAIT = 500;
         var lastNewlineCount =
             (ta.value.match(/\\n/g) || []).length;
         var lastLength = ta.value.length;
+        var timer = null;
         var pendingFrame = null;
+        var burstStart = 0;
 
-        ta.addEventListener('input', function() {
-            var newlineCount =
-                (ta.value.match(/\\n/g) || []).length;
-            var length = ta.value.length;
-            var newlineChanged =
-                newlineCount !== lastNewlineCount;
-            var bulkEdit =
-                Math.abs(length - lastLength) !== 1;
-            lastNewlineCount = newlineCount;
-            lastLength = length;
-            if (!newlineChanged && !bulkEdit) return;
+        function fire() {
+            timer = null;
             if (pendingFrame !== null) return;
             pendingFrame = requestAnimationFrame(function() {
                 pendingFrame = null;
                 autoGrow(ta);
             });
+        }
+
+        ta.addEventListener('input', function() {
+            var newlineCount =
+                (ta.value.match(/\\n/g) || []).length;
+            var length = ta.value.length;
+            var structural =
+                newlineCount !== lastNewlineCount
+                || Math.abs(length - lastLength) !== 1;
+            lastNewlineCount = newlineCount;
+            lastLength = length;
+
+            if (structural) {
+                if (timer !== null) clearTimeout(timer);
+                fire();
+                return;
+            }
+
+            var now = Date.now();
+            if (timer === null) {
+                burstStart = now;
+            } else {
+                clearTimeout(timer);
+            }
+            var delay = Math.min(
+                WAIT,
+                Math.max(0, MAX_WAIT - (now - burstStart))
+            );
+            timer = setTimeout(fire, delay);
         });
     }
 

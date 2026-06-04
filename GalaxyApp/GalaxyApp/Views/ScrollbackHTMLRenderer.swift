@@ -1068,52 +1068,75 @@ enum ScrollbackHTMLRenderer {
             });
         },
 
-        // Per-textarea auto-grow. Defers the layout work to
-        // requestAnimationFrame and only does it when the field
-        // could actually have changed height.
+        // Per-textarea auto-grow, kept off the keystroke hot path.
         //
-        // The textarea lives inside the scrollback document,
-        // which holds the entire frozen terminal buffer (up
-        // to 100K lines per the terminalScrollbackLines
-        // setting). Reading scrollHeight forces a synchronous
-        // layout across that whole DOM, so the naive per-
-        // input resize causes keystroke lag on long-running
-        // sessions whose buffer has filled up.
+        // The textarea lives inside the scrollback document, which
+        // holds the entire frozen terminal buffer (up to 100K lines
+        // per the terminalScrollbackLines setting). Reading
+        // scrollHeight forces a synchronous layout across that whole
+        // DOM, so a naive per-input resize causes keystroke lag on
+        // long-running sessions whose buffer has filled up.
         //
-        // The layout runs when the newline count changes OR when
-        // the value grew/shrank by more than one character — a
-        // bulk edit from dictation, paste, drop, or autocomplete.
-        // Single-character typing within a line skips the layout,
-        // keeping the per-keystroke fast path; bulk inserts that
-        // wrap without adding a newline still grow the field
-        // (dictation drops a whole phrase with no \\n).
+        // Structural edits resize immediately: a typed newline, or a
+        // bulk insert from paste/dictation/drop where the length jumps
+        // by more than one. Ordinary single-character typing is
+        // debounced — the resize fires WAIT ms after the last
+        // keystroke, so a continuous burst or a held key-repeat
+        // coalesces into a single layout once typing settles, and a
+        // soft wrap grows the field on the next pause. MAX_WAIT caps
+        // the debounce so an unbroken burst still resizes at least
+        // every MAX_WAIT ms, bounding how long a wrapped line sits
+        // clipped behind overflow:hidden.
         //
-        // The trackers update on every input — including skipped
-        // ones — so the next delta is measured against the true
-        // previous length rather than drifting.
+        // Trackers update on every input so the next delta is measured
+        // against the true previous length.
         installAutosize(ta) {
+            const WAIT = 250;
+            const MAX_WAIT = 500;
             let lastNewlineCount =
                 (ta.value.match(/\\n/g) || []).length;
             let lastLength = ta.value.length;
+            let timer = null;
             let pendingFrame = null;
+            let burstStart = 0;
 
-            ta.addEventListener('input', () => {
-                const newlineCount =
-                    (ta.value.match(/\\n/g) || []).length;
-                const length = ta.value.length;
-                const newlineChanged =
-                    newlineCount !== lastNewlineCount;
-                const bulkEdit =
-                    Math.abs(length - lastLength) !== 1;
-                lastNewlineCount = newlineCount;
-                lastLength = length;
-                if (!newlineChanged && !bulkEdit) return;
+            const fire = () => {
+                timer = null;
                 if (pendingFrame !== null) return;
                 pendingFrame = requestAnimationFrame(() => {
                     pendingFrame = null;
                     ta.style.height = 'auto';
                     ta.style.height = ta.scrollHeight + 'px';
                 });
+            };
+
+            ta.addEventListener('input', () => {
+                const newlineCount =
+                    (ta.value.match(/\\n/g) || []).length;
+                const length = ta.value.length;
+                const structural =
+                    newlineCount !== lastNewlineCount
+                    || Math.abs(length - lastLength) !== 1;
+                lastNewlineCount = newlineCount;
+                lastLength = length;
+
+                if (structural) {
+                    if (timer !== null) clearTimeout(timer);
+                    fire();
+                    return;
+                }
+
+                const now = Date.now();
+                if (timer === null) {
+                    burstStart = now;
+                } else {
+                    clearTimeout(timer);
+                }
+                const delay = Math.min(
+                    WAIT,
+                    Math.max(0, MAX_WAIT - (now - burstStart))
+                );
+                timer = setTimeout(fire, delay);
             });
         },
 
