@@ -366,7 +366,7 @@ struct TerminalSettingsTab: View {
                             }
                         }
                         .labelsHidden()
-                        .frame(width: 160)
+                        .frame(width: 160, alignment: .trailing)
                     }
 
                     SettingsRow(label: "Default size") {
@@ -474,7 +474,7 @@ struct TerminalSettingsTab: View {
                             }
                         }
                         .labelsHidden()
-                        .frame(width: 180)
+                        .frame(width: 180, alignment: .trailing)
                     }
 
                     ThemePreviewView(
@@ -573,7 +573,7 @@ struct TerminalSettingsTab: View {
                             }
                         }
                         .labelsHidden()
-                        .frame(width: 140)
+                        .frame(width: 140, alignment: .trailing)
                     }
 
                     HStack {
