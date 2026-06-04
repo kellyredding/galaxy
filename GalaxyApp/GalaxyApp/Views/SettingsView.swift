@@ -143,7 +143,7 @@ struct GeneralSettingsTab: View {
                         }
                         .pickerStyle(.segmented)
                         .labelsHidden()
-                        .frame(width: 140)
+                        .frame(width: 140, alignment: .trailing)
                     }
 
                     SettingsRow(label: "Theme") {
@@ -154,7 +154,7 @@ struct GeneralSettingsTab: View {
                             }
                         }
                         .labelsHidden()
-                        .frame(width: 160)
+                        .frame(width: 160, alignment: .trailing)
                     }
                 }
             }
@@ -188,7 +188,7 @@ struct SessionsSettingsTab: View {
                             }
                         }
                         .labelsHidden()
-                        .frame(width: 140)
+                        .frame(width: 140, alignment: .trailing)
                     }
 
                     GitStatusPreviewView(
@@ -213,7 +213,7 @@ struct SessionsSettingsTab: View {
                                     value: $settingsManager.settings.autoClearThreshold,
                                     in: AppSettings.autoClearThresholdRange
                                 )
-                                .frame(width: 100)
+                                .frame(width: 100, alignment: .trailing)
                             }
                         }
                     }
@@ -631,7 +631,7 @@ struct TerminalSettingsTab: View {
                                     }
                                 }
                                 .labelsHidden()
-                                .frame(width: 130)
+                                .frame(width: 130, alignment: .trailing)
 
                                 Button(action: {
                                     settingsManager.playSound(
@@ -740,7 +740,7 @@ struct NotificationsSettingsTab: View {
                                 }
                             }
                             .labelsHidden()
-                            .frame(width: 130)
+                            .frame(width: 130, alignment: .trailing)
 
                             Button(action: {
                                 settingsManager.playSound(
@@ -805,7 +805,7 @@ struct NotificationsSettingsTab: View {
                                 }
                             }
                             .labelsHidden()
-                            .frame(width: 130)
+                            .frame(width: 130, alignment: .trailing)
 
                             Button(action: {
                                 settingsManager.playSound(
@@ -967,7 +967,7 @@ struct NotificationsSettingsTab: View {
                                         in: AppSettings
                                             .notifySessionIdleMinBusyRange
                                     )
-                                    .frame(width: 100)
+                                    .frame(width: 100, alignment: .trailing)
                                 }
                             }
                             .padding(.leading, 20)
@@ -981,7 +981,7 @@ struct NotificationsSettingsTab: View {
                                         in: AppSettings
                                             .notifySessionIdleMinIdleRange
                                     )
-                                    .frame(width: 100)
+                                    .frame(width: 100, alignment: .trailing)
                                 }
                             }
                             .padding(.leading, 20)
@@ -1017,7 +1017,7 @@ struct NotificationsSettingsTab: View {
                                         }
                                     }
                                     .labelsHidden()
-                                    .frame(width: 130)
+                                    .frame(width: 130, alignment: .trailing)
 
                                     Button(action: {
                                         settingsManager.playSound(
@@ -1086,7 +1086,7 @@ struct NotificationsSettingsTab: View {
                                         in: AppSettings
                                             .notifyHighContextThresholdRange
                                     )
-                                    .frame(width: 100)
+                                    .frame(width: 100, alignment: .trailing)
                                 }
                             }
                             .padding(.leading, 20)
