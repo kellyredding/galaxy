@@ -144,6 +144,8 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
 
     func trimBuffer() { backend.trimBuffer() }
 
+    func reflowBuffer() { backend.reflowBuffer() }
+
     func focus() {
         backend.focus()
     }

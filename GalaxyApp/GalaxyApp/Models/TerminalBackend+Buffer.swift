@@ -23,6 +23,15 @@ extension TerminalBackend {
     /// output.
     func trimBuffer() {
         feed(text: "\u{1b}[H\u{1b}[2J\u{1b}[3J")
+        reflowBuffer()
+    }
+
+    /// Reflow the viewport — the "Reflow Buffer" gesture. Sends a form
+    /// feed (Ctrl+L, 0x0C) out to the child so it redraws its current
+    /// screen and prompt in place. PTY-side op; the scrollback is left
+    /// untouched — that's the distinction from `trimBuffer()`, which
+    /// drops the scrollback before reflowing.
+    func reflowBuffer() {
         send(bytes: [0x0C])
     }
 }

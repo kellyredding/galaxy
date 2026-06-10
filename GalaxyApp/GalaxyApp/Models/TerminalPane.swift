@@ -164,6 +164,11 @@ protocol TerminalPane: AnyObject {
     /// "Trim Buffer" gesture). Forwards to
     /// `TerminalBackend.trimBuffer()`.
     func trimBuffer()
+
+    /// Reflow the terminal's viewport without trimming scrollback (the
+    /// "Reflow Buffer" gesture). Forwards to
+    /// `TerminalBackend.reflowBuffer()`.
+    func reflowBuffer()
 }
 
 /// Describes where a "Send to Claude" action should route

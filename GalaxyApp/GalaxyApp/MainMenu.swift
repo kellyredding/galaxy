@@ -449,6 +449,17 @@ class MainMenu: NSObject, NSMenuDelegate {
             trimBufferItem.keyEquivalentModifierMask =
                 [.command, .control]
             menu.addItem(trimBufferItem)
+
+            // Reflow buffer (⌃L). Redraws the current screen without
+            // trimming scrollback. Same focused-pane gate as Trim.
+            let reflowBufferItem = NSMenuItem(
+                title: "Reflow Buffer",
+                action: #selector(MenuActions.reflowBuffer(_:)),
+                keyEquivalent: "l"
+            )
+            reflowBufferItem.target = MenuActions.shared
+            reflowBufferItem.keyEquivalentModifierMask = [.control]
+            menu.addItem(reflowBufferItem)
         }
 
         // Clear/Compact: only show when active session is running
@@ -906,6 +917,12 @@ class MenuActions: NSObject {
         Self.focusedTerminalPane()?.trimBuffer()
     }
 
+    /// Sessions ▸ Reflow buffer (⌃L). Redraws the focused terminal's
+    /// current screen without trimming scrollback.
+    @objc func reflowBuffer(_ sender: Any?) {
+        Self.focusedTerminalPane()?.reflowBuffer()
+    }
+
     @objc func openShell(_ sender: Any?) {
         let sm = SessionManager.shared
         if sm.activeTab != .terminal {
@@ -1020,10 +1037,11 @@ extension MenuActions: NSMenuItemValidation {
             return Self.focusedTerminalPane()?
                 .canDecreaseFontSize ?? false
 
-        // Sessions ▸ Trim buffer. Live-gated on a terminal pane being
-        // focused, so the item (and its ⌃⌘K equivalent) is active only
-        // on the Terminal tab.
-        case #selector(trimBuffer(_:)):
+        // Sessions ▸ Trim buffer / Reflow buffer. Live-gated on a
+        // terminal pane being focused, so the items (and their ⌃⌘K /
+        // ⌃L equivalents) are active only on the Terminal tab.
+        case #selector(trimBuffer(_:)),
+             #selector(reflowBuffer(_:)):
             return Self.focusedTerminalPane() != nil
 
         // Chrome font items: bound-checked against the live

@@ -109,6 +109,8 @@ final class SessionTerminalPane: TerminalPane {
 
     func trimBuffer() { backend.trimBuffer() }
 
+    func reflowBuffer() { backend.reflowBuffer() }
+
     func focus() {
         backend.focus()
     }
