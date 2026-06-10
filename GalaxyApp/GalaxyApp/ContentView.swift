@@ -530,6 +530,7 @@ extension TabUnreadIndicator {
     func withClearBehavior() -> some View {
         self.unreadIndicatorBehavior(
             session: session,
+            surface: "tab",
             isSelected: true,  // tab indicator is always for the active session
             isWindowFocused: isWindowFocused,
             isOnTerminalTab: isOnTerminalTab

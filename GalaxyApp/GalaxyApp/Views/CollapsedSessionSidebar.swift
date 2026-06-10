@@ -306,6 +306,7 @@ struct CollapsedSessionRow: View {
         .animation(.easeInOut(duration: 0.08), value: session.visualBellActive)
         .unreadIndicatorBehavior(
             session: session,
+            surface: "collapsed",
             isSelected: isSelected,
             isWindowFocused: isWindowFocused,
             isOnTerminalTab: isOnTerminalTab

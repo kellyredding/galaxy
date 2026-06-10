@@ -439,6 +439,7 @@ struct SessionRow: View {
         }
         .unreadIndicatorBehavior(
             session: session,
+            surface: "sidebar",
             isSelected: isSelected,
             isWindowFocused: isWindowFocused,
             isOnTerminalTab: isOnTerminalTab

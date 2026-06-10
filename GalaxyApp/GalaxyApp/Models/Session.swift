@@ -446,6 +446,17 @@ class Session: Identifiable, ObservableObject {
     /// enrichment call.
     var ledgerSessionId: Int64?
 
+    /// Compact identity tag for diagnostic logging. Re-evaluated on every
+    /// access so the ledger session id is picked up as soon as enrichment
+    /// assigns it; the stable sessionRef is the fallback before then.
+    /// Lets diagnostic logs be filtered per session, e.g.
+    /// `grep "Galaxy/dbg/unread" galaxy.log | grep L412` (by ledger id)
+    /// or `... | grep rich-grass-hides` (by ref).
+    var diagnosticTag: String {
+        let sid = ledgerSessionId.map { "L\($0)" } ?? "?"
+        return "sid=\(sid) ref=\(sessionRef)"
+    }
+
     /// All Claude session UUIDs accumulated through resumes/clears
     var ledgerSessionIdentifiers: [String]?
 

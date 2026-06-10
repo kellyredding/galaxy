@@ -976,10 +976,26 @@ class SessionManager: ObservableObject {
         let trackUnread = settings.showUnreadIndicator
             || settings.showDockBadge
         let unreadMinBusy: TimeInterval = 3.0
-        if trackUnread
+        let willSetUnread = trackUnread
             && !isViewingThisSession
             && turnDuration >= unreadMinBusy
-        {
+        // DIAGNOSTIC (unread red-dot flakiness): log every turn-end
+        // decision with the full gating context so a stuck dot can be
+        // traced back to its birth. Remove once resolved.
+        GalaxyLog.dbg(
+            "unread",
+            "SET handleTurnEnd \(session.diagnosticTag)"
+                + " decision=\(willSetUnread ? "SET" : "skip")"
+                + " viewing=\(isViewingThisSession)"
+                + " (active=\(session.id == activeSessionId)"
+                + " tab=\(activeTab == .terminal)"
+                + " focus=\(isWindowFocused))"
+                + " turnDur=\(String(format: "%.1f", turnDuration))"
+                + " min=\(unreadMinBusy)"
+                + " track=\(trackUnread)"
+                + " was=\(session.hasUnreadResponse)"
+        )
+        if willSetUnread {
             session.hasUnreadResponse = true
             updateDockBadge()
         }
@@ -1288,8 +1304,23 @@ class SessionManager: ObservableObject {
     }
 
     func switchTo(sessionId: UUID) {
-        guard activeSessionId != sessionId else { return }
         guard let session = sessions.first(where: { $0.id == sessionId }) else { return }
+        guard activeSessionId != sessionId else {
+            // DIAGNOSTIC (unread red-dot flakiness): re-selecting the
+            // already-active session early-returns, so CLEAR-A can't run.
+            // If a dot is showing here, only the CLEAR-B view modifier can
+            // clear it. Remove once resolved.
+            if session.hasUnreadResponse {
+                GalaxyLog.dbg(
+                    "unread",
+                    "CLEAR-A switchTo \(session.diagnosticTag)"
+                        + " no-op=reselect-active unread=true"
+                        + " tab=\(activeTab == .terminal)"
+                        + " focus=\(isWindowFocused)"
+                )
+            }
+            return
+        }
 
         // Suppress navigation history recording on both the
         // outgoing and incoming sessions across the state
@@ -1311,9 +1342,23 @@ class SessionManager: ObservableObject {
         // to avoid gesture disambiguation delays when double-click gestures
         // exist on child views. Only clears when on the terminal tab — viewing
         // Ledger or Snapshots keeps the indicator visible.
-        if session.hasUnreadResponse && isWindowFocused && activeTab == .terminal {
+        let hadUnread = session.hasUnreadResponse
+        let clearAllowed = isWindowFocused && activeTab == .terminal
+        if hadUnread && clearAllowed {
             session.hasUnreadResponse = false
             updateDockBadge()
+        }
+        // DIAGNOSTIC (unread red-dot flakiness): log the switch-time clear
+        // decision. Remove once resolved.
+        if hadUnread {
+            GalaxyLog.dbg(
+                "unread",
+                "CLEAR-A switchTo \(session.diagnosticTag)"
+                    + " cleared=\(hadUnread && clearAllowed)"
+                    + " hadUnread=\(hadUnread)"
+                    + " tab=\(activeTab == .terminal)"
+                    + " focus=\(isWindowFocused)"
+            )
         }
 
         // Update menu state for the newly active session
