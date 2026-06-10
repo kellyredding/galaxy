@@ -142,6 +142,8 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
         backend.send(text: text, asPaste: asPaste)
     }
 
+    func trimBuffer() { backend.trimBuffer() }
+
     func focus() {
         backend.focus()
     }

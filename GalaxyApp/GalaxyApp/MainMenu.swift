@@ -433,6 +433,22 @@ class MainMenu: NSObject, NSMenuDelegate {
             )
             scrollbackItem.target = MenuActions.shared
             menu.addItem(scrollbackItem)
+
+            // Trim buffer (⌃⌘K). Action is always set; the live
+            // enable gate lives in `validateMenuItem` (focused
+            // terminal pane). ⌃⌘K is its own equivalent — not shared
+            // with any other item — so it displays and dispatches
+            // reliably, and the Cmd keeps it out of the terminal's
+            // control-character space.
+            let trimBufferItem = NSMenuItem(
+                title: "Trim Buffer",
+                action: #selector(MenuActions.trimBuffer(_:)),
+                keyEquivalent: "k"
+            )
+            trimBufferItem.target = MenuActions.shared
+            trimBufferItem.keyEquivalentModifierMask =
+                [.command, .control]
+            menu.addItem(trimBufferItem)
         }
 
         // Clear/Compact: only show when active session is running
@@ -880,6 +896,16 @@ class MenuActions: NSObject {
         Self.focusedTerminalPane()?.decreaseFontSize()
     }
 
+    /// Sessions ▸ Trim buffer (⌃⌘K). Routes through the focused
+    /// terminal pane so the chrome layer never reaches into a
+    /// backend-specific path. `validateMenuItem` gates this on a
+    /// terminal pane being focused; the optional-chain no-op is
+    /// belt-and-suspenders for the (unreachable) bypassed-validation
+    /// case.
+    @objc func trimBuffer(_ sender: Any?) {
+        Self.focusedTerminalPane()?.trimBuffer()
+    }
+
     @objc func openShell(_ sender: Any?) {
         let sm = SessionManager.shared
         if sm.activeTab != .terminal {
@@ -993,6 +1019,12 @@ extension MenuActions: NSMenuItemValidation {
         case #selector(smallerTerminalFontSize(_:)):
             return Self.focusedTerminalPane()?
                 .canDecreaseFontSize ?? false
+
+        // Sessions ▸ Trim buffer. Live-gated on a terminal pane being
+        // focused, so the item (and its ⌃⌘K equivalent) is active only
+        // on the Terminal tab.
+        case #selector(trimBuffer(_:)):
+            return Self.focusedTerminalPane() != nil
 
         // Chrome font items: bound-checked against the live
         // settings value, never gated on focus — the user

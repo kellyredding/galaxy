@@ -159,6 +159,11 @@ protocol TerminalPane: AnyObject {
     /// can take another decrease step. Drives the View ▸
     /// Smaller menu item's enabled state.
     var canDecreaseFontSize: Bool { get }
+
+    /// Trim the terminal's scrollback and reflow the viewport (the
+    /// "Trim Buffer" gesture). Forwards to
+    /// `TerminalBackend.trimBuffer()`.
+    func trimBuffer()
 }
 
 /// Describes where a "Send to Claude" action should route
