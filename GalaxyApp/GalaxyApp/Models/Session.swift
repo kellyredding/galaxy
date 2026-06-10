@@ -790,6 +790,14 @@ class Session: Identifiable, ObservableObject {
         backend?.trimBuffer()
     }
 
+    /// Reflow this session's terminal viewport — send a form feed
+    /// (Ctrl+L) so the child repaints its current screen. Used on
+    /// resume, once the session is ready, to force a clean repaint of
+    /// the restored view. Leaves the scrollback untouched.
+    func reflowTerminalBuffer() {
+        backend?.reflowBuffer()
+    }
+
     func sendCommand(
         _ command: String, verifyAccepted: Bool = true
     ) {

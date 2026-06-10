@@ -808,6 +808,19 @@ class SessionManager: ObservableObject {
                 session?.sendCommand(
                     "/galaxy:resume", verifyAccepted: false
                 )
+                // The restored screen can come back garbled (a
+                // resize artifact on the freshly recreated backend),
+                // and only Claude repainting clears it. There's no
+                // deterministic "Claude repainted" signal, and the
+                // /galaxy:resume turn can run ~20s — too long to wait
+                // on — so reflow on a short fixed delay after the
+                // command goes out. Tuned timing: raise the delay if
+                // the garble sometimes outlives it.
+                DispatchQueue.main.asyncAfter(
+                    deadline: .now() + 0.25
+                ) { [weak session] in
+                    session?.reflowTerminalBuffer()
+                }
             }
         }
 
