@@ -781,6 +781,15 @@ class Session: Identifiable, ObservableObject {
         return trimmed == "/clear" || trimmed == "/compact"
     }
 
+    /// Trim this session's terminal scrollback before a context reset,
+    /// so the post-reset session opens on a clean buffer instead of
+    /// inheriting the prior session's history. Routes through the
+    /// backend's trim (a local scrollback wipe plus a viewport reflow);
+    /// nothing is queued against the turn lifecycle.
+    func trimTerminalBuffer() {
+        backend?.trimBuffer()
+    }
+
     func sendCommand(
         _ command: String, verifyAccepted: Bool = true
     ) {

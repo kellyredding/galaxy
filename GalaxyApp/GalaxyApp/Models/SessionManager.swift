@@ -828,6 +828,10 @@ class SessionManager: ObservableObject {
     /// Compact the active session and auto-handoff when Claude settles.
     func compactActiveSession() {
         guard let session = activeSession, session.isRunning, !session.hasExited else { return }
+        // Trim the terminal scrollback first so the compacted session
+        // opens on a clean buffer (same step clearAndHandoff runs
+        // before /clear).
+        session.trimTerminalBuffer()
         // verifyAccepted: false — /compact bypasses
         // Claude Code's UserPromptSubmit hook (no
         // turn:initiated event arrives), so the verify-
@@ -849,6 +853,10 @@ class SessionManager: ObservableObject {
     /// Send /clear to a session and queue /handoff after it settles.
     /// Used by clearActiveSession, compactActiveSession, and auto-clear.
     private func clearAndHandoff(_ session: Session) {
+        // Trim the terminal scrollback first so the cleared session
+        // opens on a clean buffer — /clear only resets Claude's own
+        // rendering, not the terminal's scrollback history.
+        session.trimTerminalBuffer()
         // verifyAccepted: false — same reasoning as
         // compactActiveSession. /clear bypasses
         // UserPromptSubmit, so verifyCommandSubmit can't
