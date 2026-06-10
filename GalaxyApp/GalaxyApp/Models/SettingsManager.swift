@@ -159,16 +159,16 @@ struct AppSettings: Codable, Equatable {
     /// `defaultTerminalFontSize` semantics).
     var shellDefaultHeightRatio: Double = 0.5
 
-    /// Cursor shape for the Shell pane. Default `.block`
-    /// matches macOS Terminal.app's default. Shell-only —
-    /// the Session pane's SwiftTerm caret is hidden by
-    /// Claude Code's own cursor rendering.
-    var shellCursorStyle: ShellCursorStyle = .block
-    /// Whether the Shell pane cursor blinks. Default off
-    /// because a steady cursor is less distracting in a
-    /// secondary pane where the user's visual focus is
-    /// usually the Claude session above.
-    var shellCursorBlink: Bool = false
+    /// Cursor shape for the terminal panes — applies to both the
+    /// session (Claude) pane and the shell pane. Default `.block`
+    /// matches macOS Terminal.app's default. The session pane shows
+    /// the engine's native caret as Claude's prompt cursor, so this
+    /// governs it too.
+    var terminalCursorStyle: ShellCursorStyle = .block
+    /// Whether the terminal cursor blinks. Default off for a steady,
+    /// less-distracting cursor — matches Terminal/Ghostty's typical
+    /// defaults and avoids the engine's blinking-block default.
+    var terminalCursorBlink: Bool = false
 
     /// Whether the Shell pane plays a sound on BEL.
     /// Default off — routine shell events (e.g.
@@ -367,11 +367,11 @@ struct AppSettings: Codable, Equatable {
         shellDefaultHeightRatio = try container.decodeIfPresent(
             Double.self, forKey: .shellDefaultHeightRatio
         ) ?? 0.5
-        shellCursorStyle = try container.decodeIfPresent(
-            ShellCursorStyle.self, forKey: .shellCursorStyle
+        terminalCursorStyle = try container.decodeIfPresent(
+            ShellCursorStyle.self, forKey: .terminalCursorStyle
         ) ?? .block
-        shellCursorBlink = try container.decodeIfPresent(
-            Bool.self, forKey: .shellCursorBlink
+        terminalCursorBlink = try container.decodeIfPresent(
+            Bool.self, forKey: .terminalCursorBlink
         ) ?? false
         shellBellAudible = try container.decodeIfPresent(
             Bool.self, forKey: .shellBellAudible

@@ -485,6 +485,40 @@ struct TerminalSettingsTab: View {
                 }
             }
 
+            // Cursor — applies to both the session (Claude) and
+            // shell terminal panes.
+            SettingsCard(title: "Cursor") {
+                VStack(alignment: .leading, spacing: 12) {
+                    SettingsRow(label: "Style") {
+                        Picker(
+                            "",
+                            selection: $settingsManager.settings
+                                .terminalCursorStyle
+                        ) {
+                            ForEach(
+                                ShellCursorStyle.allCases,
+                                id: \.self
+                            ) { style in
+                                Text(style.displayName)
+                                    .tag(style)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 140, alignment: .trailing)
+                    }
+
+                    HStack {
+                        Toggle(
+                            "Blink",
+                            isOn: $settingsManager.settings
+                                .terminalCursorBlink
+                        )
+                        .toggleStyle(.checkbox)
+                        Spacer()
+                    }
+                }
+            }
+
             // Shell pane settings
             SettingsCard(title: "Shell") {
                 VStack(alignment: .leading, spacing: 12) {
@@ -556,34 +590,6 @@ struct TerminalSettingsTab: View {
                             Text("%")
                                 .foregroundColor(.secondary)
                         }
-                    }
-
-                    SettingsRow(label: "Cursor style") {
-                        Picker(
-                            "",
-                            selection: $settingsManager.settings
-                                .shellCursorStyle
-                        ) {
-                            ForEach(
-                                ShellCursorStyle.allCases,
-                                id: \.self
-                            ) { style in
-                                Text(style.displayName)
-                                    .tag(style)
-                            }
-                        }
-                        .labelsHidden()
-                        .frame(width: 140, alignment: .trailing)
-                    }
-
-                    HStack {
-                        Toggle(
-                            "Blink cursor",
-                            isOn: $settingsManager.settings
-                                .shellCursorBlink
-                        )
-                        .toggleStyle(.checkbox)
-                        Spacer()
                     }
 
                     Divider()

@@ -4,7 +4,7 @@ import Galactic
 
 /// Pair wrapper over (style, blink) so Combine can dedupe
 /// changes as a single unit. Without this, two independent
-/// subscriptions on `shellCursorStyle` and `shellCursorBlink`
+/// subscriptions on `terminalCursorStyle` and `terminalCursorBlink`
 /// would each fire `applyCursor` on init — this struct lets
 /// a single `.removeDuplicates()` guard the combined signal.
 private struct ShellCursorConfig: Hashable {
@@ -310,18 +310,17 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
             }
             .store(in: &cancellables)
 
-        // Cursor (shell-only). Kept separate from
-        // `applySettings` because the Session pane's caret
-        // is hidden — applying cursor settings on every
-        // change for that backend would risk un-hiding it.
-        // SwiftTerm's `CursorStyle` fuses shape + blink, so
-        // dedupe on the pair via `ShellCursorConfig` to avoid
-        // two separate subscriptions firing on init.
+        // Cursor. Kept separate from `applySettings` because
+        // SwiftTerm's `CursorStyle` fuses shape + blink, so we
+        // dedupe on the pair via `ShellCursorConfig` to avoid two
+        // subscriptions firing on init. The same shared terminal
+        // cursor settings drive the session pane too (applied in
+        // Session.configureTerminal).
         mgr.$settings
             .map {
                 ShellCursorConfig(
-                    style: $0.shellCursorStyle,
-                    blink: $0.shellCursorBlink
+                    style: $0.terminalCursorStyle,
+                    blink: $0.terminalCursorBlink
                 )
             }
             .removeDuplicates()
@@ -339,8 +338,8 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
         backend.applySettings(settings)
         applyPerPaneFontSize()
         backend.applyCursor(
-            style: settings.shellCursorStyle,
-            blink: settings.shellCursorBlink
+            style: settings.terminalCursorStyle,
+            blink: settings.terminalCursorBlink
         )
     }
 

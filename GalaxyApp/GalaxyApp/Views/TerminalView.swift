@@ -383,12 +383,14 @@ class TerminalHostView: NSView {
         pane.view.autoresizingMask = []
         addSubview(pane.view)
 
-        // Session-pane-specific chrome: Claude Code renders its
-        // own cursor so we hide the engine's native caret. Shell
-        // pane keeps the native caret. Routed through the
-        // backend so the chrome doesn't need to know which
-        // engine is underneath.
-        sessionPane?.backend.setCaretHidden(true)
+        // Show the engine's native caret on the session pane — it
+        // IS Claude's prompt cursor (Claude does not self-render
+        // one, so hiding it left no visible cursor). Its shape and
+        // blink follow the shared terminal cursor settings, applied
+        // through the backend in Session.configureTerminal. Routed
+        // through the backend so the chrome doesn't need to know
+        // which engine is underneath.
+        sessionPane?.backend.setCaretHidden(false)
 
         // Scroll-up interception — pane-generic. Both session
         // and shell panes route scroll-up through the pane

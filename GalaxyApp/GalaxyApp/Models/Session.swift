@@ -617,10 +617,18 @@ class Session: Identifiable, ObservableObject {
     private func configureTerminal() {
         guard let backend = backend else { return }
 
-        // Initial apply of the full settings model + per-
-        // session font size override.
+        // Initial apply of the full settings model + per-session
+        // font size override + cursor style. Cursor is applied
+        // explicitly (not via applySettings) because SwiftTerm
+        // fuses shape + blink into one value; the shared terminal
+        // cursor settings drive this pane's native caret, which is
+        // Claude's prompt cursor now that it's no longer hidden.
         backend.applySettings(SettingsManager.shared.settings)
         applyPerSessionFontSize()
+        backend.applyCursor(
+            style: SettingsManager.shared.settings.terminalCursorStyle,
+            blink: SettingsManager.shared.settings.terminalCursorBlink
+        )
 
         // Re-apply on every settings change. Stored in
         // `terminalCancellables` so `releaseBackend()` can
@@ -633,6 +641,10 @@ class Session: Identifiable, ObservableObject {
             .sink { [weak self] settings in
                 self?.backend?.applySettings(settings)
                 self?.applyPerSessionFontSize()
+                self?.backend?.applyCursor(
+                    style: settings.terminalCursorStyle,
+                    blink: settings.terminalCursorBlink
+                )
             }
             .store(in: &terminalCancellables)
     }
