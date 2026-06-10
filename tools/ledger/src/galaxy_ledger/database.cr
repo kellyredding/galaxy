@@ -185,7 +185,7 @@ module GalaxyLedger
           )
         SQL
 
-        # Daily usage tracking table (one record per session per UTC day)
+        # Daily usage tracking table (one record per session per local day)
         db.exec(<<-SQL)
           CREATE TABLE IF NOT EXISTS ledger_session_daily_usages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -642,7 +642,7 @@ module GalaxyLedger
       end
     end
 
-    # Record daily usage for the current UTC day.
+    # Record daily usage for the current local day.
     # Uses dynamic baseline for both cost and tokens: each tick diffs
     # from the last observed value and accumulates positive deltas.
     # On reset (compaction/new process), the baseline resets to the
@@ -662,7 +662,7 @@ module GalaxyLedger
       cost_val = new_cost || 0.0
       tokens_val = new_tokens || 0_i64
 
-      today = Time.utc.to_s("%Y-%m-%d")
+      today = LedgerTime.today_str
 
       # Check for existing record today
       existing = db.query_one?(
@@ -794,7 +794,7 @@ module GalaxyLedger
 
       begin
         open do |db|
-          today = Time.utc.to_s("%Y-%m-%d")
+          today = LedgerTime.today_str
 
           # Check for existing record today
           existing_id = db.query_one?(

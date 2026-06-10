@@ -1785,7 +1785,7 @@ describe GalaxyLedger::Database do
       status = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":5000},"cost":{"usd":0.50}}))
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
 
-      today = Time.utc.to_s("%Y-%m-%d")
+      today = GalaxyLedger::LedgerTime.today_str
       daily = GalaxyLedger::Database.spend_daily(today, today)
       daily.size.should eq(1)
       daily[0].cost.should eq(0.50)
@@ -1803,7 +1803,7 @@ describe GalaxyLedger::Database do
       status2 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":12000},"cost":{"usd":1.20}}))
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status2)
 
-      today = Time.utc.to_s("%Y-%m-%d")
+      today = GalaxyLedger::LedgerTime.today_str
       daily = GalaxyLedger::Database.spend_daily(today, today)
       daily.size.should eq(1)
       # Cost: 0.50 + (1.20 - 0.50) = 1.20 via dynamic diffing
@@ -1831,7 +1831,7 @@ describe GalaxyLedger::Database do
       status4 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":9000},"cost":{"usd":2.00}}))
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status4)
 
-      today = Time.utc.to_s("%Y-%m-%d")
+      today = GalaxyLedger::LedgerTime.today_str
       daily = GalaxyLedger::Database.spend_daily(today, today)
       daily.size.should eq(1)
       # Cost: monotonic, just 2.00 - 0.0 = 2.00
@@ -1850,7 +1850,7 @@ describe GalaxyLedger::Database do
       GalaxyLedger::Database.update_session_metrics(lid1, status1)
       GalaxyLedger::Database.update_session_metrics(lid2, status2)
 
-      today = Time.utc.to_s("%Y-%m-%d")
+      today = GalaxyLedger::LedgerTime.today_str
       summary = GalaxyLedger::Database.spend_summary(today, today)
       summary.total_cost.should eq(1.75)
       summary.total_tokens.should eq(8000_i64)
@@ -1865,7 +1865,7 @@ describe GalaxyLedger::Database do
       status = GalaxyLedger::ContextStatus.from_json(%({"context":{"percentage":42.0}}))
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
 
-      today = Time.utc.to_s("%Y-%m-%d")
+      today = GalaxyLedger::LedgerTime.today_str
       daily = GalaxyLedger::Database.spend_daily(today, today)
       daily.size.should eq(0)
     end
@@ -1876,7 +1876,7 @@ describe GalaxyLedger::Database do
       status = GalaxyLedger::ContextStatus.from_json(%({"cost":{"usd":0.50}}))
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
 
-      today = Time.utc.to_s("%Y-%m-%d")
+      today = GalaxyLedger::LedgerTime.today_str
       daily = GalaxyLedger::Database.spend_daily(today, today)
       daily.size.should eq(1)
       daily[0].cost.should eq(0.50)
@@ -1933,7 +1933,7 @@ describe GalaxyLedger::Database do
       status = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":5000},"cost":{"usd":1.00}}))
       GalaxyLedger::Database.update_session_metrics(lid, status)
 
-      today = Time.utc.to_s("%Y-%m-%d")
+      today = GalaxyLedger::LedgerTime.today_str
       GalaxyLedger::Database.spend_daily(today, today).size.should eq(1)
 
       GalaxyLedger::Database.delete_session("sess-daily-cascade")
@@ -1968,7 +1968,7 @@ describe GalaxyLedger::Database do
       s6 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":7000},"cost":{"usd":0.60}}))
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, s6)
 
-      today = Time.utc.to_s("%Y-%m-%d")
+      today = GalaxyLedger::LedgerTime.today_str
       daily = GalaxyLedger::Database.spend_daily(today, today)
       daily.size.should eq(1)
       # Cost: 1.00(segment1) + 0.80(segment2) + 0.60(segment3) = 2.40
@@ -1996,7 +1996,7 @@ describe GalaxyLedger::Database do
       status4 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":9000},"cost":{"usd":0.80}}))
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status4)
 
-      today = Time.utc.to_s("%Y-%m-%d")
+      today = GalaxyLedger::LedgerTime.today_str
       daily = GalaxyLedger::Database.spend_daily(today, today)
       daily.size.should eq(1)
       # Cost: 1.00 (before reset) + 0.80 (after reset) = 1.80
@@ -2007,7 +2007,7 @@ describe GalaxyLedger::Database do
 
     it "handles cross-day cost reset — session resumed on new day with lower cost" do
       lid = GalaxyLedger::Database.create_session("sess-daily-crossday-reset")
-      today = Time.utc.to_s("%Y-%m-%d")
+      today = GalaxyLedger::LedgerTime.today_str
       yesterday = (Time.utc - 1.day).to_s("%Y-%m-%d")
 
       # Simulate Day 1: session ran with cost=2.50, tokens=10000
@@ -2043,7 +2043,7 @@ describe GalaxyLedger::Database do
 
     it "handles cross-day cost reset to zero — session resumed with no activity" do
       lid = GalaxyLedger::Database.create_session("sess-daily-crossday-zero")
-      today = Time.utc.to_s("%Y-%m-%d")
+      today = GalaxyLedger::LedgerTime.today_str
       yesterday = (Time.utc - 1.day).to_s("%Y-%m-%d")
 
       # Simulate Day 1: session ran with cost=1.00
@@ -2073,7 +2073,7 @@ describe GalaxyLedger::Database do
 
     it "handles cross-day cost reset with multiple Day 2 ticks" do
       lid = GalaxyLedger::Database.create_session("sess-daily-crossday-multi")
-      today = Time.utc.to_s("%Y-%m-%d")
+      today = GalaxyLedger::LedgerTime.today_str
       yesterday = (Time.utc - 1.day).to_s("%Y-%m-%d")
 
       # Day 1: session ran with cost=2.50, tokens=10000
@@ -2120,7 +2120,7 @@ describe GalaxyLedger::Database do
 
     it "handles cross-day normal continuation — cost increases monotonically" do
       lid = GalaxyLedger::Database.create_session("sess-daily-crossday-normal")
-      today = Time.utc.to_s("%Y-%m-%d")
+      today = GalaxyLedger::LedgerTime.today_str
       yesterday = (Time.utc - 1.day).to_s("%Y-%m-%d")
 
       # Simulate Day 1: session ran with cost=3.00, tokens=15000
@@ -2222,7 +2222,7 @@ describe GalaxyLedger::Database do
       result = GalaxyLedger::Database.record_oneshot_usage(lid, 0.15, 5000_i64)
       result.should be_true
 
-      today = Time.utc.to_s("%Y-%m-%d")
+      today = GalaxyLedger::LedgerTime.today_str
       GalaxyLedger::Database.open do |db|
         row = db.query_one?(
           <<-SQL,
@@ -2257,7 +2257,7 @@ describe GalaxyLedger::Database do
       GalaxyLedger::Database.record_oneshot_usage(lid, 0.10, 3000_i64)
       GalaxyLedger::Database.record_oneshot_usage(lid, 0.05, 2000_i64)
 
-      today = Time.utc.to_s("%Y-%m-%d")
+      today = GalaxyLedger::LedgerTime.today_str
       GalaxyLedger::Database.open do |db|
         row = db.query_one?(
           "SELECT oneshot_cost_usd, oneshot_tokens FROM ledger_session_daily_usages WHERE ledger_session_id = ? AND date = ?",
@@ -2282,7 +2282,7 @@ describe GalaxyLedger::Database do
       # Then one-shot
       GalaxyLedger::Database.record_oneshot_usage(lid, 0.10, 3000_i64)
 
-      today = Time.utc.to_s("%Y-%m-%d")
+      today = GalaxyLedger::LedgerTime.today_str
       GalaxyLedger::Database.open do |db|
         row = db.query_one?(
           <<-SQL,
@@ -2318,7 +2318,7 @@ describe GalaxyLedger::Database do
       status = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":10000},"cost":{"usd":0.50}}))
       GalaxyLedger::Database.update_session_metrics(lid, status)
 
-      today = Time.utc.to_s("%Y-%m-%d")
+      today = GalaxyLedger::LedgerTime.today_str
       GalaxyLedger::Database.open do |db|
         row = db.query_one?(
           "SELECT oneshot_cost_usd, oneshot_tokens FROM ledger_session_daily_usages WHERE ledger_session_id = ? AND date = ?",
@@ -2335,7 +2335,7 @@ describe GalaxyLedger::Database do
 
     it "interleaved updates: realistic scenario" do
       lid = GalaxyLedger::Database.create_session("sess-oneshot-interleave")
-      today = Time.utc.to_s("%Y-%m-%d")
+      today = GalaxyLedger::LedgerTime.today_str
 
       # Status tick 1: cost=0.50, tokens=5000
       status1 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":5000},"cost":{"usd":0.50}}))
@@ -2402,7 +2402,7 @@ describe GalaxyLedger::Database do
       # current values, and the next status line tick produces a sane
       # diff (today's actual incremental spend).
       lid = GalaxyLedger::Database.create_session("sess-oneshot-crossday-seed")
-      today = Time.utc.to_s("%Y-%m-%d")
+      today = GalaxyLedger::LedgerTime.today_str
       yesterday = (Time.utc - 1.day).to_s("%Y-%m-%d")
 
       # Simulate yesterday: session ended with lifetime cost $73.87,
@@ -2488,7 +2488,7 @@ describe GalaxyLedger::Database do
       # that creates the first row should still default baseline to 0,
       # matching the prior (pre-fix) behavior for brand-new sessions.
       lid = GalaxyLedger::Database.create_session("sess-oneshot-firstday-seed")
-      today = Time.utc.to_s("%Y-%m-%d")
+      today = GalaxyLedger::LedgerTime.today_str
 
       GalaxyLedger::Database.record_oneshot_usage(lid, 0.15, 5000_i64)
 
@@ -2644,7 +2644,7 @@ describe GalaxyLedger::Database do
       GalaxyLedger::Database.update_session_metrics(lid, status)
       GalaxyLedger::Database.record_oneshot_usage(lid, 0.25, 5000_i64)
 
-      today = Time.utc.to_s("%Y-%m-%d")
+      today = GalaxyLedger::LedgerTime.today_str
       GalaxyLedger::Database.spend_daily(today, today).size.should eq(1)
 
       GalaxyLedger::Database.delete_session("sess-oneshot-cascade")

@@ -2232,11 +2232,7 @@ module GalaxyLedger
     end
 
     private def self.resolve_spend_period(period : String) : {String, String, String}
-      today = if override = ENV["GALAXY_LEDGER_TODAY"]?
-                Time.parse(override, "%Y-%m-%d", Time::Location::UTC)
-              else
-                Time.utc
-              end
+      today = LedgerTime.now
       today_str = today.to_s("%Y-%m-%d")
 
       case period
@@ -2249,14 +2245,14 @@ module GalaxyLedger
         from = today - 29.days
         {from.to_s("%Y-%m-%d"), today_str, "Last 30 Days"}
       when "mtd"
-        first = Time.utc(today.year, today.month, 1)
+        first = Time.local(today.year, today.month, 1)
         {first.to_s("%Y-%m-%d"), today_str, "Month to Date"}
       when "qtd"
         quarter_month = ((today.month - 1) // 3) * 3 + 1
-        first = Time.utc(today.year, quarter_month, 1)
+        first = Time.local(today.year, quarter_month, 1)
         {first.to_s("%Y-%m-%d"), today_str, "Quarter to Date"}
       when "ytd"
-        first = Time.utc(today.year, 1, 1)
+        first = Time.local(today.year, 1, 1)
         {first.to_s("%Y-%m-%d"), today_str, "Year to Date"}
       when "1y"
         year_ago = today - 365.days

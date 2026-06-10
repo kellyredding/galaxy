@@ -54,7 +54,7 @@ describe "CLI Integration - spend" do
   describe "spend with data" do
     it "shows WTD summary" do
       lid = GalaxyLedger::Database.create_session("sess-spend-wtd")
-      today = Time.utc.to_s("%Y-%m-%d")
+      today = GalaxyLedger::LedgerTime.today_str
       seed_daily_usage(lid, today, 5.50, 150000_i64)
 
       result = run_binary(["spend", "wtd"])
@@ -66,7 +66,7 @@ describe "CLI Integration - spend" do
 
     it "shows 30d summary by default" do
       lid = GalaxyLedger::Database.create_session("sess-spend-30d")
-      today = Time.utc.to_s("%Y-%m-%d")
+      today = GalaxyLedger::LedgerTime.today_str
       seed_daily_usage(lid, today, 3.25, 50000_i64)
 
       result = run_binary(["spend"])
@@ -77,7 +77,7 @@ describe "CLI Integration - spend" do
 
     it "shows 30d summary" do
       lid = GalaxyLedger::Database.create_session("sess-spend-30d-explicit")
-      today = Time.utc.to_s("%Y-%m-%d")
+      today = GalaxyLedger::LedgerTime.today_str
       seed_daily_usage(lid, today, 7.00, 200000_i64)
 
       result = run_binary(["spend", "30d"])
@@ -91,7 +91,7 @@ describe "CLI Integration - spend" do
   describe "spend --json" do
     it "outputs valid JSON" do
       lid = GalaxyLedger::Database.create_session("sess-spend-json")
-      today = Time.utc.to_s("%Y-%m-%d")
+      today = GalaxyLedger::LedgerTime.today_str
       seed_daily_usage(lid, today, 2.00, 80000_i64)
 
       result = run_binary(["spend", "mtd", "--json"])
@@ -138,7 +138,7 @@ describe "CLI Integration - spend" do
   describe "spend --no-chart --no-sparkline" do
     it "suppresses chart and sparkline output" do
       lid = GalaxyLedger::Database.create_session("sess-spend-novis")
-      today = Time.utc.to_s("%Y-%m-%d")
+      today = GalaxyLedger::LedgerTime.today_str
       seed_daily_usage(lid, today, 5.00, 100000_i64)
 
       result = run_binary(["spend", "mtd", "--no-chart", "--no-sparkline"])
@@ -152,7 +152,7 @@ describe "CLI Integration - spend" do
   describe "spend with oneshot data" do
     it "includes oneshot in total cost" do
       lid = GalaxyLedger::Database.create_session("sess-spend-oneshot")
-      today = Time.utc.to_s("%Y-%m-%d")
+      today = GalaxyLedger::LedgerTime.today_str
       seed_daily_usage(lid, today, 5.00, 100000_i64, oneshot_cost: 0.50, oneshot_tokens: 10000_i64)
 
       result = run_binary(["spend", "mtd"])
@@ -163,7 +163,7 @@ describe "CLI Integration - spend" do
 
     it "includes oneshot in JSON output" do
       lid = GalaxyLedger::Database.create_session("sess-spend-oneshot-json")
-      today = Time.utc.to_s("%Y-%m-%d")
+      today = GalaxyLedger::LedgerTime.today_str
       seed_daily_usage(lid, today, 5.00, 100000_i64, oneshot_cost: 0.50, oneshot_tokens: 10000_i64)
 
       result = run_binary(["spend", "mtd", "--json"])
@@ -176,7 +176,7 @@ describe "CLI Integration - spend" do
 
     it "shows cost when only oneshot data exists (no session activity)" do
       lid = GalaxyLedger::Database.create_session("sess-spend-oneshot-only")
-      today = Time.utc.to_s("%Y-%m-%d")
+      today = GalaxyLedger::LedgerTime.today_str
       seed_daily_usage(lid, today, 0.0, 0_i64, oneshot_cost: 0.25, oneshot_tokens: 5000_i64)
 
       result = run_binary(["spend", "mtd"])
@@ -320,7 +320,7 @@ describe "CLI Integration - spend" do
 
     it "shows monthly sparkline and monthly bars for 1y" do
       lid = GalaxyLedger::Database.create_session("sess-tier-monthly")
-      today = Time.utc
+      today = GalaxyLedger::LedgerTime.now
       six_months_ago = today - 180.days
       seed_daily_usage(lid, six_months_ago.to_s("%Y-%m-%d"), 4.00, 80000_i64)
       seed_daily_usage(lid, today.to_s("%Y-%m-%d"), 6.00, 120000_i64)
@@ -334,7 +334,7 @@ describe "CLI Integration - spend" do
 
     it "shows weekly sparkline and weekly bars for ytd" do
       lid = GalaxyLedger::Database.create_session("sess-tier-ytd")
-      today = Time.utc
+      today = GalaxyLedger::LedgerTime.now
       jan_first = Time.utc(today.year, 1, 1)
       seed_daily_usage(lid, jan_first.to_s("%Y-%m-%d"), 3.00, 50000_i64)
       seed_daily_usage(lid, today.to_s("%Y-%m-%d"), 5.00, 100000_i64)
@@ -378,7 +378,7 @@ describe "CLI Integration - spend" do
 
     it "shows months footnote for monthly periods" do
       lid = GalaxyLedger::Database.create_session("sess-footnote-monthly")
-      today = Time.utc
+      today = GalaxyLedger::LedgerTime.now
       year_ago = today - 365.days
       seed_daily_usage(lid, year_ago.to_s("%Y-%m-%d"), 3.00, 50000_i64)
       seed_daily_usage(lid, today.to_s("%Y-%m-%d"), 5.00, 100000_i64)
