@@ -1855,11 +1855,38 @@ class SessionManager: ObservableObject {
                 }
             }
 
-            // Terminal bell notification (honors setting + not viewing)
-            guard settings.notifyTerminalBell else { return }
+            // Unread indicator: a PTY bell while this session is not the
+            // focused terminal means Claude wants attention (permission
+            // prompt, question form, or other notification). Mirror the
+            // handleTurnEnd set path so the dot clears through the same
+            // focus-driven CLEAR-A / CLEAR-B machinery.
             let isViewing = session.id == self.activeSessionId
                 && self.activeTab == .terminal
                 && self.isWindowFocused
+            let trackUnread = settings.showUnreadIndicator
+                || settings.showDockBadge
+            let willSetUnread = trackUnread && !isViewing
+            // DIAGNOSTIC (unread red-dot flakiness): mirror the
+            // handleTurnEnd "SET" line for bell-driven sets so a stuck
+            // dot can be traced back to a bell. Remove once resolved.
+            GalaxyLog.dbg(
+                "unread",
+                "SET-bell \(session.diagnosticTag)"
+                    + " decision=\(willSetUnread ? "SET" : "skip")"
+                    + " viewing=\(isViewing)"
+                    + " (active=\(session.id == self.activeSessionId)"
+                    + " tab=\(self.activeTab == .terminal)"
+                    + " focus=\(self.isWindowFocused))"
+                    + " track=\(trackUnread)"
+                    + " was=\(session.hasUnreadResponse)"
+            )
+            if willSetUnread {
+                session.hasUnreadResponse = true
+                self.updateDockBadge()
+            }
+
+            // Terminal bell notification (honors setting + not viewing)
+            guard settings.notifyTerminalBell else { return }
             guard !isViewing else { return }
 
             guard let lsid = session.ledgerSessionId else { return }

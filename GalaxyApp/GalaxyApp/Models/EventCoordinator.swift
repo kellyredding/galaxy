@@ -437,30 +437,54 @@ final class EventCoordinator {
                     settings.permissionRequestSound
                 )
 
-                // Notification (focus-gated)
+                // Resolve the session this request belongs to.
                 let appSessionId =
                     self?.ledgerSessionIdCache[
                         envelope.ledgerSessionId
                     ]
-                if settings.notifyPermissionRequest,
-                   let appSessionId,
-                   let session = sm.sessions.first(
-                       where: { $0.id == appSessionId }
-                   )
-                {
-                    let isViewing =
-                        appSessionId
-                            == sm.activeSessionId
-                        && sm.activeTab == .terminal
-                        && sm.isWindowFocused
-                    if !isViewing {
-                        NotificationService.shared
-                            .notifyPermissionRequest(
-                                sessionId: appSessionId,
-                                displayName:
-                                    session.displayName
-                            )
-                    }
+                guard let appSessionId,
+                      let session = sm.sessions.first(
+                          where: { $0.id == appSessionId }
+                      )
+                else { return }
+
+                let isViewing =
+                    appSessionId == sm.activeSessionId
+                    && sm.activeTab == .terminal
+                    && sm.isWindowFocused
+
+                // Unread indicator: a permission / question prompt while
+                // this session is not the focused terminal means Claude
+                // wants attention. Mirror the handleTurnEnd set path so
+                // the dot clears through the same focus-driven
+                // CLEAR-A / CLEAR-B machinery.
+                let trackUnread = settings.showUnreadIndicator
+                    || settings.showDockBadge
+                let willSetUnread = trackUnread && !isViewing
+                // DIAGNOSTIC (unread red-dot flakiness): mirror the
+                // handleTurnEnd "SET" line for permission-driven sets.
+                // Remove once resolved.
+                GalaxyLog.dbg(
+                    "unread",
+                    "SET-perm \(session.diagnosticTag)"
+                        + " decision=\(willSetUnread ? "SET" : "skip")"
+                        + " viewing=\(isViewing)"
+                        + " track=\(trackUnread)"
+                        + " was=\(session.hasUnreadResponse)"
+                )
+                if willSetUnread {
+                    session.hasUnreadResponse = true
+                    sm.updateDockBadge()
+                }
+
+                // Notification (focus-gated)
+                if settings.notifyPermissionRequest, !isViewing {
+                    NotificationService.shared
+                        .notifyPermissionRequest(
+                            sessionId: appSessionId,
+                            displayName:
+                                session.displayName
+                        )
                 }
             }
             return
