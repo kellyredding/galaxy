@@ -151,6 +151,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             name: NSWindow.didResignKeyNotification,
             object: nil
         )
+        // App reactivation (returning from another app) — re-derive focus
+        // from the real key window in case no per-window key notification
+        // fires on the way back in.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appDidBecomeActive),
+            name: NSApplication.didBecomeActiveNotification,
+            object: nil
+        )
 
         // Observe theme preference changes — apply via window.appearance
         // so SwiftUI's colorScheme updates without recreating the view tree
@@ -347,11 +356,42 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Window Focus
 
     @objc private func windowDidBecomeKey(_ notification: Notification) {
-        SessionManager.shared.isWindowFocused = true
+        refreshWindowFocused(trigger: "becomeKey", notification: notification)
     }
 
     @objc private func windowDidResignKey(_ notification: Notification) {
-        SessionManager.shared.isWindowFocused = false
+        refreshWindowFocused(trigger: "resignKey", notification: notification)
+    }
+
+    @objc private func appDidBecomeActive(_ notification: Notification) {
+        refreshWindowFocused(trigger: "appActive", notification: nil)
+    }
+
+    /// Re-derive window focus from the actual key-window state instead of
+    /// trusting per-window become/resign notifications. Those are registered
+    /// for every window (object: nil), and their delivery order on a key
+    /// transfer between two of the app's own windows (a sheet, Preferences)
+    /// is not guaranteed — a blind toggle can land on false while a window is
+    /// still key, stranding the unread-dot clear gate (which requires
+    /// isWindowFocused). Asking the main window whether it is key is always
+    /// correct regardless of notification order.
+    private func refreshWindowFocused(
+        trigger: String, notification: Notification?
+    ) {
+        let mainWindow = mainWindowController?.window
+        let focused = mainWindow?.isKeyWindow ?? false
+        SessionManager.shared.isWindowFocused = focused
+        // DIAGNOSTIC (window-focus strand): name the transitioning window so a
+        // stuck-focus episode points at its culprit. Remove once resolved.
+        let w = notification?.object as? NSWindow
+        let title = w?.title ?? "—"
+        let cls = w.map { String(describing: type(of: $0)) } ?? "—"
+        GalaxyLog.dbg(
+            "focus",
+            "\(trigger) win=\"\(title)\" cls=\(cls)"
+                + " isMain=\(w === mainWindow)"
+                + " -> isWindowFocused=\(focused)"
+        )
     }
 
     // MARK: - File Access
