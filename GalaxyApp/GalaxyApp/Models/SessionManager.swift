@@ -327,24 +327,18 @@ class SessionManager: ObservableObject {
             }
         }
 
-        // Fallback: which command
-        let task = Process()
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = FileHandle.nullDevice
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/which")
-        task.arguments = [name]
-
-        do {
-            try task.run()
-            task.waitUntilExit()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            if let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !output.isEmpty {
-                return output
-            }
-        } catch {
-            // Ignore errors
+        // Fallback: which command. Bounded so a wedged lookup can't
+        // hang app launch; a non-zero exit / timeout throws and falls
+        // through to the fallback.
+        if let data = try? ProcessRunner.runSync(
+            executableURL: URL(fileURLWithPath: "/usr/bin/which"),
+            arguments: [name],
+            timeout: 5
+        ),
+            let output = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            !output.isEmpty {
+            return output
         }
 
         return fallback

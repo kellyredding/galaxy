@@ -224,37 +224,22 @@ final class EnrichmentService {
     func enrichSync(sessionIdentifiers: [String]) -> EnrichmentResponse? {
         guard !sessionIdentifiers.isEmpty else { return nil }
 
-        let task = Process()
-        let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
-
-        task.executableURL = URL(fileURLWithPath: ledgerPath)
         var args = ["sessions", "--json"]
         for id in sessionIdentifiers {
             args.append("--session")
             args.append(id)
         }
-        task.arguments = args
-        task.standardOutput = stdoutPipe
-        task.standardError = stderrPipe
 
-        do {
-            try task.run()
-
-            // Read stdout BEFORE waitUntilExit to avoid pipe deadlock.
-            // If the subprocess writes more than ~64KB, the pipe buffer
-            // fills and the process blocks on write. waitUntilExit would
-            // then block forever waiting for a process that can't exit.
-            let data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-            task.waitUntilExit()
-
-            guard task.terminationStatus == 0 else {
-                return nil
-            }
-
-            return try JSONDecoder().decode(EnrichmentResponse.self, from: data)
-        } catch {
+        // Bounded by the service timeout so a wedged ledger call can't
+        // block startup sync forever. Non-zero exit / timeout throws
+        // and falls through to nil.
+        guard let data = try? ProcessRunner.runSync(
+            executableURL: URL(fileURLWithPath: ledgerPath),
+            arguments: args,
+            timeout: timeout
+        ) else {
             return nil
         }
+        return try? JSONDecoder().decode(EnrichmentResponse.self, from: data)
     }
 }

@@ -65,7 +65,7 @@ final class ProcessRunner: @unchecked Sendable {
 
     /// Spawn the binary with `args`, optionally feeding `stdin`, and
     /// return its stdout. Throws `ProcessRunError` on launch failure,
-    /// non-zero exit, or timeout.
+    /// non-zero exit, or timeout. Never parks a thread on the child.
     func run(
         args: [String],
         stdin: Data? = nil,
@@ -73,15 +73,99 @@ final class ProcessRunner: @unchecked Sendable {
     ) async throws -> Data {
         try Task.checkCancellation()
 
+        let (process, outPipe, errPipe, inPipe) = Self.makeProcess(
+            executableURL: URL(fileURLWithPath: binaryPath),
+            arguments: args,
+            stdin: stdin,
+            currentDirectory: nil
+        )
+
+        return try await withCheckedThrowingContinuation {
+            (continuation: CheckedContinuation<Data, Error>) in
+            Self.drive(
+                process: process,
+                stdout: outPipe,
+                stderr: errPipe,
+                stdin: stdin,
+                stdinPipe: inPipe,
+                binary: binaryName,
+                timeout: timeout ?? defaultTimeout,
+                onLaunch: { self.register(process) }
+            ) { result in
+                self.deregister(process)
+                continuation.resume(with: result)
+            }
+        }
+    }
+
+    /// Synchronous sibling of `run`. Blocks the calling thread until
+    /// the subprocess finishes or the timeout fires, then returns its
+    /// stdout. Use only off the main thread.
+    ///
+    /// This intentionally parks the *caller's* thread — that is the
+    /// point of a synchronous call. It does NOT bridge through Swift
+    /// concurrency: the shared core is pure GCD and its completion
+    /// fires from independent dispatch queues, so blocking here on a
+    /// semaphore can never starve the cooperative thread pool. The
+    /// timeout bounds the wait, so the caller blocks at most `timeout`
+    /// seconds rather than forever.
+    ///
+    /// Static because synchronous callers run arbitrary system
+    /// binaries (which, git, …) and need no cancellation domain.
+    static func runSync(
+        executableURL: URL,
+        arguments: [String],
+        stdin: Data? = nil,
+        currentDirectory: URL? = nil,
+        timeout: TimeInterval
+    ) throws -> Data {
+        let (process, outPipe, errPipe, inPipe) = makeProcess(
+            executableURL: executableURL,
+            arguments: arguments,
+            stdin: stdin,
+            currentDirectory: currentDirectory
+        )
+
+        let semaphore = DispatchSemaphore(value: 0)
+        var outcome: Result<Data, Error>!
+        drive(
+            process: process,
+            stdout: outPipe,
+            stderr: errPipe,
+            stdin: stdin,
+            stdinPipe: inPipe,
+            binary: executableURL.lastPathComponent,
+            timeout: timeout,
+            onLaunch: nil
+        ) { result in
+            outcome = result
+            semaphore.signal()
+        }
+        semaphore.wait()
+        return try outcome.get()
+    }
+
+    // MARK: - Subprocess core
+
+    /// Build and configure a Process with drained stdout/stderr pipes
+    /// plus an optional stdin pipe and working directory.
+    private static func makeProcess(
+        executableURL: URL,
+        arguments: [String],
+        stdin: Data?,
+        currentDirectory: URL?
+    ) -> (process: Process, stdout: Pipe, stderr: Pipe, stdinPipe: Pipe?) {
         let process = Process()
         let outPipe = Pipe()
         let errPipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: binaryPath)
-        process.arguments = args
+        process.executableURL = executableURL
+        process.arguments = arguments
         process.standardOutput = outPipe
         process.standardError = errPipe
-
-        let inPipe: Pipe?
+        if let currentDirectory {
+            process.currentDirectoryURL = currentDirectory
+        }
+        var inPipe: Pipe?
         if stdin != nil {
             let pipe = Pipe()
             process.standardInput = pipe
@@ -89,145 +173,159 @@ final class ProcessRunner: @unchecked Sendable {
         } else {
             inPipe = nil
         }
+        return (process, outPipe, errPipe, inPipe)
+    }
 
-        let limit = timeout ?? defaultTimeout
-
+    /// Event-driven core shared by `run` and `runSync`. Pure GCD — no
+    /// Swift concurrency — so a synchronous caller can safely block on
+    /// the completion. Drains both pipes via `readabilityHandler`,
+    /// observes exit via `terminationHandler`, and bounds the run with
+    /// a timeout that terminates (then kills) the child. Calls
+    /// `completion` exactly once. `onLaunch` runs synchronously after a
+    /// successful launch (used to register for cancellation).
+    private static func drive(
+        process: Process,
+        stdout outPipe: Pipe,
+        stderr errPipe: Pipe,
+        stdin: Data?,
+        stdinPipe inPipe: Pipe?,
+        binary: String,
+        timeout limit: TimeInterval,
+        onLaunch: (() -> Void)?,
+        completion: @escaping (Result<Data, Error>) -> Void
+    ) {
         // All completion state is mutated only on this serial queue,
         // so the three event sources (stdout EOF, stderr EOF,
         // termination) and the timeout never race.
-        let coord = DispatchQueue(label: "galaxy.processrunner.\(binaryName)")
+        let coord = DispatchQueue(label: "galaxy.processrunner.\(binary)")
 
-        return try await withCheckedThrowingContinuation {
-            (continuation: CheckedContinuation<Data, Error>) in
-            var outBuf = Data()
-            var errBuf = Data()
-            var pending = 3 // stdout EOF + stderr EOF + termination
-            var outDone = false
-            var errDone = false
-            var finished = false
+        var outBuf = Data()
+        var errBuf = Data()
+        var pending = 3 // stdout EOF + stderr EOF + termination
+        var outDone = false
+        var errDone = false
+        var finished = false
 
-            let timer = DispatchSource.makeTimerSource(queue: coord)
-            timer.schedule(deadline: .now() + limit)
+        let timer = DispatchSource.makeTimerSource(queue: coord)
+        timer.schedule(deadline: .now() + limit)
 
-            // Resolve exactly once and tear everything down. Must run
-            // on `coord`.
-            func finish(_ result: Result<Data, Error>) {
-                if finished { return }
-                finished = true
-                timer.cancel()
-                outPipe.fileHandleForReading.readabilityHandler = nil
-                errPipe.fileHandleForReading.readabilityHandler = nil
-                process.terminationHandler = nil
-                self.deregister(process)
-                continuation.resume(with: result)
-            }
+        // Resolve exactly once and tear everything down. Must run on
+        // `coord`.
+        func finish(_ result: Result<Data, Error>) {
+            if finished { return }
+            finished = true
+            timer.cancel()
+            outPipe.fileHandleForReading.readabilityHandler = nil
+            errPipe.fileHandleForReading.readabilityHandler = nil
+            process.terminationHandler = nil
+            completion(result)
+        }
 
-            // Resolve once both pipes have hit EOF and the process has
-            // terminated (so terminationStatus is valid and all output
-            // is drained). Must run on `coord`.
-            func completeIfReady() {
-                guard !finished, pending == 0 else { return }
-                let status = process.terminationStatus
-                if status == 0 {
-                    finish(.success(outBuf))
-                } else {
-                    let message = String(data: errBuf, encoding: .utf8)
-                        ?? "Unknown error"
-                    finish(.failure(ProcessRunError.cliError(
-                        binary: self.binaryName,
-                        status: status,
-                        message: message.trimmingCharacters(
-                            in: .whitespacesAndNewlines
-                        )
-                    )))
-                }
-            }
-
-            outPipe.fileHandleForReading.readabilityHandler = { handle in
-                let chunk = handle.availableData
-                // Stop EOF from re-firing immediately; the source stays
-                // readable at EOF until the handler is cleared.
-                if chunk.isEmpty { handle.readabilityHandler = nil }
-                coord.async {
-                    guard !finished else { return }
-                    if chunk.isEmpty {
-                        guard !outDone else { return }
-                        outDone = true
-                        pending -= 1
-                        completeIfReady()
-                    } else {
-                        outBuf.append(chunk)
-                    }
-                }
-            }
-
-            errPipe.fileHandleForReading.readabilityHandler = { handle in
-                let chunk = handle.availableData
-                if chunk.isEmpty { handle.readabilityHandler = nil }
-                coord.async {
-                    guard !finished else { return }
-                    if chunk.isEmpty {
-                        guard !errDone else { return }
-                        errDone = true
-                        pending -= 1
-                        completeIfReady()
-                    } else {
-                        errBuf.append(chunk)
-                    }
-                }
-            }
-
-            process.terminationHandler = { _ in
-                coord.async {
-                    guard !finished else { return }
-                    pending -= 1
-                    completeIfReady()
-                }
-            }
-
-            timer.setEventHandler {
-                guard !finished else { return }
-                if process.isRunning { process.terminate() }
-                let pid = process.processIdentifier
-                // Escalate to SIGKILL if SIGTERM is ignored.
-                coord.asyncAfter(deadline: .now() + 2.0) {
-                    if process.isRunning { kill(pid, SIGKILL) }
-                }
-                finish(.failure(ProcessRunError.timedOut(
-                    binary: self.binaryName,
-                    seconds: limit
+        // Resolve once both pipes have hit EOF and the process has
+        // terminated (so terminationStatus is valid and all output is
+        // drained). Must run on `coord`.
+        func completeIfReady() {
+            guard !finished, pending == 0 else { return }
+            let status = process.terminationStatus
+            if status == 0 {
+                finish(.success(outBuf))
+            } else {
+                let message = String(data: errBuf, encoding: .utf8)
+                    ?? "Unknown error"
+                finish(.failure(ProcessRunError.cliError(
+                    binary: binary,
+                    status: status,
+                    message: message.trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                    )
                 )))
             }
+        }
 
-            do {
-                try process.run()
-            } catch {
-                timer.cancel()
-                outPipe.fileHandleForReading.readabilityHandler = nil
-                errPipe.fileHandleForReading.readabilityHandler = nil
-                process.terminationHandler = nil
-                continuation.resume(throwing: ProcessRunError.launchFailed(
-                    binary: binaryName,
-                    underlying: error
-                ))
-                return
-            }
-
-            self.register(process)
-
-            if let stdin, let inPipe {
-                inPipe.fileHandleForWriting.write(stdin)
-                try? inPipe.fileHandleForWriting.close()
-            }
-
-            // Arm the timeout on `coord` so it is ordered against a
-            // fast process that finishes before we get here (in which
-            // case `finished` is already set and the timer — already
-            // cancelled by finish() — is never activated).
+        outPipe.fileHandleForReading.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            // Stop EOF from re-firing immediately; the source stays
+            // readable at EOF until the handler is cleared.
+            if chunk.isEmpty { handle.readabilityHandler = nil }
             coord.async {
                 guard !finished else { return }
-                timer.activate()
+                if chunk.isEmpty {
+                    guard !outDone else { return }
+                    outDone = true
+                    pending -= 1
+                    completeIfReady()
+                } else {
+                    outBuf.append(chunk)
+                }
             }
+        }
+
+        errPipe.fileHandleForReading.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            if chunk.isEmpty { handle.readabilityHandler = nil }
+            coord.async {
+                guard !finished else { return }
+                if chunk.isEmpty {
+                    guard !errDone else { return }
+                    errDone = true
+                    pending -= 1
+                    completeIfReady()
+                } else {
+                    errBuf.append(chunk)
+                }
+            }
+        }
+
+        process.terminationHandler = { _ in
+            coord.async {
+                guard !finished else { return }
+                pending -= 1
+                completeIfReady()
+            }
+        }
+
+        timer.setEventHandler {
+            guard !finished else { return }
+            if process.isRunning { process.terminate() }
+            let pid = process.processIdentifier
+            // Escalate to SIGKILL if SIGTERM is ignored.
+            coord.asyncAfter(deadline: .now() + 2.0) {
+                if process.isRunning { kill(pid, SIGKILL) }
+            }
+            finish(.failure(ProcessRunError.timedOut(
+                binary: binary,
+                seconds: limit
+            )))
+        }
+
+        do {
+            try process.run()
+        } catch {
+            timer.cancel()
+            outPipe.fileHandleForReading.readabilityHandler = nil
+            errPipe.fileHandleForReading.readabilityHandler = nil
+            process.terminationHandler = nil
+            completion(.failure(ProcessRunError.launchFailed(
+                binary: binary,
+                underlying: error
+            )))
+            return
+        }
+
+        onLaunch?()
+
+        if let stdin, let inPipe {
+            inPipe.fileHandleForWriting.write(stdin)
+            try? inPipe.fileHandleForWriting.close()
+        }
+
+        // Arm the timeout on `coord` so it is ordered against a fast
+        // process that finishes before we get here (in which case
+        // `finished` is already set and the timer — already cancelled
+        // by finish() — is never activated).
+        coord.async {
+            guard !finished else { return }
+            timer.activate()
         }
     }
 

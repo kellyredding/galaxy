@@ -145,27 +145,18 @@ class StatusLineService: ObservableObject {
     }
 
     private func runGitCommand(_ args: [String], in directory: String) -> String? {
-        let task = Process()
-        let pipe = Pipe()
-
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        task.arguments = args
-        task.currentDirectoryURL = URL(fileURLWithPath: directory)
-        task.standardOutput = pipe
-        task.standardError = FileHandle.nullDevice
-
-        do {
-            try task.run()
-            task.waitUntilExit()
-
-            if task.terminationStatus == 0 {
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                return String(data: data, encoding: .utf8)
-            }
-        } catch {
-            // Git command failed - likely not a git repo
+        // Bounded so a slow or locked repo can't block statusline
+        // rendering indefinitely. A non-zero exit (e.g. not a git repo)
+        // or timeout throws and falls through to nil, matching the
+        // previous behavior.
+        guard let data = try? ProcessRunner.runSync(
+            executableURL: URL(fileURLWithPath: "/usr/bin/git"),
+            arguments: args,
+            currentDirectory: URL(fileURLWithPath: directory),
+            timeout: 5
+        ) else {
+            return nil
         }
-
-        return nil
+        return String(data: data, encoding: .utf8)
     }
 }
