@@ -6,39 +6,27 @@ import Foundation
 class AgentsQueryService {
     static let shared = AgentsQueryService()
 
-    private let binaryPath: String
-    private let processTimeout: TimeInterval = 5.0
+    /// Two cancellation domains: `queryRunner` backs read fetches
+    /// (a new fetch cancels the previous one, and cancelAll()
+    /// targets it); `mutationRunner` backs writes so a concurrent
+    /// polling read can never terminate an in-flight mutation.
+    private let queryRunner = ProcessRunner(
+        binaryPath: "\(NSHomeDirectory())/.claude/galaxy/bin/galaxy-agents",
+        defaultTimeout: 5
+    )
+    private let mutationRunner = ProcessRunner(
+        binaryPath: "\(NSHomeDirectory())/.claude/galaxy/bin/galaxy-agents",
+        defaultTimeout: 5
+    )
 
-    /// Currently running subprocess — terminated before each
-    /// new fetch.
-    private var currentProcess: Process?
-
-    /// Mutation subprocess slot. Lives in a separate slot
-    /// from `currentProcess` so a concurrent polling fetch
-    /// can't terminate an in-flight mutation via
-    /// `cancelAll()`. Mutations should not overlap with
-    /// each other, but they're allowed to run alongside
-    /// any number of polling reads.
-    private var currentMutationProcess: Process?
-
-    private let lock = NSLock()
-
-    private init() {
-        self.binaryPath = "\(NSHomeDirectory())"
-            + "/.claude/galaxy/bin/galaxy-agents"
-    }
+    private init() {}
 
     // MARK: - Public API
 
-    /// Cancel any in-flight CLI query.
+    /// Cancel any in-flight read query. In-flight mutations
+    /// (runMutationCLI) are intentionally left running.
     func cancelAll() {
-        lock.lock()
-        let proc = currentProcess
-        currentProcess = nil
-        lock.unlock()
-        if let proc = proc, proc.isRunning {
-            proc.terminate()
-        }
+        queryRunner.cancelAll()
     }
 
     /// Fetch all agents for a session.
@@ -101,184 +89,48 @@ class AgentsQueryService {
 
     // MARK: - CLI Subprocess
 
-    /// Spawn the galaxy-agents binary and collect stdout.
-    /// Cancels any previous in-flight process first.
+    /// Spawn the galaxy-agents binary and collect stdout. Cancels
+    /// any previous in-flight read query first (single-flight).
     private func runCLI(
         args: [String]
     ) async throws -> Data {
-        cancelAll()
-        try Task.checkCancellation()
-
-        let process = Process()
-        let stdout = Pipe()
-        let stderr = Pipe()
-
-        process.executableURL = URL(
-            fileURLWithPath: binaryPath
-        )
-        process.arguments = args
-        process.standardOutput = stdout
-        process.standardError = stderr
-
-        setCurrentProcess(process)
-
-        return try await withCheckedThrowingContinuation {
-            continuation in
-            do {
-                try process.run()
-            } catch {
-                self.clearCurrentProcess(process)
-                continuation.resume(throwing: error)
-                return
-            }
-
-            DispatchQueue.global(
-                qos: .userInitiated
-            ).async {
-                let outData = stdout
-                    .fileHandleForReading
-                    .readDataToEndOfFile()
-                let errData = stderr
-                    .fileHandleForReading
-                    .readDataToEndOfFile()
-                process.waitUntilExit()
-
-                self.clearCurrentProcess(process)
-
-                guard process.terminationStatus == 0
-                else {
-                    let errMsg = String(
-                        data: errData,
-                        encoding: .utf8
-                    ) ?? "Unknown error"
-                    continuation.resume(
-                        throwing:
-                            AgentsQueryError.cliError(
-                                status: process
-                                    .terminationStatus,
-                                message: errMsg
-                                    .trimmingCharacters(
-                                        in:
-                                            .whitespacesAndNewlines
-                                    )
-                            )
-                    )
-                    return
-                }
-
-                continuation.resume(
-                    returning: outData
-                )
-            }
+        queryRunner.cancelAll()
+        do {
+            return try await queryRunner.run(args: args)
+        } catch {
+            throw Self.mapError(error)
         }
     }
 
-    /// Thread-safe setter for currentProcess.
-    private func setCurrentProcess(
-        _ process: Process
-    ) {
-        lock.lock()
-        currentProcess = process
-        lock.unlock()
-    }
-
-    /// Thread-safe conditional clear of currentProcess.
-    private func clearCurrentProcess(
-        _ process: Process
-    ) {
-        lock.lock()
-        if currentProcess === process {
-            currentProcess = nil
-        }
-        lock.unlock()
-    }
-
-    /// Mutation-lane subprocess runner. Mirrors `runCLI` but
-    /// uses `currentMutationProcess` and never calls
-    /// `cancelAll()` — concurrent polling reads must not
-    /// terminate an in-flight write. Short-lived; callers
-    /// should not fire overlapping mutations.
+    /// Mutation-lane subprocess runner. Uses `mutationRunner` and
+    /// never cancels reads — a concurrent polling read must not
+    /// terminate an in-flight write. Short-lived; callers should
+    /// not fire overlapping mutations.
     private func runMutationCLI(
         args: [String]
     ) async throws -> Data {
-        try Task.checkCancellation()
-
-        let process = Process()
-        let stdout = Pipe()
-        let stderr = Pipe()
-
-        process.executableURL = URL(
-            fileURLWithPath: binaryPath
-        )
-        process.arguments = args
-        process.standardOutput = stdout
-        process.standardError = stderr
-
-        lock.lock()
-        currentMutationProcess = process
-        lock.unlock()
-
-        return try await withCheckedThrowingContinuation {
-            continuation in
-            do {
-                try process.run()
-            } catch {
-                self.clearMutationProcess(process)
-                continuation.resume(throwing: error)
-                return
-            }
-
-            DispatchQueue.global(
-                qos: .userInitiated
-            ).async {
-                let outData = stdout
-                    .fileHandleForReading
-                    .readDataToEndOfFile()
-                let errData = stderr
-                    .fileHandleForReading
-                    .readDataToEndOfFile()
-                process.waitUntilExit()
-
-                self.clearMutationProcess(process)
-
-                guard process.terminationStatus == 0
-                else {
-                    let errMsg = String(
-                        data: errData,
-                        encoding: .utf8
-                    ) ?? "Unknown error"
-                    continuation.resume(
-                        throwing:
-                            AgentsQueryError.cliError(
-                                status: process
-                                    .terminationStatus,
-                                message: errMsg
-                                    .trimmingCharacters(
-                                        in:
-                                            .whitespacesAndNewlines
-                                    )
-                            )
-                    )
-                    return
-                }
-
-                continuation.resume(
-                    returning: outData
-                )
-            }
+        do {
+            return try await mutationRunner.run(args: args)
+        } catch {
+            throw Self.mapError(error)
         }
     }
 
-    /// Thread-safe conditional clear of
-    /// currentMutationProcess.
-    private func clearMutationProcess(
-        _ process: Process
-    ) {
-        lock.lock()
-        if currentMutationProcess === process {
-            currentMutationProcess = nil
+    /// Translate the runner's generic error into this service's
+    /// error type so callers see the familiar surface.
+    private static func mapError(_ error: Error) -> Error {
+        guard let error = error as? ProcessRunError else { return error }
+        switch error {
+        case .cliError(_, let status, let message):
+            return AgentsQueryError.cliError(status: status, message: message)
+        case .timedOut(_, let seconds):
+            return AgentsQueryError.cliError(
+                status: -1,
+                message: "timed out after \(Int(seconds))s"
+            )
+        case .launchFailed(_, let underlying):
+            return underlying
         }
-        lock.unlock()
     }
 }
 

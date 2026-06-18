@@ -1669,84 +1669,17 @@ struct ArtifactsView: View {
         }
     }
 
-    /// Read artifact content from its stored path via
-    /// the CLI view command (outputs raw file content).
+    /// Read artifact content via the CLI's view command (raw file
+    /// content), routed through the shared query service so the
+    /// view never spawns a subprocess itself.
     private func readArtifactContent(
         ledgerSessionId: Int64,
         artifact: ArtifactSummary
     ) async throws -> String {
-        // The view command outputs raw file content
-        // to stdout. We need to shell out similarly
-        // to other CLI calls.
-        let binaryPath =
-            "\(NSHomeDirectory())/.claude/galaxy"
-            + "/bin/galaxy-artifacts"
-        let process = Process()
-        let stdout = Pipe()
-        let stderr = Pipe()
-
-        process.executableURL = URL(
-            fileURLWithPath: binaryPath
+        try await ArtifactQueryService.shared.fetchContent(
+            ledgerSessionId: ledgerSessionId,
+            number: artifact.number
         )
-        process.arguments = [
-            "view",
-            "--ledger-session-id",
-            String(ledgerSessionId),
-            String(artifact.number),
-        ]
-        process.standardOutput = stdout
-        process.standardError = stderr
-
-        return try await withCheckedThrowingContinuation {
-            continuation in
-            do {
-                try process.run()
-            } catch {
-                continuation.resume(throwing: error)
-                return
-            }
-
-            DispatchQueue.global(qos: .userInitiated)
-                .async {
-                let outData = stdout
-                    .fileHandleForReading
-                    .readDataToEndOfFile()
-                let errData = stderr
-                    .fileHandleForReading
-                    .readDataToEndOfFile()
-                process.waitUntilExit()
-
-                guard process.terminationStatus == 0
-                else {
-                    let errMsg = String(
-                        data: errData,
-                        encoding: .utf8
-                    ) ?? "Unknown error"
-                    continuation.resume(
-                        throwing:
-                            ArtifactQueryError
-                            .cliError(
-                                status: process
-                                    .terminationStatus,
-                                message: errMsg
-                                    .trimmingCharacters(
-                                        in:
-                                            .whitespacesAndNewlines
-                                    )
-                            )
-                    )
-                    return
-                }
-
-                let content = String(
-                    data: outData,
-                    encoding: .utf8
-                ) ?? ""
-                continuation.resume(
-                    returning: content
-                )
-            }
-        }
     }
 
     private func openExternally(

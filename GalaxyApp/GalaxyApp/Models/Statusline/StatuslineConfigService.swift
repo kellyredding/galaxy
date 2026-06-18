@@ -6,10 +6,9 @@ import SwiftUI
 /// the Settings tab never touches ~/.claude/settings.json or
 /// ~/.claude/galaxy/statusline/config.json directly.
 ///
-/// Pattern follows TimelineQueryService: Process + Pipe with
-/// async/await bridging via withCheckedThrowingContinuation,
-/// pipes drained on a background queue before waitUntilExit to
-/// avoid pipe-buffer deadlock.
+/// CLI invocations run through ProcessRunner, which drains the
+/// pipes and observes exit via event callbacks (no blocked thread)
+/// and bounds each call with a timeout.
 @MainActor
 final class StatuslineConfigService: ObservableObject {
     enum ServiceError: Error, LocalizedError, Equatable {
@@ -47,9 +46,16 @@ final class StatuslineConfigService: ObservableObject {
     /// runCLI method without crossing actor boundaries.
     nonisolated private let binaryPath: String
 
+    /// Statusline reads/writes are independent and infrequent
+    /// (Settings tab), so no shared cancellation is needed — each
+    /// call is bounded by its own timeout.
+    nonisolated private let runner: ProcessRunner
+
     init(binaryPath: String? = nil) {
-        self.binaryPath = binaryPath
+        let resolved = binaryPath
             ?? "\(NSHomeDirectory())/.claude/galaxy/bin/galaxy-statusline"
+        self.binaryPath = resolved
+        self.runner = ProcessRunner(binaryPath: resolved, defaultTimeout: 5)
     }
 
     // MARK: - Public API
@@ -172,46 +178,27 @@ final class StatuslineConfigService: ObservableObject {
         guard FileManager.default.fileExists(atPath: path) else {
             throw ServiceError.cliMissing(path: path)
         }
+        do {
+            return try await runner.run(args: args)
+        } catch {
+            throw Self.mapError(error)
+        }
+    }
 
-        let process = Process()
-        let stdout = Pipe()
-        let stderr = Pipe()
-
-        process.executableURL = URL(fileURLWithPath: path)
-        process.arguments = args
-        process.standardOutput = stdout
-        process.standardError = stderr
-
-        return try await withCheckedThrowingContinuation { continuation in
-            do {
-                try process.run()
-            } catch {
-                continuation.resume(throwing: error)
-                return
-            }
-
-            DispatchQueue.global(qos: .userInitiated).async {
-                let outData = stdout.fileHandleForReading
-                    .readDataToEndOfFile()
-                let errData = stderr.fileHandleForReading
-                    .readDataToEndOfFile()
-                process.waitUntilExit()
-
-                guard process.terminationStatus == 0 else {
-                    let msg = String(data: errData, encoding: .utf8)
-                        ?? "Unknown error"
-                    continuation.resume(
-                        throwing: ServiceError.cliError(
-                            status: process.terminationStatus,
-                            message: msg.trimmingCharacters(
-                                in: .whitespacesAndNewlines
-                            )
-                        )
-                    )
-                    return
-                }
-                continuation.resume(returning: outData)
-            }
+    /// Translate the runner's generic error into this service's
+    /// error type so callers see the familiar surface.
+    nonisolated private static func mapError(_ error: Error) -> Error {
+        guard let error = error as? ProcessRunError else { return error }
+        switch error {
+        case .cliError(_, let status, let message):
+            return ServiceError.cliError(status: status, message: message)
+        case .timedOut(_, let seconds):
+            return ServiceError.cliError(
+                status: -1,
+                message: "timed out after \(Int(seconds))s"
+            )
+        case .launchFailed(_, let underlying):
+            return underlying
         }
     }
 }

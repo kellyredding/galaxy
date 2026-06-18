@@ -46,6 +46,23 @@ class ArtifactQueryService {
         return response.artifacts
     }
 
+    /// Read an artifact's stored file content via the CLI's view
+    /// command (raw stdout). Uses the independent lane so opening a
+    /// reader neither cancels, nor is cancelled by, the index fetch.
+    func fetchContent(
+        ledgerSessionId: Int64,
+        number: Int32
+    ) async throws -> String {
+        let data = try await runIndependent(
+            args: [
+                "view",
+                "--ledger-session-id", String(ledgerSessionId),
+                String(number),
+            ]
+        )
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
     /// Find the artifact whose source_path matches the given
     /// filesystem path. Compares on a normalized form
     /// (tilde-expanded, symlinks resolved) so callers can pass

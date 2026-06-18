@@ -30,7 +30,7 @@ import Foundation
 /// `cancelAll()` terminates every in-flight child it launched. A
 /// service that needs independent domains (one cancellable, one not)
 /// uses a separate instance per domain.
-final class ProcessRunner {
+final class ProcessRunner: @unchecked Sendable {
     private let binaryPath: String
     private let defaultTimeout: TimeInterval
 
