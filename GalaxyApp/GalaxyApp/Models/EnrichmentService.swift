@@ -140,67 +140,51 @@ final class EnrichmentService {
 
     /// Execute the actual subprocess call
     private func executeEnrichment(sessionIdentifiers: [String], completion: @escaping (EnrichmentResponse?) -> Void) {
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        var args = ["sessions", "--json"]
+        for id in sessionIdentifiers {
+            args.append("--session")
+            args.append(id)
+        }
+
+        // The runner bounds the call with `timeout`, drains the pipes
+        // without parking a thread, and reports back on a background
+        // queue — so this no longer manages its own timeout/wait.
+        let startTime = CFAbsoluteTimeGetCurrent()
+        ProcessRunner.run(
+            executableURL: URL(fileURLWithPath: ledgerPath),
+            arguments: args,
+            timeout: timeout
+        ) { [weak self] result in
             guard let self = self else { return }
+            let duration = CFAbsoluteTimeGetCurrent() - startTime
 
-            let task = Process()
-            let stdoutPipe = Pipe()
-            let stderrPipe = Pipe()
-
-            task.executableURL = URL(fileURLWithPath: self.ledgerPath)
-            var args = ["sessions", "--json"]
-            for id in sessionIdentifiers {
-                args.append("--session")
-                args.append(id)
-            }
-            task.arguments = args
-            task.standardOutput = stdoutPipe
-            task.standardError = stderrPipe
-
-            // Timeout: terminate after self.timeout seconds
-            let timeoutWorkItem = DispatchWorkItem { [weak self] in
-                if task.isRunning {
-                    GalaxyLog.enrichment("Subprocess timed out after \(self?.timeout ?? 0)s")
-                    task.terminate()
-                }
-            }
-            DispatchQueue.global().asyncAfter(deadline: .now() + self.timeout, execute: timeoutWorkItem)
-
-            let startTime = CFAbsoluteTimeGetCurrent()
-            do {
-                try task.run()
-
-                // Read stdout BEFORE waitUntilExit to avoid pipe deadlock.
-                // If the subprocess writes more than ~64KB, the pipe buffer
-                // fills and the process blocks on write. waitUntilExit would
-                // then block forever waiting for a process that can't exit.
-                let data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-                task.waitUntilExit()
-                timeoutWorkItem.cancel()
-                let duration = CFAbsoluteTimeGetCurrent() - startTime
-
-                if task.terminationStatus == 0 {
-
-                    do {
-                        let response = try JSONDecoder().decode(EnrichmentResponse.self, from: data)
-                        self.circuitBreaker.recordSuccess()
-                        GalaxyLog.enrichment("Success in \(String(format: "%.1f", duration * 1000))ms — \(response.sessions.count) session(s)")
-                        DispatchQueue.main.async { completion(response) }
-                    } catch {
-                        GalaxyLog.enrichment("JSON parse failed: \(error.localizedDescription)")
-                        self.circuitBreaker.recordFailure()
-                        DispatchQueue.main.async { completion(nil) }
-                    }
-                } else {
-                    let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-                    let stderrStr = String(data: stderrData, encoding: .utf8) ?? ""
-                    GalaxyLog.enrichment("Subprocess exited \(task.terminationStatus) in \(String(format: "%.1f", duration * 1000))ms — stderr: \(String(stderrStr.prefix(300)))")
+            switch result {
+            case .success(let data):
+                do {
+                    let response = try JSONDecoder().decode(
+                        EnrichmentResponse.self, from: data
+                    )
+                    self.circuitBreaker.recordSuccess()
+                    GalaxyLog.enrichment(
+                        "Success in \(String(format: "%.1f", duration * 1000))ms"
+                        + " — \(response.sessions.count) session(s)"
+                    )
+                    DispatchQueue.main.async { completion(response) }
+                } catch {
+                    GalaxyLog.enrichment(
+                        "JSON parse failed: \(error.localizedDescription)"
+                    )
                     self.circuitBreaker.recordFailure()
                     DispatchQueue.main.async { completion(nil) }
                 }
-            } catch {
-                timeoutWorkItem.cancel()
-                GalaxyLog.enrichment("Failed to launch subprocess: \(error.localizedDescription)")
+            case .failure(let error):
+                // Covers timeout, non-zero exit (status + stderr are in
+                // the error message), and launch failure.
+                GalaxyLog.enrichment(
+                    "Subprocess failed in"
+                    + " \(String(format: "%.1f", duration * 1000))ms:"
+                    + " \(error.localizedDescription)"
+                )
                 self.circuitBreaker.recordFailure()
                 DispatchQueue.main.async { completion(nil) }
             }
@@ -213,7 +197,10 @@ final class EnrichmentService {
                 if let next = self.pendingQueue.first {
                     self.pendingQueue.removeFirst()
                     self.inFlightCount += 1
-                    self.executeEnrichment(sessionIdentifiers: next.sessionIdentifiers, completion: next.completion)
+                    self.executeEnrichment(
+                        sessionIdentifiers: next.sessionIdentifiers,
+                        completion: next.completion
+                    )
                 }
             }
         }

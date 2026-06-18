@@ -145,6 +145,38 @@ final class ProcessRunner: @unchecked Sendable {
         return try outcome.get()
     }
 
+    /// Callback sibling of `run`/`runSync` for non-async, non-blocking
+    /// callers (completion-based pipelines). Spawns the binary and
+    /// delivers the result to `completion` on a background queue. Like
+    /// `runSync`, it is static and registry-free — callers that need
+    /// cancellation manage their own concurrency.
+    static func run(
+        executableURL: URL,
+        arguments: [String],
+        stdin: Data? = nil,
+        currentDirectory: URL? = nil,
+        timeout: TimeInterval,
+        completion: @escaping (Result<Data, Error>) -> Void
+    ) {
+        let (process, outPipe, errPipe, inPipe) = makeProcess(
+            executableURL: executableURL,
+            arguments: arguments,
+            stdin: stdin,
+            currentDirectory: currentDirectory
+        )
+        drive(
+            process: process,
+            stdout: outPipe,
+            stderr: errPipe,
+            stdin: stdin,
+            stdinPipe: inPipe,
+            binary: executableURL.lastPathComponent,
+            timeout: timeout,
+            onLaunch: nil,
+            completion: completion
+        )
+    }
+
     // MARK: - Subprocess core
 
     /// Build and configure a Process with drained stdout/stderr pipes
