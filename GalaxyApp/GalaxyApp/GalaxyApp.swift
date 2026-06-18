@@ -285,6 +285,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         SessionPersistence.shared.flushSync()
         WindowStatePersistence.shared.flushSync()
         eventCoordinator?.stop()
+        GalaxyLog.flush()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
