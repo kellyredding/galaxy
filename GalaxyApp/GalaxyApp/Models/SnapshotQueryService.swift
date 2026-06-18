@@ -7,28 +7,27 @@ import Foundation
 class SnapshotQueryService {
     static let shared = SnapshotQueryService()
 
-    private let binaryPath: String
-    private let processTimeout: TimeInterval = 5.0
+    /// Two cancellation domains: `trackedRunner` backs runCLI (a new
+    /// fetch cancels the previous one, and cancelAll() targets it);
+    /// `independentRunner` backs runIndependent (never cancelled by,
+    /// nor cancelling, the tracked work).
+    private let trackedRunner = ProcessRunner(
+        binaryPath: "\(NSHomeDirectory())/.claude/galaxy/bin/galaxy-snapshots",
+        defaultTimeout: 5
+    )
+    private let independentRunner = ProcessRunner(
+        binaryPath: "\(NSHomeDirectory())/.claude/galaxy/bin/galaxy-snapshots",
+        defaultTimeout: 5
+    )
 
-    /// Currently running subprocess — terminated before each new fetch.
-    private var currentProcess: Process?
-    private let lock = NSLock()
-
-    private init() {
-        self.binaryPath = "\(NSHomeDirectory())/.claude/galaxy/bin/galaxy-snapshots"
-    }
+    private init() {}
 
     // MARK: - Public API
 
-    /// Cancel any in-flight CLI query.
+    /// Cancel any in-flight tracked CLI query. Independent queries
+    /// (runIndependent) are intentionally left running.
     func cancelAll() {
-        lock.lock()
-        let proc = currentProcess
-        currentProcess = nil
-        lock.unlock()
-        if let proc = proc, proc.isRunning {
-            proc.terminate()
-        }
+        trackedRunner.cancelAll()
     }
 
     /// Fetch snapshot index (metadata only, no content).
@@ -148,134 +147,47 @@ class SnapshotQueryService {
 
     // MARK: - CLI Subprocess
 
-    /// Spawn the galaxy-snapshots binary and collect stdout.
-    /// Cancels any previous in-flight process first.
-    /// When stdinContent is provided, it's written to the process's stdin pipe.
+    /// Spawn the galaxy-snapshots binary and collect stdout. Cancels
+    /// any previous in-flight tracked query first (single-flight).
+    /// When stdinContent is provided, it's written to the process's
+    /// stdin pipe.
     private func runCLI(args: [String], stdinContent: String? = nil) async throws -> Data {
-        // Cancel previous (synchronous, safe to call from async)
-        cancelAll()
-
-        // Check for task cancellation
-        try Task.checkCancellation()
-
-        let process = Process()
-        let stdout = Pipe()
-        let stderr = Pipe()
-
-        process.executableURL = URL(fileURLWithPath: binaryPath)
-        process.arguments = args
-        process.standardOutput = stdout
-        process.standardError = stderr
-
-        // Set up stdin pipe when content needs to be written
-        var inputPipe: Pipe? = nil
-        if stdinContent != nil {
-            let pipe = Pipe()
-            process.standardInput = pipe
-            inputPipe = pipe
-        }
-
-        setCurrentProcess(process)
-
-        return try await withCheckedThrowingContinuation { continuation in
-            do {
-                try process.run()
-            } catch {
-                self.clearCurrentProcess(process)
-                continuation.resume(throwing: error)
-                return
-            }
-
-            // Write stdin content and close the pipe after launch
-            if let content = stdinContent, let pipe = inputPipe {
-                if let data = content.data(using: .utf8) {
-                    pipe.fileHandleForWriting.write(data)
-                }
-                pipe.fileHandleForWriting.closeFile()
-            }
-
-            // Read stdout/stderr BEFORE waitUntilExit to avoid
-            // pipe buffer deadlock when output exceeds ~64KB.
-            DispatchQueue.global(qos: .userInitiated).async {
-                let outData = stdout.fileHandleForReading.readDataToEndOfFile()
-                let errData = stderr.fileHandleForReading.readDataToEndOfFile()
-                process.waitUntilExit()
-
-                self.clearCurrentProcess(process)
-
-                guard process.terminationStatus == 0 else {
-                    let errMsg = String(data: errData, encoding: .utf8) ?? "Unknown error"
-                    continuation.resume(
-                        throwing: SnapshotQueryError.cliError(
-                            status: process.terminationStatus,
-                            message: errMsg.trimmingCharacters(in: .whitespacesAndNewlines)
-                        )
-                    )
-                    return
-                }
-
-                continuation.resume(returning: outData)
-            }
+        trackedRunner.cancelAll()
+        do {
+            return try await trackedRunner.run(
+                args: args,
+                stdin: stdinContent?.data(using: .utf8)
+            )
+        } catch {
+            throw Self.mapError(error)
         }
     }
 
-    /// Thread-safe setter for currentProcess.
-    private func setCurrentProcess(_ process: Process) {
-        lock.lock()
-        currentProcess = process
-        lock.unlock()
-    }
-
-    /// Thread-safe conditional clear of currentProcess.
-    private func clearCurrentProcess(_ process: Process) {
-        lock.lock()
-        if currentProcess === process { currentProcess = nil }
-        lock.unlock()
-    }
-
-    /// Spawn the galaxy-snapshots binary independently of the shared
-    /// currentProcess. Safe to call while other operations are
+    /// Spawn the galaxy-snapshots binary in an independent
+    /// cancellation domain. Safe to call while other operations are
     /// in-flight — won't cancel them and won't be canceled by them.
     private func runIndependent(args: [String]) async throws -> Data {
-        try Task.checkCancellation()
+        do {
+            return try await independentRunner.run(args: args)
+        } catch {
+            throw Self.mapError(error)
+        }
+    }
 
-        let process = Process()
-        let stdout = Pipe()
-        let stderr = Pipe()
-
-        process.executableURL = URL(fileURLWithPath: binaryPath)
-        process.arguments = args
-        process.standardOutput = stdout
-        process.standardError = stderr
-
-        return try await withCheckedThrowingContinuation { continuation in
-            do {
-                try process.run()
-            } catch {
-                continuation.resume(throwing: error)
-                return
-            }
-
-            // Read stdout/stderr BEFORE waitUntilExit to avoid
-            // pipe buffer deadlock when output exceeds ~64KB.
-            DispatchQueue.global(qos: .userInitiated).async {
-                let outData = stdout.fileHandleForReading.readDataToEndOfFile()
-                let errData = stderr.fileHandleForReading.readDataToEndOfFile()
-                process.waitUntilExit()
-
-                guard process.terminationStatus == 0 else {
-                    let errMsg = String(data: errData, encoding: .utf8) ?? "Unknown error"
-                    continuation.resume(
-                        throwing: SnapshotQueryError.cliError(
-                            status: process.terminationStatus,
-                            message: errMsg.trimmingCharacters(in: .whitespacesAndNewlines)
-                        )
-                    )
-                    return
-                }
-
-                continuation.resume(returning: outData)
-            }
+    /// Translate the runner's generic error into this service's
+    /// error type so callers see the familiar surface.
+    private static func mapError(_ error: Error) -> Error {
+        guard let error = error as? ProcessRunError else { return error }
+        switch error {
+        case .cliError(_, let status, let message):
+            return SnapshotQueryError.cliError(status: status, message: message)
+        case .timedOut(_, let seconds):
+            return SnapshotQueryError.cliError(
+                status: -1,
+                message: "timed out after \(Int(seconds))s"
+            )
+        case .launchFailed(_, let underlying):
+            return underlying
         }
     }
 }

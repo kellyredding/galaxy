@@ -7,12 +7,15 @@ import Foundation
 class LedgerQueryService {
     static let shared = LedgerQueryService()
 
-    private let binaryPath: String
-    private let processTimeout: TimeInterval = 5.0
+    /// Concurrent calls are expected and safe, so this runner is
+    /// never cancelled as a group — each call is bounded only by its
+    /// own timeout and its caller's Task cancellation.
+    private let runner = ProcessRunner(
+        binaryPath: "\(NSHomeDirectory())/.claude/galaxy/bin/galaxy-ledger",
+        defaultTimeout: 5
+    )
 
-    private init() {
-        self.binaryPath = "\(NSHomeDirectory())/.claude/galaxy/bin/galaxy-ledger"
-    }
+    private init() {}
 
     // MARK: - Public API
 
@@ -68,48 +71,27 @@ class LedgerQueryService {
     /// No shared process tracking — each call is independent.
     /// Task-level cancellation prevents stale data from being written.
     private func runCLI(args: [String]) async throws -> Data {
-        try Task.checkCancellation()
+        do {
+            return try await runner.run(args: args)
+        } catch {
+            throw Self.mapError(error)
+        }
+    }
 
-        let process = Process()
-        let stdout = Pipe()
-        let stderr = Pipe()
-
-        process.executableURL = URL(fileURLWithPath: binaryPath)
-        process.arguments = args
-        process.standardOutput = stdout
-        process.standardError = stderr
-
-        return try await withCheckedThrowingContinuation { continuation in
-            do {
-                try process.run()
-            } catch {
-                continuation.resume(throwing: error)
-                return
-            }
-
-            // Collect stdout/stderr on background threads BEFORE waiting
-            // for exit. Reading after waitUntilExit deadlocks when output
-            // exceeds the ~64KB pipe buffer — the process blocks on write
-            // while waitUntilExit blocks on the process.
-            DispatchQueue.global(qos: .userInitiated).async {
-                let stdoutData = stdout.fileHandleForReading.readDataToEndOfFile()
-                let stderrData = stderr.fileHandleForReading.readDataToEndOfFile()
-
-                process.waitUntilExit()
-
-                guard process.terminationStatus == 0 else {
-                    let errMsg = String(data: stderrData, encoding: .utf8) ?? "Unknown error"
-                    continuation.resume(
-                        throwing: LedgerQueryError.cliError(
-                            status: process.terminationStatus,
-                            message: errMsg.trimmingCharacters(in: .whitespacesAndNewlines)
-                        )
-                    )
-                    return
-                }
-
-                continuation.resume(returning: stdoutData)
-            }
+    /// Translate the runner's generic error into this service's
+    /// error type so callers see the familiar surface.
+    private static func mapError(_ error: Error) -> Error {
+        guard let error = error as? ProcessRunError else { return error }
+        switch error {
+        case .cliError(_, let status, let message):
+            return LedgerQueryError.cliError(status: status, message: message)
+        case .timedOut(_, let seconds):
+            return LedgerQueryError.cliError(
+                status: -1,
+                message: "timed out after \(Int(seconds))s"
+            )
+        case .launchFailed(_, let underlying):
+            return underlying
         }
     }
 }

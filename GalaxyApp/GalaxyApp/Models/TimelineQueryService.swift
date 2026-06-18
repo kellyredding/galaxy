@@ -6,11 +6,13 @@ import Foundation
 class TimelineQueryService {
     static let shared = TimelineQueryService()
 
-    private let binaryPath: String
-
-    /// Currently running subprocess — terminated before each new fetch.
-    private var currentProcess: Process?
-    private let lock = NSLock()
+    /// Drift-detector queries fire every 30s per running session;
+    /// the timeout is deliberately shorter so a wedged query is
+    /// reclaimed before the next sweep and can never accumulate.
+    private let runner = ProcessRunner(
+        binaryPath: "\(NSHomeDirectory())/.claude/galaxy/bin/galaxy-timeline",
+        defaultTimeout: 10
+    )
 
     /// Custom date formatter for CLI output format "yyyy-MM-dd HH:mm:ss" in UTC.
     static let dateFormatter: DateFormatter = {
@@ -21,21 +23,13 @@ class TimelineQueryService {
         return fmt
     }()
 
-    private init() {
-        self.binaryPath = "\(NSHomeDirectory())/.claude/galaxy/bin/galaxy-timeline"
-    }
+    private init() {}
 
     // MARK: - Public API
 
     /// Cancel any in-flight CLI query.
     func cancelAll() {
-        lock.lock()
-        let proc = currentProcess
-        currentProcess = nil
-        lock.unlock()
-        if let proc = proc, proc.isRunning {
-            proc.terminate()
-        }
+        runner.cancelAll()
     }
 
     /// Fetch timeline events for a ledger session.
@@ -133,69 +127,34 @@ class TimelineQueryService {
 
     // MARK: - CLI Subprocess
 
-    /// Spawn the galaxy-timeline binary and collect stdout.
-    /// Cancels any previous in-flight process first.
+    /// Spawn the galaxy-timeline binary and collect stdout. Cancels
+    /// any previous in-flight query first (single-flight). The runner
+    /// guarantees no thread is parked waiting on the child and bounds
+    /// every query by a timeout.
     private func runCLI(args: [String]) async throws -> Data {
-        cancelAll()
-        try Task.checkCancellation()
-
-        let process = Process()
-        let stdout = Pipe()
-        let stderr = Pipe()
-
-        process.executableURL = URL(fileURLWithPath: binaryPath)
-        process.arguments = args
-        process.standardOutput = stdout
-        process.standardError = stderr
-
-        setCurrentProcess(process)
-
-        return try await withCheckedThrowingContinuation { continuation in
-            do {
-                try process.run()
-            } catch {
-                self.clearCurrentProcess(process)
-                continuation.resume(throwing: error)
-                return
-            }
-
-            // Read stdout/stderr BEFORE waitUntilExit to avoid
-            // pipe buffer deadlock when output exceeds ~64KB.
-            DispatchQueue.global(qos: .userInitiated).async {
-                let outData = stdout.fileHandleForReading.readDataToEndOfFile()
-                let errData = stderr.fileHandleForReading.readDataToEndOfFile()
-                process.waitUntilExit()
-
-                self.clearCurrentProcess(process)
-
-                guard process.terminationStatus == 0 else {
-                    let errMsg = String(data: errData, encoding: .utf8) ?? "Unknown error"
-                    continuation.resume(
-                        throwing: TimelineQueryError.cliError(
-                            status: process.terminationStatus,
-                            message: errMsg.trimmingCharacters(in: .whitespacesAndNewlines)
-                        )
-                    )
-                    return
-                }
-
-                continuation.resume(returning: outData)
-            }
+        runner.cancelAll()
+        do {
+            return try await runner.run(args: args)
+        } catch {
+            throw Self.mapError(error)
         }
     }
 
-    /// Thread-safe setter for currentProcess.
-    private func setCurrentProcess(_ process: Process) {
-        lock.lock()
-        currentProcess = process
-        lock.unlock()
-    }
-
-    /// Thread-safe conditional clear of currentProcess.
-    private func clearCurrentProcess(_ process: Process) {
-        lock.lock()
-        if currentProcess === process { currentProcess = nil }
-        lock.unlock()
+    /// Translate the runner's generic error into this service's
+    /// error type so callers see the familiar surface.
+    private static func mapError(_ error: Error) -> Error {
+        guard let error = error as? ProcessRunError else { return error }
+        switch error {
+        case .cliError(_, let status, let message):
+            return TimelineQueryError.cliError(status: status, message: message)
+        case .timedOut(_, let seconds):
+            return TimelineQueryError.cliError(
+                status: -1,
+                message: "timed out after \(Int(seconds))s"
+            )
+        case .launchFailed(_, let underlying):
+            return underlying
+        }
     }
 }
 
