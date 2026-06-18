@@ -650,10 +650,21 @@ class TerminalHostView: NSView {
         // keyboard-dead after session switches.
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
+            // Only re-pin when focusing the live terminal, never the
+            // scrollback overlay — a user reading frozen history must not be
+            // snapped to the bottom.
+            let focusingLivePane = self.scrollbackOverlay == nil
             let target: NSResponder =
                 self.scrollbackOverlay?.scrollbackView.webView
                 ?? self.pane.view
-            if window.makeFirstResponder(target) { return }
+            // Friendly re-pin on focus gain (session / tab / app-refocus /
+            // pane switch): if the user intends to follow the live tail, snap
+            // back to the bottom. Itself a no-op when parked in scrollback or
+            // already pinned — see Galactic's reassertFollowIfIntended.
+            let reassertFollow = {
+                if focusingLivePane { self.pane.reassertFollowIfIntended() }
+            }
+            if window.makeFirstResponder(target) { reassertFollow(); return }
             // First try lost — retry once next runloop in case a
             // resigning responder elsewhere (closing Settings,
             // app-switch focus restore) hadn't fully released the
@@ -661,7 +672,7 @@ class TerminalHostView: NSView {
             // imply a deeper problem to investigate via fix (e).
             DispatchQueue.main.async { [weak window] in
                 guard let w = window else { return }
-                _ = w.makeFirstResponder(target)
+                if w.makeFirstResponder(target) { reassertFollow() }
             }
         }
     }

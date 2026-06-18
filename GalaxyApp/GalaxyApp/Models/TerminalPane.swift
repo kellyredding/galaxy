@@ -169,6 +169,11 @@ protocol TerminalPane: AnyObject {
     /// "Reflow Buffer" gesture). Forwards to
     /// `TerminalBackend.reflowBuffer()`.
     func reflowBuffer()
+
+    /// Re-assert live-bottom follow when the user intends to be following
+    /// (no-op in scrollback or when parked). Fired on focus-class events as a
+    /// friendly re-pin. Forwards to `TerminalBackend.reassertFollowIfIntended()`.
+    func reassertFollowIfIntended()
 }
 
 /// Describes where a "Send to Claude" action should route

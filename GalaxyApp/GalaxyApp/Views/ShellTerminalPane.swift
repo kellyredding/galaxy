@@ -146,6 +146,8 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
 
     func reflowBuffer() { backend.reflowBuffer() }
 
+    func reassertFollowIfIntended() { backend.reassertFollowIfIntended() }
+
     func focus() {
         backend.focus()
     }

@@ -111,6 +111,8 @@ final class SessionTerminalPane: TerminalPane {
 
     func reflowBuffer() { backend.reflowBuffer() }
 
+    func reassertFollowIfIntended() { backend.reassertFollowIfIntended() }
+
     func focus() {
         backend.focus()
     }
