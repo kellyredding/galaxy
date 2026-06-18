@@ -242,6 +242,23 @@ final class ProcessRunner: @unchecked Sendable {
             }
         }
 
+        // Both pipes have hit EOF — the child closed its descriptors,
+        // so it has exited — but `terminationHandler` hasn't fired. The
+        // exit notification was most likely lost across a sleep/wake
+        // transition (the same failure that wedged the old
+        // `waitUntilExit`). Give termination a short grace; if it still
+        // doesn't arrive, resolve with the fully drained output instead
+        // of waiting out the hard timeout. Status is unknown, so assume
+        // success — a process that died mid-write yields output its
+        // caller will fail to parse. Must run on `coord`.
+        func armEofGrace() {
+            guard !finished, outDone, errDone else { return }
+            coord.asyncAfter(deadline: .now() + 2.0) {
+                guard !finished else { return }
+                finish(.success(outBuf))
+            }
+        }
+
         outPipe.fileHandleForReading.readabilityHandler = { handle in
             let chunk = handle.availableData
             // Stop EOF from re-firing immediately; the source stays
@@ -254,6 +271,7 @@ final class ProcessRunner: @unchecked Sendable {
                     outDone = true
                     pending -= 1
                     completeIfReady()
+                    armEofGrace()
                 } else {
                     outBuf.append(chunk)
                 }
@@ -270,6 +288,7 @@ final class ProcessRunner: @unchecked Sendable {
                     errDone = true
                     pending -= 1
                     completeIfReady()
+                    armEofGrace()
                 } else {
                     errBuf.append(chunk)
                 }
