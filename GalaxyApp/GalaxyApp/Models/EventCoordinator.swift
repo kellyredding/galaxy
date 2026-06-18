@@ -113,6 +113,12 @@ final class EventCoordinator {
     /// Once we learn a mapping, subsequent events can match on the integer directly
     private var ledgerSessionIdCache: [Int64: UUID] = [:]
 
+    /// Ledger sessions already reported as unmatched, so the no-match
+    /// path logs once per session instead of once per event. Galaxy's
+    /// socket receives events for every claude session on the machine,
+    /// so most events are for sessions it does not own.
+    private var loggedUnmatchedSessions: Set<Int64> = []
+
     // MARK: - Diagnostic monitoring
     //
     // Two periodic timers that produce diagnostic-only logs.
@@ -208,6 +214,7 @@ final class EventCoordinator {
         socketListener.stop()
         eventBuffer.removeAll()
         ledgerSessionIdCache.removeAll()
+        loggedUnmatchedSessions.removeAll()
         phase = .idle
     }
 
@@ -232,11 +239,24 @@ final class EventCoordinator {
     private func routeEvent(_ envelope: EventEnvelope) {
         // Check if this event is for a session we know about
         guard matchesAppSession(envelope) else {
-            GalaxyLog.events(
-                "routeEvent: no match for event=\(envelope.event)"
-                + " ledger_session_id=\(envelope.ledgerSessionId)"
-                + " identifiers=\(envelope.sessionIdentifiers)"
-            )
+            // Galaxy's socket receives events for every claude session
+            // on the machine (Assist Ant agents, Terminal sessions, …),
+            // not just its own, so unmatched events are the expected
+            // common case. Log only the first miss per ledger session —
+            // at full volume this path was thousands of per-event,
+            // main-thread file writes.
+            if loggedUnmatchedSessions.insert(
+                envelope.ledgerSessionId
+            ).inserted {
+                GalaxyLog.dbg(
+                    "route",
+                    "no app session for"
+                    + " ledger_session_id=\(envelope.ledgerSessionId)"
+                    + " (first miss; event=\(envelope.event),"
+                    + " identifiers=\(envelope.sessionIdentifiers));"
+                    + " suppressing further misses for this session"
+                )
+            }
             return
         }
 
@@ -1065,5 +1085,8 @@ final class EventCoordinator {
     /// Clear cached mappings for a session that was closed
     func sessionClosed(_ sessionId: UUID) {
         ledgerSessionIdCache = ledgerSessionIdCache.filter { $0.value != sessionId }
+        // Re-evaluate unmatched sessions on the next event, in case the
+        // changed session set affects what can match.
+        loggedUnmatchedSessions.removeAll()
     }
 }
