@@ -121,33 +121,18 @@ final class EventCoordinator {
 
     // MARK: - Diagnostic monitoring
     //
-    // Two periodic timers that produce diagnostic-only logs.
-    // Neither mutates session state — both are read-only
-    // observers. The drift detector logs when our in-memory
-    // `isInTurn` disagrees with the timeline DB, surfacing
-    // event-loss bugs without hiding them via self-heal. The
-    // heartbeat logs a one-line digest of all running session
-    // turn states, anchoring the log so an agent investigating
-    // a future bug can scan recent state at a glance.
-
-    /// How often the drift detector runs (seconds).
-    private static let turnDriftCheckInterval:
-        TimeInterval = 30.0
-
-    /// Skip drift logging when the most recent timeline
-    /// event is younger than this — avoids logging during the
-    /// brief window where the DB write has landed but the
-    /// socket envelope hasn't been delivered yet.
-    private static let turnDriftStaleThreshold:
-        TimeInterval = 5.0
+    // A periodic heartbeat that produces a diagnostic-only log.
+    // Read-only — it never mutates session state. It logs a
+    // one-line digest of all running session turn states,
+    // anchoring the log so an agent investigating a future bug
+    // can scan recent state at a glance.
 
     /// How often the heartbeat dumps per-session turn state.
     private static let heartbeatInterval:
         TimeInterval = 60.0
 
-    /// Timer-set turn-state events. Kept on `RunLoop.main`
-    /// in `.common` mode so they fire regardless of UI mode.
-    private var turnDriftTimer: Timer?
+    /// Heartbeat timer. Kept on `RunLoop.main` in `.common`
+    /// mode so it fires regardless of UI mode.
     private var heartbeatTimer: Timer?
 
     init(sessionManager: SessionManager) {
@@ -206,8 +191,6 @@ final class EventCoordinator {
     /// Stop the event system. Call during applicationWillTerminate.
     func stop() {
         GalaxyLog.events("Stopping event system")
-        turnDriftTimer?.invalidate()
-        turnDriftTimer = nil
         heartbeatTimer?.invalidate()
         heartbeatTimer = nil
         debouncer.cancelAll()
@@ -884,15 +867,6 @@ final class EventCoordinator {
     /// timers. Both fire on `RunLoop.main` in `.common` mode
     /// so they continue during modal UI, scrolling, etc.
     private func startDiagnosticMonitors() {
-        let drift = Timer(
-            timeInterval: Self.turnDriftCheckInterval,
-            repeats: true
-        ) { [weak self] _ in
-            self?.checkTurnDrift()
-        }
-        RunLoop.main.add(drift, forMode: .common)
-        turnDriftTimer = drift
-
         let heartbeat = Timer(
             timeInterval: Self.heartbeatInterval,
             repeats: true
@@ -902,95 +876,6 @@ final class EventCoordinator {
         RunLoop.main.add(heartbeat, forMode: .common)
         heartbeatTimer = heartbeat
     }
-
-    /// Compare each running session's in-memory `isInTurn`
-    /// flag with the most recent turn-related timeline event
-    /// in the DB. **Read-only — never calls startTurn /
-    /// endTurn.** Drift is logged loudly via
-    /// `GalaxyLog.dbg("turn-drift", ...)` so the user can
-    /// see the bug in the UI and bring it back to engineering;
-    /// self-heal is intentionally avoided so future
-    /// event-loss paths remain visible.
-    private func checkTurnDrift() {
-        guard let manager = sessionManager else { return }
-
-        for session in manager.sessions where session.isRunning {
-            guard let lsid = session.ledgerSessionId
-            else { continue }
-
-            // Capture the read on main; the async query
-            // resumes on a background context.
-            let isInTurn = session.isInTurn
-            let sessionRef = session.sessionRef
-
-            Task {
-                await self.detectAndLogDrift(
-                    sessionRef: sessionRef,
-                    ledgerSessionId: lsid,
-                    isInTurn: isInTurn
-                )
-            }
-        }
-    }
-
-    private func detectAndLogDrift(
-        sessionRef: String,
-        ledgerSessionId: Int64,
-        isInTurn: Bool
-    ) async {
-        let event: TimelineEvent?
-        do {
-            event = try await TimelineQueryService.shared
-                .fetchMostRecentTurnEvent(
-                    ledgerSessionId: ledgerSessionId
-                )
-        } catch {
-            // Query failure isn't drift. Stay quiet.
-            return
-        }
-        guard let event = event else { return }
-
-        let elapsed = Date().timeIntervalSince(event.occurredAt)
-        guard elapsed >= Self.turnDriftStaleThreshold else {
-            return
-        }
-
-        let isTerminal = Self.driftTerminalEventTypes
-            .contains(event.eventType)
-        let isInitiated = event.eventType == "turn:initiated"
-
-        let elapsedSec = Int(elapsed)
-
-        if isInTurn && isTerminal {
-            GalaxyLog.dbg(
-                "turn-drift",
-                "[\(sessionRef)] BUSY but DB says IDLE:"
-                + " isInTurn=true,"
-                + " last DB event=\(event.eventType)"
-                + " (id=\(event.id))"
-                + " \(elapsedSec)s ago"
-            )
-        } else if !isInTurn && isInitiated {
-            GalaxyLog.dbg(
-                "turn-drift",
-                "[\(sessionRef)] IDLE but DB says BUSY:"
-                + " isInTurn=false,"
-                + " last DB event=turn:initiated"
-                + " (id=\(event.id))"
-                + " \(elapsedSec)s ago"
-            )
-        }
-    }
-
-    /// Terminal turn-event types. Static so the drift check
-    /// doesn't pay set-construction cost on every tick.
-    private static let driftTerminalEventTypes: Set<String> = [
-        "turn:completed",
-        "turn:failed",
-        "turn:continued",
-        "turn:interrupted",
-        "turn:abandoned",
-    ]
 
     /// Periodic per-session turn-state digest. Skips when
     /// no sessions are running so an idle Galaxy doesn't
