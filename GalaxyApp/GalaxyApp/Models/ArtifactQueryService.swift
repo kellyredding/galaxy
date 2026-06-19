@@ -382,6 +382,7 @@ struct ArtifactSummary: Codable, Identifiable {
     let mimeType: String
     let originalFilename: String
     let fileSize: Int64
+    let storedPath: String?
     let sourcePath: String?
     let createdAt: String
     let description: String?

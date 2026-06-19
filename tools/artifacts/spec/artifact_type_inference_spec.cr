@@ -131,6 +131,65 @@ describe "GalaxyArtifacts::CLI" do
     end
   end
 
+  describe ".mime_type_from_extension" do
+    it "maps raster image extensions" do
+      {
+        "png"  => "image/png",
+        "jpg"  => "image/jpeg",
+        "jpeg" => "image/jpeg",
+        "gif"  => "image/gif",
+        "webp" => "image/webp",
+      }.each do |ext, mime|
+        GalaxyArtifacts::CLI.mime_type_from_extension(
+          "asset.#{ext}",
+        ).should eq(mime)
+      end
+    end
+
+    it "maps svg to image/svg+xml" do
+      GalaxyArtifacts::CLI.mime_type_from_extension(
+        "icon.svg",
+      ).should eq("image/svg+xml")
+    end
+
+    it "maps document and text extensions" do
+      {
+        "pdf"      => "application/pdf",
+        "md"       => "text/markdown",
+        "markdown" => "text/markdown",
+        "html"     => "text/html",
+        "htm"      => "text/html",
+        "csv"      => "text/csv",
+        "tsv"      => "text/tab-separated-values",
+        "json"     => "application/json",
+        "jsonl"    => "application/json",
+        "yaml"     => "application/yaml",
+        "yml"      => "application/yaml",
+        "toml"     => "application/toml",
+        "txt"      => "text/plain",
+      }.each do |ext, mime|
+        GalaxyArtifacts::CLI.mime_type_from_extension(
+          "file.#{ext}",
+        ).should eq(mime)
+      end
+    end
+
+    it "defaults unknown extensions to octet-stream" do
+      GalaxyArtifacts::CLI.mime_type_from_extension(
+        "src.rb",
+      ).should eq("application/octet-stream")
+      GalaxyArtifacts::CLI.mime_type_from_extension(
+        "Makefile",
+      ).should eq("application/octet-stream")
+    end
+
+    it "is case-insensitive" do
+      GalaxyArtifacts::CLI.mime_type_from_extension(
+        "IMAGE.PNG",
+      ).should eq("image/png")
+    end
+  end
+
   describe ".is_agent_transcript_file?" do
     tmp_dir = Path.new(Dir.tempdir) /
               "galaxy-artifacts-test-transcript"

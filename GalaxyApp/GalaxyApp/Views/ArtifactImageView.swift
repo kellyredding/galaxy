@@ -118,6 +118,21 @@ struct ArtifactImageView: NSViewRepresentable {
 
 // MARK: - HTML Generation
 
+/// Map a raster image extension to its MIME type for the
+/// inline data URI. SVG is handled separately (inlined as
+/// markup), so it is intentionally absent here.
+private func rasterMIMEType(
+    forExtension ext: String
+) -> String {
+    switch ext {
+    case "png": return "image/png"
+    case "jpg", "jpeg": return "image/jpeg"
+    case "gif": return "image/gif"
+    case "webp": return "image/webp"
+    default: return "application/octet-stream"
+    }
+}
+
 private func buildImageHTML(
     filePath: String,
     isDark: Bool
@@ -147,11 +162,27 @@ private func buildImageHTML(
         imageElement = """
         <div class="svg-container">\(svg)</div>
         """
-    } else {
-        // Use file:// URL for raster images
+    } else if let data = FileManager.default
+        .contents(atPath: filePath)
+    {
+        // Inline raster bytes as a base64 data URI. A
+        // WKWebView loaded via loadHTMLString is not
+        // granted file:// subresource read access, so a
+        // <img src="file://…"> silently fails to load and
+        // renders the broken-image glyph. Embedding the
+        // bytes sidesteps the WebKit sandbox entirely.
+        let mime = rasterMIMEType(forExtension: ext)
+        let base64 = data.base64EncodedString()
         imageElement = """
-        <img src="file://\(filePath)"
+        <img src="data:\(mime);base64,\(base64)"
              alt="\(filename)" />
+        """
+    } else {
+        // File unreadable (moved/deleted/permissions).
+        imageElement = """
+        <div class="image-error">
+        Could not read image file:<br>\(filename)
+        </div>
         """
     }
 
@@ -208,6 +239,15 @@ private func buildImageHTML(
     .svg-container svg {
         max-width: 100%;
         max-height: 90vh;
+    }
+    .image-error {
+        color: \(isDark ? "#e6edf3" : "#1f2328");
+        font-family: -apple-system, BlinkMacSystemFont,
+            "Segoe UI", Helvetica, Arial, sans-serif;
+        font-size: 14px;
+        text-align: center;
+        line-height: 1.6;
+        opacity: 0.7;
     }
     \(annotationCSS)
     </style>

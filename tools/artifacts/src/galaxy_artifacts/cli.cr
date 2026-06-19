@@ -123,6 +123,34 @@ module GalaxyArtifacts
       end
     end
 
+    # Map a filename extension to a sensible MIME type.
+    # Mirrors artifact_type_from_extension so stored
+    # metadata carries an accurate content type rather
+    # than defaulting everything to octet-stream. Falls
+    # back to octet-stream for unknown extensions.
+    def self.mime_type_from_extension(
+      filename : String,
+    ) : String
+      ext = File.extname(filename).lchop('.').downcase
+      case ext
+      when "png"            then "image/png"
+      when "jpg", "jpeg"    then "image/jpeg"
+      when "gif"            then "image/gif"
+      when "svg"            then "image/svg+xml"
+      when "webp"           then "image/webp"
+      when "pdf"            then "application/pdf"
+      when "md", "markdown" then "text/markdown"
+      when "html", "htm"    then "text/html"
+      when "csv"            then "text/csv"
+      when "tsv"            then "text/tab-separated-values"
+      when "json", "jsonl"  then "application/json"
+      when "yaml", "yml"    then "application/yaml"
+      when "toml"           then "application/toml"
+      when "txt"            then "text/plain"
+      else                       "application/octet-stream"
+      end
+    end
+
     # Read the first line of a file, bounded to 64 KB
     # to guard against pathological no-newline files.
     # Returns empty string on failure — callers treat
@@ -336,7 +364,8 @@ module GalaxyArtifacts
                                 default_artifact_type(
                                   original_filename, source_path,
                                 )
-      effective_mime_type = mime_type || "application/octet-stream"
+      effective_mime_type = mime_type ||
+                            mime_type_from_extension(original_filename)
 
       # Compute hash and size from file if not provided
       hash = content_hash_arg || ArtifactStorage.file_hash(source_path)
@@ -470,7 +499,8 @@ module GalaxyArtifacts
       original_filename = filename
       artifact_title = title ||
                        ArtifactStorage.title_from_filename(original_filename)
-      effective_mime_type = mime_type || "application/octet-stream"
+      effective_mime_type = mime_type ||
+                            mime_type_from_extension(original_filename)
       # Type default is deferred until after the stream
       # completes — the JSONL transcript sniff needs
       # the first line on disk to inspect. See the
@@ -649,6 +679,7 @@ module GalaxyArtifacts
                     json.field "mime_type", art.mime_type
                     json.field "original_filename", art.original_filename
                     json.field "file_size", art.file_size
+                    json.field "stored_path", art.stored_path
                     json.field "source_path", art.source_path
                     json.field "created_at", art.created_at
                     json.field "description", art.description
@@ -3009,7 +3040,10 @@ module GalaxyArtifacts
                                 mermaid/json/transcript/config/diff/image/
                                 pdf/text/code; see artifact_type_from_extension
                                 for the full mapping)
-        --mime-type MIME        MIME type (default: "application/octet-stream")
+        --mime-type MIME        MIME type (default: inferred from filename
+                                extension — e.g. image/png, application/pdf,
+                                text/markdown; falls back to
+                                application/octet-stream for unknown types)
         --content-hash HASH     SHA256 hash (default: computed; source-path only)
         --file-size BYTES       File size in bytes (default: computed; source-path only)
         --skip-event            Skip socket event publish

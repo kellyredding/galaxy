@@ -705,10 +705,11 @@ struct ArtifactsView: View {
                     )
                     staleAnnotationsSection
                 }
-            } else if let path = artifact.sourcePath,
-                      isImageExtension(
-                          artifact.originalFilename
-                      )
+            } else if let path = artifact.storedPath
+                ?? artifact.sourcePath,
+                isImageExtension(
+                    artifact.originalFilename
+                )
             {
                 let label
                     = "Artifact #\(artifact.number)"
