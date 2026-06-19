@@ -464,17 +464,6 @@ final class EventCoordinator {
                 let trackUnread = settings.showUnreadIndicator
                     || settings.showDockBadge
                 let willSetUnread = trackUnread && !isViewing
-                // DIAGNOSTIC (unread red-dot flakiness): mirror the
-                // handleTurnEnd "SET" line for permission-driven sets.
-                // Remove once resolved.
-                GalaxyLog.dbg(
-                    "unread",
-                    "SET-perm \(session.diagnosticTag)"
-                        + " decision=\(willSetUnread ? "SET" : "skip")"
-                        + " viewing=\(isViewing)"
-                        + " track=\(trackUnread)"
-                        + " was=\(session.hasUnreadResponse)"
-                )
                 if willSetUnread {
                     session.hasUnreadResponse = true
                     sm.updateDockBadge()
