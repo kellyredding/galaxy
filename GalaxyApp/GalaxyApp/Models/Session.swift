@@ -1173,46 +1173,29 @@ class Session: Identifiable, ObservableObject {
     }
 
     func startProcess(executablePath: String, resume: Bool = false) {
-        // Build environment as array of "KEY=VALUE" strings
-        var envArray: [String] = ProcessInfo.processInfo.environment.map { "\($0.key)=\($0.value)" }
-
-        // Strip environment variables that interfere with child sessions:
-        // - TERM/COLORTERM/LANG: overridden below for terminal behavior
-        // - CLAUDECODE: set by running Claude Code sessions; if Galaxy.app
-        //   was launched from within a Claude session, this prevents child
-        //   processes from starting ("nested session" detection)
-        // - CLAUDE_CLI_SESSION_ID: set by Claude Persona sessions; if Galaxy.app
-        //   was launched from within such a session, the inherited value would
-        //   cause ledger hooks to resolve to the parent session instead of this one
-        envArray = envArray.filter {
-            !$0.hasPrefix("TERM=") &&
-            !$0.hasPrefix("COLORTERM=") &&
-            !$0.hasPrefix("LANG=") &&
-            !$0.hasPrefix("CLAUDECODE=") &&
-            !$0.hasPrefix("CLAUDE_CLI_SESSION_ID=")
-        }
-        envArray.append("TERM=xterm-256color")
-        // Don't set COLORTERM=truecolor — this makes Claude Code use 24-bit
-        // true color RGB values from its own theme, bypassing the ANSI palette.
-        // Without it, Claude Code falls back to ANSI indexed colors, which are
-        // controlled by our installed palette and match Terminal.app's rendering.
-        envArray.append("LANG=en_US.UTF-8")
-
-        // Ensure ~/.local/bin is in PATH. Galaxy.app inherits launchd's
-        // minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin)
-        // which doesn't include ~/.local/bin. Child processes like
-        // claude-persona need to find `claude` via PATH lookup.
-        let localBin = "\(NSHomeDirectory())/.local/bin"
-        if let pathIndex = envArray.firstIndex(where: { $0.hasPrefix("PATH=") }) {
-            let existing = envArray[pathIndex]
-            if !existing.contains(localBin) {
-                envArray[pathIndex] = "\(existing):\(localBin)"
-            }
-        } else {
-            envArray.append("PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:\(localBin)")
+        // Start process directly (not via shell) so the backend can
+        // properly monitor it. No backend means nothing to start.
+        guard backend != nil else {
+            NSLog("Session: Cannot start process - no backend")
+            return
         }
 
-        // Build args and determine executable
+        // Set readiness/running synchronously, before the environment
+        // capture is dispatched. resumeSession() registers its
+        // waitForReady action and refreshes menu state immediately
+        // after this call returns, and both read these flags. The PTY
+        // spawn itself happens on the main-thread hop below; the
+        // session:ready event that drives the queued /galaxy:resume
+        // only arrives once the resumed hook lifecycle completes — long
+        // after the spawn — so deferring the spawn is safe.
+        //
+        // Reset readiness — each new lifecycle starts unready. The
+        // on_resume / on_startup hook emits `session:ready` once it
+        // completes, flipping this back to true via markReady().
+        isReady = false
+        isRunning = true
+
+        // Build args and determine executable.
         var args: [String] = []
         let execName: String
 
@@ -1251,36 +1234,116 @@ class Session: Identifiable, ObservableObject {
             if isVibe {
                 args.append("--dangerously-skip-permissions")
             }
-
-            // Inject CLAUDE_CLI_SESSION_ID into process environment so ledger
-            // hooks resolve via Tier 1 (env var) instead of Tier 2 (PID).
-            // This prevents PID-recycling from cross-linking ledger sessions.
-            // Persona sessions get this via claude-persona's --settings mechanism.
-            envArray.append("CLAUDE_CLI_SESSION_ID=\(claudeSessionId)")
         }
 
-        // Start process directly (not via shell) so the backend
-        // can properly monitor it.
-        guard let backend = backend else {
-            NSLog("Session: Cannot start process - no backend")
-            return
+        // Vanilla Claude sessions need CLAUDE_CLI_SESSION_ID in the env;
+        // persona sessions get it via claude-persona's --settings mechanism.
+        let injectSessionId = (personaName == nil)
+        let sessionId = claudeSessionId
+
+        // Sourcing the login profile can take ~0.2-0.3s, so capture the
+        // environment off the main thread, then spawn back on main. This
+        // gives the session the same environment a terminal (the Shell
+        // pane) gets — profile secrets, full PATH, locale — instead of
+        // launchd's minimal env.
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard self != nil else { return }
+            let envArray = Self.buildChildEnvironment(
+                injectSessionId: injectSessionId,
+                sessionId: sessionId
+            )
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                guard let backend = self.backend else {
+                    // Backend released between the synchronous guard above
+                    // and now (effectively impossible mid-start). Undo the
+                    // optimistic running state rather than leave a phantom.
+                    self.isRunning = false
+                    NSLog("Session: backend released before spawn for %@", self.sessionRef)
+                    return
+                }
+                backend.startProcess(
+                    executable: executablePath,
+                    args: args,
+                    environment: envArray,
+                    execName: execName,
+                    currentDirectory: self.workingDirectory
+                )
+                NSLog("Session: Started process for %@ in %@", self.sessionRef, self.workingDirectory)
+            }
         }
-        // Reset readiness — each new lifecycle starts unready.
-        // The on_resume / on_startup hook will emit
-        // `session:ready` once it completes, flipping this back
-        // to true via markReady().
-        isReady = false
+    }
 
-        backend.startProcess(
-            executable: executablePath,
-            args: args,
-            environment: envArray,
-            execName: execName,
-            currentDirectory: workingDirectory
-        )
+    /// Build the child process environment. Runs OFF the main thread
+    /// because the login-shell capture sources the profile (~0.2-0.3s).
+    ///
+    /// Base is the user's login-shell environment (captured via
+    /// `ShellLauncher.loginShellEnvironment`) so a Galaxy session gets
+    /// the same environment a terminal does — profile-exported secrets,
+    /// the full PATH, locale. Falls back to this process's own
+    /// (launchd-minimal) environment if the capture fails, so a session
+    /// can always start.
+    ///
+    /// On top of the base it re-applies Galaxy's existing massaging:
+    /// strip vars that interfere with a child session, force a
+    /// known-good TERM/LANG, ensure ~/.local/bin is on PATH, and (for
+    /// vanilla Claude sessions) inject CLAUDE_CLI_SESSION_ID.
+    private static func buildChildEnvironment(
+        injectSessionId: Bool,
+        sessionId: String
+    ) -> [String] {
+        // Base: the login shell's environment; fall back to this
+        // process's own environment if the capture fails.
+        var envArray = ShellLauncher.loginShellEnvironment()
+            ?? ProcessInfo.processInfo.environment.map { "\($0.key)=\($0.value)" }
 
-        isRunning = true
-        NSLog("Session: Started process for %@ in %@", sessionRef, workingDirectory)
+        // Strip environment variables that interfere with child sessions:
+        // - TERM/COLORTERM/LANG: overridden below for terminal behavior
+        // - CLAUDECODE: set by running Claude Code sessions; if Galaxy.app
+        //   was launched from within a Claude session, this prevents child
+        //   processes from starting ("nested session" detection)
+        // - CLAUDE_CLI_SESSION_ID: set by Claude Persona sessions; if Galaxy.app
+        //   was launched from within such a session, the inherited value would
+        //   cause ledger hooks to resolve to the parent session instead of this one
+        envArray = envArray.filter {
+            !$0.hasPrefix("TERM=") &&
+            !$0.hasPrefix("COLORTERM=") &&
+            !$0.hasPrefix("LANG=") &&
+            !$0.hasPrefix("CLAUDECODE=") &&
+            !$0.hasPrefix("CLAUDE_CLI_SESSION_ID=")
+        }
+        envArray.append("TERM=xterm-256color")
+        // Don't set COLORTERM=truecolor — this makes Claude Code use 24-bit
+        // true color RGB values from its own theme, bypassing the ANSI palette.
+        // Without it, Claude Code falls back to ANSI indexed colors, which are
+        // controlled by our installed palette and match Terminal.app's rendering.
+        envArray.append("LANG=en_US.UTF-8")
+
+        // Ensure ~/.local/bin is in PATH. When the login-shell capture
+        // succeeds the profile already rebuilds PATH (this is then a
+        // no-op); on the fallback path Galaxy.app inherits launchd's
+        // minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin),
+        // which doesn't include ~/.local/bin where claude-persona
+        // resolves `claude` via PATH lookup.
+        let localBin = "\(NSHomeDirectory())/.local/bin"
+        if let pathIndex = envArray.firstIndex(where: { $0.hasPrefix("PATH=") }) {
+            let existing = envArray[pathIndex]
+            if !existing.contains(localBin) {
+                envArray[pathIndex] = "\(existing):\(localBin)"
+            }
+        } else {
+            envArray.append("PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:\(localBin)")
+        }
+
+        // Inject CLAUDE_CLI_SESSION_ID for vanilla Claude sessions so ledger
+        // hooks resolve via Tier 1 (env var) instead of Tier 2 (PID). This
+        // prevents PID-recycling from cross-linking ledger sessions.
+        if injectSessionId {
+            envArray.append("CLAUDE_CLI_SESSION_ID=\(sessionId)")
+        }
+
+        return envArray
     }
 
     func processDidExit(exitCode: Int32) {

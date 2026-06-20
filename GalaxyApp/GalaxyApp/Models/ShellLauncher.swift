@@ -1,8 +1,10 @@
 import Foundation
 
-/// Helpers for launching an interactive login shell inside
-/// the Shell pane. Pure functions — no state, safe to call
-/// from anywhere.
+/// Helpers for the user's login shell: launching it interactively
+/// in the Shell pane, and capturing its environment for sessions
+/// that Galaxy spawns directly. Pure functions — no state, safe to
+/// call from anywhere (the environment capture must run off the main
+/// thread; see `loginShellEnvironment`).
 enum ShellLauncher {
     /// Resolve the user's login shell from the password
     /// database. Falls back to `/bin/zsh` if the lookup
@@ -24,6 +26,53 @@ enum ShellLauncher {
             }
         }
         return "/bin/zsh"
+    }
+
+    /// Capture the environment of the user's login shell as an array
+    /// of "KEY=VALUE" strings — the same environment a terminal (the
+    /// Shell pane) would have. Galaxy spawns Claude sessions directly
+    /// (not via a shell), so without this they inherit launchd's
+    /// minimal env and miss everything the login profile exports:
+    /// secrets, the real PATH, locale, tool shims.
+    ///
+    /// Delegates entirely to the user's login shell (resolved from the
+    /// passwd DB) run as an INTERACTIVE LOGIN shell — `-i -l` — so the
+    /// capture matches the Shell pane's `-il` across shells (notably
+    /// zsh, whose `.zshrc` is interactive-only and would be skipped by
+    /// a non-interactive login shell). Galaxy makes no assumptions
+    /// about which shell or which dotfiles the user runs; it just asks
+    /// the shell what its environment is.
+    ///
+    /// `env -0` emits NUL-delimited records so values containing
+    /// newlines survive intact. stdin is fed empty so an interactive
+    /// shell sees EOF immediately and never blocks. stderr (prompt /
+    /// MOTD noise) is surfaced by the runner only on non-zero exit, so
+    /// it never pollutes the parsed stdout.
+    ///
+    /// Returns nil on any failure (non-zero exit, timeout, undecodable
+    /// output) so callers fall back to the process's own environment.
+    ///
+    /// Runs a subprocess synchronously — call OFF the main thread.
+    static func loginShellEnvironment(
+        timeout: TimeInterval = 10
+    ) -> [String]? {
+        let shell = userLoginShell()
+        guard let data = try? ProcessRunner.runSync(
+            executableURL: URL(fileURLWithPath: shell),
+            arguments: ["-i", "-l", "-c", "env -0"],
+            stdin: Data(),   // EOF on stdin → interactive shell won't block
+            timeout: timeout
+        ) else {
+            return nil
+        }
+
+        // Split on NUL; keep only well-formed, decodable KEY=VALUE records.
+        let entries = data
+            .split(separator: 0, omittingEmptySubsequences: true)
+            .compactMap { String(data: Data($0), encoding: .utf8) }
+            .filter { $0.contains("=") }
+
+        return entries.isEmpty ? nil : entries
     }
 
     /// Resolve the cwd to launch the shell in for a given
