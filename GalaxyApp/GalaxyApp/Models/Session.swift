@@ -1336,6 +1336,22 @@ class Session: Identifiable, ObservableObject {
             envArray.append("PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:\(localBin)")
         }
 
+        // Point non-interactive Bash tool calls at the user's bashrc.
+        // Claude Code's Bash tool spawns `bash -c`, which sources a
+        // startup file only when BASH_ENV names one. Without it, shell
+        // functions defined in ~/.bashrc (version-manager shims, etc.)
+        // are unavailable to tool calls — the login-shell environment we
+        // captured above carries exported vars and PATH but not shell
+        // functions. Set BASH_ENV to ~/.bashrc when that file exists and
+        // the captured environment didn't already provide one (never
+        // override a user-set value). Computed from NSHomeDirectory(), so
+        // nothing is hardcoded to a specific home — correct for any user.
+        let bashrc = "\(NSHomeDirectory())/.bashrc"
+        let hasBashEnv = envArray.contains { $0.hasPrefix("BASH_ENV=") }
+        if !hasBashEnv && FileManager.default.fileExists(atPath: bashrc) {
+            envArray.append("BASH_ENV=\(bashrc)")
+        }
+
         // Inject CLAUDE_CLI_SESSION_ID for vanilla Claude sessions so ledger
         // hooks resolve via Tier 1 (env var) instead of Tier 2 (PID). This
         // prevents PID-recycling from cross-linking ledger sessions.
