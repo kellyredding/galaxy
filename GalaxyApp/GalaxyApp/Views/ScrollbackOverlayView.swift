@@ -45,6 +45,11 @@ class ScrollbackOverlayView: NSView {
     /// both panes have a scrollback open.
     private static let unfocusedAlpha: CGFloat = 0.55
 
+    /// Width of the accent border drawn around the overlay. The
+    /// web view is inset by this amount so the border frames the
+    /// content rather than covering its edge.
+    static let borderWidth: CGFloat = 2
+
     /// Whether the host pane is the focus-holder. Toggled
     /// by `TerminalHostView` via KVO on
     /// `window.firstResponder` while a scrollback is open.
@@ -73,8 +78,13 @@ class ScrollbackOverlayView: NSView {
         super.init(frame: frame)
         wantsLayer = true
 
-        // Add scrollback web view filling the entire frame
-        scrollbackView.frame = bounds
+        // Add scrollback web view, inset by the border width so the
+        // accent border frames the content instead of painting over
+        // its first/last row and column. The fixed-margin autoresize
+        // mask preserves that inset as the overlay resizes.
+        scrollbackView.frame = bounds.insetBy(
+            dx: Self.borderWidth, dy: Self.borderWidth
+        )
         scrollbackView.autoresizingMask = [.width, .height]
         addSubview(scrollbackView)
 
@@ -93,7 +103,7 @@ class ScrollbackOverlayView: NSView {
         // Draw 2px accent-color border (focus-aware via
         // applyFocusedState so the alpha is honored even on
         // first paint).
-        layer?.borderWidth = 2
+        layer?.borderWidth = Self.borderWidth
         applyFocusedState()
     }
 

@@ -162,6 +162,14 @@ class TerminalHostView: NSView {
     /// pane" rather than chrome.
     private static let terminalPadding: CGFloat = 4
 
+    /// Galactic-owned container that hosts the live terminal
+    /// full-bleed inside a `terminalPadding` inset. SwiftTerm clips
+    /// its leftmost column whenever the terminal view's own frame
+    /// origin is offset from (0,0) of its superview, so the inset
+    /// lives on the container, never on the terminal itself.
+    /// Created in `setupTerminal` once `pane.view` exists.
+    private var terminalContainer: GalacticTerminalContainerView?
+
     // Drag highlight overlay (drawn on top of terminal)
     private var dragHighlightView: DragHighlightView?
 
@@ -376,12 +384,19 @@ class TerminalHostView: NSView {
         // reads as "part of the pane" rather than chrome.
         applyHostBackgroundColor()
 
-        // Add the pane's inner terminal view, inset by the
-        // padding amount. Autoresizing is disabled so layout()
-        // stays the single source of truth for the frame.
-        pane.view.frame = paddedBounds()
-        pane.view.autoresizingMask = []
-        addSubview(pane.view)
+        // Host the terminal inside the Galactic inset container: it
+        // fills the host and lays the terminal out full-bleed within
+        // a terminalPadding inset, so SwiftTerm never sees an offset
+        // frame (which clips its left column). Autoresizing is
+        // disabled so layout() stays the single source of truth.
+        let container = GalacticTerminalContainerView(
+            terminalView: pane.view,
+            inset: Self.terminalPadding
+        )
+        container.frame = bounds
+        container.autoresizingMask = []
+        addSubview(container)
+        terminalContainer = container
 
         // Show the engine's native caret on the session pane — it
         // IS Claude's prompt cursor (Claude does not self-render
@@ -474,10 +489,12 @@ class TerminalHostView: NSView {
                 .store(in: &cancellables)
         }
 
-        // Add drag highlight overlay ON TOP of terminal view
+        // Add drag highlight overlay ON TOP of the terminal
+        // container (the terminal is nested inside it, so the
+        // highlight orders against the container, its host sibling).
         let highlight = DragHighlightView(frame: bounds)
         highlight.autoresizingMask = [.width, .height]
-        addSubview(highlight, positioned: .above, relativeTo: pane.view)
+        addSubview(highlight, positioned: .above, relativeTo: container)
         dragHighlightView = highlight
 
         // Observe font family changes — apply to scrollback view if present
@@ -615,7 +632,10 @@ class TerminalHostView: NSView {
     override func layout() {
         super.layout()
         let inner = paddedBounds()
-        pane.view.frame = inner
+        // The container fills the host and lays the terminal out
+        // full-bleed inside its inset; overlays align to that inset
+        // rect (which equals paddedBounds / the container's content).
+        terminalContainer?.frame = bounds
         dragHighlightView?.frame = inner
         scrollbackOverlay?.frame = inner
     }
