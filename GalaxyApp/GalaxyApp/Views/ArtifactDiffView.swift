@@ -917,6 +917,22 @@ private func buildDiffHTML(
     .line-content {
         padding-left: 10px !important;
         padding-right: 16px !important;
+        /* Let a long unbreakable token break mid-token so
+           the file card can shrink to the available width
+           instead of overflowing and getting clipped by
+           the card's `overflow: clip`. The diff table uses
+           auto table-layout, which never sizes a column
+           below its min-content width; with only the
+           inherited `pre-wrap` (which breaks solely at
+           whitespace) a single long run of non-whitespace
+           pins the whole table wide, clipping every row.
+           `overflow-wrap: anywhere` — NOT `break-word` —
+           is required: only `anywhere` reduces the
+           intrinsic min-content that auto table-layout
+           reads, so the column collapses and the card
+           tracks the pane. Lines then wrap mid-token
+           rather than clip. */
+        overflow-wrap: anywhere;
     }
     /* Header lines — annotatable but styled as
        simple file-card headers, not code lines.
