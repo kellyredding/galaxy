@@ -98,9 +98,14 @@ module GalaxyStatusline
       io = IO::Memory.new
       err = IO::Memory.new
 
+      # --no-optional-locks makes diff/status/rev-parse skip the
+      # opportunistic index.lock they take to refresh the stat cache.
+      # The statusline renders on every turn against the repo the agent
+      # is working in; without the flag a refresh can race the agent's
+      # own git write and fail with "another git process is running".
       status = Process.run(
         "git",
-        args: args,
+        args: ["--no-optional-locks"] + args,
         chdir: dir,
         output: io,
         error: err

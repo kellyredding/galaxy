@@ -370,9 +370,13 @@ module GalaxyDiff
     ) : {String, Process::Status}
       output = IO::Memory.new
       error = IO::Memory.new
+      # --no-optional-locks makes diff/rev-parse skip the opportunistic
+      # index.lock they take to refresh the stat cache, so capturing a
+      # diff can't race a concurrent git write in the same repo and fail
+      # with "another git process is running".
       status = Process.run(
         "git",
-        args: args,
+        args: ["--no-optional-locks"] + args,
         chdir: dir,
         output: output,
         error: error,

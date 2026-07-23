@@ -149,9 +149,16 @@ class StatusLineService: ObservableObject {
         // rendering indefinitely. A non-zero exit (e.g. not a git repo)
         // or timeout throws and falls through to nil, matching the
         // previous behavior.
+        //
+        // --no-optional-locks makes status/rev-parse/rev-list skip the
+        // opportunistic index.lock they take to refresh the stat cache.
+        // These queries fire while an agent may be mid-write (commit,
+        // rebase, reset); without the flag they race for index.lock and
+        // fail with "another git process is running", and a query killed
+        // by the timeout could strand a stale lock.
         guard let data = try? ProcessRunner.runSync(
             executableURL: URL(fileURLWithPath: "/usr/bin/git"),
-            arguments: args,
+            arguments: ["--no-optional-locks"] + args,
             currentDirectory: URL(fileURLWithPath: directory),
             timeout: 5
         ) else {
