@@ -157,7 +157,7 @@ class StatusLineService: ObservableObject {
         // fail with "another git process is running", and a query killed
         // by the timeout could strand a stale lock.
         guard let data = try? ProcessRunner.runSync(
-            executableURL: URL(fileURLWithPath: "/usr/bin/git"),
+            executableURL: URL(fileURLWithPath: GitLocator.gitPath),
             arguments: ["--no-optional-locks"] + args,
             currentDirectory: URL(fileURLWithPath: directory),
             timeout: 5
