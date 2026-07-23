@@ -49,6 +49,11 @@ class ScrollbackWebView: NSView {
     /// note form (which has unsaved text) with a new drag selection.
     var onConfirmDragReplace: ((_ startLine: Int, _ endLine: Int) -> Void)?
 
+    /// Called when JS requests confirmation to send notes to Claude
+    /// while a note form or edit still holds unsaved comment text
+    /// (which would be dropped from the sent message).
+    var onConfirmSendWithUnsavedComment: (() -> Void)?
+
     /// Called when a note is created, updated, or deleted so the
     /// parent can publish timeline events with session context.
     var onNoteChanged: ((_ action: String, _ detailData: [String: Any]) -> Void)?
@@ -161,6 +166,8 @@ class ScrollbackWebView: NSView {
                   let endLine = body["endLine"] as? Int
             else { return }
             onConfirmDragReplace?(startLine, endLine)
+        case "confirmSendWithUnsavedComment":
+            onConfirmSendWithUnsavedComment?()
         default:
             break
         }
@@ -350,6 +357,7 @@ class ScrollbackWebView: NSView {
         onSendToClaude = nil
         onConfirmDiscardForm = nil
         onConfirmDiscardEdit = nil
+        onConfirmSendWithUnsavedComment = nil
         onNoteChanged = nil
     }
 
