@@ -43,6 +43,7 @@ struct SnapshotsView: View {
     @State private var openAnnotations: [SnapshotAnnotation] = []
     @State private var annotationHTMLMap: [Int32: String] = [:]
     @State private var webViewRef: WKWebView? = nil
+    @State private var isRefreshing = false
 
     // Cmd+F find state. Controller owns the find bar's
     // visibility, query, and match counters; the slice-4
@@ -430,6 +431,35 @@ struct SnapshotsView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundColor(isBackHovered ? .primary : .secondary)
+
+                Button(action: {
+                    requestRefreshCurrentSnapshot(
+                        snapshotId: snapshot.id
+                    )
+                }) {
+                    Image(systemName: "arrow.clockwise")
+                        .chromeFont(size: fontSize.iconSmall)
+                        .foregroundColor(
+                            isRefreshing
+                                ? .secondary.opacity(0.5)
+                                : .secondary
+                        )
+                        .rotationEffect(
+                            .degrees(isRefreshing ? 360 : 0)
+                        )
+                        .animation(
+                            isRefreshing
+                                ? .linear(duration: 0.8)
+                                  .repeatForever(
+                                      autoreverses: false
+                                  )
+                                : .default,
+                            value: isRefreshing
+                        )
+                }
+                .buttonStyle(.plain)
+                .help("Reload annotations")
+                .disabled(isRefreshing)
 
                 Spacer()
 
@@ -1299,7 +1329,7 @@ struct SnapshotsView: View {
                                     }
                                     // Refresh so cards reflect
                                     // review assignment
-                                    await refreshAnnotationsAfterReview(
+                                    await reloadAnnotations(
                                         snapshotId: snapshotId
                                     )
                                 } catch {
@@ -1348,7 +1378,7 @@ struct SnapshotsView: View {
                     }
 
                     // Refresh so cards reflect review assignment
-                    await refreshAnnotationsAfterReview(
+                    await reloadAnnotations(
                         snapshotId: snapshotId
                     )
                 } catch {
@@ -1362,11 +1392,59 @@ struct SnapshotsView: View {
         }
     }
 
-    /// Refresh annotation state after a review is created.
-    /// Re-fetches from CLI so cards reflect review assignment
-    /// (review metadata visible, edit/delete buttons hidden).
-    /// No-ops if the reader has closed or switched snapshots.
-    private func refreshAnnotationsAfterReview(
+    /// Entry point for the reader's refresh button.
+    ///
+    /// Snapshot content is immutable, so the only thing a refresh can
+    /// pick up is annotations created or removed outside the reader —
+    /// by an agent working through the CLI, most often. Rebuilding the
+    /// cards tears down an open form or an in-progress edit with them,
+    /// so text typed but not saved is confirmed away rather than
+    /// disappearing without warning.
+    private func requestRefreshCurrentSnapshot(snapshotId: Int64) {
+        guard !isRefreshing else { return }
+        guard let wv = webViewRef, let window = wv.window else {
+            refreshCurrentSnapshot(snapshotId: snapshotId)
+            return
+        }
+        wv.evaluateJavaScript(
+            "typeof AnnotationManager !== 'undefined' "
+            + "? AnnotationManager.hasOpenUnsavedComment() : false"
+        ) { [self] result, _ in
+            guard (result as? Bool) == true else {
+                refreshCurrentSnapshot(snapshotId: snapshotId)
+                return
+            }
+            SheetAlert.confirm(
+                in: window,
+                message: "Discard unsaved annotation?",
+                detail: "Refreshing rebuilds the annotation cards. "
+                    + "Text you have typed but not saved will be "
+                    + "lost.",
+                confirm: "Refresh",
+                onConfirm: {
+                    refreshCurrentSnapshot(snapshotId: snapshotId)
+                }
+            )
+        }
+    }
+
+    private func refreshCurrentSnapshot(snapshotId: Int64) {
+        isRefreshing = true
+        Task {
+            await reloadAnnotations(snapshotId: snapshotId)
+            await MainActor.run { isRefreshing = false }
+        }
+    }
+
+    /// Re-fetch the annotation set from the CLI and rebuild the
+    /// reader's cards from it.
+    ///
+    /// Used after submitting a review, so cards pick up their review
+    /// metadata and lose their edit and delete buttons, and by the
+    /// refresh button, so annotations created or removed outside the
+    /// reader show up. No-ops if the reader has closed or moved to a
+    /// different snapshot.
+    private func reloadAnnotations(
         snapshotId: Int64
     ) async {
         do {

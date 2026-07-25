@@ -250,7 +250,7 @@ struct ArtifactsView: View {
             )
         ) { _ in
             if openArtifact != nil {
-                refreshCurrentArtifact()
+                requestRefreshCurrentArtifact()
             }
         }
         .onChange(
@@ -594,7 +594,7 @@ struct ArtifactsView: View {
                 )
 
                 Button(action: {
-                    refreshCurrentArtifact()
+                    requestRefreshCurrentArtifact()
                 }) {
                     Image(
                         systemName: "arrow.clockwise"
@@ -1276,6 +1276,44 @@ struct ArtifactsView: View {
         }
     }
 
+    /// Entry point for both refresh affordances — the toolbar
+    /// button and the menu command.
+    ///
+    /// Refreshing rebuilds the annotation cards, which tears down an
+    /// open form or an in-progress edit along with them, so anything
+    /// typed but not saved is confirmed away rather than disappearing
+    /// without warning. Committed annotations are never at risk; they
+    /// come back from data.
+    private func requestRefreshCurrentArtifact() {
+        guard openArtifact != nil, !isRefreshing else { return }
+        guard let wv = webViewRef, let window = wv.window
+        else {
+            // No reader web view to lose work from — whole-file
+            // renderers use SwiftUI cards.
+            refreshCurrentArtifact()
+            return
+        }
+        wv.evaluateJavaScript(
+            "typeof AnnotationManager !== 'undefined' "
+            + "? AnnotationManager"
+            + ".hasOpenUnsavedComment() : false"
+        ) { [self] result, _ in
+            guard (result as? Bool) == true else {
+                refreshCurrentArtifact()
+                return
+            }
+            SheetAlert.confirm(
+                in: window,
+                message: "Discard unsaved annotation?",
+                detail: "Refreshing rebuilds the annotation "
+                    + "cards. Text you have typed but not "
+                    + "saved will be lost.",
+                confirm: "Refresh",
+                onConfirm: { refreshCurrentArtifact() }
+            )
+        }
+    }
+
     /// In-app refresh: call CLI with --skip-event,
     /// then re-read content + annotations in place.
     /// The reader stays open — no tab switch, no
@@ -1398,6 +1436,13 @@ struct ArtifactsView: View {
                                 $0.artifactReviewId
                                     == nil && !$0.stale
                             }
+                        // Rebuild the cards as well. The state
+                        // above only re-renders the page when
+                        // the content itself changed, so an
+                        // annotation added or deleted while the
+                        // reader stayed open would leave the
+                        // cards showing the old set.
+                        pushAnnotationData(annotations)
                         isRefreshing = false
                     }
                 } catch {
@@ -2528,6 +2573,77 @@ struct ArtifactsView: View {
         }
     }
 
+    /// Rebuild the reader's annotation cards from the given set.
+    ///
+    /// Whole-file annotations are left out because those renderers
+    /// show SwiftUI cards instead of cards in the document, and
+    /// stale ones because they belong to the drawer rather than the
+    /// page. Callers must already be on the main actor.
+    @MainActor
+    private func pushAnnotationData(
+        _ annotations: [ArtifactAnnotation]
+    ) {
+        let activeAnns = annotations.filter {
+            !$0.stale
+                && $0.anchorData.type != .whole
+        }
+        let annDicts: [[String: Any]]
+            = activeAnns.map { a in
+                var dict: [String: Any] = [
+                    "id": a.id,
+                    "number": a.number,
+                    "content": a.content,
+                    "created_at": a.createdAt,
+                    "updated_at": a.updatedAt,
+                ]
+                switch a.anchorData.type {
+                case .lineRange, .diffRange:
+                    if let sl = a.anchorData.startLine {
+                        dict["start_line"] = sl
+                    }
+                    if let el = a.anchorData.endLine {
+                        dict["end_line"] = el
+                    }
+                case .rowRange:
+                    if let sr = a.anchorData.startRow {
+                        dict["start_row"] = sr
+                    }
+                    if let er = a.anchorData.endRow {
+                        dict["end_row"] = er
+                    }
+                case .blockRange:
+                    if let sb = a.anchorData.startBlock {
+                        dict["start_block"] = sb
+                    }
+                    if let eb = a.anchorData.endBlock {
+                        dict["end_block"] = eb
+                    }
+                case .whole:
+                    break
+                }
+                if let rn = a.reviewNumber {
+                    dict["review_number"] = rn
+                }
+                if let rra = a.reviewReviewedAt {
+                    dict["review_reviewed_at"] = rra
+                }
+                return dict
+            }
+        if !annDicts.isEmpty,
+           let data = try? JSONSerialization
+            .data(withJSONObject: annDicts),
+           let json = String(
+               data: data, encoding: .utf8
+           )
+        {
+            webViewRef?.evaluateJavaScript(
+                "AnnotationManager"
+                + ".refreshAnnotationData"
+                + "(\(json))"
+            )
+        }
+    }
+
     private func refreshAnnotationsAfterReview(
         artifact: ArtifactSummary
     ) async {
@@ -2560,80 +2676,7 @@ struct ArtifactsView: View {
                             && !$0.stale
                     }
 
-                // Push updated annotations to JS
-                // (skip for whole-type renderers
-                // which use SwiftUI cards)
-                let activeAnns = annotations.filter {
-                    !$0.stale
-                        && $0.anchorData.type != .whole
-                }
-                let annDicts: [[String: Any]]
-                    = activeAnns.map { a in
-                        var dict: [String: Any] = [
-                            "id": a.id,
-                            "number": a.number,
-                            "content": a.content,
-                            "created_at": a.createdAt,
-                            "updated_at": a.updatedAt,
-                        ]
-                        switch a.anchorData.type {
-                        case .lineRange, .diffRange:
-                            if let sl = a.anchorData
-                                .startLine {
-                                dict["start_line"] = sl
-                            }
-                            if let el = a.anchorData
-                                .endLine {
-                                dict["end_line"] = el
-                            }
-                        case .rowRange:
-                            if let sr = a.anchorData
-                                .startRow {
-                                dict["start_row"] = sr
-                            }
-                            if let er = a.anchorData
-                                .endRow {
-                                dict["end_row"] = er
-                            }
-                        case .blockRange:
-                            if let sb = a.anchorData
-                                .startBlock {
-                                dict["start_block"]
-                                    = sb
-                            }
-                            if let eb = a.anchorData
-                                .endBlock {
-                                dict["end_block"] = eb
-                            }
-                        case .whole:
-                            break
-                        }
-                        if let rn = a.reviewNumber {
-                            dict["review_number"] = rn
-                        }
-                        if let rra
-                            = a.reviewReviewedAt
-                        {
-                            dict["review_reviewed_at"]
-                                = rra
-                        }
-                        return dict
-                    }
-                if !annDicts.isEmpty,
-                   let data = try? JSONSerialization
-                    .data(
-                        withJSONObject: annDicts
-                    ),
-                   let json = String(
-                       data: data, encoding: .utf8
-                   )
-                {
-                    webViewRef?.evaluateJavaScript(
-                        "AnnotationManager"
-                        + ".refreshAnnotationData"
-                        + "(\(json))"
-                    )
-                }
+                pushAnnotationData(annotations)
             }
         } catch {
             NSLog(

@@ -2537,6 +2537,44 @@ entry.card);
             if (ta) ta.focus();
         },
 
+        // True only when text the user typed would be lost by a
+        // full re-render: an open form holding content, or an edit
+        // whose textarea no longer matches the stored annotation.
+        // Committed annotations are excluded, since a re-render
+        // rebuilds those from data.
+        //
+        // Free of side effects, unlike getEscapeContext below, which
+        // cancels an unchanged edit as it reports. That makes this
+        // safe to probe from anywhere — the refresh action asks it
+        // before rebuilding the card DOM.
+        hasOpenUnsavedComment() {
+            if (this.isFormVisible()) {
+                var formTa = this.formElement\
+.querySelector('textarea');
+                if (formTa && formTa.value.trim())
+                    return true;
+            }
+            if (this.editingNumber !== null) {
+                var card = document.querySelector(
+                    '.annotation-card[data-number="'
+                    + this.editingNumber + '"]'
+                );
+                if (card) {
+                    var ta = card.querySelector(\
+'.annotation-edit-textarea');
+                    var editing = this.editingNumber;
+                    var ann = this.annotations.find(\
+function(a) {
+                        return a.number === editing;
+                    });
+                    if (ta && ann
+                        && ta.value !== ann.content)
+                        return true;
+                }
+            }
+            return false;
+        },
+
         getEscapeContext() {
             if (typeof EmojiAutocomplete \
 !== 'undefined') {
