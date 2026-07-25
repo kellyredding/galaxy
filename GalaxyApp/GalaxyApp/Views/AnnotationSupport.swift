@@ -1162,12 +1162,12 @@ return;
             var range = this.getLineRange(\
 this.highlightStart, this.highlightEnd);
             // In a diff reader the selected rows carry
-            // file/old/new line attributes; prefer the
-            // structured `path:line` label over the
-            // generic "line N" (global data-line) one.
+            // file/old/new line attributes; prefer the real
+            // file line numbers over the generic "line N"
+            // keyed off the global data-line counter.
             var fileRef = this.computeDiffRangeFileRef(
                 range.startLine, range.endLine);
-            var formatted = this.formatDiffFileRef(
+            var formatted = this.formatDiffLineRef(
                 fileRef);
             var ref;
             if (formatted) {
@@ -1286,20 +1286,34 @@ this.endLineAttr)
         // "tools/diff/foo.cr:140\\u2013146" for ranges.
         // Returns null when the ref has no path — caller
         // falls back to the generic "line N" label.
-        formatDiffFileRef(fileRef) {
+        // Labels a diff selection by its line numbers in the
+        // file, not by the diff's own flattened row indices.
+        // The path is deliberately left out: a card sits among
+        // the rows of the file it annotates, directly under a
+        // header naming that file, so repeating it says nothing
+        // the reader cannot already see and costs enough width
+        // on a nested path to wrap the label onto a second line.
+        // The path is still captured and sent with the
+        // annotation — this governs the label alone.
+        //
+        // Requires file_path even though it goes unprinted: its
+        // presence is what marks these numbers as file lines
+        // rather than row indices. Without it the caller falls
+        // back to labelling by row index.
+        formatDiffLineRef(fileRef) {
             if (!fileRef || !fileRef.file_path) {
                 return null;
             }
             if (fileRef.file_start_line == null) {
-                return fileRef.file_path;
+                return null;
             }
             if (fileRef.file_start_line
                 === fileRef.file_end_line) {
-                return fileRef.file_path + ':'
-                    + fileRef.file_start_line;
+                return this.refPrefix.toLowerCase()
+                    + ' ' + fileRef.file_start_line;
             }
-            return fileRef.file_path + ':'
-                + fileRef.file_start_line
+            return this.refPrefix.toLowerCase()
+                + 's ' + fileRef.file_start_line
                 + '\\u2013'
                 + fileRef.file_end_line;
         },
@@ -1447,7 +1461,7 @@ endVal);
             // `file_path` and fall through to the
             // legacy "line N" label keyed off the
             // global data-line counter.
-            var fileFormatted = this.formatDiffFileRef({
+            var fileFormatted = this.formatDiffLineRef({
                 file_path: annotation.file_path,
                 file_start_line:
                     annotation.file_start_line,
@@ -2370,8 +2384,8 @@ this.highlightStart, this.highlightEnd);
                         // Also lift the structured file
                         // reference so Swift can store
                         // it at top level of anchor_data
-                        // — drives the "path:line"
-                        // display label and the
+                        // — supplies the line numbers the
+                        // card's label shows and drives the
                         // file-collapse hide/show logic.
                         var fileRef = this\
 .computeDiffRangeFileRef(
