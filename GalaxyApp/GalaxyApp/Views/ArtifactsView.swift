@@ -2577,6 +2577,13 @@ struct ArtifactsView: View {
                     "created_at": a.createdAt,
                     "updated_at": a.updatedAt,
                 ]
+                // Carry the text captured when each annotation was
+                // written, alongside its position. The copy and
+                // suggestion buttons prefer it and fall back to
+                // re-deriving from the document, so omitting it here
+                // quietly downgraded every card a refresh rebuilt to
+                // the fallback, even where the initial load had
+                // supplied it.
                 switch a.anchorData.type {
                 case .lineRange, .diffRange:
                     if let sl = a.anchorData.startLine {
@@ -2585,6 +2592,9 @@ struct ArtifactsView: View {
                     if let el = a.anchorData.endLine {
                         dict["end_line"] = el
                     }
+                    if let lc = a.anchorData.lineContent {
+                        dict["line_content"] = lc
+                    }
                 case .rowRange:
                     if let sr = a.anchorData.startRow {
                         dict["start_row"] = sr
@@ -2592,12 +2602,18 @@ struct ArtifactsView: View {
                     if let er = a.anchorData.endRow {
                         dict["end_row"] = er
                     }
+                    if let rc = a.anchorData.rowContent {
+                        dict["row_content"] = rc
+                    }
                 case .blockRange:
                     if let sb = a.anchorData.startBlock {
                         dict["start_block"] = sb
                     }
                     if let eb = a.anchorData.endBlock {
                         dict["end_block"] = eb
+                    }
+                    if let bc = a.anchorData.blockContent {
+                        dict["block_content"] = bc
                     }
                 case .whole:
                     break
