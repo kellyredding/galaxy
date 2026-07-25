@@ -39,6 +39,24 @@ struct AnchorData: Codable {
     /// rows (line number references the old side).
     let fileLineSide: String?
 
+    /// The selected rows as plain source, with no diff
+    /// markers.
+    ///
+    /// `lineContent` prefixes each row with `+ `, `- `, or
+    /// two spaces so a reviewing agent can tell additions
+    /// from deletions from context. That is the wrong text
+    /// to put on the clipboard or inside a suggestion
+    /// block, which want code that could be pasted back
+    /// into the file. Both forms are recorded rather than
+    /// one being derived from the other, because stripping
+    /// a prefix would corrupt any line whose own code
+    /// begins with those characters.
+    ///
+    /// Absent on annotations written before this existed;
+    /// those fall back to reconstructing it from the
+    /// rendered rows.
+    let sourceContent: String?
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(
             keyedBy: CodingKeys.self
@@ -87,6 +105,9 @@ struct AnchorData: Codable {
         )
         fileLineSide = try container.decodeIfPresent(
             String.self, forKey: .fileLineSide
+        )
+        sourceContent = try container.decodeIfPresent(
+            String.self, forKey: .sourceContent
         )
     }
 

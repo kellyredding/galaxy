@@ -1971,7 +1971,17 @@ struct ArtifactsView: View {
             // `path/to/file.rb:N` instead of the
             // meaningless global data-line counter.
             // JS computes them at capture time.
-            var summaryParts: [String] = []
+            // Two forms of the same selection. The marked
+            // one tells a reviewing agent which rows were
+            // added, removed, or merely context. The plain
+            // one is what belongs on a clipboard or inside
+            // a suggestion block: source that could be
+            // pasted back into the file. Recording both
+            // beats deriving one later, since removing a
+            // prefix would eat the first characters of any
+            // line whose own code begins that way.
+            var markedParts: [String] = []
+            var sourceParts: [String] = []
             for row in rows {
                 let kind = row["kind"] as? String ?? ""
                 let text = row["content"]
@@ -1983,15 +1993,19 @@ struct ArtifactsView: View {
                 case "context": prefix = "  "
                 default: continue
                 }
-                summaryParts.append(prefix + text)
+                markedParts.append(prefix + text)
+                sourceParts.append(text)
             }
             let lineContent =
-                summaryParts.joined(separator: "\n")
+                markedParts.joined(separator: "\n")
+            let sourceContent =
+                sourceParts.joined(separator: "\n")
             var anchorData: [String: Any] = [
                 "type": "diff_range",
                 "start_line": startLine,
                 "end_line": endLine,
                 "line_content": lineContent,
+                "source_content": sourceContent,
                 "rows": rows,
             ]
             if let fp = filePath {

@@ -1720,6 +1720,28 @@ annotation.number);
         // anchorData), then to a DOM scan as last resort.
         capturedTextForAnnotation(annotation) {
             if (!annotation) return '';
+            // Diff rows first, and ahead of line_content,
+            // because that one is deliberately prefixed
+            // with add and delete markers for a reviewing
+            // agent — text nobody wants pasted back into a
+            // file. Use the unmarked form when the
+            // annotation carries one, and otherwise rebuild
+            // it from the rendered rows, which is how
+            // annotations written before that field existed
+            // still come out clean.
+            if (typeof annotation.source_content
+                === 'string'
+                && annotation.source_content.length > 0) {
+                return annotation.source_content;
+            }
+            var ds = annotation[this.anchorStartKey()];
+            var de = annotation[this.anchorEndKey()];
+            if (typeof ds === 'number'
+                && typeof de === 'number') {
+                var diffSource = this
+                    .extractDiffRangeText(ds, de);
+                if (diffSource !== null) return diffSource;
+            }
             if (typeof annotation.line_content === 'string'
                 && annotation.line_content.length > 0) {
                 return annotation.line_content;
@@ -1855,6 +1877,22 @@ annotation.number);
         // contains no diff rows (i.e. this isn't a diff
         // view) so the caller can fall through to the
         // generic line-range path.
+        // Rebuild the selected diff rows as plain source.
+        //
+        // Reads the code cell alone, so the line-number
+        // gutter and the marker column stay out of it, and
+        // keeps the row-kind check as a filter: gap,
+        // file-header and binary rows are not source and
+        // contribute nothing. Returns null when the range
+        // held no diff rows at all, which is how every
+        // other reader falls through to its own handling.
+        //
+        // Unmarked deliberately. The marked form lives on
+        // the annotation, where a reviewing agent needs to
+        // know which rows were added and which removed;
+        // this is the form that belongs on a clipboard or
+        // inside a suggestion, and pasting a marker back
+        // into a file would be wrong.
         extractDiffRangeText(startVal, endVal) {
             var pieces = [];
             var sawDiffRow = false;
@@ -1865,17 +1903,12 @@ annotation.number);
                 var kind = tr.getAttribute('data-kind');
                 if (!kind) continue;
                 sawDiffRow = true;
-                var prefix;
-                switch (kind) {
-                    case 'add': prefix = '+ '; break;
-                    case 'delete': prefix = '- '; break;
-                    case 'context': prefix = '  '; break;
-                    default: continue;
-                }
+                if (kind !== 'add' && kind !== 'delete'
+                    && kind !== 'context') continue;
                 var ce = tr.querySelector(
                     '.line-content');
                 var text = ce ? (ce.textContent || '') : '';
-                pieces.push(prefix + text);
+                pieces.push(text);
             }
             return sawDiffRow ? pieces.join('\\n') : null;
         },
@@ -3187,6 +3220,12 @@ func annotationDict(
         }
         if let lc = a.anchorData.lineContent {
             dict["line_content"] = lc
+        }
+        // The unmarked form, for the clipboard and for
+        // suggestions. Absent on older annotations, which
+        // fall back to rebuilding it from the rendered rows.
+        if let sc = a.anchorData.sourceContent {
+            dict["source_content"] = sc
         }
         if let fp = a.anchorData.filePath {
             dict["file_path"] = fp
