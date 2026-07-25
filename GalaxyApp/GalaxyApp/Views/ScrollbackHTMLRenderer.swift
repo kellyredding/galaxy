@@ -798,15 +798,27 @@ enum ScrollbackHTMLRenderer {
             border-width: 0;
         }
         \(verbatimCardCSS)
+        /* Sits in the header row, after the action icons, rather
+           than below the card body where appearing and
+           disappearing changed the card's height — a one-line
+           note would shrink as it expanded and grow back as it
+           collapsed, nudging every card below it. Hidden rather
+           than removed, and with its own line-height, so neither
+           the card nor the icons beside it move when it comes and
+           goes. */
         .note-expand-hint {
-            display: block;
             font-size: var(--note-meta-size);
+            line-height: 1;
             color: \(textColorFaint);
             opacity: 0.5;
-            margin-top: 2px;
             cursor: pointer;
+            white-space: nowrap;
         }
-        .note-card.expanded .note-expand-hint { display: none; }
+        .note-card.expanded .note-expand-hint,
+        .note-card:has(.note-edit-textarea)
+            .note-expand-hint {
+            visibility: hidden;
+        }
 
         /* Edit/delete buttons — match snapshot annotation style exactly */
         .note-card-actions button {
@@ -1527,11 +1539,11 @@ enum ScrollbackHTMLRenderer {
                         '<button class="note-btn-delete" title="Delete">' +
                             self.deleteIconSVG + '</button>' +
                     '</span>' +
+                    '<span class="note-expand-hint">Click to expand</span>' +
                 '</div>' +
                 '<pre class="note-card-content verbatim-card-content collapsed">' +
                     note.renderedHTML +
-                '</pre>' +
-                '<span class="note-expand-hint">Click to expand</span>';
+                '</pre>';
 
             // Click to expand/collapse
             card.addEventListener('click', (e) => {
