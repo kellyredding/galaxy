@@ -239,9 +239,13 @@ let annotationCSS: String = """
         display: inline-flex;
         opacity: 1;
     }
+    /* Hidden rather than removed: the action buttons are the
+       tallest thing in the header, so dropping them from layout
+       shortened the header and pulled the note text up as soon as
+       editing began. Reserving the box keeps the chrome still. */
     .annotation-card:has(.annotation-edit-textarea)
         .annotation-card-actions {
-        display: none;
+        visibility: hidden;
     }
     .annotation-btn-delete.confirming {
         background: rgba(220, 40, 30, 0.75) !important;
