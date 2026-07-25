@@ -3219,9 +3219,46 @@ func buildAnnotationInitJS(
     )
 }
 
-/// Overload for `[SnapshotAnnotation]` — snapshots only
-/// support `line_range` anchors, so the dict shape is
-/// simpler than the artifact variant.
+/// A line-range annotation, whichever store it came from.
+///
+/// Artifacts and snapshots describe the same idea differently: one
+/// keeps the range inside an anchor payload and records the source
+/// text captured when the annotation was written, the other keeps the
+/// range in dedicated columns and captures nothing. Reading both
+/// through one shape lets the markdown reader serve either without an
+/// artifact annotation being flattened into a snapshot one first,
+/// which used to discard the captured text on the way.
+protocol LineRangeAnnotation {
+    var id: Int64 { get }
+    var number: Int32 { get }
+    var content: String { get }
+    var createdAt: String { get }
+    var updatedAt: String { get }
+    var reviewNumber: Int32? { get }
+    var reviewReviewedAt: String? { get }
+    var anchorStartLine: Int32? { get }
+    var anchorEndLine: Int32? { get }
+    var anchorLineContent: String? { get }
+}
+
+extension ArtifactAnnotation: LineRangeAnnotation {
+    var anchorStartLine: Int32? { anchorData.startLine }
+    var anchorEndLine: Int32? { anchorData.endLine }
+    var anchorLineContent: String? { anchorData.lineContent }
+}
+
+extension SnapshotAnnotation: LineRangeAnnotation {
+    var anchorStartLine: Int32? { startLine }
+    var anchorEndLine: Int32? { endLine }
+    /// Snapshots have no column for captured text, so the reader
+    /// slices the source instead. Safe there because snapshot
+    /// content cannot change under an annotation.
+    var anchorLineContent: String? { nil }
+}
+
+/// Overload for line-range annotations from either store — the dict
+/// shape is simpler than the artifact variant, which also has to
+/// carry row, block, and whole-file anchors.
 func buildAnnotationInitJS(
     anchorType: String,
     blockSelector: String,
@@ -3229,7 +3266,7 @@ func buildAnnotationInitJS(
     endLineAttr: String? = nil,
     refPrefix: String,
     itemLabel: String,
-    annotations: [SnapshotAnnotation],
+    annotations: [any LineRangeAnnotation],
     htmlMap: [Int32: String],
     artifactContent: String? = nil
 ) -> String {
@@ -3237,12 +3274,19 @@ func buildAnnotationInitJS(
         var dict: [String: Any] = [
             "id": a.id,
             "number": a.number,
-            "start_line": a.startLine,
-            "end_line": a.endLine,
             "content": a.content,
             "created_at": a.createdAt,
             "updated_at": a.updatedAt,
         ]
+        if let sl = a.anchorStartLine {
+            dict["start_line"] = sl
+        }
+        if let el = a.anchorEndLine {
+            dict["end_line"] = el
+        }
+        if let lc = a.anchorLineContent {
+            dict["line_content"] = lc
+        }
         if let rn = a.reviewNumber {
             dict["review_number"] = rn
         }

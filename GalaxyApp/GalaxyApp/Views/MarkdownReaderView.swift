@@ -244,7 +244,7 @@ class SilentFunctionKeyWebView: WKWebView {
 struct MarkdownReaderView: NSViewRepresentable {
     let markdown: String
     let isDark: Bool
-    let annotations: [SnapshotAnnotation]
+    let annotations: [any LineRangeAnnotation]
     let annotationHTMLMap: [Int32: String]
     @Binding var webViewRef: WKWebView?
     var onAnnotationMessage: ((AnnotationMessage) -> Void)?
@@ -331,7 +331,7 @@ struct MarkdownReaderView: NSViewRepresentable {
         var annotationsEnabled: Bool = true
 
         /// Annotation data queued for injection after page load.
-        var pendingAnnotations: [SnapshotAnnotation]?
+        var pendingAnnotations: [any LineRangeAnnotation]?
         var pendingAnnotationHTMLMap: [Int32: String]?
         var pendingItemLabel: String?
         /// Raw markdown source used to slice line_content

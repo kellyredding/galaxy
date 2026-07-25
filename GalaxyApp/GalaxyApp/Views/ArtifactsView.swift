@@ -998,17 +998,23 @@ struct ArtifactsView: View {
 
         switch ext {
         case "md", "markdown":
-            let activeAnns = openAnnotations.filter {
-                !$0.stale
-            }
-            let snapshotAnns: [SnapshotAnnotation]
-                = activeAnns.compactMap {
-                    snapshotAnnotationFrom($0)
+            // The reader anchors to line ranges, so anything
+            // anchored another way is left out — as it was when
+            // these were converted one at a time and a
+            // non-line-range conversion returned nothing. Passing
+            // them through unconverted is what keeps the captured
+            // source text with them.
+            let activeAnns: [any LineRangeAnnotation]
+                = openAnnotations.filter {
+                    !$0.stale
+                        && $0.anchorData.type == .lineRange
+                        && $0.anchorData.startLine != nil
+                        && $0.anchorData.endLine != nil
                 }
             MarkdownReaderView(
                 markdown: content,
                 isDark: colorScheme == .dark,
-                annotations: snapshotAnns,
+                annotations: activeAnns,
                 annotationHTMLMap: annotationHTMLMap,
                 webViewRef: $webViewRef,
                 onAnnotationMessage: { message in
@@ -1886,31 +1892,6 @@ struct ArtifactsView: View {
     }
 
     // MARK: - Annotation Bridge
-
-    /// Convert an ArtifactAnnotation to a
-    /// SnapshotAnnotation for MarkdownReaderView.
-    /// Only works for line_range annotations.
-    private func snapshotAnnotationFrom(
-        _ ann: ArtifactAnnotation
-    ) -> SnapshotAnnotation? {
-        guard ann.anchorData.type == .lineRange,
-              let startLine = ann.anchorData.startLine,
-              let endLine = ann.anchorData.endLine
-        else { return nil }
-        return SnapshotAnnotation(
-            id: ann.id,
-            createdAt: ann.createdAt,
-            updatedAt: ann.updatedAt,
-            snapshotId: ann.artifactId,
-            number: ann.number,
-            startLine: startLine,
-            endLine: endLine,
-            content: ann.content,
-            snapshotReviewId: ann.artifactReviewId,
-            reviewNumber: ann.reviewNumber,
-            reviewReviewedAt: ann.reviewReviewedAt
-        )
-    }
 
     // MARK: - Annotation Messages
 
