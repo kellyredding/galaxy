@@ -3126,86 +3126,9 @@ func buildAnnotationInitJS(
     htmlMap: [Int32: String],
     artifactContent: String? = nil
 ) -> String {
-    let dicts: [[String: Any]] = annotations.map { a in
-        var dict: [String: Any] = [
-            "id": a.id,
-            "number": a.number,
-            "content": a.content,
-            "created_at": a.createdAt,
-            "updated_at": a.updatedAt,
-        ]
-        switch a.anchorData.type {
-        case .lineRange:
-            if let sl = a.anchorData.startLine {
-                dict["start_line"] = sl
-            }
-            if let el = a.anchorData.endLine {
-                dict["end_line"] = el
-            }
-            if let lc = a.anchorData.lineContent {
-                dict["line_content"] = lc
-            }
-        case .diffRange:
-            // Keep the global data-line values —
-            // DOM anchoring still uses them — and
-            // also emit the per-file reference so
-            // the JS renderer can show a friendlier
-            // label (`path/to/file.rb:N`) and the
-            // file-collapse handler can match cards
-            // by path.
-            if let sl = a.anchorData.startLine {
-                dict["start_line"] = sl
-            }
-            if let el = a.anchorData.endLine {
-                dict["end_line"] = el
-            }
-            if let lc = a.anchorData.lineContent {
-                dict["line_content"] = lc
-            }
-            if let fp = a.anchorData.filePath {
-                dict["file_path"] = fp
-            }
-            if let fs = a.anchorData.fileStartLine {
-                dict["file_start_line"] = fs
-            }
-            if let fe = a.anchorData.fileEndLine {
-                dict["file_end_line"] = fe
-            }
-            if let fls = a.anchorData.fileLineSide {
-                dict["file_line_side"] = fls
-            }
-        case .rowRange:
-            if let sr = a.anchorData.startRow {
-                dict["start_row"] = sr
-            }
-            if let er = a.anchorData.endRow {
-                dict["end_row"] = er
-            }
-            if let rc = a.anchorData.rowContent {
-                dict["row_content"] = rc
-            }
-        case .blockRange:
-            if let sb = a.anchorData.startBlock {
-                dict["start_block"] = sb
-            }
-            if let eb = a.anchorData.endBlock {
-                dict["end_block"] = eb
-            }
-            if let bc = a.anchorData.blockContent {
-                dict["block_content"] = bc
-            }
-        case .whole:
-            break
-        }
-        if let rn = a.reviewNumber {
-            dict["review_number"] = rn
-        }
-        if let rra = a.reviewReviewedAt {
-            dict["review_reviewed_at"] = rra
-        }
-        return dict
+    let dicts: [[String: Any]] = annotations.map {
+        annotationDict($0)
     }
-
     return buildAnnotationInitJS(
         anchorType: anchorType,
         blockSelector: blockSelector,
@@ -3217,6 +3140,96 @@ func buildAnnotationInitJS(
         htmlMap: htmlMap,
         artifactContent: artifactContent
     )
+}
+
+/// Flatten one annotation into the shape the page reads.
+///
+/// The single answer to that question. It used to be answered twice —
+/// once when a reader loads and once when its cards are rebuilt — and
+/// the two drifted every time one learned something the other did
+/// not: card bodies, captured source text, and the per-file reference
+/// a diff annotation carries, each missing from the rebuilt form until
+/// someone noticed a card that had gone quiet.
+func annotationDict(
+    _ a: ArtifactAnnotation
+) -> [String: Any] {
+    var dict: [String: Any] = [
+        "id": a.id,
+        "number": a.number,
+        "content": a.content,
+        "created_at": a.createdAt,
+        "updated_at": a.updatedAt,
+    ]
+    switch a.anchorData.type {
+    case .lineRange:
+        if let sl = a.anchorData.startLine {
+            dict["start_line"] = sl
+        }
+        if let el = a.anchorData.endLine {
+            dict["end_line"] = el
+        }
+        if let lc = a.anchorData.lineContent {
+            dict["line_content"] = lc
+        }
+    case .diffRange:
+        // Keep the global data-line values —
+        // DOM anchoring still uses them — and
+        // also emit the per-file reference so
+        // the JS renderer can show a friendlier
+        // label (`path/to/file.rb:N`) and the
+        // file-collapse handler can match cards
+        // by path.
+        if let sl = a.anchorData.startLine {
+            dict["start_line"] = sl
+        }
+        if let el = a.anchorData.endLine {
+            dict["end_line"] = el
+        }
+        if let lc = a.anchorData.lineContent {
+            dict["line_content"] = lc
+        }
+        if let fp = a.anchorData.filePath {
+            dict["file_path"] = fp
+        }
+        if let fs = a.anchorData.fileStartLine {
+            dict["file_start_line"] = fs
+        }
+        if let fe = a.anchorData.fileEndLine {
+            dict["file_end_line"] = fe
+        }
+        if let fls = a.anchorData.fileLineSide {
+            dict["file_line_side"] = fls
+        }
+    case .rowRange:
+        if let sr = a.anchorData.startRow {
+            dict["start_row"] = sr
+        }
+        if let er = a.anchorData.endRow {
+            dict["end_row"] = er
+        }
+        if let rc = a.anchorData.rowContent {
+            dict["row_content"] = rc
+        }
+    case .blockRange:
+        if let sb = a.anchorData.startBlock {
+            dict["start_block"] = sb
+        }
+        if let eb = a.anchorData.endBlock {
+            dict["end_block"] = eb
+        }
+        if let bc = a.anchorData.blockContent {
+            dict["block_content"] = bc
+        }
+    case .whole:
+        break
+    }
+    if let rn = a.reviewNumber {
+        dict["review_number"] = rn
+    }
+    if let rra = a.reviewReviewedAt {
+        dict["review_reviewed_at"] = rra
+    }
+    return dict
 }
 
 /// Which annotations belong on a given reader.
