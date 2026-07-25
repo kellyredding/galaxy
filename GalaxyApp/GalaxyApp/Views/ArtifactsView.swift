@@ -2099,41 +2099,6 @@ struct ArtifactsView: View {
         }
     }
 
-    /// Serialize an annotation + rendered HTML to a
-    /// JSON string for JS injection. Works for both
-    /// snapshot-bridged and artifact annotations.
-    private func buildAnnotationPayload(
-        annotation: SnapshotAnnotation,
-        renderedHTML: String
-    ) -> String {
-        var annDict: [String: Any] = [
-            "id": annotation.id,
-            "number": annotation.number,
-            "start_line": annotation.startLine,
-            "end_line": annotation.endLine,
-            "content": annotation.content,
-            "created_at": annotation.createdAt,
-            "updated_at": annotation.updatedAt,
-        ]
-        if let rn = annotation.reviewNumber {
-            annDict["review_number"] = rn
-        }
-        if let rra = annotation.reviewReviewedAt {
-            annDict["review_reviewed_at"] = rra
-        }
-        let dict: [String: Any] = [
-            "annotation": annDict,
-            "renderedHTML": renderedHTML,
-        ]
-        guard let data = try? JSONSerialization
-            .data(withJSONObject: dict),
-              let json = String(
-                  data: data, encoding: .utf8
-              )
-        else { return "{}" }
-        return json
-    }
-
     /// Build a JS-injectable annotation payload for
     /// any anchor type (line_range, row_range,
     /// block_range).
@@ -2252,24 +2217,11 @@ struct ArtifactsView: View {
                     ] = html
                     hasUnreviewedAnnotations = true
                 }
-                // For markdown artifacts, use
-                // snapshot bridge; for others use
-                // generic payload
-                let payload: String
-                if let snapAnn
-                    = snapshotAnnotationFrom(ann)
-                {
-                    payload = buildAnnotationPayload(
-                        annotation: snapAnn,
+                let payload
+                    = buildGenericAnnotationPayload(
+                        ann: ann,
                         renderedHTML: html
                     )
-                } else {
-                    payload
-                        = buildGenericAnnotationPayload(
-                            ann: ann,
-                            renderedHTML: html
-                        )
-                }
                 await MainActor.run {
                     webViewRef?.evaluateJavaScript(
                         "AnnotationManager"
@@ -2320,21 +2272,11 @@ struct ArtifactsView: View {
                         ann.number
                     ] = html
                 }
-                let payload: String
-                if let snapAnn
-                    = snapshotAnnotationFrom(ann)
-                {
-                    payload = buildAnnotationPayload(
-                        annotation: snapAnn,
+                let payload
+                    = buildGenericAnnotationPayload(
+                        ann: ann,
                         renderedHTML: html
                     )
-                } else {
-                    payload
-                        = buildGenericAnnotationPayload(
-                            ann: ann,
-                            renderedHTML: html
-                        )
-                }
                 await MainActor.run {
                     webViewRef?.evaluateJavaScript(
                         "AnnotationManager"
