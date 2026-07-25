@@ -12,6 +12,35 @@ import WebKit
 /// --annotation-active-block-border.
 let annotationCSS: String = """
     \(noteUXTokens(textSize: "13px"))
+    /* Neutralize host document rules that match injected
+       annotation UI by element name. A bare `pre`, `td`, or
+       `button` rule in a reader's own CSS is specificity (0,0,1);
+       these selectors are (0,1,0) and outrank it. They tie with
+       the annotation rules below, which win on source order — so
+       this block must stay first. Not a defense against host
+       `!important` or ID selectors; the only reader where that is
+       a live concern is the HTML reader's full-document path,
+       where the host CSS is artifact-authored. */
+    .annotation-card, .annotation-card *,
+    .annotation-form, .annotation-form * {
+        background: none;
+        border: 0;
+        border-radius: 0;
+        padding: 0;
+        margin: 0;
+        overflow: visible;
+        box-shadow: none;
+        max-width: none;
+        min-width: 0;
+        float: none;
+        text-align: left;
+        text-indent: 0;
+        text-transform: none;
+        letter-spacing: normal;
+        font-weight: normal;
+        font-style: normal;
+        list-style: none;
+    }
     .annotation-highlight {
         background-color: rgba(88, 166, 255, 0.12);
         border-left: 3px solid rgba(88, 166, 255, 0.6);
@@ -302,9 +331,9 @@ let annotationCSS: String = """
         margin: var(--note-spacer-gap) 0;
     }
     .annotation-spacer-row td {
-        padding: 0 !important;
-        border: none !important;
-        background: transparent !important;
+        padding: 0;
+        border: none;
+        background: transparent;
         line-height: 0;
     }
     .emoji-popup {
