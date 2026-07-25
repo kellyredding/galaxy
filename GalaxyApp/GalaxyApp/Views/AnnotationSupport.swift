@@ -11,6 +11,7 @@ import WebKit
 /// --annotation-active-block-bg,
 /// --annotation-active-block-border.
 let annotationCSS: String = """
+    \(noteUXTokens(textSize: "13px"))
     .annotation-highlight {
         background-color: rgba(88, 166, 255, 0.12);
         border-left: 3px solid rgba(88, 166, 255, 0.6);
@@ -23,31 +24,31 @@ let annotationCSS: String = """
         left: 24px;
         right: 24px;
         z-index: 10;
-        padding: 8px 12px;
+        padding: var(--note-box-pad-y) var(--note-box-pad-x);
         border: 1px solid rgba(88, 166, 255, 0.4);
         border-radius: 6px;
         background: var(--code-bg);
-        font-family: -apple-system, sans-serif;
-        font-size: 13px;
+        font-family: var(--note-chrome-font);
+        font-size: var(--note-chrome-size);
         box-sizing: border-box;
     }
     .annotation-form-header {
-        font-size: 11px;
+        font-size: var(--note-meta-size);
         color: var(--blockquote-fg);
-        margin-bottom: 4px;
-        font-family: "SF Mono", monospace;
+        margin-bottom: var(--note-header-gap);
+        font-family: var(--note-text-font);
     }
     .annotation-textarea {
         width: 100%;
-        min-height: 1.6em;
-        padding: 6px 8px;
+        min-height: var(--note-one-line);
+        padding: var(--note-text-pad-y) var(--note-text-pad-x);
         border: 1px solid var(--code-border);
         border-radius: 4px;
         background: var(--bg);
         color: var(--fg);
-        font-family: var(--font-family-mono);
-        font-size: 12px;
-        line-height: 1.5;
+        font-family: var(--note-text-font);
+        font-size: var(--note-text-size);
+        line-height: var(--note-text-line-height);
         resize: none;
         overflow: hidden;
         box-sizing: border-box;
@@ -70,27 +71,24 @@ let annotationCSS: String = """
         left: 24px;
         right: 24px;
         z-index: 10;
-        padding: 6px 10px;
+        padding: var(--note-box-pad-y) var(--note-box-pad-x);
         border: 1px solid var(--code-border);
         border-radius: 6px;
         background: var(--code-bg);
-        font-family: -apple-system, sans-serif;
-        font-size: 13px;
+        font-family: var(--note-chrome-font);
+        font-size: var(--note-chrome-size);
         box-sizing: border-box;
     }
     .annotation-card-header {
         display: flex;
         align-items: center;
         gap: 6px;
-        font-size: 11px;
+        font-size: var(--note-meta-size);
         color: var(--blockquote-fg);
-        margin-bottom: 2px;
-    }
-    .annotation-card-ref {
-        font-family: "SF Mono", monospace;
+        margin-bottom: var(--note-header-gap);
+        font-family: var(--note-text-font);
     }
     .annotation-card-meta {
-        font-family: "SF Mono", monospace;
         opacity: 0.5;
     }
     .annotation-card-actions {
@@ -244,26 +242,26 @@ let annotationCSS: String = """
         to { width: 0%; }
     }
     .annotation-card-content {
-        line-height: 1.5;
+        line-height: var(--note-text-line-height);
         color: var(--fg);
-        font-size: 12px;
+        font-size: var(--note-text-size);
     }
     .annotation-card-content.collapsed {
-        max-height: 1.6em;
+        max-height: var(--note-one-line);
         overflow: hidden;
     }
     \(verbatimCardCSS)
     .annotation-edit-textarea {
         width: 100%;
-        min-height: 1.6em;
-        padding: 4px 6px;
+        min-height: var(--note-one-line);
+        padding: var(--note-text-pad-y) var(--note-text-pad-x);
         border: 1px solid rgba(88, 166, 255, 0.4);
         border-radius: 4px;
         background: var(--bg);
         color: var(--fg);
-        font-family: var(--font-family-mono);
-        font-size: 12px;
-        line-height: 1.5;
+        font-family: var(--note-text-font);
+        font-size: var(--note-text-size);
+        line-height: var(--note-text-line-height);
         resize: none;
         overflow: hidden;
         box-sizing: border-box;
@@ -283,7 +281,7 @@ let annotationCSS: String = """
     }
     .annotation-expand-hint {
         display: block;
-        font-size: 11px;
+        font-size: var(--note-meta-size);
         color: var(--blockquote-fg);
         opacity: 0.5;
         margin-top: 2px;
@@ -298,10 +296,10 @@ let annotationCSS: String = """
         font-size: 0;
     }
     .annotation-spacer.form-spacer {
-        margin: 8px 0;
+        margin: var(--note-spacer-gap) 0;
     }
     .annotation-spacer.card-spacer {
-        margin: 6px 0;
+        margin: var(--note-spacer-gap) 0;
     }
     .annotation-spacer-row td {
         padding: 0 !important;
