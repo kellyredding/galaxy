@@ -41,7 +41,8 @@ struct ArtifactTranscriptView: NSViewRepresentable {
 
         let activeAnns = annotations.filter {
             !$0.stale
-                && $0.anchorData.type == .blockRange
+                && AnnotationScope.blockRange
+                    .accepts($0.anchorData.type)
         }
         // Block indices are assigned statically in
         // buildTranscriptHTML — no DOM walk needed.
@@ -99,8 +100,10 @@ struct ArtifactTranscriptView: NSViewRepresentable {
                 let activeAnns =
                     annotations.filter {
                         !$0.stale
-                            && $0.anchorData.type
-                                == .blockRange
+                            && AnnotationScope.blockRange
+                                .accepts(
+                                    $0.anchorData.type
+                                )
                     }
                 var initJS = buildAnnotationInitJS(
                     anchorType: "block_range",

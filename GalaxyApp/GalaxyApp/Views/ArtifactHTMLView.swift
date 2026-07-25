@@ -41,7 +41,8 @@ struct ArtifactHTMLView: NSViewRepresentable {
 
         let activeAnns = annotations.filter {
             !$0.stale
-                && $0.anchorData.type == .blockRange
+                && AnnotationScope.blockRange
+                    .accepts($0.anchorData.type)
         }
         // DOM-walk runs first, then annotation init
         let domWalkJS = blockIndexDOMWalkJS
@@ -98,8 +99,8 @@ struct ArtifactHTMLView: NSViewRepresentable {
             ) { result, _ in
                 let activeAnns = annotations.filter {
                     !$0.stale
-                        && $0.anchorData.type
-                            == .blockRange
+                        && AnnotationScope.blockRange
+                            .accepts($0.anchorData.type)
                 }
                 let domWalkJS = blockIndexDOMWalkJS
                 var initJS = buildAnnotationInitJS(

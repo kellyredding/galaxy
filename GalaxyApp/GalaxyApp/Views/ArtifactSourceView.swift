@@ -43,7 +43,8 @@ struct ArtifactSourceView: NSViewRepresentable {
         // Build init JS for after page load
         let activeAnns = annotations.filter {
             !$0.stale
-                && $0.anchorData.type == .lineRange
+                && AnnotationScope.lineRange
+                    .accepts($0.anchorData.type)
         }
         let initJS = buildAnnotationInitJS(
             anchorType: "line_range",
@@ -100,8 +101,8 @@ struct ArtifactSourceView: NSViewRepresentable {
             ) { result, _ in
                 let activeAnns = annotations.filter {
                     !$0.stale
-                        && $0.anchorData.type
-                            == .lineRange
+                        && AnnotationScope.lineRange
+                            .accepts($0.anchorData.type)
                 }
                 var initJS = buildAnnotationInitJS(
                     anchorType: "line_range",

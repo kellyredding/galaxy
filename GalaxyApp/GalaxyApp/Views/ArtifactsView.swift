@@ -1007,7 +1007,8 @@ struct ArtifactsView: View {
             let activeAnns: [any LineRangeAnnotation]
                 = openAnnotations.filter {
                     !$0.stale
-                        && $0.anchorData.type == .lineRange
+                        && AnnotationScope.lineRange
+                            .accepts($0.anchorData.type)
                         && $0.anchorData.startLine != nil
                         && $0.anchorData.endLine != nil
                 }

@@ -39,7 +39,8 @@ struct ArtifactTableView: NSViewRepresentable {
 
         let activeAnns = annotations.filter {
             !$0.stale
-                && $0.anchorData.type == .rowRange
+                && AnnotationScope.rowRange
+                    .accepts($0.anchorData.type)
         }
         let initJS = buildAnnotationInitJS(
             anchorType: "row_range",
@@ -94,8 +95,8 @@ struct ArtifactTableView: NSViewRepresentable {
             ) { result, _ in
                 let activeAnns = annotations.filter {
                     !$0.stale
-                        && $0.anchorData.type
-                            == .rowRange
+                        && AnnotationScope.rowRange
+                            .accepts($0.anchorData.type)
                 }
                 var initJS = buildAnnotationInitJS(
                     anchorType: "row_range",

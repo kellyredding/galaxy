@@ -138,10 +138,9 @@ struct ArtifactDiffView: NSViewRepresentable {
             : NSColor.white.cgColor
 
         let activeAnns = annotations.filter {
-            !$0.stale && (
-                $0.anchorData.type == .lineRange
-                    || $0.anchorData.type == .diffRange
-            )
+            !$0.stale
+                && AnnotationScope.diff
+                    .accepts($0.anchorData.type)
         }
         let initJS = buildAnnotationInitJS(
             anchorType: "line_range",
@@ -195,12 +194,9 @@ struct ArtifactDiffView: NSViewRepresentable {
                 + " : null"
             ) { result, _ in
                 let activeAnns = annotations.filter {
-                    !$0.stale && (
-                        $0.anchorData.type
-                            == .lineRange
-                        || $0.anchorData.type
-                            == .diffRange
-                    )
+                    !$0.stale
+                        && AnnotationScope.diff
+                            .accepts($0.anchorData.type)
                 }
                 var initJS = buildAnnotationInitJS(
                     anchorType: "line_range",

@@ -3219,6 +3219,47 @@ func buildAnnotationInitJS(
     )
 }
 
+/// Which annotations belong on a given reader.
+///
+/// Named once so that the initial load and any later rebuild cannot
+/// answer the question differently. They did: the rebuild applied one
+/// blanket rule to every reader, which excluded whole-file anchors —
+/// exactly the annotations a whole-file reader exists to show, and
+/// none of the ones it does not. Refreshing a diagram inverted its
+/// cards.
+struct AnnotationScope {
+    /// Anchor types the reader can place, or nil when it screens
+    /// nothing and shows whatever it is handed.
+    private let accepted: Set<AnchorType>?
+
+    private init(_ accepted: Set<AnchorType>?) {
+        self.accepted = accepted
+    }
+
+    func accepts(_ type: AnchorType) -> Bool {
+        guard let accepted else { return true }
+        return accepted.contains(type)
+    }
+
+    static let lineRange = AnnotationScope([.lineRange])
+    static let rowRange = AnnotationScope([.rowRange])
+    static let blockRange = AnnotationScope([.blockRange])
+
+    /// The diff reader is told `line_range`, since its rows carry the
+    /// `data-line` attributes the page resolves the usual way, but its
+    /// annotations are written as `diff_range` so they can also record
+    /// a per-file reference. Both kinds belong to it, which is why a
+    /// rule derived from what the page is told would drop half of
+    /// them.
+    static let diff = AnnotationScope([.lineRange, .diffRange])
+
+    /// Whole-file readers screen nothing. An annotation they cannot
+    /// place is still worth showing: it counts toward the review
+    /// button either way, and hiding it would leave pending work with
+    /// nowhere to appear. Same reasoning as the stale drawer.
+    static let unscreened = AnnotationScope(nil)
+}
+
 /// A line-range annotation, whichever store it came from.
 ///
 /// Artifacts and snapshots describe the same idea differently: one
