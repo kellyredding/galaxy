@@ -1284,6 +1284,20 @@ entry.card);
                     entry.card.remove();
             }
             this.cardSpacers = {};
+            // The registry above is keyed by annotation number, so
+            // two records sharing a number leave the first card
+            // untracked once the second insert overwrites its entry,
+            // and the loop cannot reach it. Sweep the document so a
+            // render always starts from no cards at all, whatever
+            // state the registry was left in. The loop below rebuilds
+            // one card per current annotation.
+            var strays = document.querySelectorAll(
+                '.annotation-card');
+            for (var s = 0; s < strays.length; s++) {
+                if (this.resizeObserver)
+                    this.resizeObserver.unobserve(strays[s]);
+                strays[s].remove();
+            }
             for (var i = 0; i < this.annotations.length;
                  i++) {
                 var ann = this.annotations[i];
@@ -2397,7 +2411,25 @@ function() {
             var scrollY = window.pageYOffset
                 || document.documentElement.scrollTop;
 
-            this.annotations.push(data.annotation);
+            // Replace rather than append when this number is
+            // already known. Numbers restart from one once every
+            // annotation on an artifact is deleted, so a record the
+            // page still holds can share a number with a genuinely
+            // new one. Appending would leave both in the set, and
+            // since bodies are keyed by number they would render as
+            // twins. Matches how an update reconciles.
+            var existingIdx = this.annotations.findIndex(
+                function(a) {
+                    return a.number
+                        === data.annotation.number;
+                }
+            );
+            if (existingIdx >= 0) {
+                this.annotations[existingIdx]
+                    = data.annotation;
+            } else {
+                this.annotations.push(data.annotation);
+            }
             this.annotationHTMLMap[\
 data.annotation.number]
                 = data.renderedHTML;
