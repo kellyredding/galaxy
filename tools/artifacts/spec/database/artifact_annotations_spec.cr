@@ -416,6 +416,24 @@ describe GalaxyArtifacts::Database do
       count.should eq(0)
     end
 
+    it "does not count stale annotations" do
+      artifact_id = create_artifact_for_annotations
+      2.times do |i|
+        GalaxyArtifacts::Database.save_annotation(
+          artifact_id, "Ann #{i + 1}",
+          %({"type":"whole_file"}), "abc123",
+        )
+      end
+      GalaxyArtifacts::Database.mark_annotations_stale(artifact_id)
+      GalaxyArtifacts::Database.save_annotation(
+        artifact_id, "Fresh",
+        %({"type":"whole_file"}), "abc123",
+      )
+
+      count = GalaxyArtifacts::Database.count_unreviewed_annotations(artifact_id)
+      count.should eq(1)
+    end
+
     it "returns 0 for artifact with no annotations" do
       artifact_id = create_artifact_for_annotations
       count = GalaxyArtifacts::Database.count_unreviewed_annotations(artifact_id)

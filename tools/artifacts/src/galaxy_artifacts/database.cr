@@ -712,7 +712,15 @@ module GalaxyArtifacts
       end
     end
 
-    # Count annotations not assigned to any review.
+    # Count annotations awaiting review.
+    #
+    # Stale ones do not count. Their anchor refers to content
+    # that has since changed and is not kept anywhere, so the
+    # range cannot be resolved again and only the text captured
+    # at the time survives. Sending that to a reviewer as though
+    # it described the file would be misleading, and the reader
+    # has always left them out of its own count — this is the
+    # same rule, in the one place a review is actually assembled.
     def self.count_unreviewed_annotations(
       artifact_id : Int64,
     ) : Int32
@@ -726,6 +734,7 @@ module GalaxyArtifacts
               FROM artifact_annotations
               WHERE artifact_id = ?
                 AND artifact_review_id IS NULL
+                AND stale = 0
             SQL
             artifact_id,
           ).as(Int64).to_i
@@ -757,6 +766,7 @@ module GalaxyArtifacts
               FROM artifact_annotations
               WHERE artifact_id = ?
                 AND artifact_review_id IS NULL
+                AND stale = 0
             SQL
             artifact_id,
           ).as(Int64).to_i
@@ -799,7 +809,9 @@ module GalaxyArtifacts
             return nil
           end
 
-          # Assign all unreviewed annotations to this review
+          # Claim the annotations counted above. The stale
+          # condition has to match that count exactly, or a
+          # review would report one number and carry another.
           db.exec(
             <<-SQL,
               UPDATE artifact_annotations
@@ -807,6 +819,7 @@ module GalaxyArtifacts
                   updated_at = datetime('now')
               WHERE artifact_id = ?
                 AND artifact_review_id IS NULL
+                AND stale = 0
             SQL
             review.id,
             artifact_id,

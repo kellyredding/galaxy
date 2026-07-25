@@ -128,6 +128,30 @@ describe GalaxyArtifacts::Database do
       review.created_at.should_not be_empty
       review.updated_at.should_not be_empty
     end
+
+    it "leaves stale annotations out of the review" do
+      artifact_id = create_artifact_for_reviews
+      create_annotations_for_review(artifact_id, 3)
+      GalaxyArtifacts::Database.mark_annotations_stale(artifact_id)
+      create_annotations_for_review(artifact_id, 2)
+
+      result = GalaxyArtifacts::Database.save_review(artifact_id)
+      _, count = result.not_nil!
+      count.should eq(2)
+
+      anns = GalaxyArtifacts::Database.list_annotations(artifact_id)
+      anns.select(&.stale).all? { |a|
+        a.artifact_review_id.nil?
+      }.should be_true
+    end
+
+    it "returns nil when every unreviewed annotation is stale" do
+      artifact_id = create_artifact_for_reviews
+      create_annotations_for_review(artifact_id, 3)
+      GalaxyArtifacts::Database.mark_annotations_stale(artifact_id)
+
+      GalaxyArtifacts::Database.save_review(artifact_id).should be_nil
+    end
   end
 
   describe ".list_reviews" do
