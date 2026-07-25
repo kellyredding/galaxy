@@ -1078,7 +1078,7 @@ function() {
             this.resizeObserver.observe(form);
         },
 
-        positionForm(skipScroll, direction) {
+        positionForm(skipScroll) {
             var targetBlock = this.blocks[\
 this.highlightEnd];
             if (!targetBlock || !this.formElement) \
@@ -1109,48 +1109,10 @@ return;
             this.updateFormReference();
             this.syncAllPositions();
             if (!skipScroll) {
-                if (direction) {
-                    this.scrollFormIntoView(direction);
-                } else {
-                    this.formElement.scrollIntoView({
-                        behavior: 'smooth',
-                        block: 'nearest'
-                    });
-                }
-            }
-        },
-
-        scrollFormIntoView(direction) {
-            if (!this.formElement) return;
-            var rect = this.formElement\
-.getBoundingClientRect();
-            var vh = window.innerHeight;
-
-            if (rect.bottom < 0 || rect.top > vh) {
                 this.formElement.scrollIntoView({
                     behavior: 'smooth',
-                    block: 'center'
+                    block: 'nearest'
                 });
-                return;
-            }
-
-            var margin = vh * 0.35;
-            if (direction === 'down') {
-                var bottomSpace = vh - rect.bottom;
-                if (bottomSpace < margin) {
-                    window.scrollBy({
-                        top: margin - bottomSpace,
-                        behavior: 'smooth'
-                    });
-                }
-            } else if (direction === 'up') {
-                var topSpace = rect.top;
-                if (topSpace < margin) {
-                    window.scrollBy({
-                        top: -(margin - topSpace),
-                        behavior: 'smooth'
-                    });
-                }
             }
         },
 
