@@ -1299,8 +1299,19 @@ this.expandedNumber);
             }
         },
 
-        refreshAnnotationData(annotations) {
+        refreshAnnotationData(annotations, htmlMap) {
             this.annotations = annotations;
+            // Card bodies are spliced from HTML that Swift escapes
+            // and owns, so a set carrying annotations this page has
+            // not seen before has to arrive with their HTML too.
+            // Without it the body lookup falls back to an empty
+            // string and the card renders as a shell: the header
+            // resolves from the anchor, but nothing goes inside.
+            // Callers that only re-render already-known annotations
+            // may omit it and keep the existing map.
+            if (htmlMap) {
+                this.annotationHTMLMap = htmlMap;
+            }
             if (this.anchorType === 'whole') {
                 this.renderWholeAnnotations();
             } else {

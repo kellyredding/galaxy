@@ -1486,15 +1486,31 @@ struct SnapshotsView: View {
                         }
                         return dict
                     }
+                // Ship the card bodies alongside the records. A
+                // refresh can introduce annotations the page has
+                // never rendered, and those have no entry in its
+                // map yet.
+                var jsHtmlMap: [String: String] = [:]
+                for a in annotations {
+                    jsHtmlMap[String(a.number)] =
+                        escapeAnnotationContent(a.content)
+                }
                 if let data = try? JSONSerialization.data(
                     withJSONObject: annotationDicts
                 ),
                    let json = String(
                        data: data, encoding: .utf8
+                   ),
+                   let mapData = try? JSONSerialization.data(
+                       withJSONObject: jsHtmlMap
+                   ),
+                   let mapJson = String(
+                       data: mapData, encoding: .utf8
                    ) {
                     webViewRef?.evaluateJavaScript(
                         "AnnotationManager"
-                        + ".refreshAnnotationData(\(json))"
+                        + ".refreshAnnotationData("
+                        + "\(json), \(mapJson))"
                     )
                 }
             }

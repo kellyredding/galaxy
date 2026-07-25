@@ -2629,17 +2629,30 @@ struct ArtifactsView: View {
                 }
                 return dict
             }
+        // Ship the card bodies alongside the records. A refresh can
+        // introduce annotations the page has never rendered, and
+        // those have no entry in its map yet.
+        var htmlMap: [String: String] = [:]
+        for a in activeAnns {
+            htmlMap[String(a.number)]
+                = escapeAnnotationContent(a.content)
+        }
         if !annDicts.isEmpty,
            let data = try? JSONSerialization
             .data(withJSONObject: annDicts),
            let json = String(
                data: data, encoding: .utf8
+           ),
+           let mapData = try? JSONSerialization
+            .data(withJSONObject: htmlMap),
+           let mapJson = String(
+               data: mapData, encoding: .utf8
            )
         {
             webViewRef?.evaluateJavaScript(
                 "AnnotationManager"
                 + ".refreshAnnotationData"
-                + "(\(json))"
+                + "(\(json), \(mapJson))"
             )
         }
     }
