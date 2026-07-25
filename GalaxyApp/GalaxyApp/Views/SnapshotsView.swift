@@ -210,10 +210,16 @@ struct SnapshotsView: View {
         }
         .onChange(of: sessionManager.pendingReviewCheck) {
             guard session.id == sessionManager.activeSessionId else { return }
-            guard let snapshotId = sessionManager.pendingReviewCheck,
-                  let open = openSnapshot,
-                  snapshotId == open.id else { return }
+            guard let snapshotId = sessionManager.pendingReviewCheck
+            else { return }
+            // Consume the signal before deciding whether it applies
+            // here. An id belonging to some other snapshot left
+            // sitting in place would make the next event carrying
+            // that same id compare equal, so this handler would
+            // never run and a wanted refresh would be skipped.
             sessionManager.pendingReviewCheck = nil
+            guard let open = openSnapshot,
+                  snapshotId == open.id else { return }
             checkReviewButtonVisibility(snapshotId: snapshotId)
         }
         .onReceive(

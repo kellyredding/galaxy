@@ -580,6 +580,42 @@ final class EventCoordinator {
             }
         }
 
+        // Artifact annotation/review events: the same review-button
+        // refresh, keyed by artifact number. The events also carry a
+        // row id, but the reader identifies its open artifact by
+        // number and the has-pending query takes a number, so the id
+        // would only have to be translated back. The value arrives as
+        // an Int64 regardless of its width on the wire, so it is
+        // narrowed here rather than requested as an Int32 — asking
+        // for the narrower type yields nil and silently skips the
+        // refresh.
+        if [
+            "timeline.artifact.annotation:created",
+            "timeline.artifact.annotation:updated",
+            "timeline.artifact.annotation:deleted",
+            "timeline.artifact.review:created",
+        ].contains(envelope.event),
+           let rawNumber = envelope.detailValue(
+               "artifact_number", as: Int64.self
+           ),
+           let artifactNumber = Int32(exactly: rawNumber)
+        {
+            DispatchQueue.main.async { [weak self] in
+                guard let sm = self?.sessionManager
+                else { return }
+                if let appSessionId =
+                    self?.ledgerSessionIdCache[
+                        envelope.ledgerSessionId
+                    ],
+                   appSessionId
+                       == sm.activeSessionId
+                {
+                    sm.pendingArtifactReviewCheck
+                        = artifactNumber
+                }
+            }
+        }
+
         // All known events go through debouncer → enrichment
         debouncer.submit(envelope)
     }

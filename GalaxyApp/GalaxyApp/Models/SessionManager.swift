@@ -113,6 +113,13 @@ class SessionManager: ObservableObject {
     /// SnapshotsView observes this to refresh review button visibility.
     @Published var pendingReviewCheck: Int64? = nil
 
+    /// Set by EventCoordinator when artifact annotation/review events
+    /// arrive. ArtifactsView observes this to refresh review button
+    /// visibility. Carries the artifact number rather than a row id,
+    /// because the reader identifies its open artifact by number and
+    /// the has-pending query takes one too.
+    @Published var pendingArtifactReviewCheck: Int32? = nil
+
     /// Set by EventCoordinator on agent lifecycle events.
     /// AgentsView observes this to refresh its data.
     /// Tuple of (sessionId, timestamp) for targeted refresh.

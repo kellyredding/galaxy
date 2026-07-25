@@ -209,6 +209,31 @@ struct ArtifactsView: View {
             sessionManager.listNavAction = nil
             handleListNavAction(action)
         }
+        .onChange(
+            of: sessionManager.pendingArtifactReviewCheck
+        ) {
+            guard session.id
+                == sessionManager.activeSessionId
+            else { return }
+            guard let artifactNumber
+                = sessionManager
+                    .pendingArtifactReviewCheck
+            else { return }
+            // Consume the signal before deciding whether it
+            // applies here. A number belonging to some other
+            // artifact left sitting in place would make the
+            // next event carrying that same number compare
+            // equal, so this handler would never run and a
+            // refresh the reader did want would be skipped.
+            sessionManager
+                .pendingArtifactReviewCheck = nil
+            guard let open = openArtifact,
+                  artifactNumber == open.number
+            else { return }
+            checkReviewButtonVisibility(
+                artifactNumber: artifactNumber
+            )
+        }
         .onReceive(
             NotificationCenter.default.publisher(
                 for: NSApplication
@@ -2325,6 +2350,38 @@ struct ArtifactsView: View {
     }
 
     // MARK: - Review Actions
+
+    /// Re-check whether the open artifact still has unreviewed
+    /// annotations. Driven by annotation and review events, so the
+    /// review button stays truthful when annotations are created or
+    /// deleted outside the reader — by an agent working through the
+    /// CLI, most often. Only the button is refreshed: reloading the
+    /// cards would rebuild the annotation DOM underneath whatever
+    /// form or edit the user has open.
+    private func checkReviewButtonVisibility(
+        artifactNumber: Int32
+    ) {
+        guard let lsid = session.ledgerSessionId else { return }
+        Task {
+            do {
+                let hasPending = try await ArtifactQueryService
+                    .shared
+                    .checkHasPending(
+                        ledgerSessionId: lsid,
+                        artifactNumber: artifactNumber
+                    )
+                await MainActor.run {
+                    hasUnreviewedAnnotations = hasPending
+                }
+            } catch {
+                NSLog(
+                    "ArtifactsView: checkReviewButton "
+                    + "error: %@",
+                    error.localizedDescription
+                )
+            }
+        }
+    }
 
     private func submitReview(
         artifact: ArtifactSummary
