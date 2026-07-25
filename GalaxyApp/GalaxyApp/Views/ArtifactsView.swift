@@ -1203,6 +1203,44 @@ struct ArtifactsView: View {
         return map[ext]
     }
 
+    /// Which annotations the reader for this artifact is answerable
+    /// for.
+    ///
+    /// Mirrors the dispatch in `artifactContentView` and has to keep
+    /// agreeing with it: that decides which reader opens, this decides
+    /// what a rebuild sends it, and the two disagreeing is how a
+    /// refresh came to invert a diagram's cards.
+    ///
+    /// JSONL is the awkward one — whether it opens as a transcript or
+    /// as source depends on the content rather than the extension, so
+    /// the content has to be available to answer at all. Without it
+    /// the source reading is assumed, matching the dispatch's own
+    /// fallback.
+    private func annotationScope(
+        for artifact: ArtifactSummary,
+        content: String?
+    ) -> AnnotationScope {
+        if isImageExtension(artifact.originalFilename) {
+            return .unscreened
+        }
+        let ext = (
+            artifact.originalFilename as NSString
+        ).pathExtension.lowercased()
+        switch ext {
+        case "md", "markdown": return .lineRange
+        case "csv", "tsv": return .rowRange
+        case "mmd", "mermaid": return .unscreened
+        case "html", "htm": return .blockRange
+        case "jsonl":
+            if let content, isAgentTranscript(content) {
+                return .blockRange
+            }
+            return .lineRange
+        case "gdiff": return .diff
+        default: return .lineRange
+        }
+    }
+
     private func isImageExtension(
         _ filename: String
     ) -> Bool {
@@ -1449,7 +1487,13 @@ struct ArtifactsView: View {
                         // annotation added or deleted while the
                         // reader stayed open would leave the
                         // cards showing the old set.
-                        pushAnnotationData(annotations)
+                        pushAnnotationData(
+                            annotations,
+                            scope: annotationScope(
+                                for: artifact,
+                                content: content
+                            )
+                        )
                         isRefreshing = false
                     }
                 } catch {
@@ -2557,17 +2601,24 @@ struct ArtifactsView: View {
 
     /// Rebuild the reader's annotation cards from the given set.
     ///
-    /// Whole-file annotations are left out because those renderers
-    /// show SwiftUI cards instead of cards in the document, and
-    /// stale ones because they belong to the drawer rather than the
-    /// page. Callers must already be on the main actor.
+    /// The scope decides which of them belong to the reader being
+    /// rebuilt, so that a rebuild sends the same set the initial load
+    /// did. Stale ones are always left out; they belong to the drawer
+    /// rather than the page. Callers must already be on the main
+    /// actor.
+    ///
+    /// An empty set is sent rather than withheld: that is how a reader
+    /// is told its last card is gone. Nothing renders cards this does
+    /// not send any more, so there is no longer a case where empty
+    /// means "no news" instead of "nothing left".
     @MainActor
     private func pushAnnotationData(
-        _ annotations: [ArtifactAnnotation]
+        _ annotations: [ArtifactAnnotation],
+        scope: AnnotationScope
     ) {
         let activeAnns = annotations.filter {
             !$0.stale
-                && $0.anchorData.type != .whole
+                && scope.accepts($0.anchorData.type)
         }
         let annDicts: [[String: Any]]
             = activeAnns.map { a in
@@ -2635,14 +2686,6 @@ struct ArtifactsView: View {
             htmlMap[String(a.number)]
                 = escapeAnnotationContent(a.content)
         }
-        // An empty set has to reach the page when nothing is left,
-        // or deleting the last annotation leaves its card behind.
-        // Empty for the other reason — every annotation on this
-        // artifact anchors to the whole file, which the filter above
-        // drops — must not: those readers hold cards this serializer
-        // never sends, and an empty set would clear them.
-        guard !annDicts.isEmpty || annotations.isEmpty
-        else { return }
         if let data = try? JSONSerialization
             .data(withJSONObject: annDicts),
            let json = String(
@@ -2694,7 +2737,13 @@ struct ArtifactsView: View {
                             && !$0.stale
                     }
 
-                pushAnnotationData(annotations)
+                pushAnnotationData(
+                    annotations,
+                    scope: annotationScope(
+                        for: artifact,
+                        content: openArtifactContent
+                    )
+                )
             }
         } catch {
             NSLog(
