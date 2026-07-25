@@ -312,25 +312,25 @@ let annotationCSS: String = """
         margin-left: -11px;
         transition: background-color 0.15s ease;
     }
-    /* Sits in the header row, after the action icons, rather
-       than below the card body where appearing and disappearing
-       changed the card's height — a one-line note would shrink
-       as it expanded and grow back as it collapsed, nudging
-       every card below it. Hidden rather than removed, and with
-       its own line-height, so neither the card nor the icons
-       beside it move when it comes and goes. */
+    /* Sits in the header row at the end of the label group,
+       rather than below the card body where appearing and
+       disappearing changed the card's height — a one-line note
+       would shrink as it expanded and grow back as it collapsed,
+       nudging every card below it. Nothing follows it in that
+       group and the action buttons are pinned right by their own
+       auto margin, so it can leave the flow without moving
+       anything, in either direction. */
+    /* Font, size and colour are left to the header so the hint
+       reads as the same kind of label as the line reference
+       beside it, and follows it if that treatment changes. */
     .annotation-expand-hint {
-        font-size: var(--note-meta-size);
-        line-height: 1;
-        color: var(--blockquote-fg);
-        opacity: 0.5;
         cursor: pointer;
         white-space: nowrap;
     }
     .annotation-card.expanded .annotation-expand-hint,
     .annotation-card:has(.annotation-edit-textarea)
         .annotation-expand-hint {
-        visibility: hidden;
+        display: none;
     }
     .annotation-spacer {
         pointer-events: none;
@@ -822,13 +822,13 @@ annotation.review_reviewed_at);
                     '<span class=\
 "annotation-card-meta">'
                     + metaText + '</span>' +
-                    actionsHTML +
                     '<span class=\
 "annotation-expand-hint"'
                     + (isExpanded
-                        ? ' style="visibility:hidden"'
+                        ? ' style="display:none"'
                         : '')
                     + '>Click to expand</span>' +
+                    actionsHTML +
                 '</div>' +
                 '<pre class=\
 "annotation-card-content verbatim-card-content'
@@ -1588,13 +1588,13 @@ annotation.review_reviewed_at);
                     + metaText + '</span>' +
                     copyBtnHTML +
                     suggestBtnHTML +
-                    actionsHTML +
                     '<span class=\
 "annotation-expand-hint"'
                     + (isExpanded
-                        ? ' style="visibility:hidden"'
+                        ? ' style="display:none"'
                         : '')
                     + '>Click to expand</span>' +
+                    actionsHTML +
                 '</div>' +
                 '<pre class=\
 "annotation-card-content verbatim-card-content'
@@ -2003,8 +2003,7 @@ annotation.number);
                     content.classList.remove('collapsed');
                 var hint = card.querySelector(\
 '.annotation-expand-hint');
-                if (hint)
-                    hint.style.visibility = 'hidden';
+                if (hint) hint.style.display = 'none';
                 this.syncAllPositions();
                 card.scrollIntoView({
                     behavior: 'smooth',
@@ -2030,7 +2029,7 @@ annotation.number);
                     content.classList.add('collapsed');
                 var hint = card.querySelector(\
 '.annotation-expand-hint');
-                if (hint) hint.style.visibility = '';
+                if (hint) hint.style.display = '';
             }
 
             this.clearExpandedHighlight();
