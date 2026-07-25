@@ -2637,8 +2637,15 @@ struct ArtifactsView: View {
             htmlMap[String(a.number)]
                 = escapeAnnotationContent(a.content)
         }
-        if !annDicts.isEmpty,
-           let data = try? JSONSerialization
+        // An empty set has to reach the page when nothing is left,
+        // or deleting the last annotation leaves its card behind.
+        // Empty for the other reason — every annotation on this
+        // artifact anchors to the whole file, which the filter above
+        // drops — must not: those readers hold cards this serializer
+        // never sends, and an empty set would clear them.
+        guard !annDicts.isEmpty || annotations.isEmpty
+        else { return }
+        if let data = try? JSONSerialization
             .data(withJSONObject: annDicts),
            let json = String(
                data: data, encoding: .utf8
