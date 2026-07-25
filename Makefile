@@ -1,4 +1,4 @@
-.PHONY: all clean statusline-build statusline-test statusline-check statusline-install statusline-clean ledger-build ledger-test ledger-check ledger-install ledger-clean snapshots-build snapshots-dev snapshots-test snapshots-check snapshots-install snapshots-clean artifacts-build artifacts-dev artifacts-test artifacts-check artifacts-install artifacts-clean timeline-build timeline-dev timeline-test timeline-check timeline-install timeline-clean agents-build agents-dev agents-test agents-check agents-install agents-clean diff-build diff-dev diff-test diff-check diff-install diff-clean galaxy-build galaxy-dev galaxy-test galaxy-check galaxy-install galaxy-clean app-build app-clean
+.PHONY: all clean statusline-build statusline-dev statusline-test statusline-check statusline-install statusline-clean ledger-build ledger-dev ledger-test ledger-check ledger-install ledger-clean snapshots-build snapshots-dev snapshots-test snapshots-check snapshots-install snapshots-clean artifacts-build artifacts-dev artifacts-test artifacts-check artifacts-install artifacts-clean timeline-build timeline-dev timeline-test timeline-check timeline-install timeline-clean agents-build agents-dev agents-test agents-check agents-install agents-clean diff-build diff-dev diff-test diff-check diff-install diff-clean galaxy-build galaxy-dev galaxy-test galaxy-check galaxy-install galaxy-clean app-build app-release app-clean
 
 all: statusline-build ledger-build snapshots-build artifacts-build timeline-build agents-build diff-build galaxy-build
 
@@ -155,17 +155,17 @@ galaxy-clean:
 	$(MAKE) -C tools/galaxy clean
 
 # Galaxy.app (SwiftUI Mac app)
-# Always uses -derivedDataPath to avoid polluting ~/Library/Developer/Xcode/DerivedData
-APP_DERIVED_DATA = GalaxyApp/build
-
+# Delegated so the embedded-JavaScript syntax gate runs here too. Calling
+# xcodebuild directly from this file skipped validate-js, leaving a gate that
+# only fired when the app was built from its own directory. Derived data still
+# lands in GalaxyApp/build either way.
 app-build:
-	xcodebuild -project GalaxyApp/GalaxyApp.xcodeproj -scheme GalaxyApp -configuration Debug -derivedDataPath $(APP_DERIVED_DATA) -destination 'platform=macOS' build
+	$(MAKE) -C GalaxyApp build
 
 app-release:
-	xcodebuild -project GalaxyApp/GalaxyApp.xcodeproj -scheme GalaxyApp -configuration Release -derivedDataPath $(APP_DERIVED_DATA) -destination 'platform=macOS' build
+	$(MAKE) -C GalaxyApp release
 
 app-clean:
-	xcodebuild -project GalaxyApp/GalaxyApp.xcodeproj -scheme GalaxyApp -derivedDataPath $(APP_DERIVED_DATA) clean
-	rm -rf $(APP_DERIVED_DATA)
+	$(MAKE) -C GalaxyApp clean
 
 clean: statusline-clean ledger-clean snapshots-clean artifacts-clean timeline-clean agents-clean diff-clean galaxy-clean app-clean
