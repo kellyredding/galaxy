@@ -36,13 +36,22 @@ struct ArtifactImageView: NSViewRepresentable {
             ? NSColor.black.cgColor
             : NSColor.white.cgColor
 
+        // Whole-file anchors only, decided here rather than
+        // trusted from the caller — the same way every other
+        // reader screens for the anchor type it can place. One
+        // anchored to a line or a row would otherwise be drawn
+        // as a whole-file card, which is not what it says.
+        let activeAnns = annotations.filter {
+            !$0.stale
+                && $0.anchorData.type == .whole
+        }
         let initJS = buildAnnotationInitJS(
             anchorType: "whole",
             blockSelector: "",
             lineAttr: "",
             refPrefix: "",
             itemLabel: itemLabel,
-            annotations: annotations,
+            annotations: activeAnns,
             htmlMap: annotationHTMLMap
         )
         context.coordinator.pendingInitJS = initJS
@@ -85,13 +94,17 @@ struct ArtifactImageView: NSViewRepresentable {
                 ? NSColor.black.cgColor
                 : NSColor.white.cgColor
 
+            let activeAnns = annotations.filter {
+                !$0.stale
+                    && $0.anchorData.type == .whole
+            }
             let initJS = buildAnnotationInitJS(
                 anchorType: "whole",
                 blockSelector: "",
                 lineAttr: "",
                 refPrefix: "",
                 itemLabel: itemLabel,
-                annotations: annotations,
+                annotations: activeAnns,
                 htmlMap: annotationHTMLMap
             )
             context.coordinator.pendingInitJS = initJS
