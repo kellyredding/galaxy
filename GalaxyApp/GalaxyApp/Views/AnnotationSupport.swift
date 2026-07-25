@@ -1971,6 +1971,16 @@ annotation.number);
                 }
             );
             if (!ann) return;
+            // With no anchorable blocks the two resolvers below
+            // disagree in a way that walks off the array: the start
+            // falls back to the last index, which is -1 here, while
+            // the end falls back to 0, so the loop reads index -1 and
+            // dereferences undefined. A rescan that finds nothing —
+            // mid-render, or against a document whose rows have gone
+            // — is enough to reach it. Given at least one block both
+            // fallbacks are themselves valid indices, so the loop
+            // needs no further bounds.
+            if (!this.blocks.length) return;
 
             var startIdx = this.findBlockIndexForStartLine(\
 ann[startKey]);
