@@ -2121,9 +2121,6 @@ endVal);
             );
             if (!ann || !contentDiv) return;
 
-            card.setAttribute('data-original-html',
-                contentDiv.outerHTML);
-
             var ta = document.createElement('textarea');
             ta.className = 'annotation-edit-textarea';
             ta.spellcheck = false;
@@ -2171,17 +2168,28 @@ number);
 !== 'undefined' && ta) {
                     EmojiAutocomplete.detach(ta);
                 }
-                var originalHTML = card.getAttribute(\
-'data-original-html');
-                if (ta && originalHTML) {
-                    var temp = document.createElement(\
-'div');
-                    temp.innerHTML = originalHTML;
-                    if (temp.firstChild)
-                        ta.replaceWith(temp.firstChild);
+                // Rebuild the content element from the
+                // annotation's stored HTML rather than from
+                // a snapshot of the pre-edit DOM. A
+                // snapshot also captures whatever transient
+                // decoration was present when the edit
+                // began — a Cmd+F highlight most visibly —
+                // and restoring it resurrects that markup
+                // for good, because find cannot unwrap a
+                // node that has already left the document.
+                // Same reconstruction the success path
+                // performs after a save.
+                var html = this.annotationHTMLMap[\
+this.editingNumber];
+                if (ta && typeof html === 'string') {
+                    var contentDiv
+                        = document.createElement('pre');
+                    contentDiv.className
+                        = 'annotation-card-content '
+                        + 'verbatim-card-content';
+                    contentDiv.innerHTML = html;
+                    ta.replaceWith(contentDiv);
                 }
-                card.removeAttribute(\
-'data-original-html');
             }
             this.editingNumber = null;
             this.syncAllPositions();
@@ -2500,8 +2508,6 @@ data.annotation.number]
                         = data.renderedHTML;
                     ta.replaceWith(contentDiv);
                 }
-                card.removeAttribute(\
-'data-original-html');
             }
             this.editingNumber = null;
 
