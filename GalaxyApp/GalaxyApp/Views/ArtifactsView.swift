@@ -63,8 +63,6 @@ struct ArtifactsView: View {
         [ArtifactAnnotation] = []
     @State private var annotationHTMLMap:
         [Int32: String] = [:]
-    @State private var dismissingStaleNumber:
-        Int32? = nil
 
     // Review state
     @State private var hasUnreviewedAnnotations:
@@ -723,13 +721,10 @@ struct ArtifactsView: View {
                     maxHeight: .infinity
                 )
             } else if let content = openArtifactContent {
-                VStack(spacing: 0) {
-                    artifactContentView(
-                        artifact: artifact,
-                        content: content
-                    )
-                    staleAnnotationsSection
-                }
+                artifactContentView(
+                    artifact: artifact,
+                    content: content
+                )
             } else if let path = artifact.storedPath
                 ?? artifact.sourcePath,
                 isImageExtension(
@@ -760,7 +755,6 @@ struct ArtifactsView: View {
                         webViewRef: $webViewRef
                     )
                     .id(imageRefreshToken)
-                    staleAnnotationsSection
                 }
             } else {
                 VStack {
@@ -860,121 +854,6 @@ struct ArtifactsView: View {
         else { return }
         sessionManager.artifactsFindHandler = {
             activateFind()
-        }
-    }
-
-    // MARK: - Stale Annotations
-
-    @ViewBuilder
-    private var staleAnnotationsSection: some View {
-        let staleAnns = openAnnotations.filter {
-            $0.stale
-        }
-        if !staleAnns.isEmpty {
-            VStack(alignment: .leading, spacing: 0) {
-                Rectangle()
-                    .fill(Color.primary.opacity(0.1))
-                    .frame(height: 1)
-                DisclosureGroup(
-                    "Stale Annotations"
-                    + " (\(staleAnns.count))"
-                ) {
-                    VStack(
-                        alignment: .leading,
-                        spacing: 8
-                    ) {
-                        ForEach(staleAnns) { ann in
-                            staleAnnotationCard(ann)
-                        }
-                    }
-                    .padding(.top, 4)
-                }
-                .chromeFont(
-                    size: fontSize.caption2,
-                    weight: .medium
-                )
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-            }
-            .background(
-                Color(.windowBackgroundColor)
-            )
-        }
-    }
-
-    private func staleAnnotationCard(
-        _ ann: ArtifactAnnotation
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(ann.content)
-                .chromeFontMono(size: fontSize.caption2)
-                .opacity(0.7)
-
-            if let captured = ann.anchorData
-                .capturedContent
-            {
-                Text(captured)
-                    .font(.system(
-                        size: fontSize.caption2 - 1,
-                        design: .monospaced
-                    ))
-                    .foregroundColor(.secondary)
-                    .padding(4)
-                    .background(
-                        Color.secondary.opacity(0.1)
-                    )
-                    .cornerRadius(4)
-                    .lineLimit(3)
-            }
-
-            Button("Dismiss") {
-                dismissStaleAnnotation(ann)
-            }
-            .chromeFont(size: fontSize.caption2)
-            .foregroundColor(.secondary)
-            .disabled(
-                dismissingStaleNumber == ann.number
-            )
-        }
-        .padding(.vertical, 4)
-    }
-
-    private func dismissStaleAnnotation(
-        _ ann: ArtifactAnnotation
-    ) {
-        guard dismissingStaleNumber == nil
-        else { return }
-        guard let lsid = session.ledgerSessionId,
-              let artifact = openArtifact
-        else { return }
-        dismissingStaleNumber = ann.number
-        Task {
-            do {
-                try await ArtifactQueryService.shared
-                    .deleteAnnotation(
-                        ledgerSessionId: lsid,
-                        artifactNumber: artifact.number,
-                        number: ann.number
-                    )
-                await MainActor.run {
-                    openAnnotations.removeAll {
-                        $0.number == ann.number
-                    }
-                    annotationHTMLMap.removeValue(
-                        forKey: ann.number
-                    )
-                    dismissingStaleNumber = nil
-                }
-            } catch {
-                NSLog(
-                    "ArtifactsView: dismiss stale "
-                    + "annotation error: %@",
-                    error.localizedDescription
-                )
-                await MainActor.run {
-                    dismissingStaleNumber = nil
-                }
-            }
         }
     }
 
