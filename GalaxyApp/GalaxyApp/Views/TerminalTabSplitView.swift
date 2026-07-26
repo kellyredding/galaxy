@@ -101,7 +101,13 @@ struct TerminalTabSplitView: View {
         ) { sessionId in
             guard sessionId == session.id else { return }
             if state.shellPane != nil {
-                state.shellPane?.focus()
+                // Through the pane-focus registry, not the pane:
+                // with a scrollback open on the shell, focusing
+                // the pane lands on the live terminal hidden
+                // behind the overlay, leaving it visible but
+                // keyboard-dead with Esc going to the shell as
+                // input.
+                session.restoreShellPaneFocus()
             } else {
                 state.openShell(for: session)
             }
@@ -110,7 +116,10 @@ struct TerminalTabSplitView: View {
             TerminalTabCommands.shared.focusSession
         ) { sessionId in
             guard sessionId == session.id else { return }
-            session.backend?.focus()
+            // Same reason as the shell above: reaching for the
+            // backend skips the host that knows whether a
+            // scrollback overlay is covering it.
+            session.restoreSessionPaneFocus()
         }
         .onReceive(
             TerminalTabCommands.shared.closeFocusedShell

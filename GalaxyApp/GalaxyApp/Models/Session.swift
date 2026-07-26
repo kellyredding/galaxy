@@ -440,6 +440,21 @@ class Session: Identifiable, ObservableObject {
         }
     }
 
+    /// Restore focus to the Shell pane's host view, routing
+    /// through its `requestFocus()` for the same reason
+    /// `restoreSessionPaneFocus` does — an open scrollback
+    /// overlay must receive focus rather than the live
+    /// terminal hidden underneath it. Used by the open-shell
+    /// command when a shell is already open, where the command
+    /// means "focus it" rather than "open one". No-op if the
+    /// Shell pane's restorer isn't registered.
+    func restoreShellPaneFocus() {
+        if let entry = paneFocusRestorers.values
+            .first(where: { $0.kind == .shell }) {
+            entry.restore()
+        }
+    }
+
     /// Ledger session ID for fast event matching. Set when the event
     /// system first matches this session via session_identifiers array.
     /// Optional because it's not known until the first event or
