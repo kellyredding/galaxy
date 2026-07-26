@@ -100,6 +100,15 @@ func iconButtonCSS(
     .copy-button.\(prefix)-copy-ref {
         display: inline-flex;
     }
+    /* Confirmation after a successful copy. Both copy
+       actions flash it — the reference button was added
+       to a rule that named only its sibling, so its
+       checkmark arrived in the resting colour. */
+    .copy-button.\(prefix)-copy-lines.copied,
+    .copy-button.\(prefix)-copy-ref.copied {
+        color: #2ea043;
+        opacity: 1;
+    }
     .suggest-button.\(prefix)-suggest,
     .addnote-button.\(prefix)-addnote {
         display: none;
