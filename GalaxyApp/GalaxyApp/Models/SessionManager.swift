@@ -537,7 +537,14 @@ class SessionManager: ObservableObject {
         ) -> Void
     ) {
         guard !sessions.isEmpty else {
-            completion([])
+            // Deliberately asynchronous even though the answer
+            // is already known. `applicationShouldTerminate`
+            // returns `.terminateLater` and then replies from
+            // this completion; answering inline would reply
+            // before that return, out of the order AppKit
+            // documents. Every other path out of here lands on
+            // `group.notify`, which is async regardless.
+            DispatchQueue.main.async { completion([]) }
             return
         }
 
