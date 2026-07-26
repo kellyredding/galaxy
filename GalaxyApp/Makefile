@@ -1,7 +1,15 @@
-.PHONY: build release clean validate-js
+.PHONY: generate build release clean validate-js
 
 # Always use -derivedDataPath to avoid polluting ~/Library/Developer/Xcode/DerivedData
 DERIVED_DATA = build
+
+# project.yml is the source of truth; the generated project file is
+# gitignored. Without this a fresh clone has no project to build at all, and
+# an edited project.yml is silently ignored in favour of whatever was last
+# generated — so a dependency bump can appear to succeed while the build
+# still links the previous version.
+generate:
+	xcodegen generate
 
 # Syntax-check the JavaScript that ships inside the app — standalone
 # Resources/*.js plus JS embedded in Swift """ literals marked with a
@@ -11,10 +19,10 @@ DERIVED_DATA = build
 validate-js:
 	node scripts/validate-js.mjs
 
-build: validate-js
+build: generate validate-js
 	xcodebuild -scheme GalaxyApp -configuration Debug -derivedDataPath $(DERIVED_DATA) -destination 'platform=macOS' build
 
-release: validate-js
+release: generate validate-js
 	xcodebuild -scheme GalaxyApp -configuration Release -derivedDataPath $(DERIVED_DATA) -destination 'platform=macOS' build
 
 clean:
