@@ -68,6 +68,7 @@ func iconButtonCSS(
 ) -> String {
     """
     .copy-button.\(prefix)-copy-lines,
+    .copy-button.\(prefix)-copy-ref,
     .suggest-button.\(prefix)-suggest,
     .addnote-button.\(prefix)-addnote {
         background: transparent;
@@ -83,17 +84,20 @@ func iconButtonCSS(
         align-items: center;
     }
     .copy-button.\(prefix)-copy-lines:hover,
+    .copy-button.\(prefix)-copy-ref:hover,
     .suggest-button.\(prefix)-suggest:hover,
     .addnote-button.\(prefix)-addnote:hover {
         opacity: 1;
         color: \(hoverColor);
     }
     .copy-button.\(prefix)-copy-lines .copy-icon,
+    .copy-button.\(prefix)-copy-ref .copy-icon,
     .suggest-button.\(prefix)-suggest .suggest-icon,
     .addnote-button.\(prefix)-addnote .addnote-icon {
         display: block;
     }
-    .copy-button.\(prefix)-copy-lines {
+    .copy-button.\(prefix)-copy-lines,
+    .copy-button.\(prefix)-copy-ref {
         display: inline-flex;
     }
     .suggest-button.\(prefix)-suggest,
