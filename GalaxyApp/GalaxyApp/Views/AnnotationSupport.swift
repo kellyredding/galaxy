@@ -978,27 +978,18 @@ annotation.number);
             return el;
         },
 
-        // Open over a selection as a toolbar: line reference,
-        // copy, and a button to promote into the form. Named
-        // separately from the full form for readable call sites,
-        // but shares one implementation so the two states cannot
-        // drift apart.
+        // Every selection lands here, whatever was on screen
+        // before: the toolbar is the only thing a range opens.
+        // Reaching the form is a separate, deliberate step, so
+        // nothing here focuses anything — focusing would collapse
+        // the browser selection the user still needs for Cmd+C.
         showSelectionToolbar(startIdx, endIdx) {
-            this.showFormForSelection(startIdx, endIdx, true);
-        },
-
-        // Omitting selectionOnly opens the full form, which is
-        // what Swift relies on when the user confirms replacing a
-        // half-written note after dragging a new range: they were
-        // already composing, so they land somewhere they can type.
-        showFormForSelection(startIdx, endIdx, selectionOnly) {
             this.collapseExpanded();
             this.currentBlockIndex = endIdx;
             this.highlightStart = startIdx;
             this.highlightEnd = endIdx;
-            this.selectionOnly = !!selectionOnly;
-            this.formElement.classList.toggle(
-                'selection-only', this.selectionOnly);
+            this.selectionOnly = true;
+            this.formElement.classList.add('selection-only');
             this.updateHighlights();
             this.positionForm();
             this.formElement.style.display = '';
@@ -1007,14 +998,6 @@ annotation.number);
 'textarea');
             if (ta) { ta.value = ''; autoGrow(ta); }
             this.updateFormReference();
-            // Focus only when there is something to type into.
-            // Focusing in the toolbar state would collapse the
-            // browser selection the user still needs for Cmd+C.
-            if (!this.selectionOnly) {
-                requestAnimationFrame(function() {
-                    if (ta) ta.focus();
-                });
-            }
         },
 
         // Toolbar to form, from the add-note button or Enter.
@@ -1042,6 +1025,15 @@ state.currentBlockIndex, maxIdx);
 state.highlightStart || 0, maxIdx);
                 this.highlightEnd = Math.min(\
 state.highlightEnd || 0, maxIdx);
+                // A toolbar comes back as a toolbar. The browser
+                // selection cannot survive a reload, so Cmd+C is
+                // gone, but the row highlight and the copy button
+                // both work off the restored range — promoting
+                // into the form from here behaves as it would
+                // have before the content changed underneath.
+                this.selectionOnly = !!state.selectionOnly;
+                this.formElement.classList.toggle(
+                    'selection-only', this.selectionOnly);
                 this.updateHighlights();
                 this.positionForm();
                 this.formElement.style.display = '';
@@ -2930,6 +2922,7 @@ this.currentBlockIndex,
                 highlightStart: this.highlightStart,
                 highlightEnd: this.highlightEnd,
                 formVisible: this.isFormVisible(),
+                selectionOnly: this.selectionOnly,
                 textareaValue: ta ? ta.value : '',
                 expandedNumber: this.expandedNumber
             };

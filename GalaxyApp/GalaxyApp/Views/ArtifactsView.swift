@@ -2297,11 +2297,11 @@ struct ArtifactsView: View {
             message: "Discard annotation?",
             detail: "You have unsaved text in the "
                 + "annotation form. It will be lost "
-                + "if you start a new annotation.",
+                + "if you select a different range.",
             onConfirm: { [self] in
                 self.webViewRef?.evaluateJavaScript(
                     "AnnotationManager"
-                    + ".showFormForSelection("
+                    + ".showSelectionToolbar("
                     + "\(startIdx), \(endIdx))"
                 )
             },

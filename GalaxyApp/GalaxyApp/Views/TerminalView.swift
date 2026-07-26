@@ -1579,11 +1579,13 @@ class TerminalHostView: NSView {
             in: window,
             message: "Discard note?",
             detail: "You have unsaved text in the note form. "
-                + "It will be lost if you start a new note.",
+                + "It will be lost if you select different "
+                + "lines.",
             onConfirm: {
                 overlay.scrollbackView.webView.evaluateJavaScript(
                     "ScrollbackManager.notes"
-                    + ".showNoteForm(\(startLine), \(endLine))"
+                    + ".showSelectionToolbar("
+                    + "\(startLine), \(endLine))"
                 )
             },
             onCancel: {

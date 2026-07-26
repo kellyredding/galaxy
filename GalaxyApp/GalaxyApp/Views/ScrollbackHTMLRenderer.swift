@@ -1157,15 +1157,6 @@ enum ScrollbackHTMLRenderer {
 
         // --- Form Management ---
 
-        // Open over a selection as a toolbar: line reference,
-        // copy, and a button to promote into the form. Named
-        // separately from the full form for readable call sites,
-        // but shares one implementation so the two states cannot
-        // drift apart.
-        showSelectionToolbar(startLine, endLine) {
-            this.showNoteForm(startLine, endLine, true);
-        },
-
         // Toolbar to form, from the add-note button or Enter.
         promoteToForm() {
             if (!this.selectionOnly) return;
@@ -1181,11 +1172,12 @@ enum ScrollbackHTMLRenderer {
             }
         },
 
-        // Omitting selectionOnly opens the full form, which is
-        // what Swift relies on when the user confirms replacing a
-        // half-written note after dragging a new range: they were
-        // already composing, so they land somewhere they can type.
-        showNoteForm(startLine, endLine, selectionOnly) {
+        // Every selection lands here, whatever was on screen
+        // before: the toolbar is the only thing a range opens.
+        // Reaching the form is a separate, deliberate step, so
+        // nothing here focuses anything — focusing would collapse
+        // the browser selection the user still needs for Cmd+C.
+        showSelectionToolbar(startLine, endLine) {
             this.clearHighlights();
             for (let i = startLine; i <= endLine; i++) {
                 const line = document.querySelector('[data-line=\"' + i + '\"]');
@@ -1210,24 +1202,14 @@ enum ScrollbackHTMLRenderer {
                 ref.textContent = 'Note #' + this.nextNumber + ': lines ' + (startLine + 1) + '\\u2013' + (endLine + 1);
             }
 
-            this.selectionOnly = !!selectionOnly;
-            this.formElement.classList.toggle(
-                'selection-only', this.selectionOnly);
+            this.selectionOnly = true;
+            this.formElement.classList.add('selection-only');
 
             this.positionForm(endLine);
             this.formElement.style.display = 'block';
             const ta = this.formElement.querySelector('textarea');
             ta.value = '';
             ta.style.height = 'auto';
-            // Focus only when there is something to type into.
-            // Focusing in the toolbar state would collapse the
-            // browser selection the user still needs for Cmd+C.
-            if (!this.selectionOnly) {
-                // Focus after layout so the browser has positioned the form
-                requestAnimationFrame(() => {
-                    ta.focus();
-                });
-            }
         },
 
         // Per-textarea auto-grow, kept off the keystroke hot path.
@@ -1306,7 +1288,7 @@ enum ScrollbackHTMLRenderer {
             this.formElement = document.createElement('div');
             this.formElement.className = 'note-form';
             // The form is display:none until a selection
-            // is made (showNoteForm sets
+            // is made (showSelectionToolbar sets
             // formElement.style.display = 'block'), so the
             // copy button is naturally invisible until
             // there's a range to copy.
