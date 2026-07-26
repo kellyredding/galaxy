@@ -167,10 +167,6 @@ let annotationCSS: String = """
         restColor: "var(--blockquote-fg)",
         hoverColor: "var(--fg)"
     ))
-    .copy-button.annotation-copy-lines.copied {
-        color: #2ea043;
-        opacity: 1;
-    }
     .annotation-form-header {
         display: flex;
         align-items: center;
@@ -2014,24 +2010,93 @@ annotation.number);
         // from disk. A diff's is relative — that is all a diff
         // records, and inventing an absolute one from the
         // session's directory would be right until it wasn't.
+        // Resolve a diff selection to a reference, given the
+        // global row values getLineRange returns — not block
+        // indices. Deliberately separate from
+        // computeDiffRangeFileRef, which serves the display
+        // label and the create payload and must keep answering
+        // exactly as it does.
+        //
+        // Only the new side is used. A removed line's old number
+        // names a line the file no longer has, so a reference
+        // built from it would send a reader somewhere that does
+        // not exist. Where a selection is nothing but removals
+        // there is no new number in it, and the nearest one
+        // above is the place those lines used to sit — which is
+        // where someone following the reference wants to land.
+        diffReference(startVal, endVal) {
+            var rowAt = function(v) {
+                return document.querySelector(
+                    '[data-line="' + v + '"]');
+            };
+            var newLineOf = function(el) {
+                if (!el) return null;
+                var v = el.getAttribute('data-new-line');
+                if (v == null || v === '') return null;
+                var n = parseInt(v, 10);
+                return isNaN(n) ? null : n;
+            };
+            var filePath = null;
+            var nums = [];
+            for (var v = startVal; v <= endVal; v++) {
+                var el = rowAt(v);
+                if (!el) continue;
+                var fp = el.getAttribute('data-file-path');
+                if (!filePath && fp) filePath = fp;
+                var n = newLineOf(el);
+                if (n != null) nums.push(n);
+            }
+            if (!filePath) return '';
+
+            if (nums.length === 0) {
+                // Pure removal. Walk outward for the nearest
+                // surviving line, staying inside this file.
+                var LIMIT = 400;
+                var found = null;
+                for (var up = startVal - 1;
+                     up >= startVal - LIMIT && found == null;
+                     up--) {
+                    var eu = rowAt(up);
+                    if (!eu) continue;
+                    if (eu.getAttribute('data-file-path')
+                        !== filePath) break;
+                    found = newLineOf(eu);
+                }
+                for (var dn = endVal + 1;
+                     found == null && dn <= endVal + LIMIT;
+                     dn++) {
+                    var ed = rowAt(dn);
+                    if (!ed) continue;
+                    if (ed.getAttribute('data-file-path')
+                        !== filePath) break;
+                    found = newLineOf(ed);
+                }
+                // Nothing survives anywhere in the file — it was
+                // deleted outright. The path alone is the whole
+                // truth available.
+                if (found == null) return filePath;
+                return this.joinRef(filePath, found, found);
+            }
+
+            var min = nums[0], max = nums[0];
+            for (var j = 1; j < nums.length; j++) {
+                if (nums[j] < min) min = nums[j];
+                if (nums[j] > max) max = nums[j];
+            }
+            return this.joinRef(filePath, min, max);
+        },
+
         buildReference(startIdx, endIdx) {
             if (startIdx < 0 || endIdx < 0) return '';
-            if (typeof this.computeDiffRangeFileRef
-                === 'function') {
-                var fr = this.computeDiffRangeFileRef(
-                    startIdx, endIdx);
-                if (fr && fr.file_path
-                    && fr.file_start_line != null) {
-                    return this.joinRef(fr.file_path,
-                        fr.file_start_line,
-                        fr.file_end_line);
-                }
-            }
+            var range = this.getLineRange(startIdx, endIdx);
+            var diffRef = this.diffReference(
+                range.startLine, range.endLine);
+            if (diffRef) return diffRef;
             if (!this.referencePath) return '';
-            var range = this.referenceLineRange(
+            var lines = this.referenceLineRange(
                 startIdx, endIdx);
             return this.joinRef(this.referencePath,
-                range.startLine, range.endLine);
+                lines.startLine, lines.endLine);
         },
 
         // A reference wants source lines, which is not always
@@ -2083,9 +2148,17 @@ annotation.number);
         // selection that happens to be live.
         referenceForAnnotation(a) {
             if (!a) return '';
-            if (a.file_path && a.file_start_line != null) {
-                return this.joinRef(a.file_path,
-                    a.file_start_line, a.file_end_line);
+            // Resolve a diff card from its stored row range
+            // rather than its stored file lines: those were
+            // recorded from whichever side the selection had,
+            // and an old-side number names a line the file no
+            // longer contains.
+            if (a.file_path && a.start_line != null) {
+                var diffRef = this.diffReference(
+                    a.start_line,
+                    a.end_line != null
+                        ? a.end_line : a.start_line);
+                if (diffRef) return diffRef;
             }
             if (!this.referencePath) return '';
             var s, e;
