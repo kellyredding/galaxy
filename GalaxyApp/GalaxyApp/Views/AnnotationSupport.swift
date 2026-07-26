@@ -162,29 +162,14 @@ let annotationCSS: String = """
        line-reference label in the form/card header. The
        host card-header is display:flex so the button
        slots in as a flex item. */
-    .copy-button.annotation-copy-lines {
-        background: transparent;
-        border: 0;
-        padding: 0 4px;
-        margin: 0;
-        cursor: pointer;
-        color: var(--blockquote-fg);
-        line-height: 1;
-        opacity: 0.6;
-        transition: opacity 120ms ease, color 120ms ease;
-        display: inline-flex;
-        align-items: center;
-    }
-    .copy-button.annotation-copy-lines:hover {
-        opacity: 1;
-        color: var(--fg);
-    }
+    \(iconButtonCSS(
+        prefix: "annotation",
+        restColor: "var(--blockquote-fg)",
+        hoverColor: "var(--fg)"
+    ))
     .copy-button.annotation-copy-lines.copied {
         color: #2ea043;
         opacity: 1;
-    }
-    .copy-button.annotation-copy-lines .copy-icon {
-        display: block;
     }
     .annotation-form-header {
         display: flex;
@@ -205,27 +190,6 @@ let annotationCSS: String = """
        new/edit states, never in show. Inserts the
        captured source text into the active textarea
        wrapped in a `suggestion` fenced block. */
-    .suggest-button.annotation-suggest {
-        background: transparent;
-        border: 0;
-        padding: 0 4px;
-        margin: 0;
-        cursor: pointer;
-        color: var(--blockquote-fg);
-        line-height: 1;
-        opacity: 0.7;
-        transition: opacity 120ms ease,
-            color 120ms ease;
-        display: none;
-        align-items: center;
-    }
-    .suggest-button.annotation-suggest:hover {
-        opacity: 1;
-        color: var(--fg);
-    }
-    .suggest-button.annotation-suggest .suggest-icon {
-        display: block;
-    }
     /* Visible whenever the form is up — the form is
        only shown for new/edit. */
     .annotation-form-header
