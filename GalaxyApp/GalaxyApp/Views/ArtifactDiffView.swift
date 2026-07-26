@@ -1137,6 +1137,7 @@ private func buildDiffHTML(
     </script>
     <script>\(clipboardCopyJS)</script>
     <script>\(suggestionInsertJS)</script>
+    <script>\(addNoteButtonJS)</script>
     <script>
     \(annotationManagerJS)
     </script>

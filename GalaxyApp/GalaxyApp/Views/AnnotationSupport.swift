@@ -284,6 +284,7 @@ let annotationCSS: String = """
         overflow: hidden;
     }
     \(verbatimCardCSS)
+    \(selectionToolbarCSS(prefix: "annotation"))
     .annotation-edit-textarea {
         width: 100%;
         min-height: var(--note-one-line);
@@ -549,6 +550,10 @@ let annotationManagerJS: String = """
         formElement: null,
         formSpacer: null,
         formSpacerRow: null,
+        // True while the form is showing only its header row as a
+        // toolbar over a live selection, with no textarea and
+        // nothing focused.
+        selectionOnly: false,
         cardSpacers: {},
         resizeObserver: null,
         editingNumber: null,
@@ -632,12 +637,26 @@ d="M8 6V4h8v2"/><path d="M5 6v14a1 1 0 001 1h12a1 \
             document.addEventListener(\
 'mouseup', function(e) {
                 if (e.target.closest(\
-'.annotation-form') ||
-                    e.target.closest(\
-'.annotation-card')) return;
+'.annotation-form')) return;
+                // A click on an existing card expands it, so a
+                // toolbar over some other range is no longer
+                // about anything the user is looking at.
+                if (e.target.closest(\
+'.annotation-card')) {
+                    if (self.selectionOnly)
+                        self.dismissForm();
+                    return;
+                }
 
                 var sel = window.getSelection();
-                if (!sel || sel.isCollapsed) return;
+                // A plain click collapses the selection. Nothing
+                // needed to handle this before, because the
+                // selection was destroyed the moment it was read.
+                if (!sel || sel.isCollapsed) {
+                    if (self.selectionOnly)
+                        self.dismissForm();
+                    return;
+                }
 
                 var range = sel.getRangeAt(0);
                 var startBlock = self.findBlockElement(\
@@ -645,18 +664,33 @@ range.startContainer);
                 var endBlock = self.findBlockElement(\
 range.endContainer);
 
-                if (!startBlock || !endBlock) return;
+                // Landed somewhere with no row — a file header, a
+                // gap marker. Don't leave a toolbar pointing at a
+                // range the user has moved away from.
+                if (!startBlock || !endBlock) {
+                    if (self.selectionOnly)
+                        self.dismissForm();
+                    return;
+                }
 
                 var startIdx = self.blocks.indexOf(\
 startBlock);
                 var endIdx = self.blocks.indexOf(\
 endBlock);
-                if (startIdx < 0 || endIdx < 0) return;
+                if (startIdx < 0 || endIdx < 0) {
+                    if (self.selectionOnly)
+                        self.dismissForm();
+                    return;
+                }
 
                 var lo = Math.min(startIdx, endIdx);
                 var hi = Math.max(startIdx, endIdx);
 
-                if (self.isFormVisible()) {
+                // Only a form being written into can lose work. A
+                // toolbar holds nothing, so re-pointing it at a
+                // new range needs no confirmation.
+                if (self.isFormVisible()
+                    && !self.selectionOnly) {
                     var ta = self.formElement
                         ? self.formElement.querySelector(\
 'textarea')
@@ -675,8 +709,27 @@ endBlock);
                     }
                 }
 
-                self.showFormForSelection(lo, hi);
-                sel.removeAllRanges();
+                // The selection deliberately survives: it is what
+                // a plain Cmd+C acts on, and what tells the user
+                // that copying is available right now.
+                self.showSelectionToolbar(lo, hi);
+            });
+
+            // Enter promotes a toolbar into the form, so drag
+            // then Enter arrives where dragging alone used to.
+            // Guarded on the focused element — while composing,
+            // Enter belongs to the textarea.
+            document.addEventListener(\
+'keydown', function(e) {
+                if (e.key !== 'Enter') return;
+                if (e.metaKey || e.ctrlKey || e.altKey) return;
+                var t = e.target;
+                if (t && (t.tagName === 'TEXTAREA'
+                    || t.tagName === 'INPUT')) return;
+                if (!self.selectionOnly
+                    || !self.isFormVisible()) return;
+                e.preventDefault();
+                self.promoteToForm();
             });
         },
 
@@ -925,11 +978,27 @@ annotation.number);
             return el;
         },
 
-        showFormForSelection(startIdx, endIdx) {
+        // Open over a selection as a toolbar: line reference,
+        // copy, and a button to promote into the form. Named
+        // separately from the full form for readable call sites,
+        // but shares one implementation so the two states cannot
+        // drift apart.
+        showSelectionToolbar(startIdx, endIdx) {
+            this.showFormForSelection(startIdx, endIdx, true);
+        },
+
+        // Omitting selectionOnly opens the full form, which is
+        // what Swift relies on when the user confirms replacing a
+        // half-written note after dragging a new range: they were
+        // already composing, so they land somewhere they can type.
+        showFormForSelection(startIdx, endIdx, selectionOnly) {
             this.collapseExpanded();
             this.currentBlockIndex = endIdx;
             this.highlightStart = startIdx;
             this.highlightEnd = endIdx;
+            this.selectionOnly = !!selectionOnly;
+            this.formElement.classList.toggle(
+                'selection-only', this.selectionOnly);
             this.updateHighlights();
             this.positionForm();
             this.formElement.style.display = '';
@@ -938,9 +1007,26 @@ annotation.number);
 'textarea');
             if (ta) { ta.value = ''; autoGrow(ta); }
             this.updateFormReference();
-            requestAnimationFrame(function() {
-                if (ta) ta.focus();
-            });
+            // Focus only when there is something to type into.
+            // Focusing in the toolbar state would collapse the
+            // browser selection the user still needs for Cmd+C.
+            if (!this.selectionOnly) {
+                requestAnimationFrame(function() {
+                    if (ta) ta.focus();
+                });
+            }
+        },
+
+        // Toolbar to form, from the add-note button or Enter.
+        promoteToForm() {
+            if (!this.selectionOnly) return;
+            this.selectionOnly = false;
+            this.formElement.classList.remove(
+                'selection-only');
+            this.syncAllPositions();
+            var ta = this.formElement.querySelector(\
+'textarea');
+            if (ta) { autoGrow(ta); ta.focus(); }
         },
 
         restoreFormState(state) {
@@ -1028,12 +1114,24 @@ state.expandedNumber);
                     : window.GalaxySuggestion.buttonHTML(
                         'annotation-suggest',
                         'Add a suggestion');
+            // Promotes the selection toolbar into this form.
+            // Same gate as the other two: whole-anchor mode has
+            // no selection to promote from.
+            var addNoteBtnHTML =
+                (this.anchorType === 'whole' ||
+                 typeof window.GalaxyAddNote
+                     === 'undefined')
+                    ? ''
+                    : window.GalaxyAddNote.buttonHTML(
+                        'annotation-addnote',
+                        'Add a note');
             form.innerHTML =
                 '<div class="annotation-form-header">'
                 + '<span class="annotation-form-ref">'
                 + '</span>'
                 + copyBtnHTML
                 + suggestBtnHTML
+                + addNoteBtnHTML
                 + '</div>'
                 + '<textarea class="annotation-textarea"'
                 + ' spellcheck="false"'
@@ -1106,6 +1204,20 @@ ta, e)) {
                     function() {
                         return form.querySelector(
                             '.annotation-textarea');
+                    }
+                );
+            }
+
+            // Promote the toolbar into this form. Only visible
+            // while the form is in its selection-only state.
+            var formAddNoteBtn = form.querySelector(
+                '.annotation-addnote');
+            if (formAddNoteBtn && window.GalaxyAddNote) {
+                var promoteRef = AnnotationManager;
+                window.GalaxyAddNote.bindAddNoteButton(
+                    formAddNoteBtn,
+                    function() {
+                        promoteRef.promoteToForm();
                     }
                 );
             }
@@ -2777,7 +2889,10 @@ function(a) {
 'textarea');
                 if (ta) { ta.value = ''; autoGrow(ta); }
                 this.formElement.style.display = 'none';
+                this.formElement.classList.remove(
+                    'selection-only');
             }
+            this.selectionOnly = false;
             this.removeSpacer(this.formSpacer,
                 this.formSpacerRow);
             this.formSpacer = null;

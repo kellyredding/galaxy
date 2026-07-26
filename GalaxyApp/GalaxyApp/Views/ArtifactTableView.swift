@@ -250,6 +250,7 @@ private func buildTableHTML(
     </div>
     <script>\(clipboardCopyJS)</script>
     <script>\(suggestionInsertJS)</script>
+    <script>\(addNoteButtonJS)</script>
     <script>
     \(annotationManagerJS)
     </script>
