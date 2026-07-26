@@ -16,6 +16,11 @@ struct ArtifactSourceView: NSViewRepresentable {
     @Binding var webViewRef: WKWebView?
     var onAnnotationMessage:
         ((AnnotationMessage) -> Void)?
+    // Absolute path of the file this artifact was created
+    // from, when there was one. Used only to build a
+    // copy-able reference; nothing about annotations
+    // depends on it.
+    var referencePath: String? = nil
 
     func makeNSView(
         context: Context
@@ -54,7 +59,8 @@ struct ArtifactSourceView: NSViewRepresentable {
             itemLabel: itemLabel,
             annotations: activeAnns,
             htmlMap: annotationHTMLMap,
-            artifactContent: content
+            artifactContent: content,
+            referencePath: referencePath
         )
         context.coordinator.pendingInitJS = initJS
         context.coordinator.onAnnotationMessage =
@@ -112,7 +118,8 @@ struct ArtifactSourceView: NSViewRepresentable {
                     itemLabel: itemLabel,
                     annotations: activeAnns,
                     htmlMap: annotationHTMLMap,
-                    artifactContent: content
+                    artifactContent: content,
+                    referencePath: referencePath
                 )
                 if let stateJSON = result as? String {
                     initJS += "; AnnotationManager"

@@ -255,6 +255,11 @@ struct MarkdownReaderView: NSViewRepresentable {
     /// Base URL name for internal routing
     /// (e.g. "snapshot-reader", "artifact-reader").
     var baseUrlName: String = "reader"
+    // Absolute path of the file this artifact was created
+    // from, when there was one. Used only to build a
+    // copy-able reference; nothing about annotations
+    // depends on it.
+    var referencePath: String? = nil
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
@@ -286,6 +291,8 @@ struct MarkdownReaderView: NSViewRepresentable {
         context.coordinator.pendingAnnotationHTMLMap = self.annotationHTMLMap
         context.coordinator.pendingItemLabel = self.itemLabel
         context.coordinator.pendingArtifactContent = self.markdown
+        context.coordinator.pendingReferencePath =
+            self.referencePath
 
         let baseURL = URL(
             string: "galaxy://\(self.baseUrlName)"
@@ -337,6 +344,7 @@ struct MarkdownReaderView: NSViewRepresentable {
         /// Raw markdown source used to slice line_content
         /// for the form's copy-lines affordance.
         var pendingArtifactContent: String?
+        var pendingReferencePath: String?
 
         /// Form state saved before a theme-change reload.
         var savedFormState: String?
@@ -410,6 +418,7 @@ struct MarkdownReaderView: NSViewRepresentable {
                 pendingAnnotationHTMLMap = nil
                 pendingItemLabel = nil
                 pendingArtifactContent = nil
+                pendingReferencePath = nil
                 return
             }
 
@@ -427,7 +436,8 @@ struct MarkdownReaderView: NSViewRepresentable {
                     itemLabel: label,
                     annotations: annotations,
                     htmlMap: htmlMap,
-                    artifactContent: pendingArtifactContent
+                    artifactContent: pendingArtifactContent,
+                    referencePath: pendingReferencePath
                 )
                 webView.evaluateJavaScript(initJS)
 
@@ -435,6 +445,7 @@ struct MarkdownReaderView: NSViewRepresentable {
                 pendingAnnotationHTMLMap = nil
                 pendingItemLabel = nil
                 pendingArtifactContent = nil
+                pendingReferencePath = nil
             }
 
             // Restore form state after theme-change reload

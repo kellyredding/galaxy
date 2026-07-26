@@ -905,7 +905,8 @@ struct ArtifactsView: View {
                 },
                 itemLabel:
                     "Artifact #\(artifact.number)",
-                baseUrlName: "artifact-reader"
+                baseUrlName: "artifact-reader",
+                referencePath: artifact.sourcePath
             )
         case "csv", "tsv":
             let label = "Artifact #\(artifact.number)"
@@ -921,7 +922,8 @@ struct ArtifactsView: View {
                         message,
                         artifact: artifact
                     )
-                }
+                },
+                referencePath: artifact.sourcePath
             )
         case "mmd", "mermaid":
             let label = "Artifact #\(artifact.number)"
@@ -996,7 +998,8 @@ struct ArtifactsView: View {
                             msg,
                             artifact: artifact
                         )
-                    }
+                    },
+                    referencePath: artifact.sourcePath
                 )
             }
         case "gdiff":
@@ -1050,7 +1053,8 @@ struct ArtifactsView: View {
                         message,
                         artifact: artifact
                     )
-                }
+                },
+                referencePath: artifact.sourcePath
             )
         }
     }

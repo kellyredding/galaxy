@@ -556,6 +556,11 @@ d="M8 6V4h8v2"/><path d="M5 6v14a1 1 0 001 1h12a1 \
 'data-line-start';
             this.endLineAttr = data.endLineAttr || null;
             this.refPrefix = data.refPrefix || 'Line';
+            // Path of the file this artifact came from, when
+            // there was one. Read only when building a
+            // copy-able reference; nothing about anchoring or
+            // persistence consults it.
+            this.referencePath = data.referencePath || null;
             this.itemLabel = data.itemLabel || '';
             this.annotations = data.annotations || [];
             this.annotationHTMLMap = data.htmlMap || {};
@@ -1070,6 +1075,18 @@ state.expandedNumber);
                     : window.GalaxySuggestion.buttonHTML(
                         'annotation-suggest',
                         'Add a suggestion');
+            // Copies the location rather than the content.
+            // Only offered where a reference can actually name
+            // something — a path plus real lines.
+            var refBtnHTML =
+                (this.anchorType === 'whole' ||
+                 !this.canReference() ||
+                 typeof window.GalaxyClipboard
+                     === 'undefined')
+                    ? ''
+                    : window.GalaxyClipboard.refButtonHTML(
+                        'annotation-copy-ref',
+                        'Copy reference');
             // Promotes the selection toolbar into this form.
             // Same gate as the other two: whole-anchor mode has
             // no selection to promote from.
@@ -1086,6 +1103,7 @@ state.expandedNumber);
                 + '<span class="annotation-form-ref">'
                 + '</span>'
                 + copyBtnHTML
+                + refBtnHTML
                 + suggestBtnHTML
                 + addNoteBtnHTML
                 + '</div>'
@@ -1161,6 +1179,24 @@ ta, e)) {
                         return form.querySelector(
                             '.annotation-textarea');
                     }
+                );
+            }
+
+            // Copy the location. Same binding helper as the
+            // copy-lines button, so it inherits the clipboard
+            // write and the copied confirmation; only the text
+            // it produces differs.
+            var formRefBtn = form.querySelector(
+                '.annotation-copy-ref');
+            if (formRefBtn && window.GalaxyClipboard) {
+                var refManagerRef = AnnotationManager;
+                window.GalaxyClipboard.bindCopyButton(
+                    formRefBtn,
+                    function() {
+                        return refManagerRef
+                            .referenceForForm();
+                    },
+                    'Copy reference'
                 );
             }
 
@@ -1587,6 +1623,17 @@ annotation.review_reviewed_at);
                     : window.GalaxyClipboard.buttonHTML(
                         'annotation-copy-lines',
                         'Copy lines');
+            // Copies this card's location. Gated the same way
+            // as in the form — a reader with no path and no
+            // per-row path never renders it.
+            var refBtnHTML =
+                (!this.canReference() ||
+                 typeof window.GalaxyClipboard
+                     === 'undefined')
+                    ? ''
+                    : window.GalaxyClipboard.refButtonHTML(
+                        'annotation-copy-ref',
+                        'Copy reference');
             // Suggestion-insert button. Always rendered;
             // CSS hides it in the show state and reveals
             // it once an edit textarea is active. Review-
@@ -1669,6 +1716,7 @@ annotation.review_reviewed_at);
 "annotation-card-meta">'
                     + metaText + '</span>' +
                     copyBtnHTML +
+                    refBtnHTML +
                     suggestBtnHTML +
                     '<span class=\
 "annotation-expand-hint"'
@@ -1691,6 +1739,8 @@ annotation.review_reviewed_at);
 '.annotation-card-actions') ||
                     e.target.closest(\
 '.annotation-copy-lines') ||
+                    e.target.closest(\
+'.annotation-copy-ref') ||
                     e.target.closest(\
 '.annotation-suggest') ||
                     e.target.closest(\
@@ -1733,6 +1783,24 @@ annotation.number);
                                 annotation);
                     },
                     'Copy lines'
+                );
+            }
+
+            // Wire the copy-reference button. Reads the
+            // annotation's own stored range, so a card names
+            // where it is anchored rather than wherever the
+            // selection happens to be.
+            var cardRefBtn = card.querySelector(
+                '.annotation-copy-ref');
+            if (cardRefBtn && window.GalaxyClipboard) {
+                window.GalaxyClipboard.bindCopyButton(
+                    cardRefBtn,
+                    function() {
+                        return self
+                            .referenceForAnnotation(
+                                annotation);
+                    },
+                    'Copy reference'
                 );
             }
 
@@ -1783,6 +1851,8 @@ annotation.number);
 '.annotation-card-actions') ||
                         e.target.closest(\
 '.annotation-copy-lines') ||
+                        e.target.closest(\
+'.annotation-copy-ref') ||
                         e.target.closest(\
 '.annotation-suggest') ||
                         e.target.closest(\
@@ -1912,6 +1982,127 @@ annotation.number);
         //   - block_range: textContent of selected blocks
         //     (mirrors submitCreate's blockContent)
         //   - whole: no captured text
+        // Whether this reader can name a location at all. A
+        // path plus real lines earns the affordance; a reader
+        // with neither never renders it.
+        canReference() {
+            if (this.referencePath) return true;
+            // A diff spans many files, so it carries a path per
+            // row rather than one for the artifact — its rows
+            // are the only place that path exists. Note the diff
+            // reader is configured as line_range, so anchorType
+            // cannot be used to recognise it.
+            return !!document.querySelector(
+                '[data-file-path]');
+        },
+
+        // path:line, or path:start-end for a range. Plain
+        // hyphen, not the en dash used for display, so the
+        // result matches what the editor plugins produce.
+        joinRef(path, start, end) {
+            if (!path) return '';
+            if (start == null) return path;
+            if (end == null || end === start) {
+                return path + ':' + start;
+            }
+            return path + ':' + start + '-' + end;
+        },
+
+        // A diff resolves its own path per row, since one
+        // artifact spans many files. Everything else uses the
+        // artifact's, which is absolute where the file was read
+        // from disk. A diff's is relative — that is all a diff
+        // records, and inventing an absolute one from the
+        // session's directory would be right until it wasn't.
+        buildReference(startIdx, endIdx) {
+            if (startIdx < 0 || endIdx < 0) return '';
+            if (typeof this.computeDiffRangeFileRef
+                === 'function') {
+                var fr = this.computeDiffRangeFileRef(
+                    startIdx, endIdx);
+                if (fr && fr.file_path
+                    && fr.file_start_line != null) {
+                    return this.joinRef(fr.file_path,
+                        fr.file_start_line,
+                        fr.file_end_line);
+                }
+            }
+            if (!this.referencePath) return '';
+            var range = this.referenceLineRange(
+                startIdx, endIdx);
+            return this.joinRef(this.referencePath,
+                range.startLine, range.endLine);
+        },
+
+        // A reference wants source lines, which is not always
+        // what a reader anchors by. The table anchors by row
+        // ordinal, and a row stops being a line the moment a
+        // quoted field spans one — so rows carry the line they
+        // began on, and it wins here when present. Readers that
+        // already anchor by line resolve the same either way.
+        referenceLineRange(startIdx, endIdx) {
+            var a = this.blocks[startIdx];
+            var b = this.blocks[endIdx];
+            var sv = a && a.getAttribute
+                ? a.getAttribute('data-line-start') : null;
+            var ev = b && b.getAttribute
+                ? b.getAttribute('data-line-start') : null;
+            if (sv != null && ev != null) {
+                var s = parseInt(sv, 10);
+                var e = parseInt(ev, 10);
+                if (!isNaN(s) && !isNaN(e)) {
+                    return {
+                        startLine: Math.min(s, e),
+                        endLine: Math.max(s, e)
+                    };
+                }
+            }
+            return this.getLineRange(startIdx, endIdx);
+        },
+
+        // The source line a stored row ordinal sits on, read
+        // back from the rendered row.
+        lineForRow(row) {
+            if (row == null) return null;
+            var el = document.querySelector(
+                '[data-row="' + row + '"]');
+            if (!el) return null;
+            var v = el.getAttribute('data-line-start');
+            if (v == null) return null;
+            var n = parseInt(v, 10);
+            return isNaN(n) ? null : n;
+        },
+
+        referenceForForm() {
+            return this.buildReference(
+                this.highlightStart, this.highlightEnd);
+        },
+
+        // A card names the range it was anchored to, read from
+        // fields the annotation already carries — never the
+        // selection that happens to be live.
+        referenceForAnnotation(a) {
+            if (!a) return '';
+            if (a.file_path && a.file_start_line != null) {
+                return this.joinRef(a.file_path,
+                    a.file_start_line, a.file_end_line);
+            }
+            if (!this.referencePath) return '';
+            var s, e;
+            if (this.anchorType === 'row_range') {
+                // Stored rows are ordinals; resolve them back
+                // to the lines those rows began on.
+                s = this.lineForRow(a.start_row);
+                e = this.lineForRow(a.end_row);
+                if (s == null) { s = a.start_row; e = a.end_row; }
+            } else {
+                s = a.start_line;
+                e = a.end_line;
+            }
+            if (s == null) return '';
+            return this.joinRef(this.referencePath, s, e);
+        },
+
         capturedTextForForm() {
             if (this.anchorType === 'whole') return '';
             if (this.highlightStart < 0
@@ -3239,7 +3430,8 @@ func buildAnnotationInitJS(
     itemLabel: String,
     annotationDicts: [[String: Any]],
     htmlMap: [Int32: String],
-    artifactContent: String? = nil
+    artifactContent: String? = nil,
+    referencePath: String? = nil
 ) -> String {
     let htmlMapDict: [String: String] = {
         var d: [String: String] = [:]
@@ -3261,6 +3453,12 @@ func buildAnnotationInitJS(
     ]
     if let content = artifactContent {
         payload["artifactContent"] = content
+    }
+    // Only used to build a copy-able reference. Absent for
+    // readers with no file behind them, which is how the
+    // affordance knows not to offer itself.
+    if let referencePath {
+        payload["referencePath"] = referencePath
     }
 
     guard let data = try? JSONSerialization.data(
@@ -3286,7 +3484,8 @@ func buildAnnotationInitJS(
     itemLabel: String,
     annotations: [ArtifactAnnotation],
     htmlMap: [Int32: String],
-    artifactContent: String? = nil
+    artifactContent: String? = nil,
+    referencePath: String? = nil
 ) -> String {
     let dicts: [[String: Any]] = annotations.map {
         annotationDict($0)
@@ -3300,7 +3499,8 @@ func buildAnnotationInitJS(
         itemLabel: itemLabel,
         annotationDicts: dicts,
         htmlMap: htmlMap,
-        artifactContent: artifactContent
+        artifactContent: artifactContent,
+        referencePath: referencePath
     )
 }
 
@@ -3490,7 +3690,8 @@ func buildAnnotationInitJS(
     itemLabel: String,
     annotations: [any LineRangeAnnotation],
     htmlMap: [Int32: String],
-    artifactContent: String? = nil
+    artifactContent: String? = nil,
+    referencePath: String? = nil
 ) -> String {
     let dicts: [[String: Any]] = annotations.map { a in
         var dict: [String: Any] = [
@@ -3527,6 +3728,7 @@ func buildAnnotationInitJS(
         itemLabel: itemLabel,
         annotationDicts: dicts,
         htmlMap: htmlMap,
-        artifactContent: artifactContent
+        artifactContent: artifactContent,
+        referencePath: referencePath
     )
 }

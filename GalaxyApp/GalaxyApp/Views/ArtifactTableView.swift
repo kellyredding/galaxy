@@ -13,6 +13,11 @@ struct ArtifactTableView: NSViewRepresentable {
     @Binding var webViewRef: WKWebView?
     var onAnnotationMessage:
         ((AnnotationMessage) -> Void)?
+    // Absolute path of the file this artifact was created
+    // from, when there was one. Used only to build a
+    // copy-able reference; nothing about annotations
+    // depends on it.
+    var referencePath: String? = nil
 
     func makeNSView(
         context: Context
@@ -50,7 +55,8 @@ struct ArtifactTableView: NSViewRepresentable {
             itemLabel: itemLabel,
             annotations: activeAnns,
             htmlMap: annotationHTMLMap,
-            artifactContent: content
+            artifactContent: content,
+            referencePath: referencePath
         )
         context.coordinator.pendingInitJS = initJS
         context.coordinator.onAnnotationMessage =
@@ -106,7 +112,8 @@ struct ArtifactTableView: NSViewRepresentable {
                     itemLabel: itemLabel,
                     annotations: activeAnns,
                     htmlMap: annotationHTMLMap,
-                    artifactContent: content
+                    artifactContent: content,
+                    referencePath: referencePath
                 )
                 if let stateJSON = result as? String {
                     initJS += "; AnnotationManager"
@@ -157,8 +164,9 @@ private func buildTableHTML(
     let headerRow = rows[0]
     let dataRows = Array(rows.dropFirst())
 
-    var headerHTML = "<tr data-row=\"0\">"
-    for cell in headerRow {
+    var headerHTML = "<tr data-row=\"0\""
+        + " data-line-start=\"\(headerRow.startLine)\">"
+    for cell in headerRow.cells {
         let escaped = escapeHTML(cell)
         headerHTML += "<th>\(escaped)</th>"
     }
@@ -167,8 +175,9 @@ private func buildTableHTML(
     var bodyHTML = ""
     for (i, row) in dataRows.enumerated() {
         let rowNum = i + 1
-        bodyHTML += "<tr data-row=\"\(rowNum)\">"
-        for cell in row {
+        bodyHTML += "<tr data-row=\"\(rowNum)\""
+            + " data-line-start=\"\(row.startLine)\">"
+        for cell in row.cells {
             let escaped = escapeHTML(cell)
             bodyHTML += "<td>\(escaped)</td>"
         }
@@ -262,13 +271,24 @@ private func buildTableHTML(
 }
 
 /// Simple CSV parser that handles quoted fields.
-private func parseCSV(_ content: String) -> [[String]] {
-    var rows: [[String]] = []
+/// Rows, each with the 1-based source line it began on.
+///
+/// Row ordinal and line number agree only until a quoted field
+/// contains a newline, and then silently diverge — which is exactly
+/// when a reference built from the row index would start naming the
+/// wrong place. The ordinal is still what annotations anchor to; the
+/// line travels alongside it purely so a reference can be truthful.
+private func parseCSV(
+    _ content: String
+) -> [(cells: [String], startLine: Int)] {
+    var rows: [(cells: [String], startLine: Int)] = []
     var currentRow: [String] = []
     var currentField = ""
     var inQuotes = false
     let chars = Array(content)
     var i = 0
+    var line = 1
+    var rowStartLine = 1
 
     while i < chars.count {
         let ch = chars[i]
@@ -285,6 +305,7 @@ private func parseCSV(_ content: String) -> [[String]] {
                 }
                 inQuotes = false
             } else {
+                if ch == "\n" { line += 1 }
                 currentField.append(ch)
             }
         } else {
@@ -300,12 +321,17 @@ private func parseCSV(_ content: String) -> [[String]] {
                 {
                     i += 1
                 }
+                line += 1
                 currentRow.append(currentField)
                 currentField = ""
                 if !currentRow.isEmpty {
-                    rows.append(currentRow)
+                    rows.append((
+                        cells: currentRow,
+                        startLine: rowStartLine
+                    ))
                 }
                 currentRow = []
+                rowStartLine = line
             } else {
                 currentField.append(ch)
             }
@@ -318,7 +344,10 @@ private func parseCSV(_ content: String) -> [[String]] {
         || !currentRow.isEmpty
     {
         currentRow.append(currentField)
-        rows.append(currentRow)
+        rows.append((
+            cells: currentRow,
+            startLine: rowStartLine
+        ))
     }
 
     return rows
