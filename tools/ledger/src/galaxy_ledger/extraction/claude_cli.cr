@@ -52,7 +52,6 @@ module GalaxyLedger
         prompt : String,
         timeout : Time::Span = DEFAULT_TIMEOUT,
         model : String? = nil,
-        prefill : String? = nil,
       ) : RunResult
         return ZERO_USAGE_RESULT if content.strip.empty?
         return ZERO_USAGE_RESULT if prompt.strip.empty?
@@ -79,13 +78,9 @@ module GalaxyLedger
           full_prompt = "#{prompt}\n\nContent to analyze:\n#{content}"
 
           # Build args with optional model override
-          # and prefill for deterministic JSON output
           args = ["-p", "--output-format", "json"]
           if m = model
             args.concat(["--model", m])
-          end
-          if pf = prefill
-            args.concat(["--prefill", pf])
           end
           args << full_prompt
 
