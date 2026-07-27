@@ -126,6 +126,12 @@ final class WebViewFindController: NSObject, ObservableObject {
             .replacingOccurrences(of: "'", with: "\\'")
             .replacingOccurrences(of: "\n", with: "\\n")
             .replacingOccurrences(of: "\r", with: "\\r")
+            // U+2028 and U+2029 are line terminators to a JS
+            // parser, so an unescaped one breaks the literal
+            // exactly as a raw newline would. Reachable by
+            // pasting text copied from a web page.
+            .replacingOccurrences(of: "\u{2028}", with: "\\u2028")
+            .replacingOccurrences(of: "\u{2029}", with: "\\u2029")
     }
 }
 
