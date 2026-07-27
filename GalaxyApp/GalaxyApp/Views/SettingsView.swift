@@ -159,6 +159,28 @@ struct GeneralSettingsTab: View {
                 }
             }
 
+            // Not the Terminal tab: these keystrokes govern the WebView note
+            // and annotation forms as well as the Claude session pane.
+            SettingsCard(title: "Text entry") {
+                VStack(alignment: .leading, spacing: 12) {
+                    KeystrokeListEditor(
+                        label: "Submit",
+                        keystrokes: $settingsManager.settings.textEntry.submit
+                    )
+                    KeystrokeListEditor(
+                        label: "Newline",
+                        keystrokes: $settingsManager.settings.textEntry.newline
+                    )
+                    Text(
+                        "Applies to note and annotation forms. A reader that is "
+                            + "already open keeps its previous keystrokes until "
+                            + "it is reopened."
+                    )
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                }
+            }
+
             Spacer()
         }
         .padding(20)
