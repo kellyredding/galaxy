@@ -168,7 +168,10 @@ module GalaxyLedger
       # the model legitimately deciding there was nothing to extract. Without
       # a log line, a broken call and an empty-but-correct answer look the
       # same from the outside, and the difference is the whole diagnosis.
-      private def self.extract_run_result_from_cli_output(output : String) : RunResult
+      # Public for the same reason build_args is: the failure paths are the
+      # interesting ones, and they are unreachable through run() because the
+      # test stubs short-circuit before the subprocess.
+      def self.extract_run_result_from_cli_output(output : String) : RunResult
         if output.empty?
           STDERR.puts "[galaxy-ledger] Claude CLI produced no output"
           return ZERO_USAGE_RESULT
@@ -184,20 +187,37 @@ module GalaxyLedger
           cache_creation_tokens = json["usage"]?.try(&.["cache_creation_input_tokens"]?.try(&.as_i64?)) || 0_i64
           cache_read_tokens = json["usage"]?.try(&.["cache_read_input_tokens"]?.try(&.as_i64?)) || 0_i64
 
+          # A failed call still exits zero and still fills in the result
+          # field — with the error text rather than an answer. Treating that
+          # as content hands "API Error: 400 ..." to a JSON parser, which
+          # fails somewhere far from the cause. Refusing it here keeps the
+          # reason attached to the thing that went wrong. Schema-constrained
+          # calls make this reachable: a schema the API rejects surfaces
+          # exactly this way.
+          if json["is_error"]?.try(&.as_bool?)
+            STDERR.puts(
+              "[galaxy-ledger] Claude CLI reported an error: " \
+              "#{json["result"]?.try(&.as_s?) || "(no detail)"}"
+            )
+            return RunResult.new(
+              result: nil,
+              cost_usd: cost_usd,
+              input_tokens: input_tokens,
+              output_tokens: output_tokens,
+              cache_creation_tokens: cache_creation_tokens,
+              cache_read_tokens: cache_read_tokens,
+            )
+          end
+
           # Get the result field
           result = json["result"]?.try(&.as_s?)
           if result.nil? || result.empty?
-            # Surface the envelope's own error signals — they say far more
-            # about why the field is empty than the emptiness itself does.
-            is_error = json["is_error"]?.try(&.as_bool?)
+            # Surface the envelope's own subtype — it says more about why the
+            # field is empty than the emptiness itself does.
             subtype = json["subtype"]?.try(&.as_s?)
-            detail = String.build do |io|
-              io << "is_error=" << is_error unless is_error.nil?
-              io << " subtype=" << subtype unless subtype.nil?
-            end
             STDERR.puts(
               "[galaxy-ledger] Claude CLI returned an empty result field" \
-              "#{detail.empty? ? "" : " (#{detail.strip})"}"
+              "#{subtype.nil? ? "" : " (subtype=#{subtype})"}"
             )
             return RunResult.new(
               result: nil,
