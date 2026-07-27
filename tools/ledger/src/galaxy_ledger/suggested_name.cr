@@ -8,6 +8,12 @@ module GalaxyLedger
     MAX_EXCHANGES_FOR_CONTEXT =   5
     MAX_CONTENT_PER_MESSAGE   = 500
 
+    # Bounds of the quality score the suggestion prompt asks for. A spec
+    # asserts the prompt still advertises this same range, since the schema
+    # rejecting a score the prompt invited would fail a correct answer.
+    QUALITY_MIN = 1
+    QUALITY_MAX = 5
+
     # Model for name suggestion one-shots (Haiku — cheap, fast)
     SUGGESTION_MODEL = "haiku"
 
@@ -199,6 +205,53 @@ module GalaxyLedger
 
       Respond ONLY with the JSON object. No other text.
       PROMPT
+    end
+
+    # JSON Schema constraining a suggestion response. The prompt offers two
+    # shapes — a name with its quality score, or a request for more context —
+    # and the natural expression of that is a oneOf union.
+    #
+    # A union is not available here. The CLI forwards --json-schema as a
+    # tool's input_schema, which requires a top-level "type" and rejects
+    # oneOf, allOf and anyOf at the root:
+    #
+    #   input_schema does not support oneOf, allOf, or anyOf at the top level
+    #
+    # Nesting the union under a wrapper property would satisfy that, at the
+    # cost of changing the response shape the prompt describes and the parser
+    # reads. Not worth it for what the union adds, so the schema declares
+    # every field the two shapes use and leaves all of them optional.
+    #
+    # What this enforces: the reply is a JSON object, carries no keys beyond
+    # these three, spells them correctly, and gives each the right type — a
+    # non-empty name, a quality score within the advertised range.
+    #
+    # What it does not enforce: that a complete shape is present. An empty
+    # object satisfies it, as does a name with no score. Both degrade the
+    # same way they always have — the parser reads a missing score as zero
+    # and a missing name as no suggestion — so the state machine's retry
+    # budget remains the backstop for a reply that validates but says nothing.
+    #
+    # needs_more_context stays a plain boolean rather than being pinned to
+    # true. Pinning made sense while the union kept false unreachable; in a
+    # flat schema a reply pairing a name with an explicit false would fail
+    # validation outright, losing a usable answer over a redundant field.
+    def self.suggestion_schema : String
+      <<-JSON
+      {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "quality": {
+            "type": "integer",
+            "minimum": #{QUALITY_MIN},
+            "maximum": #{QUALITY_MAX}
+          },
+          "needs_more_context": { "type": "boolean" }
+        },
+        "additionalProperties": false
+      }
+      JSON
     end
 
     # Summarize code-heavy content before sending to LLM

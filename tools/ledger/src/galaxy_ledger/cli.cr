@@ -3229,6 +3229,7 @@ module GalaxyLedger
           content: context,
           prompt: SuggestedName.suggestion_prompt,
           model: SuggestedName::SUGGESTION_MODEL,
+          json_schema: SuggestedName.suggestion_schema,
         )
 
         suggestion = SuggestedName.parse_response(run_result[:result])
