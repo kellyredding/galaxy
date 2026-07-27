@@ -147,8 +147,17 @@ module GalaxyLedger
       # Extract the result text and usage data from Claude CLI's JSON output.
       # The --output-format json flag wraps the result in metadata:
       # {"type":"result","result":"...","total_cost_usd":0.12,"usage":{...}}
+      #
+      # Every path that yields a nil result logs why. A caller that receives
+      # nil turns it into zero extractions, which is indistinguishable from
+      # the model legitimately deciding there was nothing to extract. Without
+      # a log line, a broken call and an empty-but-correct answer look the
+      # same from the outside, and the difference is the whole diagnosis.
       private def self.extract_run_result_from_cli_output(output : String) : RunResult
-        return ZERO_USAGE_RESULT if output.empty?
+        if output.empty?
+          STDERR.puts "[galaxy-ledger] Claude CLI produced no output"
+          return ZERO_USAGE_RESULT
+        end
 
         begin
           json = JSON.parse(output)
@@ -163,6 +172,18 @@ module GalaxyLedger
           # Get the result field
           result = json["result"]?.try(&.as_s?)
           if result.nil? || result.empty?
+            # Surface the envelope's own error signals — they say far more
+            # about why the field is empty than the emptiness itself does.
+            is_error = json["is_error"]?.try(&.as_bool?)
+            subtype = json["subtype"]?.try(&.as_s?)
+            detail = String.build do |io|
+              io << "is_error=" << is_error unless is_error.nil?
+              io << " subtype=" << subtype unless subtype.nil?
+            end
+            STDERR.puts(
+              "[galaxy-ledger] Claude CLI returned an empty result field" \
+              "#{detail.empty? ? "" : " (#{detail.strip})"}"
+            )
             return RunResult.new(
               result: nil,
               cost_usd: cost_usd,
@@ -176,6 +197,12 @@ module GalaxyLedger
           # Strip markdown code blocks if present
           # Claude sometimes wraps JSON in ```json ... ```
           cleaned = strip_markdown_code_blocks(result)
+          if cleaned.empty?
+            STDERR.puts(
+              "[galaxy-ledger] Claude CLI result was empty after stripping " \
+              "markdown fences"
+            )
+          end
 
           RunResult.new(
             result: cleaned.empty? ? nil : cleaned,
@@ -185,9 +212,18 @@ module GalaxyLedger
             cache_creation_tokens: cache_creation_tokens,
             cache_read_tokens: cache_read_tokens,
           )
-        rescue
-          # If outer parsing fails, maybe it's already just the content
+        rescue ex
+          # Envelope did not parse. Fall back to treating the raw output as
+          # the content, but say so — usage data is lost on this path, so a
+          # silent fallback also silently zeroes the call's cost and tokens.
+          STDERR.puts(
+            "[galaxy-ledger] Claude CLI envelope parse failed " \
+            "(#{ex.message}); treating raw output as content"
+          )
           cleaned = strip_markdown_code_blocks(output)
+          if cleaned.empty?
+            STDERR.puts "[galaxy-ledger] Claude CLI raw output was empty too"
+          end
           RunResult.new(
             result: cleaned.empty? ? nil : cleaned,
             cost_usd: 0.0,

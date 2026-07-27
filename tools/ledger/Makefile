@@ -1,4 +1,4 @@
-.PHONY: build install clean test test-eval test-all lint format check dev deps sandbox
+.PHONY: build install clean test test-eval test-all lint format check check-all dev deps sandbox
 
 PREFIX ?= $(HOME)/.claude/galaxy
 BINDIR ?= $(PREFIX)/bin
@@ -37,6 +37,12 @@ format:
 # check builds dev binary first (integration specs need it)
 check: dev test lint
 
+# Everything, including the slow and non-deterministic checks.
+# test-eval makes live Claude calls, so it is kept off `check` and off the
+# install path: a third-party hiccup should never stand between a fix and
+# getting it onto the machine.
+check-all: check test-eval sandbox
+
 dev: deps format
 	@mkdir -p $(BUILDDIR)
 	crystal build -o $(BUILDDIR)/galaxy-ledger src/galaxy_ledger.cr
@@ -46,7 +52,7 @@ build: deps
 	@mkdir -p $(BUILDDIR)
 	crystal build --release --no-debug -o $(BUILDDIR)/galaxy-ledger src/galaxy_ledger.cr
 
-install: check test-eval build
+install: check build
 	install -d $(BINDIR)
 	install -m 755 $(BUILDDIR)/galaxy-ledger $(BINDIR)/galaxy-ledger
 	@# Symlink to local bin for PATH access
