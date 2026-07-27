@@ -8,6 +8,51 @@ module GalaxyLedger
     # Ensures deterministic extraction quality regardless of user's default model.
     EXTRACTION_MODEL = "sonnet"
 
+    # Entry types each prompt is allowed to produce. These must stay in step
+    # with the type unions written into the prompts themselves — a value the
+    # prompt invites but the schema forbids turns a good answer into a
+    # validation failure. A spec asserts each of these appears in its prompt.
+    ASSISTANT_ENTRY_TYPES = ["learning", "discovery", "decision"]
+    USER_ENTRY_TYPES      = ["direction", "preference", "constraint"]
+
+    IMPORTANCE_LEVELS = ["high", "medium", "low"]
+
+    # JSON Schema pinning an extraction response to the envelope the prompts
+    # ask for. The prompts have always described this shape in prose, which
+    # left the model free to answer with prose of its own, a fenced code
+    # block, or a differently-shaped object. Passing the shape as a schema
+    # makes the CLI enforce it instead of asking politely.
+    #
+    # Note what this does and does not buy: the envelope is guaranteed, the
+    # contents are not. An empty extractions array satisfies the schema
+    # completely, so a model that decides there is nothing worth extracting
+    # still returns nothing. Shape and substance are separate problems.
+    def self.extraction_schema(entry_types : Array(String)) : String
+      <<-JSON
+      {
+        "type": "object",
+        "properties": {
+          "extractions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": { "type": "string", "enum": #{entry_types.to_json} },
+                "content": { "type": "string" },
+                "importance": {
+                  "type": "string",
+                  "enum": #{IMPORTANCE_LEVELS.to_json}
+                }
+              },
+              "required": ["type", "content", "importance"]
+            }
+          }
+        },
+        "required": ["extractions"]
+      }
+      JSON
+    end
+
     # Result of an extraction operation
     class Result
       include JSON::Serializable
@@ -114,6 +159,7 @@ module GalaxyLedger
         content: prompt,
         prompt: Prompts.user_prompt_extraction,
         model: EXTRACTION_MODEL,
+        json_schema: extraction_schema(USER_ENTRY_TYPES),
       )
 
       return Result.new if run_result[:result].nil?
@@ -137,6 +183,7 @@ module GalaxyLedger
         content: assistant_content,
         prompt: full_prompt,
         model: EXTRACTION_MODEL,
+        json_schema: extraction_schema(ASSISTANT_ENTRY_TYPES),
       )
 
       return Result.new if run_result[:result].nil?

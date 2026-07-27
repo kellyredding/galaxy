@@ -56,6 +56,39 @@ describe GalaxyLedger::Extraction::ClaudeCLI do
       end
     end
 
+    describe "structured output schema" do
+      it "passes the schema as a flag and value pair" do
+        args = GalaxyLedger::Extraction::ClaudeCLI.build_args(
+          content: "some content",
+          prompt: "some prompt",
+          json_schema: %({"type":"object"}),
+        )
+
+        idx = args.index("--json-schema").not_nil!
+        args[idx + 1].should eq(%({"type":"object"}))
+      end
+
+      it "omits the schema flag when no schema is given" do
+        args = GalaxyLedger::Extraction::ClaudeCLI.build_args(
+          content: "some content",
+          prompt: "some prompt",
+        )
+
+        args.should_not contain("--json-schema")
+      end
+
+      it "keeps the prompt last so the schema flag cannot consume it" do
+        args = GalaxyLedger::Extraction::ClaudeCLI.build_args(
+          content: "some content",
+          prompt: "some prompt",
+          model: "sonnet",
+          json_schema: %({"type":"object"}),
+        )
+
+        args.last.should contain("some prompt")
+      end
+    end
+
     describe "flags the CLI is not given" do
       # A flag the CLI accepts and silently ignores looks exactly like one
       # that works. --prefill was passed for months, did nothing, and the

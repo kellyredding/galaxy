@@ -57,9 +57,11 @@ module GalaxyLedger
         content : String,
         prompt : String,
         model : String? = nil,
+        json_schema : String? = nil,
       ) : Array(String)
         args = ["-p", "--output-format", "json"]
         args.concat(["--model", model]) if model
+        args.concat(["--json-schema", json_schema]) if json_schema
         args << "#{prompt}\n\nContent to analyze:\n#{content}"
         args
       end
@@ -73,6 +75,7 @@ module GalaxyLedger
         prompt : String,
         timeout : Time::Span = DEFAULT_TIMEOUT,
         model : String? = nil,
+        json_schema : String? = nil,
       ) : RunResult
         return ZERO_USAGE_RESULT if content.strip.empty?
         return ZERO_USAGE_RESULT if prompt.strip.empty?
@@ -94,7 +97,12 @@ module GalaxyLedger
         end
 
         begin
-          args = build_args(content: content, prompt: prompt, model: model)
+          args = build_args(
+            content: content,
+            prompt: prompt,
+            model: model,
+            json_schema: json_schema,
+          )
 
           # Build the command
           # claude -p --output-format json [--model MODEL] "$full_prompt"
