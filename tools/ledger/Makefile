@@ -1,4 +1,4 @@
-.PHONY: build install clean test test-eval test-all lint format check dev deps
+.PHONY: build install clean test test-eval test-all lint format check dev deps sandbox
 
 PREFIX ?= $(HOME)/.claude/galaxy
 BINDIR ?= $(PREFIX)/bin
@@ -18,6 +18,12 @@ test: format
 
 test-eval:
 	crystal spec --tag eval
+
+# End-to-end accrual checks against a throwaway database.
+# Requires a current $(BUILDDIR)/galaxy-ledger — run `make dev` first.
+sandbox:
+	./script/sandbox/accrual-scenarios.sh
+	./script/sandbox/resume-scenarios.sh
 
 test-all:
 	crystal spec
