@@ -695,6 +695,88 @@ module GalaxyLedger
           # Column already gone — ignore
         end
       },
+      "0.6.0" => ->(db : DB::Database) {
+        # Partition daily usage by the Claude process that reported it.
+        #
+        # Usage was keyed on (ledger_session_id, date), so every process
+        # mapped to a session shared one cost/token baseline. A process
+        # reporting a low counter reset that shared baseline, and the next
+        # tick from a process with a high counter then diffed against the
+        # reset value and re-added its whole accumulated total. Starting a
+        # session in a terminal pane and abandoning it was enough to fire
+        # this: it reports $0, does no work, and still resets the baseline
+        # the working process depends on.
+        #
+        # Adding process_key to the uniqueness constraint isolates each
+        # process's baseline. The accumulation algorithm is unchanged; the
+        # daily total is now the sum across a session's process rows,
+        # which the spend queries already computed as a SUM.
+        #
+        # SQLite cannot alter a UNIQUE constraint in place, so this is the
+        # standard table rebuild. Existing rows are attributed to 'legacy'
+        # — historical rows never accrue again, and today's in-flight rows
+        # keep their totals while new ticks open their own process rows.
+        # Either way the day total is a SUM and stays continuous.
+        # Idempotency guard: skip if a previous run already rebuilt the
+        # table (partial failure, or a rerun against a migrated database).
+        already_partitioned = (db.query_one?(
+          "SELECT COUNT(*) FROM pragma_table_info('ledger_session_daily_usages') " \
+          "WHERE name = 'process_key'",
+          as: Int64,
+        ) || 0_i64) > 0
+        return if already_partitioned
+
+        db.exec("PRAGMA foreign_keys=OFF")
+        begin
+          db.exec(<<-SQL)
+            CREATE TABLE ledger_session_daily_usages_new (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              ledger_session_id INTEGER NOT NULL,
+              date TEXT NOT NULL,
+              process_key TEXT NOT NULL DEFAULT 'legacy',
+              created_at TEXT NOT NULL DEFAULT (datetime('now')),
+              updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+              baseline_cost_usd REAL NOT NULL DEFAULT 0.0,
+              current_cost_usd REAL NOT NULL DEFAULT 0.0,
+              cumulative_cost_usd REAL NOT NULL DEFAULT 0.0,
+              baseline_tokens INTEGER NOT NULL DEFAULT 0,
+              current_tokens INTEGER NOT NULL DEFAULT 0,
+              cumulative_tokens INTEGER NOT NULL DEFAULT 0,
+              oneshot_cost_usd REAL NOT NULL DEFAULT 0.0,
+              oneshot_tokens INTEGER NOT NULL DEFAULT 0,
+              FOREIGN KEY (ledger_session_id) REFERENCES ledger_sessions(id) ON DELETE CASCADE,
+              UNIQUE(ledger_session_id, date, process_key)
+            )
+          SQL
+
+          db.exec(<<-SQL)
+            INSERT INTO ledger_session_daily_usages_new (
+              id, ledger_session_id, date, process_key, created_at, updated_at,
+              baseline_cost_usd, current_cost_usd, cumulative_cost_usd,
+              baseline_tokens, current_tokens, cumulative_tokens,
+              oneshot_cost_usd, oneshot_tokens
+            )
+            SELECT
+              id, ledger_session_id, date, 'legacy', created_at, updated_at,
+              baseline_cost_usd, current_cost_usd, cumulative_cost_usd,
+              baseline_tokens, current_tokens, cumulative_tokens,
+              oneshot_cost_usd, oneshot_tokens
+            FROM ledger_session_daily_usages
+          SQL
+
+          db.exec("DROP TABLE ledger_session_daily_usages")
+          db.exec(
+            "ALTER TABLE ledger_session_daily_usages_new " \
+            "RENAME TO ledger_session_daily_usages"
+          )
+
+          # Indexes were dropped with the old table
+          db.exec("CREATE INDEX IF NOT EXISTS idx_daily_usages_date ON ledger_session_daily_usages(date)")
+          db.exec("CREATE INDEX IF NOT EXISTS idx_daily_usages_session ON ledger_session_daily_usages(ledger_session_id)")
+        ensure
+          db.exec("PRAGMA foreign_keys=ON")
+        end
+      },
     }
 
     # ==========================================================================

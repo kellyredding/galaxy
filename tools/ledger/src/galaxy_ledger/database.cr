@@ -185,12 +185,18 @@ module GalaxyLedger
           )
         SQL
 
-        # Daily usage tracking table (one record per session per local day)
+        # Daily usage tracking table (one record per session per reporting
+        # process per local day). Partitioning on process_key keeps each
+        # Claude process's cost and token baselines isolated — without it,
+        # a process reporting a low counter resets the baseline a second
+        # process is diffing against, and that second process re-adds its
+        # entire accumulated total on its next tick.
         db.exec(<<-SQL)
           CREATE TABLE IF NOT EXISTS ledger_session_daily_usages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ledger_session_id INTEGER NOT NULL,
             date TEXT NOT NULL,
+            process_key TEXT NOT NULL DEFAULT 'legacy',
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now')),
             baseline_cost_usd REAL NOT NULL DEFAULT 0.0,
@@ -202,7 +208,7 @@ module GalaxyLedger
             oneshot_cost_usd REAL NOT NULL DEFAULT 0.0,
             oneshot_tokens INTEGER NOT NULL DEFAULT 0,
             FOREIGN KEY (ledger_session_id) REFERENCES ledger_sessions(id) ON DELETE CASCADE,
-            UNIQUE(ledger_session_id, date)
+            UNIQUE(ledger_session_id, date, process_key)
           )
         SQL
 
@@ -642,11 +648,23 @@ module GalaxyLedger
       end
     end
 
-    # Record daily usage for the current local day.
-    # Uses dynamic baseline for both cost and tokens: each tick diffs
-    # from the last observed value and accumulates positive deltas.
-    # On reset (compaction/new process), the baseline resets to the
-    # new value and previously accumulated totals are preserved.
+    # Record daily usage for the current local day, partitioned by the
+    # Claude process that reported it.
+    #
+    # Each Claude process carries its own cost and token counters. Keying
+    # the accumulator on (session, date) alone let one process's counter
+    # overwrite another's baseline: a process reporting a low value reset
+    # the shared baseline, and the next tick from a process with a high
+    # value then diffed against that reset baseline and re-added its
+    # entire accumulated total. A session started and abandoned in a
+    # terminal pane — reporting $0 and doing no work — was enough to
+    # trigger it. Partitioning on process_key confines every baseline to
+    # the process that owns it, so a foreign counter cannot reach it.
+    #
+    # The accumulation algorithm below is deliberately unchanged: each
+    # tick diffs from the last observed value and accumulates positive
+    # deltas. On reset (compaction/new process), the baseline resets to
+    # the new value and previously accumulated totals are preserved.
     private def self.record_daily_usage(
       db : DB::Database,
       ledger_session_id : Int64,
@@ -658,21 +676,34 @@ module GalaxyLedger
       # Skip if we don't have any values to record
       return if new_cost.nil? && new_tokens.nil?
 
+      # A tick with no session identifier cannot be attributed to the
+      # process that produced it. Recording it under a shared placeholder
+      # would let unrelated processes collide on one baseline again, so
+      # drop the tick rather than reintroduce that failure mode.
+      process_key = status.session_id
+      if process_key.nil? || process_key.empty?
+        STDERR.puts(
+          "galaxy-ledger: dropped usage tick for session #{ledger_session_id} " \
+          "(status payload carried no session_id)"
+        )
+        return
+      end
+
       # Default nil values to 0
       cost_val = new_cost || 0.0
       tokens_val = new_tokens || 0_i64
 
       today = LedgerTime.today_str
 
-      # Check for existing record today
+      # Check for an existing record today for THIS process
       existing = db.query_one?(
         <<-SQL,
           SELECT id, baseline_cost_usd, current_cost_usd, cumulative_cost_usd,
                  baseline_tokens, current_tokens, cumulative_tokens
           FROM ledger_session_daily_usages
-          WHERE ledger_session_id = ? AND date = ?
+          WHERE ledger_session_id = ? AND date = ? AND process_key = ?
         SQL
-        ledger_session_id, today,
+        ledger_session_id, today, process_key,
       ) do |rs|
         {
           id:                  rs.read(Int64),
@@ -686,38 +717,94 @@ module GalaxyLedger
       end
 
       if existing.nil?
-        # --- New day record ---
-        # Look up previous day's current values as baseline
+        # --- First tick from this process today ---
+        #
+        # Seeding matters because a resumed process inherits the
+        # conversation's cost counter rather than restarting at zero. Its
+        # first observation is therefore not new spend, and diffing it
+        # against zero would book the whole inherited total a second time.
+        #
+        # Look up this process's own carry-over from a previous day.
+        # Scoping to process_key matters: seeding from whatever process
+        # happened to tick last would diff against a foreign counter,
+        # which is the collision this partition exists to prevent.
         prev = db.query_one?(
           <<-SQL,
             SELECT current_cost_usd, current_tokens
             FROM ledger_session_daily_usages
-            WHERE ledger_session_id = ? AND date < ?
+            WHERE ledger_session_id = ? AND date < ? AND process_key = ?
             ORDER BY date DESC LIMIT 1
           SQL
-          ledger_session_id, today,
+          ledger_session_id, today, process_key,
         ) do |rs|
           {cost: rs.read(Float64), tokens: rs.read(Int64)}
         end
 
-        prev_cost = prev ? prev[:cost] : 0.0
-        prev_tokens = prev ? prev[:tokens] : 0_i64
-
-        # Cost: initial diff from previous day's final value
-        cost_diff = cost_val - prev_cost
-        if cost_diff < 0
-          # Reset happened between days — cost_val is from a fresh process
-          cost_diff = cost_val
+        # If this process has no history of its own, fall back to a
+        # session-level anchor.
+        #
+        # A resumed process inherits the conversation's counter, so its
+        # opening observation is mostly spend that has already been
+        # booked. Diffing against the anchor cancels the inherited
+        # portion and accrues only what is genuinely new.
+        #
+        # The ordering matters. A process's own history always wins, so
+        # two processes that both ran yesterday each continue from their
+        # own carry-over rather than from each other's. The session
+        # anchor is consulted only when there is no better reference.
+        reference = prev
+        if reference.nil?
+          # The anchor is a single day: today if the session has already
+          # reported today, otherwise its most recent prior day. Never a
+          # max across both, and never across all history — an older
+          # day's counter can sit well above the session's present one
+          # (an expensive earlier conversation, or a counter that has
+          # since reset), and anchoring high drives the diff negative,
+          # trips the reset branch, and books the whole counter as new
+          # spend. Within the chosen day a MAX is safe, because those
+          # rows all belong to the same day's concurrent processes.
+          reference = db.query_one?(
+            <<-SQL,
+              SELECT MAX(current_cost_usd), MAX(current_tokens)
+              FROM ledger_session_daily_usages
+              WHERE ledger_session_id = ?
+                AND date = COALESCE(
+                  (SELECT date FROM ledger_session_daily_usages
+                    WHERE ledger_session_id = ? AND date = ? LIMIT 1),
+                  (SELECT MAX(date) FROM ledger_session_daily_usages
+                    WHERE ledger_session_id = ? AND date < ?)
+                )
+            SQL
+            ledger_session_id, ledger_session_id, today, ledger_session_id, today,
+          ) do |rs|
+            c = rs.read(Float64?)
+            t = rs.read(Int64?)
+            c.nil? ? nil : {cost: c, tokens: t || 0_i64}
+          end
         end
-        cumulative_cost = cost_diff
 
-        # Tokens: handle potential cross-day compaction
-        token_diff = tokens_val - prev_tokens
-        if token_diff < 0
-          # Compaction happened between days — reset baseline
-          token_diff = 0_i64
+        if reference
+          cost_diff = cost_val - reference[:cost]
+          if cost_diff < 0
+            # Counter reset — this process's own value is the new spend
+            cost_diff = cost_val
+          end
+          cumulative_cost = cost_diff
+
+          token_diff = tokens_val - reference[:tokens]
+          if token_diff < 0
+            # Compaction — context shrank, nothing new to accrue
+            token_diff = 0_i64
+          end
+          cumulative_tokens = token_diff
+        else
+          # Nothing has ever been recorded for this session, so there is
+          # no prior total this could duplicate. Book the opening
+          # observation, matching pre-partition behaviour for the first
+          # tick of a brand-new session.
+          cumulative_cost = cost_val
+          cumulative_tokens = tokens_val
         end
-        cumulative_tokens = token_diff
 
         # Store baselines as current values for dynamic diffing
         insert_baseline_cost = cost_val
@@ -726,12 +813,12 @@ module GalaxyLedger
         db.exec(
           <<-SQL,
             INSERT INTO ledger_session_daily_usages (
-              ledger_session_id, date,
+              ledger_session_id, date, process_key,
               baseline_cost_usd, current_cost_usd, cumulative_cost_usd,
               baseline_tokens, current_tokens, cumulative_tokens
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
           SQL
-          ledger_session_id, today,
+          ledger_session_id, today, process_key,
           insert_baseline_cost, cost_val, cumulative_cost,
           insert_baseline_tokens, tokens_val, cumulative_tokens,
         )
@@ -781,10 +868,20 @@ module GalaxyLedger
       end
     end
 
+    # Process key for one-shot (`claude -p`) usage. One-shots are distinct
+    # short-lived processes with their own counters, so they accrue on
+    # their own partition rather than sharing a statusline process's row.
+    ONESHOT_PROCESS_KEY = "oneshot"
+
     # Record one-shot usage (cost and tokens) for a session.
-    # Atomically increments the oneshot columns on the existing daily
-    # record, or creates one if none exists yet (e.g., one-shots fire
-    # before the first status line tick).
+    # Atomically increments the oneshot columns on the session's one-shot
+    # record for today, creating it if this is the day's first one-shot.
+    #
+    # Because one-shots own their partition, this row never participates
+    # in statusline baseline diffing — its baseline/current/cumulative
+    # columns stay zero and only the oneshot columns carry value. That
+    # removes the prev-day baseline seeding this method used to perform
+    # to avoid corrupting the shared row it once wrote into.
     def self.record_oneshot_usage(
       ledger_session_id : Int64,
       cost_usd : Float64,
@@ -796,10 +893,13 @@ module GalaxyLedger
         open do |db|
           today = LedgerTime.today_str
 
-          # Check for existing record today
+          # Check for an existing one-shot record today
           existing_id = db.query_one?(
-            "SELECT id FROM ledger_session_daily_usages WHERE ledger_session_id = ? AND date = ?",
-            ledger_session_id, today,
+            <<-SQL,
+              SELECT id FROM ledger_session_daily_usages
+              WHERE ledger_session_id = ? AND date = ? AND process_key = ?
+            SQL
+            ledger_session_id, today, ONESHOT_PROCESS_KEY,
             as: Int64,
           )
 
@@ -818,46 +918,16 @@ module GalaxyLedger
               existing_id,
             )
           else
-            # No daily row yet for this session today. Seed baseline and
-            # current cost/tokens from the previous day's current values so
-            # the first statusline tick of the day computes cost_diff
-            # against the correct reference instead of zero.
-            #
-            # Without this seeding, the next record_daily_usage call would
-            # find an existing row with baseline=0 and compute
-            # cost_diff = cost_val - 0 = full session lifetime cost,
-            # treating the entire lifetime as new spend on today's date.
-            #
-            # Mirrors the prev-day lookup in record_daily_usage's INSERT
-            # path (see above). Defaults to 0.0 / 0 when no prior day
-            # exists, matching the prior behavior for first-day sessions.
-            prev = db.query_one?(
-              <<-SQL,
-                SELECT current_cost_usd, current_tokens
-                FROM ledger_session_daily_usages
-                WHERE ledger_session_id = ? AND date < ?
-                ORDER BY date DESC LIMIT 1
-              SQL
-              ledger_session_id, today,
-            ) do |rs|
-              {cost: rs.read(Float64), tokens: rs.read(Int64)}
-            end
-
-            prev_cost = prev ? prev[:cost] : 0.0
-            prev_tokens = prev ? prev[:tokens] : 0_i64
-
             db.exec(
               <<-SQL,
                 INSERT INTO ledger_session_daily_usages (
-                  ledger_session_id, date,
+                  ledger_session_id, date, process_key,
                   baseline_cost_usd, current_cost_usd, cumulative_cost_usd,
                   baseline_tokens, current_tokens, cumulative_tokens,
                   oneshot_cost_usd, oneshot_tokens
-                ) VALUES (?, ?, ?, ?, 0.0, ?, ?, 0, ?, ?)
+                ) VALUES (?, ?, ?, 0.0, 0.0, 0.0, 0, 0, 0, ?, ?)
               SQL
-              ledger_session_id, today,
-              prev_cost, prev_cost,
-              prev_tokens, prev_tokens,
+              ledger_session_id, today, ONESHOT_PROCESS_KEY,
               cost_usd, tokens,
             )
           end

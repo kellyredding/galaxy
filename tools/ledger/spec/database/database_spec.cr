@@ -1160,7 +1160,7 @@ describe GalaxyLedger::Database do
       )
 
       # Update with nil cwd, project_dir, and git_branch — should preserve existing
-      status_json = %({"context":{"percentage":55.0}})
+      status_json = %({"session_id":"spec-proc","context":{"percentage":55.0}})
       status = GalaxyLedger::ContextStatus.from_json(status_json)
 
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
@@ -1180,7 +1180,7 @@ describe GalaxyLedger::Database do
       )
 
       # Simulate status line pushing a new cwd (e.g., after context reset)
-      status_json = %({"cwd":"/home/user/projects/kajabi","context":{"percentage":10.0}})
+      status_json = %({"session_id":"spec-proc","cwd":"/home/user/projects/kajabi","context":{"percentage":10.0}})
       status = GalaxyLedger::ContextStatus.from_json(status_json)
 
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
@@ -1202,14 +1202,14 @@ describe GalaxyLedger::Database do
       )
 
       # First update: /dir/a → /dir/b
-      status1 = GalaxyLedger::ContextStatus.from_json(%({"cwd":"/dir/b","context":{"percentage":20.0}}))
+      status1 = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","cwd":"/dir/b","context":{"percentage":20.0}}))
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status1)
 
       s1 = GalaxyLedger::Database.get_session("sess-metrics-prev-chain").not_nil!
       JSON.parse(s1.context)["previous_cwd"].as_s.should eq("/dir/a")
 
       # Second update: /dir/b → /dir/c
-      status2 = GalaxyLedger::ContextStatus.from_json(%({"cwd":"/dir/c","context":{"percentage":30.0}}))
+      status2 = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","cwd":"/dir/c","context":{"percentage":30.0}}))
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status2)
 
       s2 = GalaxyLedger::Database.get_session("sess-metrics-prev-chain").not_nil!
@@ -1223,14 +1223,14 @@ describe GalaxyLedger::Database do
       )
 
       # First update: /dir/original → /dir/new (previous_cwd = /dir/original)
-      status1 = GalaxyLedger::ContextStatus.from_json(%({"cwd":"/dir/new","context":{"percentage":20.0}}))
+      status1 = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","cwd":"/dir/new","context":{"percentage":20.0}}))
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status1)
 
       s1 = GalaxyLedger::Database.get_session("sess-metrics-same-cwd").not_nil!
       JSON.parse(s1.context)["previous_cwd"].as_s.should eq("/dir/original")
 
       # Second update: same cwd /dir/new — previous_cwd should stay /dir/original
-      status2 = GalaxyLedger::ContextStatus.from_json(%({"cwd":"/dir/new","context":{"percentage":30.0}}))
+      status2 = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","cwd":"/dir/new","context":{"percentage":30.0}}))
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status2)
 
       s2 = GalaxyLedger::Database.get_session("sess-metrics-same-cwd").not_nil!
@@ -1242,7 +1242,7 @@ describe GalaxyLedger::Database do
       ledger_session_id = GalaxyLedger::Database.create_session("sess-metrics-no-cwd")
 
       # No cwd in the status update — context should remain untouched
-      status_json = %({"context":{"percentage":50.0}})
+      status_json = %({"session_id":"spec-proc","context":{"percentage":50.0}})
       status = GalaxyLedger::ContextStatus.from_json(status_json)
 
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
@@ -1259,7 +1259,7 @@ describe GalaxyLedger::Database do
       # Pre-populate context with an existing key
       GalaxyLedger::Database.merge_session_context(ledger_session_id, "injected_context", "some data")
 
-      status = GalaxyLedger::ContextStatus.from_json(%({"cwd":"/home/user/kajabi","context":{"percentage":10.0}}))
+      status = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","cwd":"/home/user/kajabi","context":{"percentage":10.0}}))
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
 
       session = GalaxyLedger::Database.get_session("sess-metrics-ctx-merge").not_nil!
@@ -1321,7 +1321,7 @@ describe GalaxyLedger::Database do
       )
 
       # Status line changes cwd, setting previous_cwd
-      status = GalaxyLedger::ContextStatus.from_json(%({"cwd":"/dir/new","context":{"percentage":10.0}}))
+      status = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","cwd":"/dir/new","context":{"percentage":10.0}}))
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
 
       # Stop hook stamps last_stop_cwd
@@ -1357,7 +1357,7 @@ describe GalaxyLedger::Database do
       GalaxyLedger::Database.stamp_stop_cwd(ledger_session_id, "/dir/working")
 
       # Status line fires after reset with project root cwd
-      status = GalaxyLedger::ContextStatus.from_json(%({"cwd":"/dir/project-root","context":{"percentage":5.0}}))
+      status = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","cwd":"/dir/project-root","context":{"percentage":5.0}}))
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
 
       session = GalaxyLedger::Database.get_session("sess-stop-cwd-no-clobber").not_nil!
@@ -1782,7 +1782,7 @@ describe GalaxyLedger::Database do
     it "creates a daily usage record on first metrics update" do
       ledger_session_id = GalaxyLedger::Database.create_session("sess-daily-1")
 
-      status = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":5000},"cost":{"usd":0.50}}))
+      status = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","context":{"tokens_used":5000},"cost":{"usd":0.50}}))
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
 
       today = GalaxyLedger::LedgerTime.today_str
@@ -1796,11 +1796,11 @@ describe GalaxyLedger::Database do
       ledger_session_id = GalaxyLedger::Database.create_session("sess-daily-2")
 
       # First update
-      status1 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":5000},"cost":{"usd":0.50}}))
+      status1 = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","context":{"tokens_used":5000},"cost":{"usd":0.50}}))
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status1)
 
       # Second update — cost and tokens increase
-      status2 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":12000},"cost":{"usd":1.20}}))
+      status2 = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","context":{"tokens_used":12000},"cost":{"usd":1.20}}))
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status2)
 
       today = GalaxyLedger::LedgerTime.today_str
@@ -1816,19 +1816,19 @@ describe GalaxyLedger::Database do
       ledger_session_id = GalaxyLedger::Database.create_session("sess-daily-compact")
 
       # Update 1: tokens=5000
-      status1 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":5000},"cost":{"usd":0.50}}))
+      status1 = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","context":{"tokens_used":5000},"cost":{"usd":0.50}}))
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status1)
 
       # Update 2: tokens=12000
-      status2 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":12000},"cost":{"usd":1.00}}))
+      status2 = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","context":{"tokens_used":12000},"cost":{"usd":1.00}}))
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status2)
 
       # Update 3: tokens=3000 (COMPACTION — tokens dropped)
-      status3 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":3000},"cost":{"usd":1.50}}))
+      status3 = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","context":{"tokens_used":3000},"cost":{"usd":1.50}}))
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status3)
 
       # Update 4: tokens=9000
-      status4 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":9000},"cost":{"usd":2.00}}))
+      status4 = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","context":{"tokens_used":9000},"cost":{"usd":2.00}}))
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status4)
 
       today = GalaxyLedger::LedgerTime.today_str
@@ -1844,8 +1844,8 @@ describe GalaxyLedger::Database do
       lid1 = GalaxyLedger::Database.create_session("sess-daily-multi-1")
       lid2 = GalaxyLedger::Database.create_session("sess-daily-multi-2")
 
-      status1 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":5000},"cost":{"usd":1.00}}))
-      status2 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":3000},"cost":{"usd":0.75}}))
+      status1 = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","context":{"tokens_used":5000},"cost":{"usd":1.00}}))
+      status2 = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","context":{"tokens_used":3000},"cost":{"usd":0.75}}))
 
       GalaxyLedger::Database.update_session_metrics(lid1, status1)
       GalaxyLedger::Database.update_session_metrics(lid2, status2)
@@ -1862,7 +1862,7 @@ describe GalaxyLedger::Database do
       ledger_session_id = GalaxyLedger::Database.create_session("sess-daily-nil")
 
       # Both nil — should skip recording
-      status = GalaxyLedger::ContextStatus.from_json(%({"context":{"percentage":42.0}}))
+      status = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","context":{"percentage":42.0}}))
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
 
       today = GalaxyLedger::LedgerTime.today_str
@@ -1873,7 +1873,7 @@ describe GalaxyLedger::Database do
     it "handles nil tokens with non-nil cost" do
       ledger_session_id = GalaxyLedger::Database.create_session("sess-daily-partial")
 
-      status = GalaxyLedger::ContextStatus.from_json(%({"cost":{"usd":0.50}}))
+      status = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","cost":{"usd":0.50}}))
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
 
       today = GalaxyLedger::LedgerTime.today_str
@@ -1903,20 +1903,20 @@ describe GalaxyLedger::Database do
         db.exec(
           <<-SQL,
             INSERT INTO ledger_session_daily_usages (
-              ledger_session_id, date,
+              ledger_session_id, date, process_key,
               baseline_cost_usd, current_cost_usd, cumulative_cost_usd,
               baseline_tokens, current_tokens, cumulative_tokens
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, 'spec-proc', ?, ?, ?, ?, ?, ?)
           SQL
           lid, "2025-02-01", 0.0, 6.0, 6.0, 0_i64, 100_i64, 100_i64,
         )
         db.exec(
           <<-SQL,
             INSERT INTO ledger_session_daily_usages (
-              ledger_session_id, date,
+              ledger_session_id, date, process_key,
               baseline_cost_usd, current_cost_usd, cumulative_cost_usd,
               baseline_tokens, current_tokens, cumulative_tokens
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, 'spec-proc', ?, ?, ?, ?, ?, ?)
           SQL
           lid, "2025-02-02", 6.0, 10.0, 4.0, 100_i64, 200_i64, 100_i64,
         )
@@ -1930,7 +1930,7 @@ describe GalaxyLedger::Database do
     it "cascades daily usage records on session delete" do
       lid = GalaxyLedger::Database.create_session("sess-daily-cascade")
 
-      status = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":5000},"cost":{"usd":1.00}}))
+      status = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","context":{"tokens_used":5000},"cost":{"usd":1.00}}))
       GalaxyLedger::Database.update_session_metrics(lid, status)
 
       today = GalaxyLedger::LedgerTime.today_str
@@ -1945,27 +1945,27 @@ describe GalaxyLedger::Database do
       ledger_session_id = GalaxyLedger::Database.create_session("sess-daily-multi-reset")
 
       # Tick 1: cost=0.50
-      s1 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":5000},"cost":{"usd":0.50}}))
+      s1 = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","context":{"tokens_used":5000},"cost":{"usd":0.50}}))
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, s1)
 
       # Tick 2: cost=1.00 (normal increase)
-      s2 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":12000},"cost":{"usd":1.00}}))
+      s2 = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","context":{"tokens_used":12000},"cost":{"usd":1.00}}))
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, s2)
 
       # Tick 3: cost=0.30 (first reset)
-      s3 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":3000},"cost":{"usd":0.30}}))
+      s3 = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","context":{"tokens_used":3000},"cost":{"usd":0.30}}))
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, s3)
 
       # Tick 4: cost=0.80 (first reset process accumulates)
-      s4 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":9000},"cost":{"usd":0.80}}))
+      s4 = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","context":{"tokens_used":9000},"cost":{"usd":0.80}}))
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, s4)
 
       # Tick 5: cost=0.20 (second reset)
-      s5 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":2000},"cost":{"usd":0.20}}))
+      s5 = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","context":{"tokens_used":2000},"cost":{"usd":0.20}}))
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, s5)
 
       # Tick 6: cost=0.60 (second reset process accumulates)
-      s6 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":7000},"cost":{"usd":0.60}}))
+      s6 = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","context":{"tokens_used":7000},"cost":{"usd":0.60}}))
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, s6)
 
       today = GalaxyLedger::LedgerTime.today_str
@@ -1981,19 +1981,19 @@ describe GalaxyLedger::Database do
       ledger_session_id = GalaxyLedger::Database.create_session("sess-daily-cost-compact")
 
       # Update 1: cost=0.50
-      status1 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":5000},"cost":{"usd":0.50}}))
+      status1 = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","context":{"tokens_used":5000},"cost":{"usd":0.50}}))
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status1)
 
       # Update 2: cost=1.00 (normal increase)
-      status2 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":12000},"cost":{"usd":1.00}}))
+      status2 = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","context":{"tokens_used":12000},"cost":{"usd":1.00}}))
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status2)
 
       # Update 3: cost=0.30 (RESET — session resumed with new process)
-      status3 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":3000},"cost":{"usd":0.30}}))
+      status3 = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","context":{"tokens_used":3000},"cost":{"usd":0.30}}))
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status3)
 
       # Update 4: cost=0.80 (new process accumulates)
-      status4 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":9000},"cost":{"usd":0.80}}))
+      status4 = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","context":{"tokens_used":9000},"cost":{"usd":0.80}}))
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status4)
 
       today = GalaxyLedger::LedgerTime.today_str
@@ -2008,24 +2008,24 @@ describe GalaxyLedger::Database do
     it "handles cross-day cost reset — session resumed on new day with lower cost" do
       lid = GalaxyLedger::Database.create_session("sess-daily-crossday-reset")
       today = GalaxyLedger::LedgerTime.today_str
-      yesterday = (Time.utc - 1.day).to_s("%Y-%m-%d")
+      yesterday = (GalaxyLedger::LedgerTime.now - 1.day).to_s("%Y-%m-%d")
 
       # Simulate Day 1: session ran with cost=2.50, tokens=10000
       GalaxyLedger::Database.open do |db|
         db.exec(
           <<-SQL,
             INSERT INTO ledger_session_daily_usages (
-              ledger_session_id, date,
+              ledger_session_id, date, process_key,
               baseline_cost_usd, current_cost_usd, cumulative_cost_usd,
               baseline_tokens, current_tokens, cumulative_tokens
-            ) VALUES (?, ?, 0.0, 2.50, 2.50, 10000, 10000, 10000)
+            ) VALUES (?, ?, 'spec-proc', 0.0, 2.50, 2.50, 10000, 10000, 10000)
           SQL
           lid, yesterday,
         )
       end
 
       # Day 2: session resumed — cost counter reset, reports 0.75
-      status = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":3000},"cost":{"usd":0.75}}))
+      status = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","context":{"tokens_used":3000},"cost":{"usd":0.75}}))
       GalaxyLedger::Database.update_session_metrics(lid, status)
 
       # Verify Day 2 record has non-negative cumulative
@@ -2044,24 +2044,24 @@ describe GalaxyLedger::Database do
     it "handles cross-day cost reset to zero — session resumed with no activity" do
       lid = GalaxyLedger::Database.create_session("sess-daily-crossday-zero")
       today = GalaxyLedger::LedgerTime.today_str
-      yesterday = (Time.utc - 1.day).to_s("%Y-%m-%d")
+      yesterday = (GalaxyLedger::LedgerTime.now - 1.day).to_s("%Y-%m-%d")
 
       # Simulate Day 1: session ran with cost=1.00
       GalaxyLedger::Database.open do |db|
         db.exec(
           <<-SQL,
             INSERT INTO ledger_session_daily_usages (
-              ledger_session_id, date,
+              ledger_session_id, date, process_key,
               baseline_cost_usd, current_cost_usd, cumulative_cost_usd,
               baseline_tokens, current_tokens, cumulative_tokens
-            ) VALUES (?, ?, 0.0, 1.00, 1.00, 5000, 5000, 5000)
+            ) VALUES (?, ?, 'spec-proc', 0.0, 1.00, 1.00, 5000, 5000, 5000)
           SQL
           lid, yesterday,
         )
       end
 
       # Day 2: session resumed, statusline reports cost=0 (no activity yet)
-      status = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":0},"cost":{"usd":0.0}}))
+      status = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","context":{"tokens_used":0},"cost":{"usd":0.0}}))
       GalaxyLedger::Database.update_session_metrics(lid, status)
 
       # Verify Day 2 record has zero cumulative, not negative
@@ -2074,36 +2074,36 @@ describe GalaxyLedger::Database do
     it "handles cross-day cost reset with multiple Day 2 ticks" do
       lid = GalaxyLedger::Database.create_session("sess-daily-crossday-multi")
       today = GalaxyLedger::LedgerTime.today_str
-      yesterday = (Time.utc - 1.day).to_s("%Y-%m-%d")
+      yesterday = (GalaxyLedger::LedgerTime.now - 1.day).to_s("%Y-%m-%d")
 
       # Day 1: session ran with cost=2.50, tokens=10000
       GalaxyLedger::Database.open do |db|
         db.exec(
           <<-SQL,
             INSERT INTO ledger_session_daily_usages (
-              ledger_session_id, date,
+              ledger_session_id, date, process_key,
               baseline_cost_usd, current_cost_usd, cumulative_cost_usd,
               baseline_tokens, current_tokens, cumulative_tokens
-            ) VALUES (?, ?, 2.50, 2.50, 2.50, 10000, 10000, 10000)
+            ) VALUES (?, ?, 'spec-proc', 2.50, 2.50, 2.50, 10000, 10000, 10000)
           SQL
           lid, yesterday,
         )
       end
 
       # Day 2, tick 1: reset detected (cost=0.75 < prev day's 2.50)
-      s1 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":3000},"cost":{"usd":0.75}}))
+      s1 = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","context":{"tokens_used":3000},"cost":{"usd":0.75}}))
       GalaxyLedger::Database.update_session_metrics(lid, s1)
 
       # Day 2, tick 2: normal increase within new process
-      s2 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":8000},"cost":{"usd":1.50}}))
+      s2 = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","context":{"tokens_used":8000},"cost":{"usd":1.50}}))
       GalaxyLedger::Database.update_session_metrics(lid, s2)
 
       # Day 2, tick 3: another reset mid-day (second process)
-      s3 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":2000},"cost":{"usd":0.40}}))
+      s3 = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","context":{"tokens_used":2000},"cost":{"usd":0.40}}))
       GalaxyLedger::Database.update_session_metrics(lid, s3)
 
       # Day 2, tick 4: second process accumulates
-      s4 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":6000},"cost":{"usd":0.90}}))
+      s4 = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","context":{"tokens_used":6000},"cost":{"usd":0.90}}))
       GalaxyLedger::Database.update_session_metrics(lid, s4)
 
       daily = GalaxyLedger::Database.spend_daily(today, today)
@@ -2121,24 +2121,24 @@ describe GalaxyLedger::Database do
     it "handles cross-day normal continuation — cost increases monotonically" do
       lid = GalaxyLedger::Database.create_session("sess-daily-crossday-normal")
       today = GalaxyLedger::LedgerTime.today_str
-      yesterday = (Time.utc - 1.day).to_s("%Y-%m-%d")
+      yesterday = (GalaxyLedger::LedgerTime.now - 1.day).to_s("%Y-%m-%d")
 
       # Simulate Day 1: session ran with cost=3.00, tokens=15000
       GalaxyLedger::Database.open do |db|
         db.exec(
           <<-SQL,
             INSERT INTO ledger_session_daily_usages (
-              ledger_session_id, date,
+              ledger_session_id, date, process_key,
               baseline_cost_usd, current_cost_usd, cumulative_cost_usd,
               baseline_tokens, current_tokens, cumulative_tokens
-            ) VALUES (?, ?, 0.0, 3.00, 3.00, 15000, 15000, 15000)
+            ) VALUES (?, ?, 'spec-proc', 0.0, 3.00, 3.00, 15000, 15000, 15000)
           SQL
           lid, yesterday,
         )
       end
 
       # Day 2: same process continues — cost is cumulative (5.00 > 3.00)
-      status = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":25000},"cost":{"usd":5.00}}))
+      status = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","context":{"tokens_used":25000},"cost":{"usd":5.00}}))
       GalaxyLedger::Database.update_session_metrics(lid, status)
 
       # Verify Day 2: cumulative = 5.00 - 3.00 = 2.00 (normal diff)
@@ -2276,7 +2276,7 @@ describe GalaxyLedger::Database do
       lid = GalaxyLedger::Database.create_session("sess-oneshot-indep")
 
       # Status line tick first
-      status = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":5000},"cost":{"usd":0.50}}))
+      status = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","context":{"tokens_used":5000},"cost":{"usd":0.50}}))
       GalaxyLedger::Database.update_session_metrics(lid, status)
 
       # Then one-shot
@@ -2284,9 +2284,13 @@ describe GalaxyLedger::Database do
 
       today = GalaxyLedger::LedgerTime.today_str
       GalaxyLedger::Database.open do |db|
+        # One-shots own the 'oneshot' partition and status line ticks own
+        # their process's partition, so the day's totals are the sum
+        # across both — which is exactly how the spend queries read them.
         row = db.query_one?(
           <<-SQL,
-            SELECT cumulative_cost_usd, cumulative_tokens, oneshot_cost_usd, oneshot_tokens
+            SELECT SUM(cumulative_cost_usd), SUM(cumulative_tokens),
+                   SUM(oneshot_cost_usd), SUM(oneshot_tokens), COUNT(*)
             FROM ledger_session_daily_usages
             WHERE ledger_session_id = ? AND date = ?
           SQL
@@ -2297,6 +2301,7 @@ describe GalaxyLedger::Database do
             cumulative_tok:  rs.read(Int64),
             oneshot_cost:    rs.read(Float64),
             oneshot_tok:     rs.read(Int64),
+            rows:            rs.read(Int64),
           }
         end
         row.should_not be_nil
@@ -2305,6 +2310,8 @@ describe GalaxyLedger::Database do
         row[:cumulative_tok].should eq(5000_i64)
         row[:oneshot_cost].should eq(0.10)
         row[:oneshot_tok].should eq(3000_i64)
+        # Separate partitions: one for the status line process, one for one-shots
+        row[:rows].should eq(2_i64)
       end
     end
 
@@ -2315,13 +2322,13 @@ describe GalaxyLedger::Database do
       GalaxyLedger::Database.record_oneshot_usage(lid, 0.10, 3000_i64)
 
       # Then status line tick
-      status = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":10000},"cost":{"usd":0.50}}))
+      status = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","context":{"tokens_used":10000},"cost":{"usd":0.50}}))
       GalaxyLedger::Database.update_session_metrics(lid, status)
 
       today = GalaxyLedger::LedgerTime.today_str
       GalaxyLedger::Database.open do |db|
         row = db.query_one?(
-          "SELECT oneshot_cost_usd, oneshot_tokens FROM ledger_session_daily_usages WHERE ledger_session_id = ? AND date = ?",
+          "SELECT SUM(oneshot_cost_usd), SUM(oneshot_tokens) FROM ledger_session_daily_usages WHERE ledger_session_id = ? AND date = ?",
           lid, today,
         ) do |rs|
           {cost: rs.read(Float64), tokens: rs.read(Int64)}
@@ -2338,14 +2345,14 @@ describe GalaxyLedger::Database do
       today = GalaxyLedger::LedgerTime.today_str
 
       # Status tick 1: cost=0.50, tokens=5000
-      status1 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":5000},"cost":{"usd":0.50}}))
+      status1 = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","context":{"tokens_used":5000},"cost":{"usd":0.50}}))
       GalaxyLedger::Database.update_session_metrics(lid, status1)
 
       # One-shot 1: cost=0.10, tokens=3000
       GalaxyLedger::Database.record_oneshot_usage(lid, 0.10, 3000_i64)
 
       # Status tick 2: cost=1.00, tokens=12000
-      status2 = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":12000},"cost":{"usd":1.00}}))
+      status2 = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","context":{"tokens_used":12000},"cost":{"usd":1.00}}))
       GalaxyLedger::Database.update_session_metrics(lid, status2)
 
       # One-shot 2: cost=0.05, tokens=1000
@@ -2354,7 +2361,8 @@ describe GalaxyLedger::Database do
       GalaxyLedger::Database.open do |db|
         row = db.query_one?(
           <<-SQL,
-            SELECT cumulative_cost_usd, cumulative_tokens, oneshot_cost_usd, oneshot_tokens
+            SELECT SUM(cumulative_cost_usd), SUM(cumulative_tokens),
+                   SUM(oneshot_cost_usd), SUM(oneshot_tokens)
             FROM ledger_session_daily_usages
             WHERE ledger_session_id = ? AND date = ?
           SQL
@@ -2387,23 +2395,23 @@ describe GalaxyLedger::Database do
       result.should be_false
     end
 
-    it "seeds baseline from prev day's current when a oneshot creates today's row" do
-      # Bug repro: a multi-day session crosses UTC midnight. The first
-      # event on the new day is a one-shot (extraction LLM call from
-      # UserPromptSubmit / Stop / name suggestion) — it fires before
-      # any status line tick.
+    it "a oneshot firing first does not dump session lifetime into today" do
+      # A multi-day session crosses midnight and the first event on the
+      # new day is a one-shot (extraction LLM call from UserPromptSubmit /
+      # Stop / name suggestion), landing before any status line tick.
       #
-      # Without seeding, the INSERT writes baseline_cost_usd = 0, and
-      # the next status line tick computes cost_diff = cost_val - 0 =
-      # full session lifetime cost, dumping the entire lifetime into
-      # today's cumulative as if it were new spend.
+      # The hazard is that the day's first row gets created with a zero
+      # baseline, so the next status line tick computes
+      # cost_diff = lifetime_cost - 0 and books the session's entire
+      # lifetime as today's spend.
       #
-      # With seeding, baseline + current carry over from yesterday's
-      # current values, and the next status line tick produces a sane
-      # diff (today's actual incremental spend).
+      # Partitioning removes the hazard structurally: the one-shot writes
+      # its own row, and the status line process seeds its baseline from
+      # its own previous-day row, so it still diffs against yesterday's
+      # carry-over and books only today's incremental spend.
       lid = GalaxyLedger::Database.create_session("sess-oneshot-crossday-seed")
       today = GalaxyLedger::LedgerTime.today_str
-      yesterday = (Time.utc - 1.day).to_s("%Y-%m-%d")
+      yesterday = (GalaxyLedger::LedgerTime.now - 1.day).to_s("%Y-%m-%d")
 
       # Simulate yesterday: session ended with lifetime cost $73.87,
       # context at 497077 tokens.
@@ -2411,10 +2419,10 @@ describe GalaxyLedger::Database do
         db.exec(
           <<-SQL,
             INSERT INTO ledger_session_daily_usages (
-              ledger_session_id, date,
+              ledger_session_id, date, process_key,
               baseline_cost_usd, current_cost_usd, cumulative_cost_usd,
               baseline_tokens, current_tokens, cumulative_tokens
-            ) VALUES (?, ?, 73.87, 73.87, 9.99, 497077, 497077, 18000)
+            ) VALUES (?, ?, 'spec-proc', 73.87, 73.87, 9.99, 497077, 497077, 18000)
           SQL
           lid, yesterday,
         )
@@ -2423,27 +2431,22 @@ describe GalaxyLedger::Database do
       # Today: one-shot fires first (no status line tick yet).
       GalaxyLedger::Database.record_oneshot_usage(lid, 0.15, 5000_i64)
 
-      # Verify the freshly-inserted row carries yesterday's lifetime
-      # forward as baseline + current. Cumulative stays 0 because no
-      # status line tick has been observed today yet.
+      # The one-shot lands on its own 'oneshot' partition and carries no
+      # status line baseline at all. It cannot influence what the status
+      # line process diffs against, which is what makes the seeding this
+      # method used to perform unnecessary.
       GalaxyLedger::Database.open do |db|
         row = db.query_one?(
           <<-SQL,
-            SELECT baseline_cost_usd, current_cost_usd, cumulative_cost_usd,
-                   baseline_tokens, current_tokens, cumulative_tokens,
-                   oneshot_cost_usd, oneshot_tokens
+            SELECT process_key, cumulative_cost_usd, oneshot_cost_usd, oneshot_tokens
             FROM ledger_session_daily_usages
             WHERE ledger_session_id = ? AND date = ?
           SQL
           lid, today,
         ) do |rs|
           {
-            baseline_cost:   rs.read(Float64),
-            current_cost:    rs.read(Float64),
+            process_key:     rs.read(String),
             cumulative_cost: rs.read(Float64),
-            baseline_tok:    rs.read(Int64),
-            current_tok:     rs.read(Int64),
-            cumulative_tok:  rs.read(Int64),
             oneshot_cost:    rs.read(Float64),
             oneshot_tok:     rs.read(Int64),
           }
@@ -2451,17 +2454,8 @@ describe GalaxyLedger::Database do
         row.should_not be_nil
         row = row.not_nil!
 
-        # Baseline + current seeded from yesterday's lifetime carry-over.
-        row[:baseline_cost].should eq(73.87)
-        row[:current_cost].should eq(73.87)
-        row[:baseline_tok].should eq(497077_i64)
-        row[:current_tok].should eq(497077_i64)
-
-        # Cumulative stays at 0 — no observed statusline spend yet today.
+        row[:process_key].should eq("oneshot")
         row[:cumulative_cost].should eq(0.0)
-        row[:cumulative_tok].should eq(0_i64)
-
-        # Oneshot column populated as before.
         row[:oneshot_cost].should eq(0.15)
         row[:oneshot_tok].should eq(5000_i64)
       end
@@ -2469,7 +2463,7 @@ describe GalaxyLedger::Database do
       # Status line tick: session lifetime cost has grown to $76.98
       # (a $3.11 increment), context now 522077 tokens (+25000).
       status = GalaxyLedger::ContextStatus.from_json(
-        %({"context":{"tokens_used":522077},"cost":{"usd":76.98}})
+        %({"session_id":"spec-proc","context":{"tokens_used":522077},"cost":{"usd":76.98}})
       )
       GalaxyLedger::Database.update_session_metrics(lid, status)
 
@@ -2623,10 +2617,10 @@ describe GalaxyLedger::Database do
         db.exec(
           <<-SQL,
             INSERT INTO ledger_session_daily_usages (
-              ledger_session_id, date,
+              ledger_session_id, date, process_key,
               baseline_cost_usd, current_cost_usd, cumulative_cost_usd,
               baseline_tokens, current_tokens, cumulative_tokens
-            ) VALUES (?, ?, 0.0, 2.0, 2.0, 0, 50000, 50000)
+            ) VALUES (?, ?, 'spec-proc', 0.0, 2.0, 2.0, 0, 50000, 50000)
           SQL
           lid2, "2025-03-01",
         )
@@ -2640,7 +2634,7 @@ describe GalaxyLedger::Database do
     it "cascade delete includes oneshot data" do
       lid = GalaxyLedger::Database.create_session("sess-oneshot-cascade")
 
-      status = GalaxyLedger::ContextStatus.from_json(%({"context":{"tokens_used":5000},"cost":{"usd":1.00}}))
+      status = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","context":{"tokens_used":5000},"cost":{"usd":1.00}}))
       GalaxyLedger::Database.update_session_metrics(lid, status)
       GalaxyLedger::Database.record_oneshot_usage(lid, 0.25, 5000_i64)
 
