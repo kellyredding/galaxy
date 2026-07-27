@@ -444,6 +444,7 @@ private func wrapHTML(
         """
         let scriptBlock = """
         <script>\(clipboardCopyJS)</script>
+        <script>\(textEntryJS)</script>
         <script>\(suggestionInsertJS)</script>
         <script>\(addNoteButtonJS)</script>
         <script>
@@ -570,6 +571,7 @@ private func wrapHTML(
     <body>
     \(content)
     <script>\(clipboardCopyJS)</script>
+    <script>\(textEntryJS)</script>
     <script>\(suggestionInsertJS)</script>
     <script>\(addNoteButtonJS)</script>
     <script>

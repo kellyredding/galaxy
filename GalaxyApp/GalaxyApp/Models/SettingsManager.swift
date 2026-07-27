@@ -379,9 +379,9 @@ struct AppSettings: Codable, Equatable {
         terminalCursorBlink = try container.decodeIfPresent(
             Bool.self, forKey: .terminalCursorBlink
         ) ?? false
-        textEntry = try container.decodeIfPresent(
+        textEntry = (try container.decodeIfPresent(
             TextEntryBindings.self, forKey: .textEntry
-        ) ?? .default
+        ) ?? .default).coercingEmptyLists()
         shellBellAudible = try container.decodeIfPresent(
             Bool.self, forKey: .shellBellAudible
         ) ?? false

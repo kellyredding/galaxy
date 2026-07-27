@@ -557,6 +557,13 @@ d="M8 6V4h8v2"/><path d="M5 6v14a1 1 0 001 1h12a1 \
             // copy-able reference; nothing about anchoring or
             // persistence consults it.
             this.referencePath = data.referencePath || null;
+            // Hand the composer keystroke bindings to the shared matcher.
+            // Absent payload leaves it on its defaults, which are the
+            // keystrokes these forms used before the setting existed.
+            if (window.GalaxyTextEntry && data.textEntry) {
+                window.GalaxyTextEntry.configure(\
+data.textEntry);
+            }
             this.itemLabel = data.itemLabel || '';
             this.annotations = data.annotations || [];
             this.annotationHTMLMap = data.htmlMap || {};
@@ -744,8 +751,9 @@ endBlock);
                 + ' autocapitalize="off"'
                 + ' autocomplete="off"'
                 + ' placeholder="Add annotation\\u2026'
-                + ' (\\u2318Enter to save'
-                + ' \\u00b7 Esc to dismiss)"'
+                + window.GalaxyTextEntry
+                    .placeholderHint('save')
+                + '"'
                 + ' rows="1"></textarea>';
 
             var ta = form.querySelector('textarea');
@@ -757,9 +765,16 @@ endBlock);
 ta, e)) {
                     return;
                 }
-                if (e.key === 'Enter' && e.metaKey) {
+                var action = window.GalaxyTextEntry
+                    .actionFor(e);
+                if (action === 'submit') {
                     e.preventDefault();
                     AnnotationManager.submitCreate();
+                    return;
+                }
+                if (action === 'newline') {
+                    window.GalaxyTextEntry
+                        .handleNewline(ta, e);
                 }
             });
 
@@ -1109,8 +1124,9 @@ state.expandedNumber);
                 + ' autocapitalize="off"'
                 + ' autocomplete="off"'
                 + ' placeholder="Add annotation\\u2026'
-                + ' (\\u2318Enter to save'
-                + ' \\u00b7 Esc to dismiss)"'
+                + window.GalaxyTextEntry
+                    .placeholderHint('save')
+                + '"'
                 + ' rows="1"></textarea>';
 
             var ta = form.querySelector('textarea');
@@ -1125,9 +1141,16 @@ state.expandedNumber);
 ta, e)) {
                     return;
                 }
-                if (e.key === 'Enter' && e.metaKey) {
+                var action = window.GalaxyTextEntry
+                    .actionFor(e);
+                if (action === 'submit') {
                     e.preventDefault();
                     AnnotationManager.submitCreate();
+                    return;
+                }
+                if (action === 'newline') {
+                    window.GalaxyTextEntry
+                        .handleNewline(ta, e);
                 }
             });
 
@@ -2558,10 +2581,17 @@ endVal);
 ta, e)) {
                     return;
                 }
-                if (e.key === 'Enter' && e.metaKey) {
+                var action = window.GalaxyTextEntry
+                    .actionFor(e);
+                if (action === 'submit') {
                     e.preventDefault();
                     AnnotationManager.submitUpdate(\
 number);
+                    return;
+                }
+                if (action === 'newline') {
+                    window.GalaxyTextEntry
+                        .handleNewline(ta, e);
                 }
             });
 
@@ -3533,6 +3563,12 @@ func buildAnnotationInitJS(
     if let referencePath {
         payload["referencePath"] = referencePath
     }
+    // Read here rather than threaded through this function's three overloads
+    // and their call sites. The bindings are a global setting, not per-reader
+    // data, and a caller that forgot to pass them would leave one reader's
+    // composer quietly honouring a keystroke the user had changed.
+    payload["textEntry"] =
+        SettingsManager.shared.settings.textEntry.jsPayload
 
     guard let data = try? JSONSerialization.data(
         withJSONObject: payload

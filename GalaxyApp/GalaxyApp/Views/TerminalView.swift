@@ -994,7 +994,8 @@ class TerminalHostView: NSView {
             theme: theme,
             fontFamily: font.fontName,
             fontSize: font.pointSize,
-            cellHeight: cellHeight
+            cellHeight: cellHeight,
+            textEntry: SettingsManager.shared.settings.textEntry.jsPayload
         )
 
         // Create web view with theme background for rubber-band overscroll
@@ -1644,7 +1645,8 @@ class TerminalHostView: NSView {
                 theme: theme,
                 fontFamily: font.fontName,
                 fontSize: size,
-                cellHeight: cellHeight
+                cellHeight: cellHeight,
+                textEntry: SettingsManager.shared.settings.textEntry.jsPayload
             )
 
             overlay.scrollbackView.reload(html: html, scrollToLine: scrollLine)

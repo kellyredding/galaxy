@@ -937,6 +937,7 @@ private func buildTranscriptHTML(
         \(stepsHTML)
     </div>
     <script>\(clipboardCopyJS)</script>
+    <script>\(textEntryJS)</script>
     <script>\(suggestionInsertJS)</script>
     <script>\(addNoteButtonJS)</script>
     <script>

@@ -89,22 +89,97 @@ struct Keystroke: Codable, Hashable {
 }
 
 extension Keystroke {
-    /// The DOM `KeyboardEvent.code` this keystroke's key produces inside a
-    /// WebView, or nil for a key the JavaScript twin cannot address.
+    /// One row per bindable key: how to spell it for a person, and how the DOM
+    /// addresses it.
     ///
-    /// A WebView never sees a macOS virtual key code, so the JavaScript
-    /// matcher compares `code` strings instead. Keeping the mapping on this
-    /// side means the JavaScript module carries no table of its own, and the
-    /// shared fixture table pins the pairing so the two cannot disagree.
+    /// Deliberately one table rather than two switches. The label and the DOM
+    /// code have to cover exactly the same set of keys, and when they were
+    /// separate they did not: a key with a label but no DOM code is bindable in
+    /// the settings card and silently inert in every composer, because
+    /// `jsPayload` drops it. Ctrl+J shipped exactly that way.
     ///
-    /// A nil result means the keystroke cannot be honoured inside a WebView
-    /// composer. Whatever vocabulary the recorder ends up permitting has to
-    /// account for that rather than assume every recordable key round-trips.
-    var domCode: String? {
-        switch keyCode {
-        case Key.ret: return "Enter"
-        case Key.keypadEnter: return "NumpadEnter"
-        default: return nil
-        }
+    /// Virtual key codes were read from Carbon's `kVK_*` constants rather than
+    /// transcribed, since the layout is not memorable and a wrong row would
+    /// bind the wrong key.
+    static let keyTable: [UInt16: (label: String, domCode: String)] = [
+        0: ("A", "KeyA"), 1: ("S", "KeyS"), 2: ("D", "KeyD"),
+        3: ("F", "KeyF"), 4: ("H", "KeyH"), 5: ("G", "KeyG"),
+        6: ("Z", "KeyZ"), 7: ("X", "KeyX"), 8: ("C", "KeyC"),
+        9: ("V", "KeyV"), 11: ("B", "KeyB"), 12: ("Q", "KeyQ"),
+        13: ("W", "KeyW"), 14: ("E", "KeyE"), 15: ("R", "KeyR"),
+        16: ("Y", "KeyY"), 17: ("T", "KeyT"), 31: ("O", "KeyO"),
+        32: ("U", "KeyU"), 34: ("I", "KeyI"), 35: ("P", "KeyP"),
+        37: ("L", "KeyL"), 38: ("J", "KeyJ"), 40: ("K", "KeyK"),
+        45: ("N", "KeyN"), 46: ("M", "KeyM"),
+
+        18: ("1", "Digit1"), 19: ("2", "Digit2"), 20: ("3", "Digit3"),
+        21: ("4", "Digit4"), 22: ("6", "Digit6"), 23: ("5", "Digit5"),
+        25: ("9", "Digit9"), 26: ("7", "Digit7"), 28: ("8", "Digit8"),
+        29: ("0", "Digit0"),
+
+        24: ("=", "Equal"), 27: ("-", "Minus"),
+        30: ("]", "BracketRight"), 33: ("[", "BracketLeft"),
+        39: ("'", "Quote"), 41: (";", "Semicolon"),
+        42: ("\\", "Backslash"), 43: (",", "Comma"),
+        44: ("/", "Slash"), 47: (".", "Period"),
+        50: ("`", "Backquote"),
+
+        36: ("Enter", "Enter"), 76: ("Enter", "NumpadEnter"),
+        48: ("Tab", "Tab"), 49: ("Space", "Space"),
+        51: ("Delete", "Backspace"), 53: ("Esc", "Escape"),
+        117: ("Fwd Delete", "Delete"),
+
+        115: ("Home", "Home"), 119: ("End", "End"),
+        116: ("Page Up", "PageUp"), 121: ("Page Down", "PageDown"),
+
+        123: ("←", "ArrowLeft"), 124: ("→", "ArrowRight"),
+        125: ("↓", "ArrowDown"), 126: ("↑", "ArrowUp"),
+
+        122: ("F1", "F1"), 120: ("F2", "F2"), 99: ("F3", "F3"),
+        118: ("F4", "F4"), 96: ("F5", "F5"), 97: ("F6", "F6"),
+        98: ("F7", "F7"), 100: ("F8", "F8"), 101: ("F9", "F9"),
+        109: ("F10", "F10"), 103: ("F11", "F11"), 111: ("F12", "F12"),
+    ]
+
+    /// Modifier glyphs in Apple's canonical order.
+    private var modifierGlyphs: String {
+        var out = ""
+        if modifiers.contains(.control) { out += "\u{2303}" }
+        if modifiers.contains(.option) { out += "\u{2325}" }
+        if modifiers.contains(.shift) { out += "\u{21e7}" }
+        if modifiers.contains(.command) { out += "\u{2318}" }
+        return out
     }
+
+    /// The DOM `KeyboardEvent.code` this keystroke's key produces inside a
+    /// WebView, or nil for a key outside the table.
+    ///
+    /// A WebView never sees a macOS virtual key code, so the JavaScript matcher
+    /// compares `code` strings instead. Keeping the mapping here means the
+    /// JavaScript module carries no table of its own.
+    var domCode: String? { Self.keyTable[keyCode]?.domCode }
+
+    /// A human-readable label, in Apple's canonical modifier order.
+    ///
+    /// Must agree with `describeBinding` in the JavaScript module, because the
+    /// settings card renders this while the composer placeholder renders that.
+    /// The shared fixture table pins the pairing.
+    var displayLabel: String {
+        modifierGlyphs + (Self.keyTable[keyCode]?.label ?? "Key \(keyCode)")
+    }
+
+    /// Whether this keystroke can actually reach a WebView composer. A key
+    /// outside the table cannot, and the recorder refuses it rather than
+    /// letting it look bound while doing nothing.
+    var isBindable: Bool { Self.keyTable[keyCode] != nil }
+
+    /// The chord reserved for Galaxy's own automated prompt submission.
+    ///
+    /// Binding it to a text-entry action would make a keystroke the user
+    /// pressed indistinguishable from one the app generated, so the recorder
+    /// refuses this and nothing else.
+    static let reservedMachineSubmit = Keystroke(
+        keyCode: Key.ret,
+        modifiers: [.control, .option, .shift, .command]
+    )
 }

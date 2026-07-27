@@ -710,6 +710,7 @@ private func buildFullHTML(
     <script>\(highlightJS)</script>
     <script>if(typeof hljs !== 'undefined') hljs.highlightAll();</script>
     <script>\(clipboardCopyJS)</script>
+    <script>\(textEntryJS)</script>
     <script>\(suggestionInsertJS)</script>
     <script>\(addNoteButtonJS)</script>
     <script>\(annotationManagerJS)</script>

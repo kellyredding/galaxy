@@ -125,14 +125,108 @@ check("configure replaces the previous bindings", () => {
     === null;
 });
 
-check("configure tolerates a missing or partial configuration", () => {
-  matcher.configure(undefined);
-  if (matcher.actionFor(eventFor({ code: "Enter", modifiers: 0 })) !== null) {
-    return false;
-  }
-  matcher.configure({ newline: [{ code: "Enter", modifiers: 0 }] });
-  return matcher.actionFor(eventFor({ code: "Enter", modifiers: 0 }))
-    === "newline";
+// The fail-safe contract: a document that never configures, or configures
+// with a payload missing a list, must still submit and newline the way these
+// composers did before the setting existed.
+// The JS half of pinning the shipped default. KeystrokeSmoke holds the Swift
+// half by asserting TextEntryBindings.default equals this same scenario.
+// Without both, the two defaults could drift and every other check would
+// still pass.
+check("the module's own defaults are the fixture's shipped defaults", () => {
+  const fresh = loadMatcher();
+  const shipped = fixture.scenarios.find((s) => s.name === "shipped defaults");
+  if (!shipped) return false;
+  // An unconfigured module must resolve every default case exactly as a
+  // configured one does.
+  return shipped.cases.every((c) => fresh.actionFor(eventFor(c)) === c.expect);
+});
+
+check("a missing list falls back to its default, not to nothing", () => {
+  const fresh = loadMatcher();
+  fresh.configure({ newline: [{ code: "Enter", modifiers: MOD_SHIFT }] });
+  // submit was absent from the payload, so it keeps its default: bare Return.
+  return fresh.actionFor(eventFor({ code: "Enter", modifiers: 0 }))
+      === "submit"
+    && fresh.actionFor(eventFor({ code: "Enter", modifiers: MOD_SHIFT }))
+      === "newline";
+});
+
+check("an explicitly empty list is honoured as an unbinding", () => {
+  const fresh = loadMatcher();
+  fresh.configure({ submit: [], newline: [] });
+  return fresh.actionFor(eventFor({ code: "Enter", modifiers: 0 })) === null
+    && fresh.actionFor(eventFor({ code: "Enter", modifiers: MOD_COMMAND }))
+      === null;
+});
+
+// handleNewline decides between standing aside and inserting. Getting this
+// wrong is how "unchanged at defaults" would quietly become false.
+check("handleNewline stands aside for chords the browser handles", () => {
+  let prevented = false;
+  const e = {
+    key: "Enter", metaKey: false, ctrlKey: false, altKey: false,
+    preventDefault: () => { prevented = true; },
+  };
+  return matcher.handleNewline({}, e) === false && prevented === false;
+});
+
+check("handleNewline inserts for chords the browser would ignore", () => {
+  let prevented = false;
+  const e = {
+    key: "Enter", metaKey: true, ctrlKey: false, altKey: false,
+    preventDefault: () => { prevented = true; },
+  };
+  const ta = {
+    value: "ab", selectionStart: 1, selectionEnd: 1,
+    dispatchEvent: () => true,
+  };
+  return matcher.handleNewline(ta, e) === true
+    && prevented === true
+    && ta.value === "a\nb"
+    && ta.selectionStart === 2;
+});
+
+// Label spelling is the other cross-language contract: Swift renders it in the
+// settings card, this module in the composer placeholder. Two spellings of one
+// binding would read as a bug in whichever surface the user distrusted.
+check("every binding is spelled the way the fixture says", () => {
+  const fresh = loadMatcher();
+  return fixture.labels.every((entry) => {
+    fresh.configure({
+      submit: [{
+        code: entry.code,
+        modifiers: entry.modifiers,
+        label: entry.label,
+      }],
+      newline: [],
+    });
+    return fresh.submitHint() === entry.label;
+  });
+});
+
+// Swift now sends the label, because its key table is far too large to keep a
+// second copy of here. The fallback covers a payload written before that field
+// existed; it spells modifiers but can only echo the raw DOM code.
+check("describeBinding falls back when a payload carries no label", () => {
+  const fresh = loadMatcher();
+  fresh.configure({ submit: [{ code: "Enter", modifiers: MOD_CONTROL }] });
+  if (fresh.submitHint() !== "⌃Enter") return false;
+  fresh.configure({ submit: [{ code: "KeyJ", modifiers: MOD_CONTROL }] });
+  return fresh.submitHint() === "⌃KeyJ";
+});
+
+check("placeholderHint names the configured submit keystroke", () => {
+  const fresh = loadMatcher();
+  fresh.configure({ submit: [{ code: "Enter", modifiers: MOD_CONTROL }] });
+  return fresh.placeholderHint("save")
+    === " (⌃Enter to save · Esc to dismiss)";
+});
+
+check("placeholderHint drops the submit half when nothing is bound", () => {
+  const fresh = loadMatcher();
+  fresh.configure({ submit: [], newline: [{ code: "Enter", modifiers: 0 }] });
+  return fresh.submitHint() === ""
+    && fresh.placeholderHint("save") === " (Esc to dismiss)";
 });
 
 check("caps-lock is not a modifier the matcher reads", () => {

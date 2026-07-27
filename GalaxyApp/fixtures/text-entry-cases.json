@@ -15,9 +15,61 @@
     "months. Adding a case with mismatched spellings makes one side fail.",
     "",
     "'modifiers' is a bitmask, shared verbatim by both sides:",
-    "  command 1, option 2, control 4, shift 8"
+    "  command 1, option 2, control 4, shift 8",
+    "",
+    "'labels' pins how a binding is spelled for a person. Swift renders it in",
+    "the settings card; the JavaScript module renders it in the composer",
+    "placeholder. Two spellings of one binding would read as a bug in",
+    "whichever surface the user happened to distrust."
+  ],
+  "labels": [
+    { "keyCode": 36, "code": "Enter", "modifiers": 0, "label": "Enter" },
+    { "keyCode": 36, "code": "Enter", "modifiers": 1, "label": "⌘Enter" },
+    { "keyCode": 36, "code": "Enter", "modifiers": 2, "label": "⌥Enter" },
+    { "keyCode": 36, "code": "Enter", "modifiers": 4, "label": "⌃Enter" },
+    { "keyCode": 36, "code": "Enter", "modifiers": 8, "label": "⇧Enter" },
+    { "keyCode": 36, "code": "Enter", "modifiers": 12, "label": "⌃⇧Enter" },
+    { "keyCode": 36, "code": "Enter", "modifiers": 15, "label": "⌃⌥⇧⌘Enter" },
+    { "keyCode": 76, "code": "NumpadEnter", "modifiers": 0, "label": "Enter" },
+    { "keyCode": 38, "code": "KeyJ", "modifiers": 4, "label": "⌃J" },
+    { "keyCode": 38, "code": "KeyJ", "modifiers": 0, "label": "J" },
+    { "keyCode": 0, "code": "KeyA", "modifiers": 1, "label": "⌘A" },
+    { "keyCode": 49, "code": "Space", "modifiers": 0, "label": "Space" },
+    { "keyCode": 48, "code": "Tab", "modifiers": 8, "label": "⇧Tab" },
+    { "keyCode": 123, "code": "ArrowLeft", "modifiers": 0, "label": "←" },
+    { "keyCode": 122, "code": "F1", "modifiers": 0, "label": "F1" },
+    { "keyCode": 24, "code": "Equal", "modifiers": 1, "label": "⌘=" }
   ],
   "scenarios": [
+    {
+      "name": "shipped defaults",
+      "bindings": {
+        "submit": [{ "keyCode": 36, "code": "Enter", "modifiers": 0 }],
+        "newline": [{ "keyCode": 36, "code": "Enter", "modifiers": 2 }]
+      },
+      "cases": [
+        {
+          "name": "a bare Return commits",
+          "keyCode": 36, "code": "Enter", "modifiers": 0,
+          "expect": "submit"
+        },
+        {
+          "name": "Option-Return inserts a newline",
+          "keyCode": 36, "code": "Enter", "modifiers": 2,
+          "expect": "newline"
+        },
+        {
+          "name": "Command-Return is not bound by default",
+          "keyCode": 36, "code": "Enter", "modifiers": 1,
+          "expect": null
+        },
+        {
+          "name": "Shift-Return is not bound by default",
+          "keyCode": 36, "code": "Enter", "modifiers": 8,
+          "expect": null
+        }
+      ]
+    },
     {
       "name": "representative bindings",
       "bindings": {

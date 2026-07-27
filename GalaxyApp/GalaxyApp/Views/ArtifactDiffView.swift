@@ -1136,6 +1136,7 @@ private func buildDiffHTML(
     \(tocNavJS)
     </script>
     <script>\(clipboardCopyJS)</script>
+    <script>\(textEntryJS)</script>
     <script>\(suggestionInsertJS)</script>
     <script>\(addNoteButtonJS)</script>
     <script>
