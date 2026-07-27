@@ -2344,7 +2344,7 @@ module GalaxyLedger
       # Format date range for header
       from_display = format_date_display(from_date)
       to_display = format_date_display(to_date)
-      date_range = from_date == to_date ? "#{from_display} UTC" : "#{from_display} – #{to_display} UTC"
+      date_range = from_date == to_date ? from_display : "#{from_display} – #{to_display}"
 
       puts "📊 Spend — #{period_label} (#{date_range})"
       puts ""
@@ -2423,11 +2423,6 @@ module GalaxyLedger
       if show_chart && daily.size > 0
         puts ""
 
-        # Determine UTC annotation for last bar row
-        utc_today = Time.utc.to_s("%Y-%m-%d")
-        local_today = Time.local.to_s("%Y-%m-%d")
-        footnote = utc_bar_footnote(utc_today, local_today, grouping)
-
         case grouping
         when :monthly
           monthly = group_by_month(daily)
@@ -2438,7 +2433,6 @@ module GalaxyLedger
           max_tok_w = token_strs.max_of?(&.size) || 0
           rows = monthly.map_with_index do |m, idx|
             extra = "#{cost_strs[idx].rjust(max_cost_w)}    #{token_strs[idx].rjust(max_tok_w)}"
-            extra += "  *" if footnote && idx == monthly.size - 1
             Chart::BarRow.new(
               label: m[:label],
               value: m[:cost],
@@ -2456,7 +2450,6 @@ module GalaxyLedger
           rows = weekly.map_with_index do |w, idx|
             if w[:cost] > 0.0
               extra = "#{cost_strs[idx].not_nil!.rjust(max_cost_w)}    #{token_strs[idx].not_nil!.rjust(max_tok_w)}"
-              extra += "  *" if footnote && idx == weekly.size - 1
               Chart::BarRow.new(
                 label: format_bar_date(w[:label]),
                 value: w[:cost],
@@ -2477,7 +2470,6 @@ module GalaxyLedger
             label = format_bar_date(d.date, with_dow: true)
             if d.cost > 0.0
               extra = "#{cost_strs[idx].not_nil!.rjust(max_cost_w)}    #{token_strs[idx].not_nil!.rjust(max_tok_w)}"
-              extra += "  *" if footnote && idx == daily.size - 1
               Chart::BarRow.new(
                 label: label,
                 value: d.cost,
@@ -2488,11 +2480,6 @@ module GalaxyLedger
             end
           end
           puts Chart.bar_chart(rows)
-        end
-
-        if footnote
-          puts ""
-          puts "  #{footnote}"
         end
       end
 
@@ -2507,31 +2494,6 @@ module GalaxyLedger
       end
 
       puts ""
-    end
-
-    # Returns a UTC footnote string if the last bar chart row needs annotation,
-    # nil otherwise. Annotation is needed when the UTC date/month doesn't match
-    # the local date/month — only matters for the current (last) data point.
-    def self.utc_bar_footnote(
-      utc_today : String,
-      local_today : String,
-      grouping : Symbol,
-    ) : String?
-      case grouping
-      when :daily
-        if utc_today != local_today
-          "* UTC — local date is still #{format_date_display(local_today)}"
-        end
-      when :weekly
-        if utc_today != local_today
-          "* UTC — local date is still #{format_date_display(local_today)}"
-        end
-      when :monthly
-        if utc_today[0, 7] != local_today[0, 7]
-          local_month = Time.parse(local_today, "%Y-%m-%d", Time::Location::UTC).to_s("%B")
-          "* UTC — local month is still #{local_month}"
-        end
-      end
     end
 
     # Group daily data into weekly buckets
