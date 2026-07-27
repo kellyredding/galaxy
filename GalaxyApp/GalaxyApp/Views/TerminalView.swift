@@ -1212,6 +1212,13 @@ class TerminalHostView: NSView {
 
         guard let overlay = scrollbackOverlay else { return }
 
+        // Close find before tearing anything down. The bar is
+        // anchored to this overlay, and the first-responder
+        // restore below should not race a panel that is about to
+        // lose its web view. Synchronous, where the overlay's own
+        // deinit safety net has to hop to the main actor.
+        overlay.findController.isVisible = false
+
         // Fire scrollback:exited timeline event before teardown
         // destroys the overlay and its notes.
         if let lsid = pane.ledgerSessionId {

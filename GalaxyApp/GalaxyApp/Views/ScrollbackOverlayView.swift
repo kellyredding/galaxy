@@ -198,6 +198,18 @@ class ScrollbackOverlayView: NSView {
         pillLabel.backgroundColor = tinted
     }
 
+    override func layout() {
+        super.layout()
+        // The find bar is pinned to this view's corner in screen
+        // space, so a change in our own geometry has to move it —
+        // a split drag, or a sibling pane opening and shrinking
+        // us. The panel controller only watches the window for
+        // resizes, and neither of those is one.
+        FindBarPanelController.shared.reanchorIfPresenting(
+            for: findController, anchorView: self
+        )
+    }
+
     // MARK: - Find Bar
 
     /// Mirror `findController.isVisible` into the panel and the
@@ -294,6 +306,20 @@ class ScrollbackOverlayView: NSView {
     deinit {
         if let monitor = findEscapeMonitor {
             NSEvent.removeMonitor(monitor)
+        }
+        // Yield the shared panel. Without this, any teardown that
+        // isn't Esc — send to Claude, session exit, app quit,
+        // discarding notes — leaves the bar floating, bound to a
+        // web view that no longer exists. The panel retains the
+        // controller through its hosting view, which is exactly
+        // why it can be stranded.
+        //
+        // Hopped to the main actor because the panel controller is
+        // isolated to it and deinit is not; the controller is
+        // captured by value so it survives the hop.
+        let controller = findController
+        Task { @MainActor in
+            FindBarPanelController.shared.dismiss(if: controller)
         }
     }
 }

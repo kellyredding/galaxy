@@ -111,13 +111,44 @@ final class FindBarPanelController {
             return
         }
 
+        // Read where focus should return to *before* any
+        // teardown. `dismiss` puts first responder back where the
+        // outgoing bar found it, so reading it afterwards captures
+        // that stale value — the pane the previous bar belonged to
+        // — rather than the pane the user is in now.
+        let incomingPriorResponder = parent.firstResponder
+
+        let previousController = currentController
         if panel != nil {
+            // Hand over without restoring focus at all. The
+            // restore is pointless here, since the incoming bar is
+            // about to take focus, and harmful: it moves first
+            // responder into the outgoing pane just long enough
+            // for the focus observers to record that pane as the
+            // one last used, which is what decides where Cmd+F
+            // routes next time.
+            priorParentResponder = nil
             dismiss()
         }
 
-        priorParentResponder = parent.firstResponder
+        priorParentResponder = incomingPriorResponder
         parentWindow = parent
         currentController = controller
+
+        // Retire whoever held the bar before. Two panes in one
+        // session can each have a scrollback open, so two
+        // controllers can each believe they are visible — but
+        // there is one panel, so the loser is left with
+        // highlights, a true `isVisible`, and nothing on screen to
+        // close it with. `isActiveSurface` does not prevent this:
+        // it gates on tab and session, not pane, so both panes of
+        // the active session pass it. Ordered after
+        // `currentController` is reassigned so the outgoing
+        // controller's own visibility sink finds the panel already
+        // handed over and leaves it alone.
+        if previousController !== controller {
+            previousController?.isVisible = false
+        }
 
         let rootView = FindBarView(controller: controller)
         let hosting = NSHostingView(rootView: rootView)
@@ -214,6 +245,26 @@ final class FindBarPanelController {
     func dismiss(if controller: WebViewFindController) {
         guard currentController === controller else { return }
         dismiss()
+    }
+
+    /// Re-position the bar against its anchor, without touching
+    /// focus.
+    ///
+    /// For anchors whose own geometry can change while the
+    /// window's does not — a pane resized by a split drag, or by
+    /// a sibling pane opening. The parent-window resize observer
+    /// sees neither. Deliberately not routed through `present`,
+    /// whose already-showing branch re-keys the panel and
+    /// re-selects the field: correct for a Cmd+F re-press, focus
+    /// theft on every layout pass.
+    func reanchorIfPresenting(
+        for controller: WebViewFindController,
+        anchorView: NSView
+    ) {
+        guard currentController === controller,
+              panel != nil,
+              let parent = anchorView.window else { return }
+        reanchor(to: anchorView, in: parent)
     }
 
     /// Hide the panel and return first responder to whoever
