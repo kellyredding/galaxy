@@ -56,9 +56,10 @@ struct FrameAnchorView: NSViewRepresentable {
 
 // MARK: - Tooltip Window Manager
 
-/// Manages a floating NSPanel for displaying rich tooltips.
-/// Uses a borderless, non-activating panel that renders above all
-/// views including AppKit-hosted NSViews (terminal).
+/// Manages the NSPanel that displays rich tooltips. Uses a borderless,
+/// non-activating panel attached as a child of the row's window, so it
+/// renders above all views including AppKit-hosted NSViews (terminal)
+/// without also rising above other applications.
 class TooltipPanel {
     static let shared = TooltipPanel()
 
@@ -90,7 +91,6 @@ class TooltipPanel {
         )
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.level = .floating
         panel.hasShadow = true
         panel.appearance = window.effectiveAppearance
         panel.contentView = hosting
@@ -125,16 +125,29 @@ class TooltipPanel {
         }
 
         panel.setFrameOrigin(NSPoint(x: originX, y: originY))
+
+        // Attach to the row's window rather than lifting the panel to a
+        // floating level. Window levels are system-global, so a floating
+        // tooltip outranks the frontmost application's windows and paints
+        // over whatever app is actually in front of Galaxy. A child ordered
+        // above its parent still renders over all of Galaxy's own content,
+        // including the AppKit-hosted terminal, but sinks behind other apps
+        // along with the window it belongs to. Pinning the level is the other
+        // half: a child keeps whatever level it was given, which is why the
+        // find bar floats over other apps despite being a child window.
+        window.addChildWindow(panel, ordered: .above)
+        panel.level = window.level
         panel.orderFront(nil)
 
         self.panel = panel
         self.hostingView = hosting
 
-        // The tooltip origin is computed once from the row's screen
-        // frame and never follows window geometry changes. Hide it when
-        // the user drags to resize (willStartLiveResize) or move
-        // (didMove) the window so it doesn't strand at stale coords;
-        // native tooltips behave the same way.
+        // The tooltip origin is computed once from the row's screen frame,
+        // so a resize strands it at stale coords — hide it when the user
+        // drags to resize (willStartLiveResize). Child attachment does carry
+        // the panel through a window move on its own, but a deliberate drag
+        // (didMove) dismisses it too rather than leaving it hanging off the
+        // pointer; native tooltips behave the same way.
         let center = NotificationCenter.default
         let names: [Notification.Name] = [
             NSWindow.willStartLiveResizeNotification,
@@ -153,7 +166,13 @@ class TooltipPanel {
     }
 
     func hide() {
-        panel?.orderOut(nil)
+        if let p = panel {
+            // A window retains its children, so detaching is what actually
+            // releases the panel — clearing this reference alone would leave
+            // it alive on the parent's child list.
+            p.parent?.removeChildWindow(p)
+            p.orderOut(nil)
+        }
         panel = nil
         hostingView = nil
 
