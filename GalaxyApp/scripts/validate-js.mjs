@@ -19,12 +19,10 @@
 //          ... javascript ...
 //          """
 //
-// The load-bearing step for embedded literals is Swift unescaping: the
-// source text `/\n/g` is the two characters backslash-n, which Node
-// parses as a valid "match a newline" regex. Swift turns that `\n`
-// into a real newline at compile time, which is an invalid regex. So
-// the validator must reproduce Swift's `"""` unescaping BEFORE parsing
-// — otherwise it would miss exactly the class of bug it exists to catch.
+// Reading a marked literal — finding it, and reproducing Swift's `"""`
+// unescaping before parsing — lives in lib/swift-literals.mjs, shared with
+// verify-text-entry.mjs. See that file for why the unescaping step is
+// load-bearing rather than cosmetic.
 //
 // Syntax checking uses `new vm.Script(code)`, which parses without
 // executing: no temp files, no subprocess, no network, no side effects.
@@ -35,73 +33,15 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
+import { extractMarkedLiterals } from "./lib/swift-literals.mjs";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = join(SCRIPT_DIR, ".."); // .../GalaxyApp
 const SRC_DIR = join(APP_ROOT, "GalaxyApp"); // .../GalaxyApp/GalaxyApp
-const MARKER = "// js-validate";
 
 const failures = [];
 let checkedFiles = 0;
 let checkedLiterals = 0;
-
-// --- Swift `"""` string-literal unescaping ---------------------------
-// Reproduces how the Swift compiler materializes the literal at build
-// time. `\(...)` interpolations are replaced with a neutral `0` token
-// so the surrounding JS still parses.
-function unescapeSwiftMultiline(src) {
-  let out = "";
-  for (let i = 0; i < src.length; i++) {
-    const ch = src[i];
-    if (ch !== "\\") {
-      out += ch;
-      continue;
-    }
-    const next = src[i + 1];
-    switch (next) {
-      case "n": out += "\n"; i++; break;
-      case "t": out += "\t"; i++; break;
-      case "r": out += "\r"; i++; break;
-      case "0": out += "\0"; i++; break;
-      case "\\": out += "\\"; i++; break;
-      case '"': out += '"'; i++; break;
-      case "'": out += "'"; i++; break;
-      case "\n": i++; break; // line continuation: backslash-newline
-      case "u": {
-        // \u{XXXX}
-        const m = /^\\u\{([0-9A-Fa-f]+)\}/.exec(src.slice(i));
-        if (m) {
-          out += String.fromCodePoint(parseInt(m[1], 16));
-          i += m[0].length - 1;
-        } else {
-          out += ch;
-        }
-        break;
-      }
-      case "(": {
-        // \( ... ) interpolation — skip with balanced-paren scan
-        let depth = 0;
-        let j = i + 1;
-        for (; j < src.length; j++) {
-          if (src[j] === "(") depth++;
-          else if (src[j] === ")") {
-            depth--;
-            if (depth === 0) break;
-          }
-        }
-        out += "0";
-        i = j;
-        break;
-      }
-      default:
-        // Unknown escape — Swift would have rejected it at compile
-        // time, so the committed source can't contain one. Pass the
-        // backslash through rather than silently dropping it.
-        out += ch;
-    }
-  }
-  return out;
-}
 
 // --- Syntax check ----------------------------------------------------
 function checkSyntax(code, label) {
@@ -131,62 +71,23 @@ function* swiftFiles(dir) {
 }
 
 function checkEmbeddedLiterals(file) {
-  const text = readFileSync(file, "utf8");
-  const lines = text.split("\n");
   const rel = relative(APP_ROOT, file);
 
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].trim() !== MARKER) continue;
-
-    // Find the opening `"""` — the declaration line at or just below
-    // the marker that ends with `"""`.
-    let openIdx = -1;
-    for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
-      if (/"""\s*$/.test(lines[j])) {
-        openIdx = j;
-        break;
-      }
-    }
-    if (openIdx === -1) {
+  for (const found of extractMarkedLiterals(readFileSync(file, "utf8"))) {
+    if (found.error) {
       recordFailure({
         file: rel,
-        literal: "(unknown)",
-        line: i + 1,
-        err: new Error(
-          `${MARKER} marker not followed by a \"\"\" literal within 3 lines`,
-        ),
+        literal: found.name,
+        line: found.line,
+        err: new Error(found.error),
       });
       continue;
     }
 
-    const literalName =
-      /(?:let|var)\s+(\w+)/.exec(lines[openIdx])?.[1] ?? "(anonymous)";
-
-    // Capture body until the closing delimiter line (trimmed === `"""`).
-    const body = [];
-    let closeIdx = -1;
-    for (let j = openIdx + 1; j < lines.length; j++) {
-      if (lines[j].trim() === '"""') {
-        closeIdx = j;
-        break;
-      }
-      body.push(lines[j]);
-    }
-    if (closeIdx === -1) {
-      recordFailure({
-        file: rel,
-        literal: literalName,
-        line: openIdx + 1,
-        err: new Error("unterminated \"\"\" literal"),
-      });
-      continue;
-    }
-
-    const js = unescapeSwiftMultiline(body.join("\n"));
-    const err = checkSyntax(js, `${rel}:${literalName}`);
+    const err = checkSyntax(found.js, `${rel}:${found.name}`);
     checkedLiterals++;
     if (err) {
-      recordFailure({ file: rel, literal: literalName, line: openIdx + 1, err });
+      recordFailure({ file: rel, literal: found.name, line: found.line, err });
     }
   }
 }

@@ -170,6 +170,12 @@ struct AppSettings: Codable, Equatable {
     /// defaults and avoids the engine's blinking-block default.
     var terminalCursorBlink: Bool = false
 
+    /// Which keystrokes commit text and which insert a newline. Governs the
+    /// note and annotation forms directly, and reaches the Claude session pane
+    /// by being written into Claude Code's own keybindings file. The default
+    /// reproduces today's behaviour, so this is inert until someone changes it.
+    var textEntry: TextEntryBindings = .default
+
     /// Whether the Shell pane plays a sound on BEL.
     /// Default off — routine shell events (e.g.
     /// backspace at line start) should not nag the user
@@ -373,6 +379,9 @@ struct AppSettings: Codable, Equatable {
         terminalCursorBlink = try container.decodeIfPresent(
             Bool.self, forKey: .terminalCursorBlink
         ) ?? false
+        textEntry = try container.decodeIfPresent(
+            TextEntryBindings.self, forKey: .textEntry
+        ) ?? .default
         shellBellAudible = try container.decodeIfPresent(
             Bool.self, forKey: .shellBellAudible
         ) ?? false
