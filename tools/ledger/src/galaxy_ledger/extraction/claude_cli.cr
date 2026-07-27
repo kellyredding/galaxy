@@ -43,6 +43,27 @@ module GalaxyLedger
         @@test_run_result = result
       end
 
+      # Argument list for the `claude` one-shot, kept separate from the
+      # subprocess call so it can be asserted directly.
+      #
+      # A flag that the CLI accepts and ignores is indistinguishable from one
+      # that works, and an unasserted argument list hides that difference for
+      # as long as the output still looks plausible. Building the list here
+      # means a change to what gets passed is a change a spec can see.
+      #
+      # Claude CLI takes the full prompt as an argument rather than on stdin,
+      # so the content is embedded rather than piped.
+      def self.build_args(
+        content : String,
+        prompt : String,
+        model : String? = nil,
+      ) : Array(String)
+        args = ["-p", "--output-format", "json"]
+        args.concat(["--model", model]) if model
+        args << "#{prompt}\n\nContent to analyze:\n#{content}"
+        args
+      end
+
       # Run a Claude CLI one-shot command
       # Returns a RunResult with the extracted content and usage metadata.
       # On error/timeout, returns a RunResult with result: nil and zero usage.
@@ -73,16 +94,7 @@ module GalaxyLedger
         end
 
         begin
-          # Build the full prompt with content embedded
-          # Claude CLI expects the full prompt as an argument, not piped input
-          full_prompt = "#{prompt}\n\nContent to analyze:\n#{content}"
-
-          # Build args with optional model override
-          args = ["-p", "--output-format", "json"]
-          if m = model
-            args.concat(["--model", m])
-          end
-          args << full_prompt
+          args = build_args(content: content, prompt: prompt, model: model)
 
           # Build the command
           # claude -p --output-format json [--model MODEL] "$full_prompt"
