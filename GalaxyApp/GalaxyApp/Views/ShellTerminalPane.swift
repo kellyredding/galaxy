@@ -166,7 +166,7 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
                 sessionBackend?.send(text: text, asPaste: false)
             },
             sendCR: {
-                sessionBackend?.send(bytes: [0x0D])
+                sessionBackend?.submitPrompt()
             },
             disabledReason: { [weak s] in
                 guard let s = s else {

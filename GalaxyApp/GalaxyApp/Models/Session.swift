@@ -891,8 +891,8 @@ class Session: Identifiable, ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.commandSubmitDelay) { [weak self] in
             guard let self = self, self.isRunning, !self.hasExited else { return }
 
-            // Send CR (0x0D) - same byte as keyboard Return
-            self.backend?.send(bytes: [0x0D])
+            // Submit the text just written — SessionSubmit owns the bytes
+            self.backend?.submitPrompt()
 
             // Skip verification if caller opted out, or if session
             // was already in a turn when we entered.
@@ -922,7 +922,7 @@ class Session: Identifiable, ObservableObject {
             }
 
             NSLog("Session: Command CR not accepted, resending (%d retries left)", retriesLeft)
-            self.backend?.send(bytes: [0x0D])
+            self.backend?.submitPrompt()
             self.verifyCommandSubmit(retriesLeft: retriesLeft - 1)
         }
     }

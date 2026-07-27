@@ -142,7 +142,7 @@ final class SessionTerminalPane: TerminalPane {
             sendText: { text in
                 backend.send(text: text, asPaste: false)
             },
-            sendCR: { backend.send(bytes: [0x0D]) },
+            sendCR: { backend.submitPrompt() },
             disabledReason: { nil }
         )
     }
