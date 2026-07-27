@@ -62,11 +62,26 @@ def eval_user_directions(fixtures_path : Path) : EvalResult
   end
 end
 
+# Uses the discovery fixture rather than the decision one. Both describe
+# real extractable material, but the decision fixture leads with a textbook
+# auth scheme — a short-lived access token beside a longer-lived refresh
+# token — and the prompt tells the model to skip standard programming
+# knowledge. Whether that outweighs the project-specific names alongside it
+# is a judgement the model remakes on every call, and it does not always
+# land the same way.
+#
+# The discovery fixture asks for no such judgement. A deprecated method and
+# a soft-delete gem that contradicts the usual convention are both squarely
+# what the prompt calls discoveries, and neither is knowable without having
+# seen the codebase. Measured over repeated runs it returned exactly two
+# extractions every time, where the decision fixture ranged between four
+# and five: the steadier count is the point, since a response being weighed
+# afresh each time can be weighed down to nothing.
 def eval_assistant_learnings(fixtures_path : Path) : EvalResult
   start = Time.monotonic
   begin
-    content = File.read(fixtures_path / "assistant_responses" / "02_decision_with_rationale.txt")
-    result = GalaxyLedger::Extraction.extract_assistant_learnings("Implement the feature", content)
+    content = File.read(fixtures_path / "assistant_responses" / "03_discovery.txt")
+    result = GalaxyLedger::Extraction.extract_assistant_learnings("Investigate the issue", content)
 
     if result.extractions.size < 1
       return EvalResult.new(
@@ -77,7 +92,7 @@ def eval_assistant_learnings(fixtures_path : Path) : EvalResult
       )
     end
 
-    STDERR.puts "\n  [assistant:decision_with_rationale]"
+    STDERR.puts "\n  [assistant:discovery]"
     result.extractions.each do |e|
       STDERR.puts "    - #{e.entry_type} (#{e.importance}): #{e.content[0, 60]}..."
     end
