@@ -62,16 +62,18 @@ enum SessionSubmit {
 
     /// Diagnostics for automated submission.
     ///
-    /// Kept in place deliberately. This path is invisible from the outside —
-    /// the bytes either land or vanish with no echo and no error — and every
-    /// theory formed by reasoning backwards from the pane turned out wrong.
-    /// These lines are what finally distinguished "Galaxy sent the wrong
-    /// thing" from "Galaxy sent the right thing into a terminal that could not
-    /// yet decode it".
+    /// Kept in place deliberately, and on a standing channel rather than a
+    /// transient one. This path is invisible from the outside — the bytes
+    /// either land or vanish with no echo and no error — and every theory
+    /// formed by reasoning backwards from the pane turned out wrong. These
+    /// lines are what finally distinguished "Galaxy sent the wrong thing" from
+    /// "Galaxy sent the right thing into a terminal that could not yet decode
+    /// it", and later what revealed that one send path skips the readiness
+    /// gate: the giveaway was a line that was absent, not one that was wrong.
     ///
-    ///     tail -f ~/.claude/galaxy/galaxy.log | grep dbg/submit
+    ///     tail -f ~/.claude/galaxy/galaxy.log | grep Galaxy/submit
     static func log(_ message: String) {
-        GalaxyLog.dbg("submit", message)
+        GalaxyLog.submit(message)
     }
 
     /// Render bytes readably, so a log line shows an escape sequence rather

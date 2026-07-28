@@ -55,6 +55,17 @@ enum GalaxyLog {
         write("[Galaxy/circuit] \(message)")
     }
 
+    /// Automated prompt submission — text Galaxy composed and sent itself.
+    ///
+    /// A standing channel rather than a `dbg` tag because this path is
+    /// invisible from the outside: the bytes either land or vanish, with no
+    /// echo and no error to distinguish the two. What it records is the only
+    /// evidence that a submission happened at all, so it outlives any one
+    /// investigation — which is precisely what `dbg` is not for.
+    static func submit(_ message: String) {
+        write("[Galaxy/submit] \(message)")
+    }
+
     /// Diagnostic logging for transient bug investigations.
     /// Tag categorizes the subsystem (e.g. "resume", "cmd",
     /// "switch", "active"). Remove call sites once the bug is
