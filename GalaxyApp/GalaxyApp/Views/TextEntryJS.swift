@@ -44,7 +44,10 @@ let textEntryJS: String = """
     // notice, whereas one that keeps working is at worst out of date.
     var DEFAULT_BINDINGS = {
         submit: [{ code: 'Enter', modifiers: 0 }],
-        newline: [{ code: 'Enter', modifiers: MOD_OPTION }]
+        newline: [
+            { code: 'Enter', modifiers: MOD_OPTION },
+            { code: 'KeyJ', modifiers: MOD_CONTROL }
+        ]
     };
 
     var bindings = DEFAULT_BINDINGS;

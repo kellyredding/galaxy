@@ -185,20 +185,7 @@ enum ClaudeKeybindingsWriter {
         // adopting would silently drop it. Refuse rather than lose it.
         let sequences = present.keys.filter { $0.contains(" ") }.sorted()
 
-        // What the pane actually does: Claude Code's own bindings, as amended by
-        // the file. Adopting the file alone would miss a default the file never
-        // mentions — Ctrl-J inserting a newline, say — and so would adopt a
-        // behaviour the pane does not have, while leaving the very key that
-        // prompted the difference out of the settings that are meant to explain
-        // it. An explicit null removes a default rather than overriding it.
-        var effective = defaultBindings
-        for (key, action) in present {
-            if let action {
-                effective[key] = action
-            } else {
-                effective.removeValue(forKey: key)
-            }
-        }
+        let effective = effectiveBindings(given: present)
 
         var adoptedSubmit: [Keystroke] = []
         var adoptedNewline: [Keystroke] = []
@@ -250,6 +237,42 @@ enum ClaudeKeybindingsWriter {
             missing: disagreeing.filter { !wantsUnbind($0) }.sorted(),
             activeDefaults: disagreeing.filter(wantsUnbind).sorted()
         )
+    }
+
+    /// What the session pane actually does: Claude Code's own bindings, as
+    /// amended by the file.
+    ///
+    /// The file alone is not the answer to that question. A default the file
+    /// never mentions is still governing the pane — Ctrl-J inserting a newline,
+    /// say — while an explicit null *removes* a default rather than overriding
+    /// it. Anything reasoning about what a keystroke will do there has to start
+    /// from the defaults and apply the file over them, in that order.
+    private static func effectiveBindings(
+        given present: [String: String?]
+    ) -> [String: String] {
+        var effective = defaultBindings
+        for (key, action) in present {
+            if let action {
+                effective[key] = action
+            } else {
+                effective.removeValue(forKey: key)
+            }
+        }
+        return effective
+    }
+
+    /// Whether a bare carriage return commits a prompt in the session pane.
+    ///
+    /// True when Return's effective binding is submit — because the file says
+    /// so, or because the file is silent about Return and Claude Code's own
+    /// default applies.
+    ///
+    /// Read rather than inferred from this app's settings, because the file is
+    /// what the pane obeys. If the two have drifted, the file is right and the
+    /// settings are a wish.
+    static var plainReturnSubmits: Bool {
+        effectiveBindings(given: presentEntries())["enter"]
+            == Action.submit.rawValue
     }
 
     /// What the file would say if these settings were written to it. A nil

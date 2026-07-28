@@ -41,12 +41,19 @@ struct TextEntryBindings: Codable, Equatable {
     ///
     /// Claude Code's documented default for `chat:newline` is Ctrl+J rather
     /// than Option-Return — Option-Return is a binding you write into its
-    /// keybindings file, which is what the sync does. Until that file is
-    /// written the session pane still answers to Ctrl+J, while these composers
-    /// already follow the setting.
+    /// keybindings file, which is what the sync does.
+    ///
+    /// Ctrl+J is listed here as well, and not as a courtesy: Claude Code binds
+    /// it whether these defaults mention it or not, so omitting it would ship a
+    /// fresh install already disagreeing with its own session pane over a key
+    /// nobody chose. Naming it makes the two agree, and earns Ctrl+J the same
+    /// meaning in a note form that it has always had in the pane.
     static let `default` = TextEntryBindings(
         submit: [Keystroke(keyCode: Keystroke.Key.ret)],
-        newline: [Keystroke(keyCode: Keystroke.Key.ret, modifiers: .option)]
+        newline: [
+            Keystroke(keyCode: Keystroke.Key.ret, modifiers: .option),
+            Keystroke(keyCode: 38, modifiers: .control),
+        ]
     )
 }
 

@@ -45,7 +45,10 @@
       "name": "shipped defaults",
       "bindings": {
         "submit": [{ "keyCode": 36, "code": "Enter", "modifiers": 0 }],
-        "newline": [{ "keyCode": 36, "code": "Enter", "modifiers": 2 }]
+        "newline": [
+          { "keyCode": 36, "code": "Enter", "modifiers": 2 },
+          { "keyCode": 38, "code": "KeyJ", "modifiers": 4 }
+        ]
       },
       "cases": [
         {
@@ -67,6 +70,11 @@
           "name": "Shift-Return is not bound by default",
           "keyCode": 36, "code": "Enter", "modifiers": 8,
           "expect": null
+        },
+        {
+          "name": "Ctrl-J inserts a newline, as it does in the session pane",
+          "keyCode": 38, "code": "KeyJ", "modifiers": 4,
+          "expect": "newline"
         }
       ]
     },

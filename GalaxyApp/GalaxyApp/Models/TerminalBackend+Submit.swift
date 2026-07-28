@@ -14,23 +14,37 @@ import Galactic
 enum SessionSubmit {
     /// Bytes that Claude Code resolves to `chat:submit`.
     ///
-    /// Once the keybindings file carries Galaxy's reserved chord, automated
-    /// prompts send that chord as a kitty functional key — `CSI 13;16u`, where
-    /// 16 is 1 + shift 1 + alt 2 + ctrl 4 + super 8. A CSI-u sequence cannot be
-    /// mistaken for literal text the way a stray control byte could.
+    /// Two instruments, and which one works depends on what Return currently
+    /// means in the session pane:
     ///
-    /// Until then a bare carriage return is correct, because Claude Code is on
-    /// its default `enter: chat:submit`.
+    /// - **Return submits.** A bare carriage return is the whole job. It needs
+    ///   no keyboard protocol, no CSI-u decoding, and cannot be misread as
+    ///   text.
+    /// - **Return does anything else** — inserts a newline, or is unbound.
+    ///   Then a carriage return is useless or actively wrong, and the reserved
+    ///   chord goes out instead as a kitty functional key: `CSI 13;16u`, where
+    ///   16 is 1 + shift 1 + alt 2 + ctrl 4 + super 8.
     ///
-    /// The distinction matters precisely because a *pressed* plain Return also
-    /// arrives as a bare carriage return. Claude Code cannot tell the two
-    /// apart, so the moment a user binds Return to anything other than submit,
-    /// every automated prompt would inherit that binding and stop sending.
+    /// Choosing between them is not a preference. Measured behaviour: the chord
+    /// is honoured only while Return is bound to something other than submit.
+    /// With `enter: chat:submit` in force it is silently ignored, and a prompt
+    /// sent that way sits fully typed and uncommitted. The likeliest reason is
+    /// that Claude Code services the carriage return directly in that
+    /// configuration and never runs the CSI-u parser for Return at all — but
+    /// the mechanism is inference, and the rule is observation.
+    ///
+    /// Which turns out to be no loss whatsoever, because the two conditions are
+    /// exact complements: the chord fails in precisely the case where a
+    /// carriage return already submits, and works in every case where it does
+    /// not. Do not collapse this back to one instrument. A single one cannot
+    /// cover both, and each fails silently — no echo, no error, just a prompt
+    /// that never sends.
     static var bytes: [UInt8] {
         // Checked per submission, not cached: the file is global, hot-reloaded,
         // and can be edited or deleted while Galaxy runs. It reads a few
         // hundred bytes, and every caller here is a human-initiated action —
         // do not move this onto a hot path.
+        if ClaudeKeybindingsWriter.plainReturnSubmits { return [0x0D] }
         guard ClaudeKeybindingsWriter.reservedBindingIsUsable else {
             return [0x0D]
         }
@@ -117,8 +131,9 @@ extension TerminalBackend {
         // byte. Automated prompts are safe on both branches because readiness
         // is established upstream, by `whenAcceptingInput` in
         // `Session.sendCommand`. Do not drop that gate on the belief that this
-        // wait already covers it — it does not, and the carriage-return
-        // fallback is the path where the gap would bite.
+        // wait already covers it — it does not, and the carriage-return branch
+        // is the path where the gap would bite. That branch is also the common
+        // one under the shipped defaults, not a rare fallback.
         guard bytes != [0x0D], !isKittyKeyboardActive else {
             send(bytes: bytes)
             SessionSubmit.log("  wrote submit")

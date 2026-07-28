@@ -409,12 +409,14 @@ check("a key the settings do claim is never unbound") {
 check("the JS payload keys keystrokes by DOM code, not virtual key code") {
     let payload = TextEntryBindings.default.jsPayload
     guard let submit = payload["submit"], submit.count == 1,
-          let newline = payload["newline"], newline.count == 1
+          let newline = payload["newline"], newline.count == 2
     else { return false }
     return submit[0]["code"] as? String == "Enter"
         && submit[0]["modifiers"] as? Int == 0
         && newline[0]["code"] as? String == "Enter"
         && newline[0]["modifiers"] as? Int == 2
+        && newline[1]["code"] as? String == "KeyJ"
+        && newline[1]["modifiers"] as? Int == 4
 }
 
 check("the JS payload drops keystrokes a WebView cannot address") {
