@@ -48,7 +48,7 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
     var view: NSView { backend.view }
     var paneKind: String { "shell" }
     var ledgerSessionId: Int64? { session?.ledgerSessionId }
-    var isAcceptingInput: Bool { isRunning }
+    var acceptsFileDrops: Bool { isRunning }
 
     var onProcessExit: ((Int32) -> Void)?
     var onBell: (() -> Void)?

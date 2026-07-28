@@ -117,7 +117,7 @@ final class SessionTerminalPane: TerminalPane {
         backend.focus()
     }
 
-    var isAcceptingInput: Bool {
+    var acceptsFileDrops: Bool {
         guard let s = session else { return false }
         return s.isRunning && !s.hasExited
     }

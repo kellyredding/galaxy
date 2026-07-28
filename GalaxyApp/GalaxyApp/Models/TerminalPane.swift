@@ -40,10 +40,15 @@ protocol TerminalPane: AnyObject {
     /// Make the inner terminal the first responder.
     func focus()
 
-    /// Whether this pane should accept dropped files right
-    /// now. Gates drag-drop registration in
+    /// Whether this pane should accept dropped files right now.
+    /// Gates drag-drop registration in
     /// `TerminalHostView.updateDragRegistration`.
-    var isAcceptingInput: Bool { get }
+    ///
+    /// Names file drops specifically because it has nothing to do with
+    /// whether the child can read typed input — that is
+    /// `whenAcceptingInput`, and conflating the two is how a keystroke
+    /// gets written into a terminal that cannot yet receive it.
+    var acceptsFileDrops: Bool { get }
 
     /// Called when the underlying process terminates with
     /// an exit code. Owning container (e.g.

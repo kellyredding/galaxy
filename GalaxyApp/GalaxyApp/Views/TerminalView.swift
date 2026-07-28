@@ -28,7 +28,7 @@ struct FocusableTerminalView: NSViewRepresentable {
         // the value flips (guarded by != oldValue). Only call
         // refreshDragRegistration explicitly when isActive
         // didn't flip — that's the case where
-        // pane.isAcceptingInput may have changed and the
+        // pane.acceptsFileDrops may have changed and the
         // didSet path skipped. Avoids paying for two
         // register/unregister cycles per transition row.
         nsView.isActive = isActive
@@ -345,7 +345,7 @@ class TerminalHostView: NSView {
     /// Only the active pane in an accepting state should be a drop
     /// target.
     private func updateDragRegistration() {
-        if isActive && pane.isAcceptingInput {
+        if isActive && pane.acceptsFileDrops {
             registerForDraggedTypes([.fileURL])
         } else {
             unregisterDraggedTypes()
@@ -727,9 +727,9 @@ class TerminalHostView: NSView {
     // MARK: - Drag and Drop
 
     /// Check if the pane can accept drops (must be active AND
-    /// accepting input — for Session pane: running, not exited).
+    /// drop-eligible — for Session pane: running, not exited).
     private var canAcceptDrop: Bool {
-        return isActive && pane.isAcceptingInput
+        return isActive && pane.acceptsFileDrops
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
