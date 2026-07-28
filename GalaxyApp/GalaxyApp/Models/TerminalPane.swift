@@ -186,22 +186,22 @@ protocol TerminalPane: AnyObject {
 /// gates the send.
 ///
 /// Both panes produce one of these; the scrollback overlay
-/// consults `disabledReason()` to decide whether the
-/// button is enabled, and calls `sendText` + `sendSubmit` when
-/// the user clicks Send.
+/// consults `disabledReason()` to decide whether the button is
+/// enabled, and calls `send` when the user clicks Send.
 struct SendToClaudeTarget {
-    /// Inject text into the target terminal as typed input.
-    let sendText: (String) -> Void
-
-    /// Submit what `sendText` injected, one `inputPacingDelay`
-    /// later so the TUI has registered the text before the
-    /// submit arrives.
+    /// Hand composed text to the owning session, which types it
+    /// and commits it.
     ///
-    /// Whichever bytes mean "submit" are resolved at the point
-    /// of sending, so this deliberately does not name them —
-    /// automated submission stopped being a carriage return
-    /// once a reserved chord became available.
-    let sendSubmit: () -> Void
+    /// One closure rather than a write and a submit the caller
+    /// paces itself. `Session.sendCommand` already owns that
+    /// sequence — wait for the child to be able to read, type,
+    /// pace, then submit whichever bytes the pane will act on —
+    /// and a second implementation of it drifted: it paced with a
+    /// number of its own for three months, and never gained the
+    /// readiness wait at all. Nothing here resolves the submit
+    /// bytes either, deliberately, because which ones work
+    /// depends on what Return currently means in that pane.
+    let send: (String) -> Void
 
     /// Preflight: nil = enabled, Some(reason) = disabled
     /// with the given tooltip string.

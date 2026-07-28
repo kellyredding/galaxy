@@ -90,6 +90,29 @@ enum SessionSubmit {
         GalaxyLog.submit(message)
     }
 
+    /// Render composed text for a log line: quoted, and short.
+    ///
+    /// The quoting and the length both matter — a trailing space is invisible at
+    /// the end of a log line, and whether it was written is the first thing to
+    /// check when a prompt fails to send.
+    ///
+    /// The truncation matters because the same seam carries slash commands of a
+    /// dozen bytes and scrollback sends of thirty thousand. A measured send of
+    /// 269 lines would otherwise put all of them in one log line, burying the
+    /// diagnostics this channel exists for in the payload they describe.
+    /// Newlines are escaped rather than printed for the same reason: one entry,
+    /// one line.
+    static func describe(text: String, head: Int = 48) -> String {
+        let escaped = text
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "\\r")
+        let shown =
+            escaped.count > head
+            ? escaped.prefix(head) + "…(+\(escaped.count - head))"
+            : escaped
+        return "\"\(shown)\" len=\(text.count)"
+    }
+
     /// Render bytes readably, so a log line shows an escape sequence rather
     /// than a list of numbers.
     static func describe(_ bytes: [UInt8]) -> String {

@@ -931,11 +931,8 @@ class Session: Identifiable, ObservableObject {
         // to this line, and it is the only one naming the command and the
         // session it went to. Logged before the write rather than after, so a
         // readiness timeout still leaves a record of what was attempted.
-        // Quoted, with a length, because a trailing space is invisible at the
-        // end of a log line — and whether it was written is the first thing to
-        // check when a prompt fails to send.
         SessionSubmit.log(
-            "sendCommand text=\"\(text)\" len=\(text.count) "
+            "sendCommand text=\(SessionSubmit.describe(text: text)) "
                 + "session=\(id.uuidString.prefix(8)) "
                 + "verifyAccepted=\(verifyAccepted) wasInTurn=\(wasInTurn)"
         )

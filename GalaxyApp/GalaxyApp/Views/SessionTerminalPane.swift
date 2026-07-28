@@ -132,17 +132,17 @@ final class SessionTerminalPane: TerminalPane {
               s.isRunning,
               !s.hasExited else {
             return SendToClaudeTarget(
-                sendText: { _ in },
-                sendSubmit: { },
+                send: { _ in },
                 disabledReason: { "Resume the session first" }
             )
         }
-        let backend = self.backend
         return SendToClaudeTarget(
-            sendText: { text in
-                backend.send(text: text, asPaste: false)
+            // Not verified: a person is watching this one land, and can press
+            // their own submit key if it does not. The retry exists for prompts
+            // Galaxy sends while nobody is looking.
+            send: { [weak s] text in
+                s?.sendCommand(text, verifyAccepted: false)
             },
-            sendSubmit: { backend.submitPrompt() },
             disabledReason: { nil }
         )
     }

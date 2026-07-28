@@ -159,14 +159,13 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
     /// into a paused buffer view would land out-of-order.
     var sendToClaudeTarget: SendToClaudeTarget? {
         guard let s = session else { return nil }
-        let sessionBackend = s.backend
 
         return SendToClaudeTarget(
-            sendText: { text in
-                sessionBackend?.send(text: text, asPaste: false)
-            },
-            sendSubmit: {
-                sessionBackend?.submitPrompt()
+            // Routed through the session rather than straight at its backend, so
+            // this pane inherits the readiness wait and the pacing instead of
+            // reimplementing them a second time.
+            send: { [weak s] text in
+                s?.sendCommand(text, verifyAccepted: false)
             },
             disabledReason: { [weak s] in
                 guard let s = s else {

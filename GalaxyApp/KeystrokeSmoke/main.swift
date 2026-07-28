@@ -404,6 +404,147 @@ check("a key the settings do claim is never unbound") {
     return ClaudeKeybindingsWriter.requiredUnbinds(for: claimsBoth).isEmpty
 }
 
+// MARK: - Against a real file
+
+/// Point the writer at a temp file holding this `Chat` block, run the body, then
+/// put everything back.
+///
+/// Exercising the writer against JSON rather than against its own internals is
+/// the point. What matters about this type is what the *file* says, and an
+/// assertion built from the same dictionary the code builds cannot tell you that
+/// — which is how the rule about submit bytes stayed wrong through a day of
+/// verification.
+func withChatBindings(
+    _ bindings: [String: Any], _ body: () -> Bool
+) -> Bool {
+    let saved = ClaudeKeybindingsWriter.fileURL
+    let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("keystroke-smoke-\(UUID().uuidString)")
+    try? FileManager.default.createDirectory(
+        at: dir, withIntermediateDirectories: true)
+    let url = dir.appendingPathComponent("keybindings.json")
+    let root: [String: Any] = [
+        "bindings": [["context": "Chat", "bindings": bindings]]
+    ]
+    if let data = try? JSONSerialization.data(withJSONObject: root) {
+        try? data.write(to: url)
+    }
+    ClaudeKeybindingsWriter.fileURL = url
+    defer {
+        ClaudeKeybindingsWriter.fileURL = saved
+        try? FileManager.default.removeItem(at: dir)
+    }
+    return body()
+}
+
+/// The `Chat` block a file would hold if these settings were written to it.
+func chatBlock(for bindings: TextEntryBindings) -> [String: Any] {
+    var chat: [String: Any] = [:]
+    for (key, action) in ClaudeKeybindingsWriter.ownedBindings(for: bindings).map
+    {
+        chat[key] = action
+    }
+    for key in ClaudeKeybindingsWriter.requiredUnbinds(for: bindings) {
+        chat[key] = NSNull()
+    }
+    return chat
+}
+
+// The truth table that decides every automated submission. Each row was
+// verified by hand against a live session on 2026-07-28; the chord is honoured
+// only while Return means something other than submit, so picking the wrong
+// instrument leaves a prompt typed in full and never sent.
+
+check("a Return that submits calls for a carriage return") {
+    withChatBindings(["enter": "chat:submit"]) {
+        ClaudeKeybindingsWriter.plainReturnSubmits
+    }
+}
+
+check("a Return bound to newline calls for the chord") {
+    withChatBindings(["enter": "chat:newline"]) {
+        !ClaudeKeybindingsWriter.plainReturnSubmits
+    }
+}
+
+check("a Return explicitly unbound calls for the chord") {
+    withChatBindings(["enter": NSNull()]) {
+        !ClaudeKeybindingsWriter.plainReturnSubmits
+    }
+}
+
+check("a file silent about Return leaves Claude Code's default in force") {
+    // Absent is not unbound. Return submits unless the file says otherwise, so
+    // a carriage return is right here — and this is the shipped default, which
+    // is exactly the row that was wrong.
+    withChatBindings(["alt+enter": "chat:newline"]) {
+        ClaudeKeybindingsWriter.plainReturnSubmits
+    }
+}
+
+check("a file written from settings reports matching") {
+    let bindings = TextEntryBindings(
+        submit: [Keystroke(keyCode: Keystroke.Key.ret, modifiers: .command)],
+        newline: [Keystroke(keyCode: Keystroke.Key.ret, modifiers: .option)]
+    )
+    return withChatBindings(chatBlock(for: bindings)) {
+        ClaudeKeybindingsWriter.fileState(for: bindings).relation == .matching
+    }
+}
+
+check("an empty Chat block reports nothing written") {
+    withChatBindings([:]) {
+        ClaudeKeybindingsWriter.fileState(for: .default).relation
+            == .notWritten
+    }
+}
+
+check("a key sequence bound to submit refuses adoption") {
+    withChatBindings(["ctrl+k ctrl+s": "chat:submit"]) {
+        let state = ClaudeKeybindingsWriter.fileState(for: .default)
+        return state.adoptRefusal != nil && !state.adoptable
+    }
+}
+
+check("adopting picks up a default the file never mentions") {
+    // Ctrl-J governs the pane without appearing in the file. Left out of the
+    // adopted lists it would be unbound by the very next write — adopting the
+    // file's contents would destroy the binding it was asked to preserve.
+    withChatBindings(["enter": "chat:submit"]) {
+        ClaudeKeybindingsWriter.fileState(for: .default).adopted?.newline
+            .contains(Keystroke(keyCode: 38, modifiers: .control)) == true
+    }
+}
+
+check("adopting never surfaces the reserved chord") {
+    var chat: [String: Any] = ["enter": "chat:submit"]
+    if let reserved = Keystroke.reservedMachineSubmit.claudeBinding {
+        chat[reserved] = "chat:submit"
+    }
+    return withChatBindings(chat) {
+        ClaudeKeybindingsWriter.fileState(for: .default).adopted?.submit
+            .contains(Keystroke.reservedMachineSubmit) == false
+    }
+}
+
+check("writing drops a submit key the settings no longer name") {
+    // Without this the file silts up: change a submit keystroke and the old one
+    // stays bound to submit for good, so both keep submitting.
+    let before = TextEntryBindings(
+        submit: [Keystroke(keyCode: Keystroke.Key.ret, modifiers: .command)],
+        newline: [Keystroke(keyCode: Keystroke.Key.ret, modifiers: .option)]
+    )
+    let after = TextEntryBindings(
+        submit: [Keystroke(keyCode: Keystroke.Key.ret, modifiers: .shift)],
+        newline: [Keystroke(keyCode: Keystroke.Key.ret, modifiers: .option)]
+    )
+    return withChatBindings(chatBlock(for: before)) {
+        _ = try? ClaudeKeybindingsWriter.sync(after)
+        let state = ClaudeKeybindingsWriter.fileState(for: after)
+        return state.relation == .matching && state.extra.isEmpty
+    }
+}
+
 // MARK: - The payload handed to the WebView matcher
 
 check("the JS payload keys keystrokes by DOM code, not virtual key code") {

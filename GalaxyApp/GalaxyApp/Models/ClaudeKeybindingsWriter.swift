@@ -13,11 +13,23 @@ import Foundation
 /// `/terminal-setup` does to VS Code's keybindings, which is the closest thing
 /// to a sanctioned precedent for editing this file from outside.
 enum ClaudeKeybindingsWriter {
-    static let fileURL = URL(fileURLWithPath: NSHomeDirectory())
+    /// Where Claude Code keeps its keybindings.
+    ///
+    /// Settable so the smoke target can aim the whole writer at a temp file and
+    /// exercise it against real JSON — reading, merging, unbinding, removing —
+    /// rather than asserting on a hand-built dictionary that is free to disagree
+    /// with what the file would actually say. That distinction is not
+    /// theoretical: the rule about which submit bytes a pane will act on was
+    /// wrong for a day, and no assertion about this type's internals could have
+    /// caught it, because the question is what the *file* says.
+    ///
+    /// Nothing in the app assigns this, and nothing should. It is read on every
+    /// automated submission, from whatever thread that submission runs on.
+    static var fileURL = URL(fileURLWithPath: NSHomeDirectory())
         .appendingPathComponent(".claude/keybindings.json")
 
-    static let backupURL = URL(fileURLWithPath: NSHomeDirectory())
-        .appendingPathComponent(".claude/keybindings.json.bak")
+    /// The copy taken before every write, alongside whatever `fileURL` names.
+    static var backupURL: URL { fileURL.appendingPathExtension("bak") }
 
     /// The context the user's own keystrokes are written into. Everything else
     /// in the file is left alone — bindings are per-context, and Claude Code

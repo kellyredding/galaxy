@@ -1083,18 +1083,11 @@ class TerminalHostView: NSView {
             }
 
             self.performScrollbackTeardown(reason: .reviewed)
-            // Two pieces of input, so they need the gap every
-            // text-then-submit pair needs: the write lands in the
-            // composer, the TUI re-renders, then the submit commits it.
-            // The delay is SessionSubmit's for a reason — a second copy
-            // of the number is the one that drifts unnoticed, which is
-            // exactly what happened to the value that used to sit here.
-            target.sendText(message)
-            DispatchQueue.main.asyncAfter(
-                deadline: .now() + SessionSubmit.inputPacingDelay
-            ) {
-                target.sendSubmit()
-            }
+            // The session owns the whole sequence — wait for the child to be
+            // able to read, type, pace, submit. This used to write and pace and
+            // submit here, which is how it came to hold its own copy of the
+            // delay and to skip the readiness wait entirely.
+            target.send(message)
         }
         webView.onConfirmDiscardForm = { [weak self] in
             self?.showDiscardNoteFormConfirmation()
