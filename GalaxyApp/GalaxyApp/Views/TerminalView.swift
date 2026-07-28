@@ -1083,10 +1083,16 @@ class TerminalHostView: NSView {
             }
 
             self.performScrollbackTeardown(reason: .reviewed)
-            // Bracketed paste delivers multi-line content as a single
-            // input block, then a submit after a delay commits it.
+            // Two pieces of input, so they need the gap every
+            // text-then-submit pair needs: the write lands in the
+            // composer, the TUI re-renders, then the submit commits it.
+            // The delay is SessionSubmit's for a reason — a second copy
+            // of the number is the one that drifts unnoticed, which is
+            // exactly what happened to the value that used to sit here.
             target.sendText(message)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + SessionSubmit.inputPacingDelay
+            ) {
                 target.sendSubmit()
             }
         }

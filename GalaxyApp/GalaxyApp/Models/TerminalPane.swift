@@ -190,13 +190,12 @@ protocol TerminalPane: AnyObject {
 /// button is enabled, and calls `sendText` + `sendSubmit` when
 /// the user clicks Send.
 struct SendToClaudeTarget {
-    /// Inject text into the target terminal
-    /// (bracketed paste).
+    /// Inject text into the target terminal as typed input.
     let sendText: (String) -> Void
 
-    /// Submit what `sendText` injected. Called ~300ms after it
-    /// so the TUI has time to register the paste as input
-    /// before the submit arrives.
+    /// Submit what `sendText` injected, one `inputPacingDelay`
+    /// later so the TUI has registered the text before the
+    /// submit arrives.
     ///
     /// Whichever bytes mean "submit" are resolved at the point
     /// of sending, so this deliberately does not name them —
