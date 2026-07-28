@@ -123,7 +123,11 @@ struct KeystrokeRecorder: View {
                 .font(.system(size: 11, design: .monospaced))
                 .lineLimit(1)
                 .foregroundColor(textColor)
-                .frame(width: 84)
+                // Wide enough for the recording placeholder, which is the
+                // longest thing this ever shows, and fixed so the field does
+                // not resize under the pointer when it arms. The label sets no
+                // horizontal padding of its own, so this width is the box.
+                .frame(width: keystrokeFieldWidth)
                 .padding(.vertical, 3)
                 .background(
                     RoundedRectangle(cornerRadius: 5)
@@ -133,6 +137,12 @@ struct KeystrokeRecorder: View {
                     RoundedRectangle(cornerRadius: 5)
                         .stroke(borderColor, lineWidth: isRecording ? 1.5 : 1)
                 )
+                // Matches the outer padding a pill carries for its removal
+                // badge. Without it the two boxes have different heights, and
+                // the row's `.top` alignment leaves the capsules sitting lower
+                // than the field beside them.
+                .padding(3)
+                .frame(height: keystrokeRowHeight)
         }
         .buttonStyle(.plain)
         .help(
@@ -216,9 +226,37 @@ struct KeystrokeRecorder: View {
 /// reachable only from the keydown handlers, with no button and no menu item, so
 /// an empty submit list would leave a composer whose text could only be
 /// discarded. An empty newline list would make multi-line notes impossible.
+/// Height of one text-entry row's controls.
+///
+/// Shared by the label, the pills and the capture field, because the row aligns
+/// on `.top` — which it must, so a wrapped second row of pills falls beneath the
+/// first instead of dragging the whole stack off centre. Top alignment only
+/// looks right if the three boxes are the same height, so this is what makes
+/// them so rather than leaving it to each one's intrinsic size.
+private let keystrokeRowHeight: CGFloat = 25
+
+/// Width of the capture field, in both states.
+///
+/// Sized for "Press a key…" rather than "Add…" so the field keeps still when it
+/// arms. A field that grew at the moment of being clicked would move out from
+/// under the pointer.
+private let keystrokeFieldWidth: CGFloat = 104
+
 struct KeystrokeListEditor: View {
     let label: String
     @Binding var keystrokes: [Keystroke]
+
+    /// The sibling list and what to call it, so one keystroke cannot be
+    /// recorded as meaning two things.
+    ///
+    /// The matcher tolerates a keystroke in both lists and breaks the tie
+    /// towards submit, which is the right behaviour for settings that arrive
+    /// without passing through here — hand-edited, or carried in from the
+    /// keybindings file. It is the wrong thing to *offer*: the losing pill goes
+    /// on being displayed while doing nothing, so the card ends up stating a
+    /// binding the app does not honour.
+    var siblingLabel: String?
+    var sibling: Binding<[Keystroke]>?
 
     @State private var hovered: Keystroke?
     @State private var refusal: String?
@@ -229,7 +267,11 @@ struct KeystrokeListEditor: View {
             // rather than drifting as later rows wrap beneath it.
             HStack(alignment: .top, spacing: 8) {
                 Text(label)
-                    .frame(width: 66, alignment: .leading)
+                    .frame(
+                        width: 66,
+                        height: keystrokeRowHeight,
+                        alignment: .leading
+                    )
 
                 // No spacing of its own: each pill carries 3pt of padding that
                 // both separates it and makes its floated ⊗ clickable.
@@ -241,6 +283,27 @@ struct KeystrokeListEditor: View {
                 KeystrokeRecorder(
                     onCapture: { captured in
                         refusal = nil
+                        if let sibling,
+                           sibling.wrappedValue.contains(captured) {
+                            // Taking the sibling's last keystroke would leave
+                            // it empty, which the card must never produce — an
+                            // empty submit list has no save button behind it, so
+                            // composed text could only be discarded. Say so
+                            // instead, and let the choice be deliberate.
+                            guard sibling.wrappedValue.count > 1 else {
+                                refusal =
+                                    "\(captured.displayLabel) is the only "
+                                    + "\(siblingLabel ?? "other") keystroke — "
+                                    + "add another there first"
+                                return
+                            }
+                            // Moved rather than refused: the tie-break already
+                            // gives submit the key, so moving it is what makes
+                            // the display agree with what the app was going to
+                            // do anyway. The pill leaving the row above is the
+                            // feedback; a message would only restate it.
+                            sibling.wrappedValue.removeAll { $0 == captured }
+                        }
                         // Re-adding an existing chord is a no-op rather than a
                         // duplicate that could never match twice.
                         if !keystrokes.contains(captured) {

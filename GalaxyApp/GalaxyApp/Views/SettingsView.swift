@@ -165,11 +165,15 @@ struct GeneralSettingsTab: View {
                 VStack(alignment: .leading, spacing: 12) {
                     KeystrokeListEditor(
                         label: "Submit",
-                        keystrokes: $settingsManager.settings.textEntry.submit
+                        keystrokes: $settingsManager.settings.textEntry.submit,
+                        siblingLabel: "Newline",
+                        sibling: $settingsManager.settings.textEntry.newline
                     )
                     KeystrokeListEditor(
                         label: "Newline",
-                        keystrokes: $settingsManager.settings.textEntry.newline
+                        keystrokes: $settingsManager.settings.textEntry.newline,
+                        siblingLabel: "Submit",
+                        sibling: $settingsManager.settings.textEntry.submit
                     )
                     Text(
                         "Applies to note and annotation forms. A reader that is "
