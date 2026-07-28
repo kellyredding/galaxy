@@ -1084,10 +1084,10 @@ class TerminalHostView: NSView {
 
             self.performScrollbackTeardown(reason: .reviewed)
             // Bracketed paste delivers multi-line content as a single
-            // input block, then CR after a delay submits it.
+            // input block, then a submit after a delay commits it.
             target.sendText(message)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                target.sendCR()
+                target.sendSubmit()
             }
         }
         webView.onConfirmDiscardForm = { [weak self] in

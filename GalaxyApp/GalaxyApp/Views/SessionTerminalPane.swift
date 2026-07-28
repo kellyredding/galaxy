@@ -133,7 +133,7 @@ final class SessionTerminalPane: TerminalPane {
               !s.hasExited else {
             return SendToClaudeTarget(
                 sendText: { _ in },
-                sendCR: { },
+                sendSubmit: { },
                 disabledReason: { "Resume the session first" }
             )
         }
@@ -142,7 +142,7 @@ final class SessionTerminalPane: TerminalPane {
             sendText: { text in
                 backend.send(text: text, asPaste: false)
             },
-            sendCR: { backend.submitPrompt() },
+            sendSubmit: { backend.submitPrompt() },
             disabledReason: { nil }
         )
     }

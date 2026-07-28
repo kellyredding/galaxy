@@ -802,7 +802,7 @@ class SessionManager: ObservableObject {
         // hook signals that Claude has finished its hook
         // lifecycle and is at (or imminently at) the prompt.
         // verifyAccepted: false because that signal is itself
-        // the readiness gate — and a stray retry CR ends up
+        // the readiness gate — and a stray retry submit ends up
         // dequeued at the empty prompt after the first
         // /galaxy:resume completes, where Claude Code's TUI
         // treats Enter-on-empty as "repeat last command" and
@@ -881,9 +881,9 @@ class SessionManager: ObservableObject {
         // verifyAccepted: false — same reasoning as
         // compactActiveSession. /clear bypasses
         // UserPromptSubmit, so verifyCommandSubmit can't
-        // distinguish "Claude accepted CR" from "Galaxy
-        // optimistically set isInTurn." CR-retry safety
-        // net is intentionally off for context-reset.
+        // distinguish "Claude accepted the submit" from
+        // "Galaxy optimistically set isInTurn." The retry
+        // safety net is intentionally off for context-reset.
         session.sendCommand("/clear", verifyAccepted: false)
         // /handoff is gated on the on_clear hook's
         // session:ready (ref="clear") event — see

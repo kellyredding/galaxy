@@ -4,7 +4,8 @@ import Combine
 import Galactic
 
 class Session: Identifiable, ObservableObject {
-    /// Delay between sending command text and CR when invoking slash commands.
+    /// Delay between sending command text and the submit when invoking
+    /// slash commands.
     /// Without this delay, the text and the submit can get batched together,
     /// causing Ink (Claude Code's TUI framework) to not recognize the submit.
     ///
@@ -15,13 +16,13 @@ class Session: Identifiable, ObservableObject {
         SessionSubmit.inputPacingDelay
     }
 
-    /// How long to wait after sending CR before checking if it was accepted.
+    /// How long to wait after submitting before checking if it was accepted.
     /// If isInTurn hasn't transitioned to true within this window (driven
-    /// by the on_user_prompt_submit hook event), the CR was likely
+    /// by the on_user_prompt_submit hook event), the submit was likely
     /// swallowed and needs to be resent.
     private static let commandVerifyDelay: TimeInterval = 0.25  // 250ms
 
-    /// Maximum number of CR resend attempts before giving up. Each retry
+    /// Maximum number of submit resend attempts before giving up. Each retry
     /// adds one commandVerifyDelay to the total wait. With 2 retries the
     /// worst-case total is: commandSubmitDelay + 3 × commandVerifyDelay = 850ms.
     private static let commandMaxRetries: Int = 2
@@ -793,12 +794,12 @@ class Session: Identifiable, ObservableObject {
     /// Send a slash command to the terminal (e.g., "/clear", "/compact").
     /// Only works when session is running.
     ///
-    /// By default, uses a verify-and-retry loop: after sending the CR,
+    /// By default, uses a verify-and-retry loop: after submitting,
     /// checks whether the session transitioned to busy (meaning Claude
-    /// accepted the command). If not, resends the CR up to
+    /// accepted the command). If not, resubmits up to
     /// `commandMaxRetries` times. This eliminates the timing-only
-    /// approach where a single blind delay could still lose the CR on
-    /// loaded systems.
+    /// approach where a single blind delay could still lose the submit
+    /// on loaded systems.
     ///
     /// Pass `verifyAccepted: false` when the caller has independent
     /// confirmation that Claude is at the prompt and ready to receive
@@ -806,7 +807,7 @@ class Session: Identifiable, ObservableObject {
     /// retry path can be actively harmful on slash commands like
     /// `/galaxy:resume` whose initial work (skill load + tool calls)
     /// often takes longer than the 250ms verify window — a stray
-    /// retry CR ends up buffered at the kernel TTY input, then
+    /// retry submit ends up buffered at the kernel TTY input, then
     /// dequeued at the empty prompt after the first command finishes,
     /// where Claude Code's TUI interprets Enter-on-empty as
     /// "repeat last command" and re-runs the command.
@@ -869,7 +870,7 @@ class Session: Identifiable, ObservableObject {
 
         // Capture pre-send turn state. If we're already in a turn,
         // the on_user_prompt_submit hook's turn:initiated event
-        // can't serve as a CR-acceptance signal (isInTurn is
+        // can't serve as a submit-acceptance signal (isInTurn is
         // already true), so skip verification and fall back to
         // fire-and-forget.
         let wasInTurn = isInTurn
@@ -988,8 +989,8 @@ class Session: Identifiable, ObservableObject {
         }
     }
 
-    /// Check whether the session entered a turn after sending CR.
-    /// If not, resend CR and schedule another check. Bails after
+    /// Check whether the session entered a turn after submitting.
+    /// If not, resubmit and schedule another check. Bails after
     /// exhausting retries. Detection rides on isInTurn, which is
     /// flipped by the on_user_prompt_submit hook event — a true
     /// "Claude received the prompt" signal.

@@ -182,17 +182,22 @@ protocol TerminalPane: AnyObject {
 ///
 /// Both panes produce one of these; the scrollback overlay
 /// consults `disabledReason()` to decide whether the
-/// button is enabled, and calls `sendText` + `sendCR` when
+/// button is enabled, and calls `sendText` + `sendSubmit` when
 /// the user clicks Send.
 struct SendToClaudeTarget {
     /// Inject text into the target terminal
     /// (bracketed paste).
     let sendText: (String) -> Void
 
-    /// Send a single CR to submit. Called ~300ms after
-    /// `sendText` so the TUI has time to register the
-    /// paste as input before Enter arrives.
-    let sendCR: () -> Void
+    /// Submit what `sendText` injected. Called ~300ms after it
+    /// so the TUI has time to register the paste as input
+    /// before the submit arrives.
+    ///
+    /// Whichever bytes mean "submit" are resolved at the point
+    /// of sending, so this deliberately does not name them —
+    /// automated submission stopped being a carriage return
+    /// once a reserved chord became available.
+    let sendSubmit: () -> Void
 
     /// Preflight: nil = enabled, Some(reason) = disabled
     /// with the given tooltip string.
