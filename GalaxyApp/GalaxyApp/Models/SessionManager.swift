@@ -813,8 +813,8 @@ class SessionManager: ObservableObject {
         // off here to avoid the empty-prompt-replay risk.
         if canResume {
             session.waitForReady { [weak session] in
-                session?.sendCommand(
-                    "/galaxy:resume", verifyAccepted: false
+                session?.sendSkill(
+                    "galaxy:resume", verifyAccepted: false
                 )
                 // The restored screen can come back garbled (a
                 // resize artifact on the freshly recreated backend),
@@ -867,7 +867,7 @@ class SessionManager: ObservableObject {
         // isReady so this won't be satisfied immediately by a
         // stale isReady=true from a previous resume cycle.
         session.waitForReady { [weak session] in
-            session?.sendCommand("/handoff")
+            session?.sendSkill("handoff")
         }
     }
 
@@ -889,7 +889,7 @@ class SessionManager: ObservableObject {
         // session:ready (ref="clear") event — see
         // compactActiveSession for the full rationale.
         session.waitForReady { [weak session] in
-            session?.sendCommand("/handoff")
+            session?.sendSkill("handoff")
         }
     }
 

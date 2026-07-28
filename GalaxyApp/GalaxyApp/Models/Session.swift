@@ -5,9 +5,15 @@ import Galactic
 
 class Session: Identifiable, ObservableObject {
     /// Delay between sending command text and CR when invoking slash commands.
-    /// Without this delay, the text and CR can get batched together, causing
-    /// Ink (Claude Code's TUI framework) to not recognize the CR as a submit action.
-    private static let commandSubmitDelay: TimeInterval = 0.1  // 100ms
+    /// Without this delay, the text and the submit can get batched together,
+    /// causing Ink (Claude Code's TUI framework) to not recognize the submit.
+    ///
+    /// Defined by `SessionSubmit`, which owns submission timing and needs the
+    /// same gap between its own two keystrokes. Two copies of one number would
+    /// drift, and the second copy is the one that would drift unnoticed.
+    private static var commandSubmitDelay: TimeInterval {
+        SessionSubmit.inputPacingDelay
+    }
 
     /// How long to wait after sending CR before checking if it was accepted.
     /// If isInTurn hasn't transitioned to true within this window (driven
@@ -836,15 +842,30 @@ class Session: Identifiable, ObservableObject {
         backend?.reflowBuffer()
     }
 
+    /// Ask Claude to run one of Galaxy's skills.
+    ///
+    /// A named seam rather than callers writing the slash themselves.
+    /// Invoking a skill and triggering a Claude Code built-in are separate
+    /// intents that happen to share a syntax, and keeping them apart means
+    /// submission mechanics can change without auditing every call site for
+    /// literal command text.
+    ///
+    /// The leading slash opens Claude Code's completion popup, which consumes
+    /// the submit keystroke. `sendCommand` deals with that for every automated
+    /// prompt — there is nothing skill-specific about it.
+    func sendSkill(
+        _ skill: String, verifyAccepted: Bool = true
+    ) {
+        sendCommand("/\(skill)", verifyAccepted: verifyAccepted)
+    }
+
     func sendCommand(
         _ command: String, verifyAccepted: Bool = true
     ) {
         guard isRunning && !hasExited else {
-            NSLog("Session: Cannot send command - session not running")
+            SessionSubmit.log("sendCommand refused — session not running")
             return
         }
-
-        NSLog("Session: Sending command: %@", command)
 
         // Capture pre-send turn state. If we're already in a turn,
         // the on_user_prompt_submit hook's turn:initiated event
@@ -884,21 +905,86 @@ class Session: Identifiable, ObservableObject {
             oneShotTurnEndActions.removeAll()
         }
 
-        // Send command text first
-        backend?.send(text: command, asPaste: false)
+        // One trailing space, and it is load-bearing — do not tidy it away.
+        //
+        // A leading slash opens Claude Code's completion popup, and the popup
+        // consumes the submit keystroke, which made the prompts Galaxy drives
+        // itself the least reliable ones in the app: the text landed and then
+        // nothing submitted it. The popup filters on the token under the
+        // cursor, so a space ends that token, leaves nothing to match, and
+        // closes it. Being a state change in the TUI rather than a wait for
+        // one, it needs no keystroke paced against a render nobody can observe.
+        //
+        // It rides in the same write as the command deliberately. Sending it as
+        // a separately paced piece was considered and is unnecessary: the popup
+        // closes on batched input, measured against /clear and /handoff, so
+        // splitting it would add a moving part to fix something that is not
+        // broken.
+        //
+        // Unconditional, because branching on it would buy nothing: Claude Code
+        // trims the input, so a plain message carries the space harmlessly, and
+        // slash commands take arguments, so an empty one parses as none.
+        let text = command + " "
 
-        // Small delay to ensure text is processed before CR
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.commandSubmitDelay) { [weak self] in
+        // Anchors the submit diagnostics: everything that follows is relative
+        // to this line, and it is the only one naming the command and the
+        // session it went to. Logged before the write rather than after, so a
+        // readiness timeout still leaves a record of what was attempted.
+        // Quoted, with a length, because a trailing space is invisible at the
+        // end of a log line — and whether it was written is the first thing to
+        // check when a prompt fails to send.
+        SessionSubmit.log(
+            "sendCommand text=\"\(text)\" len=\(text.count) "
+                + "session=\(id.uuidString.prefix(8)) "
+                + "verifyAccepted=\(verifyAccepted) wasInTurn=\(wasInTurn)"
+        )
+
+        guard let backend = backend else {
+            SessionSubmit.log("  no backend — nothing sent")
+            return
+        }
+
+        // Wait for the child's input layer before writing the text, not just
+        // before submitting it. `session:ready` marks the process being up, not
+        // its input handling, so on resume the text was going out ~155ms before
+        // Claude Code could read it — losing the trailing space, and with it
+        // the popup dismissal the space exists to perform.
+        //
+        // Free everywhere but a cold start: the wait returns synchronously when
+        // the protocol is already on, which is every mid-session send.
+        //
+        // Held on one backend for both the wait and the write, so readiness
+        // established for this child cannot be credited to a replacement.
+        if !backend.isKittyKeyboardActive {
+            SessionSubmit.log("  waiting for input readiness…")
+        }
+        let t0 = Date()
+        backend.whenAcceptingInput { [weak self] ready in
             guard let self = self, self.isRunning, !self.hasExited else { return }
 
-            // Submit the text just written — SessionSubmit owns the bytes
-            self.backend?.submitPrompt()
+            backend.send(text: text, asPaste: false)
+            SessionSubmit.log(
+                String(
+                    format: "  input %@ (+%.0fms) — wrote text",
+                    ready ? "ready" : "TIMED OUT",
+                    Date().timeIntervalSince(t0) * 1000)
+            )
 
-            // Skip verification if caller opted out, or if session
-            // was already in a turn when we entered.
-            guard verifyAccepted, !wasInTurn else { return }
+            // Small delay to ensure text is processed before the submit
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + Self.commandSubmitDelay
+            ) { [weak self] in
+                guard let self = self, self.isRunning, !self.hasExited else { return }
 
-            self.verifyCommandSubmit(retriesLeft: Self.commandMaxRetries)
+                // Submit the text just written — SessionSubmit owns the bytes
+                backend.submitPrompt()
+
+                // Skip verification if caller opted out, or if session
+                // was already in a turn when we entered.
+                guard verifyAccepted, !wasInTurn else { return }
+
+                self.verifyCommandSubmit(retriesLeft: Self.commandMaxRetries)
+            }
         }
     }
 
@@ -912,16 +998,16 @@ class Session: Identifiable, ObservableObject {
             guard let self = self, self.isRunning, !self.hasExited else { return }
 
             if self.isInTurn {
-                NSLog("Session: Command accepted (retries remaining: %d)", retriesLeft)
+                SessionSubmit.log("  accepted (\(retriesLeft) retries unused)")
                 return
             }
 
             if retriesLeft <= 0 {
-                NSLog("Session: Command CR retries exhausted — giving up")
+                SessionSubmit.log("  NOT accepted — retries exhausted, giving up")
                 return
             }
 
-            NSLog("Session: Command CR not accepted, resending (%d retries left)", retriesLeft)
+            SessionSubmit.log("  NOT accepted — resending submit (\(retriesLeft) left)")
             self.backend?.submitPrompt()
             self.verifyCommandSubmit(retriesLeft: retriesLeft - 1)
         }
@@ -1321,14 +1407,31 @@ class Session: Identifiable, ObservableObject {
         // - CLAUDE_CLI_SESSION_ID: set by Claude Persona sessions; if Galaxy.app
         //   was launched from within such a session, the inherited value would
         //   cause ledger hooks to resolve to the parent session instead of this one
+        // - TERM_PROGRAM/TERM_PROGRAM_VERSION: replaced below. Whatever
+        //   launched Galaxy may have set these, and an inherited identity
+        //   would either win outright or leave a version string describing a
+        //   different terminal than the one now being claimed
         envArray = envArray.filter {
             !$0.hasPrefix("TERM=") &&
             !$0.hasPrefix("COLORTERM=") &&
             !$0.hasPrefix("LANG=") &&
+            !$0.hasPrefix("TERM_PROGRAM=") &&
+            !$0.hasPrefix("TERM_PROGRAM_VERSION=") &&
             !$0.hasPrefix("CLAUDECODE=") &&
             !$0.hasPrefix("CLAUDE_CLI_SESSION_ID=")
         }
         envArray.append("TERM=xterm-256color")
+
+        // Claude Code enables the kitty keyboard protocol only for an
+        // allowlisted terminal identity, and that protocol is what carries a
+        // modified Return — without it Command-Return reaches the child as a
+        // bare carriage return, indistinguishable from Return itself.
+        //
+        // "kitty" is the safest name on that list: unlike ghostty, iTerm.app,
+        // or Apple_Terminal it drives no other behaviour in Claude Code.
+        // Declaring it here rather than setting TERM=xterm-kitty also leaves
+        // terminfo alone for every other program sharing the pane.
+        envArray.append("TERM_PROGRAM=kitty")
         // Don't set COLORTERM=truecolor — this makes Claude Code use 24-bit
         // true color RGB values from its own theme, bypassing the ANSI palette.
         // Without it, Claude Code falls back to ANSI indexed colors, which are
