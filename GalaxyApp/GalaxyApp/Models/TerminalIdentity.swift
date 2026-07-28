@@ -1,6 +1,6 @@
 import Foundation
 
-/// The terminal identity Galaxy declares to the programs it launches.
+/// The terminal identity this app declares to the programs it launches.
 ///
 /// Both panes claim it, and the reasoning is subtle enough that a second copy
 /// would drift from this one — where the symptom of drift is a keystroke that
@@ -27,7 +27,7 @@ enum TerminalIdentity {
     /// and neither corrupts the screen.
     static let program = "kitty"
 
-    /// Environment entries describing whichever terminal launched Galaxy.
+    /// Environment entries describing whichever terminal launched this app.
     ///
     /// Dropped before the claim is made. An inherited identity would either win
     /// outright or leave a version or session string describing a different
@@ -45,9 +45,9 @@ enum TerminalIdentity {
         inheritedPrefixes.contains { entry.hasPrefix($0) }
     }
 
-    /// The entry that declares Galaxy's own identity.
+    /// The entry that declares this app's own identity.
     ///
-    /// Deliberately only the program name: Galaxy is not the kitty version it
+    /// Deliberately only the program name: the app is not the kitty version it
     /// names, so claiming a version would be inventing one, and no session id is
     /// offered because nothing here mints them.
     static var declaration: String { "TERM_PROGRAM=\(program)" }
