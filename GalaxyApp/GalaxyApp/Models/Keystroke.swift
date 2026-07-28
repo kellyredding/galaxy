@@ -298,7 +298,7 @@ extension Keystroke {
         }
     }
 
-    /// The chord reserved for Galaxy's own automated prompt submission.
+    /// The chord reserved for this app's own automated prompt submission.
     ///
     /// Binding it to a text-entry action would make a keystroke the user
     /// pressed indistinguishable from one the app generated, so the recorder

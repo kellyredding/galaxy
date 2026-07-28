@@ -72,7 +72,7 @@ extension TextEntryBindings {
         )
     }
 
-    /// The shape `window.GalaxyTextEntry.configure` expects: keystrokes keyed
+    /// The shape the text-entry module's `configure` expects: keystrokes keyed
     /// by DOM `code`, since a WebView never sees a virtual key code.
     ///
     /// Keystrokes with no DOM spelling are dropped rather than passed along as

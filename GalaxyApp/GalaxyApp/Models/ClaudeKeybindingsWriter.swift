@@ -1,12 +1,12 @@
 import Foundation
 
-/// Writes Galaxy's text-entry keystrokes into Claude Code's own keybindings
+/// Writes this app's text-entry keystrokes into Claude Code's own keybindings
 /// file, so the session pane answers to the same keys as the composers.
 ///
-/// Galaxy is not authoritative over the whole file. It owns a set of keys
+/// This app is not authoritative over the whole file. It owns a set of keys
 /// inside the `Chat` context and leaves everything else — other contexts, other
 /// keys in `Chat`, `$schema`, `$docs`, unknown fields — exactly as it found
-/// them. The file is global and assist-ant reads it too, so anything not
+/// them. The file is global and a companion app reads it too, so anything not
 /// explicitly ours is somebody else's.
 ///
 /// The read-merge-backup-write shape mirrors what Claude Code's own
@@ -17,8 +17,8 @@ enum ClaudeKeybindingsWriter {
     ///
     /// Settable so the smoke target can aim the whole writer at a temp file and
     /// exercise it against real JSON — reading, merging, unbinding, removing —
-    /// rather than asserting on a hand-built dictionary that is free to disagree
-    /// with what the file would actually say. That distinction is not
+    /// rather than asserting on a hand-built dictionary free to disagree with
+    /// what the file would actually say. That distinction is not
     /// theoretical: the rule about which submit bytes a pane will act on was
     /// wrong for a day, and no assertion about this type's internals could have
     /// caught it, because the question is what the *file* says.
@@ -89,7 +89,7 @@ enum ClaudeKeybindingsWriter {
     }
 
     struct SyncResult {
-        /// Binding strings Galaxy wrote, in file order.
+        /// Binding strings this app wrote, in file order.
         let written: [String: String]
         /// Keystrokes that reach the composers but have no documented Claude
         /// Code spelling, so the session pane cannot honour them.
@@ -100,10 +100,10 @@ enum ClaudeKeybindingsWriter {
 
     // MARK: - Building
 
-    /// The bindings Galaxy owns, derived from the settings.
+    /// The bindings this app owns, derived from the settings.
     ///
     /// The reserved machine-submit chord is always present and always maps to
-    /// submit. It is not a user preference — every automated prompt Galaxy
+    /// submit. It is not a user preference — every automated prompt this app
     /// sends depends on it, so it has to survive whatever the user chooses.
     static func ownedBindings(
         for bindings: TextEntryBindings
@@ -140,7 +140,7 @@ enum ClaudeKeybindingsWriter {
     ///
     /// Deliberately says nothing about *who* wrote the file. Nothing in it
     /// records authorship, so a key this app did not write is indistinguishable
-    /// from one it did — naming assist-ant as the cause would be a guess
+    /// from one it did — naming the companion app as the cause would be a guess
     /// dressed as a fact. What can be stated is the difference itself, which is
     /// also what a reader needs in order to choose a direction.
     struct FileState {
@@ -185,8 +185,8 @@ enum ClaudeKeybindingsWriter {
 
     /// Compare the file against a set of settings without touching it.
     ///
-    /// Reads on every call rather than caching. The file is global, hot-reloaded
-    /// and editable while Galaxy runs, and this is far colder than
+    /// Reads on every call rather than caching. The file is global, and is
+    /// hot-reloaded and editable while this app runs. Far colder than
     /// `SessionSubmit.bytes`, which reads the same file on every automated
     /// submission for the same reason.
     static func fileState(for bindings: TextEntryBindings) -> FileState {
@@ -330,7 +330,7 @@ enum ClaudeKeybindingsWriter {
 
     // MARK: - Writing
 
-    /// Merge Galaxy's bindings into the file, backing up first.
+    /// Merge this app's bindings into the file, backing up first.
     ///
     /// Returns without writing when the file already matches, so opening
     /// settings does not churn a backup on every visit.
@@ -378,11 +378,11 @@ enum ClaudeKeybindingsWriter {
     /// Called at launch, and deliberately narrower than `sync`: it writes *only*
     /// the reserved chord, never the user's chosen keystrokes. The file is
     /// global, so pushing this app's full binding set on every launch would
-    /// stomp whatever assist-ant last wrote, for no reason.
+    /// stomp whatever the companion app last wrote, for no reason.
     ///
     /// This is what lets automated submission stop reasoning about whether a
-    /// sync has happened. The chord is present because Galaxy put it there, not
-    /// because the user visited a settings pane.
+    /// sync has happened. The chord is present because this app put it
+    /// there, not because the user visited a settings pane.
     @discardableResult
     static func ensureReservedBinding() throws -> Bool {
         guard !hasReservedBinding else { return false }
@@ -414,7 +414,7 @@ enum ClaudeKeybindingsWriter {
     /// removal, so every other binding in the context survives untouched. But
     /// within those two actions the sweep cannot be selective: the file records
     /// nothing about which app wrote a key, so removing what these settings do
-    /// not name will also remove a key assist-ant put there. That is the
+    /// not name will also remove a key the companion app put there. That is the
     /// intended meaning of writing this file rather than an accident of it —
     /// these settings win outright, and the other app adopts afterwards.
     ///
@@ -506,9 +506,9 @@ enum ClaudeKeybindingsWriter {
     /// Repair rather than fall back, because falling back is not actually safe
     /// here: if the chord was removed while `enter` is still bound to
     /// `chat:newline`, a carriage return inserts a newline and the prompt never
-    /// sends. The chord is Galaxy's own infrastructure — 3e keeps it out of the
-    /// settings UI for exactly this reason — so restoring it is repairing
-    /// damage, not overriding a preference.
+    /// sends. The chord is app infrastructure rather than a preference, and the
+    /// settings card keeps it hidden for exactly this reason — so restoring it
+    /// is repairing damage, not overriding a choice.
     ///
     /// A missing file is different and genuinely does fall back: with no
     /// bindings at all Claude Code is on its `enter: chat:submit` default, so a
@@ -533,12 +533,12 @@ enum ClaudeKeybindingsWriter {
         return hasReservedBinding
     }
 
-    /// Whether the file currently carries Galaxy's reserved machine-submit
+    /// Whether the file currently carries the reserved machine-submit
     /// binding.
     ///
     /// This is what tells automated submission which bytes to send. It reads
     /// the file rather than trusting a flag because the file is global,
-    /// hot-reloaded, and editable by hand or by assist-ant — a cached "we
+    /// hot-reloaded, and editable by hand or by a companion app — a cached "we
     /// synced once" belief could be false by the time it mattered, and the
     /// failure would be a prompt silently not sending.
     ///
