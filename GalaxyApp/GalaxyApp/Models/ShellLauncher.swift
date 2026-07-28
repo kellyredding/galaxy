@@ -134,10 +134,21 @@ enum ShellLauncher {
         var env = inherited.map { "\($0.key)=\($0.value)" }
         env = env.filter {
             !$0.hasPrefix("TERM=") &&
+            !TerminalIdentity.isInherited($0) &&
             !$0.hasPrefix("CLAUDECODE=") &&
             !$0.hasPrefix("CLAUDE_CLI_SESSION_ID=")
         }
         env.append("TERM=xterm-256color")
+
+        // The same identity the session pane claims, so a Claude started by
+        // hand here answers to the configured keystrokes rather than falling
+        // back to Claude Code's defaults. Previously this pane passed the
+        // launching terminal's identity straight through, which made the
+        // behaviour depend on how Galaxy itself was started.
+        //
+        // The claim reaches every program in this shell, not just Claude — see
+        // TerminalIdentity for what that costs and why it is affordable.
+        env.append(TerminalIdentity.declaration)
         if inherited["LANG"]?.isEmpty ?? true {
             env.append("LANG=\(defaultUtf8Locale())")
         }

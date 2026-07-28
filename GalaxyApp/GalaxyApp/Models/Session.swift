@@ -1408,31 +1408,18 @@ class Session: Identifiable, ObservableObject {
         // - CLAUDE_CLI_SESSION_ID: set by Claude Persona sessions; if Galaxy.app
         //   was launched from within such a session, the inherited value would
         //   cause ledger hooks to resolve to the parent session instead of this one
-        // - TERM_PROGRAM/TERM_PROGRAM_VERSION: replaced below. Whatever
-        //   launched Galaxy may have set these, and an inherited identity
-        //   would either win outright or leave a version string describing a
-        //   different terminal than the one now being claimed
+        // - the inherited terminal identity: replaced below with Galaxy's own.
+        //   See TerminalIdentity for which entries and why
         envArray = envArray.filter {
             !$0.hasPrefix("TERM=") &&
             !$0.hasPrefix("COLORTERM=") &&
             !$0.hasPrefix("LANG=") &&
-            !$0.hasPrefix("TERM_PROGRAM=") &&
-            !$0.hasPrefix("TERM_PROGRAM_VERSION=") &&
+            !TerminalIdentity.isInherited($0) &&
             !$0.hasPrefix("CLAUDECODE=") &&
             !$0.hasPrefix("CLAUDE_CLI_SESSION_ID=")
         }
         envArray.append("TERM=xterm-256color")
-
-        // Claude Code enables the kitty keyboard protocol only for an
-        // allowlisted terminal identity, and that protocol is what carries a
-        // modified Return — without it Command-Return reaches the child as a
-        // bare carriage return, indistinguishable from Return itself.
-        //
-        // "kitty" is the safest name on that list: unlike ghostty, iTerm.app,
-        // or Apple_Terminal it drives no other behaviour in Claude Code.
-        // Declaring it here rather than setting TERM=xterm-kitty also leaves
-        // terminfo alone for every other program sharing the pane.
-        envArray.append("TERM_PROGRAM=kitty")
+        envArray.append(TerminalIdentity.declaration)
         // Don't set COLORTERM=truecolor — this makes Claude Code use 24-bit
         // true color RGB values from its own theme, bypassing the ANSI palette.
         // Without it, Claude Code falls back to ANSI indexed colors, which are
