@@ -452,6 +452,65 @@ class SettingsManager: ObservableObject {
         }
     }
 
+    /// Replace the text-entry keystrokes with the ones the keybindings file
+    /// carries. The file wins, wholesale.
+    ///
+    /// Adopting deliberately writes the file back, by way of the settings
+    /// `didSet` — which reads oddly until you look at what the alternative
+    /// leaves behind. The adopted keystrokes come from the file, so the two
+    /// already agree on those; what the file may still be missing is an
+    /// explicit unbind on a key Claude Code binds by default. Without the
+    /// write-back the card would report a difference the instant after
+    /// adopting, over a key the user never touched. Writing converges both
+    /// sides instead of leaving that dangling.
+    ///
+    /// Refuses when the file holds a binding the settings model cannot
+    /// represent, rather than adopting the rest and dropping it silently.
+    @discardableResult
+    func adoptClaudeKeybindings() -> Bool {
+        let state = ClaudeKeybindingsWriter.fileState(for: settings.textEntry)
+        guard state.adoptable, let adopted = state.adopted else {
+            GalaxyLog.dbg(
+                "keybindings",
+                "adopt refused — \(state.adoptRefusal ?? "nothing to adopt")"
+            )
+            return false
+        }
+        settings.textEntry = TextEntryBindings(
+            submit: Self.merging(
+                into: settings.textEntry.submit, adopted.submit),
+            newline: Self.merging(
+                into: settings.textEntry.newline, adopted.newline)
+        ).coercingEmptyLists()
+
+        // Written explicitly rather than left to the settings `didSet`, which
+        // only fires when the lists actually change. Adopting can legitimately
+        // leave them identical — a default already listed above, but not yet
+        // spelled out in the file — and in that case the file still needs the
+        // binding written or the card would go on reporting a difference that
+        // pressing the button appeared to ignore.
+        syncClaudeKeybindings()
+        GalaxyLog.dbg("keybindings", "adopted the session pane's keystrokes")
+        return true
+    }
+
+    /// Fold adopted keystrokes into an existing list, keeping the order that is
+    /// already there and appending only what is new.
+    ///
+    /// Rebuilding the list outright would reorder keystrokes that did not
+    /// change, because the adopted set arrives in the file's alphabetical order
+    /// rather than the user's. Cosmetic on its own — order within a list does
+    /// not affect matching — but these lists compare element-wise, so a
+    /// reshuffle reads as a real edit, and adopting a file that already agreed
+    /// would stop being the no-op it ought to be.
+    private static func merging(
+        into current: [Keystroke], _ adopted: [Keystroke]
+    ) -> [Keystroke] {
+        let incoming = Set(adopted)
+        return current.filter(incoming.contains)
+            + adopted.filter { !current.contains($0) }
+    }
+
     private let settingsURL: URL
     private var audioPlayer: AVAudioPlayer?
 

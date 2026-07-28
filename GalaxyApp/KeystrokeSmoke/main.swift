@@ -330,6 +330,80 @@ check("keystrokes with no spelling are reported, not dropped silently") {
         && map["alt+enter"] == "chat:newline"
 }
 
+// MARK: - Reading the file back
+
+check("every spelling this app writes can be read back") {
+    // The two directions have to agree exactly, or adopting a file Galaxy
+    // itself wrote would come back as a different keystroke than went in.
+    let samples = [
+        Keystroke(keyCode: Keystroke.Key.ret),
+        Keystroke(keyCode: Keystroke.Key.ret, modifiers: .option),
+        Keystroke(keyCode: Keystroke.Key.ret, modifiers: [.command, .shift]),
+        Keystroke.reservedMachineSubmit,
+        Keystroke(keyCode: 38, modifiers: .control),  // Ctrl-J
+        Keystroke(keyCode: 48),  // Tab
+        Keystroke(keyCode: 126, modifiers: .command),  // Cmd-Up
+        Keystroke(keyCode: 12, modifiers: [.control, .shift]),  // Ctrl-Shift-Q
+    ]
+    return samples.allSatisfy { keystroke in
+        guard let spelling = keystroke.claudeBinding else { return false }
+        return Keystroke(claudeBinding: spelling) == keystroke
+    }
+}
+
+check("the aliases the reference documents are all accepted") {
+    // A hand-edited file is entitled to any spelling the reference allows,
+    // not just the ones this app happens to emit.
+    let ret = Keystroke(keyCode: Keystroke.Key.ret)
+    return Keystroke(claudeBinding: "return") == ret
+        && Keystroke(claudeBinding: "ENTER") == ret
+        && Keystroke(claudeBinding: "control+enter")
+            == Keystroke(keyCode: Keystroke.Key.ret, modifiers: .control)
+        && Keystroke(claudeBinding: "command+enter")
+            == Keystroke(keyCode: Keystroke.Key.ret, modifiers: .command)
+        && Keystroke(claudeBinding: "meta+enter")
+            == Keystroke(keyCode: Keystroke.Key.ret, modifiers: .command)
+        && Keystroke(claudeBinding: "option+enter")
+            == Keystroke(keyCode: Keystroke.Key.ret, modifiers: .option)
+        && Keystroke(claudeBinding: "opt+enter")
+            == Keystroke(keyCode: Keystroke.Key.ret, modifiers: .option)
+}
+
+check("a key sequence declines to become one keystroke") {
+    // Two keys pressed in turn. Reading it as a keystroke would silently
+    // discard half of it, so adopting refuses on this rather than guessing.
+    return Keystroke(claudeBinding: "ctrl+x ctrl+e") == nil
+        && Keystroke(claudeBinding: "ctrl+k ctrl+s") == nil
+        && Keystroke(claudeBinding: "enter enter") == nil
+}
+
+check("a spelling naming two keys is refused, not read as one") {
+    Keystroke(claudeBinding: "enter+tab") == nil
+        && Keystroke(claudeBinding: "") == nil
+        && Keystroke(claudeBinding: "ctrl+") == nil
+        && Keystroke(claudeBinding: "f1") == nil
+}
+
+check("the keys Claude Code binds itself are unbound when unclaimed") {
+    // Leaving these out of the file is not the same as turning them off:
+    // Return submits and Ctrl-J inserts a newline until the file says
+    // otherwise, so a settings list omitting one has to say so with a null.
+    let neither = TextEntryBindings(
+        submit: [Keystroke(keyCode: Keystroke.Key.ret, modifiers: .command)],
+        newline: [Keystroke(keyCode: Keystroke.Key.ret, modifiers: .option)]
+    )
+    let unbinds = ClaudeKeybindingsWriter.requiredUnbinds(for: neither)
+    return Set(unbinds) == Set(["enter", "ctrl+j"])
+}
+
+check("a key the settings do claim is never unbound") {
+    let claimsBoth = TextEntryBindings(
+        submit: [Keystroke(keyCode: Keystroke.Key.ret)],
+        newline: [Keystroke(keyCode: 38, modifiers: .control)]
+    )
+    return ClaudeKeybindingsWriter.requiredUnbinds(for: claimsBoth).isEmpty
+}
+
 // MARK: - The payload handed to the WebView matcher
 
 check("the JS payload keys keystrokes by DOM code, not virtual key code") {

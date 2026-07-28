@@ -178,6 +178,9 @@ struct GeneralSettingsTab: View {
                     )
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
+
+                    ClaudeKeybindingsSyncRow(
+                        settingsManager: settingsManager)
                 }
             }
 

@@ -229,6 +229,75 @@ extension Keystroke {
         return parts.joined(separator: "+")
     }
 
+    /// Read Claude Code's spelling of a keystroke back into one of these.
+    ///
+    /// The inverse of `claudeBinding`, and deliberately more permissive than
+    /// it: the keybindings reference documents aliases this app never emits —
+    /// `return`, `control`, `command`, `meta`, `opt`, `option` — and a file
+    /// somebody hand-edited is entitled to use any of them.
+    ///
+    /// Nil when the spelling has no representation here. The case that matters
+    /// is a chord such as `ctrl+x ctrl+e`: two keystrokes pressed in sequence,
+    /// which is not a single keystroke at all and cannot be made into one.
+    /// Callers adopting from the file must treat nil as "leave the file alone"
+    /// rather than "no binding", because the binding is real — it is only
+    /// unrepresentable.
+    init?(claudeBinding: String) {
+        let text = claudeBinding
+            .trimmingCharacters(in: .whitespaces)
+            .lowercased()
+        guard !text.isEmpty, !text.contains(" ") else { return nil }
+
+        var modifiers: Modifiers = []
+        var keyName: String?
+        for part in text.split(separator: "+").map(String.init) {
+            switch part {
+            case "ctrl", "control": modifiers.insert(.control)
+            case "alt", "opt", "option": modifiers.insert(.option)
+            case "shift": modifiers.insert(.shift)
+            case "cmd", "command", "meta": modifiers.insert(.command)
+            default:
+                // A second key name means a spelling this type cannot hold,
+                // not a keystroke with an unusual modifier.
+                guard keyName == nil else { return nil }
+                keyName = part
+            }
+        }
+        guard let keyName,
+              let keyCode = Self.keyCode(forClaudeKeyName: keyName)
+        else { return nil }
+        self.init(keyCode: keyCode, modifiers: modifiers)
+    }
+
+    /// The virtual key code behind one of Claude Code's key names.
+    ///
+    /// Mirrors `claudeKeyName` in the other direction. Return is reachable by
+    /// either spelling the reference allows, but always resolves to Return
+    /// rather than keypad Enter — the file cannot distinguish them, and Return
+    /// is overwhelmingly the one a binding means.
+    private static func keyCode(forClaudeKeyName name: String) -> UInt16? {
+        switch name {
+        case "enter", "return": return Key.ret
+        case "tab": return 48
+        case "space": return 49
+        case "escape", "esc": return 53
+        case "backspace": return 51
+        case "delete": return 117
+        case "left": return 123
+        case "right": return 124
+        case "down": return 125
+        case "up": return 126
+        default:
+            // Letters and digits spell themselves. Sorted so a label the table
+            // carries twice resolves to the lower code every time, rather than
+            // to whichever one the dictionary happened to hash first.
+            guard name.count == 1 else { return nil }
+            return keyTable
+                .filter { $0.value.label.lowercased() == name }
+                .keys.sorted().first
+        }
+    }
+
     /// The chord reserved for Galaxy's own automated prompt submission.
     ///
     /// Binding it to a text-entry action would make a keystroke the user
