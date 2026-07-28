@@ -6,8 +6,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/kellyredding/Galactic.git",
       "state" : {
-        "revision" : "34c421282d914b1debba97dd870814df2f4cbace",
-        "version" : "0.4.1"
+        "revision" : "083f94315c0b79d934145cc44067a514201a84ea",
+        "version" : "0.5.0"
       }
     },
     {
@@ -42,8 +42,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/kellyredding/SwiftTerm.git",
       "state" : {
-        "revision" : "3415b57ecf120f155c7c3b1ac7d458ca95e80b2d",
-        "version" : "1.13.0-galactic.9"
+        "revision" : "8845d85af33a81ed08b071dfb9efc983e2d8ef05",
+        "version" : "1.13.0-galactic.11"
       }
     }
   ],
