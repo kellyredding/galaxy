@@ -63,6 +63,9 @@ targets:
     sources:
       - GalaxyApp/Models/Keystroke.swift
       - GalaxyApp/Models/TextEntryBindings.swift
+      - GalaxyApp/Models/ClaudeKeybindingsWriter.swift
+      # Foundation-only, and the writer logs through it.
+      - GalaxyApp/Models/GalaxyLog.swift
       - KeystrokeSmoke
     settings:
       base:

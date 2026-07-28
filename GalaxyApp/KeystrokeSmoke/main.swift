@@ -242,6 +242,94 @@ check("coercion fixes only the empty side") {
         && fixed.newline == halfEmpty.newline
 }
 
+// MARK: - How Claude Code spells these bindings
+
+check("documented keys get a Claude Code spelling") {
+    let cases: [(Keystroke, String)] = [
+        (Keystroke(keyCode: Keystroke.Key.ret), "enter"),
+        (Keystroke(keyCode: Keystroke.Key.keypadEnter), "enter"),
+        (Keystroke(keyCode: Keystroke.Key.ret, modifiers: .command),
+         "cmd+enter"),
+        (Keystroke(keyCode: Keystroke.Key.ret, modifiers: .option),
+         "alt+enter"),
+        (Keystroke(keyCode: 38, modifiers: .control), "ctrl+j"),
+        (Keystroke(keyCode: 49), "space"),
+        (Keystroke(keyCode: 123), "left"),
+        (Keystroke(keyCode: 18, modifiers: .command), "cmd+1"),
+    ]
+    for (keystroke, expected) in cases {
+        if keystroke.claudeBinding != expected { return false }
+    }
+    return true
+}
+
+check("modifiers are spelled in the reference's own order") {
+    Keystroke.reservedMachineSubmit.claudeBinding
+        == "ctrl+alt+shift+cmd+enter"
+}
+
+check("a letter is lowercased so it cannot imply shift") {
+    // Claude Code reads a standalone uppercase letter as shift+<letter>, so an
+    // uppercased spelling would silently add a modifier nobody chose.
+    Keystroke(keyCode: 0, modifiers: .command).claudeBinding == "cmd+a"
+}
+
+check("undocumented keys decline a spelling rather than invent one") {
+    // Claude Code's schema does not constrain key strings, so a guessed name
+    // would parse, validate, and match nothing at all.
+    Keystroke(keyCode: 122).claudeBinding == nil  // F1
+        && Keystroke(keyCode: 24).claudeBinding == nil  // =
+        && Keystroke(keyCode: 115).claudeBinding == nil  // Home
+        && Keystroke(keyCode: 10).claudeBinding == nil  // outside the table
+}
+
+check("the reserved chord covers the contexts a slash command lands in") {
+    // Every prompt Galaxy submits itself is a slash command, and typing one
+    // opens the autocomplete popup — which dispatches through its own context.
+    // Bound only in Chat, the chord is unbound exactly when it is needed, and
+    // the prompt sits fully typed and unsent.
+    let entries = ClaudeKeybindingsWriter.reservedContexts
+    // Chat only. The completion popup is cleared with a plain Tab instead of a
+    // binding: a bound action there consumes the key and stops, an unbound one
+    // is swallowed, and only Return accepts-then-propagates — which binding
+    // suppresses.
+    return entries.count == 1
+        && entries[0].context == "Chat"
+        && entries[0].action == "chat:submit"
+        && entries[0].binding == Keystroke.reservedMachineSubmit
+}
+
+check("the reserved chord is always written, whatever the user chose") {
+    let exotic = TextEntryBindings(
+        submit: [Keystroke(keyCode: 38, modifiers: .control)],
+        newline: [Keystroke(keyCode: Keystroke.Key.ret)]
+    )
+    let (map, _) = ClaudeKeybindingsWriter.ownedBindings(for: exotic)
+    return map["ctrl+alt+shift+cmd+enter"] == "chat:submit"
+        && map["ctrl+j"] == "chat:submit"
+        && map["enter"] == "chat:newline"
+}
+
+check("a keystroke in both lists submits, as it does in the app") {
+    let both = TextEntryBindings(
+        submit: [Keystroke(keyCode: Keystroke.Key.ret)],
+        newline: [Keystroke(keyCode: Keystroke.Key.ret)]
+    )
+    let (map, _) = ClaudeKeybindingsWriter.ownedBindings(for: both)
+    return map["enter"] == "chat:submit"
+}
+
+check("keystrokes with no spelling are reported, not dropped silently") {
+    let partly = TextEntryBindings(
+        submit: [Keystroke(keyCode: 122)],  // F1 — undocumented
+        newline: [Keystroke(keyCode: Keystroke.Key.ret, modifiers: .option)]
+    )
+    let (map, unsupported) = ClaudeKeybindingsWriter.ownedBindings(for: partly)
+    return unsupported.count == 1
+        && unsupported[0].keyCode == 122
+        && map["alt+enter"] == "chat:newline"
+}
+
 // MARK: - The payload handed to the WebView matcher
 
 check("the JS payload keys keystrokes by DOM code, not virtual key code") {

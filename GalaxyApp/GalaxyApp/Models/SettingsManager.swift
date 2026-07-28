@@ -413,6 +413,42 @@ class SettingsManager: ObservableObject {
     @Published var settings: AppSettings {
         didSet {
             save()
+            // Only on an actual change: the file is global and shared with
+            // assist-ant, so rewriting it because someone picked a theme would
+            // stomp that app's bindings for no reason.
+            if oldValue.textEntry != settings.textEntry {
+                syncClaudeKeybindings()
+            }
+        }
+    }
+
+    /// Push the text-entry keystrokes into Claude Code's keybindings file.
+    ///
+    /// Failure is logged and swallowed. The file lives outside Galaxy, may be
+    /// read-only or owned by something else, and a settings change that a user
+    /// can see succeed in the card must not fail because a file elsewhere could
+    /// not be written. The Settings pane reports sync state separately.
+    func syncClaudeKeybindings() {
+        do {
+            let result = try ClaudeKeybindingsWriter.sync(settings.textEntry)
+            if result.alreadyInSync {
+                GalaxyLog.dbg("keybindings", "already in sync")
+            } else {
+                GalaxyLog.dbg(
+                    "keybindings",
+                    "wrote \(result.written.count) binding(s) to "
+                        + ClaudeKeybindingsWriter.fileURL.path
+                )
+            }
+            for keystroke in result.unsupported {
+                GalaxyLog.dbg(
+                    "keybindings",
+                    "\(keystroke.displayLabel) has no Claude Code spelling — "
+                        + "it works in the composers but not the session pane"
+                )
+            }
+        } catch {
+            GalaxyLog.dbg("keybindings", "sync failed — \(error)")
         }
     }
 
@@ -433,6 +469,21 @@ class SettingsManager: ObservableObject {
         self.settings = SettingsManager.load(from: settingsURL) ?? AppSettings.default
 
         NSLog("SettingsManager: Settings loaded from %@", settingsURL.path)
+
+        // Guarantee the reserved machine-submit chord before anything can send
+        // a prompt. Only that one binding — never the user's keystrokes — so a
+        // launch cannot stomp what assist-ant last wrote to this shared file.
+        do {
+            if try ClaudeKeybindingsWriter.ensureReservedBinding() {
+                GalaxyLog.dbg(
+                    "keybindings", "added the reserved machine-submit binding")
+            }
+        } catch {
+            GalaxyLog.dbg(
+                "keybindings",
+                "could not ensure the reserved binding — \(error)"
+            )
+        }
     }
 
     private static func load(from url: URL) -> AppSettings? {

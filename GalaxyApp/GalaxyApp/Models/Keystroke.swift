@@ -173,6 +173,62 @@ extension Keystroke {
     /// letting it look bound while doing nothing.
     var isBindable: Bool { Self.keyTable[keyCode] != nil }
 
+    /// How Claude Code spells this key in its keybindings file, or nil when its
+    /// spelling is not documented.
+    ///
+    /// Derived from the table rather than listed beside it, so it can never
+    /// name a key the table does not have. The nils are deliberate: Claude
+    /// Code's schema does not constrain key strings at all, so an invented
+    /// spelling would not error — it would parse, validate, and then match
+    /// nothing. Guessing is strictly worse than declining.
+    ///
+    /// Documented in the keybindings reference: enter/return, tab, space,
+    /// escape/esc, the four arrows, backspace, delete, and letters. Digits
+    /// appear only in examples. Punctuation, function keys, and
+    /// Home/End/PageUp/PageDown are absent from the reference entirely, so a
+    /// binding on one of those reaches the composers but not the session pane.
+    var claudeKeyName: String? {
+        guard let info = Self.keyTable[keyCode] else { return nil }
+        switch keyCode {
+        case Key.ret, Key.keypadEnter: return "enter"
+        case 48: return "tab"
+        case 49: return "space"
+        case 53: return "escape"
+        case 51: return "backspace"
+        case 117: return "delete"
+        case 123: return "left"
+        case 124: return "right"
+        case 125: return "down"
+        case 126: return "up"
+        default:
+            // Letters and digits are spelled as themselves. Lowercase matters:
+            // a standalone uppercase letter implies Shift to Claude Code's
+            // parser, which would silently add a modifier nobody asked for.
+            guard info.label.count == 1,
+                  let character = info.label.first,
+                  character.isLetter || character.isNumber
+            else { return nil }
+            return info.label.lowercased()
+        }
+    }
+
+    /// How Claude Code spells this whole keystroke, or nil when the key has no
+    /// documented spelling.
+    ///
+    /// Modifiers are emitted in the order the keybindings reference uses in its
+    /// own examples. The reference does not say whether order matters, so
+    /// matching its examples is the safest available choice.
+    var claudeBinding: String? {
+        guard let key = claudeKeyName else { return nil }
+        var parts: [String] = []
+        if modifiers.contains(.control) { parts.append("ctrl") }
+        if modifiers.contains(.option) { parts.append("alt") }
+        if modifiers.contains(.shift) { parts.append("shift") }
+        if modifiers.contains(.command) { parts.append("cmd") }
+        parts.append(key)
+        return parts.joined(separator: "+")
+    }
+
     /// The chord reserved for Galaxy's own automated prompt submission.
     ///
     /// Binding it to a text-entry action would make a keystroke the user
@@ -182,4 +238,5 @@ extension Keystroke {
         keyCode: Key.ret,
         modifiers: [.control, .option, .shift, .command]
     )
+
 }
