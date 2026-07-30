@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import Galactic
 
 /// Container that keeps an ArtifactsView alive per session using
 /// a ZStack. Opacity + allowsHitTesting toggle visibility without

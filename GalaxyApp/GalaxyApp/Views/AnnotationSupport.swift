@@ -1,5 +1,6 @@
 import Foundation
 import WebKit
+import Galactic
 
 // MARK: - Annotation CSS
 
@@ -12,35 +13,7 @@ import WebKit
 /// --annotation-active-block-border.
 let annotationCSS: String = """
     \(noteUXTokens(textSize: "13px"))
-    /* Neutralize host document rules that match injected
-       annotation UI by element name. A bare `pre`, `td`, or
-       `button` rule in a reader's own CSS is specificity (0,0,1);
-       these selectors are (0,1,0) and outrank it. They tie with
-       the annotation rules below, which win on source order — so
-       this block must stay first. Not a defense against host
-       `!important` or ID selectors; the only reader where that is
-       a live concern is the HTML reader's full-document path,
-       where the host CSS is artifact-authored. */
-    .annotation-card, .annotation-card *,
-    .annotation-form, .annotation-form * {
-        background: none;
-        border: 0;
-        border-radius: 0;
-        padding: 0;
-        margin: 0;
-        overflow: visible;
-        box-shadow: none;
-        max-width: none;
-        min-width: 0;
-        float: none;
-        text-align: left;
-        text-indent: 0;
-        text-transform: none;
-        letter-spacing: normal;
-        font-weight: normal;
-        font-style: normal;
-        list-style: none;
-    }
+    \(hostResetCSS(prefix: "annotation"))
     .annotation-highlight {
         background-color: rgba(88, 166, 255, 0.12);
         border-left: 3px solid rgba(88, 166, 255, 0.6);
@@ -207,33 +180,7 @@ let annotationCSS: String = """
         .annotation-card-actions {
         visibility: hidden;
     }
-    .annotation-btn-delete.confirming {
-        background: rgba(220, 40, 30, 0.75) !important;
-        color: #fff !important;
-        font-size: 12px;
-        font-weight: 600;
-        font-family: -apple-system, sans-serif;
-        padding: 4px 12px !important;
-        position: relative;
-        overflow: hidden;
-    }
-    .annotation-btn-delete.confirming:hover {
-        background: rgba(220, 40, 30, 0.85) !important;
-        color: #fff !important;
-    }
-    .annotation-btn-delete.confirming::after {
-        content: '';
-        position: absolute;
-        bottom: 0;
-        left: 0;
-        height: 1.5px;
-        background: rgba(255, 255, 255, 0.8);
-        animation: confirmDrain 5s linear forwards;
-    }
-    @keyframes confirmDrain {
-        from { width: 100%; }
-        to { width: 0%; }
-    }
+    \(deleteConfirmCSS(prefix: "annotation"))
     .annotation-card-content {
         line-height: var(--note-text-line-height);
         color: var(--fg);
@@ -310,51 +257,11 @@ let annotationCSS: String = """
         background: transparent;
         line-height: 0;
     }
-    .emoji-popup {
-        position: absolute;
-        z-index: 100;
-        min-width: 200px;
-        max-width: 300px;
-        max-height: 280px;
-        overflow-y: auto;
-        border: 1px solid var(--code-border);
-        border-radius: 6px;
-        background: var(--code-bg);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        font-family: -apple-system, sans-serif;
-        font-size: 13px;
-        padding: 4px 0;
-        display: none;
-    }
-    .emoji-popup-row {
-        display: flex;
-        align-items: center;
-        padding: 4px 10px;
-        cursor: pointer;
-        gap: 8px;
-    }
-    .emoji-popup-row.selected,
-    .emoji-popup-row.selected:hover {
-        background: rgba(88, 166, 255, 0.2);
-    }
-    .emoji-popup-row:hover {
-        background: rgba(88, 166, 255, 0.12);
-    }
-    .emoji-popup-emoji {
-        font-size: 18px;
-        width: 24px;
-        text-align: center;
-        flex-shrink: 0;
-    }
-    .emoji-popup-name {
-        color: var(--fg);
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-    .emoji-popup-name .emoji-match {
-        font-weight: 600;
-    }
+    \(emojiPopupCSS(
+        background: "var(--code-bg)",
+        border: "var(--code-border)",
+        shadow: "rgba(0, 0, 0, 0.15)"
+    ))
 """
 
 // MARK: - CSS Variables
@@ -3245,29 +3152,12 @@ this.currentBlockIndex,
 
 // MARK: - Emoji Data / Autocomplete JS
 
-let emojiDataJS: String = {
-    guard let url = Bundle.main.url(
-        forResource: "emoji-data",
-        withExtension: "js"
-    ),
-        let content = try? String(
-            contentsOf: url, encoding: .utf8
-        )
-    else { return "" }
-    return content
-}()
-
-let emojiAutocompleteJS: String = {
-    guard let url = Bundle.main.url(
-        forResource: "emoji-autocomplete",
-        withExtension: "js"
-    ),
-        let content = try? String(
-            contentsOf: url, encoding: .utf8
-        )
-    else { return "" }
-    return content
-}()
+// Names kept for the readers that interpolate them; the loading moved. Both
+// files now ship with the card UI that depends on them rather than with each
+// app, which is also what retired the second copy of this loader that used to
+// sit inside the scrollback renderer.
+let emojiDataJS: String = EmojiJS.data
+let emojiAutocompleteJS: String = EmojiJS.autocomplete
 
 // MARK: - Annotation Coordinator
 

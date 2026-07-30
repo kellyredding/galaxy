@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import Galactic
 
 /// Container that keeps a SnapshotsView alive per session using a ZStack.
 /// Opacity + allowsHitTesting toggle visibility without destroying state.
