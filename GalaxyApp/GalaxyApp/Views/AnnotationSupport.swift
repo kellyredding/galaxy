@@ -340,6 +340,18 @@ let annotationManagerJS: String = """
         }
     }
 
+    // Why the shared autosize debounces at all is sharpest on this surface.
+    //
+    // Repositioning after a resize is a forced layout whose cost scales with
+    // the size of the host artifact and the number of annotations on it, so
+    // running it per keystroke lags typing on large items. The debounce is
+    // what keeps that off the hot path: a structural change — a newline, or a
+    // bulk insert from paste, dictation, or a file drop — resizes at once
+    // because the user expects an instant jump, while ordinary typing settles
+    // first and coalesces a burst into one layout.
+    //
+    // The scrollback passes no callback and pays none of this: its notes sit
+    // in the document flow and nothing below them has to move.
     function installAutoGrow(ta) {
         window.GalaxyCardText.installAutosize(ta, syncPositionsAfterGrow);
     }

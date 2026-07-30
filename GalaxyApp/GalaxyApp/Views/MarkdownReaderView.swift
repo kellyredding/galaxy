@@ -211,13 +211,24 @@ class SilentFunctionKeyWebView: WKWebView {
             }
         }
 
-        // Escape for JS string literal
         // Encoded rather than escaped. A filename may legally contain a
         // quote, a backslash, or a line terminator, and any of those ends the
         // string literal early — which makes the whole injected snippet a
         // syntax error rather than a call with a wrong argument, so nothing
         // runs at all and the only trace is a console message inside the page.
         let jsPaths = JavaScriptLiteral.array(paths)
+
+        // Take first responder before the page places its caret.
+        //
+        // The page calls focus() on the textarea it inserted into, but DOM
+        // focus only produces a usable caret while this view holds AppKit's
+        // first responder — and a drag that begins in another application does
+        // not leave it here. The text arrived and the form looked abandoned.
+        //
+        // The scrollback overlay has no such problem because its web view is
+        // wrapped in a container that forwards becomeFirstResponder; here the
+        // web view is the view, so nothing forwards anything.
+        window?.makeFirstResponder(self)
 
         evaluateJavaScript(
             "if (typeof handleFileDrop"
