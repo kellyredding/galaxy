@@ -663,6 +663,18 @@ class TerminalHostView: NSView {
     }
 
     func requestFocus() {
+        // Only the visible Terminal tab may take terminal focus. A reader on
+        // another tab holds first responder legitimately, and dropping a file
+        // into one of its note forms from another application makes this
+        // window key as a side effect — re-asserting on that transition pulls
+        // the caret out of the form the text just landed in, leaving it
+        // filled and dead. The scrollback never showed this because the
+        // target chosen below is its web view whenever an overlay is up.
+        //
+        // Callers that mean "focus the terminal because the user just moved
+        // there" already establish this before asking, so the guard only
+        // discards grabs that would land on a tab nobody is looking at.
+        guard SessionManager.shared.activeTab == .terminal else { return }
         guard let window = window else { return }
 
         // If scrollback is active, make the WKWebView first responder
