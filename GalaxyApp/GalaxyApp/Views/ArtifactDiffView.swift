@@ -3611,21 +3611,6 @@ private let fileCollapseJS: String = """
         }, 1500);
     }
 
-    function copyTextLegacy(text) {
-        var ta = document.createElement('textarea');
-        ta.value = text;
-        ta.style.position = 'fixed';
-        ta.style.top = '-1000px';
-        ta.style.left = '-1000px';
-        document.body.appendChild(ta);
-        ta.select();
-        var ok = false;
-        try { ok = document.execCommand('copy'); }
-        catch (err) { ok = false; }
-        document.body.removeChild(ta);
-        return ok;
-    }
-
     document.addEventListener('click', function(e) {
         var btn = e.target.closest('.file-copy-path');
         if (!btn) return;
@@ -3634,23 +3619,20 @@ private let fileCollapseJS: String = """
         var path = card.getAttribute('data-file-path');
         if (!path) return;
 
-        // Try modern clipboard API first; fall back to
-        // execCommand for environments where it's
-        // unavailable. Visual feedback fires on success
-        // from either path.
-        if (navigator.clipboard
-            && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(path).then(
-                function() { showCopiedFeedback(btn); },
-                function() {
-                    if (copyTextLegacy(path)) {
-                        showCopiedFeedback(btn);
-                    }
-                }
-            );
-        } else if (copyTextLegacy(path)) {
-            showCopiedFeedback(btn);
-        }
+        // Writing to the clipboard goes through the shared
+        // helper this document already loads: modern API,
+        // legacy fallback, and trailing whitespace trimmed
+        // on the way out. Reached from inside the click
+        // handler, so the later <script> that defines it has
+        // long since run.
+        //
+        // The confirmation stays local rather than using the
+        // helper's, because file cards drive a custom
+        // `data-tooltip` overlay that has to be repositioned,
+        // not the `title` attribute the shared one writes.
+        window.GalaxyClipboard.copy(path).then(function(ok) {
+            if (ok) showCopiedFeedback(btn);
+        });
     });
 })();
 """
