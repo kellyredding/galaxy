@@ -7,7 +7,7 @@ import WebKit
 /// and emoji popup. Requires CSS variables: --bg, --fg,
 /// --code-bg, --code-border, --blockquote-fg,
 /// --table-header-bg, --delete-color,
-/// --annotation-active-bg, --annotation-active-border,
+/// --card-active-bg, --card-active-border,
 /// --annotation-active-block-bg,
 /// --annotation-active-block-border.
 let annotationCSS: String = """
@@ -261,8 +261,8 @@ let annotationCSS: String = """
         box-sizing: border-box;
     }
     .annotation-card.expanded {
-        border-color: var(--annotation-active-border);
-        background: var(--annotation-active-bg);
+        border-color: var(--card-active-border);
+        background: var(--card-active-bg);
     }
     .annotation-expanded-highlight {
         background-color:
@@ -371,9 +371,9 @@ func annotationCSSVars(isDark: Bool) -> String {
             --code-border: #30363d;
             --blockquote-fg: #8b949e;
             --table-header-bg: #21262d;
-            --annotation-active-bg: \
+            --card-active-bg: \
         rgba(255, 255, 120, 0.12);
-            --annotation-active-border: \
+            --card-active-border: \
         rgba(255, 220, 50, 0.5);
             --annotation-active-block-bg: \
         rgba(255, 255, 120, 0.08);
@@ -390,9 +390,9 @@ func annotationCSSVars(isDark: Bool) -> String {
             --code-border: #d0d7de;
             --blockquote-fg: #656d76;
             --table-header-bg: #f0f0f0;
-            --annotation-active-bg: \
+            --card-active-bg: \
         rgba(255, 248, 220, 0.8);
-            --annotation-active-border: #d4a017;
+            --card-active-border: #d4a017;
             --annotation-active-block-bg: \
         rgba(255, 248, 220, 0.5);
             --annotation-active-block-border: \

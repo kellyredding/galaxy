@@ -532,8 +532,8 @@ private func buildFullHTML(
         --table-header-bg: #333;
         --link-color: #58a6ff;
         --hr-color: #444;
-        --annotation-active-bg: rgba(255, 255, 120, 0.12);
-        --annotation-active-border: rgba(255, 220, 50, 0.5);
+        --card-active-bg: rgba(255, 255, 120, 0.12);
+        --card-active-border: rgba(255, 220, 50, 0.5);
         --annotation-active-block-bg: rgba(255, 255, 120, 0.08);
         --annotation-active-block-border: rgba(255, 220, 50, 0.35);
         --delete-color: #ff5252;
@@ -549,8 +549,8 @@ private func buildFullHTML(
         --table-header-bg: #f0f0f0;
         --link-color: #0969da;
         --hr-color: #d0d7de;
-        --annotation-active-bg: rgba(255, 248, 220, 0.8);
-        --annotation-active-border: #d4a017;
+        --card-active-bg: rgba(255, 248, 220, 0.8);
+        --card-active-border: #d4a017;
         --annotation-active-block-bg: rgba(255, 248, 220, 0.5);
         --annotation-active-block-border: rgba(212, 160, 23, 0.6);
         --delete-color: #ff3b30;
