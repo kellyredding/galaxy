@@ -328,82 +328,20 @@ let annotationManagerJS: String = """
     function autoGrow(el) {
         el.style.height = 'auto';
         el.style.height = el.scrollHeight + 'px';
+        syncPositionsAfterGrow();
+    }
+
+    // Cards are absolutely positioned relative to the blocks they annotate, so
+    // a box that changed height moves everything below it.
+    function syncPositionsAfterGrow() {
         if (typeof AnnotationManager !== 'undefined'
             && AnnotationManager.syncAllPositions) {
             AnnotationManager.syncAllPositions();
         }
     }
 
-    // Resize off the keystroke hot path. autoGrow reads scrollHeight
-    // and then repositions every annotation card via syncAllPositions
-    // — a forced layout whose cost scales with the host
-    // artifact/snapshot size and the annotation count, so running it
-    // on every keystroke lags typing on large items.
-    //
-    // Structural edits resize immediately: a typed newline, or a bulk
-    // insert from paste/dictation/drop where the length jumps by more
-    // than one. These are cheap to detect and the user expects an
-    // instant jump.
-    //
-    // Ordinary single-character typing is debounced — the resize fires
-    // WAIT ms after the last keystroke, so a continuous burst or a held
-    // key-repeat coalesces into a single layout once typing settles. A
-    // soft wrap mid-line therefore grows the field on the next pause,
-    // not on the keystroke that crossed the edge. MAX_WAIT caps the
-    // debounce: through an unbroken burst that never pauses for WAIT
-    // ms, the resize is still forced at least every MAX_WAIT ms, which
-    // bounds how long a freshly wrapped line sits clipped behind
-    // overflow:hidden. Both values are tuned for feel, not correctness.
-    //
-    // Trackers update on every input so the next delta is measured
-    // against the true previous length.
     function installAutoGrow(ta) {
-        var WAIT = 250;
-        var MAX_WAIT = 500;
-        var lastNewlineCount =
-            (ta.value.match(/\\n/g) || []).length;
-        var lastLength = ta.value.length;
-        var timer = null;
-        var pendingFrame = null;
-        var burstStart = 0;
-
-        function fire() {
-            timer = null;
-            if (pendingFrame !== null) return;
-            pendingFrame = requestAnimationFrame(function() {
-                pendingFrame = null;
-                autoGrow(ta);
-            });
-        }
-
-        ta.addEventListener('input', function() {
-            var newlineCount =
-                (ta.value.match(/\\n/g) || []).length;
-            var length = ta.value.length;
-            var structural =
-                newlineCount !== lastNewlineCount
-                || Math.abs(length - lastLength) !== 1;
-            lastNewlineCount = newlineCount;
-            lastLength = length;
-
-            if (structural) {
-                if (timer !== null) clearTimeout(timer);
-                fire();
-                return;
-            }
-
-            var now = Date.now();
-            if (timer === null) {
-                burstStart = now;
-            } else {
-                clearTimeout(timer);
-            }
-            var delay = Math.min(
-                WAIT,
-                Math.max(0, MAX_WAIT - (now - burstStart))
-            );
-            timer = setTimeout(fire, delay);
-        });
+        window.GalaxyCardText.installAutosize(ta, syncPositionsAfterGrow);
     }
 
     const AnnotationManager = {
@@ -437,18 +375,8 @@ let annotationManagerJS: String = """
         endLineAttr: null,
         refPrefix: 'Line',
         itemLabel: '',
-        editIconSVG: '<svg width="1em" height="1em" \
-viewBox="0 0 24 24" fill="none" stroke="currentColor" \
-stroke-width="2.5" stroke-linecap="round" \
-stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 \
-114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>',
-        deleteIconSVG: '<svg width="1em" height="1em" \
-viewBox="0 0 24 24" fill="none" stroke="currentColor" \
-stroke-width="2.5" stroke-linecap="round" \
-stroke-linejoin="round"><path d="M3 6h18"/><path \
-d="M8 6V4h8v2"/><path d="M5 6v14a1 1 0 001 1h12a1 \
-1 0 001-1V6"/><path d="M10 11v6"/><path d="M14 \
-11v6"/></svg>',
+        editIconSVG: window.GalaxyCardText.EDIT_ICON_SVG,
+        deleteIconSVG: window.GalaxyCardText.DELETE_ICON_SVG,
 
         initialize(data) {
             this.anchorType = data.anchorType || \
@@ -2716,7 +2644,8 @@ this.highlightStart, this.highlightEnd);
                 // catches the second click of a double-click
                 // regardless of whether btn.disabled worked.
                 var elapsed = Date.now() - this.confirmArmedAt;
-                if (elapsed < 500) return;
+                if (elapsed
+                    < window.GalaxyCardText.DELETE_ARM_REJECT_MS) return;
                 this.deleting = true;
                 this.clearDeleteConfirmation();
                 this.requestDelete(number);
@@ -2736,14 +2665,13 @@ this.highlightStart, this.highlightEnd);
                 + '"] .annotation-btn-delete'
             );
             if (!btn) return;
-            btn.classList.add('confirming');
-            btn.textContent = 'Are you sure?';
+            window.GalaxyCardText.armDeleteButton(btn);
 
             this.confirmDeleteTimer = setTimeout(\
 function() {
                 AnnotationManager\
 .clearDeleteConfirmation();
-            }, 5000);
+            }, window.GalaxyCardText.DELETE_REVERT_MS);
         },
 
         clearDeleteConfirmation() {
@@ -2762,8 +2690,7 @@ function() {
                 + '"] .annotation-btn-delete'
             );
             if (!btn) return;
-            btn.classList.remove('confirming');
-            btn.innerHTML = this.deleteIconSVG;
+            window.GalaxyCardText.disarmDeleteButton(btn);
         },
 
         requestDelete(number) {
@@ -3095,58 +3022,23 @@ this.currentBlockIndex,
     };
 
     function handleFileDrop(paths) {
-        // Find the active textarea — either the
-        // create form or an edit textarea
+        // Which textarea receives the drop is this surface's own question —
+        // the create form if it is open, otherwise the annotation being
+        // edited. Everything after that is the same on both card surfaces.
         var ta = null;
         if (AnnotationManager.formElement
-            && AnnotationManager.formElement
-                .style.display !== 'none') {
-            ta = AnnotationManager.formElement
-                .querySelector('textarea');
+            && AnnotationManager.formElement.style.display !== 'none') {
+            ta = AnnotationManager.formElement.querySelector('textarea');
         }
-        if (!ta
-            && AnnotationManager.editingNumber
-                !== null) {
+        if (!ta && AnnotationManager.editingNumber !== null) {
             ta = document.querySelector(
                 '.annotation-card[data-number="'
                 + AnnotationManager.editingNumber
                 + '"] .annotation-edit-textarea'
             );
         }
-        if (!ta) return;
 
-        // Build the text to insert
-        var text = paths.map(function(p) {
-            return '[' + p + ']';
-        }).join(' ');
-
-        // Insert at cursor position
-        var start = ta.selectionStart;
-        var end = ta.selectionEnd;
-        var before = ta.value.substring(0, start);
-        var after = ta.value.substring(end);
-
-        // Newline before if not at start of line,
-        // newline after
-        var prefix = '';
-        if (before.length > 0
-            && before[before.length - 1] !== '\\n') {
-            prefix = '\\n';
-        }
-        var suffix = '\\n';
-
-        ta.value = before + prefix + text
-            + suffix + after;
-
-        // Move cursor to after inserted text
-        var newPos = start + prefix.length
-            + text.length + suffix.length;
-        ta.selectionStart = newPos;
-        ta.selectionEnd = newPos;
-
-        // Trigger auto-grow
-        ta.dispatchEvent(new Event('input'));
-        ta.focus();
+        window.GalaxyCardText.insertPaths(ta, paths);
     }
 """
 

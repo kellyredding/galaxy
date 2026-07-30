@@ -709,6 +709,7 @@ private func buildFullHTML(
     \(bodyHTML)
     <script>\(highlightJS)</script>
     <script>if(typeof hljs !== 'undefined') hljs.highlightAll();</script>
+    <script>\(cardTextJS)</script>
     <script>\(clipboardCopyJS)</script>
     <script>\(textEntryJS)</script>
     <script>\(suggestionInsertJS)</script>

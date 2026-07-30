@@ -258,6 +258,7 @@ private func buildTableHTML(
     <tbody>\(bodyHTML)</tbody>
     </table>
     </div>
+    <script>\(cardTextJS)</script>
     <script>\(clipboardCopyJS)</script>
     <script>\(textEntryJS)</script>
     <script>\(suggestionInsertJS)</script>

@@ -303,6 +303,7 @@ private func buildSourceHTML(
             });
     }
     </script>
+    <script>\(cardTextJS)</script>
     <script>\(clipboardCopyJS)</script>
     <script>\(textEntryJS)</script>
     <script>\(suggestionInsertJS)</script>

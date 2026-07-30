@@ -257,6 +257,7 @@ private func buildImageHTML(
     <div class="image-container">
     \(imageElement)
     </div>
+    <script>\(cardTextJS)</script>
     <script>\(clipboardCopyJS)</script>
     <script>\(textEntryJS)</script>
     <script>\(suggestionInsertJS)</script>
