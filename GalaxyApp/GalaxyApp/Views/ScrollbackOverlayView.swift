@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import SwiftUI
+import Galactic
 
 /// Container NSView that holds a ScrollbackWebView and a floating pill
 /// indicator. Draws a 2px accent-color border around the entire view.

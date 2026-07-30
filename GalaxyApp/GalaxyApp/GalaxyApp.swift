@@ -20,6 +20,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             debug: { GalaxyLog.dbg($0, $1) }
         )
 
+        // The find bar scales with the chrome-font setting like the rest of
+        // this app's chrome. Read per presentation rather than captured, so a
+        // size changed while the app is running takes effect on the next bar.
+        FindBarPanelController.shared.metricsProvider = {
+            let scale = ChromeFontSize(
+                SettingsManager.shared.settings.chromeFontSize
+            )
+            return FindBarView.Metrics(
+                icon: scale.iconSmall,
+                field: scale.caption,
+                matchCount: scale.caption2
+            )
+        }
+
         // Disable macOS press-and-hold accent popover app-wide so held keys
         // produce normal key repeats. Without this, holding j/k in less (or
         // any pager/vim-style UI inside the shell pane) registers once and
