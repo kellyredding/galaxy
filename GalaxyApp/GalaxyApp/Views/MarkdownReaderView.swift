@@ -55,34 +55,33 @@ class SilentFunctionKeyWebView: WKWebView {
             return true
         }
 
-        // Cmd+= or Cmd++: zoom in
-        if event.modifierFlags.contains(.command),
-           let chars = event
-               .charactersIgnoringModifiers,
-           chars == "=" || chars == "+"
-        {
-            adjustZoom(by: 0.1)
-            return true
-        }
-
-        // Cmd+-: zoom out
-        if event.modifierFlags.contains(.command),
-           let chars = event
-               .charactersIgnoringModifiers,
-           chars == "-"
-        {
-            adjustZoom(by: -0.1)
-            return true
-        }
-
-        // Cmd+0: reset zoom
-        if event.modifierFlags.contains(.command),
-           let chars = event
-               .charactersIgnoringModifiers,
-           chars == "0"
-        {
-            resetZoom()
-            return true
+        // Zoom is Command and nothing else.
+        //
+        // Tested for equality rather than membership, because `contains` is a
+        // subset test: it holds for Command+Shift too, and
+        // `charactersIgnoringModifiers` reports "=" whether or not Shift was
+        // held. The three chrome-font-size shortcuts are Command+Shift over
+        // exactly these keys, so a reader with focus swallowed all three and
+        // zoomed itself instead — the menu never saw them.
+        let chord = event.modifierFlags.intersection(
+            [.command, .option, .control, .shift]
+        )
+        if chord == .command, let chars = event.charactersIgnoringModifiers {
+            // Cmd+= or Cmd++: zoom in
+            if chars == "=" || chars == "+" {
+                adjustZoom(by: 0.1)
+                return true
+            }
+            // Cmd+-: zoom out
+            if chars == "-" {
+                adjustZoom(by: -0.1)
+                return true
+            }
+            // Cmd+0: reset zoom
+            if chars == "0" {
+                resetZoom()
+                return true
+            }
         }
 
         // Cmd+S: pass through to menu system for
