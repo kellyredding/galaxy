@@ -39,6 +39,20 @@ const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = join(SCRIPT_DIR, ".."); // .../GalaxyApp
 const SRC_DIR = join(APP_ROOT, "GalaxyApp"); // .../GalaxyApp/GalaxyApp
 
+// Coverage floor.
+//
+// The walker only sees this app's own source tree, so a marked literal that
+// moves out of it is not reported missing — it simply stops being found. The
+// count drops, every remaining literal still parses, and the run passes green.
+// That is the one failure this gate cannot survive, because its whole purpose
+// is catching JS that compiles clean and breaks at runtime in a WebView.
+//
+// Lowering these is a deliberate act: do it in the same change that moves the
+// literal, and only once its new home validates it. Never to make a red build
+// green.
+const EXPECTED_MIN_RESOURCE_FILES = 2;
+const EXPECTED_MIN_LITERALS = 12;
+
 const failures = [];
 let checkedFiles = 0;
 let checkedLiterals = 0;
@@ -117,12 +131,33 @@ for (const file of swiftFiles(SRC_DIR)) {
   checkEmbeddedLiterals(file);
 }
 
-if (failures.length === 0) {
+if (
+  failures.length === 0 &&
+  checkedFiles >= EXPECTED_MIN_RESOURCE_FILES &&
+  checkedLiterals >= EXPECTED_MIN_LITERALS
+) {
   console.log(
     `✓ JS validation passed — ${checkedFiles} resource file(s), ` +
       `${checkedLiterals} embedded literal(s)`,
   );
   process.exit(0);
+}
+
+if (
+  checkedFiles < EXPECTED_MIN_RESOURCE_FILES ||
+  checkedLiterals < EXPECTED_MIN_LITERALS
+) {
+  console.error(
+    `\n✗ JS validation coverage dropped — found ${checkedFiles} resource ` +
+      `file(s) and ${checkedLiterals} embedded literal(s), expected at least ` +
+      `${EXPECTED_MIN_RESOURCE_FILES} and ${EXPECTED_MIN_LITERALS}.\n\n` +
+      `  Something that used to be validated here no longer is. A literal\n` +
+      `  that moved out of this source tree is not reported missing — it\n` +
+      `  just stops being found, and everything left still passes.\n\n` +
+      `  If the move was intended, lower the floor in this file in the same\n` +
+      `  change, once its new home validates it.\n`,
+  );
+  if (failures.length === 0) process.exit(1);
 }
 
 console.error(`\n✗ JS validation failed — ${failures.length} error(s)\n`);
