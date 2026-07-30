@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import Galactic
 
 /// Renders HTML artifacts in a sandboxed WKWebView.
 /// External links open in the default browser.

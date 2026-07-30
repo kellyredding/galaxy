@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import Galactic
 
 /// Renders CSV content as a styled HTML table in a WKWebView.
 /// Supports row_range annotations via the shared

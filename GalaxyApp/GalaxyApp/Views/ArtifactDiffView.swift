@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import Galactic
 
 // MARK: - Gdiff JSON Models
 

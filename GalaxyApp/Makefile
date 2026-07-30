@@ -1,4 +1,4 @@
-.PHONY: generate build release clean validate-js verify-text-entry smoke check
+.PHONY: generate build release clean validate-js check
 
 # Always use -derivedDataPath to avoid polluting ~/Library/Developer/Xcode/DerivedData
 DERIVED_DATA = build
@@ -19,27 +19,20 @@ generate:
 validate-js:
 	node scripts/validate-js.mjs
 
-# Run the shipped JS text-entry matcher against the same fixture table the
-# Swift smoke target uses. A build gate rather than part of `check`, for the
-# same reason validate-js is one: the two matchers disagreeing is invisible at
-# runtime until a key silently stops working inside a WebView composer.
-verify-text-entry:
-	node scripts/verify-text-entry.mjs
-
-build: generate validate-js verify-text-entry
+build: generate validate-js
 	xcodebuild -scheme GalaxyApp -configuration Debug -derivedDataPath $(DERIVED_DATA) -destination 'platform=macOS' build
 
-release: generate validate-js verify-text-entry
+release: generate validate-js
 	xcodebuild -scheme GalaxyApp -configuration Release -derivedDataPath $(DERIVED_DATA) -destination 'platform=macOS' build
 
-# Build and run the keystroke smoke checks. Runs from this directory, so the
-# fixture path the tool defaults to resolves.
-smoke: generate
-	xcodebuild -scheme KeystrokeSmoke -configuration Debug -derivedDataPath $(DERIVED_DATA) -destination 'platform=macOS' build
-	./$(DERIVED_DATA)/Build/Products/Debug/KeystrokeSmoke
-
 # The pre-commit gate: everything that can fail without launching the app.
-check: build smoke
+#
+# The keystroke matchers are no longer checked here. Both of them — the Swift
+# one and its JavaScript twin — now live in Galactic and are asserted against a
+# single fixture in a single process by `swift test` there. Re-checking either
+# half from this side would mean a second copy of the fixture, which is the
+# thing that arrangement exists to prevent.
+check: build
 
 clean:
 	xcodebuild -scheme GalaxyApp -derivedDataPath $(DERIVED_DATA) clean

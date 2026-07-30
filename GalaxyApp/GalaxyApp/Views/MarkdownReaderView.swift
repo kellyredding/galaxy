@@ -1,6 +1,7 @@
 import SwiftUI
 import WebKit
 import Markdown
+import Galactic
 
 // AnnotationMessage enum is in AnnotationSupport.swift
 

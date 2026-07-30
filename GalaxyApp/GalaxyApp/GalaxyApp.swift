@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import Galactic
 
 /// Main entry point for the application.
 /// Uses AppKit for the shell (menus, window management) and SwiftUI for content views.
@@ -10,6 +11,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var eventCoordinator: EventCoordinator?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        // Give the engine somewhere to log before anything it owns can run.
+        // It discards by default, and the submission trail is the one record
+        // that distinguishes "sent the wrong bytes" from "sent the right bytes
+        // too early" — both of which look identical from the outside.
+        GalacticLog.sink = GalacticLog.Sink(
+            submit: { GalaxyLog.submit($0) },
+            debug: { GalaxyLog.dbg($0, $1) }
+        )
+
         // Disable macOS press-and-hold accent popover app-wide so held keys
         // produce normal key repeats. Without this, holding j/k in less (or
         // any pager/vim-style UI inside the shell pane) registers once and

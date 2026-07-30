@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import Galactic
 
 /// Renders standalone .mmd/.mermaid files using the
 /// vendored mermaid.js. Supports zoom via the shared

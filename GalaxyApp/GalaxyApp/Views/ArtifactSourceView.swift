@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import Galactic
 
 /// Renders source code or plain text with line numbers and
 /// syntax highlighting in a WKWebView. Uses the same vendored

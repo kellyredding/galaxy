@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import Galactic
 
 /// Renders JSONL agent transcript artifacts as a
 /// structured HTML conversation document.

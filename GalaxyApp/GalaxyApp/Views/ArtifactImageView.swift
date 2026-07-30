@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import Galactic
 
 /// Renders image artifacts (PNG, JPG, GIF, SVG, WebP) in
 /// a WKWebView for consistent zoom support via

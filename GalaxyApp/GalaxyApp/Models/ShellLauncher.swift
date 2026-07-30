@@ -1,4 +1,5 @@
 import Foundation
+import Galactic
 
 /// Helpers for the user's login shell: launching it interactively
 /// in the Shell pane, and capturing its environment for sessions
