@@ -16,16 +16,23 @@ class Session: Identifiable, ObservableObject {
         SessionSubmit.inputPacingDelay
     }
 
-    /// How long to wait after submitting before checking if it was accepted.
-    /// If isInTurn hasn't transitioned to true within this window (driven
-    /// by the on_user_prompt_submit hook event), the submit was likely
-    /// swallowed and needs to be resent.
-    private static let commandVerifyDelay: TimeInterval = 0.25  // 250ms
-
-    /// Maximum number of submit resend attempts before giving up. Each retry
-    /// adds one commandVerifyDelay to the total wait. With 2 retries the
-    /// worst-case total is: commandSubmitDelay + 3 × commandVerifyDelay = 850ms.
-    private static let commandMaxRetries: Int = 2
+    /// What "the prompt was taken" means for a Galaxy session.
+    ///
+    /// The only half of verification that is Galaxy's to answer. `isInTurn` is
+    /// flipped by Claude Code's UserPromptSubmit hook arriving over the socket,
+    /// so it is a report from the agent rather than an observation of the
+    /// terminal — and nothing observable from the terminal answers this at all.
+    /// The bounded poll, the retype, and the retry ceiling all live in Galactic;
+    /// this is the value they consume.
+    private var submitVerification: SubmitVerification {
+        SubmitVerification(
+            isAccepted: { [weak self] in self?.isInTurn ?? false },
+            isAlive: { [weak self] in
+                guard let self else { return false }
+                return self.isRunning && !self.hasExited
+            }
+        )
+    }
 
     /// UUID used for SwiftUI Identifiable AND as Claude's session ID
     let id: UUID
@@ -794,23 +801,20 @@ class Session: Identifiable, ObservableObject {
     /// Send a slash command to the terminal (e.g., "/clear", "/compact").
     /// Only works when session is running.
     ///
-    /// By default, uses a verify-and-retry loop: after submitting,
-    /// checks whether the session transitioned to busy (meaning Claude
-    /// accepted the command). If not, resubmits up to
-    /// `commandMaxRetries` times. This eliminates the timing-only
-    /// approach where a single blind delay could still lose the submit
-    /// on loaded systems.
+    /// By default the send is verified: Galactic watches for the
+    /// `isInTurn` flip that Claude Code's UserPromptSubmit hook drives,
+    /// and retypes the prompt if it never arrives. Readiness itself is
+    /// not observable from here — five signals were measured and every
+    /// one reported ready against a prompt that did not exist — so this
+    /// path is correct because it is confirmed, not because it is timed.
     ///
-    /// Pass `verifyAccepted: false` when the caller has independent
-    /// confirmation that Claude is at the prompt and ready to receive
-    /// input (e.g., the `session:ready` hook event after resume). The
-    /// retry path can be actively harmful on slash commands like
-    /// `/galaxy:resume` whose initial work (skill load + tool calls)
-    /// often takes longer than the 250ms verify window — a stray
-    /// retry submit ends up buffered at the kernel TTY input, then
-    /// dequeued at the empty prompt after the first command finishes,
-    /// where Claude Code's TUI interprets Enter-on-empty as
-    /// "repeat last command" and re-runs the command.
+    /// Pass `verifyAccepted: false` only when no such confirmation can
+    /// ever arrive. `/clear` and `/compact` are the real cases: both are
+    /// handled at the TUI level, before the prompt-submit pipeline, so
+    /// their hook never fires and a verifier would declare every one lost
+    /// and retype forever. "The caller already knows Claude is ready" is
+    /// not a reason — `session:ready` was the belief that made resume
+    /// unreliable for a week, and it fires before the input layer paints.
     /// Detect /clear and /compact, which bypass Claude
     /// Code's UserPromptSubmit hook (handled at the TUI
     /// level before the prompt-submit pipeline runs).
@@ -977,37 +981,15 @@ class Session: Identifiable, ObservableObject {
                 // Submit the text just written — SessionSubmit owns the bytes
                 backend.submitPrompt()
 
-                // Skip verification if caller opted out, or if session
-                // was already in a turn when we entered.
-                guard verifyAccepted, !wasInTurn else { return }
-
-                self.verifyCommandSubmit(retriesLeft: Self.commandMaxRetries)
+                // Opt out by value, not by skipping the call: the caller may
+                // have independent confirmation, and a send made inside an
+                // existing turn has no turn-start left to wait for.
+                backend.verifySubmission(
+                    text: text,
+                    verification: verifyAccepted && !wasInTurn
+                        ? self.submitVerification : nil
+                )
             }
-        }
-    }
-
-    /// Check whether the session entered a turn after submitting.
-    /// If not, resubmit and schedule another check. Bails after
-    /// exhausting retries. Detection rides on isInTurn, which is
-    /// flipped by the on_user_prompt_submit hook event — a true
-    /// "Claude received the prompt" signal.
-    private func verifyCommandSubmit(retriesLeft: Int) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.commandVerifyDelay) { [weak self] in
-            guard let self = self, self.isRunning, !self.hasExited else { return }
-
-            if self.isInTurn {
-                SessionSubmit.log("  accepted (\(retriesLeft) retries unused)")
-                return
-            }
-
-            if retriesLeft <= 0 {
-                SessionSubmit.log("  NOT accepted — retries exhausted, giving up")
-                return
-            }
-
-            SessionSubmit.log("  NOT accepted — resending submit (\(retriesLeft) left)")
-            self.backend?.submitPrompt()
-            self.verifyCommandSubmit(retriesLeft: retriesLeft - 1)
         }
     }
 

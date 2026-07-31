@@ -800,22 +800,28 @@ class SessionManager: ObservableObject {
         //
         // The `session:ready` socket event from the on_resume
         // hook signals that Claude has finished its hook
-        // lifecycle and is at (or imminently at) the prompt.
-        // verifyAccepted: false because that signal is itself
-        // the readiness gate — and a stray retry submit ends up
-        // dequeued at the empty prompt after the first
-        // /galaxy:resume completes, where Claude Code's TUI
-        // treats Enter-on-empty as "repeat last command" and
-        // re-runs /galaxy:resume. The verifyCommandSubmit path
-        // is now hook-driven (waits for isInTurn flip from
-        // on_user_prompt_submit) so it would no longer be
-        // tripped by skill-load latency, but we leave verify
-        // off here to avoid the empty-prompt-replay risk.
+        // lifecycle — not that it can be typed at. Measured, the
+        // gap between the two is the conversation replay, and it
+        // scales with the size of the session being restored:
+        // ~50ms when this path was written, ~750ms once the
+        // session had grown, which is when resume stopped
+        // working entirely. Nothing observable from outside the
+        // process closes that gap. Protocol flags, bytes
+        // received, screen content, output silence and the
+        // readiness hook itself were each measured and each
+        // reported ready against a prompt that did not exist.
+        //
+        // So verify rather than predict: on_user_prompt_submit
+        // flips isInTurn only when Claude actually took the
+        // prompt, which no amount of replay latency can fake.
+        // The reason this was previously off — a bare retry
+        // submit landing on an empty prompt, which Claude Code
+        // reads as "repeat last command" — is answered in
+        // `TerminalBackend.verifySubmission`, which retypes before
+        // it submits so Enter never arrives against an empty box.
         if canResume {
             session.waitForReady { [weak session] in
-                session?.sendSkill(
-                    "galaxy:resume", verifyAccepted: false
-                )
+                session?.sendSkill("galaxy:resume")
                 // The restored screen can come back garbled (a
                 // resize artifact on the freshly recreated backend),
                 // and only Claude repainting clears it. There's no
