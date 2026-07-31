@@ -463,9 +463,7 @@ class TerminalHostView: NSView {
         // matters in their context. Paired with the
         // unregister in `deinit`.
         if let session = owningSession {
-            let kind: Session.ScrollbackPaneKind =
-                pane is ShellTerminalPane
-                    ? .shell : .session
+            let kind = sessionPaneKind
             let key = ObjectIdentifier(self)
             session.registerScrollbackUnsavedWorkChecker(
                 key,
@@ -634,17 +632,14 @@ class TerminalHostView: NSView {
                 // hosts would race and whichever fired last
                 // would steal focus regardless of which pane
                 // the user was actually in.
-                let myKind: Session.ScrollbackPaneKind =
-                    self.pane is ShellTerminalPane
-                        ? .shell : .session
-                let preferred = self.owningSession?
-                    .lastFocusedPaneKind ?? .session
-                guard myKind == preferred else { return }
+                guard self.isPreferredPane else { return }
                 if window.firstResponder !== self.pane.view {
                     self.requestFocus()
                 }
             }
             .store(in: &cancellables)
+
+        observeKeyWindowChanges()
 
         // Request focus after a short delay
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
@@ -683,6 +678,42 @@ class TerminalHostView: NSView {
         wantsLayer = true
         layer?.backgroundColor =
             theme.backgroundColorValue.cgColor
+    }
+
+    /// Re-evaluate the focus dim whenever any window takes or gives up key.
+    ///
+    /// The find bar lives in its own panel, so it taking key moves focus out
+    /// of this view without changing any first responder here — the KVO that
+    /// normally drives the dim sees nothing at all. Deliberately unfiltered by
+    /// window: the panel is not this view's window, and which window is
+    /// involved is precisely what must not be assumed.
+    private func observeKeyWindowChanges() {
+        for name in [
+            NSWindow.didBecomeKeyNotification,
+            NSWindow.didResignKeyNotification,
+        ] {
+            NotificationCenter.default.publisher(for: name)
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in self?.refreshFocusState() }
+                .store(in: &cancellables)
+        }
+    }
+
+    /// This pane's kind, in the session model's terms.
+    ///
+    /// Four sites re-derived this from the pane's concrete class before the
+    /// contract carried the answer. Two enums still name the same two cases;
+    /// converging them belongs with the registry that owns the second.
+    private var sessionPaneKind: Session.ScrollbackPaneKind {
+        pane.paneKind == .shell ? .shell : .session
+    }
+
+    /// Whether this pane is the one the session remembers the user typing in.
+    ///
+    /// The gate that keeps two panes of one session from both answering a
+    /// command meant for whichever the user was actually in.
+    private var isPreferredPane: Bool {
+        (owningSession?.lastFocusedPaneKind ?? .session) == sessionPaneKind
     }
 
     func requestFocus() {
@@ -724,11 +755,7 @@ class TerminalHostView: NSView {
     /// loser of the race would clobber `lastFocusedPaneKind`
     /// via `refreshFocusState`, defeating the registry.
     func requestFocusIfPreferred() {
-        let myKind: Session.ScrollbackPaneKind =
-            pane is ShellTerminalPane ? .shell : .session
-        let preferred = owningSession?
-            .lastFocusedPaneKind ?? .session
-        guard myKind == preferred else { return }
+        guard isPreferredPane else { return }
         requestFocus()
     }
 
@@ -974,10 +1001,17 @@ class TerminalHostView: NSView {
         // dispatcher in SessionManager, while this comment claimed it —
         // the predicate now says what the comment always meant.
         guard isVisibleSurface else { return }
+        // Which pane answers is decided by focus memory rather than first
+        // responder, because once the find panel takes key no pane holds
+        // first responder at all — so a second press would reach nobody, and
+        // with a split open both panes would otherwise answer the first.
+        guard isPreferredPane else { return }
         if let overlay = scrollbackOverlay {
             overlay.activateFind()
             return
         }
+        // Opening a fresh scrollback is the one path that does want the
+        // terminal focused, so a background pane cannot spawn one.
         guard window?.firstResponder === pane.view else { return }
 
         let scrollPosition = pane.viewportRow
@@ -1453,12 +1487,24 @@ class TerminalHostView: NSView {
         // Only writes on entry — leaving (e.g., to a rename
         // text field) keeps the prior value so post-edit
         // restoration lands back where they were.
-        if isFocusInPane {
-            let myKind: Session.ScrollbackPaneKind =
-                pane is ShellTerminalPane ? .shell : .session
-            if owningSession?.lastFocusedPaneKind != myKind {
-                owningSession?.lastFocusedPaneKind = myKind
-            }
+        if isFocusInPane, owningSession?.lastFocusedPaneKind != sessionPaneKind {
+            owningSession?.lastFocusedPaneKind = sessionPaneKind
+        }
+
+        // The find bar is this pane's own UI even though AppKit puts it in a
+        // separate window, so searching a scrollback must not read as having
+        // left the pane — otherwise the pane dims and its overlay tints down
+        // while the user is looking straight at it. Asserted rather than
+        // inferred from first responder: which window holds focus while a
+        // child panel is key is AppKit's business, and this does not need to
+        // depend on getting that right.
+        //
+        // Gated on the bar actually holding key, not merely being open, so
+        // that clicking into the sibling pane still dims this one.
+        if !isFocusInPane,
+           let findController = scrollbackOverlay?.findController,
+           FindBarPanelController.shared.isKeyWindow(for: findController) {
+            isFocusInPane = true
         }
 
         // Pane-level dim: animate alpha so the transition
@@ -1549,48 +1595,18 @@ class TerminalHostView: NSView {
     /// the current scroll position. Theme changes require a full rebuild
     /// because inline <span> styles are baked from the original theme.
     private func applySettingsToScrollback() {
-        guard let overlay = scrollbackOverlay else { return }
-        guard let snapshot = currentSnapshot else { return }
-
-        // Save current scroll position before rebuilding
-        overlay.scrollbackView.webView.evaluateJavaScript(
-            "ScrollbackManager.getVisibleLine()"
-        ) { [weak self] result, _ in
-            guard let self = self else { return }
-            _ = self  // keep self alive for the duration of the closure
-            let scrollLine = result as? Int ?? 0
-
-            let theme = TerminalColorTheme.theme(
-                named: SettingsManager.shared.settings.terminalColorThemeName
-            )
-            let family = SettingsManager.shared.settings.terminalFontFamily
-            let size = self.pane.fontSize
-
-            // Compute font and cell height (same logic as Session)
-            let font: NSFont
-            if family == "SF Mono" {
-                font = NSFont.monospacedSystemFont(ofSize: size, weight: .medium)
-            } else {
-                font = NSFont(name: family, size: size)
-                    ?? NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
-            }
-            let ctFont = font as CTFont
-            let cellHeight = ceil(
-                CTFontGetAscent(ctFont) + CTFontGetDescent(ctFont)
-                    + CTFontGetLeading(ctFont)
-            )
-
-            let html = ScrollbackHTMLRenderer.render(
-                snapshot: snapshot,
-                theme: theme,
-                fontFamily: font.fontName,
-                fontSize: size,
-                cellHeight: cellHeight,
-                textEntry: SettingsManager.shared.settings.textEntry.jsPayload
-            )
-
-            overlay.scrollbackView.reload(html: html, scrollToLine: scrollLine)
-        }
+        guard let overlay = scrollbackOverlay,
+              let snapshot = currentSnapshot else { return }
+        let settings = SettingsManager.shared.settings
+        overlay.reRender(
+            snapshot: snapshot,
+            theme: TerminalColorTheme.theme(
+                named: settings.terminalColorThemeName
+            ),
+            fontFamily: settings.terminalFontFamily,
+            fontSize: pane.fontSize,
+            textEntry: settings.textEntry.jsPayload
+        )
     }
 
     // MARK: - Terminal Text Injection
