@@ -188,22 +188,5 @@ protocol TerminalPane: AnyObject {
 /// Both panes produce one of these; the scrollback overlay
 /// consults `disabledReason()` to decide whether the button is
 /// enabled, and calls `send` when the user clicks Send.
-struct SendToClaudeTarget {
-    /// Hand composed text to the owning session, which types it
-    /// and commits it.
-    ///
-    /// One closure rather than a write and a submit the caller
-    /// paces itself. `Session.sendCommand` already owns that
-    /// sequence — wait for the child to be able to read, type,
-    /// pace, then submit whichever bytes the pane will act on —
-    /// and a second implementation of it drifted: it paced with a
-    /// number of its own for three months, and never gained the
-    /// readiness wait at all. Nothing here resolves the submit
-    /// bytes either, deliberately, because which ones work
-    /// depends on what Return currently means in that pane.
-    let send: (String) -> Void
-
-    /// Preflight: nil = enabled, Some(reason) = disabled
-    /// with the given tooltip string.
-    let disabledReason: () -> String?
-}
+// The type itself now ships with the scrollback surface that consumes it.
+// `Session.sendCommand` is the send closure both panes hand it here.

@@ -350,43 +350,15 @@ struct MarkdownReaderView: NSViewRepresentable {
             _ controller: WKUserContentController,
             didReceive message: WKScriptMessage
         ) {
+            // Shared with every other reader's coordinator. This one used to
+            // parse its own subset — the four actions a markdown DOM can
+            // produce — which was correct until it wasn't, since an anchor
+            // type added later would have fallen through to nothing at all.
             guard message.name == "annotation",
                   let body = message.body as? [String: Any],
-                  let action = body["action"] as? String else { return }
-
-            switch action {
-            case "create":
-                guard let startLine = body["startLine"] as? Int,
-                      let endLine = body["endLine"] as? Int,
-                      let content = body["content"] as? String else { return }
-                onAnnotationMessage?(.create(
-                    startLine: Int32(startLine),
-                    endLine: Int32(endLine),
-                    content: content
-                ))
-            case "update":
-                guard let number = body["number"] as? Int,
-                      let content = body["content"] as? String else { return }
-                onAnnotationMessage?(.update(
-                    number: Int32(number),
-                    content: content
-                ))
-            case "delete":
-                guard let number = body["number"] as? Int else { return }
-                onAnnotationMessage?(.delete(number: Int32(number)))
-            case "confirmDragReplace":
-                guard let startIdx = body["startIdx"] as? Int,
-                      let endIdx = body["endIdx"] as? Int
-                else { return }
-                onAnnotationMessage?(
-                    .confirmDragReplace(
-                        startIdx: startIdx,
-                        endIdx: endIdx
-                    )
-                )
-            default:
-                break
-            }
+                  let parsed = AnnotationMessage.from(body)
+            else { return }
+            onAnnotationMessage?(parsed)
         }
 
         // MARK: WKNavigationDelegate
