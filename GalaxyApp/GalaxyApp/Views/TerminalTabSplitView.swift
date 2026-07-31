@@ -12,7 +12,8 @@ import SwiftUI
 /// per-session and not persisted across app restarts.
 struct TerminalTabSplitView: View {
     @ObservedObject var session: Session
-    let isActive: Bool
+    let isActiveSession: Bool
+    let isVisibleSurface: Bool
     let onResume: () -> Void
 
     @StateObject private var state = SplitState()
@@ -37,7 +38,8 @@ struct TerminalTabSplitView: View {
                 VStack(spacing: 0) {
                     SessionPaneView(
                         session: session,
-                        isActive: isActive,
+                        isActiveSession: isActiveSession,
+                        isVisibleSurface: isVisibleSurface,
                         onResume: onResume
                     )
                     .frame(
@@ -49,7 +51,8 @@ struct TerminalTabSplitView: View {
                     if let shellPane = state.shellPane {
                         ShellPaneView(
                             pane: shellPane,
-                            isActive: isActive,
+                            isActiveSession: isActiveSession,
+                            isVisibleSurface: isVisibleSurface,
                             onBarDragBegan: {
                                 state.beginDragPreview()
                             },

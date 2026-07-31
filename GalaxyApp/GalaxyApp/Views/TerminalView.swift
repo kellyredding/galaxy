@@ -14,29 +14,45 @@ extension Notification.Name {
 // bridge without branching.
 struct FocusableTerminalView: NSViewRepresentable {
     let pane: TerminalPane
-    let isActive: Bool
+
+    /// Whether this pane belongs to the session the user selected. Drives
+    /// hiding and drag registration — the questions that really are about
+    /// which session owns the pane.
+    let isActiveSession: Bool
+
+    /// Whether this pane is the surface the user is actually looking at:
+    /// the selected session *and* the terminal tab. Drives focus, scrollback
+    /// entry and find.
+    ///
+    /// Separate from `isActiveSession` because the terminal tab stays mounted
+    /// when another tab is showing — it is switched by opacity, not by being
+    /// torn down. A pane that reads only the session believes it is in front
+    /// of the user while a reader is showing, and takes the caret back from
+    /// whatever the user was typing in.
+    let isVisibleSurface: Bool
 
     func makeNSView(context: Context) -> TerminalHostView {
         TerminalHostView(pane: pane)
     }
 
     func updateNSView(_ nsView: TerminalHostView, context: Context) {
-        let wasActive = nsView.isActive
-        let activationChanged = isActive != wasActive
+        let wasVisible = nsView.isVisibleSurface
+        let sessionChanged = nsView.isActiveSession != isActiveSession
 
-        // didSet on isActive runs updateDragRegistration when
+        // didSet on isActiveSession runs updateDragRegistration when
         // the value flips (guarded by != oldValue). Only call
-        // refreshDragRegistration explicitly when isActive
+        // refreshDragRegistration explicitly when the session flag
         // didn't flip — that's the case where
         // pane.acceptsFileDrops may have changed and the
         // didSet path skipped. Avoids paying for two
         // register/unregister cycles per transition row.
-        nsView.isActive = isActive
-        if !activationChanged {
+        nsView.isActiveSession = isActiveSession
+        nsView.isVisibleSurface = isVisibleSurface
+        if !sessionChanged {
             nsView.refreshDragRegistration()
         }
 
-        if !isActive {
+        if !isActiveSession {
             // If we're deactivating AND this host holds first
             // responder (i.e., the user was typing in this
             // pane), resign first responder EXPLICITLY before
@@ -66,7 +82,7 @@ struct FocusableTerminalView: NSViewRepresentable {
         // on no-op assignments. After SwiftUI's per-row
         // short-circuit, only the two transition rows
         // actually need this poke.
-        let shouldHide = !isActive
+        let shouldHide = !isActiveSession
         if nsView.isHidden != shouldHide {
             nsView.isHidden = shouldHide
         }
@@ -79,7 +95,7 @@ struct FocusableTerminalView: NSViewRepresentable {
         // lastFocusedPaneKind takes focus, leaving the registry's
         // memory intact for TerminalContainerView's onChange-driven
         // restoreTerminalFocus() (which reads the same value).
-        if isActive && !wasActive {
+        if isVisibleSurface && !wasVisible {
             nsView.requestFocusIfPreferred()
         }
     }
@@ -87,7 +103,7 @@ struct FocusableTerminalView: NSViewRepresentable {
 
 extension FocusableTerminalView: Equatable {
     /// Identity equality: same pane (by reference) and same
-    /// isActive flag. Used via `.equatable()` at call sites
+    /// activity flags. Used via `.equatable()` at call sites
     /// so SwiftUI guarantees `updateNSView` is skipped on
     /// rows whose inputs haven't changed — independent of
     /// SwiftUI's automatic memberwise diff for the
@@ -105,7 +121,8 @@ extension FocusableTerminalView: Equatable {
         lhs: FocusableTerminalView,
         rhs: FocusableTerminalView
     ) -> Bool {
-        lhs.isActive == rhs.isActive
+        lhs.isActiveSession == rhs.isActiveSession
+            && lhs.isVisibleSurface == rhs.isVisibleSurface
             && (lhs.pane as AnyObject) === (rhs.pane as AnyObject)
     }
 }
@@ -145,14 +162,20 @@ class TerminalHostView: NSView {
         return nil
     }
 
-    // Track if this is the active session - controls drag-drop registration
-    var isActive: Bool = false {
+    /// Is this pane's session the selected one? Controls drag-drop
+    /// registration and hiding.
+    var isActiveSession: Bool = false {
         didSet {
-            if isActive != oldValue {
+            if isActiveSession != oldValue {
                 updateDragRegistration()
             }
         }
     }
+
+    /// Is this pane the surface in front of the user — selected session and
+    /// terminal tab both? Supplied by the representable; see its declaration
+    /// for why this is not the same question as `isActiveSession`.
+    var isVisibleSurface: Bool = false
     private var isSetUp = false
 
     /// Uniform inset between the host's bounds and the inner
@@ -345,7 +368,7 @@ class TerminalHostView: NSView {
     /// Only the active pane in an accepting state should be a drop
     /// target.
     private func updateDragRegistration() {
-        if isActive && pane.acceptsFileDrops {
+        if isActiveSession && pane.acceptsFileDrops {
             registerForDraggedTypes([.fileURL])
         } else {
             unregisterDraggedTypes()
@@ -600,7 +623,7 @@ class TerminalHostView: NSView {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] notification in
                 guard let self = self else { return }
-                guard self.isActive else { return }
+                guard self.isVisibleSurface else { return }
                 // Only react when our own window became key.
                 guard let window =
                     notification.object as? NSWindow,
@@ -663,50 +686,33 @@ class TerminalHostView: NSView {
     }
 
     func requestFocus() {
-        // Only the visible Terminal tab may take terminal focus. A reader on
-        // another tab holds first responder legitimately, and dropping a file
-        // into one of its note forms from another application makes this
-        // window key as a side effect — re-asserting on that transition pulls
-        // the caret out of the form the text just landed in, leaving it
-        // filled and dead. The scrollback never showed this because the
-        // target chosen below is its web view whenever an overlay is up.
-        //
-        // Callers that mean "focus the terminal because the user just moved
-        // there" already establish this before asking, so the guard only
-        // discards grabs that would land on a tab nobody is looking at.
-        guard SessionManager.shared.activeTab == .terminal else { return }
-        guard let window = window else { return }
-
-        // If scrollback is active, make the WKWebView first responder
-        // instead of the live terminal — otherwise scrollback is visible but
-        // keyboard-dead after session switches.
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            // Only re-pin when focusing the live terminal, never the
-            // scrollback overlay — a user reading frozen history must not be
-            // snapped to the bottom.
-            let focusingLivePane = self.scrollbackOverlay == nil
-            let target: NSResponder =
-                self.scrollbackOverlay?.scrollbackView.webView
-                ?? self.pane.view
-            // Friendly re-pin on focus gain (session / tab / app-refocus /
-            // pane switch): if the user intends to follow the live tail, snap
-            // back to the bottom. Itself a no-op when parked in scrollback or
-            // already pinned — see Galactic's reassertFollowIfIntended.
-            let reassertFollow = {
-                if focusingLivePane { self.pane.reassertFollowIfIntended() }
+        TerminalFocus.request(
+            in: window,
+            isVisibleSurface: isVisibleSurface,
+            resolveTarget: { [weak self] in
+                guard let self else { return nil }
+                // With a scrollback open, focus belongs to the overlay's web
+                // view rather than the live terminal behind it — otherwise
+                // scrollback is visible but keyboard-dead, and Esc has
+                // nowhere to go.
+                if let webView =
+                    self.scrollbackOverlay?.scrollbackView.webView
+                {
+                    return TerminalFocusTarget(
+                        responder: webView, isLivePane: false
+                    )
+                }
+                return TerminalFocusTarget(
+                    responder: self.pane.view, isLivePane: true
+                )
+            },
+            onFocusedLivePane: { [weak self] in
+                // Friendly re-pin on focus gain: if the user intends to follow
+                // the live tail, snap back to the bottom. A no-op when already
+                // pinned, and never reached while parked in scrollback.
+                self?.pane.reassertFollowIfIntended()
             }
-            if window.makeFirstResponder(target) { reassertFollow(); return }
-            // First try lost — retry once next runloop in case a
-            // resigning responder elsewhere (closing Settings,
-            // app-switch focus restore) hadn't fully released the
-            // chain yet. One retry is sufficient; further failures
-            // imply a deeper problem to investigate via fix (e).
-            DispatchQueue.main.async { [weak window] in
-                guard let w = window else { return }
-                if w.makeFirstResponder(target) { reassertFollow() }
-            }
-        }
+        )
     }
 
     /// Like `requestFocus()`, but only when this pane matches
@@ -741,7 +747,7 @@ class TerminalHostView: NSView {
     /// Check if the pane can accept drops (must be active AND
     /// drop-eligible — for Session pane: running, not exited).
     private var canAcceptDrop: Bool {
-        return isActive && pane.acceptsFileDrops
+        return isActiveSession && pane.acceptsFileDrops
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
@@ -935,7 +941,7 @@ class TerminalHostView: NSView {
     /// visible. The scroll-wheel path stays strict to avoid
     /// spamming the overlay on ordinary scroll gestures.
     private func enterScrollbackFromMenu() {
-        guard isActive else { return }
+        guard isVisibleSurface else { return }
         guard !isScrollbackActive else { return }
         guard window?.firstResponder === pane.view else {
             return
@@ -958,12 +964,16 @@ class TerminalHostView: NSView {
     /// gates as enterScrollbackFromMenu so only the focused
     /// pane in the active session responds.
     private func activateFindOnScrollback() {
-        // Gate the existing-overlay early-return on isActive too.
+        // Gate the existing-overlay early-return on visibility.
         // Otherwise a scrollback overlay alive in a non-active
         // session pane (or this pane while a different tab is
         // showing) eagerly grabs Cmd+F and binds the find-bar
         // panel to the wrong controller.
-        guard isActive else { return }
+        //
+        // The tab half of that was previously enforced only by the
+        // dispatcher in SessionManager, while this comment claimed it —
+        // the predicate now says what the comment always meant.
+        guard isVisibleSurface else { return }
         if let overlay = scrollbackOverlay {
             overlay.activateFind()
             return
@@ -1150,13 +1160,11 @@ class TerminalHostView: NSView {
         let overlay = ScrollbackOverlayView(
             frame: paddedBounds(),
             scrollbackView: webView,
+            // The same question the host asks itself, asked once. This
+            // expression used to be the only place the two halves were
+            // combined correctly, while the host read the session half alone.
             isActiveSurface: { [weak self] in
-                guard let self = self,
-                      let mySessionId = self.owningSession?.id
-                else { return false }
-                let manager = SessionManager.shared
-                return manager.activeTab == .terminal
-                    && manager.activeSessionId == mySessionId
+                self?.isVisibleSurface ?? false
             }
         )
         overlay.autoresizingMask = []

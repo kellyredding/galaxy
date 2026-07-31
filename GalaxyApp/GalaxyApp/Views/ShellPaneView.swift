@@ -6,7 +6,8 @@ import SwiftUI
 /// open.
 struct ShellPaneView: View {
     @ObservedObject var pane: ShellTerminalPane
-    let isActive: Bool
+    let isActiveSession: Bool
+    let isVisibleSurface: Bool
     let onBarDragBegan: () -> Void
     let onBarDrag: (CGFloat) -> Void
     let onBarDragEnded: () -> Void
@@ -24,11 +25,12 @@ struct ShellPaneView: View {
 
             // `.equatable()` opts into FocusableTerminalView's
             // Equatable conformance so SwiftUI skips
-            // updateNSView on rows whose pane and isActive
-            // haven't changed.
+            // updateNSView on rows whose pane and activity
+            // flags haven't changed.
             FocusableTerminalView(
                 pane: pane,
-                isActive: isActive
+                isActiveSession: isActiveSession,
+                isVisibleSurface: isVisibleSurface
             )
             .equatable()
         }

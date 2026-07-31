@@ -456,7 +456,13 @@ struct TerminalContainerView: View {
             ForEach(sessionManager.sessions) { session in
                 TerminalTabSplitView(
                     session: session,
-                    isActive: session.id == sessionManager.activeSessionId,
+                    isActiveSession:
+                        session.id == sessionManager.activeSessionId,
+                    // Both halves, composed once at the top. Everything below
+                    // reads this rather than re-deriving a piece of it.
+                    isVisibleSurface:
+                        session.id == sessionManager.activeSessionId
+                        && sessionManager.activeTab == .terminal,
                     onResume: { sessionManager.resumeSession(sessionId: session.id) }
                 )
                 .opacity(session.id == sessionManager.activeSessionId ? 1 : 0)
@@ -546,7 +552,8 @@ extension TabUnreadIndicator {
 /// backend changes (e.g., after a stop+resume cycle).
 struct SessionPaneView: View {
     @ObservedObject var session: Session
-    let isActive: Bool
+    let isActiveSession: Bool
+    let isVisibleSurface: Bool
     let onResume: () -> Void
 
     @StateObject private var adapterHolder = SessionPaneAdapterHolder()
@@ -561,12 +568,13 @@ struct SessionPaneView: View {
                 // `.equatable()` opts into our Equatable
                 // conformance for SwiftUI's diff, guaranteeing
                 // updateNSView is skipped on rows whose pane
-                // and isActive flag haven't changed.
+                // and activity flags haven't changed.
                 FocusableTerminalView(
                     pane: adapterHolder.adapter(
                         for: session, backend: backend
                     ),
-                    isActive: isActive
+                    isActiveSession: isActiveSession,
+                    isVisibleSurface: isVisibleSurface
                 )
                 .equatable()
             }
