@@ -401,6 +401,28 @@ class TerminalHostView: NSView {
     }
 
     private func setupTerminal() {
+        mountTerminalSurface()
+        observeScrollUp()
+        observeFontSize()
+        registerWithSession()
+        observeSessionExit()
+        observeSettingsChanges()
+        observeAppTermination()
+        observeScrollbackNotification()
+        observeFindActivation()
+        observeActiveSurfaceChanges()
+        observeWindowBecameKey()
+        observeKeyWindowChanges()
+
+        // Request focus after a short delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            self?.requestFocus()
+        }
+    }
+
+    /// Paint the host strip, mount the terminal inside its inset container,
+    /// and lay the drag highlight over the top.
+    private func mountTerminalSurface() {
         // Paint the host's layer in the current theme background
         // color. Combined with the per-subview inset below, this
         // creates a padded strip around the terminal content that
@@ -430,13 +452,25 @@ class TerminalHostView: NSView {
         // which engine is underneath.
         sessionPane?.backend.setCaretHidden(false)
 
+        // Add drag highlight overlay ON TOP of the terminal
+        // container (the terminal is nested inside it, so the
+        // highlight orders against the container, its host sibling).
+        let highlight = DragHighlightView(frame: bounds)
+        highlight.autoresizingMask = [.width, .height]
+        addSubview(highlight, positioned: .above, relativeTo: terminalContainer)
+        dragHighlightView = highlight
+    }
+
+    private func observeScrollUp() {
         // Scroll-up interception — pane-generic. Both session
         // and shell panes route scroll-up through the pane
         // protocol so we enter scrollback mode uniformly.
         pane.onScrollUp = { [weak self] event in
             self?.handleScrollUp(event: event) ?? false
         }
+    }
 
+    private func observeFontSize() {
         // Font-size re-renders for the scrollback overlay —
         // pane-generic. Session pane's size lives on
         // `session.$terminalFontSize`; shell pane's lives on
@@ -450,18 +484,13 @@ class TerminalHostView: NSView {
                 self?.applySettingsToScrollback()
             }
             .store(in: &cancellables)
+    }
 
-        // Register this host view's scrollback-unsaved-
-        // work checker on the owning session so Cmd+Q /
-        // stop-session confirmations cover whichever pane
-        // has the open scrollback — not just the Session
-        // pane. Paired with `unregister` in `deinit`.
-        // Register this host view's scrollback-unsaved-
-        // work checker on the owning session, tagged with
-        // its pane kind so callers (stop-session vs.
-        // quit-app) can filter to the panes whose loss
-        // matters in their context. Paired with the
-        // unregister in `deinit`.
+    /// Register this host's scrollback-unsaved-work checker and pane-focus
+    /// restorer on the owning session, each tagged with its pane kind so
+    /// callers can filter to the panes whose loss matters in their context.
+    /// Paired with the unregister in `deinit`.
+    private func registerWithSession() {
         if let session = owningSession {
             let kind = sessionPaneKind
             let key = ObjectIdentifier(self)
@@ -488,7 +517,9 @@ class TerminalHostView: NSView {
                 self?.requestFocus()
             }
         }
+    }
 
+    private func observeSessionExit() {
         if let session = self.session {
             // Observe session process exit — tear down scrollback if process dies.
             // Skip note confirmation — the process is gone so there's nothing
@@ -509,15 +540,9 @@ class TerminalHostView: NSView {
                 }
                 .store(in: &cancellables)
         }
+    }
 
-        // Add drag highlight overlay ON TOP of the terminal
-        // container (the terminal is nested inside it, so the
-        // highlight orders against the container, its host sibling).
-        let highlight = DragHighlightView(frame: bounds)
-        highlight.autoresizingMask = [.width, .height]
-        addSubview(highlight, positioned: .above, relativeTo: container)
-        dragHighlightView = highlight
-
+    private func observeSettingsChanges() {
         // Observe font family changes — apply to scrollback view if present
         SettingsManager.shared.$settings
             .map(\.terminalFontFamily)
@@ -542,7 +567,9 @@ class TerminalHostView: NSView {
                 self?.applySettingsToScrollback()
             }
             .store(in: &cancellables)
+    }
 
+    private func observeAppTermination() {
         // Close scrollback on app quit so the
         // scrollback:exited duration event fires.
         // No .receive(on:) — willTerminate already
@@ -558,7 +585,9 @@ class TerminalHostView: NSView {
                 )
             }
             .store(in: &cancellables)
+    }
 
+    private func observeScrollbackNotification() {
         // Observe Cmd+S menu action for scrollback entry
         NotificationCenter.default.publisher(for: .enterScrollback)
             .receive(on: DispatchQueue.main)
@@ -566,7 +595,9 @@ class TerminalHostView: NSView {
                 self?.enterScrollbackFromMenu()
             }
             .store(in: &cancellables)
+    }
 
+    private func observeFindActivation() {
         // Observe Cmd+F find activation. If scrollback is already
         // open in this host, focus its find bar; otherwise open
         // scrollback at the current viewport and queue the find
@@ -578,7 +609,9 @@ class TerminalHostView: NSView {
                 self?.activateFindOnScrollback()
             }
             .store(in: &cancellables)
+    }
 
+    private func observeActiveSurfaceChanges() {
         // Re-evaluate find-bar-panel ownership on tab and
         // session changes. The scrollback overlay's
         // `findController.isVisible` survives switches (the
@@ -606,7 +639,9 @@ class TerminalHostView: NSView {
                     .refreshFindBarPanelPresentation()
             }
             .store(in: &cancellables)
+    }
 
+    private func observeWindowBecameKey() {
         // Observe main-window-becomes-key. SwiftTerm's display
         // refresh appears to stall while the window is inactive;
         // when it regains key, force a redraw so the current
@@ -638,13 +673,6 @@ class TerminalHostView: NSView {
                 }
             }
             .store(in: &cancellables)
-
-        observeKeyWindowChanges()
-
-        // Request focus after a short delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-            self?.requestFocus()
-        }
     }
 
     override func layout() {
@@ -1023,44 +1051,21 @@ class TerminalHostView: NSView {
 
     /// Create the scrollback overlay with an HTML rendering of the live terminal's buffer.
     private func createScrollback(initialScrollLine: Int? = nil) {
-        // The pane produces an opaque `ScrollbackSnapshot` —
-        // chrome doesn't reach into SwiftTerm types to render.
-        // The renderer iterates the snapshot's engine-agnostic
-        // cell stream, so re-rendering on theme/font change is
-        // just another `ScrollbackHTMLRenderer.render(snapshot:
-        // ...)` invocation against the same frozen snapshot.
-        guard let snapshot = pane.captureScrollbackSnapshot() else {
-            return
-        }
-        self.currentSnapshot = snapshot
+        // The pane produces an opaque snapshot — chrome never reaches into
+        // engine types to render it, which is what lets the same frozen buffer
+        // be rendered again on a theme or font change.
+        guard let opened = ScrollbackFactory.open(
+            pane: pane,
+            theme: TerminalColorTheme.theme(
+                named: SettingsManager.shared.settings.terminalColorThemeName
+            ),
+            textEntry: SettingsManager.shared.settings.textEntry.jsPayload,
+            initialScrollLine: initialScrollLine
+        ) else { return }
 
-        // Use provided scroll position, or default to bottom of buffer
-        let initialScrollLine = initialScrollLine ?? snapshot.yDisp
+        self.currentSnapshot = opened.snapshot
+        let webView = opened.webView
 
-        // Get current font metrics for CSS matching
-        let font = pane.font
-        let cellHeight = pane.cellHeight
-        let theme = TerminalColorTheme.theme(
-            named: SettingsManager.shared.settings.terminalColorThemeName
-        )
-
-        // Render buffer to HTML
-        let html = ScrollbackHTMLRenderer.render(
-            snapshot: snapshot,
-            theme: theme,
-            fontFamily: font.fontName,
-            fontSize: font.pointSize,
-            cellHeight: cellHeight,
-            textEntry: SettingsManager.shared.settings.textEntry.jsPayload
-        )
-
-        // Create web view with theme background for rubber-band overscroll
-        let webView = ScrollbackWebView(
-            frame: pane.view.bounds,
-            html: html,
-            initialScrollLine: initialScrollLine,
-            backgroundColor: theme.backgroundColorValue
-        )
         webView.onDismiss = { [weak self] in
             self?.dismissScrollback(reason: .dismissed)
         }
