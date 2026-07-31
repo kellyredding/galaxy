@@ -46,7 +46,7 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
     @Published private(set) var isRunning: Bool = false
 
     var view: NSView { backend.view }
-    var paneKind: String { "shell" }
+    var paneKind: TerminalPaneKind { .shell }
     var ledgerSessionId: Int64? { session?.ledgerSessionId }
     var acceptsFileDrops: Bool { isRunning }
 

@@ -1090,7 +1090,7 @@ class TerminalHostView: NSView {
                 }
 
                 let detailData: [String: Any] = [
-                    "pane": self.pane.paneKind,
+                    "pane": self.pane.paneKind.rawValue,
                     "note_count": notes.count,
                     "message": message,
                     "notes": expandedNotes,
@@ -1133,7 +1133,7 @@ class TerminalHostView: NSView {
                   let lsid = self.pane.ledgerSessionId
             else { return }
             var enriched = detailData
-            enriched["pane"] = self.pane.paneKind
+            enriched["pane"] = self.pane.paneKind.rawValue
             TimelineService.record(
                 ledgerSessionId: lsid,
                 eventType:
@@ -1193,7 +1193,7 @@ class TerminalHostView: NSView {
                 eventType: "scrollback:entered",
                 source: "galaxy-app/views/terminal",
                 durationIdentifier: durationId,
-                detailData: ["pane": pane.paneKind]
+                detailData: ["pane": pane.paneKind.rawValue]
             )
         }
 
@@ -1253,7 +1253,7 @@ class TerminalHostView: NSView {
                     source: "galaxy-app/views/terminal",
                     durationIdentifier: durationId,
                     detailData: [
-                        "pane": pane.paneKind,
+                        "pane": pane.paneKind.rawValue,
                         "reason": reason.rawValue,
                         "note_count": notes.count,
                     ]
@@ -1265,7 +1265,7 @@ class TerminalHostView: NSView {
                     source: "galaxy-app/views/terminal",
                     durationIdentifier: durationId,
                     detailData: [
-                        "pane": pane.paneKind,
+                        "pane": pane.paneKind.rawValue,
                         "reason": reason.rawValue,
                     ]
                 )
@@ -1286,7 +1286,7 @@ class TerminalHostView: NSView {
                     source: "galaxy-app/views/terminal",
                     durationIdentifier: durationId,
                     detailData: [
-                        "pane": pane.paneKind,
+                        "pane": pane.paneKind.rawValue,
                         "reason": reason.rawValue,
                         "note_count": notes.count,
                         "discarded_notes": expandedNotes,
@@ -1481,26 +1481,45 @@ class TerminalHostView: NSView {
         scrollbackOverlay?.isPaneFocused = isFocusInPane
     }
 
-    /// Show an NSAlert sheet asking the user to confirm discarding notes.
     private func showDismissConfirmation() {
-        guard let overlay = scrollbackOverlay,
-              let window = window else { return }
-        let noteCount = overlay.scrollbackView.notes.count
-
-        SheetAlert.confirm(
+        guard let overlay = scrollbackOverlay, let window else { return }
+        overlay.confirmDiscardNotes(
             in: window,
-            message: "Discard scrollback notes?",
-            detail: "You have \(noteCount) unsaved "
-                + "note\(noteCount == 1 ? "" : "s"). "
-                + "They will be lost if you exit scrollback.",
-            onConfirm: { [weak self] in
-                self?.performScrollbackTeardown(
-                    reason: .dismissed
-                )
+            onDiscard: { [weak self] in
+                self?.performScrollbackTeardown(reason: .dismissed)
             },
-            onCancel: { [weak self] in
-                self?.requestFocus()
-            }
+            onCancel: { [weak self] in self?.requestFocus() }
+        )
+    }
+
+    private func showDiscardNoteFormConfirmation() {
+        guard let overlay = scrollbackOverlay, let window else { return }
+        overlay.confirmDiscardNoteForm(in: window) { [weak self] in
+            self?.requestFocus()
+        }
+    }
+
+    private func showSendWithUnsavedCommentConfirmation() {
+        guard let overlay = scrollbackOverlay, let window else { return }
+        overlay.confirmSendWithUnsavedComment(in: window) { [weak self] in
+            self?.requestFocus()
+        }
+    }
+
+    private func showDiscardNoteEditConfirmation() {
+        guard let overlay = scrollbackOverlay, let window else { return }
+        overlay.confirmDiscardNoteEdit(in: window) { [weak self] in
+            self?.requestFocus()
+        }
+    }
+
+    private func showDragReplaceNoteConfirmation(
+        startLine: Int,
+        endLine: Int
+    ) {
+        guard let overlay = scrollbackOverlay, let window else { return }
+        overlay.confirmReplaceSelection(
+            in: window, startLine: startLine, endLine: endLine
         )
     }
 
@@ -1523,104 +1542,6 @@ class TerminalHostView: NSView {
                 completion(hasWork)
             }
         }
-    }
-
-    /// Show an NSAlert asking to discard new note form content.
-    private func showDiscardNoteFormConfirmation() {
-        guard let overlay = scrollbackOverlay,
-              let window = window else { return }
-
-        SheetAlert.confirm(
-            in: window,
-            message: "Discard note?",
-            detail: "You have unsaved text in the note form. "
-                + "It will be lost if you dismiss.",
-            onConfirm: {
-                overlay.scrollbackView.webView.evaluateJavaScript(
-                    "ScrollbackManager.notes.forceDiscardForm()"
-                )
-            },
-            onCancel: { [weak self] in
-                self?.requestFocus()
-            }
-        )
-    }
-
-    /// Show an NSAlert warning that sending will drop unsaved
-    /// comment text (an open note form or in-progress edit).
-    /// On confirm: force the send past the JS guard, which
-    /// discards the open comment as teardown destroys the web
-    /// view. On cancel: return focus so the user can finish it.
-    private func showSendWithUnsavedCommentConfirmation() {
-        guard let overlay = scrollbackOverlay,
-              let window = window else { return }
-
-        SheetAlert.confirm(
-            in: window,
-            message: "Send without unsaved comment?",
-            detail: "You have unsaved text in a comment that "
-                + "won't be included. It will be lost if you send.",
-            confirm: "Send",
-            onConfirm: {
-                overlay.scrollbackView.webView.evaluateJavaScript(
-                    "ScrollbackManager.notes.sendToClaude(true)"
-                )
-            },
-            onCancel: { [weak self] in
-                self?.requestFocus()
-            }
-        )
-    }
-
-    /// Show an NSAlert asking to discard edit changes to a note.
-    private func showDiscardNoteEditConfirmation() {
-        guard let overlay = scrollbackOverlay,
-              let window = window else { return }
-
-        SheetAlert.confirm(
-            in: window,
-            message: "Discard changes?",
-            detail: "You have unsaved changes to this note. "
-                + "They will be lost if you cancel editing.",
-            onConfirm: {
-                overlay.scrollbackView.webView.evaluateJavaScript(
-                    "ScrollbackManager.notes.forceDiscardEdit()"
-                )
-            },
-            onCancel: { [weak self] in
-                self?.requestFocus()
-            }
-        )
-    }
-
-    /// Show an NSAlert asking to discard unsaved note form content
-    /// before opening a new form at a different drag selection.
-    private func showDragReplaceNoteConfirmation(
-        startLine: Int,
-        endLine: Int
-    ) {
-        guard let overlay = scrollbackOverlay,
-              let window = window else { return }
-
-        SheetAlert.confirm(
-            in: window,
-            message: "Discard note?",
-            detail: "You have unsaved text in the note form. "
-                + "It will be lost if you select different "
-                + "lines.",
-            onConfirm: {
-                overlay.scrollbackView.webView.evaluateJavaScript(
-                    "ScrollbackManager.notes"
-                    + ".showSelectionToolbar("
-                    + "\(startLine), \(endLine))"
-                )
-            },
-            onCancel: {
-                overlay.scrollbackView.webView.evaluateJavaScript(
-                    "ScrollbackManager.notes.focusForm()"
-                )
-            }
-        )
     }
 
     /// Apply current font/theme settings to the scrollback view if present.
@@ -1684,44 +1605,3 @@ class TerminalHostView: NSView {
 
 // MARK: - Drag Highlight Overlay View
 
-/// Transparent overlay view that draws a highlight border when files are dragged over
-class DragHighlightView: NSView {
-    var isHighlighted = false {
-        didSet {
-            needsDisplay = true
-        }
-    }
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-        // Critical: allow mouse events to pass through to terminal underneath
-        layer?.backgroundColor = .clear
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-
-        guard isHighlighted else { return }
-
-        // Draw border highlight with enough inset for clean corners
-        // 1px border needs 0.5px inset from edge to render fully inside bounds
-        // Plus a little extra margin so corners don't clip against parent edges
-        let borderRect = bounds.insetBy(dx: 2, dy: 2)
-        let borderPath = NSBezierPath(roundedRect: borderRect, xRadius: 3, yRadius: 3)
-        borderPath.lineWidth = 1
-
-        // Use system accent color
-        NSColor.controlAccentColor.setStroke()
-        borderPath.stroke()
-    }
-
-    // Allow mouse events to pass through to the terminal view underneath
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        return nil
-    }
-}

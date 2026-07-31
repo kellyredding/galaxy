@@ -1,4 +1,5 @@
 import AppKit
+import Galactic
 import Combine
 import Carbon.HIToolbox
 

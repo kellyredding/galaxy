@@ -17,7 +17,7 @@ final class SessionTerminalPane: TerminalPane {
     let backend: TerminalBackend
 
     var view: NSView { backend.view }
-    var paneKind: String { "session" }
+    var paneKind: TerminalPaneKind { .session }
     var ledgerSessionId: Int64? { session?.ledgerSessionId }
 
     /// Session pane ignores this — `Session`'s own exit
