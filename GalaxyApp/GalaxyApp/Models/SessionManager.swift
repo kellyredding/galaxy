@@ -1793,9 +1793,10 @@ class SessionManager: ObservableObject {
     /// enabled and not viewing). Debounced: if a bell is already in
     /// flight for this session, the new event is dropped entirely.
     ///
-    /// Called from the `onBell` closure wired in
-    /// `wireSessionCallbacks`, and from the debug bell shortcut
-    /// via `session.backend?.onBell?()`.
+    /// Called from the bell closure wired in `wireSessionCallbacks`. That wiring
+    /// targets the backend because it runs at backend construction, before a
+    /// pane adapter exists; the session pane's `onBell` is an accessor over the
+    /// same storage, so the two are one installation rather than two.
     private func handleBell(for session: Session) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }

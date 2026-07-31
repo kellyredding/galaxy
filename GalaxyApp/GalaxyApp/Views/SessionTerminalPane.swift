@@ -25,10 +25,18 @@ final class SessionTerminalPane: TerminalPane {
     /// source of truth.
     var onProcessExit: ((Int32) -> Void)?
 
-    /// Session pane ignores this — `SessionManager` wires
-    /// `backend.onBell` directly to its bell pipeline.
-    /// Do NOT double-install from here.
-    var onBell: (() -> Void)?
+    /// Forwards to the backend, which is where the engine fires it.
+    ///
+    /// An accessor rather than storage because the backend outlives this
+    /// adapter: `SessionManager` wires the bell pipeline when the backend is
+    /// created, before any pane exists to wire instead. One storage location
+    /// also means a second installer cannot silently displace the first —
+    /// which is what the previous stored property invited, and what its
+    /// "do NOT double-install" warning was standing in for.
+    var onBell: (() -> Void)? {
+        get { backend.onBell }
+        set { backend.onBell = newValue }
+    }
 
     /// Scroll-up interception forwards to the backend, which
     /// fires it from its underlying scroll-wheel override.

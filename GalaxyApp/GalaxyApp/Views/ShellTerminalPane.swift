@@ -51,6 +51,15 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
     var acceptsFileDrops: Bool { isRunning }
 
     var onProcessExit: ((Int32) -> Void)?
+
+    /// Storage rather than a forward to the backend, because this pane claims
+    /// the engine's callback for its own bell policy and re-emits through this
+    /// one afterwards. The sibling session pane forwards instead, since its
+    /// policy lives in `SessionManager`.
+    ///
+    /// That asymmetry is a symptom of the policy being written twice, and it
+    /// resolves when the debounce becomes one shared mechanism — at which point
+    /// both panes forward and neither owns a pipeline.
     var onBell: (() -> Void)?
 
     /// Forwarded from the backend so external coordinators
