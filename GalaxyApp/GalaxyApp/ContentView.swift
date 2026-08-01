@@ -575,6 +575,7 @@ struct SessionPaneView: View {
                         for: session, backend: backend
                     ),
                     timelineRecorder: .galaxyLedger,
+                    settings: SettingsManager.shared,
                     isActiveSession: isActiveSession,
                     isVisibleSurface: isVisibleSurface
                 )

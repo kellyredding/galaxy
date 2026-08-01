@@ -31,6 +31,7 @@ struct ShellPaneView: View {
             FocusableTerminalView(
                 pane: pane,
                 timelineRecorder: .galaxyLedger,
+                settings: SettingsManager.shared,
                 isActiveSession: isActiveSession,
                 isVisibleSurface: isVisibleSurface
             )

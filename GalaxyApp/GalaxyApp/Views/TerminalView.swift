@@ -22,6 +22,13 @@ struct FocusableTerminalView: NSViewRepresentable {
     /// store into supplies nil and the describing stays put.
     let timelineRecorder: TerminalTimelineRecorder?
 
+    /// Where the host reads configuration, and hears that it changed.
+    ///
+    /// Supplied for the same reason as the recorder: the settings store is one
+    /// of the names a shared host cannot carry, and a behaviour the app turns
+    /// off is a value read through here rather than code that is absent.
+    let settings: GalacticConfigurationSource
+
     /// Whether this pane belongs to the session the user selected. Drives
     /// hiding and drag registration — the questions that really are about
     /// which session owns the pane.
@@ -39,7 +46,11 @@ struct FocusableTerminalView: NSViewRepresentable {
     let isVisibleSurface: Bool
 
     func makeNSView(context: Context) -> TerminalHostView {
-        TerminalHostView(pane: pane, timelineRecorder: timelineRecorder)
+        TerminalHostView(
+            pane: pane,
+            timelineRecorder: timelineRecorder,
+            settings: settings
+        )
     }
 
     func updateNSView(_ nsView: TerminalHostView, context: Context) {
@@ -163,6 +174,9 @@ class TerminalHostView: NSView {
     /// Where this host's terminal events go, or nil to record nothing.
     private let timelineRecorder: TerminalTimelineRecorder?
 
+    /// Where this host reads configuration, and hears that it changed.
+    private let settings: GalacticConfigurationSource
+
     /// Which pane this host is showing, as the pane itself reports it.
     private var paneKind: TerminalPaneKind { pane.paneKind }
 
@@ -248,10 +262,11 @@ class TerminalHostView: NSView {
     /// fails internally.
     private var pendingFindActivation: Bool = false
 
-    /// Cooldown flag — when true, scroll-wheel-up is ignored to prevent
-    /// trackpad momentum from immediately re-creating the scrollback view.
-    private var scrollbackCooldown = false
-    private var scrollbackCooldownTimer: DispatchWorkItem?
+    /// Whether a scroll-up opens the scrollback overlay, and the post-dismiss
+    /// cooldown that stops the tail of the dismissing gesture from re-opening
+    /// it. Both answers come from configuration, so the whole behaviour is one
+    /// value away from off.
+    private let scrollEntry = ScrollToEnterScrollback()
 
     /// Combine subscriptions for live settings sync (font, theme, hasExited).
     private var cancellables = Set<AnyCancellable>()
@@ -284,10 +299,12 @@ class TerminalHostView: NSView {
 
     init(
         pane: TerminalPane,
-        timelineRecorder: TerminalTimelineRecorder?
+        timelineRecorder: TerminalTimelineRecorder?,
+        settings: GalacticConfigurationSource
     ) {
         self.pane = pane
         self.timelineRecorder = timelineRecorder
+        self.settings = settings
         super.init(frame: .zero)
         wantsLayer = true
         // Note: Don't register for drags here - done dynamically via updateDragRegistration()
@@ -301,7 +318,6 @@ class TerminalHostView: NSView {
             NSEvent.removeMonitor(monitor)
         }
         cancellables.removeAll()
-        scrollbackCooldownTimer?.cancel()
         firstResponderObservation?.invalidate()
         let key = ObjectIdentifier(self)
         paneRegistry?.unregisterUnsavedWorkChecker(key)
@@ -951,51 +967,16 @@ class TerminalHostView: NSView {
     /// Handle scroll-wheel-up on the live terminal. Returns true if the event
     /// was consumed (scrollback overlay created), false to let normal scroll proceed.
     private func handleScrollUp(event: NSEvent) -> Bool {
-        guard SettingsManager.shared.settings.scrollToEnterScrollback else { return false }
-        guard !isScrollbackActive else { return false }
-        guard !scrollbackCooldown else { return false }
-        guard pane.hasScrollbackContent else { return false }
+        guard scrollEntry.shouldEnter(
+            configuration: settings.configuration,
+            isSurfaceOpen: isScrollbackActive,
+            hasContent: pane.hasScrollbackContent
+        ) else { return false }
 
         let scrollPosition = pane.viewportRow
         pane.clearSelection()
         createScrollback(initialScrollLine: scrollPosition)
         return true
-    }
-
-    /// Start the post-dismiss cooldown. Clears on momentum end or ~300ms timeout
-    /// (whichever comes first). Prevents trackpad momentum from immediately
-    /// re-creating the scrollback view after dismiss.
-    private func startScrollbackCooldown() {
-        scrollbackCooldown = true
-        scrollbackCooldownTimer?.cancel()
-
-        // Monitor for momentum end — clears cooldown early for trackpads
-        var momentumMonitor: Any?
-        momentumMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-            if event.momentumPhase == .ended
-                || (event.momentumPhase == [] && event.phase == .ended) {
-                self?.scrollbackCooldown = false
-                self?.scrollbackCooldownTimer?.cancel()
-                self?.scrollbackCooldownTimer = nil
-                if let monitor = momentumMonitor {
-                    NSEvent.removeMonitor(monitor)
-                    momentumMonitor = nil
-                }
-            }
-            return event
-        }
-
-        // Safety timeout — for discrete mouse wheels that don't send momentum events
-        let timer = DispatchWorkItem { [weak self] in
-            self?.scrollbackCooldown = false
-            self?.scrollbackCooldownTimer = nil
-            if let monitor = momentumMonitor {
-                NSEvent.removeMonitor(monitor)
-                momentumMonitor = nil
-            }
-        }
-        scrollbackCooldownTimer = timer
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: timer)
     }
 
     /// Enter scrollback mode from Cmd+S menu action. Only the
@@ -1369,12 +1350,9 @@ class TerminalHostView: NSView {
             paneRegistry?.setSessionPaneScrollbackActive(false)
         }
 
-        // Start cooldown to prevent trackpad momentum from
-        // re-creating scrollback
-        if SettingsManager.shared.settings
-            .scrollToEnterScrollback {
-            startScrollbackCooldown()
-        }
+        // Ignore the tail of the gesture that dismissed this, or it re-opens
+        // what the user just closed.
+        scrollEntry.beginCooldown(configuration: settings.configuration)
     }
 
     /// Push the current `sendToClaudeTarget.disabledReason()`
