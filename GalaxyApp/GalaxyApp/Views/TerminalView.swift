@@ -710,13 +710,11 @@ class TerminalHostView: NSView {
     /// Paint the host's layer in the current theme background
     /// color. Called on setup and on theme changes.
     private func applyHostBackgroundColor() {
-        let theme = TerminalColorTheme.theme(
-            named: SettingsManager.shared
+        TerminalHostBackground.apply(
+            to: self,
+            themeNamed: SettingsManager.shared
                 .settings.terminalColorThemeName
         )
-        wantsLayer = true
-        layer?.backgroundColor =
-            theme.backgroundColorValue.cgColor
     }
 
     /// Re-evaluate the focus dim whenever any window takes or gives up key.
