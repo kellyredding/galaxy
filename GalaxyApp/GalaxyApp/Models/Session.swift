@@ -1184,7 +1184,7 @@ class Session: Identifiable, ObservableObject {
     /// because the login-shell capture sources the profile (~0.2-0.3s).
     ///
     /// Base is the user's login-shell environment (captured via
-    /// `ShellLauncher.loginShellEnvironment`) so a Galaxy session gets
+    /// `ShellEnvironment.loginShellEnvironment`) so a Galaxy session gets
     /// the same environment a terminal does — profile-exported secrets,
     /// the full PATH, locale. Falls back to this process's own
     /// (launchd-minimal) environment if the capture fails, so a session
@@ -1200,7 +1200,7 @@ class Session: Identifiable, ObservableObject {
     ) -> [String] {
         // Base: the login shell's environment; fall back to this
         // process's own environment if the capture fails.
-        var envArray = ShellLauncher.loginShellEnvironment()
+        var envArray = ShellEnvironment.loginShellEnvironment()
             ?? ProcessInfo.processInfo.environment.map { "\($0.key)=\($0.value)" }
 
         // Strip environment variables that interfere with child sessions:
@@ -1211,6 +1211,13 @@ class Session: Identifiable, ObservableObject {
         // - CLAUDE_CLI_SESSION_ID: set by Claude Persona sessions; if Galaxy.app
         //   was launched from within such a session, the inherited value would
         //   cause ledger hooks to resolve to the parent session instead of this one
+        // - CLAUDE_CODE_*: the same hazard from the other direction. Launching
+        //   Galaxy.app from inside a Claude Code session — an agent restarting
+        //   it with `open` — leaks CLAUDE_CODE_SESSION_ID and
+        //   CLAUDE_CODE_CHILD_SESSION in, so a session spawned here would carry
+        //   the launching session's identity. The whole family goes, since
+        //   CLAUDE_CODE_ENTRYPOINT and CLAUDE_CODE_EXECPATH describe the parent
+        //   too
         // - the inherited terminal identity: replaced below with Galaxy's own.
         //   See TerminalIdentity for which entries and why
         envArray = envArray.filter {
@@ -1219,7 +1226,8 @@ class Session: Identifiable, ObservableObject {
             !$0.hasPrefix("LANG=") &&
             !TerminalIdentity.isInherited($0) &&
             !$0.hasPrefix("CLAUDECODE=") &&
-            !$0.hasPrefix("CLAUDE_CLI_SESSION_ID=")
+            !$0.hasPrefix("CLAUDE_CLI_SESSION_ID=") &&
+            !$0.hasPrefix("CLAUDE_CODE_")
         }
         envArray.append("TERM=xterm-256color")
         envArray.append(TerminalIdentity.declaration)

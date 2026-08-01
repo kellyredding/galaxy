@@ -88,7 +88,7 @@ final class ShellTerminalPane: BackendBackedPane, ObservableObject {
     func start() {
         startShell(
             ShellLaunch(
-                executable: ShellLauncher.userLoginShell(),
+                executable: ShellEnvironment.userLoginShell(),
                 workingDirectory: ShellLauncher.resolveCwd(for: session),
                 environment: ShellLauncher.buildEnvironment()
             )
