@@ -85,17 +85,27 @@ class Session: Identifiable, ObservableObject {
     /// True when the session was stopped by the user (stop button, ⌘W).
     /// Prevents "exited unexpectedly" notifications for intentional stops.
     var userInitiatedStop: Bool = false
-    /// Whether this session has an unread response the user hasn't seen yet.
-    /// Set by SessionManager.handleIdleTransition when a non-focused session
-    /// goes idle. Cleared when the user views the session on the terminal tab.
+    /// Whether this session has something waiting the user has not seen.
     ///
-    /// Two display surfaces read this state independently:
-    /// - Sidebar/tab red dots (gated by showUnreadIndicator setting)
-    /// - Dock badge count (gated by showDockBadge setting)
+    /// Set by `SessionManager.markAttentionWanted(for:)` whenever a notable
+    /// event lands on a session nobody is looking at — a turn ending, a bell, a
+    /// permission prompt. Cleared by `attentionAutoClear` as soon as one of the
+    /// surfaces rendering it is being viewed.
     ///
-    /// IMPORTANT: After mutating this property, call
-    /// SessionManager.shared.updateDockBadge() to keep the dock badge in sync.
-    @Published var hasUnreadResponse: Bool = false
+    /// Three surfaces render it, each gated by its own setting: the sidebar and
+    /// collapsed-sidebar dots and the tab dot on `showUnreadIndicator`, the dock
+    /// badge count on `showDockBadge`.
+    ///
+    /// The dock badge resyncs from `didSet` rather than by convention. It used
+    /// to be every caller's job to remember, documented here in capitals, and
+    /// six sites remembered while three wrote the badge directly and bypassed
+    /// the helper — which is what a convention that cannot be enforced buys.
+    @Published var hasUnreadResponse: Bool = false {
+        didSet {
+            guard oldValue != hasUnreadResponse else { return }
+            SessionManager.shared.updateDockBadge()
+        }
+    }
     @Published var visualBellActive: Bool = false
 
     /// Collapses a burst of bells on this session into one event — no sound,
