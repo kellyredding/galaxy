@@ -98,7 +98,9 @@ struct TerminalTabSplitView: View {
         .onReceive(
             TerminalTabCommands.shared.openShell
         ) { sessionId in
-            guard sessionId == session.id else { return }
+            guard TerminalTabCommands.addresses(
+                sessionID: session.id, target: sessionId
+            ) else { return }
             if state.shellPane != nil {
                 // Through the pane-focus registry, not the pane:
                 // with a scrollback open on the shell, focusing
@@ -114,7 +116,9 @@ struct TerminalTabSplitView: View {
         .onReceive(
             TerminalTabCommands.shared.focusSession
         ) { sessionId in
-            guard sessionId == session.id else { return }
+            guard TerminalTabCommands.addresses(
+                sessionID: session.id, target: sessionId
+            ) else { return }
             // Same reason as the shell above: reaching for the
             // backend skips the host that knows whether a
             // scrollback overlay is covering it.
@@ -123,8 +127,9 @@ struct TerminalTabSplitView: View {
         .onReceive(
             TerminalTabCommands.shared.closeFocusedShell
         ) { sessionId in
-            guard sessionId == session.id,
-                  let pane = state.shellPane else { return }
+            guard TerminalTabCommands.addresses(
+                sessionID: session.id, target: sessionId
+            ), let pane = state.shellPane else { return }
             // Mirror session-pane Cmd+W: gate destructive
             // close on a confirmation sheet when scrollback
             // notes would be lost. The helper no-ops the
@@ -229,63 +234,59 @@ final class SplitState: ObservableObject {
     }
 }
 
-/// Pub/sub hub for Terminal-tab commands from the menu.
-/// Each `TerminalTabSplitView` subscribes and filters by
-/// session ID, so only the active session's split
-/// responds. Singleton lifetime — installed once at first
-/// access; Cmd+W monitor is hooked here too.
-final class TerminalTabCommands {
-    static let shared = TerminalTabCommands()
+/// App-wide ⌘W interceptor for the Terminal tab's shell pane.
+///
+/// Consumes ⌘W only when focus sits in a shell pane, and sends the close
+/// command naming that pane's session. Every other ⌘W passes through to the
+/// File menu unchanged.
+///
+/// Still app-side because the walk below names this app's host and pane types.
+/// It moves once those do; the command it sends, and the ⌘W match itself,
+/// already come from the engine.
+final class ShellCloseKeyMonitor {
+    static let shared = ShellCloseKeyMonitor()
 
-    let openShell = PassthroughSubject<UUID, Never>()
-    let focusSession = PassthroughSubject<UUID, Never>()
-    let closeFocusedShell =
-        PassthroughSubject<UUID, Never>()
-
-    /// Strong ref kept so the monitor is never removed for
-    /// the life of the app.
-    private var cmdWMonitor: Any?
+    /// Strong ref kept so the monitor is never removed for the life of the app.
+    private var monitor: Any?
 
     private init() {
-        installCmdWMonitor()
+        install()
     }
 
-    /// Install an app-wide Cmd+W interceptor that consumes
-    /// the event only when the first responder is inside a
-    /// `TerminalHostView` hosting a `ShellTerminalPane`. In
-    /// that case, sends `closeFocusedShell` for the owning
-    /// session. Otherwise passes through so the File menu's
-    /// Cmd+W handles it as before.
-    private func installCmdWMonitor() {
-        cmdWMonitor = NSEvent.addLocalMonitorForEvents(
+    private func install() {
+        monitor = NSEvent.addLocalMonitorForEvents(
             matching: .keyDown
-        ) { [weak self] event in
-            guard let self = self else { return event }
-            let modsOfInterest: NSEvent.ModifierFlags = [
-                .command, .option, .control, .shift,
-            ]
-            let mods =
-                event.modifierFlags
-                .intersection(modsOfInterest)
-            guard mods == .command else { return event }
-            guard
-                event.charactersIgnoringModifiers?
-                    .lowercased() == "w"
-            else { return event }
+        ) { event in
+            guard TerminalTabKeyCommand.isCloseWindow(event) else {
+                return event
+            }
+
+            // With the find bar up, the key window is its panel and the walk
+            // below finds no host — which would quietly turn ⌘W into "close
+            // the whole window" mid-search. Fall back to the focus memory of
+            // the session on screen, which still names the pane the user was
+            // typing in.
+            if FindBarPanelController.shared.isPresenting {
+                guard
+                    let session = SessionManager.shared.activeSession,
+                    session.paneRegistry.lastFocusedPaneKind == .shell
+                else { return event }
+                TerminalTabCommands.shared.closeFocusedShell
+                    .send(session.id)
+                return nil
+            }
 
             guard let window = NSApp.keyWindow,
-                  let responder =
-                    window.firstResponder as? NSView
+                  let responder = window.firstResponder as? NSView
             else { return event }
 
             var view: NSView? = responder
             while let v = view {
                 if let host = v as? TerminalHostView,
-                   let shellPane =
-                    host.pane as? ShellTerminalPane,
-                   let sessionId =
-                    shellPane.session?.id {
-                    self.closeFocusedShell.send(sessionId)
+                   let shellPane = host.pane as? ShellTerminalPane,
+                   let sessionId = shellPane.session?.id {
+                    TerminalTabCommands.shared.closeFocusedShell
+                        .send(sessionId)
                     return nil  // consume the event
                 }
                 view = v.superview

@@ -108,7 +108,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // than lazily on first SwiftUI body evaluation. The
         // monitor needs to be in place before the user can
         // possibly press Cmd+W in a focused shell pane.
-        _ = TerminalTabCommands.shared
+        _ = ShellCloseKeyMonitor.shared
 
         // Create and show the main window
         mainWindowController = MainWindowController()
