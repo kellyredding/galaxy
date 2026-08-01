@@ -284,10 +284,18 @@ struct CollapsedSessionRow: View {
                         : Color.clear
                 )
 
-            // Visual bell flash overlay (entire row area)
-            if isSelected && session.visualBellActive {
+            // Visual bell flash over the whole row area. Every session flashes,
+            // not only the selected one — the collapsed sidebar is where an
+            // unattended session is *most* likely to be, so withholding the cue
+            // there was backwards. Two washes because the backdrop differs; see
+            // `Color.sessionBellFlashSelected`.
+            if session.visualBellActive {
                 Rectangle()
-                    .fill(Color.white.opacity(0.4))
+                    .fill(
+                        isSelected
+                            ? Color.sessionBellFlashSelected
+                            : Color.sessionBellFlashUnselected
+                    )
             }
 
             // Status dot

@@ -376,10 +376,23 @@ struct SessionRow: View {
                     Rectangle().fill(Color.accentColor.opacity(0.25))
                 }
 
-                // Visual bell pulse overlay (only for selected session, not during drag)
-                if !isPlaceholder && isSelected && session.visualBellActive {
+                // Visual bell pulse. Every session's row flashes, not only the
+                // selected one — a bell means the agent wants attention, and
+                // the row you are *not* looking at is the case that needs
+                // saying. The persistent unread dot was carrying that alone,
+                // while the cue that says "now" fired only where you already
+                // were.
+                //
+                // Two washes because the backdrop differs — see
+                // `Color.sessionBellFlashSelected` for why one colour cannot
+                // serve both.
+                if !isPlaceholder && session.visualBellActive {
                     Rectangle()
-                        .fill(Color.white.opacity(0.4))
+                        .fill(
+                            isSelected
+                                ? Color.sessionBellFlashSelected
+                                : Color.sessionBellFlashUnselected
+                        )
                 }
             }
         )
