@@ -32,6 +32,7 @@ struct ShellPaneView: View {
                 pane: pane,
                 timelineRecorder: .galaxyLedger,
                 settings: SettingsManager.shared,
+                findActivations: SessionManager.shared.findActivations,
                 isActiveSession: isActiveSession,
                 isVisibleSurface: isVisibleSurface
             )

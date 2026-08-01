@@ -29,6 +29,13 @@ struct FocusableTerminalView: NSViewRepresentable {
     /// off is a value read through here rather than code that is absent.
     let settings: GalacticConfigurationSource
 
+    /// Told each time the user asks to find, however this app carries that.
+    ///
+    /// The host answers ⌘F but does not own the gesture — a menu does, and how
+    /// a menu reaches the right surface is this app's business, not the
+    /// terminal's.
+    let findActivations: FindActivations
+
     /// Whether this pane belongs to the session the user selected. Drives
     /// hiding and drag registration — the questions that really are about
     /// which session owns the pane.
@@ -49,7 +56,8 @@ struct FocusableTerminalView: NSViewRepresentable {
         TerminalHostView(
             pane: pane,
             timelineRecorder: timelineRecorder,
-            settings: settings
+            settings: settings,
+            findActivations: findActivations
         )
     }
 
@@ -176,6 +184,9 @@ class TerminalHostView: NSView {
 
     /// Where this host reads configuration, and hears that it changed.
     private let settings: GalacticConfigurationSource
+
+    /// Told each time the user asks to find within this surface.
+    private let findActivations: FindActivations
 
     /// Which pane this host is showing, as the pane itself reports it.
     private var paneKind: TerminalPaneKind { pane.paneKind }
@@ -311,11 +322,13 @@ class TerminalHostView: NSView {
     init(
         pane: TerminalPane,
         timelineRecorder: TerminalTimelineRecorder?,
-        settings: GalacticConfigurationSource
+        settings: GalacticConfigurationSource,
+        findActivations: FindActivations
     ) {
         self.pane = pane
         self.timelineRecorder = timelineRecorder
         self.settings = settings
+        self.findActivations = findActivations
         super.init(frame: .zero)
         wantsLayer = true
         // Note: Don't register for drags here - done dynamically via updateDragRegistration()
@@ -637,14 +650,12 @@ class TerminalHostView: NSView {
     }
 
     private func observeFindActivation() {
-        // Observe Cmd+F find activation. If scrollback is already
-        // open in this host, focus its find bar; otherwise open
-        // scrollback at the current viewport and queue the find
-        // bar to appear once the WebView signals ready.
-        SessionManager.shared.$findActivationCounter
+        // If a scrollback is already open here, bring up its find bar;
+        // otherwise open one at the current viewport and queue the bar for
+        // after the page paints.
+        findActivations
             .receive(on: DispatchQueue.main)
-            .dropFirst()  // ignore initial value
-            .sink { [weak self] _ in
+            .sink { [weak self] in
                 self?.activateFindOnScrollback()
             }
             .store(in: &cancellables)

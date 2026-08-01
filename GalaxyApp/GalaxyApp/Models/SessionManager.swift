@@ -150,6 +150,21 @@ class SessionManager: ObservableObject {
     /// dispatches directly via the slot matching `activeTab`.
     @Published var findActivationCounter: Int = 0
 
+    /// The counter above as terminal hosts consume it.
+    ///
+    /// A counter is how this app carries the gesture, and a count is not what a
+    /// host wants to know — it wants to be told once, each time. Mapping here
+    /// rather than at the hosts keeps the quirk of the transport with the thing
+    /// that has it, including the replay a published property performs for
+    /// every new subscriber, which a host reading it raw would mistake for a
+    /// keypress at mount.
+    var findActivations: FindActivations {
+        $findActivationCounter
+            .dropFirst()
+            .map { _ in () }
+            .eraseToAnyPublisher()
+    }
+
     /// Activation slots populated by the active SwiftUI surface
     /// in its appear/onChange handlers. `activateFind()` calls
     /// the slot whose tab matches `activeTab`. Slots are plain
