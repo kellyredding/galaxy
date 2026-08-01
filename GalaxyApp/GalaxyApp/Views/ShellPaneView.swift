@@ -30,6 +30,7 @@ struct ShellPaneView: View {
             // flags haven't changed.
             FocusableTerminalView(
                 pane: pane,
+                timelineRecorder: .galaxyLedger,
                 isActiveSession: isActiveSession,
                 isVisibleSurface: isVisibleSurface
             )

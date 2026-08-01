@@ -15,6 +15,13 @@ extension Notification.Name {
 struct FocusableTerminalView: NSViewRepresentable {
     let pane: TerminalPane
 
+    /// Where the host's terminal events are recorded.
+    ///
+    /// Supplied by the app rather than reached for, so the host describes what
+    /// happened without knowing what stores it — and so an app with nothing to
+    /// store into supplies nil and the describing stays put.
+    let timelineRecorder: TerminalTimelineRecorder?
+
     /// Whether this pane belongs to the session the user selected. Drives
     /// hiding and drag registration — the questions that really are about
     /// which session owns the pane.
@@ -32,7 +39,7 @@ struct FocusableTerminalView: NSViewRepresentable {
     let isVisibleSurface: Bool
 
     func makeNSView(context: Context) -> TerminalHostView {
-        TerminalHostView(pane: pane)
+        TerminalHostView(pane: pane, timelineRecorder: timelineRecorder)
     }
 
     func updateNSView(_ nsView: TerminalHostView, context: Context) {
@@ -153,6 +160,9 @@ class TerminalHostView: NSView {
         owningSession?.paneRegistry
     }
 
+    /// Where this host's terminal events go, or nil to record nothing.
+    private let timelineRecorder: TerminalTimelineRecorder?
+
     /// Which pane this host is showing, as the pane itself reports it.
     private var paneKind: TerminalPaneKind { pane.paneKind }
 
@@ -272,8 +282,12 @@ class TerminalHostView: NSView {
     /// hard to scan if the user glances over.
     private static let unfocusedPaneAlpha: CGFloat = 0.70
 
-    init(pane: TerminalPane) {
+    init(
+        pane: TerminalPane,
+        timelineRecorder: TerminalTimelineRecorder?
+    ) {
         self.pane = pane
+        self.timelineRecorder = timelineRecorder
         super.init(frame: .zero)
         wantsLayer = true
         // Note: Don't register for drags here - done dynamically via updateDragRegistration()
@@ -1136,12 +1150,18 @@ class TerminalHostView: NSView {
                     "notes": expandedNotes,
                 ]
 
-                TimelineService.recordViaStdin(
-                    ledgerSessionId: lsid,
-                    eventType: "scrollback:reviewed",
-                    source: "galaxy-app/views/terminal",
-                    detailData: detailData
-                )
+                self.timelineRecorder.record(
+                    sessionID: self.pane.ledgerSessionId
+                ) { id in
+                    TerminalTimelineEvent(
+                        sessionID: id,
+                        type: "scrollback:reviewed",
+                        paneKind: self.paneKind,
+                        source: "galaxy-app/views/terminal",
+                        detail: detailData,
+                        detailMayBeLarge: true
+                    )
+                }
             }
 
             self.performScrollbackTeardown(reason: .reviewed)
@@ -1172,16 +1192,15 @@ class TerminalHostView: NSView {
             guard let self = self,
                   let lsid = self.pane.ledgerSessionId
             else { return }
-            var enriched = detailData
-            enriched["pane"] = self.paneKind.rawValue
-            TimelineService.record(
-                ledgerSessionId: lsid,
-                eventType:
-                    "scrollback.note:\(action)",
-                source:
-                    "galaxy-app/views/scrollback",
-                detailData: enriched
-            )
+            self.timelineRecorder.record(sessionID: lsid) { id in
+                TerminalTimelineEvent(
+                    sessionID: id,
+                    type: "scrollback.note:\(action)",
+                    paneKind: self.paneKind,
+                    source: "galaxy-app/views/scrollback",
+                    detail: detailData
+                )
+            }
         }
 
         // Create overlay container with border and pill. Sized to
@@ -1227,13 +1246,13 @@ class TerminalHostView: NSView {
         // Generate duration ID and fire scrollback:entered event
         let durationId = "scrollback--\(UUID().uuidString)"
         scrollbackDurationId = durationId
-        if let lsid = pane.ledgerSessionId {
-            TimelineService.record(
-                ledgerSessionId: lsid,
-                eventType: "scrollback:entered",
+        timelineRecorder.record(sessionID: pane.ledgerSessionId) { id in
+            TerminalTimelineEvent(
+                sessionID: id,
+                type: "scrollback:entered",
+                paneKind: paneKind,
                 source: "galaxy-app/views/terminal",
-                durationIdentifier: durationId,
-                detailData: ["pane": paneKind.rawValue]
+                durationIdentifier: durationId
             )
         }
 
@@ -1281,58 +1300,40 @@ class TerminalHostView: NSView {
 
         // Fire scrollback:exited timeline event before teardown
         // destroys the overlay and its notes.
-        if let lsid = pane.ledgerSessionId {
+        timelineRecorder.record(sessionID: pane.ledgerSessionId) { id in
             let notes = overlay.scrollbackView.notes
-            let durationId = scrollbackDurationId
 
+            // Three shapes of the same event. A review already recorded its
+            // notes in full, so this one only counts them; an exit with nothing
+            // written has nothing to count; an exit that discards notes carries
+            // them so they can be recovered, which is what makes its payload
+            // unbounded.
+            var detail: [String: Any] = ["reason": reason.rawValue]
+            var mayBeLarge = false
             if reason == .reviewed {
-                // Notes already captured in scrollback:reviewed
-                TimelineService.record(
-                    ledgerSessionId: lsid,
-                    eventType: "scrollback:exited",
-                    source: "galaxy-app/views/terminal",
-                    durationIdentifier: durationId,
-                    detailData: [
-                        "pane": paneKind.rawValue,
-                        "reason": reason.rawValue,
-                        "note_count": notes.count,
-                    ]
-                )
-            } else if notes.isEmpty {
-                TimelineService.record(
-                    ledgerSessionId: lsid,
-                    eventType: "scrollback:exited",
-                    source: "galaxy-app/views/terminal",
-                    durationIdentifier: durationId,
-                    detailData: [
-                        "pane": paneKind.rawValue,
-                        "reason": reason.rawValue,
-                    ]
-                )
-            } else {
-                // Capture discarded notes for recovery
-                let expandedNotes: [[String: Any]] =
-                    notes.map { note in
-                        [
-                            "start_line": note.startLine,
-                            "end_line": note.endLine,
-                            "line_content": note.lineContent,
-                            "note": note.content,
-                        ] as [String: Any]
-                    }
-                TimelineService.recordViaStdin(
-                    ledgerSessionId: lsid,
-                    eventType: "scrollback:exited",
-                    source: "galaxy-app/views/terminal",
-                    durationIdentifier: durationId,
-                    detailData: [
-                        "pane": paneKind.rawValue,
-                        "reason": reason.rawValue,
-                        "note_count": notes.count,
-                        "discarded_notes": expandedNotes,
-                    ]
-                )
+                detail["note_count"] = notes.count
+            } else if !notes.isEmpty {
+                detail["note_count"] = notes.count
+                detail["discarded_notes"] = notes.map { note in
+                    [
+                        "start_line": note.startLine,
+                        "end_line": note.endLine,
+                        "line_content": note.lineContent,
+                        "note": note.content,
+                    ] as [String: Any]
+                }
+                mayBeLarge = true
             }
+
+            return TerminalTimelineEvent(
+                sessionID: id,
+                type: "scrollback:exited",
+                paneKind: paneKind,
+                source: "galaxy-app/views/terminal",
+                durationIdentifier: scrollbackDurationId,
+                detail: detail,
+                detailMayBeLarge: mayBeLarge
+            )
         }
 
         // Restore first responder to live terminal only if the

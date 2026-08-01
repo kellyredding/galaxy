@@ -574,6 +574,7 @@ struct SessionPaneView: View {
                     pane: adapterHolder.adapter(
                         for: session, backend: backend
                     ),
+                    timelineRecorder: .galaxyLedger,
                     isActiveSession: isActiveSession,
                     isVisibleSurface: isVisibleSurface
                 )
