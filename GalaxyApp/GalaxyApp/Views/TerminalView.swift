@@ -761,23 +761,18 @@ class TerminalHostView: NSView {
         (paneRegistry?.lastFocusedPaneKind ?? .session) == paneKind
     }
 
-    /// Give up first responder if this host holds it.
+    /// Give up first responder if this host holds it, and close the find bar.
     ///
-    /// Called before the pane is hidden, and deliberately before rather than
-    /// during: AppKit's own auto-resign inside `setHidden:` does ~800ms of
-    /// synchronous work when the first responder is a descendant of the view
-    /// being hidden — measured on a shell-pane session switch, and asymmetric
-    /// in whether the pane was focused. Resigning here first drops that to
-    /// under a millisecond. The workaround names no engine type, so it survives
-    /// a backend change unchanged.
+    /// Called as this session stops being the selected one, which is also when
+    /// the pane gets hidden — and the order matters enough that the reason is
+    /// recorded on the shared implementation.
     func resignFocusIfHeld() {
-        guard let window else { return }
-        let responder = window.firstResponder
-        let holdsFocus =
-            responder === pane.view
-            || (responder as? NSView)?.isDescendant(of: self) == true
-        guard holdsFocus else { return }
-        window.makeFirstResponder(nil)
+        TerminalFocus.resignIfHeld(
+            in: window,
+            host: self,
+            paneView: pane.view,
+            findController: scrollbackOverlay?.findController
+        )
     }
 
     func requestFocus() {
