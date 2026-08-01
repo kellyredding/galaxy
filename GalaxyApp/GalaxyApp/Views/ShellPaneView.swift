@@ -45,6 +45,7 @@ struct ShellPaneView: View {
                 timelineRecorder: .galaxyLedger,
                 settings: SettingsManager.shared,
                 findActivations: SessionManager.shared.findActivations,
+                scrollbackActivations: MenuActions.scrollbackActivations,
                 // No turns happen in a shell, so there is nothing here to
                 // interrupt. Answered with a value rather than by the host
                 // working it out from what kind of pane this is.
@@ -56,7 +57,12 @@ struct ShellPaneView: View {
                 surfaceEndings: .never,
                 sendBlockerChanges: sendBlockerChanges,
                 isActiveSession: isActiveSession,
-                isVisibleSurface: isVisibleSurface
+                isVisibleSurface: isVisibleSurface,
+                // This app hides a pane whose session is not selected, so the
+                // moment to give up the caret is the deselection — before the
+                // hide, not when the user merely moves to another tab with
+                // this session still showing behind it.
+                shouldResignFocus: !isActiveSession
             )
             .equatable()
         }

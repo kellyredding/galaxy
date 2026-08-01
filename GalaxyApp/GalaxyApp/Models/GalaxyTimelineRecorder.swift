@@ -16,7 +16,18 @@ extension TerminalTimelineRecorder {
     /// breach it, so those go over standard input instead. The hint says the
     /// payload may be unbounded rather than naming the transport, so this stays
     /// the only code that has to know a ceiling exists at all.
-    static let galaxyLedger = TerminalTimelineRecorder { event in
+    /// The two names this app gives the places terminal events come from.
+    ///
+    /// Load-bearing stored values, not labels: they are already written into
+    /// thousands of ledger rows, and anything grouping or filtering by source
+    /// sees a split dataset the day they change. They live here, beside the
+    /// transport, because what this app calls its own code is this app's to say
+    /// — shared code asks rather than assuming, so the emitting code can move
+    /// between modules without rewriting history's idea of where it was.
+    static let galaxyLedger = TerminalTimelineRecorder(
+        terminalSource: "galaxy-app/views/terminal",
+        scrollbackSource: "galaxy-app/views/scrollback"
+    ) { event in
         if event.detailMayBeLarge {
             TimelineService.recordViaStdin(
                 ledgerSessionId: event.sessionID,
