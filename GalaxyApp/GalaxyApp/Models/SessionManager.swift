@@ -986,16 +986,12 @@ class SessionManager: ObservableObject {
             && activeTab == .terminal
             && isWindowFocused
 
-        // Unread indicator
-        let trackUnread = settings.showUnreadIndicator
-            || settings.showDockBadge
+        // A turn ending is only worth flagging if it ran long enough to have
+        // been worth waiting for — the extra condition this path has and the
+        // other two do not.
         let unreadMinBusy: TimeInterval = 3.0
-        let willSetUnread = trackUnread
-            && !isViewingThisSession
-            && turnDuration >= unreadMinBusy
-        if willSetUnread {
-            session.hasUnreadResponse = true
-            updateDockBadge()
+        if turnDuration >= unreadMinBusy {
+            markAttentionWanted(for: session)
         }
 
         // Session Idle notification
@@ -1626,6 +1622,38 @@ class SessionManager: ObservableObject {
     /// Update the dock badge to reflect the current unread session count.
     /// Only updates when the showDockBadge setting is enabled.
     /// Must be called on the main thread (NSDockTile is AppKit).
+    /// Whether the user is demonstrably looking at this session right now.
+    ///
+    /// The one predicate both directions of the attention rule are written
+    /// against: something is worth flagging when this is false, and worth
+    /// forgetting when it becomes true. It was previously spelled out at each of
+    /// four call sites, which is how the two directions drift apart.
+    func isViewing(_ session: Session) -> Bool {
+        session.id == activeSessionId
+            && activeTab == .terminal
+            && isWindowFocused
+    }
+
+    /// Note that a session wants attention, if anything would show it.
+    ///
+    /// Called for every event that means "Claude needs you" — a turn ending, a
+    /// PTY bell, a permission prompt. Each of those had its own copy of this,
+    /// identical but for the turn case's extra minimum-duration guard, and two
+    /// of the three carried the same copy-pasted comment explaining that they
+    /// mirrored the first.
+    ///
+    /// Silent when neither cue is enabled: with no dot and no badge there is
+    /// nothing to mark, and setting the flag anyway would leave state that only
+    /// surfaces later if a setting is switched on.
+    func markAttentionWanted(for session: Session) {
+        let settings = SettingsManager.shared.settings
+        let anythingWouldShowIt = settings.showUnreadIndicator
+            || settings.showDockBadge
+
+        guard anythingWouldShowIt, !isViewing(session) else { return }
+        session.hasUnreadResponse = true
+    }
+
     func updateDockBadge() {
         guard SettingsManager.shared.settings.showDockBadge else {
             NSApp.dockTile.badgeLabel = nil
@@ -1804,21 +1832,14 @@ class SessionManager: ObservableObject {
                 }
             }
 
-            // Unread indicator: a PTY bell while this session is not the
-            // focused terminal means Claude wants attention (permission
-            // prompt, question form, or other notification). Mirror the
-            // handleTurnEnd set path so the dot clears through the same
-            // focus-driven CLEAR-A / CLEAR-B machinery.
-            let isViewing = session.id == self.activeSessionId
-                && self.activeTab == .terminal
-                && self.isWindowFocused
-            let trackUnread = settings.showUnreadIndicator
-                || settings.showDockBadge
-            let willSetUnread = trackUnread && !isViewing
-            if willSetUnread {
-                session.hasUnreadResponse = true
-                self.updateDockBadge()
-            }
+            // A PTY bell while this session is not the focused terminal means
+            // Claude wants attention — a permission prompt, a question form, or
+            // another notification.
+            self.markAttentionWanted(for: session)
+
+            // Still needed below: notifying is a separate decision from the
+            // indicator, sharing only this predicate.
+            let isViewing = self.isViewing(session)
 
             // Terminal bell notification (honors setting + not viewing)
             guard settings.notifyTerminalBell else { return }

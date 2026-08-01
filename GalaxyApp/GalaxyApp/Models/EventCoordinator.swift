@@ -451,23 +451,13 @@ final class EventCoordinator {
                       )
                 else { return }
 
-                let isViewing =
-                    appSessionId == sm.activeSessionId
-                    && sm.activeTab == .terminal
-                    && sm.isWindowFocused
+                // Still needed below to gate the notification, which is a
+                // separate decision from the indicator.
+                let isViewing = sm.isViewing(session)
 
-                // Unread indicator: a permission / question prompt while
-                // this session is not the focused terminal means Claude
-                // wants attention. Mirror the handleTurnEnd set path so
-                // the dot clears through the same focus-driven
-                // CLEAR-A / CLEAR-B machinery.
-                let trackUnread = settings.showUnreadIndicator
-                    || settings.showDockBadge
-                let willSetUnread = trackUnread && !isViewing
-                if willSetUnread {
-                    session.hasUnreadResponse = true
-                    sm.updateDockBadge()
-                }
+                // A permission or question prompt while this session is not the
+                // focused terminal means Claude wants attention.
+                sm.markAttentionWanted(for: session)
 
                 // Notification (focus-gated)
                 if settings.notifyPermissionRequest, !isViewing {
