@@ -53,28 +53,7 @@ struct FocusableTerminalView: NSViewRepresentable {
         }
 
         if !isActiveSession {
-            // If we're deactivating AND this host holds first
-            // responder (i.e., the user was typing in this
-            // pane), resign first responder EXPLICITLY before
-            // flipping isHidden. AppKit's auto-resign path
-            // inside -[NSView setHidden:] does ~800ms of
-            // synchronous work when the first responder is a
-            // descendant of the view being hidden — observed
-            // on shell pane session-switch, with cost
-            // asymmetric to whether the pane was focused.
-            // Resigning first responder ourselves before the
-            // hide drops that cost from ~800ms to <1ms. The
-            // workaround is backend-agnostic (no SwiftTerm-
-            // specific code), so it survives a future
-            // libghostty migration unchanged.
-            let responder = nsView.window?.firstResponder
-            let firstResponderInPane =
-                responder === nsView.pane.view
-                || (responder as? NSView)?
-                    .isDescendant(of: nsView) == true
-            if firstResponderInPane {
-                nsView.window?.makeFirstResponder(nil)
-            }
+            nsView.resignFocusIfHeld()
         }
 
         // Skip the write when the value already matches —
@@ -174,6 +153,9 @@ class TerminalHostView: NSView {
         owningSession?.paneRegistry
     }
 
+    /// Which pane this host is showing, as the pane itself reports it.
+    private var paneKind: TerminalPaneKind { pane.paneKind }
+
     /// Is this pane's session the selected one? Controls drag-drop
     /// registration and hiding.
     var isActiveSession: Bool = false {
@@ -188,7 +170,7 @@ class TerminalHostView: NSView {
     /// terminal tab both? Supplied by the representable; see its declaration
     /// for why this is not the same question as `isActiveSession`.
     var isVisibleSurface: Bool = false
-    private var isSetUp = false
+    private var didSetUp = false
 
     /// Uniform inset between the host's bounds and the inner
     /// terminal view / scrollback overlay / drag highlight.
@@ -398,9 +380,9 @@ class TerminalHostView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
 
-        if !isSetUp && window != nil {
+        if !didSetUp && window != nil {
             setupTerminal()
-            isSetUp = true
+            didSetUp = true
         }
 
         // Re-bind the first-responder observer to the
@@ -503,7 +485,7 @@ class TerminalHostView: NSView {
     /// Paired with the unregister in `deinit`.
     private func registerWithPaneRegistry() {
         if let registry = paneRegistry {
-            let kind = pane.paneKind
+            let kind = paneKind
             let key = ObjectIdentifier(self)
             registry.registerUnsavedWorkChecker(
                 key,
@@ -741,7 +723,26 @@ class TerminalHostView: NSView {
     /// The gate that keeps two panes of one session from both answering a
     /// command meant for whichever the user was actually in.
     private var isPreferredPane: Bool {
-        (paneRegistry?.lastFocusedPaneKind ?? .session) == pane.paneKind
+        (paneRegistry?.lastFocusedPaneKind ?? .session) == paneKind
+    }
+
+    /// Give up first responder if this host holds it.
+    ///
+    /// Called before the pane is hidden, and deliberately before rather than
+    /// during: AppKit's own auto-resign inside `setHidden:` does ~800ms of
+    /// synchronous work when the first responder is a descendant of the view
+    /// being hidden — measured on a shell-pane session switch, and asymmetric
+    /// in whether the pane was focused. Resigning here first drops that to
+    /// under a millisecond. The workaround names no engine type, so it survives
+    /// a backend change unchanged.
+    func resignFocusIfHeld() {
+        guard let window else { return }
+        let responder = window.firstResponder
+        let holdsFocus =
+            responder === pane.view
+            || (responder as? NSView)?.isDescendant(of: self) == true
+        guard holdsFocus else { return }
+        window.makeFirstResponder(nil)
     }
 
     func requestFocus() {
@@ -905,17 +906,17 @@ class TerminalHostView: NSView {
 
         // Deduplicate URLs by path (some drag sources provide duplicates)
         var seenPaths = Set<String>()
-        var uniqueUrls: [URL] = []
+        var uniqueURLs: [URL] = []
         for url in urls {
             let path = url.standardized.path
             if !seenPaths.contains(path) {
                 seenPaths.insert(path)
-                uniqueUrls.append(url)
+                uniqueURLs.append(url)
             }
         }
 
         // Send raw paths (like Cmd+V paste) so Claude Code shows gray box treatment
-        let pathsText = uniqueUrls.map { $0.path }.joined(separator: " ") + " "
+        let pathsText = uniqueURLs.map { $0.path }.joined(separator: " ") + " "
 
         // Send to terminal with bracketed paste mode
         sendTextToTerminal(pathsText, asPaste: true)
@@ -1129,7 +1130,7 @@ class TerminalHostView: NSView {
                 }
 
                 let detailData: [String: Any] = [
-                    "pane": self.pane.paneKind.rawValue,
+                    "pane": self.paneKind.rawValue,
                     "note_count": notes.count,
                     "message": message,
                     "notes": expandedNotes,
@@ -1172,7 +1173,7 @@ class TerminalHostView: NSView {
                   let lsid = self.pane.ledgerSessionId
             else { return }
             var enriched = detailData
-            enriched["pane"] = self.pane.paneKind.rawValue
+            enriched["pane"] = self.paneKind.rawValue
             TimelineService.record(
                 ledgerSessionId: lsid,
                 eventType:
@@ -1232,7 +1233,7 @@ class TerminalHostView: NSView {
                 eventType: "scrollback:entered",
                 source: "galaxy-app/views/terminal",
                 durationIdentifier: durationId,
-                detailData: ["pane": pane.paneKind.rawValue]
+                detailData: ["pane": paneKind.rawValue]
             )
         }
 
@@ -1292,7 +1293,7 @@ class TerminalHostView: NSView {
                     source: "galaxy-app/views/terminal",
                     durationIdentifier: durationId,
                     detailData: [
-                        "pane": pane.paneKind.rawValue,
+                        "pane": paneKind.rawValue,
                         "reason": reason.rawValue,
                         "note_count": notes.count,
                     ]
@@ -1304,7 +1305,7 @@ class TerminalHostView: NSView {
                     source: "galaxy-app/views/terminal",
                     durationIdentifier: durationId,
                     detailData: [
-                        "pane": pane.paneKind.rawValue,
+                        "pane": paneKind.rawValue,
                         "reason": reason.rawValue,
                     ]
                 )
@@ -1325,7 +1326,7 @@ class TerminalHostView: NSView {
                     source: "galaxy-app/views/terminal",
                     durationIdentifier: durationId,
                     detailData: [
-                        "pane": pane.paneKind.rawValue,
+                        "pane": paneKind.rawValue,
                         "reason": reason.rawValue,
                         "note_count": notes.count,
                         "discarded_notes": expandedNotes,
@@ -1492,8 +1493,8 @@ class TerminalHostView: NSView {
         // Only writes on entry — leaving (e.g., to a rename
         // text field) keeps the prior value so post-edit
         // restoration lands back where they were.
-        if isFocusInPane, paneRegistry?.lastFocusedPaneKind != pane.paneKind {
-            paneRegistry?.lastFocusedPaneKind = pane.paneKind
+        if isFocusInPane, paneRegistry?.lastFocusedPaneKind != paneKind {
+            paneRegistry?.lastFocusedPaneKind = paneKind
         }
 
         // The find bar is this pane's own UI even though AppKit puts it in a
