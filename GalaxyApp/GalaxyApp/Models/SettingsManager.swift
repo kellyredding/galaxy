@@ -233,11 +233,15 @@ struct AppSettings: Codable, Equatable {
     // Scrollback constraints
     static let terminalScrollbackRange: ClosedRange<Int> = 500...100_000
 
-    // Shell pane default height constraints. The same 30–70%
-    // window the drag indicator enforces, so the setting can't
-    // be configured outside the usable range.
-    static let shellDefaultHeightRatioRange:
-        ClosedRange<Double> = 0.30...0.70
+    // Shell pane default height constraints — the same window the drag
+    // enforces, derived from it rather than restated, so the setting cannot be
+    // configured outside what a drag allows.
+    //
+    // Derived and not copied because the two are only the same numbers while
+    // the window is symmetric: this one bounds the *shell* pane's share, the
+    // drag bounds the pane above it.
+    static let shellDefaultHeightRatioRange: ClosedRange<Double> =
+        PaneSplitBounds.standard.bottomRange
     /// Stepper increment for the Settings UI. 1% nudges
     /// give fine-grained control; text field accepts any
     /// integer percent inside the range.
