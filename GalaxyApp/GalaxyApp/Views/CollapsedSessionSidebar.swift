@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Galactic
 
 // MARK: - Row Frame Anchor
 
@@ -228,6 +229,8 @@ struct CollapsedSessionSidebar: View {
                 isSelected: session.id == sessionManager.activeSessionId,
                 isWindowFocused: sessionManager.isWindowFocused,
                 isOnTerminalTab: sessionManager.activeTab == .terminal,
+                showUnreadIndicator: SettingsManager.shared
+                    .settings.showUnreadIndicator,
                 statusInfo: statusLineService.statusInfo[session.id],
                 sidebarPosition: SettingsManager.shared.settings.sidebarPosition
             )
@@ -262,6 +265,8 @@ struct CollapsedSessionRow: View {
     let isSelected: Bool
     let isWindowFocused: Bool
     let isOnTerminalTab: Bool
+    /// See the note on `SessionRow.showUnreadIndicator`.
+    let showUnreadIndicator: Bool
     let statusInfo: StatusLineService.SessionStatusInfo?
     let sidebarPosition: SidebarPosition
 
@@ -309,7 +314,7 @@ struct CollapsedSessionRow: View {
         .frame(width: 32, height: rowHeight)
         .background(FrameAnchorView(anchor: frameAnchor))
         .overlay(alignment: .topTrailing) {
-            if session.hasUnreadResponse {
+            if session.hasUnreadResponse, showUnreadIndicator {
                 UnreadIndicator()
                     .offset(x: 0, y: 6)
             }
@@ -331,13 +336,12 @@ struct CollapsedSessionRow: View {
             TooltipPanel.shared.hide()
         }
         .animation(.easeInOut(duration: 0.08), value: session.visualBellActive)
-        .unreadIndicatorBehavior(
-            session: session,
-            surface: "collapsed",
-            isSelected: isSelected,
-            isWindowFocused: isWindowFocused,
-            isOnTerminalTab: isOnTerminalTab
-        )
+        .attentionAutoClear(
+            isBeingViewed: isSelected && isWindowFocused && isOnTerminalTab,
+            hasAttention: session.hasUnreadResponse
+        ) {
+            session.hasUnreadResponse = false
+        }
     }
 
     private func showTooltip() {
@@ -746,6 +750,7 @@ extension CollapsedSessionRow: Equatable {
             && lhs.isSelected == rhs.isSelected
             && lhs.isWindowFocused == rhs.isWindowFocused
             && lhs.isOnTerminalTab == rhs.isOnTerminalTab
+            && lhs.showUnreadIndicator == rhs.showUnreadIndicator
             && lhs.statusInfo == rhs.statusInfo
             && lhs.sidebarPosition == rhs.sidebarPosition
     }

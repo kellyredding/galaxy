@@ -534,13 +534,14 @@ extension TabUnreadIndicator {
     /// Attach auto-clear behavior so the tab dot clears independently
     /// of the sidebar row (which has its own behavior modifier).
     func withClearBehavior() -> some View {
-        self.unreadIndicatorBehavior(
-            session: session,
-            surface: "tab",
-            isSelected: true,  // tab indicator is always for the active session
-            isWindowFocused: isWindowFocused,
-            isOnTerminalTab: isOnTerminalTab
-        )
+        // The tab indicator only ever renders for the active session, so
+        // selection is a given here and being viewed reduces to focus and tab.
+        self.attentionAutoClear(
+            isBeingViewed: isWindowFocused && isOnTerminalTab,
+            hasAttention: session.hasUnreadResponse
+        ) {
+            session.hasUnreadResponse = false
+        }
     }
 }
 

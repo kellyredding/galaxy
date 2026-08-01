@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Galactic
 
 // MARK: - Inline Name Editor (AppKit-backed)
 
@@ -221,6 +222,10 @@ struct SessionRow: View {
     let isSelected: Bool
     let isWindowFocused: Bool  // Need this to know when to fade indicator
     let isOnTerminalTab: Bool  // Only clear unread when viewing terminal
+    /// Passed rather than read from settings: observing the settings store
+    /// here would invalidate every row on any preference change, which is
+    /// the cascade `SidebarPreferences` exists to avoid.
+    let showUnreadIndicator: Bool
     var onStop: () -> Void   // Stop a running session
     var onClose: () -> Void  // Remove a stopped session from list
 
@@ -351,7 +356,10 @@ struct SessionRow: View {
                 // Appears instantly, fades out over 3 seconds (declarative animation)
                 UnreadIndicator()
                     .offset(x: -6, y: -2)
-                    .opacity(session.hasUnreadResponse ? 1 : 0)
+                    .opacity(
+                        session.hasUnreadResponse && showUnreadIndicator
+                            ? 1 : 0
+                    )
                     .animation(
                         session.hasUnreadResponse ? nil : .easeOut(duration: 3.0),
                         value: session.hasUnreadResponse
@@ -450,13 +458,12 @@ struct SessionRow: View {
                 isHovered = true
             }
         }
-        .unreadIndicatorBehavior(
-            session: session,
-            surface: "sidebar",
-            isSelected: isSelected,
-            isWindowFocused: isWindowFocused,
-            isOnTerminalTab: isOnTerminalTab
-        )
+        .attentionAutoClear(
+            isBeingViewed: isSelected && isWindowFocused && isOnTerminalTab,
+            hasAttention: session.hasUnreadResponse
+        ) {
+            session.hasUnreadResponse = false
+        }
     }
 
     // MARK: - Line 3: CWD + Git Status
@@ -675,6 +682,7 @@ extension SessionRow: Equatable {
             && lhs.isSelected == rhs.isSelected
             && lhs.isWindowFocused == rhs.isWindowFocused
             && lhs.isOnTerminalTab == rhs.isOnTerminalTab
+            && lhs.showUnreadIndicator == rhs.showUnreadIndicator
             && lhs.isPlaceholder == rhs.isPlaceholder
             && lhs.rowIndex == rhs.rowIndex
             && lhs.showDragHandle == rhs.showDragHandle

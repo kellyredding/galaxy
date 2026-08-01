@@ -123,6 +123,8 @@ struct ExpandedSessionSidebar: View {
                 isSelected: session.id == sessionManager.activeSessionId,
                 isWindowFocused: sessionManager.isWindowFocused,
                 isOnTerminalTab: sessionManager.activeTab == .terminal,
+                showUnreadIndicator: SettingsManager.shared
+                    .settings.showUnreadIndicator,
                 onStop: {
                     sessionManager.confirmAndStopSession(sessionId: session.id)
                 },
@@ -225,6 +227,9 @@ struct DragPreviewOverlay: View {
             isSelected: isSelected,
             isWindowFocused: isWindowFocused,
             isOnTerminalTab: isOnTerminalTab,
+            // A drag preview is a snapshot under the cursor; an attention dot
+            // on it would be noise, and clearing is the live row's job.
+            showUnreadIndicator: false,
             onStop: {},
             onClose: {},
             isPlaceholder: false,
