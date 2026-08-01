@@ -444,7 +444,7 @@ class TerminalHostView: NSView {
         observeScrollUp()
         observeFontSize()
         registerWithPaneRegistry()
-        observeSessionExit()
+        observeSurfaceEnding()
         observeSettingsChanges()
         observeAppTermination()
         observeScrollbackNotification()
@@ -548,7 +548,7 @@ class TerminalHostView: NSView {
         }
     }
 
-    private func observeSessionExit() {
+    private func observeSurfaceEnding() {
         // Close an open scrollback when whatever was behind this surface ends.
         // No note confirmation on this path: there is nothing left to send them
         // to, so asking would be offering a choice that cannot be taken.
