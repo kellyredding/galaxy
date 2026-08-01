@@ -1678,43 +1678,23 @@ class SessionManager: ObservableObject {
         return cleaned
     }
 
-    /// Trigger visual bell with 3 flashes, each shorter than the last.
-    /// Unconditional — debounce lives one level up in handleBell(for:)
-    /// so the whole pipeline (sound + flash + notification) is gated
-    /// together, not just the flash.
+    /// Flash this session's sidebar row on the shared cadence — three flashes
+    /// of equal length, not the decreasing ones this comment used to claim.
+    ///
+    /// Unconditional. The debounce lives one level up in `handleBell(for:)` so
+    /// the whole pipeline is gated together rather than just the flash — and the
+    /// cadence relies on that, having no overlap protection of its own.
     private func triggerVisualBell(for session: Session) {
-        // Flash durations: 3 flashes at 375ms each
-        // Gap between flashes: 100ms
-        let flashDurations = [0.375, 0.375, 0.375]
-        let gap = 0.1
-
-        var delay = 0.0
-        for (index, duration) in flashDurations.enumerated() {
-            // Turn on
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                session.visualBellActive = true
-            }
-            delay += duration
-
-            // Turn off
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                session.visualBellActive = false
-            }
-
-            // Add gap before next flash (except after last flash)
-            if index < flashDurations.count - 1 {
-                delay += gap
-            }
+        // The rhythm is shared; where it renders is not. This drives the
+        // session's flag and the sidebar row picks it up from there.
+        //
+        // Weakly held: the sequence outlives its own scheduling by more than a
+        // second, and a session torn down inside that window should stop being
+        // flashed rather than be kept alive to finish.
+        VisualBellCadence.standard.run { [weak session] active in
+            session?.visualBellActive = active
         }
     }
-
-    /// Total duration of a single bell pipeline event. Matches the
-    /// visual flash sequence (3 flashes × 375ms + 2 gaps × 100ms).
-    ///
-    /// Read by `Session` to size its own bell gate, so the window and the
-    /// sequence it has to outlast stay one number rather than two that drift.
-    static let bellPipelineDuration: TimeInterval =
-        (0.375 * 3) + (0.1 * 2)
 
     /// Subscribe to a session's `$backend` so the callback set
     /// below (`wireSessionCallbacks`) fires automatically whenever

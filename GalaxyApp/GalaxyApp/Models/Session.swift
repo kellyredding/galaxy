@@ -101,9 +101,11 @@ class Session: Identifiable, ObservableObject {
     /// Collapses a burst of bells on this session into one event — no sound,
     /// no flash, no notification for the ones that arrive mid-window.
     ///
-    /// Sized to the full visual flash sequence, so the gate aligns with what a
-    /// person perceives as a single bell rather than with any one of the three
-    /// responses.
+    /// Sized from the flash cadence itself rather than from a figure copied
+    /// alongside it, so the gate cannot reopen while the flash it is meant to
+    /// outlast is still running. The previous arrangement kept a literal here
+    /// and described it in a comment as 100ms shorter than the arithmetic
+    /// actually gave.
     ///
     /// Deliberately not `@Published`, and its predecessor should not have been.
     /// It is coordination state that no view reads or ever read; publishing it
@@ -111,7 +113,7 @@ class Session: Identifiable, ObservableObject {
     /// path this codebase separately documents as costing 80–300ms of main
     /// thread per fan-out.
     let bellDebounce = TerminalBellDebounce(
-        window: SessionManager.bellPipelineDuration
+        window: VisualBellCadence.standard.totalDuration
     )
 
     // MARK: - Turn State
