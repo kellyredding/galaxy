@@ -464,9 +464,9 @@ class Session: Identifiable, ObservableObject {
     /// Push the current `AppSettings` model into the backend
     /// and subscribe to future changes so they apply
     /// automatically. Called from `init` and `ensureBackend`
-    /// after the backend is constructed; the per-pane font-
-    /// size override is applied separately because
-    /// `applySettings` uses the global default size.
+    /// after the backend is constructed, handing the apply this
+    /// session's own font size rather than the configured
+    /// default.
     private func configureTerminal() {
         guard let backend = backend else { return }
 
@@ -476,8 +476,9 @@ class Session: Identifiable, ObservableObject {
         // fuses shape + blink into one value; the shared terminal
         // cursor settings drive this pane's native caret, which is
         // Claude's prompt cursor now that it's no longer hidden.
-        backend.applySettings(SettingsManager.shared.settings)
-        applyPerSessionFontSize()
+        backend.applySettings(
+            SettingsManager.shared.settings, fontSize: terminalFontSize
+        )
         backend.applyCursor(
             style: SettingsManager.shared.settings.terminalCursorStyle,
             blink: SettingsManager.shared.settings.terminalCursorBlink
@@ -492,9 +493,11 @@ class Session: Identifiable, ObservableObject {
             .dropFirst()  // Skip current value (already applied above)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] settings in
-                self?.backend?.applySettings(settings)
-                self?.applyPerSessionFontSize()
-                self?.backend?.applyCursor(
+                guard let self else { return }
+                self.backend?.applySettings(
+                    settings, fontSize: self.terminalFontSize
+                )
+                self.backend?.applyCursor(
                     style: settings.terminalCursorStyle,
                     blink: settings.terminalCursorBlink
                 )
@@ -502,10 +505,12 @@ class Session: Identifiable, ObservableObject {
             .store(in: &terminalCancellables)
     }
 
-    /// Apply the per-session font-size override (set via
-    /// ⌘+/⌘−) to the backend. `backend.applySettings(_:)` uses
-    /// the global default size; this overrides with the
-    /// session's per-pane value.
+    /// Push this session's own size to the backend, for the
+    /// zoom gestures.
+    ///
+    /// Only the font — a zoom has no business rebuilding the
+    /// colour table or reallocating scrollback, which is why
+    /// this is not a settings re-apply.
     private func applyPerSessionFontSize() {
         guard let backend = backend else { return }
         let family = SettingsManager.shared.settings.terminalFontFamily
