@@ -158,17 +158,6 @@ extension FocusableTerminalView: Equatable {
 class TerminalHostView: NSView {
     let pane: TerminalPane
 
-    /// Downcast to this app's session pane, for the one appearance decision
-    /// still made from here.
-    ///
-    /// Everything else that used to need it now arrives as a value. What is
-    /// left is showing the engine's own caret, which is a pane's statement
-    /// about itself and belongs with the rest of that pane's appearance work —
-    /// it stays here only until that work moves.
-    private var sessionPane: SessionTerminalPane? {
-        pane as? SessionTerminalPane
-    }
-
     /// The pane registry this host coordinates through.
     ///
     /// Handed in rather than resolved through the pane, matching the other
@@ -491,15 +480,6 @@ class TerminalHostView: NSView {
         container.autoresizingMask = []
         addSubview(container)
         terminalContainer = container
-
-        // Show the engine's native caret on the session pane — it
-        // IS Claude's prompt cursor (Claude does not self-render
-        // one, so hiding it left no visible cursor). Its shape and
-        // blink follow the shared terminal cursor settings, applied
-        // through the backend in Session.configureTerminal. Routed
-        // through the backend so the chrome doesn't need to know
-        // which engine is underneath.
-        sessionPane?.backend.setCaretHidden(false)
 
         // Add drag highlight overlay ON TOP of the terminal
         // container (the terminal is nested inside it, so the

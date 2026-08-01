@@ -479,6 +479,12 @@ class Session: Identifiable, ObservableObject {
         backend.applySettings(
             SettingsManager.shared.settings, fontSize: terminalFontSize
         )
+        // Show the engine's own caret: it is Claude's prompt cursor, since
+        // Claude draws none of its own. Asserted here, beside the rest of this
+        // terminal's appearance, rather than from the view that happens to
+        // mount it — the other app already does it here, and a backend
+        // outlives the views that come and go over it.
+        backend.setCaretHidden(false)
         backend.applyCursor(
             style: SettingsManager.shared.settings.terminalCursorStyle,
             blink: SettingsManager.shared.settings.terminalCursorBlink

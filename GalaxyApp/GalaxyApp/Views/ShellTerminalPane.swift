@@ -36,7 +36,7 @@ final class ShellTerminalPane: BackendBackedPane, ObservableObject {
     /// True while the shell process is running. Flips to false
     /// on process exit, which `TerminalTabSplitView` observes
     /// to tear down the shell pane.
-    @Published private(set) var isRunning: Bool = false
+    @Published var isRunning: Bool = false
 
     var paneKind: TerminalPaneKind { .shell }
     var ledgerSessionId: Int64? { session?.ledgerSessionId }
@@ -86,23 +86,12 @@ final class ShellTerminalPane: BackendBackedPane, ObservableObject {
 
     /// Launch the user's login shell in the resolved cwd.
     func start() {
-        let shell = ShellLauncher.userLoginShell()
-        let cwd = ShellLauncher.resolveCwd(for: session)
-        let env = ShellLauncher.buildEnvironment()
-
-        applyCurrentSettings()
-
-        backend.startProcess(
-            executable: shell,
-            args: ["-il"],
-            environment: env,
-            execName: (shell as NSString).lastPathComponent,
-            currentDirectory: cwd
-        )
-
-        isRunning = true
-        NSLog(
-            "ShellTerminalPane: Started %@ in %@", shell, cwd
+        startShell(
+            ShellLaunch(
+                executable: ShellLauncher.userLoginShell(),
+                workingDirectory: ShellLauncher.resolveCwd(for: session),
+                environment: ShellLauncher.buildEnvironment()
+            )
         )
     }
 
@@ -141,13 +130,7 @@ final class ShellTerminalPane: BackendBackedPane, ObservableObject {
     // MARK: - Private
 
     private func wireBackend() {
-        backend.onProcessTerminated = { [weak self] exitCode in
-            DispatchQueue.main.async {
-                guard let self = self else { return }
-                self.isRunning = false
-                self.onProcessExit?(exitCode)
-            }
-        }
+        forwardProcessExit()
         backend.onBell = { [weak self] in
             self?.handleBell()
             // External observers (e.g. future telemetry)
