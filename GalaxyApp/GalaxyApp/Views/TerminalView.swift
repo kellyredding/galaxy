@@ -193,7 +193,18 @@ class TerminalHostView: NSView {
     /// Is this pane the surface in front of the user — selected session and
     /// terminal tab both? Supplied by the representable; see its declaration
     /// for why this is not the same question as `isActiveSession`.
-    var isVisibleSurface: Bool = false
+    var isVisibleSurface: Bool = false {
+        didSet {
+            guard oldValue != isVisibleSurface else { return }
+            // An open overlay holds the shared find panel only while its
+            // surface is the one in front of the user, and it is an NSView deep
+            // in the hierarchy with no way to learn that it no longer is. The
+            // host is the only thing that knows, and this is the moment it
+            // finds out. Left unsaid, the panel stays up over whatever the user
+            // moved to, bound to a surface that is no longer showing.
+            scrollbackOverlay?.refreshFindBarPanelPresentation()
+        }
+    }
     private var didSetUp = false
 
     /// Uniform inset between the host's bounds and the inner
@@ -433,7 +444,6 @@ class TerminalHostView: NSView {
         observeAppTermination()
         observeScrollbackNotification()
         observeFindActivation()
-        observeActiveSurfaceChanges()
         observeWindowBecameKey()
         observeKeyWindowChanges()
 
@@ -636,36 +646,6 @@ class TerminalHostView: NSView {
             .dropFirst()  // ignore initial value
             .sink { [weak self] _ in
                 self?.activateFindOnScrollback()
-            }
-            .store(in: &cancellables)
-    }
-
-    private func observeActiveSurfaceChanges() {
-        // Re-evaluate find-bar-panel ownership on tab and
-        // session changes. The scrollback overlay's
-        // `findController.isVisible` survives switches (the
-        // overlay isn't torn down when the user leaves the
-        // terminal tab), so without this the shared panel
-        // remains visible bound to a no-longer-active surface
-        // until the user navigates back and explicitly
-        // dismisses it. `refreshFindBarPanelPresentation` uses
-        // `dismiss(if:)` internally, so when both old and new
-        // active surfaces fire their observers, only the truly
-        // active one wins.
-        SessionManager.shared.$activeTab
-            .receive(on: DispatchQueue.main)
-            .dropFirst()
-            .sink { [weak self] _ in
-                self?.scrollbackOverlay?
-                    .refreshFindBarPanelPresentation()
-            }
-            .store(in: &cancellables)
-        SessionManager.shared.$activeSessionId
-            .receive(on: DispatchQueue.main)
-            .dropFirst()
-            .sink { [weak self] _ in
-                self?.scrollbackOverlay?
-                    .refreshFindBarPanelPresentation()
             }
             .store(in: &cancellables)
     }
