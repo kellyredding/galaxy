@@ -2,16 +2,6 @@ import AppKit
 import Combine
 import Galactic
 
-/// Pair wrapper over (style, blink) so Combine can dedupe
-/// changes as a single unit. Without this, two independent
-/// subscriptions on `terminalCursorStyle` and `terminalCursorBlink`
-/// would each fire `applyCursor` on init — this struct lets
-/// a single `.removeDuplicates()` guard the combined signal.
-private struct ShellCursorConfig: Hashable {
-    let style: ShellCursorStyle
-    let blink: Bool
-}
-
 /// Non-Claude interactive shell pane. Runs the user's login
 /// shell (`getpwuid_r` + `-il`), inherits user environment
 /// minus Claude env vars (with forced `TERM=xterm-256color`),
@@ -27,8 +17,8 @@ private struct ShellCursorConfig: Hashable {
 /// used for routing bell events into the session-bell
 /// pipeline and targeting the session's terminal for
 /// "Send to Claude" pastes.
-final class ShellTerminalPane: TerminalPane, ObservableObject {
-    private let backend: TerminalBackend
+final class ShellTerminalPane: BackendBackedPane, ObservableObject {
+    let backend: TerminalBackend
 
     /// Weak ref to the owning Claude session. Used for bell
     /// routing and as the Send-to-Claude target.
@@ -45,7 +35,6 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
     /// to tear down the shell pane.
     @Published private(set) var isRunning: Bool = false
 
-    var view: NSView { backend.view }
     var paneKind: TerminalPaneKind { .shell }
     var ledgerSessionId: Int64? { session?.ledgerSessionId }
     var acceptsFileDrops: Bool { isRunning }
@@ -73,20 +62,6 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
         get { backend.suppressFocusEvents }
         set { backend.suppressFocusEvents = newValue }
     }
-
-    var onScrollUp: ((NSEvent) -> Bool)? {
-        get { backend.onScrollUp }
-        set { backend.onScrollUp = newValue }
-    }
-
-    var hasScrollbackContent: Bool { backend.hasScrollbackContent }
-    var viewportRow: Int { backend.viewportRow }
-    func clearSelection() { backend.clearSelection() }
-
-    var font: NSFont { backend.font }
-    var cellHeight: CGFloat { backend.cellHeight }
-    func redraw() { backend.redraw() }
-    func snapViewportToBottom() { backend.snapViewportToBottom() }
 
     var fontSizePublisher: AnyPublisher<CGFloat, Never> {
         $fontSize.eraseToAnyPublisher()
@@ -143,24 +118,6 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
         backend.terminateProcess(signal: SIGHUP)
     }
 
-    func captureScrollbackSnapshot() -> ScrollbackSnapshot? {
-        backend.captureScrollbackSnapshot()
-    }
-
-    func send(text: String, asPaste: Bool) {
-        backend.send(text: text, asPaste: asPaste)
-    }
-
-    func trimBuffer() { backend.trimBuffer() }
-
-    func reflowBuffer() { backend.reflowBuffer() }
-
-    func reassertFollowIfIntended() { backend.reassertFollowIfIntended() }
-
-    func focus() {
-        backend.focus()
-    }
-
     /// Shell pane's Send-to-Claude routes pastes to the owning
     /// Claude session's terminal. Disabled with a tooltip when
     /// the session isn't running (takes precedence) or the
@@ -193,37 +150,10 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
         )
     }
 
-    // MARK: - Font size
-
-    func increaseFontSize() {
-        let step = AppSettings.terminalFontSizeStep
-        let range = AppSettings.terminalFontSizeRange
-        fontSize = min(fontSize + step, range.upperBound)
-        applyPerPaneFontSize()
-    }
-
-    func decreaseFontSize() {
-        let step = AppSettings.terminalFontSizeStep
-        let range = AppSettings.terminalFontSizeRange
-        fontSize = max(fontSize - step, range.lowerBound)
-        applyPerPaneFontSize()
-    }
-
-    /// Reset to the global default terminal font size. Mirrors
-    /// `Session.resetTerminalFontSize()` so the View ▸ Default
-    /// menu action behaves identically across pane kinds.
-    func resetFontSize() {
-        fontSize = SettingsManager.shared.settings
-            .defaultTerminalFontSize
-        applyPerPaneFontSize()
-    }
-
-    var canIncreaseFontSize: Bool {
-        fontSize < AppSettings.terminalFontSizeRange.upperBound
-    }
-
-    var canDecreaseFontSize: Bool {
-        fontSize > AppSettings.terminalFontSizeRange.lowerBound
+    /// Where View ▸ Default returns to. The pane's own size is per-instance
+    /// and in memory; this is the configured one every pane starts from.
+    var defaultFontSize: CGFloat {
+        SettingsManager.shared.settings.defaultTerminalFontSize
     }
 
     // MARK: - Private
@@ -303,7 +233,7 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] settings in
                 self?.backend.applySettings(settings)
-                self?.applyPerPaneFontSize()
+                self?.applyFontSize()
             }
             .store(in: &cancellables)
 
@@ -315,7 +245,7 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
         // Session.configureTerminal).
         mgr.$settings
             .map {
-                ShellCursorConfig(
+                TerminalCursorConfig(
                     style: $0.terminalCursorStyle,
                     blink: $0.terminalCursorBlink
                 )
@@ -333,7 +263,7 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
     private func applyInitialAppearance() {
         let settings = SettingsManager.shared.settings
         backend.applySettings(settings)
-        applyPerPaneFontSize()
+        applyFontSize()
         backend.applyCursor(
             style: settings.terminalCursorStyle,
             blink: settings.terminalCursorBlink
@@ -344,7 +274,7 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
     /// to the backend. `backend.applySettings(_:)` uses the
     /// global default size; this overrides with the pane's
     /// per-instance value.
-    private func applyPerPaneFontSize() {
+    func applyFontSize() {
         let family =
             SettingsManager.shared.settings.terminalFontFamily
         backend.setFont(

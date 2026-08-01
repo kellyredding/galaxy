@@ -219,8 +219,12 @@ struct AppSettings: Codable, Equatable {
     // Font size constraints
     static let chromeFontSizeRange: ClosedRange<CGFloat> = 8...24
     static let chromeFontSizeStep: CGFloat = 2
-    static let terminalFontSizeRange: ClosedRange<CGFloat> = 10...24
-    static let terminalFontSizeStep: CGFloat = 1
+    // The zoom window every terminal surface shares, derived from it rather
+    // than restated so a pane and the settings that bound it cannot disagree.
+    static let terminalFontSizeRange: ClosedRange<CGFloat> =
+        TerminalFontSizeBounds.standard.range
+    static let terminalFontSizeStep: CGFloat =
+        TerminalFontSizeBounds.standard.step
 
     // Auto-clear threshold constraints
     static let autoClearThresholdRange: ClosedRange<Int> = 50...99
