@@ -492,7 +492,7 @@ class TerminalHostView: NSView {
     /// Paired with the unregister in `deinit`.
     private func registerWithSession() {
         if let session = owningSession {
-            let kind = sessionPaneKind
+            let kind = pane.paneKind
             let key = ObjectIdentifier(self)
             session.registerScrollbackUnsavedWorkChecker(
                 key,
@@ -727,21 +727,12 @@ class TerminalHostView: NSView {
         }
     }
 
-    /// This pane's kind, in the session model's terms.
-    ///
-    /// Four sites re-derived this from the pane's concrete class before the
-    /// contract carried the answer. Two enums still name the same two cases;
-    /// converging them belongs with the registry that owns the second.
-    private var sessionPaneKind: Session.ScrollbackPaneKind {
-        pane.paneKind == .shell ? .shell : .session
-    }
-
     /// Whether this pane is the one the session remembers the user typing in.
     ///
     /// The gate that keeps two panes of one session from both answering a
     /// command meant for whichever the user was actually in.
     private var isPreferredPane: Bool {
-        (owningSession?.lastFocusedPaneKind ?? .session) == sessionPaneKind
+        (owningSession?.lastFocusedPaneKind ?? .session) == pane.paneKind
     }
 
     func requestFocus() {
@@ -1492,8 +1483,8 @@ class TerminalHostView: NSView {
         // Only writes on entry — leaving (e.g., to a rename
         // text field) keeps the prior value so post-edit
         // restoration lands back where they were.
-        if isFocusInPane, owningSession?.lastFocusedPaneKind != sessionPaneKind {
-            owningSession?.lastFocusedPaneKind = sessionPaneKind
+        if isFocusInPane, owningSession?.lastFocusedPaneKind != pane.paneKind {
+            owningSession?.lastFocusedPaneKind = pane.paneKind
         }
 
         // The find bar is this pane's own UI even though AppKit puts it in a

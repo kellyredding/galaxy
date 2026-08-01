@@ -293,18 +293,6 @@ class Session: Identifiable, ObservableObject {
     // session.metrics event. Plain var (not @Published) until a
     // specific property is promoted for UI rendering.
 
-    /// Which terminal pane a scrollback checker covers.
-    /// Stop-session and quit-app each consult a different
-    /// subset — stopping a session only loses notes from
-    /// the session pane (the shell process survives),
-    /// while quitting the app loses both. Tagging the
-    /// registered checker is what lets callers ask the
-    /// right question.
-    enum ScrollbackPaneKind {
-        case session
-        case shell
-    }
-
     /// Per-host-view closures that check whether this
     /// session has unsaved scrollback work (notes, form
     /// content, in-progress edits). Keyed by the
@@ -312,7 +300,7 @@ class Session: Identifiable, ObservableObject {
     /// `ObjectIdentifier` so multiple panes each
     /// contribute one checker; dying views remove theirs
     /// cleanly. Each entry carries a
-    /// `ScrollbackPaneKind` so callers can filter to the
+    /// `TerminalPaneKind` so callers can filter to the
     /// panes whose loss matters in their context. Use
     /// `registerScrollbackUnsavedWorkChecker` /
     /// `unregisterScrollbackUnsavedWorkChecker` /
@@ -320,7 +308,7 @@ class Session: Identifiable, ObservableObject {
     /// directly.
     private var scrollbackUnsavedWorkCheckers:
         [ObjectIdentifier: (
-            kind: ScrollbackPaneKind,
+            kind: TerminalPaneKind,
             check: (@escaping (Bool) -> Void) -> Void
         )] = [:]
 
@@ -329,7 +317,7 @@ class Session: Identifiable, ObservableObject {
     /// that matches the host view's pane.
     func registerScrollbackUnsavedWorkChecker(
         _ key: ObjectIdentifier,
-        kind: ScrollbackPaneKind,
+        kind: TerminalPaneKind,
         checker: @escaping (
             @escaping (Bool) -> Void
         ) -> Void
@@ -357,7 +345,7 @@ class Session: Identifiable, ObservableObject {
     /// live sessions and `[.shell]` for stopped sessions
     /// (whose shell pane may still be open).
     func checkAnyScrollbackUnsavedWork(
-        kinds: Set<ScrollbackPaneKind>,
+        kinds: Set<TerminalPaneKind>,
         completion: @escaping (Bool) -> Void
     ) {
         let entries = scrollbackUnsavedWorkCheckers.values
@@ -397,19 +385,18 @@ class Session: Identifiable, ObservableObject {
     /// `TerminalHostView` when its inner view gains first
     /// responder. Defaults to `.session` so single-pane
     /// sessions (no shell open) behave identically to before.
-    @Published var lastFocusedPaneKind:
-        ScrollbackPaneKind = .session
+    @Published var lastFocusedPaneKind: TerminalPaneKind = .session
 
     /// Per-host restoration closures, keyed by registering
     /// `TerminalHostView`'s `ObjectIdentifier`. Each entry
-    /// carries its `ScrollbackPaneKind` so
+    /// carries its `TerminalPaneKind` so
     /// `restorePreferredPaneFocus` can pick the one matching
     /// `lastFocusedPaneKind`. Mirrors
     /// `scrollbackUnsavedWorkCheckers` so registration /
     /// unregistration / lookup follow the same shape.
     private var paneFocusRestorers:
         [ObjectIdentifier: (
-            kind: ScrollbackPaneKind,
+            kind: TerminalPaneKind,
             restore: () -> Void
         )] = [:]
 
@@ -418,7 +405,7 @@ class Session: Identifiable, ObservableObject {
     /// `unregisterPaneFocusRestorer` in deinit.
     func registerPaneFocusRestorer(
         _ key: ObjectIdentifier,
-        kind: ScrollbackPaneKind,
+        kind: TerminalPaneKind,
         restore: @escaping () -> Void
     ) {
         paneFocusRestorers[key] = (kind: kind, restore: restore)

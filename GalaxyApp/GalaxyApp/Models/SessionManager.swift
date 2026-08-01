@@ -556,7 +556,7 @@ class SessionManager: ObservableObject {
             // Stopped sessions: only the shell pane can
             // still hold unsaved notes (session pane is
             // gone). Live sessions: both panes apply.
-            let kinds: Set<Session.ScrollbackPaneKind> =
+            let kinds: Set<TerminalPaneKind> =
                 session.hasExited
                     ? [.shell]
                     : [.session, .shell]
