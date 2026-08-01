@@ -110,7 +110,7 @@ struct TerminalTabSplitView: View {
                 // behind the overlay, leaving it visible but
                 // keyboard-dead with Esc going to the shell as
                 // input.
-                session.restoreShellPaneFocus()
+                session.paneRegistry.restoreFocus(kind: .shell)
             } else {
                 state.openShell(for: session)
             }
@@ -122,7 +122,7 @@ struct TerminalTabSplitView: View {
             // Same reason as the shell above: reaching for the
             // backend skips the host that knows whether a
             // scrollback overlay is covering it.
-            session.restoreSessionPaneFocus()
+            session.paneRegistry.restoreFocus(kind: .session)
         }
         .onReceive(
             TerminalTabCommands.shared.closeFocusedShell
@@ -250,7 +250,7 @@ final class SplitState: ObservableObject {
         DispatchQueue.main.asyncAfter(
             deadline: .now() + 0.05
         ) {
-            session.restoreSessionPaneFocus()
+            session.paneRegistry.restoreFocus(kind: .session)
         }
     }
 

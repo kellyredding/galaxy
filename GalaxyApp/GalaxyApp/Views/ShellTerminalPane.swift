@@ -185,7 +185,7 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
                 if !s.isRunning || s.hasExited {
                     return "Resume the session first"
                 }
-                if s.sessionPaneScrollbackActive {
+                if s.paneRegistry.sessionPaneScrollbackActive {
                     return "Close session scrollback first"
                 }
                 return nil

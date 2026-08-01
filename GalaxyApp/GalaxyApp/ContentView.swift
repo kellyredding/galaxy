@@ -504,7 +504,7 @@ struct TerminalContainerView: View {
               let session = sessionManager.sessions
                 .first(where: { $0.id == activeId }),
               !session.hasExited else { return }
-        session.restorePreferredPaneFocus()
+        session.paneRegistry.restorePreferredPaneFocus()
     }
 }
 

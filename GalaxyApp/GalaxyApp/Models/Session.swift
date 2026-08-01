@@ -149,26 +149,15 @@ class Session: Identifiable, ObservableObject {
     /// `processDidExit` so each new lifecycle starts unready.
     @Published private(set) var isReady: Bool = false
 
-    /// True when this session's terminal pane has its scrollback
-    /// overlay open. Updated by the session pane's
-    /// TerminalHostView in createScrollback /
-    /// performScrollbackTeardown. Read by the shell pane's
-    /// send-to-claude target to gate the cross-pane send button —
-    /// sending into a paused buffer view would land out of order.
-    /// Source-of-truth lives on Session (not on the
-    /// TerminalHostView itself) so subscribers survive stop/resume
-    /// cycles, which destroy and recreate the host NSView.
-    /// Reset to false in processDidExit so a future resumed
-    /// lifecycle starts with a clean signal.
-    @Published private(set) var sessionPaneScrollbackActive: Bool
-        = false
-
-    /// Setter exposed for TerminalHostView, which is the only
-    /// legitimate writer. Call from the session pane's overlay
-    /// open/close code paths.
-    func setSessionPaneScrollbackActive(_ active: Bool) {
-        sessionPaneScrollbackActive = active
-    }
+    /// This session's terminal panes, as a unit — the focus memory, the
+    /// cross-pane scrollback flag, and the unsaved-work checks.
+    ///
+    /// Owned here rather than app-wide because the answers are per session:
+    /// the quit sheet names which *sessions* hold unsaved notes, which a single
+    /// shared registry could not say. Held by the session and not by the pane
+    /// host, so registrations survive the stop/resume cycles that destroy and
+    /// recreate the host view.
+    let paneRegistry = SessionPaneRegistry()
 
     /// Number of currently running agents. Maintained by
     /// EventCoordinator (increment on agent:started, decrement
@@ -292,188 +281,6 @@ class Session: Identifiable, ObservableObject {
     // Populated by EventCoordinator.applyEnrichmentData() on each
     // session.metrics event. Plain var (not @Published) until a
     // specific property is promoted for UI rendering.
-
-    /// Per-host-view closures that check whether this
-    /// session has unsaved scrollback work (notes, form
-    /// content, in-progress edits). Keyed by the
-    /// registering `TerminalHostView`'s
-    /// `ObjectIdentifier` so multiple panes each
-    /// contribute one checker; dying views remove theirs
-    /// cleanly. Each entry carries a
-    /// `TerminalPaneKind` so callers can filter to the
-    /// panes whose loss matters in their context. Use
-    /// `registerScrollbackUnsavedWorkChecker` /
-    /// `unregisterScrollbackUnsavedWorkChecker` /
-    /// `checkAnyScrollbackUnsavedWork` — do not access
-    /// directly.
-    private var scrollbackUnsavedWorkCheckers:
-        [ObjectIdentifier: (
-            kind: TerminalPaneKind,
-            check: (@escaping (Bool) -> Void) -> Void
-        )] = [:]
-
-    /// Register a checker for one pane's scrollback.
-    /// Call from `TerminalHostView` setup with the kind
-    /// that matches the host view's pane.
-    func registerScrollbackUnsavedWorkChecker(
-        _ key: ObjectIdentifier,
-        kind: TerminalPaneKind,
-        checker: @escaping (
-            @escaping (Bool) -> Void
-        ) -> Void
-    ) {
-        scrollbackUnsavedWorkCheckers[key] =
-            (kind: kind, check: checker)
-    }
-
-    /// Remove a checker when its host view goes away.
-    func unregisterScrollbackUnsavedWorkChecker(
-        _ key: ObjectIdentifier
-    ) {
-        scrollbackUnsavedWorkCheckers
-            .removeValue(forKey: key)
-    }
-
-    /// Fan out to checkers matching `kinds` and report
-    /// `true` if ANY of them reports unsaved work. Runs
-    /// the per-pane checks in parallel. Calls completion
-    /// on main.
-    ///
-    /// Stop-session uses `[.session]` — shell pane notes
-    /// don't matter because the shell process keeps
-    /// running. Quit-app uses `[.session, .shell]` for
-    /// live sessions and `[.shell]` for stopped sessions
-    /// (whose shell pane may still be open).
-    func checkAnyScrollbackUnsavedWork(
-        kinds: Set<TerminalPaneKind>,
-        completion: @escaping (Bool) -> Void
-    ) {
-        let entries = scrollbackUnsavedWorkCheckers.values
-            .filter { kinds.contains($0.kind) }
-        guard !entries.isEmpty else {
-            completion(false)
-            return
-        }
-
-        let group = DispatchGroup()
-        var anyHasWork = false
-        let lock = NSLock()
-
-        for entry in entries {
-            group.enter()
-            entry.check { hasWork in
-                if hasWork {
-                    lock.lock()
-                    anyHasWork = true
-                    lock.unlock()
-                }
-                group.leave()
-            }
-        }
-
-        group.notify(queue: .main) {
-            completion(anyHasWork)
-        }
-    }
-
-    // MARK: - Pane Focus Memory
-
-    /// Which pane was most recently the first responder. Read
-    /// by tab-switch / session-switch / window-becomes-key
-    /// restoration paths so the user lands back on whichever
-    /// pane they were last typing in. Written by
-    /// `TerminalHostView` when its inner view gains first
-    /// responder. Defaults to `.session` so single-pane
-    /// sessions (no shell open) behave identically to before.
-    @Published var lastFocusedPaneKind: TerminalPaneKind = .session
-
-    /// Per-host restoration closures, keyed by registering
-    /// `TerminalHostView`'s `ObjectIdentifier`. Each entry
-    /// carries its `TerminalPaneKind` so
-    /// `restorePreferredPaneFocus` can pick the one matching
-    /// `lastFocusedPaneKind`. Mirrors
-    /// `scrollbackUnsavedWorkCheckers` so registration /
-    /// unregistration / lookup follow the same shape.
-    private var paneFocusRestorers:
-        [ObjectIdentifier: (
-            kind: TerminalPaneKind,
-            restore: () -> Void
-        )] = [:]
-
-    /// Register a pane focus restorer. Call from
-    /// `TerminalHostView` setup. Paired with
-    /// `unregisterPaneFocusRestorer` in deinit.
-    func registerPaneFocusRestorer(
-        _ key: ObjectIdentifier,
-        kind: TerminalPaneKind,
-        restore: @escaping () -> Void
-    ) {
-        paneFocusRestorers[key] = (kind: kind, restore: restore)
-    }
-
-    /// Remove a restorer when its host view goes away.
-    func unregisterPaneFocusRestorer(
-        _ key: ObjectIdentifier
-    ) {
-        paneFocusRestorers.removeValue(forKey: key)
-    }
-
-    /// Restore focus to the pane matching
-    /// `lastFocusedPaneKind`, falling back to whichever pane
-    /// is registered if the preferred one isn't available
-    /// (e.g., user remembered being in shell, but the shell
-    /// pane has since closed). No-op if no panes are
-    /// registered.
-    func restorePreferredPaneFocus() {
-        let preferred = lastFocusedPaneKind
-        if let entry = paneFocusRestorers.values
-            .first(where: { $0.kind == preferred }) {
-            entry.restore()
-            return
-        }
-        // Preferred kind not available — fall back to whatever
-        // is registered. Session pane wins ties since that's
-        // the historical default.
-        if let entry = paneFocusRestorers.values
-            .first(where: { $0.kind == .session }) {
-            entry.restore()
-            return
-        }
-        if let entry = paneFocusRestorers.values
-            .first(where: { $0.kind == .shell }) {
-            entry.restore()
-        }
-    }
-
-    /// Restore focus to the Session pane's host view,
-    /// routing through its `requestFocus()` so an open
-    /// scrollback overlay receives focus rather than the
-    /// hidden live terminal underneath. Used by shell-close
-    /// to land focus back on the Session pane regardless of
-    /// `lastFocusedPaneKind` (which still reads `.shell` from
-    /// the user's last shell keystroke). No-op if the Session
-    /// pane's restorer isn't registered.
-    func restoreSessionPaneFocus() {
-        if let entry = paneFocusRestorers.values
-            .first(where: { $0.kind == .session }) {
-            entry.restore()
-        }
-    }
-
-    /// Restore focus to the Shell pane's host view, routing
-    /// through its `requestFocus()` for the same reason
-    /// `restoreSessionPaneFocus` does — an open scrollback
-    /// overlay must receive focus rather than the live
-    /// terminal hidden underneath it. Used by the open-shell
-    /// command when a shell is already open, where the command
-    /// means "focus it" rather than "open one". No-op if the
-    /// Shell pane's restorer isn't registered.
-    func restoreShellPaneFocus() {
-        if let entry = paneFocusRestorers.values
-            .first(where: { $0.kind == .shell }) {
-            entry.restore()
-        }
-    }
 
     /// Ledger session ID for fast event matching. Set when the event
     /// system first matches this session via session_identifiers array.
@@ -1475,9 +1282,11 @@ class Session: Identifiable, ObservableObject {
             // the TerminalHostView is being torn down by SwiftUI
             // as part of the hasExited transition. Reset
             // defensively so any subscriber reflects clean state.
-            if self.sessionPaneScrollbackActive {
-                self.sessionPaneScrollbackActive = false
-            }
+            //
+            // Cleared from here rather than from the host's teardown because
+            // the registry outlives the host across a stop/resume, so a host
+            // going away is not evidence the flag should drop.
+            self.paneRegistry.setSessionPaneScrollbackActive(false)
 
             // Cancel any pending post-turn-end actions (e.g., a
             // queued review-message send waiting on the next turn

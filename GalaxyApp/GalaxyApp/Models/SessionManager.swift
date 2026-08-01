@@ -507,10 +507,10 @@ class SessionManager: ObservableObject {
         // scrollback. Shell-pane notes are explicitly
         // out of scope here — the shell process survives
         // session stop, so its notes aren't lost.
-        session.checkAnyScrollbackUnsavedWork(
+        session.paneRegistry.checkUnsavedWork(
             kinds: [.session]
-        ) { hasWork in
-            if hasWork {
+        ) { panesWithWork in
+            if !panesWithWork.isEmpty {
                 completion(.unsavedScrollback)
             } else if inTurn {
                 completion(.inTurn)
@@ -562,10 +562,10 @@ class SessionManager: ObservableObject {
                     : [.session, .shell]
 
             group.enter()
-            session.checkAnyScrollbackUnsavedWork(
+            session.paneRegistry.checkUnsavedWork(
                 kinds: kinds
-            ) { hasScrollbackWork in
-                if hasScrollbackWork {
+            ) { panesWithWork in
+                if !panesWithWork.isEmpty {
                     lock.lock()
                     warnings.append(
                         (session, .unsavedScrollback)
@@ -649,10 +649,10 @@ class SessionManager: ObservableObject {
         session: Session,
         onConfirm: @escaping () -> Void
     ) {
-        session.checkAnyScrollbackUnsavedWork(
+        session.paneRegistry.checkUnsavedWork(
             kinds: [.shell]
-        ) { hasWork in
-            guard hasWork else {
+        ) { panesWithWork in
+            guard !panesWithWork.isEmpty else {
                 onConfirm()
                 return
             }

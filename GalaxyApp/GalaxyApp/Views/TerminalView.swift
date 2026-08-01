@@ -162,6 +162,18 @@ class TerminalHostView: NSView {
         return nil
     }
 
+    /// The pane registry this host coordinates through, resolved through the
+    /// pane exactly as the session itself is.
+    ///
+    /// Reached as the contract rather than as this app's type, and per session
+    /// rather than from a static: the answers it holds are one session's, so a
+    /// shared answer would attribute a note to whichever session was asked
+    /// about last. Nil when the pane has no session, which is the same window
+    /// in which nothing else here has one either.
+    private var paneRegistry: (any TerminalPaneRegistry)? {
+        owningSession?.paneRegistry
+    }
+
     /// Is this pane's session the selected one? Controls drag-drop
     /// registration and hiding.
     var isActiveSession: Bool = false {
@@ -296,9 +308,8 @@ class TerminalHostView: NSView {
         scrollbackCooldownTimer?.cancel()
         firstResponderObservation?.invalidate()
         let key = ObjectIdentifier(self)
-        owningSession?
-            .unregisterScrollbackUnsavedWorkChecker(key)
-        owningSession?.unregisterPaneFocusRestorer(key)
+        paneRegistry?.unregisterUnsavedWorkChecker(key)
+        paneRegistry?.unregisterFocusRestorer(key)
     }
 
     /// Set up local event monitor for two purposes:
@@ -404,7 +415,7 @@ class TerminalHostView: NSView {
         mountTerminalSurface()
         observeScrollUp()
         observeFontSize()
-        registerWithSession()
+        registerWithPaneRegistry()
         observeSessionExit()
         observeSettingsChanges()
         observeAppTermination()
@@ -487,14 +498,14 @@ class TerminalHostView: NSView {
     }
 
     /// Register this host's scrollback-unsaved-work checker and pane-focus
-    /// restorer on the owning session, each tagged with its pane kind so
+    /// restorer on the pane registry, each tagged with its pane kind so
     /// callers can filter to the panes whose loss matters in their context.
     /// Paired with the unregister in `deinit`.
-    private func registerWithSession() {
-        if let session = owningSession {
+    private func registerWithPaneRegistry() {
+        if let registry = paneRegistry {
             let kind = pane.paneKind
             let key = ObjectIdentifier(self)
-            session.registerScrollbackUnsavedWorkChecker(
+            registry.registerUnsavedWorkChecker(
                 key,
                 kind: kind
             ) { [weak self] completion in
@@ -511,7 +522,7 @@ class TerminalHostView: NSView {
             // session-switch / app-becomes-key paths can land
             // the user back on the pane they were last in,
             // not unconditionally on the Session pane.
-            session.registerPaneFocusRestorer(
+            registry.registerFocusRestorer(
                 key, kind: kind
             ) { [weak self] in
                 self?.requestFocus()
@@ -732,7 +743,7 @@ class TerminalHostView: NSView {
     /// The gate that keeps two panes of one session from both answering a
     /// command meant for whichever the user was actually in.
     private var isPreferredPane: Bool {
-        (owningSession?.lastFocusedPaneKind ?? .session) == pane.paneKind
+        (paneRegistry?.lastFocusedPaneKind ?? .session) == pane.paneKind
     }
 
     func requestFocus() {
@@ -1211,7 +1222,7 @@ class TerminalHostView: NSView {
         if pane is SessionTerminalPane,
            let session = self.session
         {
-            session.setSessionPaneScrollbackActive(true)
+            paneRegistry?.setSessionPaneScrollbackActive(true)
         }
 
         // Generate duration ID and fire scrollback:entered event
@@ -1355,7 +1366,7 @@ class TerminalHostView: NSView {
         if pane is SessionTerminalPane,
            let session = self.session
         {
-            session.setSessionPaneScrollbackActive(false)
+            paneRegistry?.setSessionPaneScrollbackActive(false)
         }
 
         // Start cooldown to prevent trackpad momentum from
@@ -1418,11 +1429,11 @@ class TerminalHostView: NSView {
             .store(in: &sendButtonStateCancellables)
 
             // Push: session pane's scrollback overlay state.
-            // Subscription target is the durable Session model,
-            // which survives the stop/resume cycles that
-            // destroy and recreate the session pane's
-            // TerminalHostView.
-            session.$sessionPaneScrollbackActive
+            // Subscription target is the registry the durable
+            // Session model owns, which likewise survives the
+            // stop/resume cycles that destroy and recreate the
+            // session pane's TerminalHostView.
+            session.paneRegistry.sessionPaneScrollbackActivePublisher
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] _ in
                     self?.refreshSendButtonState()
@@ -1483,8 +1494,8 @@ class TerminalHostView: NSView {
         // Only writes on entry — leaving (e.g., to a rename
         // text field) keeps the prior value so post-edit
         // restoration lands back where they were.
-        if isFocusInPane, owningSession?.lastFocusedPaneKind != pane.paneKind {
-            owningSession?.lastFocusedPaneKind = pane.paneKind
+        if isFocusInPane, paneRegistry?.lastFocusedPaneKind != pane.paneKind {
+            paneRegistry?.lastFocusedPaneKind = pane.paneKind
         }
 
         // The find bar is this pane's own UI even though AppKit puts it in a

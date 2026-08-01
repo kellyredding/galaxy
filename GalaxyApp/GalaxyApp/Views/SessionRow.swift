@@ -646,7 +646,7 @@ struct SessionRow: View {
     private func restoreTerminalFocus() {
         DispatchQueue.main.async {
             guard !session.hasExited else { return }
-            session.restorePreferredPaneFocus()
+            session.paneRegistry.restorePreferredPaneFocus()
         }
     }
 }
