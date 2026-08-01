@@ -20,6 +20,9 @@ import Galactic
 final class ShellTerminalPane: BackendBackedPane, ObservableObject {
     let backend: TerminalBackend
 
+    /// Where configuration comes from, and how a change to it arrives.
+    var settings: GalacticConfigurationSource { SettingsManager.shared }
+
     /// Weak ref to the owning Claude session. Used for bell
     /// routing and as the Send-to-Claude target.
     weak var session: Session?
@@ -37,7 +40,6 @@ final class ShellTerminalPane: BackendBackedPane, ObservableObject {
 
     var paneKind: TerminalPaneKind { .shell }
     var ledgerSessionId: Int64? { session?.ledgerSessionId }
-    var acceptsFileDrops: Bool { isRunning }
 
     var onProcessExit: ((Int32) -> Void)?
 
@@ -79,7 +81,7 @@ final class ShellTerminalPane: BackendBackedPane, ObservableObject {
         )
         self.fontSize = session.terminalFontSize
         wireBackend()
-        subscribeToSettings()
+        observeSettings(storingIn: &cancellables)
     }
 
     /// Launch the user's login shell in the resolved cwd.
@@ -88,7 +90,7 @@ final class ShellTerminalPane: BackendBackedPane, ObservableObject {
         let cwd = ShellLauncher.resolveCwd(for: session)
         let env = ShellLauncher.buildEnvironment()
 
-        applyInitialAppearance()
+        applyCurrentSettings()
 
         backend.startProcess(
             executable: shell,
@@ -102,20 +104,6 @@ final class ShellTerminalPane: BackendBackedPane, ObservableObject {
         NSLog(
             "ShellTerminalPane: Started %@ in %@", shell, cwd
         )
-    }
-
-    /// Request that the shell exit. Sends SIGHUP via the
-    /// backend; the backend escalates to SIGTERM after 0.5s
-    /// and SIGKILL after 1s if the shell doesn't exit. SIGHUP
-    /// is the canonical "terminal hangup" signal — most
-    /// shells exit gracefully and save state (history, etc.)
-    /// in response, while still having SIGTERM/SIGKILL as
-    /// fallbacks for misbehaving plugins. Shell process exit
-    /// fires `onProcessTerminated` which clears `isRunning`,
-    /// prompting teardown.
-    func requestClose() {
-        guard isRunning else { return }
-        backend.terminateProcess(signal: SIGHUP)
     }
 
     /// Shell pane's Send-to-Claude routes pastes to the owning
@@ -148,12 +136,6 @@ final class ShellTerminalPane: BackendBackedPane, ObservableObject {
                 return nil
             }
         )
-    }
-
-    /// Where View ▸ Default returns to. The pane's own size is per-instance
-    /// and in memory; this is the configured one every pane starts from.
-    var defaultFontSize: CGFloat {
-        SettingsManager.shared.settings.defaultTerminalFontSize
     }
 
     // MARK: - Private
@@ -215,68 +197,5 @@ final class ShellTerminalPane: BackendBackedPane, ObservableObject {
     /// just picks the target view.
     private func flashVisualBell() {
         TerminalVisualBell.pulse(over: backend.view)
-    }
-
-    private func subscribeToSettings() {
-        let mgr = SettingsManager.shared
-
-        // Re-apply the full settings model on any change, handing it this
-        // pane's own size — the configured default is where a pane starts, not
-        // where it is now. `dropFirst()` skips the initial value, which
-        // `applyInitialAppearance` pushes explicitly at start time.
-        mgr.$settings
-            .removeDuplicates()
-            .dropFirst()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] settings in
-                guard let self else { return }
-                self.backend.applySettings(
-                    settings, fontSize: self.fontSize
-                )
-            }
-            .store(in: &cancellables)
-
-        // Cursor. Kept separate from `applySettings` because
-        // SwiftTerm's `CursorStyle` fuses shape + blink, so we
-        // dedupe on the pair via `ShellCursorConfig` to avoid two
-        // subscriptions firing on init. The same shared terminal
-        // cursor settings drive the session pane too (applied in
-        // Session.configureTerminal).
-        mgr.$settings
-            .map {
-                TerminalCursorConfig(
-                    style: $0.terminalCursorStyle,
-                    blink: $0.terminalCursorBlink
-                )
-            }
-            .removeDuplicates()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] config in
-                self?.backend.applyCursor(
-                    style: config.style, blink: config.blink
-                )
-            }
-            .store(in: &cancellables)
-    }
-
-    private func applyInitialAppearance() {
-        let settings = SettingsManager.shared.settings
-        backend.applySettings(settings, fontSize: fontSize)
-        backend.applyCursor(
-            style: settings.terminalCursorStyle,
-            blink: settings.terminalCursorBlink
-        )
-    }
-
-    /// Push this pane's own size to the backend, for the zoom gestures.
-    ///
-    /// Only the font — a zoom has no business rebuilding the colour table or
-    /// reallocating scrollback, which is why this is not a settings re-apply.
-    func applyFontSize() {
-        let family =
-            SettingsManager.shared.settings.terminalFontFamily
-        backend.setFont(
-            resolveTerminalFont(family: family, size: fontSize)
-        )
     }
 }
