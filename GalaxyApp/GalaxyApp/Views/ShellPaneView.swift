@@ -1,4 +1,5 @@
 import SwiftUI
+import Galactic
 
 /// SwiftUI container for the Shell pane. Lays out the
 /// `ShellPaneBar` on top and the terminal below.
