@@ -566,25 +566,31 @@ class TerminalHostView: NSView {
     }
 
     private func observeSettingsChanges() {
-        // Observe font family changes — apply to scrollback view if present
-        SettingsManager.shared.$settings
-            .map(\.terminalFontFamily)
+        // Font family changes — re-render an open scrollback so it keeps
+        // matching the live terminal underneath it.
+        //
+        // The prepend/dropFirst pair seeds a baseline for the dedupe rather
+        // than replaying a value: the source deliberately does not resend the
+        // current configuration, so with nothing to compare against, the first
+        // change of any kind would read as a font change and re-render for
+        // nothing. No `receive(on:)` — the source guarantees main.
+        settings.configurationChanges
+            .map { $0.terminalFontFamily }
+            .prepend(settings.configuration.terminalFontFamily)
             .removeDuplicates()
             .dropFirst()
-            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.applySettingsToScrollback()
             }
             .store(in: &cancellables)
 
-        // Observe color theme changes — apply to the padded host
-        // background so the 4px strip around the terminal tracks
-        // the theme, and re-render any active scrollback overlay.
-        SettingsManager.shared.$settings
-            .map(\.terminalColorThemeName)
+        // Color theme changes — repaint the padded host strip so it tracks the
+        // theme, and re-render any open scrollback. Same baseline treatment.
+        settings.configurationChanges
+            .map { $0.terminalColorThemeName }
+            .prepend(settings.configuration.terminalColorThemeName)
             .removeDuplicates()
             .dropFirst()
-            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.applyHostBackgroundColor()
                 self?.applySettingsToScrollback()
@@ -724,8 +730,7 @@ class TerminalHostView: NSView {
     private func applyHostBackgroundColor() {
         TerminalHostBackground.apply(
             to: self,
-            themeNamed: SettingsManager.shared
-                .settings.terminalColorThemeName
+            themeNamed: settings.configuration.terminalColorThemeName
         )
     }
 
@@ -1050,12 +1055,13 @@ class TerminalHostView: NSView {
         // The pane produces an opaque snapshot — chrome never reaches into
         // engine types to render it, which is what lets the same frozen buffer
         // be rendered again on a theme or font change.
+        let configuration = settings.configuration
         guard let opened = ScrollbackFactory.open(
             pane: pane,
             theme: TerminalColorTheme.theme(
-                named: SettingsManager.shared.settings.terminalColorThemeName
+                named: configuration.terminalColorThemeName
             ),
-            textEntry: SettingsManager.shared.settings.textEntry.jsPayload,
+            textEntry: configuration.textEntry.jsPayload,
             initialScrollLine: initialScrollLine
         ) else { return }
 
@@ -1582,15 +1588,20 @@ class TerminalHostView: NSView {
     private func applySettingsToScrollback() {
         guard let overlay = scrollbackOverlay,
               let snapshot = currentSnapshot else { return }
-        let settings = SettingsManager.shared.settings
+        let configuration = settings.configuration
         overlay.reRender(
             snapshot: snapshot,
             theme: TerminalColorTheme.theme(
-                named: settings.terminalColorThemeName
+                named: configuration.terminalColorThemeName
             ),
-            fontFamily: settings.terminalFontFamily,
+            // The font the surface is actually showing, not the family that was
+            // asked for. They differ whenever the configured family does not
+            // resolve and the pane fell back, and rendering the snapshot in a
+            // font the terminal is not using is visible as a seam at the
+            // boundary between the two.
+            fontFamily: pane.font.fontName,
             fontSize: pane.fontSize,
-            textEntry: settings.textEntry.jsPayload
+            textEntry: configuration.textEntry.jsPayload
         )
     }
 
