@@ -559,6 +559,27 @@ struct SessionPaneView: View {
 
     @StateObject private var adapterHolder = SessionPaneAdapterHolder()
 
+    /// The moment this session ends, as the host needs to hear it.
+    ///
+    /// Deduplicated because the flag republishes, and mapped without a queue
+    /// hop: it is already set on main, and this view is replaced in the same
+    /// turn it flips — a hop would arrive after the overlay that needed
+    /// closing had gone.
+    private var surfaceEndings: SurfaceEndings {
+        session.$hasExited
+            .removeDuplicates()
+            .filter { $0 }
+            .map { _ in () }
+            .eraseToAnyPublisher()
+    }
+
+    /// What can stop this session being written to.
+    private var sendBlockerChanges: SendBlockerChanges {
+        Publishers.CombineLatest(session.$isRunning, session.$hasExited)
+            .map { _, _ in () }
+            .eraseToAnyPublisher()
+    }
+
     /// Recording an interrupted turn, for the surface a turn happens on.
     ///
     /// Weakly held on purpose: a session that has gone away has no turn left to
@@ -595,6 +616,9 @@ struct SessionPaneView: View {
                     settings: SettingsManager.shared,
                     findActivations: SessionManager.shared.findActivations,
                     turnInterrupt: turnInterrupt,
+                    paneRegistry: session.paneRegistry,
+                    surfaceEndings: surfaceEndings,
+                    sendBlockerChanges: sendBlockerChanges,
                     isActiveSession: isActiveSession,
                     isVisibleSurface: isVisibleSurface
                 )

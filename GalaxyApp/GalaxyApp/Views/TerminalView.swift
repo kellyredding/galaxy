@@ -40,6 +40,17 @@ struct FocusableTerminalView: NSViewRepresentable {
     /// do not happen — the shell pane beside an agent being exactly that.
     let turnInterrupt: TurnInterrupt?
 
+    /// The registry this pane's host coordinates through, or nil for a pane
+    /// with no session behind it.
+    let paneRegistry: (any TerminalPaneRegistry)?
+
+    /// Told when whatever is behind this surface has ended, so anything left
+    /// open over it can be closed.
+    let surfaceEndings: SurfaceEndings
+
+    /// Told when something that could block sending has changed.
+    let sendBlockerChanges: SendBlockerChanges
+
     /// Whether this pane belongs to the session the user selected. Drives
     /// hiding and drag registration — the questions that really are about
     /// which session owns the pane.
@@ -62,7 +73,10 @@ struct FocusableTerminalView: NSViewRepresentable {
             timelineRecorder: timelineRecorder,
             settings: settings,
             findActivations: findActivations,
-            turnInterrupt: turnInterrupt
+            turnInterrupt: turnInterrupt,
+            paneRegistry: paneRegistry,
+            surfaceEndings: surfaceEndings,
+            sendBlockerChanges: sendBlockerChanges
         )
     }
 
@@ -144,45 +158,26 @@ extension FocusableTerminalView: Equatable {
 class TerminalHostView: NSView {
     let pane: TerminalPane
 
-    /// Downcast to SessionTerminalPane for Session-pane-specific
-    /// behavior (font observers, scrollback unsaved-work checks).
-    /// Nil for non-Session panes.
+    /// Downcast to this app's session pane, for the one appearance decision
+    /// still made from here.
+    ///
+    /// Everything else that used to need it now arrives as a value. What is
+    /// left is showing the engine's own caret, which is a pane's statement
+    /// about itself and belongs with the rest of that pane's appearance work —
+    /// it stays here only until that work moves.
     private var sessionPane: SessionTerminalPane? {
         pane as? SessionTerminalPane
     }
 
-    /// Convenience accessor derived from `sessionPane`. Kept as
-    /// an optional because non-Session panes (Shell pane) don't
-    /// populate it. Paths that hit it are Session-specific
-    /// (Claude-side observers).
-    var session: Session? { sessionPane?.session }
-
-    /// The owning session regardless of pane type.
-    /// `self.session` above only resolves for the Session
-    /// pane; this also reaches through `ShellTerminalPane`
-    /// so shared behaviors (e.g. quit-warning checkers)
-    /// can cover both panes with one call site.
-    private var owningSession: Session? {
-        if let sp = sessionPane {
-            return sp.session
-        }
-        if let sp = pane as? ShellTerminalPane {
-            return sp.session
-        }
-        return nil
-    }
-
-    /// The pane registry this host coordinates through, resolved through the
-    /// pane exactly as the session itself is.
+    /// The pane registry this host coordinates through.
     ///
-    /// Reached as the contract rather than as this app's type, and per session
-    /// rather than from a static: the answers it holds are one session's, so a
-    /// shared answer would attribute a note to whichever session was asked
-    /// about last. Nil when the pane has no session, which is the same window
-    /// in which nothing else here has one either.
-    private var paneRegistry: (any TerminalPaneRegistry)? {
-        owningSession?.paneRegistry
-    }
+    /// Handed in rather than resolved through the pane, matching the other
+    /// host: the answers it holds belong to one session, so reaching for it
+    /// through a type only this app has was the last thing standing between
+    /// this view and being shared. Optional because a pane can exist with no
+    /// session behind it, which is the same window in which none of these
+    /// answers exist either.
+    private let paneRegistry: (any TerminalPaneRegistry)?
 
     /// Where this host's terminal events go, or nil to record nothing.
     private let timelineRecorder: TerminalTimelineRecorder?
@@ -195,6 +190,12 @@ class TerminalHostView: NSView {
 
     /// How an interrupted turn gets recorded, or nil where turns do not happen.
     private let turnInterrupt: TurnInterrupt?
+
+    /// Told when whatever was behind this surface has ended.
+    private let surfaceEndings: SurfaceEndings
+
+    /// Told when something that could block sending has changed.
+    private let sendBlockerChanges: SendBlockerChanges
 
     /// Which pane this host is showing, as the pane itself reports it.
     private var paneKind: TerminalPaneKind { pane.paneKind }
@@ -332,13 +333,19 @@ class TerminalHostView: NSView {
         timelineRecorder: TerminalTimelineRecorder?,
         settings: GalacticConfigurationSource,
         findActivations: FindActivations,
-        turnInterrupt: TurnInterrupt?
+        turnInterrupt: TurnInterrupt?,
+        paneRegistry: (any TerminalPaneRegistry)?,
+        surfaceEndings: SurfaceEndings,
+        sendBlockerChanges: SendBlockerChanges
     ) {
         self.pane = pane
         self.timelineRecorder = timelineRecorder
         self.settings = settings
         self.findActivations = findActivations
         self.turnInterrupt = turnInterrupt
+        self.paneRegistry = paneRegistry
+        self.surfaceEndings = surfaceEndings
+        self.sendBlockerChanges = sendBlockerChanges
         super.init(frame: .zero)
         wantsLayer = true
         // Note: Don't register for drags here - done dynamically via updateDragRegistration()
@@ -562,26 +569,19 @@ class TerminalHostView: NSView {
     }
 
     private func observeSessionExit() {
-        if let session = self.session {
-            // Observe session process exit — tear down scrollback if process dies.
-            // Skip note confirmation — the process is gone so there's nothing
-            // to send notes to.
-            //
-            // No .receive(on: .main) here — processDidExit already sets
-            // hasExited on main queue. An extra async hop would let SwiftUI
-            // tear down this view (hasExited swaps to StoppedSessionView)
-            // before the sink fires, preventing the scrollback:exited event.
-            session.$hasExited
-                .removeDuplicates()
-                .sink { [weak self] exited in
-                    if exited {
-                        self?.performScrollbackTeardown(
-                            reason: .sessionEnded
-                        )
-                    }
-                }
-                .store(in: &cancellables)
-        }
+        // Close an open scrollback when whatever was behind this surface ends.
+        // No note confirmation on this path: there is nothing left to send them
+        // to, so asking would be offering a choice that cannot be taken.
+        //
+        // Deliberately no `receive(on:)`. The signal already arrives on main,
+        // and the app is usually replacing this view in the same turn — a
+        // queued reaction would run after the overlay it needed is gone, and
+        // the exit event that goes with the teardown would never be recorded.
+        surfaceEndings
+            .sink { [weak self] in
+                self?.performScrollbackTeardown(reason: .sessionEnded)
+            }
+            .store(in: &cancellables)
     }
 
     private func observeSettingsChanges() {
@@ -618,19 +618,12 @@ class TerminalHostView: NSView {
     }
 
     private func observeAppTermination() {
-        // Close scrollback on app quit so the
-        // scrollback:exited duration event fires.
-        // No .receive(on:) — willTerminate already
-        // fires on the main thread, and an async hop
-        // would be dropped during app teardown.
-        NotificationCenter.default.publisher(
-            for: NSApplication
-                .willTerminateNotification
-        )
-            .sink { [weak self] _ in
-                self?.performScrollbackTeardown(
-                    reason: .appQuit
-                )
+        // Close an open scrollback as the app quits, so its exit event fires
+        // with a duration rather than the surface just vanishing. The no-hop
+        // rule this depends on is documented where the signal is.
+        ApplicationLifecycle.willTerminate
+            .sink { [weak self] in
+                self?.performScrollbackTeardown(reason: .appQuit)
             }
             .store(in: &cancellables)
     }
@@ -1102,8 +1095,9 @@ class TerminalHostView: NSView {
 
             // Record timeline event before dismiss destroys
             // the web view and its notes.
-            if let lsid = self.pane.ledgerSessionId,
-               let overlay = self.scrollbackOverlay {
+            // No session check here — the recorder declines a session it
+            // cannot attribute, so asking first would be asking twice.
+            if let overlay = self.scrollbackOverlay {
                 let notes = overlay.scrollbackView.notes
                 let expandedNotes: [[String: Any]] = notes.map {
                     note in
@@ -1207,11 +1201,11 @@ class TerminalHostView: NSView {
         // Publish scrollback-active state to the session model
         // so cross-pane consumers (shell pane's send-to-claude
         // gate) can subscribe via Combine instead of polling.
-        // Only the session pane writes this signal — shell-pane
-        // scrollbacks don't gate the cross-pane button.
-        if pane is SessionTerminalPane,
-           let session = self.session
-        {
+        // Only the agent pane writes this signal — a shell's own scrollback
+        // does not gate the cross-pane button. Asked of the pane rather than
+        // by testing its class, which is the same question with one fewer name
+        // in it.
+        if paneKind == .session {
             paneRegistry?.setSessionPaneScrollbackActive(true)
         }
 
@@ -1335,9 +1329,7 @@ class TerminalHostView: NSView {
         // Mirror the createScrollback path: clear the
         // session-model scrollback flag for session-pane
         // overlays so cross-pane consumers see the change.
-        if pane is SessionTerminalPane,
-           let session = self.session
-        {
+        if paneKind == .session {
             paneRegistry?.setSessionPaneScrollbackActive(false)
         }
 
@@ -1385,42 +1377,27 @@ class TerminalHostView: NSView {
     private func subscribeToSendButtonStateChanges() {
         sendButtonStateCancellables.removeAll()
 
-        if let shell = pane as? ShellTerminalPane,
-           let session = shell.session {
-            Publishers.CombineLatest(
-                session.$isRunning,
-                session.$hasExited
-            )
+        // Both panes write into the same agent, so both care whether it is
+        // there to write to. One subscription rather than a branch per pane
+        // kind: the two used to be the same expression twice.
+        sendBlockerChanges
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _, _ in
+            .sink { [weak self] in
                 self?.refreshSendButtonState()
             }
             .store(in: &sendButtonStateCancellables)
 
-            // Push: session pane's scrollback overlay state.
-            // Subscription target is the registry the durable
-            // Session model owns, which likewise survives the
-            // stop/resume cycles that destroy and recreate the
-            // session pane's TerminalHostView.
-            session.paneRegistry.sessionPaneScrollbackActivePublisher
+        // Only a shell is additionally blocked by the agent pane's own
+        // scrollback being frozen open. Read from the registry, which outlives
+        // the stop-and-resume cycles that destroy and rebuild this view — and
+        // which shared code can reach without being handed anything.
+        if paneKind == .shell {
+            paneRegistry?.sessionPaneScrollbackActivePublisher
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] _ in
                     self?.refreshSendButtonState()
                 }
                 .store(in: &sendButtonStateCancellables)
-        }
-
-        if let sessionPane = pane as? SessionTerminalPane,
-           let session = sessionPane.session {
-            Publishers.CombineLatest(
-                session.$isRunning,
-                session.$hasExited
-            )
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _, _ in
-                self?.refreshSendButtonState()
-            }
-            .store(in: &sendButtonStateCancellables)
         }
     }
 
