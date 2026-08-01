@@ -245,21 +245,15 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
         }
     }
 
-    /// True while a bell's side effects are in flight.
-    /// Gates both audible and visual paths so a rapid
-    /// BEL burst (e.g. holding backspace at line start)
-    /// produces one flash, not a flicker. Matches the
-    /// debounce philosophy of `SessionManager.handleBell`
-    /// but scoped to this pane only.
-    private var isHandlingBell = false
-
-    /// Short debounce window covering the full bell
-    /// pipeline (sound fire + flash overlay animation).
-    /// Slightly longer than `TerminalVisualBell.duration`
-    /// so the gate clears after the overlay is fully
-    /// torn down — never shorter, or rapid bells would
-    /// stack overlays.
-    private static let bellDebounceWindow: TimeInterval = 0.24
+    /// Collapses a rapid BEL burst (holding backspace at line start is enough)
+    /// into one flash rather than a flicker.
+    ///
+    /// The same mechanism the session pipeline uses, with a much shorter window
+    /// because this pane's response is shorter: a sound and one overlay
+    /// animation, not a three-flash cadence and a notification. Slightly longer
+    /// than the overlay's own duration so the gate clears after teardown —
+    /// never shorter, or bells would stack overlays.
+    private let bellDebounce = TerminalBellDebounce(window: 0.24)
 
     /// Apply shell-bell side effects per current settings.
     /// Called from `backend.onBell` (pane-local, no
@@ -268,16 +262,9 @@ final class ShellTerminalPane: TerminalPane, ObservableObject {
     /// notifications — those are reserved for
     /// Claude-attention events.
     private func handleBell() {
-        DispatchQueue.main.async { [weak self] in
+        // The gate hops to the main queue and holds the window itself.
+        bellDebounce.fire { [weak self] in
             guard let self = self else { return }
-            guard !self.isHandlingBell else { return }
-            self.isHandlingBell = true
-            DispatchQueue.main.asyncAfter(
-                deadline: .now()
-                    + Self.bellDebounceWindow
-            ) { [weak self] in
-                self?.isHandlingBell = false
-            }
 
             let s = SettingsManager.shared.settings
             if s.shellBellAudible {

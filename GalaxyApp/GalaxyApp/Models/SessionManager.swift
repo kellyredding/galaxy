@@ -1710,8 +1710,10 @@ class SessionManager: ObservableObject {
 
     /// Total duration of a single bell pipeline event. Matches the
     /// visual flash sequence (3 flashes × 375ms + 2 gaps × 100ms).
-    /// Used as the debounce window in handleBell(for:).
-    private static let bellPipelineDuration: TimeInterval =
+    ///
+    /// Read by `Session` to size its own bell gate, so the window and the
+    /// sequence it has to outlast stay one number rather than two that drift.
+    static let bellPipelineDuration: TimeInterval =
         (0.375 * 3) + (0.1 * 2)
 
     /// Subscribe to a session's `$backend` so the callback set
@@ -1798,18 +1800,11 @@ class SessionManager: ObservableObject {
     /// pane adapter exists; the session pane's `onBell` is an accessor over the
     /// same storage, so the two are one installation rather than two.
     private func handleBell(for session: Session) {
-        DispatchQueue.main.async { [weak self] in
+        // The gate hops to the main queue and holds the window itself, so what
+        // is left here is only what a bell should do — which is the point of
+        // gating around the whole response rather than inside it.
+        session.bellDebounce.fire { [weak self] in
             guard let self = self else { return }
-            guard !session.bellDebounceActive else { return }
-            session.bellDebounceActive = true
-
-            // Clear the gate after the full pipeline duration so
-            // the next bell can fire cleanly.
-            DispatchQueue.main.asyncAfter(
-                deadline: .now() + Self.bellPipelineDuration
-            ) {
-                session.bellDebounceActive = false
-            }
 
             let settings = SettingsManager.shared.settings
 

@@ -98,14 +98,21 @@ class Session: Identifiable, ObservableObject {
     @Published var hasUnreadResponse: Bool = false
     @Published var visualBellActive: Bool = false
 
-    /// Gate for bell-pipeline debounce. Set true at the top of
-    /// the bell handler while a bell event is in progress;
-    /// additional bells that arrive during this window are
-    /// dropped entirely — no sound, no flash, no notification.
-    /// Window duration matches the full visual flash sequence
-    /// (~1.225s) so the debounce naturally aligns with the
-    /// perceived bell event.
-    @Published var bellDebounceActive: Bool = false
+    /// Collapses a burst of bells on this session into one event — no sound,
+    /// no flash, no notification for the ones that arrive mid-window.
+    ///
+    /// Sized to the full visual flash sequence, so the gate aligns with what a
+    /// person perceives as a single bell rather than with any one of the three
+    /// responses.
+    ///
+    /// Deliberately not `@Published`, and its predecessor should not have been.
+    /// It is coordination state that no view reads or ever read; publishing it
+    /// invalidated all eighteen observers of a session twice per bell, on a
+    /// path this codebase separately documents as costing 80–300ms of main
+    /// thread per fan-out.
+    let bellDebounce = TerminalBellDebounce(
+        window: SessionManager.bellPipelineDuration
+    )
 
     // MARK: - Turn State
     //
