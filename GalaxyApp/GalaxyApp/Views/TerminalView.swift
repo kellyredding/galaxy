@@ -935,8 +935,10 @@ class TerminalHostView: NSView {
         // Send raw paths (like Cmd+V paste) so Claude Code shows gray box treatment
         let pathsText = uniqueURLs.map { $0.path }.joined(separator: " ") + " "
 
-        // Send to terminal with bracketed paste mode
-        sendTextToTerminal(pathsText, asPaste: true)
+        // Bracketed paste, no submit — the user reads the paths back and
+        // presses Return themselves. Straight to the pane: routing it through
+        // the chrome added a name and decided nothing.
+        pane.send(text: pathsText, asPaste: true)
 
         // Defensive: kick the terminal view to repaint even if
         // we're arriving from a window-inactive state where
@@ -1588,14 +1590,6 @@ class TerminalHostView: NSView {
         )
     }
 
-    // MARK: - Terminal Text Injection
-
-    /// Send text to the terminal, routing through the pane so
-    /// bracketed-paste-mode handling stays inside the backend
-    /// rather than the chrome layer.
-    private func sendTextToTerminal(_ text: String, asPaste: Bool) {
-        pane.send(text: text, asPaste: asPaste)
-    }
 }
 
 // MARK: - Drag Highlight Overlay View
