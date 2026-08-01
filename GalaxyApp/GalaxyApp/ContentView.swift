@@ -559,6 +559,23 @@ struct SessionPaneView: View {
 
     @StateObject private var adapterHolder = SessionPaneAdapterHolder()
 
+    /// Recording an interrupted turn, for the surface a turn happens on.
+    ///
+    /// Weakly held on purpose: a session that has gone away has no turn left to
+    /// interrupt, so there is nothing here worth keeping it alive for.
+    /// Idempotency is the recorder's — leaning on Esc against one turn reads
+    /// its state as already cleared and stops there.
+    private var turnInterrupt: TurnInterrupt {
+        let session = session
+        return TurnInterrupt(
+            isInTurn: { [weak session] in session?.isInTurn ?? false },
+            record: { [weak session] in
+                guard let session else { return }
+                SessionManager.shared.recordEscapeInterrupt(for: session)
+            }
+        )
+    }
+
     var body: some View {
         Group {
             if session.hasExited {
@@ -577,6 +594,7 @@ struct SessionPaneView: View {
                     timelineRecorder: .galaxyLedger,
                     settings: SettingsManager.shared,
                     findActivations: SessionManager.shared.findActivations,
+                    turnInterrupt: turnInterrupt,
                     isActiveSession: isActiveSession,
                     isVisibleSurface: isVisibleSurface
                 )

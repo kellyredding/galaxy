@@ -33,6 +33,10 @@ struct ShellPaneView: View {
                 timelineRecorder: .galaxyLedger,
                 settings: SettingsManager.shared,
                 findActivations: SessionManager.shared.findActivations,
+                // No turns happen in a shell, so there is nothing here to
+                // interrupt. Answered with a value rather than by the host
+                // working it out from what kind of pane this is.
+                turnInterrupt: nil,
                 isActiveSession: isActiveSession,
                 isVisibleSurface: isVisibleSurface
             )

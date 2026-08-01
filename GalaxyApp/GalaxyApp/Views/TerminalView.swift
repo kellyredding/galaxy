@@ -36,6 +36,10 @@ struct FocusableTerminalView: NSViewRepresentable {
     /// terminal's.
     let findActivations: FindActivations
 
+    /// How an interrupted turn gets recorded, or nil for a surface where turns
+    /// do not happen — the shell pane beside an agent being exactly that.
+    let turnInterrupt: TurnInterrupt?
+
     /// Whether this pane belongs to the session the user selected. Drives
     /// hiding and drag registration — the questions that really are about
     /// which session owns the pane.
@@ -57,7 +61,8 @@ struct FocusableTerminalView: NSViewRepresentable {
             pane: pane,
             timelineRecorder: timelineRecorder,
             settings: settings,
-            findActivations: findActivations
+            findActivations: findActivations,
+            turnInterrupt: turnInterrupt
         )
     }
 
@@ -187,6 +192,9 @@ class TerminalHostView: NSView {
 
     /// Told each time the user asks to find within this surface.
     private let findActivations: FindActivations
+
+    /// How an interrupted turn gets recorded, or nil where turns do not happen.
+    private let turnInterrupt: TurnInterrupt?
 
     /// Which pane this host is showing, as the pane itself reports it.
     private var paneKind: TerminalPaneKind { pane.paneKind }
@@ -323,12 +331,14 @@ class TerminalHostView: NSView {
         pane: TerminalPane,
         timelineRecorder: TerminalTimelineRecorder?,
         settings: GalacticConfigurationSource,
-        findActivations: FindActivations
+        findActivations: FindActivations,
+        turnInterrupt: TurnInterrupt?
     ) {
         self.pane = pane
         self.timelineRecorder = timelineRecorder
         self.settings = settings
         self.findActivations = findActivations
+        self.turnInterrupt = turnInterrupt
         super.init(frame: .zero)
         wantsLayer = true
         // Note: Don't register for drags here - done dynamically via updateDragRegistration()
@@ -371,25 +381,11 @@ class TerminalHostView: NSView {
             // Only handle if our terminal is the first responder
             guard self.window?.firstResponder === self.pane.view else { return event }
 
-            // Esc with no modifiers → if a turn is active
-            // on this Session pane, record turn:interrupted.
-            // Don't consume — Esc still needs to flow to
-            // SwiftTerm so Claude Code aborts the stream.
-            // Idempotency is via TurnState file deletion
-            // inside recordEscapeInterrupt — rapid repeat
-            // Escs against the same turn read TurnState
-            // as nil and bail without re-recording.
-            if event.keyCode == 53,
-               event.modifierFlags.intersection([
-                   .control, .option, .command, .shift,
-               ]).isEmpty,
-               let session = self.session,
-               session.isInTurn
-            {
-                SessionManager.shared
-                    .recordEscapeInterrupt(for: session)
-                return event
-            }
+            // A bare Esc during a turn is the user stopping it, which is worth
+            // recording. Deliberately not consumed here or below: Esc still has
+            // to reach the terminal, since aborting the stream is Claude Code's
+            // own job on the far end.
+            self.turnInterrupt.recordIfInterrupting(event)
 
             // Only intercept when Control is pressed without Option or Command
             let controlOnly = event.modifierFlags.intersection([.control, .option, .command]) == .control
@@ -1012,9 +1008,10 @@ class TerminalHostView: NSView {
         // showing) eagerly grabs Cmd+F and binds the find-bar
         // panel to the wrong controller.
         //
-        // The tab half of that was previously enforced only by the
-        // dispatcher in SessionManager, while this comment claimed it —
-        // the predicate now says what the comment always meant.
+        // The tab half of that used to be enforced only by whatever routed the
+        // gesture here, while this comment claimed it — the predicate now says
+        // what the comment always meant, and says it where a host that gets
+        // its gestures from somewhere else still gets the guarantee.
         guard isVisibleSurface else { return }
         // Which pane answers is decided by focus memory rather than first
         // responder, because once the find panel takes key no pane holds
