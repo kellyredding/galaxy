@@ -624,7 +624,7 @@ class SessionManager: ObservableObject {
                 proceed()
                 return
             }
-            guard let window = NSApp.keyWindow
+            guard let window = SheetAlert.hostWindow()
             else { return }
             SheetAlert.confirm(
                 in: window,
@@ -656,7 +656,7 @@ class SessionManager: ObservableObject {
                 onConfirm()
                 return
             }
-            guard let window = NSApp.keyWindow
+            guard let window = SheetAlert.hostWindow()
             else { return }
             SheetAlert.confirm(
                 in: window,
@@ -1425,7 +1425,7 @@ class SessionManager: ObservableObject {
             return
         }
 
-        guard let window = NSApp.keyWindow else { return }
+        guard let window = SheetAlert.hostWindow() else { return }
 
         SheetAlert.confirm(
             in: window,
@@ -1596,7 +1596,7 @@ class SessionManager: ObservableObject {
         guard let marker = markers.first(where: {
             $0.id == markerId
         }) else { return }
-        guard let window = NSApp.keyWindow else { return }
+        guard let window = SheetAlert.hostWindow() else { return }
 
         let displayName: String
         if !marker.emoji.isEmpty && !marker.name.isEmpty {
