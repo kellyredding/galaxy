@@ -90,7 +90,10 @@ final class ShellTerminalPane: BackendBackedPane, ObservableObject {
             ShellLaunch(
                 executable: ShellEnvironment.userLoginShell(),
                 workingDirectory: ShellLauncher.resolveCwd(for: session),
-                environment: ShellLauncher.buildEnvironment()
+                environment: ShellLauncher.buildEnvironment(),
+                // A user sitting at a prompt: the profile a login shell reads,
+                // and the behaviour an interactive one has.
+                arguments: ["-il"]
             )
         )
     }
