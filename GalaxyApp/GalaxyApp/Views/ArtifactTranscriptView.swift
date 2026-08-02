@@ -493,15 +493,17 @@ private func buildTranscriptHTML(
     content: String,
     isDark: Bool
 ) -> String {
-    let bgColor = isDark ? "#0d1117" : "#ffffff"
-    let textColor = isDark ? "#e6edf3" : "#1f2328"
-    let mutedColor = isDark ? "#8b949e" : "#656d76"
-    let borderColor = isDark
-        ? "#30363d" : "#d0d7de"
-    let cardBg = isDark ? "#161b22" : "#f6f8fa"
-    let codeBg = isDark ? "#0d1117" : "#f6f8fa"
-    let accentColor = isDark
-        ? "#58a6ff" : "#0969da"
+    // Shared palette from the engine. The local names stay: the stylesheet
+    // below is nearly two hundred lines of interpolation, and renaming
+    // through all of it would buy nothing but risk a great deal.
+    let theme = ReaderTheme.standard(isDark: isDark)
+    let bgColor = theme.background
+    let textColor = theme.foreground
+    let mutedColor = theme.mutedForeground
+    let borderColor = theme.border
+    let cardBg = theme.raisedSurface
+    let codeBg = theme.sunkenSurface
+    let accentColor = theme.accent
     let toolBadgeBg = isDark
         ? "#1f2937" : "#e5e7eb"
     let toolBadgeColor = isDark
@@ -695,244 +697,211 @@ private func buildTranscriptHTML(
 
     let totalBlocks = blockIndex - 1
 
-    return """
-    <!DOCTYPE html>
-    <html>
-    <head>
-    <meta charset="utf-8">
-    <meta name="viewport"
-          content="width=device-width, \
-    initial-scale=1">
-    <title>Galaxy Artifact Reader</title>
-    <style>
-    :root {
-        \(cssVars)
-    }
-    * { margin: 0; padding: 0;
-        box-sizing: border-box; }
-    html, body {
-        background: \(bgColor);
-        color: \(textColor);
-        font-family: -apple-system,
-            BlinkMacSystemFont, 'SF Pro Text',
-            'Helvetica Neue', sans-serif;
-        font-size: 13px;
-        line-height: 1.5;
-        -webkit-font-smoothing: antialiased;
-    }
-    .transcript-container {
-        max-width: 900px;
-        margin: 0 auto;
-        padding: 16px 24px;
-    }
-    .stats-bar {
-        display: flex;
-        gap: 16px;
-        padding: 8px 12px;
-        background: \(cardBg);
-        border: 1px solid \(borderColor);
-        border-radius: 6px;
-        margin-bottom: 16px;
-        font-size: 12px;
-        color: \(mutedColor);
-        font-family: "SF Mono", monospace;
-        flex-wrap: wrap;
-    }
-    .stats-bar .stat-value {
-        color: \(textColor);
-        font-weight: 600;
-    }
-    .prompt-block {
-        padding: 12px 16px;
-        background: \(promptBg);
-        border: 1px solid \(promptBorder);
-        border-radius: 6px;
-        margin-bottom: 16px;
-        font-size: 13px;
-        line-height: 1.6;
-    }
-    .prompt-block .prompt-para {
-        border: none;
-        border-radius: 0;
-        padding: 4px 0;
-        margin-bottom: 4px;
-        white-space: pre-wrap;
-        word-wrap: break-word;
-    }
-    .prompt-block .prompt-para:last-child {
-        margin-bottom: 0;
-    }
-    .prompt-label {
-        font-size: 11px;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        color: \(accentColor);
-        margin-bottom: 6px;
-        font-family: "SF Mono", monospace;
-    }
-    .transcript-step {
-        margin-bottom: 8px;
-        border: 1px solid \(borderColor);
-        border-radius: 6px;
-        padding: 8px 12px;
-    }
-    .step-label {
-        font-size: 11px;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        color: \(mutedColor);
-        margin-bottom: 4px;
-        font-family: "SF Mono", monospace;
-    }
-    .thinking-step {
-        border-left: 3px solid \(mutedColor);
-    }
-    .thinking-content {
-        white-space: pre-wrap;
-        word-wrap: break-word;
-        font-size: 13px;
-        line-height: 1.5;
-    }
-    .tool-step {
-        border-left: 3px solid \(accentColor);
-    }
-    .tool-badge {
-        display: inline-block;
-        padding: 1px 8px;
-        border-radius: 4px;
-        font-size: 12px;
-        font-weight: 600;
-        font-family: "SF Mono", monospace;
-        background: \(toolBadgeBg);
-        color: \(toolBadgeColor);
-    }
-    .tool-detail {
-        margin-top: 4px;
-        font-family: "SF Mono", monospace;
-        font-size: 12px;
-        color: \(textColor);
-        white-space: pre-wrap;
-        word-wrap: break-word;
-    }
-    details {
-        margin-top: 6px;
-    }
-    details summary {
-        cursor: pointer;
-        font-size: 11px;
-        color: \(mutedColor);
-        font-family: "SF Mono", monospace;
-        user-select: none;
-    }
-    details summary:hover {
-        color: \(accentColor);
-    }
-    details .tool-result-content {
-        margin-top: 4px;
-        padding: 8px;
-        background: \(codeBg);
-        border: 1px solid \(borderColor);
-        border-radius: 4px;
-        font-family: "SF Mono", monospace;
-        font-size: 11px;
-        line-height: 1.4;
-        white-space: pre-wrap;
-        word-wrap: break-word;
-        max-height: 300px;
-        overflow-y: auto;
-    }
-    .summary-container {
-        background: \(summaryBg);
-        border: 1px solid \(summaryBorder);
-        border-left: 3px solid \(
-            summaryBorderColor
-        );
-        border-radius: 6px;
-        padding: 12px 16px;
-        margin-top: 16px;
-        margin-bottom: 8px;
-    }
-    .summary-container .step-label {
-        color: \(
-            isDark ? "#4ade80" : "#16a34a"
-        );
-    }
-    .summary-container .summary-para {
-        border: none;
-        border-radius: 0;
-        padding: 4px 0;
-        margin-bottom: 4px;
-        white-space: pre-wrap;
-        word-wrap: break-word;
-        font-size: 13px;
-        line-height: 1.6;
-    }
-    .summary-container .summary-para:last-child {
-        margin-bottom: 0;
-    }
-    .transcript-step.annotation-highlight {
-        background-color:
-            rgba(88, 166, 255, 0.12);
-        border-left-color:
-            rgba(88, 166, 255, 0.6);
-    }
-    .transcript-step\
-    .annotation-expanded-highlight {
-        background-color:
-            var(--annotation-active-block-bg);
-        border-left-color:
-            var(--annotation-active-block-border);
-    }
-    \(annotationCSS)
-    </style>
-    </head>
-    <body>
-    <div class="transcript-container">
-        <div class="stats-bar">
-            <span><span class="stat-value">\(
-                parsed.messageCount
-            )</span> messages</span>
-            <span><span class="stat-value">\(
-                toolCallCount
-            )</span> tool calls</span>
-            <span><span class="stat-value">\(
-                totalBlocks
-            )</span> steps</span>
-            <span><span class="stat-value">\(
-                formatTokenCount(
-                    parsed.totalInputTokens
-                )
-            )</span> input tokens</span>
-            <span><span class="stat-value">\(
-                formatTokenCount(
-                    parsed.totalOutputTokens
-                )
-            )</span> output tokens</span>
-        </div>\
-    \(promptHTML.isEmpty ? "" : """
+    return ReaderDocument.render(
+        theme: theme,
+        title: "Galaxy Artifact Reader",
+        lineHeight: "1.5",
+        css: """
+        .transcript-container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 16px 24px;
+        }
+        .stats-bar {
+            display: flex;
+            gap: 16px;
+            padding: 8px 12px;
+            background: \(cardBg);
+            border: 1px solid \(borderColor);
+            border-radius: 6px;
+            margin-bottom: 16px;
+            font-size: 12px;
+            color: \(mutedColor);
+            font-family: "SF Mono", monospace;
+            flex-wrap: wrap;
+        }
+        .stats-bar .stat-value {
+            color: \(textColor);
+            font-weight: 600;
+        }
+        .prompt-block {
+            padding: 12px 16px;
+            background: \(promptBg);
+            border: 1px solid \(promptBorder);
+            border-radius: 6px;
+            margin-bottom: 16px;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+        .prompt-block .prompt-para {
+            border: none;
+            border-radius: 0;
+            padding: 4px 0;
+            margin-bottom: 4px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .prompt-block .prompt-para:last-child {
+            margin-bottom: 0;
+        }
+        .prompt-label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: \(accentColor);
+            margin-bottom: 6px;
+            font-family: "SF Mono", monospace;
+        }
+        .transcript-step {
+            margin-bottom: 8px;
+            border: 1px solid \(borderColor);
+            border-radius: 6px;
+            padding: 8px 12px;
+        }
+        .step-label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: \(mutedColor);
+            margin-bottom: 4px;
+            font-family: "SF Mono", monospace;
+        }
+        .thinking-step {
+            border-left: 3px solid \(mutedColor);
+        }
+        .thinking-content {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+        .tool-step {
+            border-left: 3px solid \(accentColor);
+        }
+        .tool-badge {
+            display: inline-block;
+            padding: 1px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            font-family: "SF Mono", monospace;
+            background: \(toolBadgeBg);
+            color: \(toolBadgeColor);
+        }
+        .tool-detail {
+            margin-top: 4px;
+            font-family: "SF Mono", monospace;
+            font-size: 12px;
+            color: \(textColor);
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        details {
+            margin-top: 6px;
+        }
+        details summary {
+            cursor: pointer;
+            font-size: 11px;
+            color: \(mutedColor);
+            font-family: "SF Mono", monospace;
+            user-select: none;
+        }
+        details summary:hover {
+            color: \(accentColor);
+        }
+        details .tool-result-content {
+            margin-top: 4px;
+            padding: 8px;
+            background: \(codeBg);
+            border: 1px solid \(borderColor);
+            border-radius: 4px;
+            font-family: "SF Mono", monospace;
+            font-size: 11px;
+            line-height: 1.4;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .summary-container {
+            background: \(summaryBg);
+            border: 1px solid \(summaryBorder);
+            border-left: 3px solid \(
+                summaryBorderColor
+            );
+            border-radius: 6px;
+            padding: 12px 16px;
+            margin-top: 16px;
+            margin-bottom: 8px;
+        }
+        .summary-container .step-label {
+            color: \(
+                isDark ? "#4ade80" : "#16a34a"
+            );
+        }
+        .summary-container .summary-para {
+            border: none;
+            border-radius: 0;
+            padding: 4px 0;
+            margin-bottom: 4px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+        .summary-container .summary-para:last-child {
+            margin-bottom: 0;
+        }
+        .transcript-step.annotation-highlight {
+            background-color:
+                rgba(88, 166, 255, 0.12);
+            border-left-color:
+                rgba(88, 166, 255, 0.6);
+        }
+        .transcript-step\
+        .annotation-expanded-highlight {
+            background-color:
+                var(--annotation-active-block-bg);
+            border-left-color:
+                var(--annotation-active-block-border);
+        }
+        """,
+        body: """
+        <div class="transcript-container">
+            <div class="stats-bar">
+                <span><span class="stat-value">\(
+                    parsed.messageCount
+                )</span> messages</span>
+                <span><span class="stat-value">\(
+                    toolCallCount
+                )</span> tool calls</span>
+                <span><span class="stat-value">\(
+                    totalBlocks
+                )</span> steps</span>
+                <span><span class="stat-value">\(
+                    formatTokenCount(
+                        parsed.totalInputTokens
+                    )
+                )</span> input tokens</span>
+                <span><span class="stat-value">\(
+                    formatTokenCount(
+                        parsed.totalOutputTokens
+                    )
+                )</span> output tokens</span>
+            </div>\
+        \(promptHTML.isEmpty ? "" : """
 
-        <div class="prompt-block">
-            <div class="prompt-label">Prompt</div>
-            \(promptHTML)
+            <div class="prompt-block">
+                <div class="prompt-label">Prompt</div>
+                \(promptHTML)
+            </div>
+        """)
+            \(stepsHTML)
         </div>
-    """)
-        \(stepsHTML)
-    </div>
-    <script>\(cardTextJS)</script>
-    <script>\(clipboardCopyJS)</script>
-    <script>\(textEntryJS)</script>
-    <script>\(suggestionInsertJS)</script>
-    <script>\(addNoteButtonJS)</script>
-    <script>
-    \(annotationManagerJS)
-    </script>
-    <script>\(emojiDataJS)</script>
-    <script>\(emojiAutocompleteJS)</script>
-    </body>
-    </html>
-    """
+        """
+    )
 }
 
 /// Build HTML for a single tool_use step,

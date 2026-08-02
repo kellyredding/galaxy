@@ -135,7 +135,7 @@ private func buildImageHTML(
     filePath: String,
     isDark: Bool
 ) -> String {
-    let bgColor = isDark ? "#0d1117" : "#ffffff"
+    let theme = ReaderTheme.standard(isDark: isDark)
     let filename = (filePath as NSString)
         .lastPathComponent
     let ext = (filename as NSString)
@@ -187,81 +187,57 @@ private func buildImageHTML(
     // Checkerboard pattern for transparent images
     let checkerColor = isDark ? "#1a1a2e" : "#f0f0f0"
 
-    return """
-    <!DOCTYPE html>
-    <html>
-    <head>
-    <meta charset="utf-8">
-    <meta name="viewport"
-          content="width=device-width, initial-scale=1">
-    <title>Galaxy Artifact Reader</title>
-    <style>
-    :root {
-        \(annotationCSSVars(isDark: isDark))
-    }
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body {
-        background: \(bgColor);
-        -webkit-font-smoothing: antialiased;
-    }
-    .image-container {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        min-height: 50vh;
-        padding: 24px;
-        background-image: linear-gradient(
-            45deg, \(checkerColor) 25%, transparent 25%
-        ), linear-gradient(
-            -45deg, \(checkerColor) 25%, transparent 25%
-        ), linear-gradient(
-            45deg, transparent 75%, \(checkerColor) 75%
-        ), linear-gradient(
-            -45deg, transparent 75%, \(checkerColor) 75%
-        );
-        background-size: 20px 20px;
-        background-position: 0 0, 0 10px,
-            10px -10px, -10px 0px;
-    }
-    img {
-        max-width: 100%;
-        max-height: 90vh;
-        object-fit: contain;
-        border-radius: 4px;
-    }
-    .svg-container {
-        max-width: 100%;
-        display: flex;
-        justify-content: center;
-    }
-    .svg-container svg {
-        max-width: 100%;
-        max-height: 90vh;
-    }
-    .image-error {
-        color: \(isDark ? "#e6edf3" : "#1f2328");
-        font-family: -apple-system, BlinkMacSystemFont,
-            "Segoe UI", Helvetica, Arial, sans-serif;
-        font-size: 14px;
-        text-align: center;
-        line-height: 1.6;
-        opacity: 0.7;
-    }
-    \(annotationCSS)
-    </style>
-    </head>
-    <body>
-    <div class="image-container">
-    \(imageElement)
-    </div>
-    <script>\(cardTextJS)</script>
-    <script>\(clipboardCopyJS)</script>
-    <script>\(textEntryJS)</script>
-    <script>\(suggestionInsertJS)</script>
-    <script>\(annotationManagerJS)</script>
-    <script>\(emojiDataJS)</script>
-    <script>\(emojiAutocompleteJS)</script>
-    </body>
-    </html>
-    """
+    return ReaderDocument.render(
+        theme: theme,
+        title: "Galaxy Artifact Reader",
+        css: """
+        .image-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 50vh;
+            padding: 24px;
+            background-image: linear-gradient(
+                45deg, \(checkerColor) 25%, transparent 25%
+            ), linear-gradient(
+                -45deg, \(checkerColor) 25%, transparent 25%
+            ), linear-gradient(
+                45deg, transparent 75%, \(checkerColor) 75%
+            ), linear-gradient(
+                -45deg, transparent 75%, \(checkerColor) 75%
+            );
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px,
+                10px -10px, -10px 0px;
+        }
+        img {
+            max-width: 100%;
+            max-height: 90vh;
+            object-fit: contain;
+            border-radius: 4px;
+        }
+        .svg-container {
+            max-width: 100%;
+            display: flex;
+            justify-content: center;
+        }
+        .svg-container svg {
+            max-width: 100%;
+            max-height: 90vh;
+        }
+        .image-error {
+            color: \(theme.foreground);
+            font-size: 14px;
+            text-align: center;
+            line-height: 1.6;
+            opacity: 0.7;
+        }
+        """,
+        body: """
+        <div class="image-container">
+        \(imageElement)
+        </div>
+        """,
+        cardScripts: .withoutAddNote
+    )
 }

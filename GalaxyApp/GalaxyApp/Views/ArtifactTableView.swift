@@ -137,12 +137,7 @@ private func buildTableHTML(
     content: String,
     isDark: Bool
 ) -> String {
-    let bgColor = isDark ? "#0d1117" : "#ffffff"
-    let textColor = isDark ? "#e6edf3" : "#1f2328"
-    let headerBg = isDark ? "#161b22" : "#f6f8fa"
-    let borderColor = isDark ? "#30363d" : "#d0d7de"
-    let stripeBg = isDark ? "#0d1117" : "#ffffff"
-    let stripeAltBg = isDark ? "#161b22" : "#f6f8fa"
+    let theme = ReaderTheme.standard(isDark: isDark)
 
     let rows = parseCSV(content)
     guard !rows.isEmpty else {
@@ -172,93 +167,62 @@ private func buildTableHTML(
         bodyHTML += "</tr>"
     }
 
-    let cssVars = annotationCSSVars(isDark: isDark)
-
-    return """
-    <!DOCTYPE html>
-    <html>
-    <head>
-    <meta charset="utf-8">
-    <meta name="viewport"
-          content="width=device-width, initial-scale=1">
-    <title>Galaxy Artifact Reader</title>
-    <style>
-    :root {
-        \(cssVars)
-    }
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body {
-        background: \(bgColor);
-        color: \(textColor);
-        font-family: -apple-system, BlinkMacSystemFont,
-            'SF Pro Text', 'Helvetica Neue', sans-serif;
-        font-size: 13px;
-        line-height: 1.45;
-        -webkit-font-smoothing: antialiased;
-    }
-    .table-container {
-        padding: 16px;
-        overflow: auto;
-    }
-    table {
-        border-collapse: collapse;
-        width: 100%;
-        border: 1px solid \(borderColor);
-    }
-    th {
-        background: \(headerBg);
-        font-weight: 600;
-        text-align: left;
-        padding: 8px 12px;
-        border: 1px solid \(borderColor);
-        white-space: nowrap;
-    }
-    td {
-        padding: 6px 12px;
-        border: 1px solid \(borderColor);
-        white-space: nowrap;
-    }
-    tr:nth-child(even) {
-        background: \(stripeAltBg);
-    }
-    tr:nth-child(odd) {
-        background: \(stripeBg);
-    }
-    /* Annotation highlight for table rows */
-    tr.annotation-highlight td {
-        background-color: rgba(88, 166, 255, 0.12);
-        border-left-color: rgba(88, 166, 255, 0.6);
-    }
-    tr.annotation-expanded-highlight td {
-        background-color:
-            var(--annotation-active-block-bg);
-        border-left-color:
-            var(--annotation-active-block-border);
-    }
-    \(annotationCSS)
-    </style>
-    </head>
-    <body>
-    <div class="table-container">
-    <table>
-    <thead>\(headerHTML)</thead>
-    <tbody>\(bodyHTML)</tbody>
-    </table>
-    </div>
-    <script>\(cardTextJS)</script>
-    <script>\(clipboardCopyJS)</script>
-    <script>\(textEntryJS)</script>
-    <script>\(suggestionInsertJS)</script>
-    <script>\(addNoteButtonJS)</script>
-    <script>
-    \(annotationManagerJS)
-    </script>
-    <script>\(emojiDataJS)</script>
-    <script>\(emojiAutocompleteJS)</script>
-    </body>
-    </html>
-    """
+    return ReaderDocument.render(
+        theme: theme,
+        title: "Galaxy Artifact Reader",
+        css: """
+        .table-container {
+            padding: 16px;
+            overflow: auto;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            border: 1px solid \(theme.border);
+        }
+        th {
+            background: \(theme.raisedSurface);
+            font-weight: 600;
+            text-align: left;
+            padding: 8px 12px;
+            border: 1px solid \(theme.border);
+            white-space: nowrap;
+        }
+        td {
+            padding: 6px 12px;
+            border: 1px solid \(theme.border);
+            white-space: nowrap;
+        }
+        tr:nth-child(even) {
+            background: \(theme.raisedSurface);
+        }
+        tr:nth-child(odd) {
+            background: \(theme.background);
+        }
+        /* Annotation highlight for table rows */
+        tr.annotation-highlight td {
+            background-color: rgba(88, 166, 255, 0.12);
+            border-left-color: rgba(88, 166, 255, 0.6);
+        }
+        tr.annotation-expanded-highlight td {
+            background-color:
+                var(--annotation-active-block-bg);
+            border-left-color:
+                var(--annotation-active-block-border);
+        }
+        """,
+        body: """
+        <div class="table-container">
+        <table>
+        <thead>\(headerHTML)</thead>
+        <tbody>\(bodyHTML)</tbody>
+        </table>
+        </div>
+        """
+    )
 }
+
+
 
 /// Simple CSV parser that handles quoted fields.
 /// Rows, each with the 1-based source line it began on.

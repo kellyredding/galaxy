@@ -111,7 +111,6 @@ struct ArtifactMermaidView: NSViewRepresentable {
     }
 }
 
-private let mermaidJS = ReaderAssets.mermaidJS
 
 // MARK: - HTML Generation
 
@@ -119,71 +118,42 @@ private func buildMermaidHTML(
     content: String,
     isDark: Bool
 ) -> String {
-    let bgColor = isDark ? "#0d1117" : "#ffffff"
-    let textColor = isDark ? "#e6edf3" : "#1f2328"
-    let theme = isDark ? "dark" : "default"
-
-    let escaped = HTMLEscape.text(content)
-
-    return """
-    <!DOCTYPE html>
-    <html>
-    <head>
-    <meta charset="utf-8">
-    <meta name="viewport"
-          content="width=device-width, initial-scale=1">
-    <title>Galaxy Artifact Reader</title>
-    <style>
-    :root {
-        \(annotationCSSVars(isDark: isDark))
-    }
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body {
-        background: \(bgColor);
-        color: \(textColor);
-        font-family: -apple-system, BlinkMacSystemFont,
-            'SF Pro Text', 'Helvetica Neue', sans-serif;
-        -webkit-font-smoothing: antialiased;
-    }
-    .mermaid-container {
-        display: flex;
-        justify-content: center;
-        padding: 32px 16px;
-        width: 100%;
-    }
-    .mermaid {
-        width: 100%;
-    }
-    .mermaid svg {
-        width: 100%;
-        height: auto;
-    }
-    \(annotationCSS)
-    </style>
-    </head>
-    <body>
-    <div class="mermaid-container">
-    <pre class="mermaid">\(escaped)</pre>
-    </div>
-    <script>\(mermaidJS)</script>
-    <script>
-    if (typeof mermaid !== 'undefined') {
-        mermaid.initialize({
-            startOnLoad: false,
-            theme: '\(theme)',
-            securityLevel: 'loose',
-        });
-        mermaid.run();
-    }
-    </script>
-    <script>\(cardTextJS)</script>
-    <script>\(clipboardCopyJS)</script>
-    <script>\(textEntryJS)</script>
-    <script>\(suggestionInsertJS)</script>
-    <script>\(annotationManagerJS)</script>
-    <script>\(emojiDataJS)</script>
-    <script>\(emojiAutocompleteJS)</script>
-    </body>
-    </html>
-    """
+    ReaderDocument.render(
+        theme: .standard(isDark: isDark),
+        title: "Galaxy Artifact Reader",
+        css: """
+        .mermaid-container {
+            display: flex;
+            justify-content: center;
+            padding: 32px 16px;
+            width: 100%;
+        }
+        .mermaid {
+            width: 100%;
+        }
+        .mermaid svg {
+            width: 100%;
+            height: auto;
+        }
+        """,
+        body: """
+        <div class="mermaid-container">
+        <pre class="mermaid">\(HTMLEscape.text(content))</pre>
+        </div>
+        """,
+        // The diagram has to exist before the cards install, because a
+        // whole-document anchor measures the rendered page.
+        scriptsBeforeCards: """
+        \(ReaderAssets.mermaidJS)
+        if (typeof mermaid !== 'undefined') {
+            mermaid.initialize({
+                startOnLoad: false,
+                theme: '\(isDark ? "dark" : "default")',
+                securityLevel: 'loose',
+            });
+            mermaid.run();
+        }
+        """,
+        cardScripts: .withoutAddNote
+    )
 }

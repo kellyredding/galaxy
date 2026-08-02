@@ -150,10 +150,7 @@ private func buildSourceHTML(
         isDark: isDark
     )
 
-    let bgColor = isDark ? "#0d1117" : "#ffffff"
-    let textColor = isDark ? "#e6edf3" : "#1f2328"
-    let lineNumColor = isDark ? "#6e7681" : "#8b949e"
-    let gutterBg = isDark ? "#010409" : "#f6f8fa"
+    let theme = ReaderTheme.standard(isDark: isDark)
 
     // Build line-numbered code block
     let lines = content.components(separatedBy: "\n")
@@ -175,118 +172,87 @@ private func buildSourceHTML(
         ? "language-\(language!)"
         : "nohighlight"
 
-    let cssVars = annotationCSSVars(isDark: isDark)
-
-    return """
-    <!DOCTYPE html>
-    <html>
-    <head>
-    <meta charset="utf-8">
-    <meta name="viewport"
-          content="width=device-width, initial-scale=1">
-    <title>Galaxy Artifact Reader</title>
-    <style>
-    :root {
-        \(cssVars)
-    }
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body {
-        background: \(bgColor);
-        color: \(textColor);
-        font-family: ui-monospace, 'SF Mono', Monaco,
-            'Cascadia Code', 'Roboto Mono', Menlo,
-            monospace;
-        font-size: 13px;
-        line-height: 1.45;
-        -webkit-font-smoothing: antialiased;
-    }
-    .source-container {
-        width: 100%;
-        overflow-x: auto;
-    }
-    table.source-table {
-        border-collapse: collapse;
-        width: max-content;
-        min-width: 100%;
-    }
-    .code-line td {
-        padding: 0 0;
-        vertical-align: top;
-        white-space: pre;
-    }
-    .line-num {
-        width: 4em;
-        min-width: 4em;
-        max-width: 4em;
-        text-align: right;
-        padding-right: 12px !important;
-        padding-left: 8px !important;
-        color: \(lineNumColor);
-        background: \(gutterBg);
-        user-select: none;
-        -webkit-user-select: none;
-        border-right: 1px solid
-            \(isDark ? "#21262d" : "#d0d7de");
-        position: sticky;
-        left: 0;
-        z-index: 1;
-    }
-    .line-content {
-        padding-left: 12px !important;
-        padding-right: 16px !important;
-    }
-    /* Override hljs background — we handle it */
-    .hljs { background: transparent !important; }
-    /* Annotation highlight adaption for table rows */
-    .code-line.annotation-highlight td {
-        background-color: rgba(88, 166, 255, 0.12);
-    }
-    .code-line.annotation-highlight .line-num {
-        border-left: 3px solid
-            rgba(88, 166, 255, 0.6);
-        padding-left: 5px !important;
-    }
-    .code-line.annotation-expanded-highlight td {
-        background-color:
-            var(--annotation-active-block-bg);
-    }
-    .code-line.annotation-expanded-highlight .line-num {
-        border-left: 3px solid
-            var(--annotation-active-block-border);
-        padding-left: 5px !important;
-    }
-    \(annotationCSS)
-    \(themeCSS)
-    </style>
-    </head>
-    <body>
-    <div class="source-container">
-    <table class="source-table">
-    <tbody class="\(langClass)">
-    \(lineHTML)
-    </tbody>
-    </table>
-    </div>
-    <script>\(hjsContent)</script>
-    <script>
-    if (typeof hljs !== 'undefined') {
-        document.querySelectorAll('.line-content')
-            .forEach(function(el) {
-                hljs.highlightElement(el);
-            });
-    }
-    </script>
-    <script>\(cardTextJS)</script>
-    <script>\(clipboardCopyJS)</script>
-    <script>\(textEntryJS)</script>
-    <script>\(suggestionInsertJS)</script>
-    <script>\(addNoteButtonJS)</script>
-    <script>
-    \(annotationManagerJS)
-    </script>
-    <script>\(emojiDataJS)</script>
-    <script>\(emojiAutocompleteJS)</script>
-    </body>
-    </html>
-    """
+    return ReaderDocument.render(
+        theme: theme,
+        title: "Galaxy Artifact Reader",
+        fontFamily: ReaderFont.mono,
+        css: """
+        .source-container {
+            width: 100%;
+            overflow-x: auto;
+        }
+        table.source-table {
+            border-collapse: collapse;
+            width: max-content;
+            min-width: 100%;
+        }
+        .code-line td {
+            padding: 0 0;
+            vertical-align: top;
+            white-space: pre;
+        }
+        .line-num {
+            width: 4em;
+            min-width: 4em;
+            max-width: 4em;
+            text-align: right;
+            padding-right: 12px !important;
+            padding-left: 8px !important;
+            color: \(theme.lineNumber);
+            background: \(theme.gutter);
+            user-select: none;
+            -webkit-user-select: none;
+            border-right: 1px solid
+                \(isDark ? "#21262d" : "#d0d7de");
+            position: sticky;
+            left: 0;
+            z-index: 1;
+        }
+        .line-content {
+            padding-left: 12px !important;
+            padding-right: 16px !important;
+        }
+        /* Override hljs background — we handle it */
+        .hljs { background: transparent !important; }
+        /* Annotation highlight adaption for table rows */
+        .code-line.annotation-highlight td {
+            background-color: rgba(88, 166, 255, 0.12);
+        }
+        .code-line.annotation-highlight .line-num {
+            border-left: 3px solid
+                rgba(88, 166, 255, 0.6);
+            padding-left: 5px !important;
+        }
+        .code-line.annotation-expanded-highlight td {
+            background-color:
+                var(--annotation-active-block-bg);
+        }
+        .code-line.annotation-expanded-highlight .line-num {
+            border-left: 3px solid
+                var(--annotation-active-block-border);
+            padding-left: 5px !important;
+        }
+        \(themeCSS)
+        """,
+        body: """
+        <div class="source-container">
+        <table class="source-table">
+        <tbody class="\(langClass)">
+        \(lineHTML)
+        </tbody>
+        </table>
+        </div>
+        """,
+        // Highlight before the cards install: the manager measures the
+        // rows it anchors to, and highlighting rewrites their contents.
+        scriptsBeforeCards: """
+        \(hjsContent)
+        if (typeof hljs !== 'undefined') {
+            document.querySelectorAll('.line-content')
+                .forEach(function(el) {
+                    hljs.highlightElement(el);
+                });
+        }
+        """
+    )
 }

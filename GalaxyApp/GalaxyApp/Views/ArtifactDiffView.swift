@@ -255,13 +255,16 @@ private func buildDiffHTML(
         isDark: isDark
     )
 
-    let bgColor = isDark ? "#0d1117" : "#ffffff"
-    let textColor = isDark ? "#e6edf3" : "#1f2328"
-    let lineNumColor = isDark ? "#6e7681" : "#8b949e"
-    let gutterBg = isDark ? "#010409" : "#f6f8fa"
-    let borderColor = isDark ? "#30363d" : "#d0d7de"
-    let headerBg = isDark ? "#161b22" : "#f6f8fa"
-    let mutedFg = isDark ? "#8b949e" : "#656d76"
+    // Shared palette from the engine. The hover lift and tooltip
+    // pill below stay local: nothing outside a diff uses them.
+    let theme = ReaderTheme.standard(isDark: isDark)
+    let bgColor = theme.background
+    let textColor = theme.foreground
+    let lineNumColor = theme.lineNumber
+    let gutterBg = theme.gutter
+    let borderColor = theme.border
+    let headerBg = theme.raisedSurface
+    let mutedFg = theme.mutedForeground
     // Subtle lift on the collapse-toggle button hover;
     // semi-transparent mid-gray reads against both the
     // light and dark header backgrounds without needing
@@ -407,722 +410,690 @@ private func buildDiffHTML(
 
     let cssVars = annotationCSSVars(isDark: isDark)
 
-    return """
-    <!DOCTYPE html>
-    <html>
-    <head>
-    <meta charset="utf-8">
-    <meta name="viewport"
-          content="width=device-width, initial-scale=1">
-    <title>Galaxy Diff Reader</title>
-    <style>
-    :root {
-        \(cssVars)
-    }
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body {
-        background: \(bgColor);
-        color: \(textColor);
-        font-family: ui-monospace, 'SF Mono', Monaco,
-            'Cascadia Code', 'Roboto Mono', Menlo,
-            monospace;
-        font-size: 13px;
-        line-height: 1.45;
-        -webkit-font-smoothing: antialiased;
-    }
-    body {
-        padding: 12px;
-    }
-    .diff-summary {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 8px 12px;
-        margin-bottom: 12px;
-        background: \(headerBg);
-        border: 1px solid \(borderColor);
-        border-radius: 6px;
-        font-family: -apple-system, system-ui,
-            sans-serif;
-        font-size: 12px;
-        color: \(mutedFg);
-        flex-wrap: wrap;
-    }
-    .diff-summary-refs {
-        font-family: ui-monospace, monospace;
-    }
-    /* "View on GitHub" affordance — pushed to the
-       right edge of the header via margin-left:auto
-       (the summary flexbox flows left-to-right, so
-       auto-margin consumes the remaining space).
-       Underline only on hover keeps the header calm
-       when idle. `target="_blank" rel="noopener"` on
-       the anchor itself lets the WKNavigationDelegate
-       in AnnotationSupport route the click through
-       NSWorkspace.open rather than navigating the
-       WKWebView. */
-    .diff-summary-link {
-        margin-left: auto;
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        color: \(blueFg);
-        text-decoration: none;
-    }
-    .diff-summary-link:hover {
-        text-decoration: underline;
-    }
-    .diff-summary-gh-mark {
-        /* Nudge the mark down a hair so its optical
-           center aligns with the x-height of the
-           adjacent text (the glyph's visual weight
-           sits below geometric center). */
-        transform: translateY(0.5px);
-    }
-    .diff-summary-sep {
-        opacity: 0.5;
-    }
-    /* Two-column layout: TOC sidebar on the left,
-       file cards in the main column. align-items
-       flex-start so the sidebar doesn't stretch to
-       the full content height — the sidebar is its
-       own scroll container via max-height +
-       overflow-y below. */
-    .diff-body {
-        display: flex;
-        align-items: flex-start;
-        gap: 16px;
-    }
-    .main-column {
-        flex: 1 1 auto;
-        /* Constrain so long file paths wrap inside
-           the card instead of expanding the main
-           column and pushing the sidebar off-screen.
-           min-width:0 is the standard flex-item fix
-           for "child with overflow pushes parent". */
-        min-width: 0;
-    }
-    /* TOC sidebar. Sticky-top so it stays put while
-       the main column scrolls; own scroll container
-       so a long tree doesn't push everything below
-       the viewport. */
-    .toc-sidebar {
-        flex: 0 0 260px;
-        width: 260px;
-        position: sticky;
-        top: 12px;
-        max-height: calc(100vh - 24px);
-        overflow-y: auto;
-        padding: 8px 4px;
-        background: \(headerBg);
-        border: 1px solid \(borderColor);
-        border-radius: 6px;
-        font-family: -apple-system, system-ui,
-            sans-serif;
-        font-size: 12px;
-    }
-    .toc-list {
-        list-style: none;
-        padding: 0;
-        margin: 0;
-    }
-    /* Folder + file rows share this button-based
-       clickable area. Buttons (not <a>s) because
-       they're in-page actions (collapse / scroll),
-       not navigation targets. */
-    .toc-folder-label, .toc-file-label {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        width: 100%;
-        padding: 3px 8px 3px var(--toc-indent, 8px);
-        background: transparent;
-        border: 0;
-        color: \(textColor);
-        font: inherit;
-        cursor: pointer;
-        text-align: left;
-        border-radius: 4px;
-        white-space: nowrap;
-        overflow: hidden;
-    }
-    .toc-folder-label:hover,
-    .toc-file-label:hover {
-        background: \(hoverBg);
-    }
-    .toc-folder-name, .toc-file-name {
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-    .toc-folder-name {
-        font-family: ui-monospace, monospace;
-        color: \(mutedFg);
-    }
-    .toc-file-name {
-        font-family: ui-monospace, monospace;
-    }
-    /* Chevron rotates when the parent folder
-       collapses — one SVG, two visual states. */
-    .toc-chevron {
-        flex: 0 0 12px;
-        transition: transform 0.15s ease;
-        color: \(mutedFg);
-    }
-    .toc-folder.collapsed
-        > .toc-folder-label .toc-chevron {
-        transform: rotate(-90deg);
-    }
-    .toc-folder.collapsed > .toc-children {
-        display: none;
-    }
-    /* Status badges — compact single-letter pills
-       matching the file-card header's colors so
-       both views speak the same visual language. */
-    .toc-status {
-        flex: 0 0 16px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 16px;
-        height: 16px;
-        border-radius: 3px;
-        font-size: 10px;
-        font-weight: 600;
-        font-family: ui-monospace, monospace;
-        line-height: 1;
-    }
-    .toc-status-added {
-        background: \(greenBg); color: \(greenFg);
-    }
-    .toc-status-modified {
-        background: \(yellowBg); color: \(yellowFg);
-    }
-    .toc-status-deleted {
-        background: \(redBg); color: \(redFg);
-    }
-    .toc-status-renamed {
-        background: \(blueBg); color: \(blueFg);
-    }
-    .toc-status-binary {
-        background: \(hoverBg); color: \(mutedFg);
-    }
-    /* Annotation cards are absolute-positioned
-       against the page edges by annotationCSS. Here
-       the main content sits in a 276px-indented
-       column (sidebar 260 + gap 16), so a card at
-       the default gutter would run under the
-       sidebar. Move the gutter rather than restating
-       the card and form rules — those live in the
-       engine and would have to be kept in step by
-       hand. `:has(.toc-sidebar)` scopes this to
-       diffs that rendered one; empty-state diffs
-       skip the sidebar and keep the default. */
-    body:has(.toc-sidebar) {
-        --annotation-gutter-left: calc(24px + 276px);
-    }
-    .empty-state {
-        padding: 40px 20px;
-        text-align: center;
-        color: \(mutedFg);
-        font-family: -apple-system, system-ui,
-            sans-serif;
-        font-size: 14px;
-    }
-    .file-card {
-        margin-bottom: 16px;
-        border: 1px solid \(borderColor);
-        border-radius: 6px;
-        /* `overflow: clip` clips the inner table's
-           square corners against the 6px border-radius
-           just like `overflow: hidden` would, but
-           (unlike hidden) does NOT establish a scroll
-           container. That matters because
-           `position: sticky` on descendants walks up
-           to the nearest scroll container to decide
-           where to sticky — hidden would trap the
-           sticky header inside the non-scrolling card
-           and make it a no-op. `clip` keeps the
-           viewport as the sticky container so the
-           header pins to the top of the page while
-           the card body scrolls behind it. */
-        overflow: clip;
-    }
-    .file-header {
-        display: flex;
-        align-items: center;
-        padding: 8px 12px;
-        background: \(headerBg);
-        border-bottom: 1px solid \(borderColor);
-        font-family: -apple-system, system-ui,
-            sans-serif;
-        font-size: 13px;
-        gap: 8px;
-        flex-wrap: wrap;
-    }
-    .file-path {
-        font-weight: 600;
-        font-family: ui-monospace, monospace;
-        /* `overflow-wrap: break-word` lets long
-           paths break mid-path only when they would
-           actually overflow, without making the
-           element's min-content 1 character the way
-           `word-break: break-all` does — which was
-           collapsing the file-header flex container
-           on some cards. */
-        overflow-wrap: break-word;
-    }
-    .file-old-path {
-        font-family: ui-monospace, monospace;
-        color: \(mutedFg);
-        font-size: 12px;
-        text-decoration: line-through;
-    }
-    .file-stats {
-        margin-left: auto;
-        font-size: 11px;
-        color: \(mutedFg);
-        font-family: ui-monospace, monospace;
-    }
-    .file-stats .stat-add { color: \(greenFg); }
-    .file-stats .stat-del { color: \(redFg); }
-    /* Viewed checkbox — GitHub-style affordance next
-       to the file stats. Clicking it toggles the
-       file-card's `.collapsed` class (same mechanism
-       the chevron uses) and posts a setViewed message
-       to Swift for per-session persistence. */
-    .file-viewed {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        font-size: 12px;
-        color: \(mutedFg);
-        cursor: pointer;
-        user-select: none;
-        -webkit-user-select: none;
-        padding: 2px 6px;
-        border-radius: 4px;
-    }
-    .file-viewed:hover { background: \(hoverBg); }
-    .file-viewed input[type="checkbox"] {
-        cursor: pointer;
-        margin: 0;
-    }
-    .status-badge {
-        display: inline-block;
-        padding: 1px 6px;
-        border-radius: 3px;
-        font-size: 11px;
-        font-weight: 600;
-    }
-    .status-modified {
-        background: \(yellowBg); color: \(yellowFg);
-    }
-    .status-added {
-        background: \(greenBg); color: \(greenFg);
-    }
-    .status-deleted {
-        background: \(redBg); color: \(redFg);
-    }
-    .status-renamed {
-        background: \(blueBg); color: \(blueFg);
-    }
-    .status-binary {
-        background: \(blueBg); color: \(blueFg);
-    }
-    .file-body {
-        width: 100%;
-    }
-    /* Shared button styling for the file-header's
-       icon buttons — the collapse chevron and the
-       copy-path button live inside .file-header with
-       the parent's `gap: 8px` handling spacing.
-       `line-height: 0` prevents the SVG from
-       contributing extra vertical whitespace. */
-    .file-collapse-toggle,
-    .file-copy-path {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 20px;
-        height: 20px;
-        border: none;
-        background: transparent;
-        color: \(mutedFg);
-        cursor: pointer;
-        padding: 0;
-        border-radius: 4px;
-        flex-shrink: 0;
-        line-height: 0;
-        font: inherit;
-    }
-    .file-collapse-toggle:hover,
-    .file-collapse-toggle:focus-visible,
-    .file-copy-path:hover,
-    .file-copy-path:focus-visible {
-        background: \(hoverBg);
-        color: \(textColor);
-        outline: none;
-    }
-    .file-collapse-toggle .chevron {
-        transition: transform 0.12s ease-in-out;
-    }
-    /* Brief green flash on successful copy, paired
-       with the check icon swap + "Copied!" tooltip.
-       Decays back to the default muted color when
-       .copied is removed. */
-    .file-copy-path.copied {
-        color: \(greenFg);
-    }
-    /* Rotate chevron-down → chevron-right when the
-       card is collapsed. (-90deg rotates the tip from
-       the 6 o'clock position to 3 o'clock.) */
-    .file-card.collapsed
+    return ReaderDocument.render(
+        theme: theme,
+        title: "Galaxy Diff Reader",
+        fontFamily: ReaderFont.mono,
+        css: """
+        }
+        body {
+            padding: 12px;
+        }
+        .diff-summary {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 12px;
+            margin-bottom: 12px;
+            background: \(headerBg);
+            border: 1px solid \(borderColor);
+            border-radius: 6px;
+            font-family: -apple-system, system-ui,
+                sans-serif;
+            font-size: 12px;
+            color: \(mutedFg);
+            flex-wrap: wrap;
+        }
+        .diff-summary-refs {
+            font-family: ui-monospace, monospace;
+        }
+        /* "View on GitHub" affordance — pushed to the
+           right edge of the header via margin-left:auto
+           (the summary flexbox flows left-to-right, so
+           auto-margin consumes the remaining space).
+           Underline only on hover keeps the header calm
+           when idle. `target="_blank" rel="noopener"` on
+           the anchor itself lets the WKNavigationDelegate
+           in AnnotationSupport route the click through
+           NSWorkspace.open rather than navigating the
+           WKWebView. */
+        .diff-summary-link {
+            margin-left: auto;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: \(blueFg);
+            text-decoration: none;
+        }
+        .diff-summary-link:hover {
+            text-decoration: underline;
+        }
+        .diff-summary-gh-mark {
+            /* Nudge the mark down a hair so its optical
+               center aligns with the x-height of the
+               adjacent text (the glyph's visual weight
+               sits below geometric center). */
+            transform: translateY(0.5px);
+        }
+        .diff-summary-sep {
+            opacity: 0.5;
+        }
+        /* Two-column layout: TOC sidebar on the left,
+           file cards in the main column. align-items
+           flex-start so the sidebar doesn't stretch to
+           the full content height — the sidebar is its
+           own scroll container via max-height +
+           overflow-y below. */
+        .diff-body {
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+        }
+        .main-column {
+            flex: 1 1 auto;
+            /* Constrain so long file paths wrap inside
+               the card instead of expanding the main
+               column and pushing the sidebar off-screen.
+               min-width:0 is the standard flex-item fix
+               for "child with overflow pushes parent". */
+            min-width: 0;
+        }
+        /* TOC sidebar. Sticky-top so it stays put while
+           the main column scrolls; own scroll container
+           so a long tree doesn't push everything below
+           the viewport. */
+        .toc-sidebar {
+            flex: 0 0 260px;
+            width: 260px;
+            position: sticky;
+            top: 12px;
+            max-height: calc(100vh - 24px);
+            overflow-y: auto;
+            padding: 8px 4px;
+            background: \(headerBg);
+            border: 1px solid \(borderColor);
+            border-radius: 6px;
+            font-family: -apple-system, system-ui,
+                sans-serif;
+            font-size: 12px;
+        }
+        .toc-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        /* Folder + file rows share this button-based
+           clickable area. Buttons (not <a>s) because
+           they're in-page actions (collapse / scroll),
+           not navigation targets. */
+        .toc-folder-label, .toc-file-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            width: 100%;
+            padding: 3px 8px 3px var(--toc-indent, 8px);
+            background: transparent;
+            border: 0;
+            color: \(textColor);
+            font: inherit;
+            cursor: pointer;
+            text-align: left;
+            border-radius: 4px;
+            white-space: nowrap;
+            overflow: hidden;
+        }
+        .toc-folder-label:hover,
+        .toc-file-label:hover {
+            background: \(hoverBg);
+        }
+        .toc-folder-name, .toc-file-name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .toc-folder-name {
+            font-family: ui-monospace, monospace;
+            color: \(mutedFg);
+        }
+        .toc-file-name {
+            font-family: ui-monospace, monospace;
+        }
+        /* Chevron rotates when the parent folder
+           collapses — one SVG, two visual states. */
+        .toc-chevron {
+            flex: 0 0 12px;
+            transition: transform 0.15s ease;
+            color: \(mutedFg);
+        }
+        .toc-folder.collapsed
+            > .toc-folder-label .toc-chevron {
+            transform: rotate(-90deg);
+        }
+        .toc-folder.collapsed > .toc-children {
+            display: none;
+        }
+        /* Status badges — compact single-letter pills
+           matching the file-card header's colors so
+           both views speak the same visual language. */
+        .toc-status {
+            flex: 0 0 16px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 16px;
+            height: 16px;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: 600;
+            font-family: ui-monospace, monospace;
+            line-height: 1;
+        }
+        .toc-status-added {
+            background: \(greenBg); color: \(greenFg);
+        }
+        .toc-status-modified {
+            background: \(yellowBg); color: \(yellowFg);
+        }
+        .toc-status-deleted {
+            background: \(redBg); color: \(redFg);
+        }
+        .toc-status-renamed {
+            background: \(blueBg); color: \(blueFg);
+        }
+        .toc-status-binary {
+            background: \(hoverBg); color: \(mutedFg);
+        }
+        /* Annotation cards are absolute-positioned
+           against the page edges by annotationCSS. Here
+           the main content sits in a 276px-indented
+           column (sidebar 260 + gap 16), so a card at
+           the default gutter would run under the
+           sidebar. Move the gutter rather than restating
+           the card and form rules — those live in the
+           engine and would have to be kept in step by
+           hand. `:has(.toc-sidebar)` scopes this to
+           diffs that rendered one; empty-state diffs
+           skip the sidebar and keep the default. */
+        body:has(.toc-sidebar) {
+            --annotation-gutter-left: calc(24px + 276px);
+        }
+        .empty-state {
+            padding: 40px 20px;
+            text-align: center;
+            color: \(mutedFg);
+            font-family: -apple-system, system-ui,
+                sans-serif;
+            font-size: 14px;
+        }
+        .file-card {
+            margin-bottom: 16px;
+            border: 1px solid \(borderColor);
+            border-radius: 6px;
+            /* `overflow: clip` clips the inner table's
+               square corners against the 6px border-radius
+               just like `overflow: hidden` would, but
+               (unlike hidden) does NOT establish a scroll
+               container. That matters because
+               `position: sticky` on descendants walks up
+               to the nearest scroll container to decide
+               where to sticky — hidden would trap the
+               sticky header inside the non-scrolling card
+               and make it a no-op. `clip` keeps the
+               viewport as the sticky container so the
+               header pins to the top of the page while
+               the card body scrolls behind it. */
+            overflow: clip;
+        }
+        .file-header {
+            display: flex;
+            align-items: center;
+            padding: 8px 12px;
+            background: \(headerBg);
+            border-bottom: 1px solid \(borderColor);
+            font-family: -apple-system, system-ui,
+                sans-serif;
+            font-size: 13px;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .file-path {
+            font-weight: 600;
+            font-family: ui-monospace, monospace;
+            /* `overflow-wrap: break-word` lets long
+               paths break mid-path only when they would
+               actually overflow, without making the
+               element's min-content 1 character the way
+               `word-break: break-all` does — which was
+               collapsing the file-header flex container
+               on some cards. */
+            overflow-wrap: break-word;
+        }
+        .file-old-path {
+            font-family: ui-monospace, monospace;
+            color: \(mutedFg);
+            font-size: 12px;
+            text-decoration: line-through;
+        }
+        .file-stats {
+            margin-left: auto;
+            font-size: 11px;
+            color: \(mutedFg);
+            font-family: ui-monospace, monospace;
+        }
+        .file-stats .stat-add { color: \(greenFg); }
+        .file-stats .stat-del { color: \(redFg); }
+        /* Viewed checkbox — GitHub-style affordance next
+           to the file stats. Clicking it toggles the
+           file-card's `.collapsed` class (same mechanism
+           the chevron uses) and posts a setViewed message
+           to Swift for per-session persistence. */
+        .file-viewed {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 12px;
+            color: \(mutedFg);
+            cursor: pointer;
+            user-select: none;
+            -webkit-user-select: none;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+        .file-viewed:hover { background: \(hoverBg); }
+        .file-viewed input[type="checkbox"] {
+            cursor: pointer;
+            margin: 0;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 1px 6px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .status-modified {
+            background: \(yellowBg); color: \(yellowFg);
+        }
+        .status-added {
+            background: \(greenBg); color: \(greenFg);
+        }
+        .status-deleted {
+            background: \(redBg); color: \(redFg);
+        }
+        .status-renamed {
+            background: \(blueBg); color: \(blueFg);
+        }
+        .status-binary {
+            background: \(blueBg); color: \(blueFg);
+        }
+        .file-body {
+            width: 100%;
+        }
+        /* Shared button styling for the file-header's
+           icon buttons — the collapse chevron and the
+           copy-path button live inside .file-header with
+           the parent's `gap: 8px` handling spacing.
+           `line-height: 0` prevents the SVG from
+           contributing extra vertical whitespace. */
+        .file-collapse-toggle,
+        .file-copy-path {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 20px;
+            height: 20px;
+            border: none;
+            background: transparent;
+            color: \(mutedFg);
+            cursor: pointer;
+            padding: 0;
+            border-radius: 4px;
+            flex-shrink: 0;
+            line-height: 0;
+            font: inherit;
+        }
+        .file-collapse-toggle:hover,
+        .file-collapse-toggle:focus-visible,
+        .file-copy-path:hover,
+        .file-copy-path:focus-visible {
+            background: \(hoverBg);
+            color: \(textColor);
+            outline: none;
+        }
         .file-collapse-toggle .chevron {
-        transform: rotate(-90deg);
-    }
-    /* GitHub-style tooltip pill. Rendered as a single
-       element appended to <body> (not a pseudo-element
-       on the button) so it escapes the file-card's
-       `overflow: hidden` — which would otherwise clip
-       it on the left edge for cards whose toggle sits
-       at the start, and clip it entirely below
-       collapsed cards (no body room beneath). JS
-       positions it via getBoundingClientRect on hover. */
-    .file-tooltip {
-        position: fixed;
-        top: 0;
-        left: 0;
-        background: \(tooltipBg);
-        color: \(tooltipFg);
-        padding: 4px 8px;
-        border-radius: 6px;
-        font-size: 11px;
-        font-family: -apple-system, system-ui,
-            sans-serif;
-        font-weight: 500;
-        white-space: nowrap;
-        pointer-events: none;
-        opacity: 0;
-        transition: opacity 0.1s ease-in-out;
-        z-index: 1000;
-    }
-    .file-tooltip.visible { opacity: 1; }
-    /* Collapse the card body — hides code-line rows
-       and gap-spacer rows in one selector. Gap-expand
-       DOM state is preserved under display:none, so
-       re-expanding the card restores any previously
-       revealed lines. */
-    .file-card.collapsed tbody > tr:not(.header-line) {
-        display: none;
-    }
-    /* Drop the header's bottom border when collapsed
-       so the card reads as a single compact bar. */
-    .file-card.collapsed .file-header {
-        border-bottom: none;
-    }
-    /* Annotation cards live on document.body (outside
-       any file-card, so they escape the card's
-       overflow clip). When their file is collapsed,
-       they need to be hidden explicitly — the in-tbody
-       spacer row is already handled by the collapse
-       selector above, but the floating card isn't. */
-    .annotation-card.file-hidden {
-        display: none !important;
-    }
-    /* Auto table layout — the browser sizes each
-       column from content. `width: 100%` constrains
-       the overall table to the card; `pre-wrap`
-       below lets cells wrap at word boundaries when
-       their content exceeds the remaining width. No
-       `table-layout: fixed` — it breaks cells that
-       don't get the `.hljs` class (crystal, etc.)
-       whose intrinsic-content column sizing differs
-       from cells that do. */
-    table.diff-table {
-        border-collapse: collapse;
-        width: 100%;
-        tab-size: 4;
-        -moz-tab-size: 4;
-    }
-    .code-line td {
-        padding: 0;
-        vertical-align: top;
-        /* `pre-wrap` preserves leading whitespace /
-           indentation while allowing wrapping at
-           word boundaries. */
-        white-space: pre-wrap;
-    }
-    /* Three gutter columns: old line number, new line
-       number, and a +/-/space marker. Shared column
-       styling below; per-column widths follow. */
-    .line-old-num, .line-new-num {
-        text-align: right;
-        padding-right: 10px !important;
-        padding-left: 10px !important;
-        color: \(lineNumColor);
-        background: \(gutterBg);
-        user-select: none;
-        -webkit-user-select: none;
-    }
-    .line-old-num {
-        width: 5em;
-        min-width: 5em;
-        max-width: 5em;
-    }
-    .line-new-num {
-        width: 5em;
-        min-width: 5em;
-        max-width: 5em;
-        border-right: 1px solid \(borderColor);
-    }
-    .line-marker {
-        width: 1.25em;
-        min-width: 1.25em;
-        max-width: 1.25em;
-        text-align: center;
-        padding: 0 !important;
-        user-select: none;
-        -webkit-user-select: none;
-        color: \(mutedFg);
-    }
-    .line-content {
-        padding-left: 10px !important;
-        padding-right: 16px !important;
-        /* Let a long unbreakable token break mid-token so
-           the file card can shrink to the available width
-           instead of overflowing and getting clipped by
-           the card's `overflow: clip`. The diff table uses
-           auto table-layout, which never sizes a column
-           below its min-content width; with only the
-           inherited `pre-wrap` (which breaks solely at
-           whitespace) a single long run of non-whitespace
-           pins the whole table wide, clipping every row.
-           `overflow-wrap: anywhere` — NOT `break-word` —
-           is required: only `anywhere` reduces the
-           intrinsic min-content that auto table-layout
-           reads, so the column collapses and the card
-           tracks the pane. Lines then wrap mid-token
-           rather than clip. */
-        overflow-wrap: anywhere;
-    }
-    /* Header lines — annotatable but styled as
-       simple file-card headers, not code lines.
-       Header uses a single colspan=4 cell. */
-    .code-line.header-line td {
-        padding: 0 !important;
-    }
-    /* Sticky file-card header — pins the file path /
-       status / collapse chevron to the top of the
-       viewport while the body of the card scrolls
-       behind. The `:not(.collapsed)` guard keeps it
-       inert for collapsed cards, where the header is
-       the entire card and stickying it would just
-       waste a stacking slot. z-index 20 keeps the
-       header above annotation cards (z-index 10) so
-       scrolling past a pinned annotation can't cover
-       the file chrome. */
-    .file-card:not(.collapsed) tr.header-line {
-        position: sticky;
-        top: 0;
-        z-index: 20;
-    }
-    /* Diff overlay — shade every column of add/del
-       rows so the colored band spans the full row.
-       `!important` is required because hljs adds the
-       `.hljs` class to `.line-content` cells where it
-       successfully highlights, and the `.hljs` rule
-       (below) uses `!important transparent` to
-       neutralize the theme's dark hljs background.
-       Without `!important` here, hljs-highlighted
-       cells (known languages like Swift) lose the
-       diff row shading while unknown languages
-       (Crystal, etc.) keep it — an inconsistency
-       with no user-facing logic. */
-    .diff-add td {
-        background-color: \(diffAddBg) !important;
-    }
-    .diff-add td.line-old-num,
-    .diff-add td.line-new-num {
-        background-color: \(diffAddNum) !important;
-    }
-    .diff-add td.line-marker {
-        color: \(greenFg);
-        font-weight: 600;
-    }
-    .diff-del td {
-        background-color: \(diffDelBg) !important;
-    }
-    .diff-del td.line-old-num,
-    .diff-del td.line-new-num {
-        background-color: \(diffDelNum) !important;
-    }
-    .diff-del td.line-marker {
-        color: \(redFg);
-        font-weight: 600;
-    }
-    .char-add {
-        background-color: \(charAddBg);
-        border-radius: 2px;
-    }
-    .char-del {
-        background-color: \(charDelBg);
-        border-radius: 2px;
-    }
-    .binary-notice {
-        padding: 16px;
-        text-align: center;
-        color: \(mutedFg);
-        font-family: -apple-system, system-ui,
-            sans-serif;
-        font-style: italic;
-    }
-    /* Unchanged-region collapse — spacer row replacing
-       long runs of context lines between hunks. Three
-       affordances: expand-up (reveals N lines at the
-       top), expand-all (reveals the whole gap), and
-       expand-down (reveals N lines at the bottom). */
-    .unchanged-gap td.gap-spacer {
-        padding: 4px 12px !important;
-        background: \(gutterBg) !important;
-        border-top: 1px solid \(borderColor);
-        border-bottom: 1px solid \(borderColor);
-        font-family: -apple-system, system-ui,
-            sans-serif;
-        font-size: 11px;
-        color: \(mutedFg);
-        white-space: normal;
-    }
-    .gap-spacer-inner {
-        display: flex;
-        align-items: stretch;
-        gap: 12px;
-        width: 100%;
-    }
-    /* Arrow column — vertical stack for `gap-stacked`
-       (two buttons, taller row); single button for
-       `gap-combined` (shorter row). Row height is
-       driven by this column's content. */
-    .gap-expand-group {
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-        flex: 0 0 auto;
-    }
-    .gap-expand {
-        background: transparent;
-        border: 0;
-        padding: 3px 10px;
-        margin: 0;
-        color: \(mutedFg);
-        font-family: inherit;
-        font-size: 11px;
-        cursor: pointer;
-        border-radius: 4px;
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        line-height: 1.4;
-        white-space: nowrap;
-    }
-    .gap-expand:hover {
-        background: rgba(127, 127, 127, 0.14);
-        color: \(textColor);
-    }
-    /* Center the "show all" button in whatever space
-       remains after the arrow column. Sized to its
-       text, not flex-stretched. */
-    .gap-all-wrap {
-        flex: 1 1 auto;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-    .gap-expand-all {
-        flex: 0 0 auto;
-        font-style: italic;
-    }
-    .gap-arrow {
-        font-weight: 700;
-        font-size: 13px;
-    }
-    /* hljs background suppression */
-    .hljs { background: transparent !important; }
-    /* Annotation highlight adaption for table rows */
-    .code-line.annotation-highlight td {
-        background-color: rgba(88, 166, 255, 0.12);
-    }
-    .code-line.annotation-highlight td:first-child {
-        border-left: 3px solid
-            rgba(88, 166, 255, 0.6);
-        padding-left: 7px !important;
-    }
-    .code-line.annotation-expanded-highlight td {
-        background-color:
-            var(--annotation-active-block-bg);
-    }
-    .code-line.annotation-expanded-highlight
-        td:first-child {
-        border-left: 3px solid
-            var(--annotation-active-block-border);
-        padding-left: 7px !important;
-    }
-    \(annotationCSS)
-    \(themeCSS)
-    </style>
-    </head>
-    <body>
-    <script>\(afterLinesJS)</script>
-    \(metadataHTML)
-    \(bodyLayoutHTML)
-    <script>\(hjsContent)</script>
-    <script>
-    if (typeof hljs !== 'undefined') {
-        document.querySelectorAll(
-            '.diff-table tbody[data-lang]'
-        ).forEach(function(tbody) {
-            var lang = tbody.getAttribute('data-lang');
-            tbody.querySelectorAll('.line-content')
-                .forEach(function(el) {
-                    // Skip hljs for lines that already
-                    // have char-level spans, and for
-                    // header rows
-                    if (el.querySelector('.char-add')
-                        || el.querySelector('.char-del')
-                        || el.closest('.header-line')) {
-                        return;
-                    }
-                    if (lang && lang !== 'plaintext') {
-                        el.classList.add(
-                            'language-' + lang
-                        );
-                    }
-                    hljs.highlightElement(el);
-                });
-        });
-    }
-    </script>
-    <script>
-    \(gapExpansionJS)
-    </script>
-    <script>
-    \(fileCollapseJS)
-    </script>
-    <script>
-    \(tocNavJS)
-    </script>
-    <script>\(cardTextJS)</script>
-    <script>\(clipboardCopyJS)</script>
-    <script>\(textEntryJS)</script>
-    <script>\(suggestionInsertJS)</script>
-    <script>\(addNoteButtonJS)</script>
-    <script>
-    \(annotationManagerJS)
-    </script>
-    <script>\(emojiDataJS)</script>
-    <script>\(emojiAutocompleteJS)</script>
-    </body>
-    </html>
-    """
+            transition: transform 0.12s ease-in-out;
+        }
+        /* Brief green flash on successful copy, paired
+           with the check icon swap + "Copied!" tooltip.
+           Decays back to the default muted color when
+           .copied is removed. */
+        .file-copy-path.copied {
+            color: \(greenFg);
+        }
+        /* Rotate chevron-down → chevron-right when the
+           card is collapsed. (-90deg rotates the tip from
+           the 6 o'clock position to 3 o'clock.) */
+        .file-card.collapsed
+            .file-collapse-toggle .chevron {
+            transform: rotate(-90deg);
+        }
+        /* GitHub-style tooltip pill. Rendered as a single
+           element appended to <body> (not a pseudo-element
+           on the button) so it escapes the file-card's
+           `overflow: hidden` — which would otherwise clip
+           it on the left edge for cards whose toggle sits
+           at the start, and clip it entirely below
+           collapsed cards (no body room beneath). JS
+           positions it via getBoundingClientRect on hover. */
+        .file-tooltip {
+            position: fixed;
+            top: 0;
+            left: 0;
+            background: \(tooltipBg);
+            color: \(tooltipFg);
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-family: -apple-system, system-ui,
+                sans-serif;
+            font-weight: 500;
+            white-space: nowrap;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.1s ease-in-out;
+            z-index: 1000;
+        }
+        .file-tooltip.visible { opacity: 1; }
+        /* Collapse the card body — hides code-line rows
+           and gap-spacer rows in one selector. Gap-expand
+           DOM state is preserved under display:none, so
+           re-expanding the card restores any previously
+           revealed lines. */
+        .file-card.collapsed tbody > tr:not(.header-line) {
+            display: none;
+        }
+        /* Drop the header's bottom border when collapsed
+           so the card reads as a single compact bar. */
+        .file-card.collapsed .file-header {
+            border-bottom: none;
+        }
+        /* Annotation cards live on document.body (outside
+           any file-card, so they escape the card's
+           overflow clip). When their file is collapsed,
+           they need to be hidden explicitly — the in-tbody
+           spacer row is already handled by the collapse
+           selector above, but the floating card isn't. */
+        .annotation-card.file-hidden {
+            display: none !important;
+        }
+        /* Auto table layout — the browser sizes each
+           column from content. `width: 100%` constrains
+           the overall table to the card; `pre-wrap`
+           below lets cells wrap at word boundaries when
+           their content exceeds the remaining width. No
+           `table-layout: fixed` — it breaks cells that
+           don't get the `.hljs` class (crystal, etc.)
+           whose intrinsic-content column sizing differs
+           from cells that do. */
+        table.diff-table {
+            border-collapse: collapse;
+            width: 100%;
+            tab-size: 4;
+            -moz-tab-size: 4;
+        }
+        .code-line td {
+            padding: 0;
+            vertical-align: top;
+            /* `pre-wrap` preserves leading whitespace /
+               indentation while allowing wrapping at
+               word boundaries. */
+            white-space: pre-wrap;
+        }
+        /* Three gutter columns: old line number, new line
+           number, and a +/-/space marker. Shared column
+           styling below; per-column widths follow. */
+        .line-old-num, .line-new-num {
+            text-align: right;
+            padding-right: 10px !important;
+            padding-left: 10px !important;
+            color: \(lineNumColor);
+            background: \(gutterBg);
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        .line-old-num {
+            width: 5em;
+            min-width: 5em;
+            max-width: 5em;
+        }
+        .line-new-num {
+            width: 5em;
+            min-width: 5em;
+            max-width: 5em;
+            border-right: 1px solid \(borderColor);
+        }
+        .line-marker {
+            width: 1.25em;
+            min-width: 1.25em;
+            max-width: 1.25em;
+            text-align: center;
+            padding: 0 !important;
+            user-select: none;
+            -webkit-user-select: none;
+            color: \(mutedFg);
+        }
+        .line-content {
+            padding-left: 10px !important;
+            padding-right: 16px !important;
+            /* Let a long unbreakable token break mid-token so
+               the file card can shrink to the available width
+               instead of overflowing and getting clipped by
+               the card's `overflow: clip`. The diff table uses
+               auto table-layout, which never sizes a column
+               below its min-content width; with only the
+               inherited `pre-wrap` (which breaks solely at
+               whitespace) a single long run of non-whitespace
+               pins the whole table wide, clipping every row.
+               `overflow-wrap: anywhere` — NOT `break-word` —
+               is required: only `anywhere` reduces the
+               intrinsic min-content that auto table-layout
+               reads, so the column collapses and the card
+               tracks the pane. Lines then wrap mid-token
+               rather than clip. */
+            overflow-wrap: anywhere;
+        }
+        /* Header lines — annotatable but styled as
+           simple file-card headers, not code lines.
+           Header uses a single colspan=4 cell. */
+        .code-line.header-line td {
+            padding: 0 !important;
+        }
+        /* Sticky file-card header — pins the file path /
+           status / collapse chevron to the top of the
+           viewport while the body of the card scrolls
+           behind. The `:not(.collapsed)` guard keeps it
+           inert for collapsed cards, where the header is
+           the entire card and stickying it would just
+           waste a stacking slot. z-index 20 keeps the
+           header above annotation cards (z-index 10) so
+           scrolling past a pinned annotation can't cover
+           the file chrome. */
+        .file-card:not(.collapsed) tr.header-line {
+            position: sticky;
+            top: 0;
+            z-index: 20;
+        }
+        /* Diff overlay — shade every column of add/del
+           rows so the colored band spans the full row.
+           `!important` is required because hljs adds the
+           `.hljs` class to `.line-content` cells where it
+           successfully highlights, and the `.hljs` rule
+           (below) uses `!important transparent` to
+           neutralize the theme's dark hljs background.
+           Without `!important` here, hljs-highlighted
+           cells (known languages like Swift) lose the
+           diff row shading while unknown languages
+           (Crystal, etc.) keep it — an inconsistency
+           with no user-facing logic. */
+        .diff-add td {
+            background-color: \(diffAddBg) !important;
+        }
+        .diff-add td.line-old-num,
+        .diff-add td.line-new-num {
+            background-color: \(diffAddNum) !important;
+        }
+        .diff-add td.line-marker {
+            color: \(greenFg);
+            font-weight: 600;
+        }
+        .diff-del td {
+            background-color: \(diffDelBg) !important;
+        }
+        .diff-del td.line-old-num,
+        .diff-del td.line-new-num {
+            background-color: \(diffDelNum) !important;
+        }
+        .diff-del td.line-marker {
+            color: \(redFg);
+            font-weight: 600;
+        }
+        .char-add {
+            background-color: \(charAddBg);
+            border-radius: 2px;
+        }
+        .char-del {
+            background-color: \(charDelBg);
+            border-radius: 2px;
+        }
+        .binary-notice {
+            padding: 16px;
+            text-align: center;
+            color: \(mutedFg);
+            font-family: -apple-system, system-ui,
+                sans-serif;
+            font-style: italic;
+        }
+        /* Unchanged-region collapse — spacer row replacing
+           long runs of context lines between hunks. Three
+           affordances: expand-up (reveals N lines at the
+           top), expand-all (reveals the whole gap), and
+           expand-down (reveals N lines at the bottom). */
+        .unchanged-gap td.gap-spacer {
+            padding: 4px 12px !important;
+            background: \(gutterBg) !important;
+            border-top: 1px solid \(borderColor);
+            border-bottom: 1px solid \(borderColor);
+            font-family: -apple-system, system-ui,
+                sans-serif;
+            font-size: 11px;
+            color: \(mutedFg);
+            white-space: normal;
+        }
+        .gap-spacer-inner {
+            display: flex;
+            align-items: stretch;
+            gap: 12px;
+            width: 100%;
+        }
+        /* Arrow column — vertical stack for `gap-stacked`
+           (two buttons, taller row); single button for
+           `gap-combined` (shorter row). Row height is
+           driven by this column's content. */
+        .gap-expand-group {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            flex: 0 0 auto;
+        }
+        .gap-expand {
+            background: transparent;
+            border: 0;
+            padding: 3px 10px;
+            margin: 0;
+            color: \(mutedFg);
+            font-family: inherit;
+            font-size: 11px;
+            cursor: pointer;
+            border-radius: 4px;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            line-height: 1.4;
+            white-space: nowrap;
+        }
+        .gap-expand:hover {
+            background: rgba(127, 127, 127, 0.14);
+            color: \(textColor);
+        }
+        /* Center the "show all" button in whatever space
+           remains after the arrow column. Sized to its
+           text, not flex-stretched. */
+        .gap-all-wrap {
+            flex: 1 1 auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .gap-expand-all {
+            flex: 0 0 auto;
+            font-style: italic;
+        }
+        .gap-arrow {
+            font-weight: 700;
+            font-size: 13px;
+        }
+        /* hljs background suppression */
+        .hljs { background: transparent !important; }
+        /* Annotation highlight adaption for table rows */
+        .code-line.annotation-highlight td {
+            background-color: rgba(88, 166, 255, 0.12);
+        }
+        .code-line.annotation-highlight td:first-child {
+            border-left: 3px solid
+                rgba(88, 166, 255, 0.6);
+            padding-left: 7px !important;
+        }
+        .code-line.annotation-expanded-highlight td {
+            background-color:
+                var(--annotation-active-block-bg);
+        }
+        .code-line.annotation-expanded-highlight
+            td:first-child {
+            border-left: 3px solid
+                var(--annotation-active-block-border);
+            padding-left: 7px !important;
+        }
+        \(themeCSS)
+        """,
+        body: """
+        <script>\(afterLinesJS)</script>
+        \(metadataHTML)
+        \(bodyLayoutHTML)
+        """,
+        // Highlighting, gap expansion, collapse and the table of contents
+        // all rewrite rows the cards anchor to, so every one of them has to
+        // finish before the manager measures anything.
+        scriptsBeforeCards: """
+        \(hjsContent)
+        if (typeof hljs !== 'undefined') {
+            document.querySelectorAll(
+                '.diff-table tbody[data-lang]'
+            ).forEach(function(tbody) {
+                var lang = tbody.getAttribute('data-lang');
+                tbody.querySelectorAll('.line-content')
+                    .forEach(function(el) {
+                        // Skip hljs for lines that already
+                        // have char-level spans, and for
+                        // header rows
+                        if (el.querySelector('.char-add')
+                            || el.querySelector('.char-del')
+                            || el.closest('.header-line')) {
+                            return;
+                        }
+                        if (lang && lang !== 'plaintext') {
+                            el.classList.add(
+                                'language-' + lang
+                            );
+                        }
+                        hljs.highlightElement(el);
+                    });
+            });
+        }
+        \(gapExpansionJS)
+        \(fileCollapseJS)
+        \(tocNavJS)
+
+        """
+    )
 }
 
 // MARK: - File Card Rendering

@@ -335,8 +335,7 @@ private func wrapHTML(
     content: String,
     isDark: Bool
 ) -> String {
-    let bgColor = isDark ? "#0d1117" : "#ffffff"
-    let textColor = isDark ? "#e6edf3" : "#1f2328"
+    let theme = ReaderTheme.standard(isDark: isDark)
     let cssVars = annotationCSSVars(isDark: isDark)
 
     let lower = content.lowercased()
@@ -355,92 +354,13 @@ private func wrapHTML(
         <style>
         :root { \(cssVars) }
         \(baseCSS)
-        /* Code block line-level annotation support */
-        .code-block-wrapper {
-            margin: 0;
-            padding: 16px;
-        }
-        .code-line {
-            margin: 0;
-            padding: 0;
-            line-height: 1.45;
-        }
-        .code-line code {
-            display: inline;
-            background: none;
-            padding: 0;
-            border-radius: 0;
-            white-space: pre;
-        }
-        .code-line.annotation-highlight {
-            background-color:
-                rgba(88, 166, 255, 0.12);
-            border-left: 3px solid
-                rgba(88, 166, 255, 0.6);
-            padding-left: 8px;
-            margin-left: -11px;
-        }
-        .code-line.annotation-expanded-highlight {
-            background-color:
-                var(--annotation-active-block-bg);
-            border-left: 3px solid
-                var(--annotation-active-block-border);
-            padding-left: 8px;
-            margin-left: -11px;
-        }
-        /* Annotation highlight for blocks */
-        .annotatable-block.annotation-highlight {
-            background-color:
-                rgba(88, 166, 255, 0.12);
-            border-left: 3px solid
-                rgba(88, 166, 255, 0.6);
-            padding-left: 8px;
-            margin-left: -11px;
-        }
-        .annotatable-block.annotation-expanded-highlight {
-            background-color:
-                var(--annotation-active-block-bg);
-            border-left: 3px solid
-                var(--annotation-active-block-border);
-            padding-left: 8px;
-            margin-left: -11px;
-        }
-        tr.annotatable-block.annotation-highlight td,
-        tr.annotatable-block.annotation-highlight th {
-            background-color:
-                rgba(88, 166, 255, 0.12);
-        }
-        tr.annotatable-block.annotation-highlight
-            td:first-child,
-        tr.annotatable-block.annotation-highlight
-            th:first-child {
-            border-left: 3px solid
-                rgba(88, 166, 255, 0.6);
-        }
-        tr.annotatable-block.annotation-expanded-highlight td,
-        tr.annotatable-block.annotation-expanded-highlight th {
-            background-color:
-                var(--annotation-active-block-bg);
-        }
-        tr.annotatable-block.annotation-expanded-highlight td:first-child,
-        tr.annotatable-block.annotation-expanded-highlight th:first-child {
-            border-left: 3px solid
-                var(--annotation-active-block-border);
-        }
-        \(annotationCSS)
+        \(htmlAnnotationAdaptCSS)
         </style>
         """
+        // The same run, in the same order, that a rebuilt document gets.
         let scriptBlock = """
-        <script>\(cardTextJS)</script>
-        <script>\(clipboardCopyJS)</script>
-        <script>\(textEntryJS)</script>
-        <script>\(suggestionInsertJS)</script>
-        <script>\(addNoteButtonJS)</script>
-        <script>
-        \(annotationManagerJS)
-        </script>
-        <script>\(emojiDataJS)</script>
-        <script>\(emojiAutocompleteJS)</script>
+        <script>\(blockIndexDOMWalkJS)</script>
+        \(ReaderDocument.cardScriptTags(.full))
         """
 
         if let headEnd = html.range(
@@ -466,21 +386,28 @@ private func wrapHTML(
 
     // Otherwise wrap in a themed shell
     let baseCSS = htmlBaseCSS(isDark: isDark)
-    return """
-    <!DOCTYPE html>
-    <html>
-    <head>
-    <meta charset="utf-8">
-    <meta name="viewport"
-          content="width=device-width, initial-scale=1">
-    <title>Galaxy Artifact Reader</title>
-    <style>
-    :root {
-        \(cssVars)
-    }
-    \(baseCSS)
-    body { padding: 16px 24px; margin: 0; }
-    /* Code block line-level annotation support */
+    return ReaderDocument.render(
+        theme: theme,
+        title: "Galaxy Artifact Reader",
+        css: """
+        \(baseCSS)
+        \(htmlAnnotationAdaptCSS)
+        """,
+        body: """
+        \(content)
+        """,
+        scriptsBeforeCards: blockIndexDOMWalkJS
+    )
+}
+
+/// Rules adapting the annotation layer to arbitrary host markup.
+///
+/// Shared by both branches of `wrapHTML`. A document that arrives with its
+/// own `<html>` has these spliced into it; one that does not gets them in
+/// the shell built around it. They were written twice, identically, and the
+/// two copies were seventy lines apart in the same function.
+private let htmlAnnotationAdaptCSS: String = """
+/* Code block line-level annotation support */
     .code-block-wrapper {
         margin: 0;
         padding: 16px;
@@ -498,7 +425,8 @@ private func wrapHTML(
         white-space: pre;
     }
     .code-line.annotation-highlight {
-        background-color: rgba(88, 166, 255, 0.12);
+        background-color:
+            rgba(88, 166, 255, 0.12);
         border-left: 3px solid
             rgba(88, 166, 255, 0.6);
         padding-left: 8px;
@@ -514,7 +442,8 @@ private func wrapHTML(
     }
     /* Annotation highlight for blocks */
     .annotatable-block.annotation-highlight {
-        background-color: rgba(88, 166, 255, 0.12);
+        background-color:
+            rgba(88, 166, 255, 0.12);
         border-left: 3px solid
             rgba(88, 166, 255, 0.6);
         padding-left: 8px;
@@ -528,10 +457,10 @@ private func wrapHTML(
         padding-left: 8px;
         margin-left: -11px;
     }
-    /* Table row annotation highlights */
     tr.annotatable-block.annotation-highlight td,
     tr.annotatable-block.annotation-highlight th {
-        background-color: rgba(88, 166, 255, 0.12);
+        background-color:
+            rgba(88, 166, 255, 0.12);
     }
     tr.annotatable-block.annotation-highlight
         td:first-child,
@@ -540,36 +469,15 @@ private func wrapHTML(
         border-left: 3px solid
             rgba(88, 166, 255, 0.6);
     }
-    tr.annotatable-block.annotation-expanded-highlight
-        td,
-    tr.annotatable-block.annotation-expanded-highlight
-        th {
+    tr.annotatable-block.annotation-expanded-highlight td,
+    tr.annotatable-block.annotation-expanded-highlight th {
         background-color:
             var(--annotation-active-block-bg);
     }
-    tr.annotatable-block.annotation-expanded-highlight
-        td:first-child,
-    tr.annotatable-block.annotation-expanded-highlight
-        th:first-child {
+    tr.annotatable-block.annotation-expanded-highlight td:first-child,
+    tr.annotatable-block.annotation-expanded-highlight th:first-child {
         border-left: 3px solid
             var(--annotation-active-block-border);
     }
-    \(annotationCSS)
-    </style>
-    </head>
-    <body>
-    \(content)
-    <script>\(cardTextJS)</script>
-    <script>\(clipboardCopyJS)</script>
-    <script>\(textEntryJS)</script>
-    <script>\(suggestionInsertJS)</script>
-    <script>\(addNoteButtonJS)</script>
-    <script>
-    \(annotationManagerJS)
-    </script>
-    <script>\(emojiDataJS)</script>
-    <script>\(emojiAutocompleteJS)</script>
-    </body>
-    </html>
-    """
-}
+
+"""
