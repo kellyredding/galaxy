@@ -1564,16 +1564,46 @@ struct ArtifactsView: View {
         )
     }
 
+    /// Hand an artifact to whichever application owns its type.
+    ///
+    /// Two paths are tried, in order. The source is preferred because it is
+    /// the file the user still works in, and opening the stored copy would
+    /// invite edits that go nowhere. The stored copy is the fallback because
+    /// it is the one Galaxy can be sure of: an artifact saved from a pipe has
+    /// no source at all, and a source recorded relative to some long-gone
+    /// working directory resolves to nothing.
+    ///
+    /// Both of those used to end the same way. Only the source was tried, the
+    /// result of trying was discarded, and a failure was indistinguishable
+    /// from a click that never landed — no window, no error, nothing in the
+    /// log. The comment here promised the fallback that the code did not
+    /// have.
     private func openExternally(
         artifact: ArtifactSummary
     ) {
-        // Use the source_path if available, otherwise
-        // try the stored artifact path
-        if let sourcePath = artifact.sourcePath {
-            NSWorkspace.shared.open(
-                URL(fileURLWithPath: sourcePath)
+        let candidates = [
+            artifact.sourcePath, artifact.storedPath,
+        ].compactMap { $0 }
+
+        var opened = false
+        for path in candidates {
+            if NSWorkspace.shared.open(
+                URL(fileURLWithPath: path)
+            ) {
+                opened = true
+                break
+            }
+        }
+
+        if !opened {
+            GalaxyLog.dbg(
+                "artifacts",
+                "external open failed for #\(artifact.number) "
+                    + "(\(artifact.originalFilename)); tried "
+                    + "\(candidates.count) path(s)"
             )
         }
+
         // Fire a point event for external opens
         if let lsid = session.ledgerSessionId {
             TimelineService.record(
