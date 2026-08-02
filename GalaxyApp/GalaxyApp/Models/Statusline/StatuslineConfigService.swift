@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import Galactic
 
 /// Async wrapper around the `galaxy-statusline` CLI. All
 /// statusline configuration reads and writes flow through here —

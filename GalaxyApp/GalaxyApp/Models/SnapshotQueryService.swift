@@ -1,4 +1,5 @@
 import Foundation
+import Galactic
 
 /// Fetches snapshot data on demand by spawning galaxy-snapshots CLI.
 /// Separate from LedgerQueryService to maintain independent

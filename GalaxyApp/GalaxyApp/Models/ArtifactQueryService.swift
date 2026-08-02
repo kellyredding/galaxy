@@ -1,4 +1,5 @@
 import Foundation
+import Galactic
 
 /// Fetches artifact data on demand by spawning galaxy-artifacts CLI.
 /// Separate from other query services to maintain independent

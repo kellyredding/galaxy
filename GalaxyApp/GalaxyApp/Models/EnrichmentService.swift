@@ -1,4 +1,5 @@
 import Foundation
+import Galactic
 
 /// Calls `galaxy-ledger sessions --json` to enrich events with fresh session data.
 ///

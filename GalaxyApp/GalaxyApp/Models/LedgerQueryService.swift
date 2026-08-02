@@ -1,4 +1,5 @@
 import Foundation
+import Galactic
 
 /// Singleton service that fetches ledger data on demand by spawning
 /// the galaxy-ledger CLI as a subprocess. Each public method is

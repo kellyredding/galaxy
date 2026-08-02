@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import Galactic
 
 /// Service that fetches git status for sessions on demand.
 /// Triggered by EventCoordinator after enrichment completes — no polling timer.

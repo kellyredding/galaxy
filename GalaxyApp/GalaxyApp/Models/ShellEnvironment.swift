@@ -1,4 +1,5 @@
 import Foundation
+import Galactic
 
 /// Captures the user's login-shell environment so a session Galaxy spawns
 /// matches what a terminal gets — profile-exported secrets, the full PATH,

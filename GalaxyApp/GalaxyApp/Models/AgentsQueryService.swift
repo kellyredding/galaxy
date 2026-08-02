@@ -1,4 +1,5 @@
 import Foundation
+import Galactic
 
 /// Fetches agent data on demand by spawning galaxy-agents CLI.
 /// Follows the same pattern as SnapshotQueryService — independent

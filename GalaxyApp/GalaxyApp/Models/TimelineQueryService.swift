@@ -1,4 +1,5 @@
 import Foundation
+import Galactic
 
 /// Fetches timeline events on demand by spawning galaxy-timeline CLI.
 /// Follows the SnapshotQueryService pattern: Process with async/await
