@@ -4,16 +4,6 @@ import Combine
 import Galactic
 
 class Session: Identifiable, ObservableObject {
-    /// Delay between sending command text and the submit when invoking
-    /// slash commands.
-    /// Without this delay, the text and the submit can get batched together,
-    /// causing Ink (Claude Code's TUI framework) to not recognize the submit.
-    ///
-    /// Defined by the harness, which owns submission timing and needs the
-    /// same gap between its own two keystrokes. Two copies of one number would
-    /// drift, and the second copy is the one that would drift unnoticed.
-    private var commandSubmitDelay: TimeInterval { harness.inputPacingDelay }
-
     /// The agent this session runs. The only place Galaxy names one: the
     /// submit bytes, the pacing, the readiness bound, what closes a completion
     /// popup, and which commands never report acceptance all come from here
@@ -775,18 +765,16 @@ class Session: Identifiable, ObservableObject {
         // trims the input, so a plain message carries the space harmlessly, and
         // slash commands take arguments, so an empty one parses as none.
         //
-        // Composed by the harness rather than spelled here, so what closes a
-        // completion popup is the agent's answer and not this file's memory of
-        // one agent's answer.
-        let text = harness.composedCommand(command)
+        // Composed inside the delivery seam rather than here, so what closes a
+        // completion popup is the agent's answer, and so a retype re-sends
+        // exactly what the first attempt sent.
 
         // Anchors the submit diagnostics: everything that follows is relative
-        // to this line, and it is the only one naming the command and the
-        // session it went to. Logged before the write rather than after, so a
-        // readiness timeout still leaves a record of what was attempted.
+        // to this line, and it is the only one naming the session and the
+        // decisions this app made. Logged before the write rather than after,
+        // so a readiness timeout still leaves a record of what was attempted.
         SessionSubmit.log(
-            "sendCommand text=\(SessionSubmit.describe(text: text)) "
-                + "session=\(id.uuidString.prefix(8)) "
+            "sendCommand session=\(id.uuidString.prefix(8)) "
                 + "verifyAccepted=\(verifyAccepted) wasInTurn=\(wasInTurn) "
                 + "bypasses=\(bypassesAcceptance) retry=\(retry)"
         )
@@ -796,57 +784,23 @@ class Session: Identifiable, ObservableObject {
             return
         }
 
-        // Wait for the child's input layer before writing the text, not just
-        // before submitting it. `session:ready` marks the process being up, not
-        // its input handling, so on resume the text was going out ~155ms before
-        // Claude Code could read it — losing the trailing space, and with it
-        // the popup dismissal the space exists to perform.
-        //
-        // Free everywhere but a cold start: the wait returns synchronously when
-        // the protocol is already on, which is every mid-session send.
-        //
-        // Held on one backend for both the wait and the write, so readiness
-        // established for this child cannot be credited to a replacement.
-        if !backend.isKittyKeyboardActive {
-            SessionSubmit.log("  waiting for input readiness…")
-        }
-        let t0 = Date()
-        backend.whenAcceptingInput(harness: harness) { [weak self] ready in
-            guard let self = self, self.isRunning, !self.hasExited else { return }
+        // Opt out by value, not by skipping the call. Three reasons a send is
+        // unverifiable, and all of them are about whether a report can arrive
+        // rather than whether anyone would notice: the caller has independent
+        // confirmation, the command bypasses the agent's prompt pipeline, or a
+        // turn is already running so there is no turn-start left to wait for.
+        let verifiable = verifyAccepted && !wasInTurn && !bypassesAcceptance
 
-            backend.send(text: text, asPaste: false)
-            SessionSubmit.log(
-                String(
-                    format: "  input %@ (+%.0fms) — wrote text",
-                    ready ? "ready" : "TIMED OUT",
-                    Date().timeIntervalSince(t0) * 1000)
-            )
-
-            // Small delay to ensure text is processed before the submit
-            DispatchQueue.main.asyncAfter(
-                deadline: .now() + self.commandSubmitDelay
-            ) { [weak self] in
-                guard let self = self, self.isRunning, !self.hasExited else { return }
-
-                // Submit the text just written — the harness owns the bytes
-                backend.submitPrompt(harness: self.harness)
-
-                // Opt out by value, not by skipping the call. Three reasons a
-                // send is unverifiable, and all of them are about whether a
-                // report can arrive rather than whether anyone would notice:
-                // the caller has independent confirmation, the command bypasses
-                // the agent's prompt pipeline, or a turn is already running so
-                // there is no turn-start left to wait for.
-                let verifiable =
-                    verifyAccepted && !wasInTurn && !bypassesAcceptance
-                backend.verifySubmission(
-                    text: text,
-                    harness: self.harness,
-                    verification: verifiable ? self.submitVerification : nil,
-                    retry: retry
-                )
-            }
-        }
+        backend.deliverPrompt(
+            command,
+            harness: harness,
+            isAlive: { [weak self] in
+                guard let self else { return false }
+                return self.isRunning && !self.hasExited
+            },
+            verification: verifiable ? submitVerification : nil,
+            retry: retry
+        )
     }
 
     // MARK: - Turn State (socket-driven)
