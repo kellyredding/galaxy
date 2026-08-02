@@ -728,7 +728,7 @@ struct ArtifactsView: View {
                 )
             } else if let path = artifact.storedPath
                 ?? artifact.sourcePath,
-                isImageExtension(
+                FileKind.isImage(
                     artifact.originalFilename
                 )
             {
@@ -822,7 +822,7 @@ struct ArtifactsView: View {
     /// no-op on them.
     func activateFind() {
         guard let artifact = openArtifact else { return }
-        if isImageExtension(artifact.originalFilename) { return }
+        if FileKind.isImage(artifact.originalFilename) { return }
         findController.isVisible = true
         // Also call the panel sync directly. SwiftUI's
         // `.onChange(of: isVisible)` only fires on transitions,
@@ -876,21 +876,24 @@ struct ArtifactsView: View {
             artifact.originalFilename as NSString
         ).pathExtension.lowercased()
 
-        switch ext {
-        case "md", "markdown":
+        switch FileKind.resolve(
+            filename: artifact.originalFilename,
+            firstLine: content.split(
+                separator: "\n", maxSplits: 1
+            ).first.map(String.init)
+        ) {
+        case .markdown:
             // The reader anchors to line ranges, so anything
             // anchored another way is left out — as it was when
             // these were converted one at a time and a
             // non-line-range conversion returned nothing. Passing
             // them through unconverted is what keeps the captured
             // source text with them.
-            let activeAnns: [any LineRangeAnnotation]
-                = openAnnotations.filter {
-                    !$0.stale
-                        && AnnotationScope.lineRange
-                            .accepts($0.anchorData.type)
-                        && $0.anchorData.startLine != nil
-                        && $0.anchorData.endLine != nil
+            let activeAnns = markdownAnchoring
+                .screen(openAnnotations)
+                .filter {
+                    $0.anchorStartLine != nil
+                        && $0.anchorEndLine != nil
                 }
             MarkdownReaderView(
                 markdown: content,
@@ -909,7 +912,7 @@ struct ArtifactsView: View {
                 baseUrlName: "artifact-reader",
                 referencePath: artifact.sourcePath
             )
-        case "csv", "tsv":
+        case .table:
             let label = "Artifact #\(artifact.number)"
             ArtifactTableView(
                 content: content,
@@ -926,7 +929,7 @@ struct ArtifactsView: View {
                 },
                 referencePath: artifact.sourcePath
             )
-        case "mmd", "mermaid":
+        case .mermaid:
             let label = "Artifact #\(artifact.number)"
             let activeAnns = openAnnotations.filter {
                 !$0.stale
@@ -945,7 +948,7 @@ struct ArtifactsView: View {
                 },
                 webViewRef: $webViewRef
             )
-        case "html", "htm":
+        case .html:
             let label = "Artifact #\(artifact.number)"
             ArtifactHTMLView(
                 content: content,
@@ -961,49 +964,25 @@ struct ArtifactsView: View {
                     )
                 }
             )
-        case "jsonl":
-            if isAgentTranscript(content) {
-                let label =
-                    "Artifact #\(artifact.number)"
-                ArtifactTranscriptView(
-                    content: content,
-                    isDark: colorScheme == .dark,
-                    annotations: openAnnotations,
-                    annotationHTMLMap:
-                        annotationHTMLMap,
-                    itemLabel: label,
-                    webViewRef: $webViewRef,
-                    onAnnotationMessage: { msg in
-                        handleAnnotationMessage(
-                            msg,
-                            artifact: artifact
-                        )
-                    }
-                )
-            } else {
-                // Non-transcript JSONL — render
-                // as syntax-highlighted source
-                let label =
-                    "Artifact #\(artifact.number)"
-                ArtifactSourceView(
-                    content: content,
-                    language: "json",
-                    isDark: colorScheme == .dark,
-                    annotations: openAnnotations,
-                    annotationHTMLMap:
-                        annotationHTMLMap,
-                    itemLabel: label,
-                    webViewRef: $webViewRef,
-                    onAnnotationMessage: { msg in
-                        handleAnnotationMessage(
-                            msg,
-                            artifact: artifact
-                        )
-                    },
-                    referencePath: artifact.sourcePath
-                )
-            }
-        case "gdiff":
+        case .transcript:
+            let label =
+                "Artifact #\(artifact.number)"
+            ArtifactTranscriptView(
+                content: content,
+                isDark: colorScheme == .dark,
+                annotations: openAnnotations,
+                annotationHTMLMap:
+                    annotationHTMLMap,
+                itemLabel: label,
+                webViewRef: $webViewRef,
+                onAnnotationMessage: { msg in
+                    handleAnnotationMessage(
+                        msg,
+                        artifact: artifact
+                    )
+                }
+            )
+        case .unhandled("gdiff"):
             let label = "Artifact #\(artifact.number)"
             // Pre-render the diff with any viewed files
             // already checked + collapsed. Persistence
@@ -1043,7 +1022,9 @@ struct ArtifactsView: View {
             let label = "Artifact #\(artifact.number)"
             ArtifactSourceView(
                 content: content,
-                language: languageForExtension(ext),
+                language: FileKind.highlightLanguage(
+                    forFilename: artifact.originalFilename
+                ),
                 isDark: colorScheme == .dark,
                 annotations: openAnnotations,
                 annotationHTMLMap: annotationHTMLMap,
@@ -1061,39 +1042,17 @@ struct ArtifactsView: View {
     }
 
     /// Map file extension to highlight.js language name.
-    private func languageForExtension(
-        _ ext: String
-    ) -> String? {
-        let map: [String: String] = [
-            "rb": "ruby", "cr": "crystal",
-            "py": "python", "js": "javascript",
-            "ts": "typescript", "jsx": "javascript",
-            "tsx": "typescript", "swift": "swift",
-            "go": "go", "rs": "rust",
-            "java": "java", "kt": "kotlin",
-            "sql": "sql", "sh": "bash",
-            "bash": "bash", "zsh": "bash",
-            "yml": "yaml", "yaml": "yaml",
-            "json": "json", "jsonl": "json",
-            "toml": "ini",
-            "xml": "xml", "html": "xml",
-            "htm": "xml", "css": "css",
-            "scss": "scss", "less": "less",
-            "vue": "xml", "csv": "plaintext",
-            "tsv": "plaintext",
-            "mmd": "plaintext",
-            "mermaid": "plaintext",
-        ]
-        return map[ext]
-    }
-
     /// Which annotations the reader for this artifact is answerable
     /// for.
     ///
-    /// Mirrors the dispatch in `artifactContentView` and has to keep
-    /// agreeing with it: that decides which reader opens, this decides
-    /// what a rebuild sends it, and the two disagreeing is how a
-    /// refresh came to invert a diagram's cards.
+    /// Mirrors the dispatch in `artifactContentView`: that decides which
+    /// reader opens, this decides what a rebuild sends it, and the two
+    /// disagreeing is how a refresh came to invert a diagram's cards.
+    ///
+    /// It answers with the reader's *own* declared anchoring rather than a
+    /// second description of it, so the two can now only disagree about
+    /// which reader opens — never about what that reader will accept once
+    /// it has. Screening and the values handed to the page are one thing.
     ///
     /// JSONL is the awkward one — whether it opens as a transcript or
     /// as source depends on the content rather than the extension, so
@@ -1103,70 +1062,15 @@ struct ArtifactsView: View {
     private func annotationScope(
         for artifact: ArtifactSummary,
         content: String?
-    ) -> AnnotationScope {
-        if isImageExtension(artifact.originalFilename) {
-            return .unscreened
-        }
-        let ext = (
-            artifact.originalFilename as NSString
-        ).pathExtension.lowercased()
-        switch ext {
-        case "md", "markdown": return .lineRange
-        case "csv", "tsv": return .rowRange
-        case "mmd", "mermaid": return .unscreened
-        case "html", "htm": return .blockRange
-        case "jsonl":
-            if let content, isAgentTranscript(content) {
-                return .blockRange
-            }
-            return .lineRange
-        case "gdiff": return .diff
-        default: return .lineRange
-        }
-    }
-
-    private func isImageExtension(
-        _ filename: String
-    ) -> Bool {
-        let ext = (filename as NSString)
-            .pathExtension.lowercased()
-        return ["png", "jpg", "jpeg", "gif",
-                "svg", "webp"].contains(ext)
-    }
-
-    /// Sniff the first line of JSONL content to
-    /// detect agent transcript structure. Agent
-    /// transcripts have an "agentId" field and a
-    /// "message" object with a "role" field.
-    private func isAgentTranscript(
-        _ content: String
-    ) -> Bool {
-        let firstLine: String
-        if let newline = content.firstIndex(
-            of: "\n"
-        ) {
-            firstLine = String(
-                content[
-                    content.startIndex..<newline
-                ]
-            )
-        } else {
-            firstLine = content
-        }
-        guard let data = firstLine.data(
-            using: .utf8
-        ),
-            let obj = try? JSONSerialization
-                .jsonObject(with: data)
-                as? [String: Any],
-            obj["agentId"] is String,
-            let message = obj["message"]
-                as? [String: Any],
-            message["role"] is String
-        else {
-            return false
-        }
-        return true
+    ) -> ReaderAnchoring {
+        let kind = FileKind.resolve(
+            filename: artifact.originalFilename,
+            firstLine: content?.split(
+                separator: "\n", maxSplits: 1
+            ).first.map(String.init)
+        )
+        if case .unhandled("gdiff") = kind { return diffAnchoring }
+        return kind.anchoring
     }
 
     // MARK: - Data Lifecycle
@@ -1479,49 +1383,21 @@ struct ArtifactsView: View {
         guard let lsid = session.ledgerSessionId
         else { return }
 
-        // Check if the artifact is a type we can
-        // render inline. Binary/image/large files
-        // open externally.
-        let ext = (
-            artifact.originalFilename as NSString
-        ).pathExtension.lowercased()
+        // Whether this opens inline or goes to the OS.
+        //
+        // The kind table answers both halves — what this file is, and how big
+        // is too big for it. `gdiff` resolves as unhandled there because the
+        // engine ships no diff reader; this app does, so it is renderable
+        // here and carries a cap of its own.
+        let kind = FileKind.resolve(
+            filename: artifact.originalFilename
+        )
+        let isGdiff = kind == .unhandled("gdiff")
+        let sizeLimit = isGdiff
+            ? 5_000_000
+            : kind.defaultSizeCap
 
-        let renderableExtensions: Set<String> = [
-            "md", "markdown",
-            "rb", "cr", "py", "js", "ts",
-            "jsx", "tsx", "swift", "go", "rs",
-            "java", "kt", "sql", "sh", "bash",
-            "zsh", "yml", "yaml", "json", "toml",
-            "xml", "html", "htm", "css", "scss",
-            "less", "vue", "csv", "tsv", "txt",
-            "jsonl", "mmd", "mermaid", "log", "conf",
-            "cfg", "ini", "env", "gitignore",
-            "dockerignore", "editorconfig",
-            "png", "jpg", "jpeg", "gif", "svg",
-            "webp",
-            "gdiff",
-        ]
-
-        let imageExtensions: Set<String> = [
-            "png", "jpg", "jpeg", "gif", "svg",
-            "webp",
-        ]
-
-        // Size limits by type
-        let sizeLimit: Int64
-        if ext == "md" || ext == "markdown" {
-            sizeLimit = 512_000
-        } else if imageExtensions.contains(ext) {
-            sizeLimit = 26_214_400  // 25MB
-        } else if ext == "mmd" || ext == "mermaid" {
-            sizeLimit = 102_400     // 100KB
-        } else if ext == "gdiff" {
-            sizeLimit = 5_000_000   // 5MB
-        } else {
-            sizeLimit = 2_000_000   // 2MB
-        }
-
-        if !renderableExtensions.contains(ext)
+        if (!isGdiff && kind.isUnhandled)
             || artifact.fileSize > sizeLimit
         {
             openExternally(artifact: artifact)
@@ -1530,7 +1406,7 @@ struct ArtifactsView: View {
 
         // Images use file path directly — no need
         // to read content into a String.
-        if imageExtensions.contains(ext),
+        if kind == .image,
            let path = artifact.sourcePath
         {
             isLoadingContent = true
@@ -2512,15 +2388,12 @@ struct ArtifactsView: View {
     @MainActor
     private func pushAnnotationData(
         _ annotations: [ArtifactAnnotation],
-        scope: AnnotationScope
+        scope: ReaderAnchoring
     ) {
-        let activeAnns = annotations.filter {
-            !$0.stale
-                && scope.accepts($0.anchorData.type)
-        }
-        let annDicts: [[String: Any]] = activeAnns.map {
-            annotationDict($0)
-        }
+        let activeAnns = scope.screen(annotations)
+        let annDicts: [[String: Any]] = activeAnns.map(
+            readerAnnotationDict
+        )
         // Ship the card bodies alongside the records. A refresh can
         // introduce annotations the page has never rendered, and
         // those have no entry in its map yet.

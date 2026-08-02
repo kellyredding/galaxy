@@ -2,13 +2,16 @@ import SwiftUI
 import WebKit
 import Galactic
 
+/// How this reader anchors annotations into its markup.
+let tableAnchoring = ReaderAnchoring.rows()
+
 /// Renders CSV content as a styled HTML table in a WKWebView.
 /// Supports row_range annotations via the shared
 /// AnnotationManager JS.
 struct ArtifactTableView: NSViewRepresentable {
     let content: String
     let isDark: Bool
-    let annotations: [ArtifactAnnotation]
+    let annotations: [any ReaderAnnotation]
     let annotationHTMLMap: [Int32: String]
     let itemLabel: String
     @Binding var webViewRef: WKWebView?
@@ -22,13 +25,13 @@ struct ArtifactTableView: NSViewRepresentable {
 
     func makeNSView(
         context: Context
-    ) -> SilentFunctionKeyWebView {
+    ) -> ReaderWebView {
         let config = WKWebViewConfiguration()
         config.installGalaxyFindUserScript()
         config.userContentController.add(
             context.coordinator, name: "annotation"
         )
-        let webView = SilentFunctionKeyWebView(
+        let webView = ReaderWebView(
             frame: .zero, configuration: config
         )
         webView.setValue(
@@ -43,18 +46,10 @@ struct ArtifactTableView: NSViewRepresentable {
             ? NSColor.black.cgColor
             : NSColor.white.cgColor
 
-        let activeAnns = annotations.filter {
-            !$0.stale
-                && AnnotationScope.rowRange
-                    .accepts($0.anchorData.type)
-        }
         let initJS = buildAnnotationInitJS(
-            anchorType: "row_range",
-            blockSelector: "tr[data-row]",
-            lineAttr: "data-row",
-            refPrefix: "Row",
+            anchoring: tableAnchoring,
             itemLabel: itemLabel,
-            annotations: activeAnns,
+            annotations: annotations,
             htmlMap: annotationHTMLMap,
             artifactContent: content,
             referencePath: referencePath
@@ -82,7 +77,7 @@ struct ArtifactTableView: NSViewRepresentable {
     }
 
     func updateNSView(
-        _ webView: SilentFunctionKeyWebView,
+        _ webView: ReaderWebView,
         context: Context
     ) {
         if context.coordinator.lastIsDark != isDark {
@@ -100,18 +95,10 @@ struct ArtifactTableView: NSViewRepresentable {
                 + "AnnotationManager.getFormState())"
                 + " : null"
             ) { result, _ in
-                let activeAnns = annotations.filter {
-                    !$0.stale
-                        && AnnotationScope.rowRange
-                            .accepts($0.anchorData.type)
-                }
                 var initJS = buildAnnotationInitJS(
-                    anchorType: "row_range",
-                    blockSelector: "tr[data-row]",
-                    lineAttr: "data-row",
-                    refPrefix: "Row",
+                    anchoring: tableAnchoring,
                     itemLabel: itemLabel,
-                    annotations: activeAnns,
+                    annotations: annotations,
                     htmlMap: annotationHTMLMap,
                     artifactContent: content,
                     referencePath: referencePath
@@ -168,7 +155,7 @@ private func buildTableHTML(
     var headerHTML = "<tr data-row=\"0\""
         + " data-line-start=\"\(headerRow.startLine)\">"
     for cell in headerRow.cells {
-        let escaped = escapeHTML(cell)
+        let escaped = HTMLEscape.text(cell)
         headerHTML += "<th>\(escaped)</th>"
     }
     headerHTML += "</tr>"
@@ -179,7 +166,7 @@ private func buildTableHTML(
         bodyHTML += "<tr data-row=\"\(rowNum)\""
             + " data-line-start=\"\(row.startLine)\">"
         for cell in row.cells {
-            let escaped = escapeHTML(cell)
+            let escaped = HTMLEscape.text(cell)
             bodyHTML += "<td>\(escaped)</td>"
         }
         bodyHTML += "</tr>"
@@ -356,9 +343,3 @@ private func parseCSV(
     return rows
 }
 
-private func escapeHTML(_ text: String) -> String {
-    text
-        .replacingOccurrences(of: "&", with: "&amp;")
-        .replacingOccurrences(of: "<", with: "&lt;")
-        .replacingOccurrences(of: ">", with: "&gt;")
-}

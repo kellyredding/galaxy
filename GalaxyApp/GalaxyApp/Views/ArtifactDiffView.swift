@@ -2,6 +2,12 @@ import SwiftUI
 import WebKit
 import Galactic
 
+/// How this reader anchors annotations into its markup.
+let diffAnchoring = ReaderAnchoring.lines(
+    selector: ".code-line",
+    accepting: [.lineRange, .diffRange]
+)
+
 // MARK: - Gdiff JSON Models
 
 /// Top-level `.gdiff` document emitted by `galaxy-diff
@@ -102,7 +108,7 @@ struct GdiffLine: Codable {
 struct ArtifactDiffView: NSViewRepresentable {
     let content: String
     let isDark: Bool
-    let annotations: [ArtifactAnnotation]
+    let annotations: [any ReaderAnnotation]
     let annotationHTMLMap: [Int32: String]
     let itemLabel: String
     /// File paths (relative, as they appear in the
@@ -117,13 +123,13 @@ struct ArtifactDiffView: NSViewRepresentable {
 
     func makeNSView(
         context: Context
-    ) -> SilentFunctionKeyWebView {
+    ) -> ReaderWebView {
         let config = WKWebViewConfiguration()
         config.installGalaxyFindUserScript()
         config.userContentController.add(
             context.coordinator, name: "annotation"
         )
-        let webView = SilentFunctionKeyWebView(
+        let webView = ReaderWebView(
             frame: .zero, configuration: config
         )
         webView.setValue(
@@ -138,18 +144,10 @@ struct ArtifactDiffView: NSViewRepresentable {
             ? NSColor.black.cgColor
             : NSColor.white.cgColor
 
-        let activeAnns = annotations.filter {
-            !$0.stale
-                && AnnotationScope.diff
-                    .accepts($0.anchorData.type)
-        }
         let initJS = buildAnnotationInitJS(
-            anchorType: "line_range",
-            blockSelector: ".code-line",
-            lineAttr: "data-line",
-            refPrefix: "Line",
+            anchoring: diffAnchoring,
             itemLabel: itemLabel,
-            annotations: activeAnns,
+            annotations: annotations,
             htmlMap: annotationHTMLMap
         )
         context.coordinator.pendingInitJS = initJS
@@ -176,7 +174,7 @@ struct ArtifactDiffView: NSViewRepresentable {
     }
 
     func updateNSView(
-        _ webView: SilentFunctionKeyWebView,
+        _ webView: ReaderWebView,
         context: Context
     ) {
         if context.coordinator.lastIsDark != isDark {
@@ -194,18 +192,10 @@ struct ArtifactDiffView: NSViewRepresentable {
                 + "AnnotationManager.getFormState())"
                 + " : null"
             ) { result, _ in
-                let activeAnns = annotations.filter {
-                    !$0.stale
-                        && AnnotationScope.diff
-                            .accepts($0.anchorData.type)
-                }
                 var initJS = buildAnnotationInitJS(
-                    anchorType: "line_range",
-                    blockSelector: ".code-line",
-                    lineAttr: "data-line",
-                    refPrefix: "Line",
+                    anchoring: diffAnchoring,
                     itemLabel: itemLabel,
-                    annotations: activeAnns,
+                    annotations: annotations,
                     htmlMap: annotationHTMLMap
                 )
                 if let stateJSON = result as? String {
@@ -260,21 +250,10 @@ private func buildDiffHTML(
         )
     }
 
-    let hjsURL = Bundle.main.url(
-        forResource: "highlight.min",
-        withExtension: "js"
+    let hjsContent = ReaderAssets.highlightJS
+    let themeCSS = ReaderAssets.highlightThemeCSS(
+        isDark: isDark
     )
-    let hjsContent = hjsURL
-        .flatMap { try? String(contentsOf: $0) } ?? ""
-
-    let themeName =
-        isDark ? "github-dark.min" : "github.min"
-    let themeURL = Bundle.main.url(
-        forResource: themeName,
-        withExtension: "css"
-    )
-    let themeCSS = themeURL
-        .flatMap { try? String(contentsOf: $0) } ?? ""
 
     let bgColor = isDark ? "#0d1117" : "#ffffff"
     let textColor = isDark ? "#e6edf3" : "#1f2328"
@@ -628,23 +607,18 @@ private func buildDiffHTML(
         background: \(hoverBg); color: \(mutedFg);
     }
     /* Annotation cards are absolute-positioned
-       relative to the viewport (defined in
-       annotationCSS, which is shared with the other
-       readers and stays at left:24px right:24px so
-       markdown/table/etc. render correctly). In the
-       diff reader the main content sits in a
-       276px-indented column (sidebar 260 + gap 16),
-       so full-viewport-width annotations would
-       extend under the sidebar. Shift `left` by the
-       sidebar offset when the sidebar is present —
-       `:has(.toc-sidebar)` scopes this to diffs
-       that actually rendered one (empty-state diffs
-       skip the sidebar and keep the default left).
-       The annotationCSS rules still win for any
-       reader that doesn't have a toc-sidebar. */
-    body:has(.toc-sidebar) .annotation-card,
-    body:has(.toc-sidebar) .annotation-form {
-        left: calc(24px + 276px);
+       against the page edges by annotationCSS. Here
+       the main content sits in a 276px-indented
+       column (sidebar 260 + gap 16), so a card at
+       the default gutter would run under the
+       sidebar. Move the gutter rather than restating
+       the card and form rules — those live in the
+       engine and would have to be kept in step by
+       hand. `:has(.toc-sidebar)` scopes this to
+       diffs that rendered one; empty-state diffs
+       skip the sidebar and keep the default. */
+    body:has(.toc-sidebar) {
+        --annotation-gutter-left: calc(24px + 276px);
     }
     .empty-state {
         padding: 40px 20px;
@@ -2954,16 +2928,14 @@ private func splitLines(_ s: String) -> [String] {
     return lines
 }
 
+/// Local alias for `HTMLEscape.text`.
+///
+/// Kept as a name rather than substituted at every call site, because this
+/// reader stays in Galaxy while the others move into the engine. There is no
+/// second definition left for it to drift from, so the alias costs nothing
+/// and the churn would buy nothing.
 private func htmlEscape(_ s: String) -> String {
-    s.replacingOccurrences(of: "&", with: "&amp;")
-        .replacingOccurrences(of: "<", with: "&lt;")
-        .replacingOccurrences(of: ">", with: "&gt;")
-        .replacingOccurrences(
-            of: "\"", with: "&quot;"
-        )
-        .replacingOccurrences(
-            of: "'", with: "&#39;"
-        )
+    HTMLEscape.text(s)
 }
 
 // MARK: - Gap-expansion JS
@@ -2987,14 +2959,9 @@ private let gapExpansionJS: String = """
     var GAP_EXPAND_STEP = 30;
     var GAP_THRESHOLD = 10;
 
-    function htmlEscape(s) {
-        return String(s)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
-    }
+// Served from the engine so this and the Swift-side escape cannot
+// diverge — rows revealed here sit beside rows rendered there.
+\(HTMLEscape.javaScriptFunction)
 
     function renderContextRow(p) {
         var body = htmlEscape(p.content);

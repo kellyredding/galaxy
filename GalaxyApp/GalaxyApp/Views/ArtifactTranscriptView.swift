@@ -2,6 +2,9 @@ import SwiftUI
 import WebKit
 import Galactic
 
+/// How this reader anchors annotations into its markup.
+let transcriptAnchoring = ReaderAnchoring.blocks(selector: ".transcript-step")
+
 /// Renders JSONL agent transcript artifacts as a
 /// structured HTML conversation document.
 /// Each logical step (thinking, tool call, summary)
@@ -10,7 +13,7 @@ import Galactic
 struct ArtifactTranscriptView: NSViewRepresentable {
     let content: String
     let isDark: Bool
-    let annotations: [ArtifactAnnotation]
+    let annotations: [any ReaderAnnotation]
     let annotationHTMLMap: [Int32: String]
     let itemLabel: String
     @Binding var webViewRef: WKWebView?
@@ -19,13 +22,13 @@ struct ArtifactTranscriptView: NSViewRepresentable {
 
     func makeNSView(
         context: Context
-    ) -> SilentFunctionKeyWebView {
+    ) -> ReaderWebView {
         let config = WKWebViewConfiguration()
         config.installGalaxyFindUserScript()
         config.userContentController.add(
             context.coordinator, name: "annotation"
         )
-        let webView = SilentFunctionKeyWebView(
+        let webView = ReaderWebView(
             frame: .zero, configuration: config
         )
         webView.setValue(
@@ -40,20 +43,12 @@ struct ArtifactTranscriptView: NSViewRepresentable {
             ? NSColor.black.cgColor
             : NSColor.white.cgColor
 
-        let activeAnns = annotations.filter {
-            !$0.stale
-                && AnnotationScope.blockRange
-                    .accepts($0.anchorData.type)
-        }
         // Block indices are assigned statically in
         // buildTranscriptHTML — no DOM walk needed.
         let initJS = buildAnnotationInitJS(
-            anchorType: "block_range",
-            blockSelector: ".transcript-step",
-            lineAttr: "data-block-index",
-            refPrefix: "Block",
+            anchoring: transcriptAnchoring,
             itemLabel: itemLabel,
-            annotations: activeAnns,
+            annotations: annotations,
             htmlMap: annotationHTMLMap
         )
         context.coordinator.pendingInitJS = initJS
@@ -79,7 +74,7 @@ struct ArtifactTranscriptView: NSViewRepresentable {
     }
 
     func updateNSView(
-        _ webView: SilentFunctionKeyWebView,
+        _ webView: ReaderWebView,
         context: Context
     ) {
         if context.coordinator.lastIsDark != isDark {
@@ -98,22 +93,10 @@ struct ArtifactTranscriptView: NSViewRepresentable {
                 + "AnnotationManager.getFormState())"
                 + " : null"
             ) { result, _ in
-                let activeAnns =
-                    annotations.filter {
-                        !$0.stale
-                            && AnnotationScope.blockRange
-                                .accepts(
-                                    $0.anchorData.type
-                                )
-                    }
                 var initJS = buildAnnotationInitJS(
-                    anchorType: "block_range",
-                    blockSelector:
-                        ".transcript-step",
-                    lineAttr: "data-block-index",
-                    refPrefix: "Block",
+                    anchoring: transcriptAnchoring,
                     itemLabel: itemLabel,
-                    annotations: activeAnns,
+                    annotations: annotations,
                     htmlMap: annotationHTMLMap
                 )
                 if let stateJSON =
@@ -565,7 +548,7 @@ private func buildTranscriptHTML(
                  data-block-index="\(
                      blockIndex
                  )">\(
-                escapeHTMLTranscript(para)
+                HTMLEscape.text(para)
             )</div>
             """
             blockIndex += 1
@@ -633,7 +616,7 @@ private func buildTranscriptHTML(
                          data-block-index="\(
                              blockIndex
                          )">\(
-                        escapeHTMLTranscript(para)
+                        HTMLEscape.text(para)
                     )</div>
                     """
                     blockIndex += 1
@@ -649,7 +632,7 @@ private func buildTranscriptHTML(
                 <div class="step-label">\
                 Thinking</div>
                 <div class="thinking-content">\(
-                    escapeHTMLTranscript(text)
+                    HTMLEscape.text(text)
                 )</div>
                 </div>
                 """
@@ -966,7 +949,7 @@ private func buildToolUseStep(
     toolBadgeColor: String
 ) -> String {
     let escapedDetail =
-        escapeHTMLTranscript(detail)
+        HTMLEscape.text(detail)
     let resultHTML: String
     if let result = resultContent,
        !result.isEmpty
@@ -982,7 +965,7 @@ private func buildToolUseStep(
             truncated = result
         }
         let escaped =
-            escapeHTMLTranscript(truncated)
+            HTMLEscape.text(truncated)
         resultHTML = """
         <details>
         <summary>Show result (\(
@@ -1001,7 +984,7 @@ private func buildToolUseStep(
     <div class="transcript-step tool-step"
          data-block-index="\(blockIndex)">
     <span class="tool-badge">\(
-        escapeHTMLTranscript(name)
+        HTMLEscape.text(name)
     )</span>
     <div class="tool-detail">\(
         escapedDetail
@@ -1040,21 +1023,3 @@ private func formatByteCount(
     }
 }
 
-/// HTML-escape text for safe embedding.
-private func escapeHTMLTranscript(
-    _ text: String
-) -> String {
-    text
-        .replacingOccurrences(
-            of: "&", with: "&amp;"
-        )
-        .replacingOccurrences(
-            of: "<", with: "&lt;"
-        )
-        .replacingOccurrences(
-            of: ">", with: "&gt;"
-        )
-        .replacingOccurrences(
-            of: "\"", with: "&quot;"
-        )
-}

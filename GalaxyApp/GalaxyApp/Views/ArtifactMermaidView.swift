@@ -2,14 +2,17 @@ import SwiftUI
 import WebKit
 import Galactic
 
+/// How this reader anchors annotations into its markup.
+let mermaidAnchoring = ReaderAnchoring.whole
+
 /// Renders standalone .mmd/.mermaid files using the
 /// vendored mermaid.js. Supports zoom via the shared
-/// SilentFunctionKeyWebView and annotation via the
+/// ReaderWebView and annotation via the
 /// generalized AnnotationManager JS.
 struct ArtifactMermaidView: NSViewRepresentable {
     let content: String
     let isDark: Bool
-    let annotations: [ArtifactAnnotation]
+    let annotations: [any ReaderAnnotation]
     let annotationHTMLMap: [Int32: String]
     let itemLabel: String
     var onAnnotationMessage:
@@ -18,13 +21,13 @@ struct ArtifactMermaidView: NSViewRepresentable {
 
     func makeNSView(
         context: Context
-    ) -> SilentFunctionKeyWebView {
+    ) -> ReaderWebView {
         let config = WKWebViewConfiguration()
         config.installGalaxyFindUserScript()
         config.userContentController.add(
             context.coordinator, name: "annotation"
         )
-        let webView = SilentFunctionKeyWebView(
+        let webView = ReaderWebView(
             frame: .zero, configuration: config
         )
         webView.setValue(false, forKey: "drawsBackground")
@@ -39,10 +42,7 @@ struct ArtifactMermaidView: NSViewRepresentable {
             : NSColor.white.cgColor
 
         let initJS = buildAnnotationInitJS(
-            anchorType: "whole",
-            blockSelector: "",
-            lineAttr: "",
-            refPrefix: "",
+            anchoring: mermaidAnchoring,
             itemLabel: itemLabel,
             annotations: annotations,
             htmlMap: annotationHTMLMap
@@ -70,7 +70,7 @@ struct ArtifactMermaidView: NSViewRepresentable {
     }
 
     func updateNSView(
-        _ webView: SilentFunctionKeyWebView,
+        _ webView: ReaderWebView,
         context: Context
     ) {
         context.coordinator.onAnnotationMessage =
@@ -86,10 +86,7 @@ struct ArtifactMermaidView: NSViewRepresentable {
                 : NSColor.white.cgColor
 
             let initJS = buildAnnotationInitJS(
-                anchorType: "whole",
-                blockSelector: "",
-                lineAttr: "",
-                refPrefix: "",
+                anchoring: mermaidAnchoring,
                 itemLabel: itemLabel,
                 annotations: annotations,
                 htmlMap: annotationHTMLMap
@@ -114,19 +111,7 @@ struct ArtifactMermaidView: NSViewRepresentable {
     }
 }
 
-// MARK: - Mermaid JS (shared with MarkdownReaderView)
-
-private let mermaidJS: String = {
-    guard let url = Bundle.main.url(
-        forResource: "mermaid.min",
-        withExtension: "js"
-    ),
-        let content = try? String(
-            contentsOf: url, encoding: .utf8
-        )
-    else { return "" }
-    return content
-}()
+private let mermaidJS = ReaderAssets.mermaidJS
 
 // MARK: - HTML Generation
 
@@ -138,10 +123,7 @@ private func buildMermaidHTML(
     let textColor = isDark ? "#e6edf3" : "#1f2328"
     let theme = isDark ? "dark" : "default"
 
-    let escaped = content
-        .replacingOccurrences(of: "&", with: "&amp;")
-        .replacingOccurrences(of: "<", with: "&lt;")
-        .replacingOccurrences(of: ">", with: "&gt;")
+    let escaped = HTMLEscape.text(content)
 
     return """
     <!DOCTYPE html>

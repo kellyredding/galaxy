@@ -3,229 +3,17 @@ import WebKit
 import Markdown
 import Galactic
 
+/// How this reader anchors annotations into its markup.
+///
+/// One `.md-block` can span several source lines — a fenced block, a table
+/// row — so the span is carried by a pair of attributes rather than one.
+let markdownAnchoring = ReaderAnchoring.lines(
+    selector: ".md-block",
+    lineAttr: "data-line-start",
+    endLineAttr: "data-line-end"
+)
+
 // AnnotationMessage enum is in AnnotationSupport.swift
-
-// MARK: - Silent WKWebView
-
-/// WKWebView subclass that silently consumes function key events
-/// (F1–F20) to prevent NSBeep from firing when the responder chain
-/// can't handle them. This allows dictation triggers like Fn+F11
-/// to work without system beep noise — dictation itself operates
-/// through NSTextInputClient, not keyDown events.
-class SilentFunctionKeyWebView: WKWebView {
-    /// Short-circuit key view traversal — same fix as GalacticSwiftTermView
-    /// and InlineEditField. When makeFirstResponder targets this WKWebView
-    /// (e.g. restoreWebViewFocus on session/tab switch), AppKit walks the
-    /// key view chain across the full ZStack view tree.
-    override var previousValidKeyView: NSView? { nil }
-    override var nextValidKeyView: NSView? { nil }
-
-    /// Current zoom level (1.0 = 100%)
-    private var zoomLevel: CGFloat = 1.0
-
-    override init(
-        frame: CGRect,
-        configuration: WKWebViewConfiguration
-    ) {
-        super.init(
-            frame: frame,
-            configuration: configuration
-        )
-        registerForDraggedTypes([.fileURL])
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func performKeyEquivalent(
-        with event: NSEvent
-    ) -> Bool {
-        // F1 (0xF704) through F20 (0xF717) —
-        // consume silently
-        if event.modifierFlags.contains(.function),
-           event.charactersIgnoringModifiers?
-               .unicodeScalars.first
-               .map({
-                   $0.value >= 0xF704
-                       && $0.value <= 0xF717
-               }) == true
-        {
-            return true
-        }
-
-        // Zoom is Command and nothing else.
-        //
-        // Tested for equality rather than membership, because `contains` is a
-        // subset test: it holds for Command+Shift too, and
-        // `charactersIgnoringModifiers` reports "=" whether or not Shift was
-        // held. The three chrome-font-size shortcuts are Command+Shift over
-        // exactly these keys, so a reader with focus swallowed all three and
-        // zoomed itself instead — the menu never saw them.
-        let chord = event.modifierFlags.intersection(
-            [.command, .option, .control, .shift]
-        )
-        if chord == .command, let chars = event.charactersIgnoringModifiers {
-            // Cmd+= or Cmd++: zoom in
-            if chars == "=" || chars == "+" {
-                adjustZoom(by: 0.1)
-                return true
-            }
-            // Cmd+-: zoom out
-            if chars == "-" {
-                adjustZoom(by: -0.1)
-                return true
-            }
-            // Cmd+0: reset zoom
-            if chars == "0" {
-                resetZoom()
-                return true
-            }
-        }
-
-        // Cmd+S: pass through to menu system for
-        // scrollback entry. WKWebView's default
-        // performKeyEquivalent may consume this
-        // before the menu sees it.
-        if event.modifierFlags.contains(.command),
-           let chars = event
-               .charactersIgnoringModifiers,
-           chars == "s"
-        {
-            return false
-        }
-
-        return super.performKeyEquivalent(
-            with: event
-        )
-    }
-
-    private func adjustZoom(by delta: CGFloat) {
-        zoomLevel = min(
-            3.0, max(0.5, zoomLevel + delta)
-        )
-        applyZoom()
-    }
-
-    private func resetZoom() {
-        zoomLevel = 1.0
-        applyZoom()
-    }
-
-    private func applyZoom() {
-        evaluateJavaScript("""
-            document.body.style.transform
-                = 'scale(\(zoomLevel))';
-            document.body.style.transformOrigin
-                = 'top left';
-            document.body.style.width
-                = '\(100.0 / zoomLevel)%';
-        """)
-    }
-
-    // MARK: - File Drag and Drop
-
-    override func draggingEntered(
-        _ sender: NSDraggingInfo
-    ) -> NSDragOperation {
-        guard !ModalState.isPresenting(over: window) else {
-            return []
-        }
-
-        guard sender.draggingPasteboard.canReadObject(
-            forClasses: [NSURL.self],
-            options: [.urlReadingFileURLsOnly: true]
-        ) else { return [] }
-
-        evaluateJavaScript(
-            "document.body.classList"
-            + ".add('file-drop-active')"
-        )
-        return .copy
-    }
-
-    override func draggingUpdated(
-        _ sender: NSDraggingInfo
-    ) -> NSDragOperation {
-        guard !ModalState.isPresenting(over: window) else {
-            return []
-        }
-
-        guard sender.draggingPasteboard.canReadObject(
-            forClasses: [NSURL.self],
-            options: [.urlReadingFileURLsOnly: true]
-        ) else { return [] }
-        return .copy
-    }
-
-    override func draggingExited(
-        _ sender: NSDraggingInfo?
-    ) {
-        evaluateJavaScript(
-            "document.body.classList"
-            + ".remove('file-drop-active')"
-        )
-    }
-
-    override func draggingEnded(
-        _ sender: NSDraggingInfo
-    ) {
-        evaluateJavaScript(
-            "document.body.classList"
-            + ".remove('file-drop-active')"
-        )
-    }
-
-    override func performDragOperation(
-        _ sender: NSDraggingInfo
-    ) -> Bool {
-        defer {
-            evaluateJavaScript(
-                "document.body.classList"
-                + ".remove('file-drop-active')"
-            )
-        }
-
-        guard !ModalState.isPresenting(over: window) else {
-            return false
-        }
-
-        guard let urls = sender.draggingPasteboard
-            .readObjects(
-                forClasses: [NSURL.self],
-                options: [
-                    .urlReadingFileURLsOnly: true,
-                ]
-            ) as? [URL], !urls.isEmpty
-        else { return false }
-
-        // Deduplicate by path
-        var seen = Set<String>()
-        var paths: [String] = []
-        for url in urls {
-            let p = url.standardized.path
-            if !seen.contains(p) {
-                seen.insert(p)
-                paths.append(p)
-            }
-        }
-
-        // Encoded rather than escaped. A filename may legally contain a
-        // quote, a backslash, or a line terminator, and any of those ends the
-        // string literal early — which makes the whole injected snippet a
-        // syntax error rather than a call with a wrong argument, so nothing
-        // runs at all and the only trace is a console message inside the page.
-        let jsPaths = JavaScriptLiteral.array(paths)
-
-        evaluateJavaScript(
-            "if (typeof handleFileDrop"
-            + " !== 'undefined')"
-            + " { handleFileDrop(\(jsPaths)); }"
-        )
-        return true
-    }
-}
 
 // MARK: - MarkdownReaderView
 
@@ -239,7 +27,7 @@ class SilentFunctionKeyWebView: WKWebView {
 struct MarkdownReaderView: NSViewRepresentable {
     let markdown: String
     let isDark: Bool
-    let annotations: [any LineRangeAnnotation]
+    let annotations: [any ReaderAnnotation]
     let annotationHTMLMap: [Int32: String]
     @Binding var webViewRef: WKWebView?
     var onAnnotationMessage: ((AnnotationMessage) -> Void)?
@@ -260,7 +48,7 @@ struct MarkdownReaderView: NSViewRepresentable {
         let config = WKWebViewConfiguration()
         config.installGalaxyFindUserScript()
         config.userContentController.add(context.coordinator, name: "annotation")
-        let webView = SilentFunctionKeyWebView(frame: .zero, configuration: config)
+        let webView = ReaderWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
         webView.isInspectable = true
         webView.navigationDelegate = context.coordinator
@@ -333,7 +121,7 @@ struct MarkdownReaderView: NSViewRepresentable {
         var annotationsEnabled: Bool = true
 
         /// Annotation data queued for injection after page load.
-        var pendingAnnotations: [any LineRangeAnnotation]?
+        var pendingAnnotations: [any ReaderAnnotation]?
         var pendingAnnotationHTMLMap: [Int32: String]?
         var pendingItemLabel: String?
         /// Raw markdown source used to slice line_content
@@ -395,11 +183,7 @@ struct MarkdownReaderView: NSViewRepresentable {
                let label = pendingItemLabel {
 
                 let initJS = buildAnnotationInitJS(
-                    anchorType: "line_range",
-                    blockSelector: ".md-block",
-                    lineAttr: "data-line-start",
-                    endLineAttr: "data-line-end",
-                    refPrefix: "Line",
+                    anchoring: markdownAnchoring,
                     itemLabel: label,
                     annotations: annotations,
                     htmlMap: htmlMap,
@@ -432,15 +216,8 @@ func renderMarkdownToHTML(_ source: String, isDark: Bool) -> String {
     var visitor = LineAnchoredHTMLVisitor()
     let bodyHTML = visitor.visit(document)
 
-    // Load vendored highlight.js and theme CSS from bundle
-    let hjsURL = Bundle.main.url(forResource: "highlight.min",
-                                  withExtension: "js")
-    let hjsContent = hjsURL.flatMap { try? String(contentsOf: $0) } ?? ""
-
-    let themeName = isDark ? "github-dark.min" : "github.min"
-    let themeURL = Bundle.main.url(forResource: themeName,
-                                    withExtension: "css")
-    let themeCSS = themeURL.flatMap { try? String(contentsOf: $0) } ?? ""
+    let hjsContent = ReaderAssets.highlightJS
+    let themeCSS = ReaderAssets.highlightThemeCSS(isDark: isDark)
 
     return buildFullHTML(
         bodyHTML: bodyHTML,
@@ -453,17 +230,7 @@ func renderMarkdownToHTML(_ source: String, isDark: Bool) -> String {
 // emojiDataJS and emojiAutocompleteJS are in
 // AnnotationSupport.swift
 
-private let mermaidJS: String = {
-    guard let url = Bundle.main.url(
-        forResource: "mermaid.min",
-        withExtension: "js"
-    ),
-        let content = try? String(
-            contentsOf: url, encoding: .utf8
-        )
-    else { return "" }
-    return content
-}()
+private let mermaidJS = ReaderAssets.mermaidJS
 
 /// Build a complete HTML document with embedded styles, highlight.js,
 /// and the AnnotationManager JavaScript module.
@@ -750,7 +517,7 @@ struct LineAnchoredHTMLVisitor: MarkupVisitor {
         if codeBlock.language?.lowercased()
             == "mermaid"
         {
-            let escaped = escapeHTML(codeBlock.code)
+            let escaped = HTMLEscape.text(codeBlock.code)
             let inner = "<div class=\"mermaid\">"
                 + "\(escaped)</div>"
             return wrapBlock(
@@ -764,7 +531,7 @@ struct LineAnchoredHTMLVisitor: MarkupVisitor {
            !lang.isEmpty
         {
             langAttr = " class=\"language-"
-                + "\(escapeHTML(lang))\""
+                + "\(HTMLEscape.text(lang))\""
         } else {
             langAttr = ""
         }
@@ -796,7 +563,7 @@ struct LineAnchoredHTMLVisitor: MarkupVisitor {
             // collapsing to zero.
             let content = raw.isEmpty
                 ? "&nbsp;"
-                : escapeHTML(raw)
+                : HTMLEscape.text(raw)
             linesDivs += "<div class=\"md-block"
                 + " code-line\""
                 + " data-line-start=\"\(lineNum)\""
@@ -916,7 +683,7 @@ struct LineAnchoredHTMLVisitor: MarkupVisitor {
     // MARK: - Inline Elements
 
     func visitText(_ text: Markdown.Text) -> String {
-        return escapeHTML(text.string)
+        return HTMLEscape.text(text.string)
     }
 
     func visitEmphasis(_ emphasis: Emphasis) -> String {
@@ -932,18 +699,18 @@ struct LineAnchoredHTMLVisitor: MarkupVisitor {
     }
 
     func visitInlineCode(_ inlineCode: InlineCode) -> String {
-        return "<code>\(escapeHTML(inlineCode.code))</code>"
+        return "<code>\(HTMLEscape.text(inlineCode.code))</code>"
     }
 
     func visitLink(_ link: Markdown.Link) -> String {
         let dest = link.destination ?? ""
-        return "<a href=\"\(escapeHTML(dest))\">\(visitChildren(link))</a>"
+        return "<a href=\"\(HTMLEscape.text(dest))\">\(visitChildren(link))</a>"
     }
 
     func visitImage(_ image: Markdown.Image) -> String {
         let src = image.source ?? ""
         let alt = image.plainText
-        return "<img src=\"\(escapeHTML(src))\" alt=\"\(escapeHTML(alt))\">"
+        return "<img src=\"\(HTMLEscape.text(src))\" alt=\"\(HTMLEscape.text(alt))\">"
     }
 
     func visitSoftBreak(_ softBreak: SoftBreak) -> String {
@@ -990,12 +757,4 @@ struct LineAnchoredHTMLVisitor: MarkupVisitor {
         return " class=\"md-block\" data-line-start=\"\(start)\" data-line-end=\"\(end)\""
     }
 
-    /// Escape HTML special characters.
-    private func escapeHTML(_ string: String) -> String {
-        string
-            .replacingOccurrences(of: "&", with: "&amp;")
-            .replacingOccurrences(of: "<", with: "&lt;")
-            .replacingOccurrences(of: ">", with: "&gt;")
-            .replacingOccurrences(of: "\"", with: "&quot;")
-    }
 }

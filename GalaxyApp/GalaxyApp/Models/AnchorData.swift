@@ -1,10 +1,11 @@
 import Foundation
+import Galactic
 
 /// Typed representation of an artifact annotation's
 /// anchor_data JSON. Supports multiple anchor types
 /// for different content renderers.
 struct AnchorData: Codable {
-    let type: AnchorType
+    let type: ReaderAnchorType
 
     // line_range fields
     let startLine: Int32?
@@ -62,7 +63,7 @@ struct AnchorData: Codable {
             keyedBy: CodingKeys.self
         )
         type = try container.decode(
-            AnchorType.self, forKey: .type
+            ReaderAnchorType.self, forKey: .type
         )
         startLine = try container.decodeIfPresent(
             Int32.self, forKey: .startLine
@@ -118,10 +119,3 @@ struct AnchorData: Codable {
     }
 }
 
-enum AnchorType: String, Codable {
-    case lineRange = "line_range"
-    case rowRange = "row_range"
-    case blockRange = "block_range"
-    case diffRange = "diff_range"
-    case whole = "whole"
-}

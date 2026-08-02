@@ -2,6 +2,9 @@ import SwiftUI
 import WebKit
 import Galactic
 
+/// How this reader anchors annotations into its markup.
+let htmlAnchoring = ReaderAnchoring.blocks(selector: ".annotatable-block")
+
 /// Renders HTML artifacts in a sandboxed WKWebView.
 /// External links open in the default browser.
 /// Supports block_range annotations via the shared
@@ -10,7 +13,7 @@ import Galactic
 struct ArtifactHTMLView: NSViewRepresentable {
     let content: String
     let isDark: Bool
-    let annotations: [ArtifactAnnotation]
+    let annotations: [any ReaderAnnotation]
     let annotationHTMLMap: [Int32: String]
     let itemLabel: String
     @Binding var webViewRef: WKWebView?
@@ -19,13 +22,13 @@ struct ArtifactHTMLView: NSViewRepresentable {
 
     func makeNSView(
         context: Context
-    ) -> SilentFunctionKeyWebView {
+    ) -> ReaderWebView {
         let config = WKWebViewConfiguration()
         config.installGalaxyFindUserScript()
         config.userContentController.add(
             context.coordinator, name: "annotation"
         )
-        let webView = SilentFunctionKeyWebView(
+        let webView = ReaderWebView(
             frame: .zero, configuration: config
         )
         webView.setValue(
@@ -40,20 +43,12 @@ struct ArtifactHTMLView: NSViewRepresentable {
             ? NSColor.black.cgColor
             : NSColor.white.cgColor
 
-        let activeAnns = annotations.filter {
-            !$0.stale
-                && AnnotationScope.blockRange
-                    .accepts($0.anchorData.type)
-        }
         // DOM-walk runs first, then annotation init
         let domWalkJS = blockIndexDOMWalkJS
         let initJS = buildAnnotationInitJS(
-            anchorType: "block_range",
-            blockSelector: ".annotatable-block",
-            lineAttr: "data-block-index",
-            refPrefix: "Block",
+            anchoring: htmlAnchoring,
             itemLabel: itemLabel,
-            annotations: activeAnns,
+            annotations: annotations,
             htmlMap: annotationHTMLMap
         )
         context.coordinator.pendingInitJS =
@@ -80,7 +75,7 @@ struct ArtifactHTMLView: NSViewRepresentable {
     }
 
     func updateNSView(
-        _ webView: SilentFunctionKeyWebView,
+        _ webView: ReaderWebView,
         context: Context
     ) {
         if context.coordinator.lastIsDark != isDark {
@@ -98,19 +93,11 @@ struct ArtifactHTMLView: NSViewRepresentable {
                 + "AnnotationManager.getFormState())"
                 + " : null"
             ) { result, _ in
-                let activeAnns = annotations.filter {
-                    !$0.stale
-                        && AnnotationScope.blockRange
-                            .accepts($0.anchorData.type)
-                }
                 let domWalkJS = blockIndexDOMWalkJS
                 var initJS = buildAnnotationInitJS(
-                    anchorType: "block_range",
-                    blockSelector: ".annotatable-block",
-                    lineAttr: "data-block-index",
-                    refPrefix: "Block",
+                    anchoring: htmlAnchoring,
                     itemLabel: itemLabel,
-                    annotations: activeAnns,
+                    annotations: annotations,
                     htmlMap: annotationHTMLMap
                 )
                 if let stateJSON = result as? String {

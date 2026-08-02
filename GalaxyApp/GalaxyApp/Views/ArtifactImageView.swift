@@ -2,14 +2,17 @@ import SwiftUI
 import WebKit
 import Galactic
 
+/// How this reader anchors annotations into its markup.
+let imageAnchoring = ReaderAnchoring.whole
+
 /// Renders image artifacts (PNG, JPG, GIF, SVG, WebP) in
 /// a WKWebView for consistent zoom support via
-/// SilentFunctionKeyWebView and annotation via the
+/// ReaderWebView and annotation via the
 /// generalized AnnotationManager JS.
 struct ArtifactImageView: NSViewRepresentable {
     let filePath: String
     let isDark: Bool
-    let annotations: [ArtifactAnnotation]
+    let annotations: [any ReaderAnnotation]
     let annotationHTMLMap: [Int32: String]
     let itemLabel: String
     var onAnnotationMessage:
@@ -18,12 +21,12 @@ struct ArtifactImageView: NSViewRepresentable {
 
     func makeNSView(
         context: Context
-    ) -> SilentFunctionKeyWebView {
+    ) -> ReaderWebView {
         let config = WKWebViewConfiguration()
         config.userContentController.add(
             context.coordinator, name: "annotation"
         )
-        let webView = SilentFunctionKeyWebView(
+        let webView = ReaderWebView(
             frame: .zero, configuration: config
         )
         webView.setValue(false, forKey: "drawsBackground")
@@ -38,10 +41,7 @@ struct ArtifactImageView: NSViewRepresentable {
             : NSColor.white.cgColor
 
         let initJS = buildAnnotationInitJS(
-            anchorType: "whole",
-            blockSelector: "",
-            lineAttr: "",
-            refPrefix: "",
+            anchoring: imageAnchoring,
             itemLabel: itemLabel,
             annotations: annotations,
             htmlMap: annotationHTMLMap
@@ -71,7 +71,7 @@ struct ArtifactImageView: NSViewRepresentable {
     }
 
     func updateNSView(
-        _ webView: SilentFunctionKeyWebView,
+        _ webView: ReaderWebView,
         context: Context
     ) {
         context.coordinator.onAnnotationMessage =
@@ -87,10 +87,7 @@ struct ArtifactImageView: NSViewRepresentable {
                 : NSColor.white.cgColor
 
             let initJS = buildAnnotationInitJS(
-                anchorType: "whole",
-                blockSelector: "",
-                lineAttr: "",
-                refPrefix: "",
+                anchoring: imageAnchoring,
                 itemLabel: itemLabel,
                 annotations: annotations,
                 htmlMap: annotationHTMLMap

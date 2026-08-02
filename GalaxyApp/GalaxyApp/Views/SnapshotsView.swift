@@ -1468,25 +1468,8 @@ struct SnapshotsView: View {
                 }
 
                 // Push updated annotations to JS for card re-render
-                let annotationDicts: [[String: Any]] =
-                    annotations.map { a in
-                        var dict: [String: Any] = [
-                            "id": a.id,
-                            "number": a.number,
-                            "start_line": a.startLine,
-                            "end_line": a.endLine,
-                            "content": a.content,
-                            "created_at": a.createdAt,
-                            "updated_at": a.updatedAt
-                        ]
-                        if let rn = a.reviewNumber {
-                            dict["review_number"] = rn
-                        }
-                        if let rra = a.reviewReviewedAt {
-                            dict["review_reviewed_at"] = rra
-                        }
-                        return dict
-                    }
+                let annotationDicts =
+                    annotations.map(readerAnnotationDict)
                 // Ship the card bodies alongside the records. A
                 // refresh can introduce annotations the page has
                 // never rendered, and those have no entry in its

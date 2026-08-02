@@ -2,6 +2,9 @@ import SwiftUI
 import WebKit
 import Galactic
 
+/// How this reader anchors annotations into its markup.
+let sourceAnchoring = ReaderAnchoring.lines(selector: ".code-line")
+
 /// Renders source code or plain text with line numbers and
 /// syntax highlighting in a WKWebView. Uses the same vendored
 /// highlight.js and theme CSS as MarkdownReaderView.
@@ -11,7 +14,7 @@ struct ArtifactSourceView: NSViewRepresentable {
     let content: String
     let language: String?
     let isDark: Bool
-    let annotations: [ArtifactAnnotation]
+    let annotations: [any ReaderAnnotation]
     let annotationHTMLMap: [Int32: String]
     let itemLabel: String
     @Binding var webViewRef: WKWebView?
@@ -25,13 +28,13 @@ struct ArtifactSourceView: NSViewRepresentable {
 
     func makeNSView(
         context: Context
-    ) -> SilentFunctionKeyWebView {
+    ) -> ReaderWebView {
         let config = WKWebViewConfiguration()
         config.installGalaxyFindUserScript()
         config.userContentController.add(
             context.coordinator, name: "annotation"
         )
-        let webView = SilentFunctionKeyWebView(
+        let webView = ReaderWebView(
             frame: .zero, configuration: config
         )
         webView.setValue(
@@ -47,18 +50,10 @@ struct ArtifactSourceView: NSViewRepresentable {
             : NSColor.white.cgColor
 
         // Build init JS for after page load
-        let activeAnns = annotations.filter {
-            !$0.stale
-                && AnnotationScope.lineRange
-                    .accepts($0.anchorData.type)
-        }
         let initJS = buildAnnotationInitJS(
-            anchorType: "line_range",
-            blockSelector: ".code-line",
-            lineAttr: "data-line",
-            refPrefix: "Line",
+            anchoring: sourceAnchoring,
             itemLabel: itemLabel,
-            annotations: activeAnns,
+            annotations: annotations,
             htmlMap: annotationHTMLMap,
             artifactContent: content,
             referencePath: referencePath
@@ -87,7 +82,7 @@ struct ArtifactSourceView: NSViewRepresentable {
     }
 
     func updateNSView(
-        _ webView: SilentFunctionKeyWebView,
+        _ webView: ReaderWebView,
         context: Context
     ) {
         if context.coordinator.lastIsDark != isDark {
@@ -106,18 +101,10 @@ struct ArtifactSourceView: NSViewRepresentable {
                 + "AnnotationManager.getFormState())"
                 + " : null"
             ) { result, _ in
-                let activeAnns = annotations.filter {
-                    !$0.stale
-                        && AnnotationScope.lineRange
-                            .accepts($0.anchorData.type)
-                }
                 var initJS = buildAnnotationInitJS(
-                    anchorType: "line_range",
-                    blockSelector: ".code-line",
-                    lineAttr: "data-line",
-                    refPrefix: "Line",
+                    anchoring: sourceAnchoring,
                     itemLabel: itemLabel,
-                    annotations: activeAnns,
+                    annotations: annotations,
                     htmlMap: annotationHTMLMap,
                     artifactContent: content,
                     referencePath: referencePath
@@ -158,21 +145,10 @@ private func buildSourceHTML(
     language: String?,
     isDark: Bool
 ) -> String {
-    let hjsURL = Bundle.main.url(
-        forResource: "highlight.min",
-        withExtension: "js"
+    let hjsContent = ReaderAssets.highlightJS
+    let themeCSS = ReaderAssets.highlightThemeCSS(
+        isDark: isDark
     )
-    let hjsContent = hjsURL
-        .flatMap { try? String(contentsOf: $0) } ?? ""
-
-    let themeName =
-        isDark ? "github-dark.min" : "github.min"
-    let themeURL = Bundle.main.url(
-        forResource: themeName,
-        withExtension: "css"
-    )
-    let themeCSS = themeURL
-        .flatMap { try? String(contentsOf: $0) } ?? ""
 
     let bgColor = isDark ? "#0d1117" : "#ffffff"
     let textColor = isDark ? "#e6edf3" : "#1f2328"
@@ -184,10 +160,7 @@ private func buildSourceHTML(
     var lineHTML = ""
     for (i, line) in lines.enumerated() {
         let lineNum = i + 1
-        let escapedLine = line
-            .replacingOccurrences(of: "&", with: "&amp;")
-            .replacingOccurrences(of: "<", with: "&lt;")
-            .replacingOccurrences(of: ">", with: "&gt;")
+        let escapedLine = HTMLEscape.text(line)
         lineHTML +=
             "<tr class=\"code-line\""
             + " data-line=\"\(lineNum)\">"
