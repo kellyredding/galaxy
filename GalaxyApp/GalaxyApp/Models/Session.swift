@@ -157,7 +157,7 @@ class Session: Identifiable, ObservableObject {
     /// shared registry could not say. Held by the session and not by the pane
     /// host, so registrations survive the stop/resume cycles that destroy and
     /// recreate the host view.
-    let paneRegistry = SessionPaneRegistry()
+    let paneRegistry = TerminalPaneCoordinator()
 
     /// Number of currently running agents. Maintained by
     /// EventCoordinator (increment on agent:started, decrement
