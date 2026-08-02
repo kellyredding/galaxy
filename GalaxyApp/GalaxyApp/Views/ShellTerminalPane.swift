@@ -9,8 +9,8 @@ import Galactic
 /// (`ShellLauncher.resolveCwd`).
 ///
 /// Owns a `TerminalBackend` for the PTY + rendering — the
-/// concrete engine (SwiftTerm today; libghostty in the
-/// future) is selected by `TerminalBackendFactory` from the
+/// concrete engine (SwiftTerm is the only one today) is
+/// selected by `TerminalBackendFactory` from the
 /// global `AppSettings.terminalEngine` setting at
 /// construction time and pinned for the pane's lifetime
 /// (D-pane). No `Session` coupling beyond a weak reference

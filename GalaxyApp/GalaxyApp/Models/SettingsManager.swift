@@ -142,9 +142,12 @@ struct AppSettings: Codable, Equatable {
     /// Active terminal engine. Global default; each pane
     /// pins to whichever engine was active at its construction
     /// time (D-pane). Flipping this never affects already-
-    /// running panes — see `TerminalBackendFactory`. No UI
-    /// surface yet; the toggle ships when libghostty
-    /// integration ships.
+    /// running panes — see `TerminalBackendFactory`.
+    ///
+    /// One engine exists today, so there is no UI for this and
+    /// the value never varies. It is kept because bringing in a
+    /// second backend stays a live possibility, and this is the
+    /// setting that would carry the choice.
     var terminalEngine: TerminalEngine = .swiftTerm
 
     // Shell pane settings
@@ -282,10 +285,10 @@ struct AppSettings: Codable, Equatable {
     // Custom decoder to handle missing keys gracefully when adding new settings
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        sidebarPosition = try container.decodeIfPresent(SidebarPosition.self, forKey: .sidebarPosition) ?? .left
+        sidebarPosition = container.lenient(.sidebarPosition, default: .left)
         sidebarWidth = try container.decodeIfPresent(CGFloat.self, forKey: .sidebarWidth) ?? 220.0
         isSidebarVisible = try container.decodeIfPresent(Bool.self, forKey: .isSidebarVisible) ?? true
-        themePreference = try container.decodeIfPresent(ThemePreference.self, forKey: .themePreference) ?? .system
+        themePreference = container.lenient(.themePreference, default: .system)
         // Bell sound + visual flash: try new keys first, migrate
         // from legacy bellPreference if present.
         if let sound = try container.decodeIfPresent(
@@ -319,10 +322,8 @@ struct AppSettings: Codable, Equatable {
         bellVisualFlash = try container.decodeIfPresent(
             Bool.self, forKey: .bellVisualFlash
         ) ?? bellVisualFlash
-        permissionRequestSound = try container.decodeIfPresent(
-            SoundPreference.self,
-            forKey: .permissionRequestSound
-        ) ?? .none
+        permissionRequestSound = container.lenient(
+            .permissionRequestSound, default: SoundPreference.none)
         showUnreadIndicator = try container.decodeIfPresent(Bool.self, forKey: .showUnreadIndicator) ?? true
         showDockBadge = try container.decodeIfPresent(Bool.self, forKey: .showDockBadge) ?? false
         terminalFontFamily = try container.decodeIfPresent(String.self, forKey: .terminalFontFamily) ?? "SF Mono"
@@ -337,10 +338,8 @@ struct AppSettings: Codable, Equatable {
             terminalColorThemeName = "galaxy-default"
         }
         terminalScrollbackLines = try container.decodeIfPresent(Int.self, forKey: .terminalScrollbackLines) ?? 10_000
-        terminalEngine = try container.decodeIfPresent(
-            TerminalEngine.self, forKey: .terminalEngine
-        ) ?? .swiftTerm
-        gitStatusStyle = try container.decodeIfPresent(GitStatusStyle.self, forKey: .gitStatusStyle) ?? .symbolic
+        terminalEngine = container.lenient(.terminalEngine, default: .swiftTerm)
+        gitStatusStyle = container.lenient(.gitStatusStyle, default: .symbolic)
         autoClearEnabled = try container.decodeIfPresent(Bool.self, forKey: .autoClearEnabled) ?? true
         autoClearThreshold = try container.decodeIfPresent(Int.self, forKey: .autoClearThreshold) ?? 97
         scrollToEnterScrollback = try container.decodeIfPresent(
@@ -403,6 +402,27 @@ struct AppSettings: Codable, Equatable {
 
     init() {
         // Use defaults
+    }
+}
+
+private extension KeyedDecodingContainer {
+    /// Decode a value that may not survive a round trip between builds,
+    /// falling back to `fallback` rather than failing the whole document.
+    ///
+    /// Written for enums, which are where this actually bites.
+    /// `decodeIfPresent` answers nil only for an *absent* key — a key present
+    /// with an unrecognised value throws. Every field in `AppSettings`'s
+    /// initializer sits under one do/catch that answers nil for the entire
+    /// settings file, so a single stale enum value silently reverts every
+    /// setting the user has: their sidebar, their theme, their fonts, all of
+    /// it, with nothing but an NSLog to say why.
+    ///
+    /// Reachable three ways, none exotic: running an older build after a newer
+    /// one wrote a case it does not know, hand-editing the file, or a case
+    /// being removed in a later version. The cost of tolerating it is losing
+    /// one field instead of all of them.
+    func lenient<T: Decodable>(_ key: Key, default fallback: T) -> T {
+        ((try? decodeIfPresent(T.self, forKey: key)) ?? nil) ?? fallback
     }
 }
 
