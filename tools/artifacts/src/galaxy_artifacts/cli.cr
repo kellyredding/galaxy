@@ -347,6 +347,32 @@ module GalaxyArtifacts
         return
       end
 
+      # Resolve to an absolute path before anything
+      # records or compares it. A relative path is only
+      # meaningful next to the working directory it was
+      # typed in, and nothing downstream keeps that: the
+      # column is read back by Galaxy.app to open the
+      # file, and it is half of the uniqueness constraint
+      # that makes a second save of the same file an
+      # update rather than a duplicate. Saving one file
+      # from two directories used to produce two
+      # artifacts, and neither could be opened.
+      #
+      # expand_path rather than real_path — symlinks stay
+      # as the user wrote them. Resolving them would be
+      # better for dedup and worse for everything else,
+      # since a path under a symlinked directory would be
+      # recorded somewhere the user does not recognise.
+      #
+      # home: true because a shell expands a bare ~ but
+      # a quoted one arrives intact, as does anything
+      # handed over by a caller that never went through a
+      # shell. Without it the tilde is treated as a
+      # directory name and joined to the working
+      # directory, which produces an absolute path that
+      # is confidently wrong.
+      source_path = File.expand_path(source_path, home: true)
+
       unless File.exists?(source_path)
         STDERR.puts "Error: file not found: #{source_path}"
         exit(1)
@@ -3028,6 +3054,9 @@ module GalaxyArtifacts
 
       SOURCE (one of):
         --source-path PATH      File on disk to copy into artifact storage
+                                (resolved to an absolute path before it is
+                                recorded, so dedup and reopening work from
+                                any working directory)
         --filename NAME         Filename for stdin content (required when
                                 --source-path is not provided; extension
                                 determines reader type in Galaxy.app)
