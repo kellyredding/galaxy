@@ -874,13 +874,13 @@ class SessionManager: ObservableObject {
         // opens on a clean buffer (same step clearAndHandoff runs
         // before /clear).
         session.trimTerminalBuffer()
-        // verifyAccepted: false — /compact bypasses
-        // Claude Code's UserPromptSubmit hook (no
-        // turn:initiated event arrives), so the verify-
-        // and-retry loop's isInTurn check would false-
-        // positive on the optimistic startTurn that
-        // sendCommand sets for context-reset commands.
-        session.sendCommand("/compact", verifyAccepted: false)
+        // Unverified, and sendCommand works that out for itself: /compact
+        // bypasses Claude Code's UserPromptSubmit hook, so no turn:initiated
+        // event arrives and the isInTurn check would false-positive on the
+        // optimistic startTurn that sendCommand sets for these very commands.
+        // The harness names which commands do that, so this call site no
+        // longer has to.
+        session.sendCommand("/compact")
         // /handoff is gated on the on_compact hook's
         // session:ready (ref="compact") event, which fires
         // exactly when Claude is at-or-imminently-at the new
@@ -899,13 +899,11 @@ class SessionManager: ObservableObject {
         // opens on a clean buffer — /clear only resets Claude's own
         // rendering, not the terminal's scrollback history.
         session.trimTerminalBuffer()
-        // verifyAccepted: false — same reasoning as
-        // compactActiveSession. /clear bypasses
-        // UserPromptSubmit, so verifyCommandSubmit can't
-        // distinguish "Claude accepted the submit" from
-        // "Galaxy optimistically set isInTurn." The retry
-        // safety net is intentionally off for context-reset.
-        session.sendCommand("/clear", verifyAccepted: false)
+        // Unverified, detected rather than declared — same reasoning as
+        // compactActiveSession. /clear bypasses UserPromptSubmit, so a
+        // verifier could not distinguish "Claude accepted the submit" from
+        // "Galaxy optimistically set isInTurn."
+        session.sendCommand("/clear")
         // /handoff is gated on the on_clear hook's
         // session:ready (ref="clear") event — see
         // compactActiveSession for the full rationale.

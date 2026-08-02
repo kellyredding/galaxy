@@ -110,8 +110,12 @@ final class ShellTerminalPane: BackendBackedPane, ObservableObject {
             // Routed through the session rather than straight at its backend, so
             // this pane inherits the readiness wait and the pacing instead of
             // reimplementing them a second time.
+            //
+            // Verified but never retyped, for the same reason as the session
+            // pane's: the payload is unbounded user selection, so a spurious
+            // second copy is worse than a reported loss.
             send: { [weak s] text in
-                s?.sendCommand(text, verifyAccepted: false)
+                s?.sendCommand(text, retry: .reportOnly)
             },
             disabledReason: { [weak s] in
                 guard let s = s else {

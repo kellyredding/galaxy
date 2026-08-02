@@ -145,11 +145,16 @@ final class SessionTerminalPane: TerminalPane {
             )
         }
         return SendToClaudeTarget(
-            // Not verified: a person is watching this one land, and can press
-            // their own submit key if it does not. The retry exists for prompts
-            // Galaxy sends while nobody is looking.
+            // Verified, but never retyped. This carries whatever the user
+            // selected — unbounded, and measured in the tens of thousands of
+            // bytes — so a retype would put a second copy of all of it in the
+            // composer in the case where the text landed and only the submit
+            // was lost. Nothing observable distinguishes that from a total
+            // loss. Detection still runs: a prompt that vanishes should leave
+            // a record even when recovering it automatically is the wrong
+            // trade.
             send: { [weak s] text in
-                s?.sendCommand(text, verifyAccepted: false)
+                s?.sendCommand(text, retry: .reportOnly)
             },
             disabledReason: { nil }
         )

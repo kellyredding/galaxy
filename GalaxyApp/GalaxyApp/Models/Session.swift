@@ -9,12 +9,16 @@ class Session: Identifiable, ObservableObject {
     /// Without this delay, the text and the submit can get batched together,
     /// causing Ink (Claude Code's TUI framework) to not recognize the submit.
     ///
-    /// Defined by `SessionSubmit`, which owns submission timing and needs the
+    /// Defined by the harness, which owns submission timing and needs the
     /// same gap between its own two keystrokes. Two copies of one number would
     /// drift, and the second copy is the one that would drift unnoticed.
-    private static var commandSubmitDelay: TimeInterval {
-        SessionSubmit.inputPacingDelay
-    }
+    private var commandSubmitDelay: TimeInterval { harness.inputPacingDelay }
+
+    /// The agent this session runs. The only place Galaxy names one: the
+    /// submit bytes, the pacing, the readiness bound, what closes a completion
+    /// popup, and which commands never report acceptance all come from here
+    /// rather than being assumed of whatever is on the other end of the PTY.
+    private let harness: AgentHarness = ClaudeCodeHarness()
 
     /// What "the prompt was taken" means for a Galaxy session.
     ///
@@ -633,25 +637,35 @@ class Session: Identifiable, ObservableObject {
     /// path is correct because it is confirmed, not because it is timed.
     ///
     /// Pass `verifyAccepted: false` only when no such confirmation can
-    /// ever arrive. `/clear` and `/compact` are the real cases: both are
-    /// handled at the TUI level, before the prompt-submit pipeline, so
-    /// their hook never fires and a verifier would declare every one lost
-    /// and retype forever. "The caller already knows Claude is ready" is
-    /// not a reason — `session:ready` was the belief that made resume
-    /// unreliable for a week, and it fires before the input layer paints.
-    /// Detect /clear and /compact, which bypass Claude
-    /// Code's UserPromptSubmit hook (handled at the TUI
-    /// level before the prompt-submit pipeline runs).
-    /// `sendCommand` treats matches as synthetic Galaxy-
-    /// initiated turns, optimistically calling startTurn
-    /// since no turn:initiated socket event will arrive.
-    private static func isContextResetCommand(
-        _ command: String
-    ) -> Bool {
-        let trimmed = command.trimmingCharacters(
-            in: .whitespaces
+    /// ever arrive. "The caller already knows Claude is ready" is not a
+    /// reason — `session:ready` was the belief that made resume unreliable
+    /// for a week, and it fires before the input layer paints. Nor is "a
+    /// person is watching this one": that reasoning kept the acceptance
+    /// signal off the sends carrying the most text, and the thing it was
+    /// really avoiding was the retype, not the detection.
+    ///
+    /// The commands that genuinely cannot be confirmed are detected rather
+    /// than declared — see `isContextResetCommand` — so a caller does not
+    /// have to remember which they are.
+    ///
+    /// `retry` is the separate question: whether a prompt found missing
+    /// should be retyped. Bounded payloads say yes. An unbounded one says
+    /// `.reportOnly`, because retyping doubles a prompt in the case where
+    /// the text landed and only the submit was lost, and nothing here can
+    /// distinguish that from a total loss.
+    /// Detect the commands that bypass the agent's prompt-submit pipeline, so
+    /// no acceptance report will ever arrive for them.
+    ///
+    /// The set is the harness's to name — which commands an agent intercepts
+    /// is a fact about that agent, and Galaxy held its own copy of the answer
+    /// for as long as there was nowhere else to put it. What Galaxy still owns
+    /// is the *response*: it treats a match as a synthetic Galaxy-initiated
+    /// turn, optimistically calling `startTurn`, because no `turn:initiated`
+    /// socket event is coming.
+    private func isContextResetCommand(_ command: String) -> Bool {
+        harness.acceptanceBypassingCommands.contains(
+            command.trimmingCharacters(in: .whitespaces)
         )
-        return trimmed == "/clear" || trimmed == "/compact"
     }
 
     /// Trim this session's terminal scrollback before a context reset,
@@ -689,7 +703,9 @@ class Session: Identifiable, ObservableObject {
     }
 
     func sendCommand(
-        _ command: String, verifyAccepted: Bool = true
+        _ command: String,
+        verifyAccepted: Bool = true,
+        retry: SubmitRetryPolicy = .retype
     ) {
         guard isRunning && !hasExited else {
             SessionSubmit.log("sendCommand refused — session not running")
@@ -702,6 +718,11 @@ class Session: Identifiable, ObservableObject {
         // already true), so skip verification and fall back to
         // fire-and-forget.
         let wasInTurn = isInTurn
+
+        // Whether an acceptance report can arrive at all. Detected from the
+        // harness rather than left to the caller — a caller that forgot would
+        // wait out the full window on every context reset and then retype one.
+        let bypassesAcceptance = isContextResetCommand(command)
 
         // Galaxy-initiated context-reset commands (/clear,
         // /compact) bypass Claude Code's UserPromptSubmit hook
@@ -727,7 +748,7 @@ class Session: Identifiable, ObservableObject {
         // queued review-message send). Clear both before this
         // cycle's actions register so the new lifecycle's events
         // fire only this cycle's actions.
-        if Self.isContextResetCommand(command) {
+        if bypassesAcceptance {
             startTurn(source: "sendCommand:\(command)")
             isReady = false
             pendingReadyActions.removeAll()
@@ -753,7 +774,11 @@ class Session: Identifiable, ObservableObject {
         // Unconditional, because branching on it would buy nothing: Claude Code
         // trims the input, so a plain message carries the space harmlessly, and
         // slash commands take arguments, so an empty one parses as none.
-        let text = command + " "
+        //
+        // Composed by the harness rather than spelled here, so what closes a
+        // completion popup is the agent's answer and not this file's memory of
+        // one agent's answer.
+        let text = harness.composedCommand(command)
 
         // Anchors the submit diagnostics: everything that follows is relative
         // to this line, and it is the only one naming the command and the
@@ -762,7 +787,8 @@ class Session: Identifiable, ObservableObject {
         SessionSubmit.log(
             "sendCommand text=\(SessionSubmit.describe(text: text)) "
                 + "session=\(id.uuidString.prefix(8)) "
-                + "verifyAccepted=\(verifyAccepted) wasInTurn=\(wasInTurn)"
+                + "verifyAccepted=\(verifyAccepted) wasInTurn=\(wasInTurn) "
+                + "bypasses=\(bypassesAcceptance) retry=\(retry)"
         )
 
         guard let backend = backend else {
@@ -785,7 +811,7 @@ class Session: Identifiable, ObservableObject {
             SessionSubmit.log("  waiting for input readiness…")
         }
         let t0 = Date()
-        backend.whenAcceptingInput { [weak self] ready in
+        backend.whenAcceptingInput(harness: harness) { [weak self] ready in
             guard let self = self, self.isRunning, !self.hasExited else { return }
 
             backend.send(text: text, asPaste: false)
@@ -798,20 +824,26 @@ class Session: Identifiable, ObservableObject {
 
             // Small delay to ensure text is processed before the submit
             DispatchQueue.main.asyncAfter(
-                deadline: .now() + Self.commandSubmitDelay
+                deadline: .now() + self.commandSubmitDelay
             ) { [weak self] in
                 guard let self = self, self.isRunning, !self.hasExited else { return }
 
-                // Submit the text just written — SessionSubmit owns the bytes
-                backend.submitPrompt()
+                // Submit the text just written — the harness owns the bytes
+                backend.submitPrompt(harness: self.harness)
 
-                // Opt out by value, not by skipping the call: the caller may
-                // have independent confirmation, and a send made inside an
-                // existing turn has no turn-start left to wait for.
+                // Opt out by value, not by skipping the call. Three reasons a
+                // send is unverifiable, and all of them are about whether a
+                // report can arrive rather than whether anyone would notice:
+                // the caller has independent confirmation, the command bypasses
+                // the agent's prompt pipeline, or a turn is already running so
+                // there is no turn-start left to wait for.
+                let verifiable =
+                    verifyAccepted && !wasInTurn && !bypassesAcceptance
                 backend.verifySubmission(
                     text: text,
-                    verification: verifyAccepted && !wasInTurn
-                        ? self.submitVerification : nil
+                    harness: self.harness,
+                    verification: verifiable ? self.submitVerification : nil,
+                    retry: retry
                 )
             }
         }
