@@ -54,8 +54,15 @@ const SRC_DIR = join(APP_ROOT, "GalaxyApp"); // .../GalaxyApp/GalaxyApp
 // Galactic, which parses each of them in its own test suite. A zero resource
 // floor is honest here rather than lax: this app no longer carries any
 // non-minified JavaScript of its own under Resources/.
+//
+// Lowered from 4 when the HTML reader's block-index DOM walk moved into
+// Galactic with the renderer that injects it. Its new home covers it: the
+// package's shipped-JavaScript suite parses it by name and its own floor rose
+// to match, in the same change. The three that remain are the diff reader's —
+// gap expansion, file collapse, and table-of-contents navigation — and that
+// reader stays in this app.
 const EXPECTED_MIN_RESOURCE_FILES = 0;
-const EXPECTED_MIN_LITERALS = 4;
+const EXPECTED_MIN_LITERALS = 3;
 
 const failures = [];
 let checkedFiles = 0;
