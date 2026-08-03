@@ -176,6 +176,10 @@ final class SplitState: ObservableObject {
 
     @Published var shellPane: ShellTerminalPane?
 
+    // Main-actor isolated because opening the shell now surrenders the find
+    // bar, and the panel holding it is isolated. Its one caller is the
+    // openShell command's subscriber, which already runs on main.
+    @MainActor
     func openShell(for session: Session) {
         let pane = ShellTerminalPane(session: session)
 
@@ -207,6 +211,15 @@ final class SplitState: ObservableObject {
         session.shellPane = pane
 
         // Focus the shell on open (user just asked for it).
+        //
+        // A fresh pane has no focus restorer registered yet, so this reaches
+        // the backend directly rather than going through the registry — and
+        // therefore misses the find-bar surrender the registry performs. Do it
+        // here, synchronously and before the deferral: the bar holds the
+        // keyboard from its own panel, so `focus()` would set first responder
+        // in a window that is not key and leave the new pane looking focused
+        // while every keystroke still went to the find field.
+        FindBarPanelController.shared.surrenderForFocusChange()
         DispatchQueue.main.asyncAfter(
             deadline: .now() + 0.05
         ) {
