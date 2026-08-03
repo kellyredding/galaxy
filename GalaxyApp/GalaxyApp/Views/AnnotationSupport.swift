@@ -74,7 +74,8 @@ func buildAnnotationInitJS(
     annotations: [any ReaderAnnotation],
     htmlMap: [Int32: String],
     artifactContent: String? = nil,
-    referencePath: String? = nil
+    referencePath: String? = nil,
+    restoringFormState: String? = nil
 ) -> String {
     buildAnnotationInitJS(
         anchoring: anchoring,
@@ -83,6 +84,7 @@ func buildAnnotationInitJS(
         htmlMap: htmlMap,
         artifactContent: artifactContent,
         referencePath: referencePath,
-        textEntry: SettingsManager.shared.settings.textEntry.jsPayload
+        textEntry: SettingsManager.shared.settings.textEntry.jsPayload,
+        restoringFormState: restoringFormState
     )
 }

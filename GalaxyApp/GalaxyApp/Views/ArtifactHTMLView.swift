@@ -10,121 +10,35 @@ let htmlAnchoring = ReaderAnchoring.blocks(selector: ".annotatable-block")
 /// Supports block_range annotations via the shared
 /// AnnotationManager JS with a DOM-walk block-index
 /// pass after page load.
-struct ArtifactHTMLView: NSViewRepresentable {
+struct ArtifactHTMLView: View {
     let content: String
     let isDark: Bool
     let annotations: [any ReaderAnnotation]
     let annotationHTMLMap: [Int32: String]
     let itemLabel: String
     @Binding var webViewRef: WKWebView?
-    var onAnnotationMessage:
-        ((AnnotationMessage) -> Void)?
+    var onAnnotationMessage: ((AnnotationMessage) -> Void)?
 
-    func makeNSView(
-        context: Context
-    ) -> ReaderWebView {
-        let config = WKWebViewConfiguration()
-        config.installGalaxyFindUserScript()
-        config.userContentController.add(
-            context.coordinator, name: "annotation"
-        )
-        let webView = ReaderWebView(
-            frame: .zero, configuration: config
-        )
-        webView.setValue(
-            false, forKey: "drawsBackground"
-        )
-        webView.navigationDelegate =
-            context.coordinator
-
-        webView.wantsLayer = true
-        webView.layer?.backgroundColor =
-            isDark
-            ? NSColor.black.cgColor
-            : NSColor.white.cgColor
-
-        // DOM-walk runs first, then annotation init
-        let domWalkJS = blockIndexDOMWalkJS
-        let initJS = buildAnnotationInitJS(
-            anchoring: htmlAnchoring,
-            itemLabel: itemLabel,
-            annotations: annotations,
-            htmlMap: annotationHTMLMap
-        )
-        context.coordinator.pendingInitJS =
-            domWalkJS + "; " + initJS
-        context.coordinator.onAnnotationMessage =
-            onAnnotationMessage
-
-        let html = wrapHTML(
-            content: content,
-            isDark: isDark
-        )
-        webView.loadHTMLString(
-            html,
-            baseURL: URL(
-                string: "galaxy://artifact-reader"
-            )
-        )
-
-        DispatchQueue.main.async {
-            webViewRef = webView
-        }
-
-        return webView
-    }
-
-    func updateNSView(
-        _ webView: ReaderWebView,
-        context: Context
-    ) {
-        if context.coordinator.lastIsDark != isDark {
-            context.coordinator.lastIsDark = isDark
-
-            webView.wantsLayer = true
-            webView.layer?.backgroundColor =
-                isDark
-                ? NSColor.black.cgColor
-                : NSColor.white.cgColor
-
-            webView.evaluateJavaScript(
-                "typeof AnnotationManager !== 'undefined'"
-                + " ? JSON.stringify("
-                + "AnnotationManager.getFormState())"
-                + " : null"
-            ) { result, _ in
-                let domWalkJS = blockIndexDOMWalkJS
-                var initJS = buildAnnotationInitJS(
+    var body: some View {
+        ReaderHostView(
+            isDark: isDark,
+            reloadToken: isDark,
+            document: {
+                wrapHTML(content: content, isDark: isDark)
+            },
+            annotationInitJS: { formState in
+                buildAnnotationInitJS(
                     anchoring: htmlAnchoring,
                     itemLabel: itemLabel,
                     annotations: annotations,
-                    htmlMap: annotationHTMLMap
+                    htmlMap: annotationHTMLMap,
+                    restoringFormState: formState
                 )
-                if let stateJSON = result as? String {
-                    initJS += "; AnnotationManager"
-                        + ".restoreFormState("
-                        + stateJSON + ")"
-                }
-                context.coordinator.pendingInitJS =
-                    domWalkJS + "; " + initJS
-
-                let html = wrapHTML(
-                    content: content,
-                    isDark: isDark
-                )
-                webView.loadHTMLString(
-                    html,
-                    baseURL: URL(
-                        string:
-                            "galaxy://artifact-reader"
-                    )
-                )
-            }
-        }
-    }
-
-    func makeCoordinator() -> AnnotationCoordinator {
-        AnnotationCoordinator(isDark: isDark)
+            },
+            baseURL: URL(string: "galaxy://artifact-reader"),
+            webView: $webViewRef,
+            onAnnotationMessage: onAnnotationMessage
+        )
     }
 }
 
@@ -336,7 +250,6 @@ private func wrapHTML(
     isDark: Bool
 ) -> String {
     let theme = ReaderTheme.standard(isDark: isDark)
-    let cssVars = annotationCSSVars(isDark: isDark)
 
     let lower = content.lowercased()
 
@@ -350,12 +263,16 @@ private func wrapHTML(
         var html = content
 
         let baseCSS = htmlBaseCSS(isDark: isDark)
+        // Two style elements, not one: the reader's own rules, then the
+        // annotation layer complete with the variables it reads. The layer
+        // arrives as a unit from the engine so this branch cannot take half
+        // of it — which it did, and the cards rendered as white boxes.
         let styleBlock = """
         <style>
-        :root { \(cssVars) }
         \(baseCSS)
         \(htmlAnnotationAdaptCSS)
         </style>
+        \(ReaderDocument.annotationStyleTag(theme: theme))
         """
         // The same run, in the same order, that a rebuilt document gets.
         let scriptBlock = """

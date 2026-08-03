@@ -9,108 +9,38 @@ let mermaidAnchoring = ReaderAnchoring.whole
 /// vendored mermaid.js. Supports zoom via the shared
 /// ReaderWebView and annotation via the
 /// generalized AnnotationManager JS.
-struct ArtifactMermaidView: NSViewRepresentable {
+struct ArtifactMermaidView: View {
     let content: String
     let isDark: Bool
     let annotations: [any ReaderAnnotation]
     let annotationHTMLMap: [Int32: String]
     let itemLabel: String
-    var onAnnotationMessage:
-        ((AnnotationMessage) -> Void)?
+    var onAnnotationMessage: ((AnnotationMessage) -> Void)?
     @Binding var webViewRef: WKWebView?
 
-    func makeNSView(
-        context: Context
-    ) -> ReaderWebView {
-        let config = WKWebViewConfiguration()
-        config.installGalaxyFindUserScript()
-        config.userContentController.add(
-            context.coordinator, name: "annotation"
-        )
-        let webView = ReaderWebView(
-            frame: .zero, configuration: config
-        )
-        webView.setValue(false, forKey: "drawsBackground")
-        webView.isInspectable = true
-        webView.navigationDelegate =
-            context.coordinator
-
-        webView.wantsLayer = true
-        webView.layer?.backgroundColor =
-            isDark
-            ? NSColor.black.cgColor
-            : NSColor.white.cgColor
-
-        let initJS = buildAnnotationInitJS(
-            anchoring: mermaidAnchoring,
-            itemLabel: itemLabel,
-            annotations: annotations,
-            htmlMap: annotationHTMLMap
-        )
-        context.coordinator.pendingInitJS = initJS
-        context.coordinator.onAnnotationMessage =
-            onAnnotationMessage
-
-        let html = buildMermaidHTML(
-            content: content,
-            isDark: isDark
-        )
-        webView.loadHTMLString(
-            html,
-            baseURL: URL(
-                string: "galaxy://artifact-reader"
-            )
-        )
-
-        DispatchQueue.main.async {
-            webViewRef = webView
-        }
-
-        return webView
-    }
-
-    func updateNSView(
-        _ webView: ReaderWebView,
-        context: Context
-    ) {
-        context.coordinator.onAnnotationMessage =
-            onAnnotationMessage
-
-        if context.coordinator.lastIsDark != isDark {
-            context.coordinator.lastIsDark = isDark
-
-            webView.wantsLayer = true
-            webView.layer?.backgroundColor =
-                isDark
-                ? NSColor.black.cgColor
-                : NSColor.white.cgColor
-
-            let initJS = buildAnnotationInitJS(
-                anchoring: mermaidAnchoring,
-                itemLabel: itemLabel,
-                annotations: annotations,
-                htmlMap: annotationHTMLMap
-            )
-            context.coordinator.pendingInitJS = initJS
-
-            let html = buildMermaidHTML(
-                content: content,
-                isDark: isDark
-            )
-            webView.loadHTMLString(
-                html,
-                baseURL: URL(
-                    string: "galaxy://artifact-reader"
+    var body: some View {
+        ReaderHostView(
+            isDark: isDark,
+            reloadToken: isDark,
+            document: {
+                buildMermaidHTML(content: content, isDark: isDark)
+            },
+            annotationInitJS: { formState in
+                buildAnnotationInitJS(
+                    anchoring: mermaidAnchoring,
+                    itemLabel: itemLabel,
+                    annotations: annotations,
+                    htmlMap: annotationHTMLMap,
+                    restoringFormState: formState
                 )
-            )
-        }
-    }
-
-    func makeCoordinator() -> AnnotationCoordinator {
-        AnnotationCoordinator(isDark: isDark)
+            },
+            baseURL: URL(string: "galaxy://artifact-reader"),
+            webView: $webViewRef,
+            onAnnotationMessage: onAnnotationMessage,
+            isInspectable: true
+        )
     }
 }
-
 
 // MARK: - HTML Generation
 

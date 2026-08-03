@@ -24,7 +24,7 @@ let markdownAnchoring = ReaderAnchoring.lines(
 /// messages) and WKNavigationDelegate (injecting annotations after
 /// page load). The webViewRef binding exposes the WKWebView so the
 /// parent view can call evaluateJavaScript for annotation actions.
-struct MarkdownReaderView: NSViewRepresentable {
+struct MarkdownReaderView: View {
     let markdown: String
     let isDark: Bool
     let annotations: [any ReaderAnnotation]
@@ -44,167 +44,42 @@ struct MarkdownReaderView: NSViewRepresentable {
     // depends on it.
     var referencePath: String? = nil
 
-    func makeNSView(context: Context) -> WKWebView {
-        let config = WKWebViewConfiguration()
-        config.installGalaxyFindUserScript()
-        config.userContentController.add(context.coordinator, name: "annotation")
-        let webView = ReaderWebView(frame: .zero, configuration: config)
-        webView.setValue(false, forKey: "drawsBackground")
-        webView.isInspectable = true
-        webView.navigationDelegate = context.coordinator
-
-        // Defer binding update to avoid mutating state during view update
-        DispatchQueue.main.async { self.webViewRef = webView }
-
-        return webView
-    }
-
-    func updateNSView(_ webView: WKWebView, context: Context) {
-        // Keep callback current (closure may capture new state)
-        context.coordinator.onAnnotationMessage = onAnnotationMessage
-
-        let html = renderMarkdownToHTML(markdown, isDark: isDark)
-        let htmlHash = html.hashValue
-        guard context.coordinator.lastHTMLHash != htmlHash else { return }
-
-        context.coordinator.lastHTMLHash = htmlHash
-        context.coordinator.annotationsEnabled =
-            self.annotationsEnabled
-        context.coordinator.pendingAnnotations = self.annotations
-        context.coordinator.pendingAnnotationHTMLMap = self.annotationHTMLMap
-        context.coordinator.pendingItemLabel = self.itemLabel
-        context.coordinator.pendingArtifactContent = self.markdown
-        context.coordinator.pendingReferencePath =
-            self.referencePath
-
-        let baseURL = URL(
-            string: "galaxy://\(self.baseUrlName)"
-        )
-
-        // When annotations are disabled, skip form-state
-        // save and load HTML directly.
-        guard annotationsEnabled else {
-            webView.loadHTMLString(html, baseURL: baseURL)
-            return
-        }
-
-        // Save form state before reload (no-op on first load when
-        // AnnotationManager doesn't exist yet). Load inside the
-        // callback so form state is captured before the page reloads.
-        webView.evaluateJavaScript(
-            """
-            typeof AnnotationManager !== 'undefined' && AnnotationManager.blocks.length > 0
-                ? JSON.stringify(AnnotationManager.getFormState())
-                : null
-            """
-        ) { result, _ in
-            if let json = result as? String {
-                context.coordinator.savedFormState = json
-            }
-            webView.loadHTMLString(html, baseURL: baseURL)
-        }
-    }
-
-    static func dismantleNSView(_ nsView: WKWebView, coordinator: Coordinator) {
-        nsView.stopLoading()
-        nsView.configuration.userContentController
-            .removeScriptMessageHandler(forName: "annotation")
-    }
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    // MARK: - Coordinator
-
-    class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
-        var lastHTMLHash: Int = 0
-        var onAnnotationMessage: ((AnnotationMessage) -> Void)?
-        var annotationsEnabled: Bool = true
-
-        /// Annotation data queued for injection after page load.
-        var pendingAnnotations: [any ReaderAnnotation]?
-        var pendingAnnotationHTMLMap: [Int32: String]?
-        var pendingItemLabel: String?
-        /// Raw markdown source used to slice line_content
-        /// for the form's copy-lines affordance.
-        var pendingArtifactContent: String?
-        var pendingReferencePath: String?
-
-        /// Form state saved before a theme-change reload.
-        var savedFormState: String?
-
-        // MARK: WKScriptMessageHandler
-
-        func userContentController(
-            _ controller: WKUserContentController,
-            didReceive message: WKScriptMessage
-        ) {
-            // Shared with every other reader's coordinator. This one used to
-            // parse its own subset — the four actions a markdown DOM can
-            // produce — which was correct until it wasn't, since an anchor
-            // type added later would have fallen through to nothing at all.
-            guard message.name == "annotation",
-                  let body = message.body as? [String: Any],
-                  let parsed = AnnotationMessage.from(body)
-            else { return }
-            onAnnotationMessage?(parsed)
-        }
-
-        // MARK: WKNavigationDelegate
-
-        func webView(
-            _ webView: WKWebView,
-            decidePolicyFor navigationAction: WKNavigationAction,
-            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
-        ) {
-            if navigationAction.navigationType == .linkActivated,
-               let url = navigationAction.request.url,
-               url.scheme == "http" || url.scheme == "https" {
-                NSWorkspace.shared.open(url)
-                decisionHandler(.cancel)
-            } else {
-                decisionHandler(.allow)
-            }
-        }
-
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            // Skip annotation injection when disabled
-            guard annotationsEnabled else {
-                pendingAnnotations = nil
-                pendingAnnotationHTMLMap = nil
-                pendingItemLabel = nil
-                pendingArtifactContent = nil
-                pendingReferencePath = nil
-                return
-            }
-
-            // Inject annotation data after page load
-            if let annotations = pendingAnnotations,
-               let htmlMap = pendingAnnotationHTMLMap,
-               let label = pendingItemLabel {
-
-                let initJS = buildAnnotationInitJS(
+    var body: some View {
+        ReaderHostView(
+            isDark: isDark,
+            // Unlike the other readers this one's content can change under
+            // it, so the source is part of what the page is built from. It
+            // used to decide by rendering the document and comparing the
+            // hash of the result — which meant building the page in full on
+            // every pass in order to find out whether it needed building.
+            reloadToken: [
+                markdown.hashValue,
+                isDark ? 1 : 0,
+                annotationsEnabled ? 1 : 0,
+            ],
+            document: {
+                renderMarkdownToHTML(markdown, isDark: isDark)
+            },
+            annotationInitJS: { formState in
+                // A host can suppress the whole layer — a preview with
+                // nothing to annotate against. Returning nothing installs
+                // nothing, rather than installing a manager with no data.
+                guard annotationsEnabled else { return "" }
+                return buildAnnotationInitJS(
                     anchoring: markdownAnchoring,
-                    itemLabel: label,
+                    itemLabel: itemLabel,
                     annotations: annotations,
-                    htmlMap: htmlMap,
-                    artifactContent: pendingArtifactContent,
-                    referencePath: pendingReferencePath
+                    htmlMap: annotationHTMLMap,
+                    artifactContent: markdown,
+                    referencePath: referencePath,
+                    restoringFormState: formState
                 )
-                webView.evaluateJavaScript(initJS)
-
-                pendingAnnotations = nil
-                pendingAnnotationHTMLMap = nil
-                pendingItemLabel = nil
-                pendingArtifactContent = nil
-                pendingReferencePath = nil
-            }
-
-            // Restore form state after theme-change reload
-            if let formState = savedFormState {
-                webView.evaluateJavaScript("AnnotationManager.restoreFormState(\(formState))")
-                savedFormState = nil
-            }
-        }
+            },
+            baseURL: URL(string: "galaxy://\(baseUrlName)"),
+            webView: $webViewRef,
+            onAnnotationMessage: onAnnotationMessage,
+            isInspectable: true
+        )
     }
 }
 

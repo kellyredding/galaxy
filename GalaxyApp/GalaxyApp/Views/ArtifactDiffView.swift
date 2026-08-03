@@ -101,129 +101,43 @@ struct GdiffLine: Codable {
 /// shaded green/red. Character-level changes within
 /// modified line pairs get a darker highlight.
 ///
-/// Uses the same WKWebView + AnnotationCoordinator
+/// Uses the same shared reader host
 /// pattern as ArtifactSourceView, with a global
 /// sequential `data-line` counter so line_range
 /// annotations work unchanged.
-struct ArtifactDiffView: NSViewRepresentable {
+struct ArtifactDiffView: View {
     let content: String
     let isDark: Bool
     let annotations: [any ReaderAnnotation]
     let annotationHTMLMap: [Int32: String]
     let itemLabel: String
-    /// File paths (relative, as they appear in the
-    /// diff) that should pre-render with the Viewed
-    /// checkbox checked and the file-card collapsed.
-    /// Sourced from `ViewedFilesPersistence` keyed by
-    /// ledger-session + artifact number.
     let viewedFilePaths: Set<String>
     @Binding var webViewRef: WKWebView?
-    var onAnnotationMessage:
-        ((AnnotationMessage) -> Void)?
+    var onAnnotationMessage: ((AnnotationMessage) -> Void)?
 
-    func makeNSView(
-        context: Context
-    ) -> ReaderWebView {
-        let config = WKWebViewConfiguration()
-        config.installGalaxyFindUserScript()
-        config.userContentController.add(
-            context.coordinator, name: "annotation"
-        )
-        let webView = ReaderWebView(
-            frame: .zero, configuration: config
-        )
-        webView.setValue(
-            false, forKey: "drawsBackground"
-        )
-        webView.navigationDelegate =
-            context.coordinator
-
-        webView.wantsLayer = true
-        webView.layer?.backgroundColor =
-            isDark
-            ? NSColor.black.cgColor
-            : NSColor.white.cgColor
-
-        let initJS = buildAnnotationInitJS(
-            anchoring: diffAnchoring,
-            itemLabel: itemLabel,
-            annotations: annotations,
-            htmlMap: annotationHTMLMap
-        )
-        context.coordinator.pendingInitJS = initJS
-        context.coordinator.onAnnotationMessage =
-            onAnnotationMessage
-
-        let html = buildDiffHTML(
-            content: content,
+    var body: some View {
+        ReaderHostView(
             isDark: isDark,
-            viewedFilePaths: viewedFilePaths
-        )
-        webView.loadHTMLString(
-            html,
-            baseURL: URL(
-                string: "galaxy://artifact-reader"
-            )
-        )
-
-        DispatchQueue.main.async {
-            webViewRef = webView
-        }
-
-        return webView
-    }
-
-    func updateNSView(
-        _ webView: ReaderWebView,
-        context: Context
-    ) {
-        if context.coordinator.lastIsDark != isDark {
-            context.coordinator.lastIsDark = isDark
-
-            webView.wantsLayer = true
-            webView.layer?.backgroundColor =
-                isDark
-                ? NSColor.black.cgColor
-                : NSColor.white.cgColor
-
-            webView.evaluateJavaScript(
-                "typeof AnnotationManager !== 'undefined'"
-                + " ? JSON.stringify("
-                + "AnnotationManager.getFormState())"
-                + " : null"
-            ) { result, _ in
-                var initJS = buildAnnotationInitJS(
+            reloadToken: isDark,
+            document: {
+                buildDiffHTML(
+                    content: content, isDark: isDark,
+                    viewedFilePaths: viewedFilePaths
+                )
+            },
+            annotationInitJS: { formState in
+                buildAnnotationInitJS(
                     anchoring: diffAnchoring,
                     itemLabel: itemLabel,
                     annotations: annotations,
-                    htmlMap: annotationHTMLMap
+                    htmlMap: annotationHTMLMap,
+                    restoringFormState: formState
                 )
-                if let stateJSON = result as? String {
-                    initJS += "; AnnotationManager"
-                        + ".restoreFormState("
-                        + stateJSON + ")"
-                }
-                context.coordinator.pendingInitJS
-                    = initJS
-
-                let html = buildDiffHTML(
-                    content: content,
-                    isDark: isDark,
-                    viewedFilePaths: viewedFilePaths
-                )
-                webView.loadHTMLString(
-                    html,
-                    baseURL: URL(
-                        string:
-                            "galaxy://artifact-reader"
-                    )
-                )
-            }
-        }
-    }
-
-    func makeCoordinator() -> AnnotationCoordinator {
-        AnnotationCoordinator(isDark: isDark)
+            },
+            baseURL: URL(string: "galaxy://artifact-reader"),
+            webView: $webViewRef,
+            onAnnotationMessage: onAnnotationMessage
+        )
     }
 }
 
@@ -258,7 +172,6 @@ private func buildDiffHTML(
     // Shared palette from the engine. The hover lift and tooltip
     // pill below stay local: nothing outside a diff uses them.
     let theme = ReaderTheme.standard(isDark: isDark)
-    let bgColor = theme.background
     let textColor = theme.foreground
     let lineNumColor = theme.lineNumber
     let gutterBg = theme.gutter
@@ -408,7 +321,6 @@ private func buildDiffHTML(
         + renderGitHubLink(doc.metadata)
         + "</div>"
 
-    let cssVars = annotationCSSVars(isDark: isDark)
 
     return ReaderDocument.render(
         theme: theme,

@@ -10,124 +10,35 @@ let transcriptAnchoring = ReaderAnchoring.blocks(selector: ".transcript-step")
 /// Each logical step (thinking, tool call, summary)
 /// is an annotatable block. Tool call details are
 /// collapsible via <details> elements.
-struct ArtifactTranscriptView: NSViewRepresentable {
+struct ArtifactTranscriptView: View {
     let content: String
     let isDark: Bool
     let annotations: [any ReaderAnnotation]
     let annotationHTMLMap: [Int32: String]
     let itemLabel: String
     @Binding var webViewRef: WKWebView?
-    var onAnnotationMessage:
-        ((AnnotationMessage) -> Void)?
+    var onAnnotationMessage: ((AnnotationMessage) -> Void)?
 
-    func makeNSView(
-        context: Context
-    ) -> ReaderWebView {
-        let config = WKWebViewConfiguration()
-        config.installGalaxyFindUserScript()
-        config.userContentController.add(
-            context.coordinator, name: "annotation"
-        )
-        let webView = ReaderWebView(
-            frame: .zero, configuration: config
-        )
-        webView.setValue(
-            false, forKey: "drawsBackground"
-        )
-        webView.navigationDelegate =
-            context.coordinator
-
-        webView.wantsLayer = true
-        webView.layer?.backgroundColor =
-            isDark
-            ? NSColor.black.cgColor
-            : NSColor.white.cgColor
-
-        // Block indices are assigned statically in
-        // buildTranscriptHTML — no DOM walk needed.
-        let initJS = buildAnnotationInitJS(
-            anchoring: transcriptAnchoring,
-            itemLabel: itemLabel,
-            annotations: annotations,
-            htmlMap: annotationHTMLMap
-        )
-        context.coordinator.pendingInitJS = initJS
-        context.coordinator.onAnnotationMessage =
-            onAnnotationMessage
-
-        let html = buildTranscriptHTML(
-            content: content,
-            isDark: isDark
-        )
-        webView.loadHTMLString(
-            html,
-            baseURL: URL(
-                string: "galaxy://artifact-reader"
-            )
-        )
-
-        DispatchQueue.main.async {
-            webViewRef = webView
-        }
-
-        return webView
-    }
-
-    func updateNSView(
-        _ webView: ReaderWebView,
-        context: Context
-    ) {
-        if context.coordinator.lastIsDark != isDark {
-            context.coordinator.lastIsDark = isDark
-
-            webView.wantsLayer = true
-            webView.layer?.backgroundColor =
-                isDark
-                ? NSColor.black.cgColor
-                : NSColor.white.cgColor
-
-            webView.evaluateJavaScript(
-                "typeof AnnotationManager"
-                + " !== 'undefined'"
-                + " ? JSON.stringify("
-                + "AnnotationManager.getFormState())"
-                + " : null"
-            ) { result, _ in
-                var initJS = buildAnnotationInitJS(
+    var body: some View {
+        ReaderHostView(
+            isDark: isDark,
+            reloadToken: isDark,
+            document: {
+                buildTranscriptHTML(content: content, isDark: isDark)
+            },
+            annotationInitJS: { formState in
+                buildAnnotationInitJS(
                     anchoring: transcriptAnchoring,
                     itemLabel: itemLabel,
                     annotations: annotations,
-                    htmlMap: annotationHTMLMap
+                    htmlMap: annotationHTMLMap,
+                    restoringFormState: formState
                 )
-                if let stateJSON =
-                    result as? String
-                {
-                    initJS += "; AnnotationManager"
-                        + ".restoreFormState("
-                        + stateJSON + ")"
-                }
-                context.coordinator.pendingInitJS
-                    = initJS
-
-                let html = buildTranscriptHTML(
-                    content: content,
-                    isDark: isDark
-                )
-                webView.loadHTMLString(
-                    html,
-                    baseURL: URL(
-                        string:
-                            "galaxy://artifact-reader"
-                    )
-                )
-            }
-        }
-    }
-
-    func makeCoordinator()
-        -> AnnotationCoordinator
-    {
-        AnnotationCoordinator(isDark: isDark)
+            },
+            baseURL: URL(string: "galaxy://artifact-reader"),
+            webView: $webViewRef,
+            onAnnotationMessage: onAnnotationMessage
+        )
     }
 }
 
@@ -517,7 +428,6 @@ private func buildTranscriptHTML(
     let summaryBorder = isDark
         ? "#16a34a" : "#86efac"
 
-    let cssVars = annotationCSSVars(isDark: isDark)
 
     let parsed = parseTranscript(content)
     let entries = parsed.entries

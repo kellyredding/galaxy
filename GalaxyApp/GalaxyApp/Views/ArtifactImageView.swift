@@ -9,108 +9,39 @@ let imageAnchoring = ReaderAnchoring.whole
 /// a WKWebView for consistent zoom support via
 /// ReaderWebView and annotation via the
 /// generalized AnnotationManager JS.
-struct ArtifactImageView: NSViewRepresentable {
+struct ArtifactImageView: View {
     let filePath: String
     let isDark: Bool
     let annotations: [any ReaderAnnotation]
     let annotationHTMLMap: [Int32: String]
     let itemLabel: String
-    var onAnnotationMessage:
-        ((AnnotationMessage) -> Void)?
+    var onAnnotationMessage: ((AnnotationMessage) -> Void)?
     @Binding var webViewRef: WKWebView?
 
-    func makeNSView(
-        context: Context
-    ) -> ReaderWebView {
-        let config = WKWebViewConfiguration()
-        config.userContentController.add(
-            context.coordinator, name: "annotation"
-        )
-        let webView = ReaderWebView(
-            frame: .zero, configuration: config
-        )
-        webView.setValue(false, forKey: "drawsBackground")
-        webView.isInspectable = true
-        webView.navigationDelegate =
-            context.coordinator
-
-        webView.wantsLayer = true
-        webView.layer?.backgroundColor =
-            isDark
-            ? NSColor.black.cgColor
-            : NSColor.white.cgColor
-
-        let initJS = buildAnnotationInitJS(
-            anchoring: imageAnchoring,
-            itemLabel: itemLabel,
-            annotations: annotations,
-            htmlMap: annotationHTMLMap
-        )
-        context.coordinator.pendingInitJS = initJS
-        context.coordinator.onAnnotationMessage =
-            onAnnotationMessage
-
-        let html = buildImageHTML(
-            filePath: filePath,
-            isDark: isDark
-        )
-        webView.loadHTMLString(
-            html,
-            baseURL: URL(
-                fileURLWithPath:
-                    (filePath as NSString)
-                    .deletingLastPathComponent
-            )
-        )
-
-        DispatchQueue.main.async {
-            webViewRef = webView
-        }
-
-        return webView
-    }
-
-    func updateNSView(
-        _ webView: ReaderWebView,
-        context: Context
-    ) {
-        context.coordinator.onAnnotationMessage =
-            onAnnotationMessage
-
-        if context.coordinator.lastIsDark != isDark {
-            context.coordinator.lastIsDark = isDark
-
-            webView.wantsLayer = true
-            webView.layer?.backgroundColor =
-                isDark
-                ? NSColor.black.cgColor
-                : NSColor.white.cgColor
-
-            let initJS = buildAnnotationInitJS(
-                anchoring: imageAnchoring,
-                itemLabel: itemLabel,
-                annotations: annotations,
-                htmlMap: annotationHTMLMap
-            )
-            context.coordinator.pendingInitJS = initJS
-
-            let html = buildImageHTML(
-                filePath: filePath,
-                isDark: isDark
-            )
-            webView.loadHTMLString(
-                html,
-                baseURL: URL(
-                    fileURLWithPath:
-                        (filePath as NSString)
-                        .deletingLastPathComponent
+    var body: some View {
+        ReaderHostView(
+            isDark: isDark,
+            reloadToken: isDark,
+            document: {
+                buildImageHTML(filePath: filePath, isDark: isDark)
+            },
+            annotationInitJS: { formState in
+                buildAnnotationInitJS(
+                    anchoring: imageAnchoring,
+                    itemLabel: itemLabel,
+                    annotations: annotations,
+                    htmlMap: annotationHTMLMap,
+                    restoringFormState: formState
                 )
-            )
-        }
-    }
-
-    func makeCoordinator() -> AnnotationCoordinator {
-        AnnotationCoordinator(isDark: isDark)
+            },
+            baseURL: URL(
+                fileURLWithPath: (filePath as NSString)
+                    .deletingLastPathComponent
+            ),
+            webView: $webViewRef,
+            onAnnotationMessage: onAnnotationMessage,
+            isInspectable: true
+        )
     }
 }
 
