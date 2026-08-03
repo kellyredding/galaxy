@@ -666,22 +666,36 @@ class MainMenu: NSObject, NSMenuDelegate {
 
         // Terminal font size. Enable state is computed
         // dynamically by `MenuActions.validateMenuItem` —
-        // gated on the focused pane being a terminal pane,
-        // not on whether a session merely exists. Static
+        // gated on a terminal pane being resolvable, not on
+        // whether a session merely exists. Static
         // `isEnabled` would go stale between buildViewMenu
         // calls (the View menu only rebuilds on visual open),
         // which dropped the menu's key equivalents on the
         // floor and let SwiftTerm consume the keystroke.
-        let defaultTerminalItem = NSMenuItem(title: "Default terminal font size", action: #selector(MenuActions.defaultTerminalFontSize(_:)), keyEquivalent: "0")
+        //
+        // Both groups name their steps "Bigger" and
+        // "Smaller", so each sits under a heading. Flat, with
+        // only a separator between them, the two pairs were
+        // told apart solely by the wording of the item above.
+        let terminalFontHeader = NSMenuItem(
+            title: "Terminal Font Size", action: nil, keyEquivalent: ""
+        )
+        terminalFontHeader.isEnabled = false
+        menu.addItem(terminalFontHeader)
+
+        let defaultTerminalItem = NSMenuItem(title: "Default", action: #selector(MenuActions.defaultTerminalFontSize(_:)), keyEquivalent: "0")
         defaultTerminalItem.target = MenuActions.shared
+        defaultTerminalItem.indentationLevel = 1
         menu.addItem(defaultTerminalItem)
 
         let biggerTerminalItem = NSMenuItem(title: "Bigger", action: #selector(MenuActions.biggerTerminalFontSize(_:)), keyEquivalent: "=")
         biggerTerminalItem.target = MenuActions.shared
+        biggerTerminalItem.indentationLevel = 1
         menu.addItem(biggerTerminalItem)
 
         let smallerTerminalItem = NSMenuItem(title: "Smaller", action: #selector(MenuActions.smallerTerminalFontSize(_:)), keyEquivalent: "-")
         smallerTerminalItem.target = MenuActions.shared
+        smallerTerminalItem.indentationLevel = 1
         menu.addItem(smallerTerminalItem)
 
         menu.addItem(.separator())
@@ -690,19 +704,28 @@ class MainMenu: NSObject, NSMenuDelegate {
         // `MenuActions.validateMenuItem` so the keyboard
         // shortcut stops firing at the upper / lower limit
         // without a buildViewMenu rebuild.
-        let defaultChromeItem = NSMenuItem(title: "Default chrome font size", action: #selector(MenuActions.defaultChromeFontSize(_:)), keyEquivalent: "0")
+        let chromeFontHeader = NSMenuItem(
+            title: "Chrome Font Size", action: nil, keyEquivalent: ""
+        )
+        chromeFontHeader.isEnabled = false
+        menu.addItem(chromeFontHeader)
+
+        let defaultChromeItem = NSMenuItem(title: "Default", action: #selector(MenuActions.defaultChromeFontSize(_:)), keyEquivalent: "0")
         defaultChromeItem.target = MenuActions.shared
         defaultChromeItem.keyEquivalentModifierMask = [.command, .shift]
+        defaultChromeItem.indentationLevel = 1
         menu.addItem(defaultChromeItem)
 
         let biggerChromeItem = NSMenuItem(title: "Bigger", action: #selector(MenuActions.biggerChromeFontSize(_:)), keyEquivalent: "=")
         biggerChromeItem.target = MenuActions.shared
         biggerChromeItem.keyEquivalentModifierMask = [.command, .shift]
+        biggerChromeItem.indentationLevel = 1
         menu.addItem(biggerChromeItem)
 
         let smallerChromeItem = NSMenuItem(title: "Smaller", action: #selector(MenuActions.smallerChromeFontSize(_:)), keyEquivalent: "-")
         smallerChromeItem.target = MenuActions.shared
         smallerChromeItem.keyEquivalentModifierMask = [.command, .shift]
+        smallerChromeItem.indentationLevel = 1
         menu.addItem(smallerChromeItem)
 
         menu.addItem(.separator())
