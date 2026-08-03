@@ -65,9 +65,9 @@ struct ArtifactsView: View {
     @State private var annotationHTMLMap:
         [Int32: String] = [:]
 
-    // Review state
-    @State private var hasUnreviewedAnnotations:
-        Bool = false
+    // Review state — how many annotations a review would carry, which is
+    // what the reader's send bar reports.
+    @State private var pendingAnnotationCount: Int = 0
 
     // Refresh state
     @State private var isRefreshing = false
@@ -664,35 +664,6 @@ struct ArtifactsView: View {
 
                 Spacer()
 
-                // Review with Claude button
-                Button(action: {
-                    submitReview(
-                        artifact: artifact
-                    )
-                }) {
-                    Text("Review with Claude")
-                        .chromeFont(
-                            size: fontSize.caption2,
-                            weight: .medium
-                        )
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(
-                            RoundedRectangle(
-                                cornerRadius: 6
-                            )
-                            .fill(Color.green)
-                        )
-                        .foregroundColor(.white)
-                }
-                .buttonStyle(.plain)
-                .opacity(
-                    hasUnreviewedAnnotations ? 1 : 0
-                )
-                .allowsHitTesting(
-                    hasUnreviewedAnnotations
-                )
-
                 if let content = openArtifactContent {
                     CopyButton(
                         text: content,
@@ -745,6 +716,8 @@ struct ArtifactsView: View {
                         annotations: activeAnns,
                         annotationHTMLMap:
                             annotationHTMLMap,
+                        pendingReviewCount:
+                            pendingAnnotationCount,
                         itemLabel: label,
                         onAnnotationMessage: {
                             message in
@@ -900,6 +873,7 @@ struct ArtifactsView: View {
                 isDark: colorScheme == .dark,
                 annotations: activeAnns,
                 annotationHTMLMap: annotationHTMLMap,
+                pendingReviewCount: pendingAnnotationCount,
                 webViewRef: $webViewRef,
                 onAnnotationMessage: { message in
                     handleAnnotationMessage(
@@ -919,6 +893,7 @@ struct ArtifactsView: View {
                 isDark: colorScheme == .dark,
                 annotations: openAnnotations,
                 annotationHTMLMap: annotationHTMLMap,
+                pendingReviewCount: pendingAnnotationCount,
                 itemLabel: label,
                 webViewRef: $webViewRef,
                 onAnnotationMessage: { message in
@@ -939,6 +914,7 @@ struct ArtifactsView: View {
                 isDark: colorScheme == .dark,
                 annotations: activeAnns,
                 annotationHTMLMap: annotationHTMLMap,
+                pendingReviewCount: pendingAnnotationCount,
                 itemLabel: label,
                 onAnnotationMessage: { message in
                     handleAnnotationMessage(
@@ -955,6 +931,7 @@ struct ArtifactsView: View {
                 isDark: colorScheme == .dark,
                 annotations: openAnnotations,
                 annotationHTMLMap: annotationHTMLMap,
+                pendingReviewCount: pendingAnnotationCount,
                 itemLabel: label,
                 webViewRef: $webViewRef,
                 onAnnotationMessage: { message in
@@ -973,6 +950,8 @@ struct ArtifactsView: View {
                 annotations: openAnnotations,
                 annotationHTMLMap:
                     annotationHTMLMap,
+                pendingReviewCount:
+                    pendingAnnotationCount,
                 itemLabel: label,
                 webViewRef: $webViewRef,
                 onAnnotationMessage: { msg in
@@ -1007,6 +986,7 @@ struct ArtifactsView: View {
                 isDark: colorScheme == .dark,
                 annotations: openAnnotations,
                 annotationHTMLMap: annotationHTMLMap,
+                pendingReviewCount: pendingAnnotationCount,
                 itemLabel: label,
                 viewedFilePaths: viewed,
                 webViewRef: $webViewRef,
@@ -1028,6 +1008,7 @@ struct ArtifactsView: View {
                 isDark: colorScheme == .dark,
                 annotations: openAnnotations,
                 annotationHTMLMap: annotationHTMLMap,
+                pendingReviewCount: pendingAnnotationCount,
                 itemLabel: label,
                 webViewRef: $webViewRef,
                 onAnnotationMessage: { message in
@@ -1222,11 +1203,7 @@ struct ArtifactsView: View {
                 await MainActor.run {
                     openAnnotations = annotations
                     annotationHTMLMap = htmlMap
-                    hasUnreviewedAnnotations
-                        = annotations.contains {
-                            $0.artifactReviewId
-                                == nil && !$0.stale
-                        }
+                    recountPending(annotations)
                     imageRefreshToken += 1
                     isRefreshing = false
                 }
@@ -1264,11 +1241,7 @@ struct ArtifactsView: View {
                         openArtifactContent = content
                         openAnnotations = annotations
                         annotationHTMLMap = htmlMap
-                        hasUnreviewedAnnotations
-                            = annotations.contains {
-                                $0.artifactReviewId
-                                    == nil && !$0.stale
-                            }
+                        recountPending(annotations)
                         // Rebuild the cards as well. The state
                         // above only re-renders the page when
                         // the content itself changed, so an
@@ -1441,11 +1414,7 @@ struct ArtifactsView: View {
                     openAnnotations = annotations
                     annotationHTMLMap = htmlMap
                     isLoadingContent = false
-                    hasUnreviewedAnnotations
-                        = annotations.contains {
-                            $0.artifactReviewId
-                                == nil && !$0.stale
-                        }
+                    recountPending(annotations)
 
                     let durationId =
                         "artifact--"
@@ -1511,11 +1480,7 @@ struct ArtifactsView: View {
                     openAnnotations = annotations
                     annotationHTMLMap = htmlMap
                     isLoadingContent = false
-                    hasUnreviewedAnnotations
-                        = annotations.contains {
-                            $0.artifactReviewId == nil
-                                && !$0.stale
-                        }
+                    recountPending(annotations)
 
                     // Fire artifact:opened
                     // duration event
@@ -1716,7 +1681,9 @@ struct ArtifactsView: View {
         openArtifactContent = nil
         openAnnotations = []
         annotationHTMLMap = [:]
-        hasUnreviewedAnnotations = false
+        // Set directly rather than through setPendingCount: the web view is
+        // already gone, so there is nothing left to tell.
+        pendingAnnotationCount = 0
 
         if let number = closingNumber {
             focusedIndex = sortedArtifacts
@@ -1957,11 +1924,7 @@ struct ArtifactsView: View {
                             + ".annotationDeleted"
                             + "(\(number))"
                         )
-                        hasUnreviewedAnnotations
-                            = openAnnotations.contains {
-                                $0.artifactReviewId
-                                    == nil && !$0.stale
-                            }
+                        recountPending(openAnnotations)
                     }
                 } catch {
                     NSLog(
@@ -1996,6 +1959,9 @@ struct ArtifactsView: View {
                 filePath: filePath,
                 isViewed: isViewed
             )
+
+        case .reviewWithClaude:
+            submitReview(artifact: artifact)
         }
     }
 
@@ -2115,7 +2081,7 @@ struct ArtifactsView: View {
                     annotationHTMLMap[
                         ann.number
                     ] = html
-                    hasUnreviewedAnnotations = true
+                    recountPending(openAnnotations)
                 }
                 let payload
                     = buildGenericAnnotationPayload(
@@ -2224,29 +2190,65 @@ struct ArtifactsView: View {
         )
     }
 
+    // MARK: - Pending Count
+
+    /// Recount what a review would carry, from the annotations in hand.
+    ///
+    /// Pending and not stale — the same predicate the CLI's `save_review`
+    /// counts and claims on, whose own comment explains why the two have to
+    /// agree: a review that reported one number and carried another would be
+    /// worse than a wrong badge. This predicate was written out six times in
+    /// this file before the count needed a single answer.
+    private func recountPending(
+        _ annotations: [ArtifactAnnotation]
+    ) {
+        setPendingCount(
+            annotations.filter {
+                $0.artifactReviewId == nil && !$0.stale
+            }.count
+        )
+    }
+
+    /// Store the count and tell the open reader.
+    ///
+    /// The page is told separately from being given the annotations, because
+    /// the two travel on different schedules: annotations are pushed when the
+    /// document's cards change, the count also moves when a review claims
+    /// annotations the page is still displaying.
+    private func setPendingCount(_ count: Int) {
+        pendingAnnotationCount = count
+        webViewRef?.evaluateJavaScript(
+            "window.GalaxySendBar.update(\(count))"
+        )
+    }
+
     // MARK: - Review Actions
 
-    /// Re-check whether the open artifact still has unreviewed
-    /// annotations. Driven by annotation and review events, so the
-    /// review button stays truthful when annotations are created or
-    /// deleted outside the reader — by an agent working through the
-    /// CLI, most often. Only the button is refreshed: reloading the
-    /// cards would rebuild the annotation DOM underneath whatever
-    /// form or edit the user has open.
+    /// Re-count the open artifact's unreviewed annotations. Driven by
+    /// annotation and review events, so the send bar stays truthful when
+    /// annotations are created or deleted outside the reader — by an
+    /// agent working through the CLI, most often. Only the count is
+    /// refreshed: reloading the cards would rebuild the annotation DOM
+    /// underneath whatever form or edit the user has open.
+    ///
+    /// This is why the count is stored rather than derived from
+    /// `openAnnotations`. That array is the reader's view of the
+    /// annotations and goes stale precisely in this case, so the
+    /// database is asked instead.
     private func checkReviewButtonVisibility(
         artifactNumber: Int32
     ) {
         guard let lsid = session.ledgerSessionId else { return }
         Task {
             do {
-                let hasPending = try await ArtifactQueryService
+                let pending = try await ArtifactQueryService
                     .shared
-                    .checkHasPending(
+                    .checkPendingCount(
                         ledgerSessionId: lsid,
                         artifactNumber: artifactNumber
                     )
                 await MainActor.run {
-                    hasUnreviewedAnnotations = hasPending
+                    setPendingCount(pending)
                 }
             } catch {
                 NSLog(
@@ -2261,7 +2263,9 @@ struct ArtifactsView: View {
     private func submitReview(
         artifact: ArtifactSummary
     ) {
-        hasUnreviewedAnnotations = false
+        // Optimistic, to stop a second press landing while the first is still
+        // in flight. Every failure path below puts the real count back.
+        setPendingCount(0)
         guard let lsid = session.ledgerSessionId
         else { return }
         closeReader(reason: "reviewed")
@@ -2285,7 +2289,7 @@ struct ArtifactsView: View {
                         + "gone"
                     )
                     await MainActor.run {
-                        hasUnreviewedAnnotations = true
+                        recountPending(openAnnotations)
                     }
                     return
                 }
@@ -2338,9 +2342,9 @@ struct ArtifactsView: View {
                                         )
                                 } catch {
                                     await MainActor.run {
-                                        self
-                                            .hasUnreviewedAnnotations
-                                            = true
+                                        self.recountPending(
+                                            self.openAnnotations
+                                        )
                                     }
                                     NSLog(
                                         "ArtifactsView:"
@@ -2391,7 +2395,7 @@ struct ArtifactsView: View {
                     )
                 } catch {
                     await MainActor.run {
-                        hasUnreviewedAnnotations = true
+                        recountPending(openAnnotations)
                     }
                     NSLog(
                         "ArtifactsView: submitReview "
@@ -2477,11 +2481,7 @@ struct ArtifactsView: View {
 
                 openAnnotations = annotations
                 annotationHTMLMap = htmlMap
-                hasUnreviewedAnnotations
-                    = annotations.contains {
-                        $0.artifactReviewId == nil
-                            && !$0.stale
-                    }
+                recountPending(annotations)
 
                 pushAnnotationData(
                     annotations,

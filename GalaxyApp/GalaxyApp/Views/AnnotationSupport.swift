@@ -68,6 +68,11 @@ extension SnapshotAnnotation: ReaderAnnotation {
 /// and each app keeps them in a settings type of its own. This is where Galaxy
 /// answers that — one place, so a reader never reaches for the singleton
 /// itself.
+///
+/// The send bar's noun is answered here for the same reason. Every reader in
+/// this app has a review workflow behind it, and every one of them counts the
+/// same thing, so the word belongs to the app rather than to eight readers
+/// that would each have to be told it.
 func buildAnnotationInitJS(
     anchoring: ReaderAnchoring,
     itemLabel: String,
@@ -75,7 +80,8 @@ func buildAnnotationInitJS(
     htmlMap: [Int32: String],
     artifactContent: String? = nil,
     referencePath: String? = nil,
-    restoringFormState: String? = nil
+    restoringFormState: String? = nil,
+    sendBarCount: Int = 0
 ) -> String {
     buildAnnotationInitJS(
         anchoring: anchoring,
@@ -85,6 +91,11 @@ func buildAnnotationInitJS(
         artifactContent: artifactContent,
         referencePath: referencePath,
         textEntry: SettingsManager.shared.settings.textEntry.jsPayload,
-        restoringFormState: restoringFormState
+        restoringFormState: restoringFormState,
+        // "pending", not "annotation": a document can show twelve cards of
+        // which nine belong to a review that already happened, and the bar
+        // reports what pressing it would send.
+        sendBarNoun: "pending annotation",
+        sendBarCount: sendBarCount
     )
 }

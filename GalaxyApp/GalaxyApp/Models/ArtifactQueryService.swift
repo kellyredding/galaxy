@@ -269,13 +269,17 @@ class ArtifactQueryService {
         )
     }
 
-    /// Check if an artifact has unreviewed annotations.
+    /// How many unreviewed annotations an artifact has.
     /// Uses an independent process — safe to call while
     /// other operations are in-flight.
-    func checkHasPending(
+    ///
+    /// The CLI has always reported the count alongside
+    /// the boolean; only this side discarded it, back
+    /// when the caller was toggling a button's opacity.
+    func checkPendingCount(
         ledgerSessionId: Int64,
         artifactNumber: Int32
-    ) async throws -> Bool {
+    ) async throws -> Int {
         let data = try await runIndependent(
             args: ["review", "has-pending",
                    "--ledger-session-id",
@@ -289,7 +293,7 @@ class ArtifactQueryService {
             ArtifactHasPendingResult.self,
             from: data
         )
-        return result.hasPending
+        return Int(result.count)
     }
 
     // MARK: - CLI Subprocess

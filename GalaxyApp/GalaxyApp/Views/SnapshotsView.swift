@@ -53,7 +53,9 @@ struct SnapshotsView: View {
         WebViewFindController(webView: nil, reverse: false)
 
     // Review state
-    @State private var hasUnreviewedAnnotations: Bool = false
+    // How many annotations a review would carry, which is what the
+    // reader's send bar reports.
+    @State private var pendingAnnotationCount: Int = 0
 
     // Duration tracking for timeline events
     @State private var snapshotDurationId: String? = nil
@@ -485,23 +487,6 @@ struct SnapshotsView: View {
 
                 Spacer()
 
-                // Review with Claude button — always rendered for stable
-                // layout, visibility controlled by opacity
-                Button(action: { submitReview(snapshotId: snapshot.id) }) {
-                    Text("Review with Claude")
-                        .chromeFont(size: fontSize.caption2, weight: .medium)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(Color.green)
-                        )
-                        .foregroundColor(.white)
-                }
-                .buttonStyle(.plain)
-                .opacity(hasUnreviewedAnnotations ? 1 : 0)
-                .allowsHitTesting(hasUnreviewedAnnotations)
-
                 CopyButton(
                     text: snapshot.content,
                     iconSize: fontSize.iconSmall
@@ -522,6 +507,7 @@ struct SnapshotsView: View {
                 isDark: colorScheme == .dark,
                 annotations: openAnnotations,
                 annotationHTMLMap: annotationHTMLMap,
+                pendingReviewCount: pendingAnnotationCount,
                 webViewRef: $webViewRef,
                 onAnnotationMessage: { message in
                     handleAnnotationMessage(
@@ -660,9 +646,7 @@ struct SnapshotsView: View {
                     openAnnotations = annotations
                     annotationHTMLMap = htmlMap
                     isLoadingContent = false
-                    hasUnreviewedAnnotations = annotations.contains {
-                        $0.snapshotReviewId == nil
-                    }
+                    recountPending(annotations)
 
                     // Fire snapshot:opened duration event
                     let durationId =
@@ -781,7 +765,9 @@ struct SnapshotsView: View {
         openSnapshot = nil  // Purge content from memory
         openAnnotations = []
         annotationHTMLMap = [:]
-        hasUnreviewedAnnotations = false
+        // Set directly rather than through setPendingCount: the web view is
+        // already gone, so there is nothing left to tell.
+        pendingAnnotationCount = 0
 
         // Refocus the row that was open
         if let number = closingNumber {
@@ -1036,9 +1022,7 @@ struct SnapshotsView: View {
                     openSnapshot = detail
                     openAnnotations = annotations
                     annotationHTMLMap = htmlMap
-                    hasUnreviewedAnnotations = annotations.contains {
-                        $0.snapshotReviewId == nil
-                    }
+                    recountPending(annotations)
 
                     // Fire snapshot:opened duration
                     // event for the auto-opened
@@ -1204,6 +1188,9 @@ struct SnapshotsView: View {
                 startIdx: startIdx,
                 endIdx: endIdx
             )
+        case .reviewWithClaude:
+            guard let snapshot = openSnapshot else { break }
+            submitReview(snapshotId: snapshot.id)
         case .createDiffRange, .createRowRange,
              .createBlockRange, .createWhole,
              .setViewed:
@@ -1244,15 +1231,42 @@ struct SnapshotsView: View {
         return json
     }
 
+    // MARK: - Pending Count
+
+    /// Recount what a review would carry, from the annotations in hand.
+    ///
+    /// No staleness term, unlike the artifact readers: a snapshot's content
+    /// cannot change under an annotation, so nothing can go stale.
+    private func recountPending(_ annotations: [SnapshotAnnotation]) {
+        setPendingCount(
+            annotations.filter { $0.snapshotReviewId == nil }.count
+        )
+    }
+
+    /// Store the count and tell the open reader.
+    private func setPendingCount(_ count: Int) {
+        pendingAnnotationCount = count
+        webViewRef?.evaluateJavaScript(
+            "window.GalaxySendBar.update(\(count))"
+        )
+    }
+
     // MARK: - Review Actions
 
+    /// Re-count the open snapshot's unreviewed annotations, so the send bar
+    /// stays truthful when annotations are created or deleted outside the
+    /// reader — by an agent working through the CLI, most often.
+    ///
+    /// This is why the count is stored rather than derived from
+    /// `openAnnotations`: that array is the reader's view and goes stale
+    /// precisely in this case, so the database is asked instead.
     private func checkReviewButtonVisibility(snapshotId: Int64) {
         Task {
             do {
-                let hasPending = try await SnapshotQueryService.shared
-                    .checkHasPending(snapshotId: snapshotId)
+                let pending = try await SnapshotQueryService.shared
+                    .checkPendingCount(snapshotId: snapshotId)
                 await MainActor.run {
-                    hasUnreviewedAnnotations = hasPending
+                    setPendingCount(pending)
                 }
             } catch {
                 NSLog("SnapshotsView: checkReviewButton error: %@",
@@ -1262,7 +1276,9 @@ struct SnapshotsView: View {
     }
 
     private func submitReview(snapshotId: Int64) {
-        hasUnreviewedAnnotations = false  // Immediate, prevents double-click
+        // Optimistic, to stop a second press landing while the first is
+        // still in flight. Every failure path below puts the real count back.
+        setPendingCount(0)
         guard let lsid = session.ledgerSessionId else { return }
         guard let snapshotNumber = openSnapshot?.number else { return }
         closeReader(reason: "reviewed")
@@ -1282,7 +1298,7 @@ struct SnapshotsView: View {
                           + "working directory gone, skipping review "
                           + "creation to preserve unreviewed annotations")
                     await MainActor.run {
-                        hasUnreviewedAnnotations = true
+                        recountPending(openAnnotations)
                     }
                     return
                 }
@@ -1335,7 +1351,7 @@ struct SnapshotsView: View {
                                     )
                                 } catch {
                                     await MainActor.run {
-                                        hasUnreviewedAnnotations = true
+                                        recountPending(openAnnotations)
                                     }
                                     NSLog(
                                         "SnapshotsView: submitReview"
@@ -1384,7 +1400,7 @@ struct SnapshotsView: View {
                     )
                 } catch {
                     await MainActor.run {
-                        hasUnreviewedAnnotations = true
+                        recountPending(openAnnotations)
                     }
                     NSLog("SnapshotsView: submitReview error: %@",
                           error.localizedDescription)
@@ -1463,9 +1479,7 @@ struct SnapshotsView: View {
 
                 openAnnotations = annotations
                 annotationHTMLMap = htmlMap
-                hasUnreviewedAnnotations = annotations.contains {
-                    $0.snapshotReviewId == nil
-                }
+                recountPending(annotations)
 
                 // Push updated annotations to JS for card re-render
                 let annotationDicts =

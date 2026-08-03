@@ -18,6 +18,9 @@ struct MarkdownReaderView: View {
     let isDark: Bool
     let annotations: [any ReaderAnnotation]
     let annotationHTMLMap: [Int32: String]
+    /// How many annotations a review would carry. Displayed by the send bar;
+    /// the reader neither computes nor interprets it.
+    let pendingReviewCount: Int
     @Binding var webViewRef: WKWebView?
     var onAnnotationMessage: ((AnnotationMessage) -> Void)?
     var annotationsEnabled: Bool = true
@@ -61,7 +64,8 @@ struct MarkdownReaderView: View {
                     htmlMap: annotationHTMLMap,
                     artifactContent: markdown,
                     referencePath: referencePath,
-                    restoringFormState: formState
+                    restoringFormState: formState,
+                    sendBarCount: pendingReviewCount
                 )
             },
             baseURL: URL(string: "galaxy://\(baseUrlName)"),

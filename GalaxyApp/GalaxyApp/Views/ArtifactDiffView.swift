@@ -110,6 +110,9 @@ struct ArtifactDiffView: View {
     let isDark: Bool
     let annotations: [any ReaderAnnotation]
     let annotationHTMLMap: [Int32: String]
+    /// How many annotations a review would carry. Displayed by the send bar;
+    /// the reader neither computes nor interprets it.
+    let pendingReviewCount: Int
     let itemLabel: String
     let viewedFilePaths: Set<String>
     @Binding var webViewRef: WKWebView?
@@ -131,7 +134,8 @@ struct ArtifactDiffView: View {
                     itemLabel: itemLabel,
                     annotations: annotations,
                     htmlMap: annotationHTMLMap,
-                    restoringFormState: formState
+                    restoringFormState: formState,
+                    sendBarCount: pendingReviewCount
                 )
             },
             baseURL: URL(string: "galaxy://artifact-reader"),

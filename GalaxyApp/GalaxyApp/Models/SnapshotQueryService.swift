@@ -135,7 +135,12 @@ class SnapshotQueryService {
     /// Check if a snapshot has unreviewed annotations.
     /// Uses an independent process — safe to call while other
     /// SnapshotQueryService operations are in-flight.
-    func checkHasPending(snapshotId: Int64) async throws -> Bool {
+    /// How many unreviewed annotations a snapshot has.
+    ///
+    /// The CLI has always reported the count alongside the boolean; only
+    /// this side discarded it, back when the caller was toggling a
+    /// button's opacity.
+    func checkPendingCount(snapshotId: Int64) async throws -> Int {
         let data = try await runIndependent(
             args: ["review", "has-pending",
                    "--snapshot-id", String(snapshotId)]
@@ -143,7 +148,7 @@ class SnapshotQueryService {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let result = try decoder.decode(HasPendingResult.self, from: data)
-        return result.hasPending
+        return Int(result.count)
     }
 
     // MARK: - CLI Subprocess
