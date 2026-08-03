@@ -411,6 +411,13 @@ class Session: Identifiable, ObservableObject {
     /// Auto-clears when SplitState releases its strong ref on close.
     weak var shellPane: ShellTerminalPane?
 
+    /// The session pane's adapter, so a pane-directed command can name this
+    /// pane when nothing holds first responder.
+    ///
+    /// Weak for the same reason `shellPane` is: the strong owner is the view
+    /// that caches it, and a pane that cannot be released could not clear this.
+    weak var sessionPane: SessionTerminalPane?
+
     let createdAt: Date
     let workingDirectory: String
 
@@ -439,8 +446,12 @@ class Session: Identifiable, ObservableObject {
         self.createdAt = Date()
         self.workingDirectory = workingDirectory
 
-        // Initialize terminal font size from settings default
-        self.terminalFontSize = SettingsManager.shared.settings.defaultTerminalFontSize
+        // Initialize terminal font size from the settings default, held
+        // inside the zoom window — the setting has never been through a zoom
+        // gesture, so nothing has bounded it yet.
+        self.terminalFontSize = TerminalFontSizeBounds.standard.clamped(
+            SettingsManager.shared.settings.defaultTerminalFontSize
+        )
 
         // Create terminal backend with default configuration.
         // Engine is pinned to whichever was active at construction
@@ -581,31 +592,43 @@ class Session: Identifiable, ObservableObject {
         NSLog("Session[%@]: Released terminal backend", sessionRef)
     }
 
+    /// The zoom window this session's terminal obeys.
+    ///
+    /// Named once and delegated to rather than restated: the shell pane
+    /// reaches the same rule through the engine's own pane defaults, and two
+    /// spellings of one window is how the two panes of a single split come to
+    /// stop at different limits or move by different steps.
+    private var fontSizeBounds: TerminalFontSizeBounds { .standard }
+
     /// Increase terminal font size by one step
     func increaseTerminalFontSize() {
-        let newSize = min(terminalFontSize + AppSettings.terminalFontSizeStep, AppSettings.terminalFontSizeRange.upperBound)
-        terminalFontSize = newSize
+        terminalFontSize = fontSizeBounds.increased(from: terminalFontSize)
     }
 
     /// Decrease terminal font size by one step
     func decreaseTerminalFontSize() {
-        let newSize = max(terminalFontSize - AppSettings.terminalFontSizeStep, AppSettings.terminalFontSizeRange.lowerBound)
-        terminalFontSize = newSize
+        terminalFontSize = fontSizeBounds.decreased(from: terminalFontSize)
     }
 
     /// Check if terminal font size can be increased
     var canIncreaseTerminalFontSize: Bool {
-        terminalFontSize < AppSettings.terminalFontSizeRange.upperBound
+        fontSizeBounds.canIncrease(from: terminalFontSize)
     }
 
     /// Check if terminal font size can be decreased
     var canDecreaseTerminalFontSize: Bool {
-        terminalFontSize > AppSettings.terminalFontSizeRange.lowerBound
+        fontSizeBounds.canDecrease(from: terminalFontSize)
     }
 
-    /// Reset terminal font size to the default from settings
+    /// Reset terminal font size to the default from settings.
+    ///
+    /// Clamped, because the setting has never been through a zoom gesture and
+    /// so was never bounded by one. A persisted size from outside the window
+    /// would otherwise leave one direction permanently dead.
     func resetTerminalFontSize() {
-        terminalFontSize = SettingsManager.shared.settings.defaultTerminalFontSize
+        terminalFontSize = fontSizeBounds.clamped(
+            SettingsManager.shared.settings.defaultTerminalFontSize
+        )
     }
 
     /// Claude's session ID used for --session-id / --resume flags
@@ -1029,8 +1052,11 @@ class Session: Identifiable, ObservableObject {
         self.workingDirectory = state.workingDirectory
         self.personaName = state.personaName
         self.isVibe = state.isVibe
-        self.terminalFontSize = SettingsManager.shared
-            .settings.defaultTerminalFontSize
+        // Clamped for the same reason as the other initializer: a settings
+        // value has never been bounded by a zoom gesture.
+        self.terminalFontSize = TerminalFontSizeBounds.standard.clamped(
+            SettingsManager.shared.settings.defaultTerminalFontSize
+        )
 
         // No backend — stopped sessions don't need one.
         // ensureBackend() creates it on resume.

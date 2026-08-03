@@ -127,6 +127,9 @@ private final class SessionPaneAdapterHolder: ObservableObject {
             session: session, backend: backend
         )
         cached = fresh
+        // The same hand-back the shell pane performs on open, so a command can
+        // name this pane while no pane holds first responder.
+        session.sessionPane = fresh
         return fresh
     }
 

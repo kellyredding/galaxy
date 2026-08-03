@@ -920,15 +920,15 @@ class MenuActions: NSObject {
     /// is belt-and-suspenders for the (unreachable) case
     /// where validation is bypassed.
     @objc func defaultTerminalFontSize(_ sender: Any?) {
-        Self.focusedTerminalPane()?.resetFontSize()
+        Self.targetTerminalPane()?.resetFontSize()
     }
 
     @objc func biggerTerminalFontSize(_ sender: Any?) {
-        Self.focusedTerminalPane()?.increaseFontSize()
+        Self.targetTerminalPane()?.increaseFontSize()
     }
 
     @objc func smallerTerminalFontSize(_ sender: Any?) {
-        Self.focusedTerminalPane()?.decreaseFontSize()
+        Self.targetTerminalPane()?.decreaseFontSize()
     }
 
     /// Sessions ▸ Trim buffer (⌃⌘K). Routes through the focused
@@ -938,13 +938,13 @@ class MenuActions: NSObject {
     /// belt-and-suspenders for the (unreachable) bypassed-validation
     /// case.
     @objc func trimBuffer(_ sender: Any?) {
-        Self.focusedTerminalPane()?.trimBuffer()
+        Self.targetTerminalPane()?.trimBuffer()
     }
 
     /// Sessions ▸ Reflow buffer (⌃L). Redraws the focused terminal's
     /// current screen without trimming scrollback.
     @objc func reflowBuffer(_ sender: Any?) {
-        Self.focusedTerminalPane()?.reflowBuffer()
+        Self.targetTerminalPane()?.reflowBuffer()
     }
 
     @objc func openShell(_ sender: Any?) {
@@ -965,16 +965,40 @@ class MenuActions: NSObject {
         TerminalTabCommands.shared.focusSession.send(id)
     }
 
+    /// The pane a pane-directed command should act on.
+    ///
+    /// Prefers the first responder, which is unambiguous while the user is
+    /// typing in a terminal. Falls back to the pane-focus memory when that walk
+    /// finds nothing — which is not an edge case but two ordinary situations:
+    /// the find bar takes key in a panel of its own, so `NSApp.keyWindow` is
+    /// not this window at all; and leaving a pane ends in
+    /// `makeFirstResponder(nil)`, which leaves the window itself holding it,
+    /// and a window is not an `NSView`. In both the user is looking straight at
+    /// the terminal they were last in, and a zoom that refuses until they click
+    /// back into it is the defect this closes.
+    ///
+    /// Gated on the Terminal tab because this app hosts the find bar in its
+    /// artifact and snapshot readers too — so the bar holding key does not mean
+    /// a terminal is on screen, and a zoom must not resize a pane the user
+    /// cannot see.
+    static func targetTerminalPane() -> TerminalPane? {
+        if let focused = focusedTerminalPane() { return focused }
+        guard SessionManager.shared.activeTab == .terminal,
+              let session = SessionManager.shared.activeSession
+        else { return nil }
+        return session.paneRegistry.lastFocusedPaneKind == .shell
+            ? session.shellPane
+            : session.sessionPane
+    }
+
     /// Walk up from the current first responder looking for
     /// a `TerminalHostView` and return its hosted
-    /// `TerminalPane` (Session or Shell). Used by the View ▸
-    /// terminal-font menu items to gate their key
-    /// equivalents on a terminal pane actually being focused
-    /// — pressing ⌘+/⌘- from the Snapshots / Artifacts /
-    /// Agents / Ledger tab no longer silently zooms the
-    /// background session pane. Returns nil when focus is
-    /// elsewhere (sidebar, modal sheet, non-terminal tab).
-    static func focusedTerminalPane() -> TerminalPane? {
+    /// `TerminalPane` (Session or Shell).
+    ///
+    /// Private, and deliberately only half an answer: it reports where the
+    /// caret literally is, which is nil for every case
+    /// `targetTerminalPane` exists to cover. Callers want that one.
+    private static func focusedTerminalPane() -> TerminalPane? {
         guard let window = NSApp.keyWindow,
               let responder =
                 window.firstResponder as? NSView
@@ -1047,26 +1071,27 @@ extension MenuActions: NSMenuItemValidation {
         _ menuItem: NSMenuItem
     ) -> Bool {
         switch menuItem.action {
-        // Terminal font items: only fire when the first
-        // responder is inside a `TerminalHostView`.
-        // `focusedTerminalPane()` returns the protocol-typed
+        // Terminal font items: only fire when a terminal pane
+        // can be named — the one holding the caret, or the one
+        // the user was last in on the Terminal tab.
+        // `targetTerminalPane()` returns the protocol-typed
         // pane (Session or Shell) so neither this gate nor
         // the action handlers couple to SwiftTerm.
         case #selector(defaultTerminalFontSize(_:)):
-            return Self.focusedTerminalPane() != nil
+            return Self.targetTerminalPane() != nil
         case #selector(biggerTerminalFontSize(_:)):
-            return Self.focusedTerminalPane()?
+            return Self.targetTerminalPane()?
                 .canIncreaseFontSize ?? false
         case #selector(smallerTerminalFontSize(_:)):
-            return Self.focusedTerminalPane()?
+            return Self.targetTerminalPane()?
                 .canDecreaseFontSize ?? false
 
         // Sessions ▸ Trim buffer / Reflow buffer. Live-gated on a
-        // terminal pane being focused, so the items (and their ⌃⌘K /
+        // terminal pane being nameable, so the items (and their ⌃⌘K /
         // ⌃L equivalents) are active only on the Terminal tab.
         case #selector(trimBuffer(_:)),
              #selector(reflowBuffer(_:)):
-            return Self.focusedTerminalPane() != nil
+            return Self.targetTerminalPane() != nil
 
         // Chrome font items: bound-checked against the live
         // settings value, never gated on focus — the user
