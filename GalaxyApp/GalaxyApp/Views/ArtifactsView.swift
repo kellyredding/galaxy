@@ -889,7 +889,7 @@ struct ArtifactsView: View {
             // non-line-range conversion returned nothing. Passing
             // them through unconverted is what keeps the captured
             // source text with them.
-            let activeAnns = markdownAnchoring
+            let activeAnns = MarkdownRenderer.anchoring
                 .screen(openAnnotations)
                 .filter {
                     $0.anchorStartLine != nil
