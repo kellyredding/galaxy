@@ -61,6 +61,51 @@ describe GalaxyAgents::MetaReader do
       result = GalaxyAgents::MetaReader.read_description(
         "/tmp/nonexistent/transcript.jsonl",
         "abc123",
+        attempts: 1,
+      )
+      result.should be_nil
+    end
+
+    it "retries until the sidecar is written" do
+      tmp = Path.new(Dir.tempdir) /
+            "galaxy-agents-meta-race-#{
+  Random.rand(100000)
+}"
+      Dir.mkdir_p(
+        tmp / "transcript" / "subagents",
+      )
+      File.write(
+        tmp / "transcript.jsonl", "{}\n",
+      )
+      meta = tmp / "transcript" / "subagents" /
+             "agent-abc123.meta.json"
+
+      # Land the sidecar after the first look has already
+      # missed it, the way Claude Code writes it just after
+      # SubagentStart fires.
+      spawn do
+        sleep(30.milliseconds)
+        File.write(
+          meta,
+          %({"description":"Late arrival"}),
+        )
+      end
+
+      result = GalaxyAgents::MetaReader.read_description(
+        (tmp / "transcript.jsonl").to_s,
+        "abc123",
+      )
+      result.should eq("Late arrival")
+
+      FileUtils.rm_rf(tmp.to_s)
+    end
+
+    it "gives up once the retry budget is spent" do
+      result = GalaxyAgents::MetaReader.read_description(
+        "/tmp/nonexistent/transcript.jsonl",
+        "abc123",
+        attempts: 3,
+        delay: 1.millisecond,
       )
       result.should be_nil
     end
@@ -83,6 +128,7 @@ describe GalaxyAgents::MetaReader do
       result = GalaxyAgents::MetaReader.read_description(
         (tmp / "transcript.jsonl").to_s,
         "abc123",
+        attempts: 1,
       )
       result.should be_nil
 
@@ -109,6 +155,7 @@ describe GalaxyAgents::MetaReader do
       result = GalaxyAgents::MetaReader.read_description(
         (tmp / "transcript.jsonl").to_s,
         "abc123",
+        attempts: 1,
       )
       result.should be_nil
 
