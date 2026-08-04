@@ -243,6 +243,122 @@ describe "CLI agent commands", tags: "integration" do
 
       FileUtils.rm_rf(tmp.to_s)
     end
+
+    it "publishes no timeline event when already running" do
+      log_path = build_timeline_logging_stub
+
+      run_binary([
+        "start",
+        "--ledger-session-id", "1",
+        "--agent-id", "sd1",
+        "--agent-type", "Explore",
+      ])
+
+      # Snapshot the log just before the second start so we
+      # can isolate which timeline records came from it.
+      sleep 100.milliseconds
+      pre_start = read_timeline_log(log_path).size
+
+      result = run_binary([
+        "start",
+        "--ledger-session-id", "1",
+        "--agent-id", "sd1",
+        "--agent-type", "Explore",
+      ])
+
+      result[:status].should eq(0)
+      result[:output].should contain(
+        "was already running",
+      )
+
+      # Timeline publish is fire-and-forget; give it a
+      # moment to actually NOT happen.
+      sleep 200.milliseconds
+      post_start = read_timeline_log(log_path)
+      start_calls = post_start.skip(pre_start)
+
+      start_calls.any? do |line|
+        line.includes?("agent:started")
+      end.should be_false
+    ensure
+      File.delete(log_path) if log_path &&
+                               File.exists?(log_path)
+      restore_timeline_noop
+    end
+
+    it "still publishes timeline event on a fresh start" do
+      log_path = build_timeline_logging_stub
+
+      sleep 100.milliseconds
+      pre_start = read_timeline_log(log_path).size
+
+      run_binary([
+        "start",
+        "--ledger-session-id", "1",
+        "--agent-id", "sd2",
+        "--agent-type", "Explore",
+      ])
+
+      sleep 200.milliseconds
+      post_start = read_timeline_log(log_path)
+      start_calls = post_start.skip(pre_start)
+
+      start_calls.any? do |line|
+        line.includes?("agent:started")
+      end.should be_true
+    ensure
+      File.delete(log_path) if log_path &&
+                               File.exists?(log_path)
+      restore_timeline_noop
+    end
+
+    it "keeps the description when a resume reads none" do
+      tmp = Path.new(Dir.tempdir) /
+            "galaxy-agents-keep-#{Random.rand(100000)}"
+      Dir.mkdir_p(tmp / "transcript" / "subagents")
+      File.write(
+        tmp / "transcript.jsonl", "{}\n",
+      )
+      meta = tmp / "transcript" / "subagents" /
+             "agent-sd3.meta.json"
+      File.write(
+        meta,
+        %({"agentType":"Explore","description":"First desc"}),
+      )
+
+      run_binary([
+        "start",
+        "--ledger-session-id", "1",
+        "--agent-id", "sd3",
+        "--agent-type", "Explore",
+        "--parent-transcript-path",
+        (tmp / "transcript.jsonl").to_s,
+      ])
+
+      # A resumed agent re-runs start, and the sidecar is
+      # frequently unreadable the second time around.
+      File.delete(meta)
+
+      run_binary([
+        "start",
+        "--ledger-session-id", "1",
+        "--agent-id", "sd3",
+        "--agent-type", "Explore",
+        "--parent-transcript-path",
+        (tmp / "transcript.jsonl").to_s,
+      ])
+
+      show = run_binary([
+        "show",
+        "--ledger-session-id", "1",
+        "--agent-id", "sd3",
+        "--json",
+      ])
+      parsed = JSON.parse(show[:output])
+      parsed["description"].as_s.should eq("First desc")
+
+      FileUtils.rm_rf(tmp.to_s)
+    end
   end
 
   describe "stop" do
