@@ -853,10 +853,19 @@ struct AgentsView: View {
                 guard !Task.isCancelled else {
                     return
                 }
-                GalaxyLog.events(
-                    "AgentsView fetch failed:"
-                    + " \(error)"
-                )
+                if (error as? AgentsQueryError)?
+                    .isSuperseded == true
+                {
+                    GalaxyLog.events(
+                        "AgentsView fetch superseded"
+                        + " by a newer one"
+                    )
+                } else {
+                    GalaxyLog.events(
+                        "AgentsView fetch failed:"
+                        + " \(error)"
+                    )
+                }
             }
         }
     }

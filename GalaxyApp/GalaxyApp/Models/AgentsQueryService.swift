@@ -7,16 +7,30 @@ import Galactic
 class AgentsQueryService {
     static let shared = AgentsQueryService()
 
-    /// Two cancellation domains: `queryRunner` backs read fetches
-    /// (a new fetch cancels the previous one, and cancelAll()
-    /// targets it); `mutationRunner` backs writes so a concurrent
-    /// polling read can never terminate an in-flight mutation.
-    private let queryRunner = ProcessRunner(
-        binaryPath: "\(NSHomeDirectory())/.claude/galaxy/bin/galaxy-agents",
-        defaultTimeout: 5
-    )
+    private static let binaryPath =
+        "\(NSHomeDirectory())/.claude/galaxy/bin/galaxy-agents"
+
+    /// One read cancellation domain per session, plus a separate
+    /// mutation lane.
+    ///
+    /// Reads are single-flight *within* a session: a newer answer
+    /// about a session supersedes the older one, so killing the
+    /// stale query is right. Reads about *different* sessions are
+    /// not substitutes for one another — the startup seed asks one
+    /// question per session, and an answer about one says nothing
+    /// about another. A single shared read runner made every query
+    /// cancel every other query regardless of subject, so whichever
+    /// sessions were asked about first could lose their answers and
+    /// never be asked again.
+    ///
+    /// Keyed by ledger session id and never pruned: a runner is a
+    /// lock and an empty dictionary, and the key space is bounded by
+    /// how many sessions the app has seen.
+    private var readRunners: [Int64: ProcessRunner] = [:]
+    private let readRunnersLock = NSLock()
+
     private let mutationRunner = ProcessRunner(
-        binaryPath: "\(NSHomeDirectory())/.claude/galaxy/bin/galaxy-agents",
+        binaryPath: AgentsQueryService.binaryPath,
         defaultTimeout: 5
     )
 
@@ -24,10 +38,17 @@ class AgentsQueryService {
 
     // MARK: - Public API
 
-    /// Cancel any in-flight read query. In-flight mutations
-    /// (runMutationCLI) are intentionally left running.
+    /// Cancel every in-flight read query, across all sessions.
+    /// In-flight mutations (runMutationCLI) are intentionally
+    /// left running.
     func cancelAll() {
-        queryRunner.cancelAll()
+        readRunnersLock.lock()
+        let runners = Array(readRunners.values)
+        readRunnersLock.unlock()
+
+        for runner in runners {
+            runner.cancelAll()
+        }
     }
 
     /// Fetch all agents for a session.
@@ -35,6 +56,7 @@ class AgentsQueryService {
         ledgerSessionId: Int64
     ) async throws -> [AgentRun] {
         let data = try await runCLI(
+            ledgerSessionId: ledgerSessionId,
             args: [
                 "list", "--json",
                 "--ledger-session-id",
@@ -55,6 +77,7 @@ class AgentsQueryService {
         ledgerSessionId: Int64
     ) async throws -> Int {
         let data = try await runCLI(
+            ledgerSessionId: ledgerSessionId,
             args: [
                 "running",
                 "--ledger-session-id",
@@ -90,14 +113,35 @@ class AgentsQueryService {
 
     // MARK: - CLI Subprocess
 
+    /// The read runner for one session, created on first use.
+    private func readRunner(
+        for ledgerSessionId: Int64
+    ) -> ProcessRunner {
+        readRunnersLock.lock()
+        defer { readRunnersLock.unlock() }
+
+        if let existing = readRunners[ledgerSessionId] {
+            return existing
+        }
+        let runner = ProcessRunner(
+            binaryPath: Self.binaryPath,
+            defaultTimeout: 5
+        )
+        readRunners[ledgerSessionId] = runner
+        return runner
+    }
+
     /// Spawn the galaxy-agents binary and collect stdout. Cancels
-    /// any previous in-flight read query first (single-flight).
+    /// any previous in-flight read query *for this session*, which
+    /// leaves queries about other sessions running.
     private func runCLI(
+        ledgerSessionId: Int64,
         args: [String]
     ) async throws -> Data {
-        queryRunner.cancelAll()
+        let runner = readRunner(for: ledgerSessionId)
+        runner.cancelAll()
         do {
-            return try await queryRunner.run(args: args)
+            return try await runner.run(args: args)
         } catch {
             throw Self.mapError(error)
         }
@@ -139,6 +183,18 @@ class AgentsQueryService {
 
 enum AgentsQueryError: Error, LocalizedError {
     case cliError(status: Int32, message: String)
+
+    /// True when the child was terminated rather than failing on
+    /// its own. Reads are single-flight per session, so this means
+    /// a newer query for the same session replaced this one —
+    /// routine, and worth naming separately so a genuine failure
+    /// is not buried among them in the log.
+    var isSuperseded: Bool {
+        if case .cliError(let status, _) = self {
+            return status == SIGTERM
+        }
+        return false
+    }
 
     var errorDescription: String? {
         switch self {
