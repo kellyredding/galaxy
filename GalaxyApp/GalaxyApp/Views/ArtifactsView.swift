@@ -2618,6 +2618,9 @@ struct ArtifactsView: View {
 
     // MARK: - Escape Key (AppKit monitor)
 
+    /// A binding added here also needs a row in `KeystrokeCatalog`, with an
+    /// availability case naming its gate — nothing fails to say so, because
+    /// the catalog restates these facts rather than deriving them.
     private func installEscapeMonitor() {
         guard escapeMonitor == nil else { return }
         escapeMonitor =

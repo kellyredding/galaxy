@@ -824,6 +824,10 @@ struct SnapshotsView: View {
 
     /// Install a local event monitor that catches Escape regardless of
     /// which AppKit responder (e.g. WKWebView) holds first responder.
+    ///
+    /// A binding added here also needs a row in `KeystrokeCatalog`, with an
+    /// availability case naming its gate — nothing fails to say so, because
+    /// the catalog restates these facts rather than deriving them.
     private func installEscapeMonitor() {
         guard escapeMonitor == nil else { return }
         escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [self] event in

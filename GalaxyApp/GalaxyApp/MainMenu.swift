@@ -9,6 +9,13 @@ import Carbon.HIToolbox
 /// Also subscribes to session state changes via Combine so that keyboard shortcuts
 /// (e.g. ⌘R for Resume) work immediately — `menuNeedsUpdate` only fires reliably
 /// when the menu is opened visually, not when macOS matches key equivalents.
+///
+/// A binding added here also needs a row in `KeystrokeCatalog` — with an
+/// availability case that names its gate, and aliases carrying the words
+/// its label does not — or it will not appear in the ⌘/ cheat sheet.
+/// Nothing fails to say so: the catalog restates these facts rather than
+/// deriving them, so a keystroke added without a row is simply absent
+/// from the sheet, and the sheet goes on looking complete.
 class MainMenu: NSObject, NSMenuDelegate {
     private let sessionManager: SessionManager
     private let settingsManager: SettingsManager

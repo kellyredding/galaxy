@@ -256,6 +256,10 @@ final class SplitState: ObservableObject {
 /// Still app-side because the walk below names this app's host and pane types.
 /// It moves once those do; the command it sends, and the ⌘W match itself,
 /// already come from the engine.
+///
+/// A binding added here also needs a row in `KeystrokeCatalog`, with an
+/// availability case naming its gate — nothing fails to say so, because the
+/// catalog restates these facts rather than deriving them.
 final class ShellCloseKeyMonitor {
     static let shared = ShellCloseKeyMonitor()
 
