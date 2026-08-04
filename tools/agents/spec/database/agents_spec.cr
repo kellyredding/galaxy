@@ -53,6 +53,38 @@ describe GalaxyAgents::Database do
       )
     end
 
+    it "keeps the description when a later start has none" do
+      GalaxyAgents::Database.start_agent(
+        1_i64, "abc123", "Explore", "First desc",
+      )
+      GalaxyAgents::Database.start_agent(
+        1_i64, "abc123", "Explore", nil,
+      )
+
+      agent = GalaxyAgents::Database.get_agent(
+        1_i64, "abc123",
+      )
+      agent.not_nil!.description.should eq(
+        "First desc",
+      )
+    end
+
+    it "fills in a description a later start supplies" do
+      GalaxyAgents::Database.start_agent(
+        1_i64, "abc123", "Explore", nil,
+      )
+      GalaxyAgents::Database.start_agent(
+        1_i64, "abc123", "Explore", "Late desc",
+      )
+
+      agent = GalaxyAgents::Database.get_agent(
+        1_i64, "abc123",
+      )
+      agent.not_nil!.description.should eq(
+        "Late desc",
+      )
+    end
+
     it "keeps status running on duplicate start" do
       GalaxyAgents::Database.start_agent(
         1_i64, "abc123", "Explore", "First desc",

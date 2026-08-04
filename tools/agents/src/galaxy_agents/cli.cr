@@ -172,6 +172,25 @@ module GalaxyAgents
         )
       end
 
+      # Detect an already-running row so the lifecycle
+      # timeline event below can be suppressed. Resuming a
+      # subagent re-fires SubagentStart, and the hook carries
+      # no flag distinguishing a resume from a fresh spawn,
+      # so without this guard the second start publishes a
+      # duplicate durationStart paired with the same
+      # agent--<id> identifier: it double-increments the
+      # running-agent badge in Galaxy.app and leaves an
+      # orphaned bar in the Timeline tab that never closes.
+      # The badge only ever drifts upward, because the
+      # matching decrement clamps at zero while the increment
+      # has no ceiling. Mirrors the already_terminal guard on
+      # the stop path.
+      existing = Database.get_agent(
+        ledger_session_id, agent_id,
+      )
+      already_running =
+        existing.try(&.status) == "running"
+
       Database.start_agent(
         ledger_session_id,
         agent_id,
@@ -180,14 +199,23 @@ module GalaxyAgents
       )
 
       # Timeline event + socket signal (fire-and-forget)
-      TimelinePublisher.agent_started(
-        ledger_session_id,
-        agent_id: agent_id,
-        agent_type: agent_type,
-        description: description,
-      )
+      unless already_running
+        TimelinePublisher.agent_started(
+          ledger_session_id,
+          agent_id: agent_id,
+          agent_type: agent_type,
+          description: description,
+        )
+      end
 
-      puts "Agent #{agent_id} started"
+      if already_running
+        puts(
+          "Agent #{agent_id} start recorded " \
+          "(was already running)",
+        )
+      else
+        puts "Agent #{agent_id} started"
+      end
     end
 
     # ==========================================================

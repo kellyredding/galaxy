@@ -115,8 +115,14 @@ module GalaxyAgents
     # ========================================================
 
     # Upsert an agent with status=running.
-    # On conflict, updates the description and
-    # updated_at but leaves other fields untouched.
+    # On conflict, fills in a description the row does not
+    # already have and updates updated_at, leaving other
+    # fields untouched. The incoming description is COALESCEd
+    # rather than assigned because a resumed subagent re-runs
+    # this with whatever the sidecar read returned that time —
+    # frequently nothing, since MetaReader races the file
+    # being written. Assigning would let a later start erase
+    # a description an earlier one captured.
     def self.start_agent(
       ledger_session_id : Int64,
       agent_id : String,
@@ -136,7 +142,9 @@ module GalaxyAgents
               VALUES (?, ?, ?, 'running', ?)
               ON CONFLICT(ledger_session_id, agent_id)
               DO UPDATE SET
-                description = excluded.description,
+                description = COALESCE(
+                  excluded.description, description
+                ),
                 updated_at = datetime('now')
             SQL
             ledger_session_id,
