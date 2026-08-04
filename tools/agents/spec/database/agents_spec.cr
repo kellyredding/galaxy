@@ -99,6 +99,28 @@ describe GalaxyAgents::Database do
       agent.not_nil!.status.should eq("running")
     end
 
+    it "returns a resumed agent to running" do
+      GalaxyAgents::Database.start_agent(
+        1_i64, "abc123", "Explore", "First desc",
+      )
+      GalaxyAgents::Database.stop_agent(
+        1_i64, "abc123",
+        status: "stopped",
+        duration_ms: 1234_i64,
+      )
+
+      GalaxyAgents::Database.start_agent(
+        1_i64, "abc123", "Explore", nil,
+      )
+
+      agent = GalaxyAgents::Database.get_agent(
+        1_i64, "abc123",
+      ).not_nil!
+      agent.status.should eq("running")
+      agent.completed_at.should be_nil
+      agent.duration_ms.should be_nil
+    end
+
     it "preserves other fields on duplicate start" do
       GalaxyAgents::Database.start_agent(
         1_i64, "abc123", "Explore", "First desc",

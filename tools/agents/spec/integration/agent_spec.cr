@@ -63,6 +63,41 @@ private def read_timeline_log(
   File.read_lines(log_path).reject(&.empty?)
 end
 
+# Wait until the stub log holds at least `count` lines, or
+# the deadline passes. The CLI publishes through a detached
+# process, so how long a record takes to land is not bounded
+# by how long the CLI itself ran — a fixed sleep either
+# flakes or reads the log before anything has been written.
+private def wait_for_timeline_calls(
+  log_path : Path,
+  count : Int32,
+  timeout : Time::Span = 5.seconds,
+) : Array(String)
+  deadline = Time.monotonic + timeout
+  loop do
+    calls = read_timeline_log(log_path)
+    return calls if calls.size >= count
+    break if Time.monotonic > deadline
+    sleep 25.milliseconds
+  end
+  read_timeline_log(log_path)
+end
+
+# Count stub invocations for one agent and event type.
+# Totals rather than a before/after window: the ordering of
+# detached publishes is not guaranteed, so a positional
+# snapshot can attribute an earlier record to a later call.
+private def count_calls(
+  calls : Array(String),
+  agent_id : String,
+  event_type : String,
+) : Int32
+  calls.count do |line|
+    line.includes?("--event-type #{event_type}") &&
+      line.includes?("agent--#{agent_id}")
+  end
+end
+
 # Restore the no-op timeline stub installed by
 # spec_helper.cr so later tests aren't affected.
 private def restore_timeline_noop
@@ -306,6 +341,98 @@ describe "CLI agent commands", tags: "integration" do
       start_calls.any? do |line|
         line.includes?("agent:started")
       end.should be_true
+    ensure
+      File.delete(log_path) if log_path &&
+                               File.exists?(log_path)
+      restore_timeline_noop
+    end
+
+    it "publishes the stop that follows a resume" do
+      log_path = build_timeline_logging_stub
+
+      run_binary([
+        "start",
+        "--ledger-session-id", "1",
+        "--agent-id", "sd4",
+        "--agent-type", "Explore",
+      ])
+      run_binary(
+        [
+          "stop",
+          "--ledger-session-id", "1",
+          "--agent-id", "sd4",
+          "--last-message-stdin",
+        ],
+        stdin: "First run done",
+      )
+
+      # Resume: the row must return to running, or the stop
+      # below reads as a repeat of an already-terminal stop
+      # and publishes nothing — leaving the agent started
+      # once more than it was ever stopped, which is what
+      # strands it in the running set of anything counting.
+      run_binary([
+        "start",
+        "--ledger-session-id", "1",
+        "--agent-id", "sd4",
+        "--agent-type", "Explore",
+      ])
+      run_binary(
+        [
+          "stop",
+          "--ledger-session-id", "1",
+          "--agent-id", "sd4",
+          "--last-message-stdin",
+        ],
+        stdin: "Second run done",
+      )
+
+      calls = wait_for_timeline_calls(log_path, 4)
+      count_calls(calls, "sd4", "agent:started").should eq(2)
+      count_calls(calls, "sd4", "agent:stopped").should eq(2)
+    ensure
+      File.delete(log_path) if log_path &&
+                               File.exists?(log_path)
+      restore_timeline_noop
+    end
+
+    it "suppresses a third start after a resume" do
+      log_path = build_timeline_logging_stub
+
+      run_binary([
+        "start",
+        "--ledger-session-id", "1",
+        "--agent-id", "sd5",
+        "--agent-type", "Explore",
+      ])
+      run_binary(
+        [
+          "stop",
+          "--ledger-session-id", "1",
+          "--agent-id", "sd5",
+          "--last-message-stdin",
+        ],
+        stdin: "Done",
+      )
+      run_binary([
+        "start",
+        "--ledger-session-id", "1",
+        "--agent-id", "sd5",
+        "--agent-type", "Explore",
+      ])
+
+      result = run_binary([
+        "start",
+        "--ledger-session-id", "1",
+        "--agent-id", "sd5",
+        "--agent-type", "Explore",
+      ])
+      result[:output].should contain(
+        "was already running",
+      )
+
+      calls = wait_for_timeline_calls(log_path, 3)
+      count_calls(calls, "sd5", "agent:started").should eq(2)
     ensure
       File.delete(log_path) if log_path &&
                                File.exists?(log_path)

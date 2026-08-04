@@ -115,11 +115,22 @@ module GalaxyAgents
     # ========================================================
 
     # Upsert an agent with status=running.
-    # On conflict, fills in a description the row does not
-    # already have and updates updated_at, leaving other
-    # fields untouched. The incoming description is COALESCEd
-    # rather than assigned because a resumed subagent re-runs
-    # this with whatever the sidecar read returned that time —
+    #
+    # On conflict the row is returned to running and its
+    # completion fields cleared, because the only thing that
+    # runs this is an agent actually starting: a resumed
+    # subagent is running again, whatever it was before.
+    # Leaving the status alone made a stopped row read
+    # 'stopped' forever, which defeated both lifecycle guards
+    # at once — every later start looked like a fresh one and
+    # published a duplicate, while the eventual stop looked
+    # like a repeat of an already-terminal stop and published
+    # nothing. An agent could therefore be started twice and
+    # stopped never, as far as anything downstream could see.
+    #
+    # The incoming description is COALESCEd rather than
+    # assigned because a resumed subagent re-runs this with
+    # whatever the sidecar read returned that time —
     # frequently nothing, since MetaReader races the file
     # being written. Assigning would let a later start erase
     # a description an earlier one captured.
@@ -142,6 +153,9 @@ module GalaxyAgents
               VALUES (?, ?, ?, 'running', ?)
               ON CONFLICT(ledger_session_id, agent_id)
               DO UPDATE SET
+                status = 'running',
+                completed_at = NULL,
+                duration_ms = NULL,
                 description = COALESCE(
                   excluded.description, description
                 ),
