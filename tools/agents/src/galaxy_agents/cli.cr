@@ -1279,7 +1279,11 @@ module GalaxyAgents
       ms : Int64,
     ) : String
       if ms >= 60_000
-        minutes = ms / 60_000
+        # Floor division: `/` on two integers yields a Float
+        # in Crystal, which put the whole fractional duration
+        # into the minutes component beside an already-correct
+        # seconds remainder.
+        minutes = ms // 60_000
         seconds = (ms % 60_000) / 1000.0
         "#{minutes}m#{"%.1f" % seconds}s"
       else

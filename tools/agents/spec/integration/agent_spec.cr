@@ -361,6 +361,30 @@ describe "CLI agent commands", tags: "integration" do
     end
   end
 
+  describe "duration formatting" do
+    it "renders whole minutes without a fraction" do
+      run_binary([
+        "start",
+        "--ledger-session-id", "1",
+        "--agent-id", "dur1",
+        "--agent-type", "Explore",
+      ])
+      GalaxyAgents::Database.stop_agent(
+        1_i64, "dur1",
+        status: "stopped",
+        duration_ms: 331_875_i64,
+      )
+
+      result = run_binary([
+        "list",
+        "--ledger-session-id", "1",
+      ])
+
+      result[:output].should contain("5m31.9s")
+      result[:output].should_not contain("5.53125")
+    end
+  end
+
   describe "stop" do
     it "stops a running agent with success" do
       run_binary([
