@@ -153,11 +153,45 @@ class Session: Identifiable, ObservableObject {
     /// recreate the host view.
     let paneRegistry = TerminalPaneCoordinator()
 
-    /// Number of currently running agents. Maintained by
-    /// EventCoordinator (increment on agent:started, decrement
-    /// on agent:stopped/failed/abandoned). Seeded at startup
-    /// via CLI query. Corrected when AgentsView fetches.
-    @Published var runningAgentCount: Int = 0
+    /// Ids of the agents currently running for this session.
+    ///
+    /// Tracked as a set rather than a counter because the events
+    /// driving it are not guaranteed to arrive once per agent:
+    /// resuming a subagent re-fires Claude Code's SubagentStart
+    /// hook, and an agent that dies abnormally can emit no end
+    /// event at all. A counter turns both into permanent drift,
+    /// since the decrement clamps at zero and an over-count is
+    /// never worked back off. Set membership is idempotent, so
+    /// a repeated start and a missing stop are both harmless.
+    private var runningAgentIds: Set<String> = []
+
+    /// Number of currently running agents, derived from
+    /// runningAgentIds. Maintained by EventCoordinator and
+    /// seeded once from the agents CLI during startup sync —
+    /// nothing polls, so the id set is what keeps this honest
+    /// for the life of the app.
+    @Published private(set) var runningAgentCount: Int = 0
+
+    /// Record an agent as running. Idempotent — a second start
+    /// for an id already tracked leaves the count alone.
+    func agentStarted(_ agentId: String) {
+        runningAgentIds.insert(agentId)
+        runningAgentCount = runningAgentIds.count
+    }
+
+    /// Record an agent as no longer running. Idempotent, and
+    /// safe for an id that was never tracked.
+    func agentStopped(_ agentId: String) {
+        runningAgentIds.remove(agentId)
+        runningAgentCount = runningAgentIds.count
+    }
+
+    /// Replace the tracked set with an authoritative snapshot
+    /// from the agents CLI.
+    func seedRunningAgents(_ agentIds: Set<String>) {
+        runningAgentIds = agentIds
+        runningAgentCount = runningAgentIds.count
+    }
 
     /// When the current turn started (startTurn called).
     /// Used to compute turn duration for notification/unread gates.

@@ -292,7 +292,7 @@ final class EventCoordinator {
             return
         }
 
-        // Agent-start event: increment running count
+        // Agent-start event: track the agent as running
         // and notify AgentsView to refresh its list.
         // Socket events own the count; the CLI fetch
         // only refreshes the list (no count correction).
@@ -306,13 +306,25 @@ final class EventCoordinator {
                        $0.id == appSessionId
                    })
             {
-                GalaxyLog.events(
-                    "[\(session.sessionRef)]"
-                    + " routeEvent:"
-                    + " agent count +1"
-                    + " via \(envelope.event)"
-                )
-                session.runningAgentCount += 1
+                if let agentId = envelope.detailValue(
+                    "agent_id", as: String.self
+                ) {
+                    session.agentStarted(agentId)
+                    GalaxyLog.events(
+                        "[\(session.sessionRef)]"
+                        + " routeEvent:"
+                        + " agent \(agentId) running"
+                        + " (\(session.runningAgentCount))"
+                        + " via \(envelope.event)"
+                    )
+                } else {
+                    GalaxyLog.events(
+                        "[\(session.sessionRef)]"
+                        + " routeEvent:"
+                        + " \(envelope.event) carried no"
+                        + " agent_id; count unchanged"
+                    )
+                }
                 sessionManager?
                     .agentRefreshTrigger =
                     (appSessionId, Date())
@@ -321,8 +333,8 @@ final class EventCoordinator {
             return
         }
 
-        // Agent-end events: decrement running count
-        // and notify AgentsView to refresh its list.
+        // Agent-end events: drop the agent from the running
+        // set and notify AgentsView to refresh its list.
         // Socket events own the count; the CLI fetch
         // only refreshes the list (no count correction).
         if Self.agentEndEvents.contains(
@@ -337,16 +349,25 @@ final class EventCoordinator {
                        $0.id == appSessionId
                    })
             {
-                GalaxyLog.events(
-                    "[\(session.sessionRef)]"
-                    + " routeEvent:"
-                    + " agent count -1"
-                    + " via \(envelope.event)"
-                )
-                session.runningAgentCount = max(
-                    0,
-                    session.runningAgentCount - 1
-                )
+                if let agentId = envelope.detailValue(
+                    "agent_id", as: String.self
+                ) {
+                    session.agentStopped(agentId)
+                    GalaxyLog.events(
+                        "[\(session.sessionRef)]"
+                        + " routeEvent:"
+                        + " agent \(agentId) ended"
+                        + " (\(session.runningAgentCount))"
+                        + " via \(envelope.event)"
+                    )
+                } else {
+                    GalaxyLog.events(
+                        "[\(session.sessionRef)]"
+                        + " routeEvent:"
+                        + " \(envelope.event) carried no"
+                        + " agent_id; count unchanged"
+                    )
+                }
                 sessionManager?
                     .agentRefreshTrigger =
                     (appSessionId, Date())
@@ -938,6 +959,11 @@ final class EventCoordinator {
     /// Seed running agent counts from the CLI during
     /// startup sync. Called on the main queue after
     /// enrichment completes.
+    ///
+    /// Fetches the agent rows rather than a bare count
+    /// because the session tracks which agents are running,
+    /// not how many — a count could not populate the id set
+    /// the socket events later add to and remove from.
     private func seedRunningAgentCounts(
         sessionManager: SessionManager
     ) {
@@ -948,23 +974,31 @@ final class EventCoordinator {
             // Fire-and-forget async query per session
             Task {
                 do {
-                    let count =
+                    let agents =
                         try await AgentsQueryService
                         .shared
-                        .fetchRunningCount(
+                        .fetchAgents(
                             ledgerSessionId: lsid
                         )
+                    let runningIds = Set(
+                        agents
+                            .filter(\.isRunning)
+                            .map(\.agentId)
+                    )
                     await MainActor.run {
-                        if session.runningAgentCount
-                            != count
-                        {
+                        let before =
                             session.runningAgentCount
-                                = count
+                        session.seedRunningAgents(
+                            runningIds
+                        )
+                        if before
+                            != session.runningAgentCount
+                        {
                             GalaxyLog.events(
                                 "[\(session.sessionRef)]"
                                 + " seeded"
                                 + " runningAgentCount"
-                                + " = \(count)"
+                                + " = \(runningIds.count)"
                             )
                         }
                     }
