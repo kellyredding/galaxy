@@ -1096,8 +1096,13 @@ struct ArtifactsView: View {
                     artifacts = result
                     seedArtifactTitles(result)
                     isLoading = false
+                    // The list opens scrolled to its last row, so
+                    // seeding focus at the first one left the
+                    // highlight off screen until an arrow key moved
+                    // it. Seed where the scroll already went.
                     focusedIndex =
-                        result.isEmpty ? nil : 0
+                        result.isEmpty
+                        ? nil : result.count - 1
                 }
             } catch {
                 guard !Task.isCancelled else { return }

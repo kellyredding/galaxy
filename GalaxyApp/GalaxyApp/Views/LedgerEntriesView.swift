@@ -79,13 +79,18 @@ struct LedgerEntriesView: View {
                 sessionManager.listNavAction = nil
                 handleListNavAction(action)
             }
-            .onChange(of: entries?.count) { handleEntriesCountChange() }
+            // Keyed on the rows themselves, not how many there are: a search
+            // returning as many entries as it replaced never fired, leaving
+            // the highlight on whatever moved into the old position.
+            .onChange(of: entries.map { $0.map(\.id) }) {
+                handleEntriesDataChange()
+            }
             .onChange(of: sessionManager.activeTab) { focusSearchIfActive() }
             .onChange(of: sessionManager.activeSessionId) { focusSearchIfActive() }
             .onChange(of: sessionManager.activeLedgerSubTab) { focusSearchIfActive() }
     }
 
-    private func handleEntriesCountChange() {
+    private func handleEntriesDataChange() {
         if let entries = entries, !entries.isEmpty {
             focusedIndex = 0
         } else {

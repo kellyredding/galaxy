@@ -76,7 +76,10 @@ struct LedgerFilesView: View {
             sessionManager.listNavAction = nil
             handleListNavAction(action)
         }
-        .onChange(of: files?.count) {
+        // Keyed on the rows themselves, not how many there are: a refresh
+        // returning as many files as it replaced never fired, leaving the
+        // highlight on whatever moved into the old position.
+        .onChange(of: files.map { $0.map(\.id) }) {
             if let files = files, !files.isEmpty {
                 focusedIndex = 0
             } else {

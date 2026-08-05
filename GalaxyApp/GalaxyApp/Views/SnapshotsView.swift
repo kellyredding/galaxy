@@ -615,7 +615,10 @@ struct SnapshotsView: View {
                     snapshots = result
                     seedSnapshotTitles(result)
                     isLoading = false
-                    focusedIndex = result.isEmpty ? nil : 0
+                    // The list opens scrolled to its last row, so seeding
+                    // focus at the first one left the highlight off screen
+                    // until an arrow key moved it.
+                    focusedIndex = result.isEmpty ? nil : result.count - 1
                 }
             } catch {
                 guard !Task.isCancelled else { return }
