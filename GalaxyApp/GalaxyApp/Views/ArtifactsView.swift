@@ -1600,100 +1600,84 @@ struct ArtifactsView: View {
         }
     }
 
-    /// Check for unsaved annotation state before
-    /// closing the reader. Mirrors the escape-key
-    /// logic for consistency.
+    /// Ask about anything typed before closing the reader.
+    ///
+    /// Deliberately not the escape-key logic. Escape unwinds
+    /// whatever layer is outermost; Back is leaving, and the only
+    /// thing it needs to know is what text it would take along —
+    /// which is one question, whatever else happens to be on top
+    /// of it. Asking the layer question here is what used to let
+    /// an open emoji popup or an expanded card send Back straight
+    /// past a half-written annotation underneath.
     private func handleBackButton() {
-        // Check WKWebView annotation forms
         guard let wv = webViewRef else {
             closeReader()
             return
         }
-        // The overall comment is asked about first, and asked
-        // with a probe that changes nothing.
-        // `getEscapeContext()` below collapses the comment as a
-        // side effect of being asked, so a question put after it
-        // would always find an empty field.
         wv.evaluateJavaScript(
-            "window.GalaxySendBar"
-            + " ? window.GalaxySendBar.commentText() : ''"
+            "typeof AnnotationManager !== 'undefined'"
+            + " ? AnnotationManager.unsavedTextKind()"
+            + " : 'none'"
         ) { result, _ in
-            let comment = (result as? String) ?? ""
+            let kind = (result as? String) ?? "none"
             DispatchQueue.main.async {
-                if comment.isEmpty {
-                    self.handleBackAgainstFormState(wv)
-                } else {
-                    self.confirmBackDiscardingComment(wv)
-                }
+                self.confirmBack(kind: kind, in: wv)
             }
         }
     }
 
-    /// Going back would drop a written overall comment. Unlike a
-    /// theme change, which carries it across, this one ends the
-    /// page for good — so it asks.
-    private func confirmBackDiscardingComment(_ wv: WKWebView) {
+    private func confirmBack(kind: String, in wv: WKWebView) {
+        // A theme change carries all three of these across. Back
+        // ends the page for good, so it is the one that asks.
+        let prompt: (message: String, detail: String)?
+        switch kind {
+        case "comment":
+            prompt = (
+                "Discard your comment?",
+                "You have an unsent overall comment on the "
+                    + "send bar. It will be lost if you go back."
+            )
+        case "edit":
+            prompt = (
+                "Discard changes?",
+                "You have unsaved changes to this annotation. "
+                    + "They will be lost if you go back."
+            )
+        case "form":
+            prompt = (
+                "Discard annotation?",
+                "You have unsaved text in the annotation form. "
+                    + "It will be lost if you go back."
+            )
+        default:
+            prompt = nil
+        }
+        guard let prompt else {
+            closeReader()
+            return
+        }
         guard let window = wv.window else { return }
         SheetAlert.confirm(
             in: window,
-            message: "Discard your comment?",
-            detail: "You have an unsent overall comment "
-                + "on the send bar. It will be lost if "
-                + "you go back.",
+            message: prompt.message,
+            detail: prompt.detail,
             onConfirm: { [self] in
                 self.closeReader()
             }
         )
     }
 
-    private func handleBackAgainstFormState(_ wv: WKWebView) {
-        wv.evaluateJavaScript(
+    /// Call one of the reader page's own actions.
+    ///
+    /// Named rather than inlined so the escape switch reads as a
+    /// list of decisions instead of a list of scripts — the emoji
+    /// case in particular used to be a seven-line function
+    /// literal, written out twice in this app.
+    private func runInReader(_ call: String) {
+        webViewRef?.evaluateJavaScript(
             "typeof AnnotationManager !== 'undefined'"
-            + " ? AnnotationManager.getEscapeContext()"
-            + " : 'close'"
-        ) { result, _ in
-            guard let context = result as? String
-            else {
-                DispatchQueue.main.async {
-                    self.closeReader()
-                }
-                return
-            }
-            switch context {
-            case "formHasText":
-                guard let window = wv.window
-                else { return }
-                SheetAlert.confirm(
-                    in: window,
-                    message: "Discard annotation?",
-                    detail: "You have unsaved text "
-                        + "in the annotation form. "
-                        + "It will be lost if you "
-                        + "go back.",
-                    onConfirm: { [self] in
-                        self.closeReader()
-                    }
-                )
-            case "editing":
-                guard let window = wv.window
-                else { return }
-                SheetAlert.confirm(
-                    in: window,
-                    message: "Discard changes?",
-                    detail: "You have unsaved changes"
-                        + " to this annotation. They"
-                        + " will be lost if you go"
-                        + " back.",
-                    onConfirm: { [self] in
-                        self.closeReader()
-                    }
-                )
-            default:
-                DispatchQueue.main.async {
-                    self.closeReader()
-                }
-            }
-        }
+            + " ? AnnotationManager.\(call) : null"
+        )
     }
 
     private func closeReader(
@@ -2711,11 +2695,16 @@ struct ArtifactsView: View {
                         return nil
                     }
 
+                    // Which layer is outermost. Asking changes
+                    // nothing, so every case below has to name
+                    // the action it wants — including the two
+                    // that the question used to perform on its
+                    // own, and which Back had no way to decline.
                     webViewRef?.evaluateJavaScript(
                         "typeof AnnotationManager "
                         + "!== 'undefined' ? "
                         + "AnnotationManager"
-                        + ".getEscapeContext() "
+                        + ".escapeContext() "
                         + ": 'close'"
                     ) { result, _ in
                         guard let context
@@ -2728,39 +2717,24 @@ struct ArtifactsView: View {
                         }
                         switch context {
                         case "emojiPopup":
-                            self.webViewRef?
-                                .evaluateJavaScript(
-                                    """
-                                    (function() {
-                                        var ta = document.querySelector('.annotation-textarea:focus') ||
-                                                 document.querySelector('.annotation-edit-textarea:focus');
-                                        if (ta && typeof EmojiAutocomplete !== 'undefined') {
-                                            EmojiAutocomplete.dismiss(ta);
-                                        }
-                                    })()
-                                    """
-                                )
-                        case "editing":
+                            self.runInReader(
+                                "dismissEmojiPopup()")
+                        case "overallComment":
+                            self.runInReader(
+                                "collapseOverallComment()")
+                        case "editingDirty":
                             self
                                 .showDiscardEditAlert()
+                        case "editingClean":
+                            self.runInReader("cancelEdit()")
                         case "expanded":
-                            self.webViewRef?
-                                .evaluateJavaScript(
-                                    "AnnotationManager"
-                                    + ".collapseExpanded"
-                                    + "()"
-                                )
+                            self.runInReader(
+                                "collapseExpanded()")
                         case "formHasText":
                             self
                                 .showDiscardFormAlert()
                         case "formVisible":
-                            self.webViewRef?
-                                .evaluateJavaScript(
-                                    "AnnotationManager"
-                                    + ".dismissForm()"
-                                )
-                        case "__consumed__":
-                            break
+                            self.runInReader("dismissForm()")
                         default:
                             DispatchQueue.main.async {
                                 closeReader()
