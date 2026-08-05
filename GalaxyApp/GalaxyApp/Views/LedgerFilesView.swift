@@ -190,25 +190,13 @@ struct LedgerFilesView: View {
     }
 
     private func sortableHeader(_ column: SortColumn, width: CGFloat) -> some View {
-        Button(action: { model.select(column) }) {
-            HStack(spacing: 3) {
-                Text(model.title(for: column))
-                    .chromeFont(size: fontSize.caption2, weight: .semibold)
-                    .foregroundColor(.secondary)
-                    .textCase(.uppercase)
-                    .lineLimit(1)
-                if model.sortColumn == column {
-                    Image(
-                        systemName: model.sortAscending
-                            ? "chevron.up" : "chevron.down"
-                    )
-                    .font(.system(size: 8))
-                    .foregroundColor(.secondary)
-                }
-            }
-        }
-        .buttonStyle(.plain)
-        .frame(width: width, alignment: .leading)
+        LedgerTableHeader(
+            title: model.title(for: column),
+            width: width,
+            isSorted: model.sortColumn == column,
+            ascending: model.sortAscending,
+            fontSize: fontSize,
+            onTap: { model.select(column) })
     }
 
     // MARK: - Data Row

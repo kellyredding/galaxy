@@ -17,11 +17,14 @@ struct LedgerEntriesView: View {
     @Environment(\.chromeFontSize) private var chromeFontSize
     private var fontSize: ChromeFontSize { ChromeFontSize(chromeFontSize) }
 
-    // Focus state for keyboard navigation
-    @State private var focusedIndex: Int? = nil
     @State private var expandedEntryIds: Set<Int64> = []
-    @State private var sortColumn: SortColumn = .importance
-    @State private var sortAscending: Bool = true
+
+    /// Order and selection. The selection is an identity rather than a row
+    /// number, so re-sorting cannot slide the highlight onto another entry.
+    @State private var model = ListSortModel<LedgerEntry, SortColumn>(
+        columns: LedgerEntriesView.columns,
+        sortColumn: .importance,
+        sortAscending: true)
     /// Incrementing counter — each bump triggers one focus request
     /// on the SafeSearchField via AppKit's makeFirstResponder.
     @State private var searchFocusTrigger: Int = 0
@@ -34,32 +37,34 @@ struct LedgerEntriesView: View {
         case entryType, importance, source, content, category, created
     }
 
-    private var sortedEntries: [LedgerEntry] {
-        guard let entries = entries else { return [] }
-        return entries.sorted { a, b in
-            let order: ComparisonResult
-            switch sortColumn {
-            case .entryType:
-                order = ListSorting.compareText(a.entryType, b.entryType)
-            case .importance:
-                // Ranked, not spelled: ascending now reads high, medium, low
-                // rather than the alphabet's high, low, medium.
-                order = ListSorting.compare(
-                    ListSorting.importanceRank(a.importance),
-                    ListSorting.importanceRank(b.importance))
-            case .source:
-                order = ListSorting.compareText(a.source ?? "", b.source ?? "")
-            case .content:
-                order = ListSorting.compareText(a.content, b.content)
-            case .category:
-                order = ListSorting.compareText(
-                    a.category ?? "", b.category ?? "")
-            case .created:
-                order = ListSorting.compare(a.createdAt, b.createdAt)
-            }
-            return ListSorting.ordered(order, ascending: sortAscending)
-        }
-    }
+    /// What each column is called and how it orders. This tab opens on
+    /// Importance, which is why its ranking is the one that matters most here.
+    private static let columns: [ListColumn<LedgerEntry, SortColumn>] = [
+        .init(.entryType, title: "Type") {
+            ListSorting.compareText($0.entryType, $1.entryType)
+        },
+        // Ranked rather than spelled: as prose, "low" sorts between "high"
+        // and "medium", so ascending read high, low, medium.
+        .init(.importance, title: "Importance") {
+            ListSorting.compare(
+                ListSorting.importanceRank($0.importance),
+                ListSorting.importanceRank($1.importance))
+        },
+        .init(.source, title: "Source") {
+            ListSorting.compareText($0.source ?? "", $1.source ?? "")
+        },
+        .init(.content, title: "Content") {
+            ListSorting.compareText($0.content, $1.content)
+        },
+        .init(.category, title: "Category") {
+            ListSorting.compareText($0.category ?? "", $1.category ?? "")
+        },
+        .init(.created, title: "Created", prefersAscending: false) {
+            ListSorting.compare($0.createdAt, $1.createdAt)
+        },
+    ]
+
+    private var sortedEntries: [LedgerEntry] { model.sorted(entries) }
 
     var body: some View {
         mainContent
@@ -67,35 +72,31 @@ struct LedgerEntriesView: View {
                 setupSearchDebounce()
                 searchFocusTrigger += 1
             }
-            .onChange(of: sessionManager.listNavAction) {
-                // Mounted on every tab, hidden by opacity — so the tab has to
-                // be checked here too, or this claims and consumes the action
-                // from whichever list is actually on screen. `focusSearchIfActive`
-                // below already asks the same three questions.
-                guard sessionManager.activeTab == .ledger else { return }
-                guard sessionId == sessionManager.activeSessionId else { return }
-                guard sessionManager.activeLedgerSubTab == .entries else { return }
-                guard let action = sessionManager.listNavAction else { return }
-                sessionManager.listNavAction = nil
-                handleListNavAction(action)
-            }
+            .listNavigation(
+                from: sessionManager,
+                isActive: {
+                    // Spelled out rather than reusing `isSearchActive`, which
+                    // asks two of these three and would answer yes from
+                    // another tab.
+                    sessionManager.activeTab == .ledger
+                        && sessionManager.activeLedgerSubTab == .entries
+                        && sessionId == sessionManager.activeSessionId
+                },
+                onAction: { action in
+                    switch action {
+                    case .up: model.move(.up, in: sortedEntries)
+                    case .down: model.move(.down, in: sortedEntries)
+                    case .activate: break  // Given a meaning below the table
+                    }
+                })
             // Keyed on the rows themselves, not how many there are: a search
-            // returning as many entries as it replaced never fired, leaving
-            // the highlight on whatever moved into the old position.
+            // returning as many entries as it replaced never fired at all.
             .onChange(of: entries.map { $0.map(\.id) }) {
-                handleEntriesDataChange()
+                model.reconcileFocus(in: sortedEntries, seed: .first)
             }
             .onChange(of: sessionManager.activeTab) { focusSearchIfActive() }
             .onChange(of: sessionManager.activeSessionId) { focusSearchIfActive() }
             .onChange(of: sessionManager.activeLedgerSubTab) { focusSearchIfActive() }
-    }
-
-    private func handleEntriesDataChange() {
-        if let entries = entries, !entries.isEmpty {
-            focusedIndex = 0
-        } else {
-            focusedIndex = nil
-        }
     }
 
     /// Focus the search field when navigating to the Entries subtab.
@@ -270,13 +271,9 @@ struct LedgerEntriesView: View {
                         .frame(width: tableWidth)
                     }
                 }
-                .onChange(of: focusedIndex) {
-                    if let idx = focusedIndex,
-                       idx < sortedEntries.count
-                    {
-                        scrollProxy.scrollTo(
-                            sortedEntries[idx].id
-                        )
+                .onChange(of: model.focusedId) {
+                    if let id = model.focusedId {
+                        scrollProxy.scrollTo(id)
                     }
                 }
             }
@@ -287,49 +284,33 @@ struct LedgerEntriesView: View {
 
     private func headerRow(flexWidth: CGFloat) -> some View {
         HStack(spacing: Self.colSpacing) {
-            sortableHeader("Type", column: .entryType, width: Self.colType)
-            sortableHeader("Importance", column: .importance, width: Self.colImportance)
-            sortableHeader("Source", column: .source, width: Self.colSource)
-            sortableHeader("Content", column: .content, width: flexWidth)
-            sortableHeader("Category", column: .category, width: Self.colCategory)
-            sortableHeader("Created", column: .created, width: Self.colCreated)
+            sortableHeader(.entryType, width: Self.colType)
+            sortableHeader(.importance, width: Self.colImportance)
+            sortableHeader(.source, width: Self.colSource)
+            sortableHeader(.content, width: flexWidth)
+            sortableHeader(.category, width: Self.colCategory)
+            sortableHeader(.created, width: Self.colCreated)
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
         .background(Color.primary.opacity(0.05))
     }
 
-    private func sortableHeader(_ title: String, column: SortColumn, width: CGFloat) -> some View {
-        Button(action: {
-            if sortColumn == column {
-                sortAscending.toggle()
-            } else {
-                sortColumn = column
-                sortAscending = true
-            }
-        }) {
-            HStack(spacing: 3) {
-                Text(title)
-                    .chromeFont(size: fontSize.caption2, weight: .semibold)
-                    .foregroundColor(.secondary)
-                    .textCase(.uppercase)
-                    .lineLimit(1)
-                if sortColumn == column {
-                    Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 8))
-                        .foregroundColor(.secondary)
-                }
-            }
-        }
-        .buttonStyle(.plain)
-        .frame(width: width, alignment: .leading)
+    private func sortableHeader(_ column: SortColumn, width: CGFloat) -> some View {
+        LedgerTableHeader(
+            title: model.title(for: column),
+            width: width,
+            isSorted: model.sortColumn == column,
+            ascending: model.sortAscending,
+            fontSize: fontSize,
+            onTap: { model.select(column) })
     }
 
     // MARK: - Data Row
 
     private func entryRow(_ entry: LedgerEntry, index: Int, flexWidth: CGFloat) -> some View {
         let isExpanded = expandedEntryIds.contains(entry.id)
-        let isFocused = focusedIndex == index
+        let isFocused = model.focusedId == entry.id
 
         return HStack(spacing: Self.colSpacing) {
             Text(entry.entryType)
@@ -407,32 +388,6 @@ struct LedgerEntriesView: View {
                     onSearch(query)
                 }
             }
-    }
-
-    // MARK: - List Focus Navigation
-
-    private func handleListNavAction(_ action: ListNavAction) {
-        let items = sortedEntries
-        guard !items.isEmpty else { return }
-
-        switch action {
-        case .up:
-            if let current = focusedIndex {
-                guard current > 0 else { return }
-                focusedIndex = current - 1
-            } else {
-                focusedIndex = items.count - 1
-            }
-        case .down:
-            if let current = focusedIndex {
-                guard current < items.count - 1 else { return }
-                focusedIndex = current + 1
-            } else {
-                focusedIndex = 0
-            }
-        case .activate:
-            break  // No-op for entries
-        }
     }
 
     // MARK: - Helpers
