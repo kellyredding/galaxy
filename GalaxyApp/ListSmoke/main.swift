@@ -155,6 +155,114 @@ check("timestamp: a tier prints only what it needs to") {
     return !today.contains("2025") && older.contains("2024")
 }
 
+// MARK: - Order and selection
+
+private struct Row: Identifiable {
+    let id: Int
+    let name: String
+    let count: Int
+}
+
+private let rowColumns: [ListColumn<Row, String>] = [
+    .init("name", title: "Name") {
+        ListSorting.compareText($0.name, $1.name)
+    },
+    .init("count", title: "Count", prefersAscending: false) {
+        ListSorting.compare($0.count, $1.count)
+    },
+]
+
+private func rowModel(
+    sortColumn: String = "name", ascending: Bool = true
+) -> ListSortModel<Row, String> {
+    ListSortModel(
+        columns: rowColumns, sortColumn: sortColumn,
+        sortAscending: ascending)
+}
+
+private let twoRows = [
+    Row(id: 1, name: "b", count: 2),
+    Row(id: 2, name: "a", count: 1),
+]
+
+// The reason the selection is an identity and not a row number: five views
+// stored the number and none of them repaired it when the order changed, so a
+// header tap slid the highlight onto whatever had moved into that slot.
+check("model: the selection follows its row through a re-sort") {
+    var m = rowModel()
+    m.focusedId = 1
+    let before = m.ordinal(in: m.sorted(twoRows))
+    m.select("count")
+    let after = m.ordinal(in: m.sorted(twoRows))
+    return before == 1 && after == 0 && m.focusedId == 1
+}
+
+check("model: a new column opens in the direction it declared") {
+    var m = rowModel()
+    m.select("count")
+    return m.sortColumn == "count" && !m.sortAscending
+}
+
+check("model: picking the same column again reverses it") {
+    var m = rowModel()
+    m.select("name")
+    return !m.sortAscending
+}
+
+check("model: tied rows hold their arrival order in both directions") {
+    var m = rowModel(sortColumn: "count", ascending: true)
+    let tied = [
+        Row(id: 1, name: "a", count: 7),
+        Row(id: 2, name: "b", count: 7),
+        Row(id: 3, name: "c", count: 7),
+    ]
+    let ascending = m.sorted(tied).map(\.id)
+    m.sortAscending = false
+    return ascending == [1, 2, 3] && m.sorted(tied).map(\.id) == [1, 2, 3]
+}
+
+check("model: a refresh that keeps the row keeps the selection") {
+    var m = rowModel()
+    m.focusedId = 2
+    m.reconcileFocus(in: twoRows, seed: .first)
+    return m.focusedId == 2
+}
+
+check("model: a selection whose row is gone falls back to the seed") {
+    var m = rowModel()
+    m.focusedId = 99
+    m.reconcileFocus(in: twoRows, seed: .last)
+    let seededLast = m.focusedId
+    m.focusedId = 99
+    m.reconcileFocus(in: twoRows, seed: .first)
+    return seededLast == 2 && m.focusedId == 1
+}
+
+check("model: an empty refresh clears the selection") {
+    var m = rowModel()
+    m.focusedId = 1
+    m.reconcileFocus(in: [], seed: .first)
+    return m.focusedId == nil
+}
+
+check("model: moving stops at the ends, and starts from the far one") {
+    var m = rowModel(sortColumn: "count", ascending: true)
+    let rows = m.sorted(twoRows)  // id 2 then id 1
+    m.move(.up, in: rows)
+    let fromNothing = m.focusedId
+    m.move(.down, in: rows)
+    let heldAtBottom = m.focusedId
+    m.move(.up, in: rows)
+    let movedUp = m.focusedId
+    m.move(.up, in: rows)
+    return fromNothing == 1 && heldAtBottom == 1 && movedUp == 2
+        && m.focusedId == 2
+}
+
+check("model: a column title comes from the one place it is declared") {
+    rowModel().title(for: "count") == "Count"
+}
+
 print(
     failures == 0
         ? "\n✅ all list checks passed"

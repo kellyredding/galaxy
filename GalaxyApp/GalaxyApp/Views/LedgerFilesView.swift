@@ -11,39 +11,44 @@ struct LedgerFilesView: View {
     @Environment(\.chromeFontSize) private var chromeFontSize
     private var fontSize: ChromeFontSize { ChromeFontSize(chromeFontSize) }
 
-    // Focus state for keyboard navigation
-    @State private var focusedIndex: Int? = nil
-
-    @State private var sortColumn: SortColumn = .lastSeen
-    @State private var sortAscending: Bool = false
+    /// Order and selection. The selection is an identity rather than a row
+    /// number, so re-sorting cannot slide the highlight onto another file.
+    @State private var model = ListSortModel<LedgerFile, SortColumn>(
+        columns: LedgerFilesView.columns,
+        sortColumn: .lastSeen,
+        sortAscending: false)
 
     enum SortColumn {
         case ops, fileType, filePath, pattern, accesses, lastSeen
     }
 
-    private var sortedFiles: [LedgerFile] {
-        guard let files = files else { return [] }
-        return files.sorted { a, b in
-            let order: ComparisonResult
-            switch sortColumn {
-            case .ops:
-                order = ListSorting.compareText(opsString(a), opsString(b))
-            case .fileType:
-                order = ListSorting.compareText(a.fileType, b.fileType)
-            case .filePath:
-                order = ListSorting.compareText(a.filePath, b.filePath)
-            case .pattern:
-                order = ListSorting.compareText(
-                    a.searchPattern, b.searchPattern)
-            case .accesses:
-                order = ListSorting.compare(a.accessCount, b.accessCount)
-            case .lastSeen:
-                order = ListSorting.compare(
-                    a.lastSeenAt ?? "", b.lastSeenAt ?? "")
-            }
-            return ListSorting.ordered(order, ascending: sortAscending)
-        }
-    }
+    /// What each column is called and how it orders. A count or a timestamp
+    /// opens at its largest, which is what a reader choosing that column is
+    /// after; text opens at A.
+    private static let columns: [ListColumn<LedgerFile, SortColumn>] = [
+        .init(.ops, title: "Ops") {
+            ListSorting.compareText(
+                LedgerFilesView.opsString($0),
+                LedgerFilesView.opsString($1))
+        },
+        .init(.fileType, title: "Type") {
+            ListSorting.compareText($0.fileType, $1.fileType)
+        },
+        .init(.filePath, title: "File Path") {
+            ListSorting.compareText($0.filePath, $1.filePath)
+        },
+        .init(.pattern, title: "Pattern") {
+            ListSorting.compareText($0.searchPattern, $1.searchPattern)
+        },
+        .init(.accesses, title: "Accesses", prefersAscending: false) {
+            ListSorting.compare($0.accessCount, $1.accessCount)
+        },
+        .init(.lastSeen, title: "Last Seen", prefersAscending: false) {
+            ListSorting.compare($0.lastSeenAt ?? "", $1.lastSeenAt ?? "")
+        },
+    ]
+
+    private var sortedFiles: [LedgerFile] { model.sorted(files) }
 
     var body: some View {
         Group {
@@ -64,27 +69,23 @@ struct LedgerFilesView: View {
                 emptyState
             }
         }
-        .onChange(of: sessionManager.listNavAction) {
-            // Every tab container stays mounted, hidden by opacity, so this
-            // handler runs on every tab. Without the tab check it claims the
-            // action from Artifacts, Snapshots or Agents — and consumes it,
-            // since the first reader to answer nils the shared value —
-            // whenever the sticky sub-tab happens to be Files.
-            guard sessionManager.activeTab == .ledger else { return }
-            guard sessionManager.activeLedgerSubTab == .files else { return }
-            guard let action = sessionManager.listNavAction else { return }
-            sessionManager.listNavAction = nil
-            handleListNavAction(action)
-        }
+        .listNavigation(
+            from: sessionManager,
+            isActive: {
+                sessionManager.activeTab == .ledger
+                    && sessionManager.activeLedgerSubTab == .files
+            },
+            onAction: { action in
+                switch action {
+                case .up: model.move(.up, in: sortedFiles)
+                case .down: model.move(.down, in: sortedFiles)
+                case .activate: break  // Nothing to open on a file yet
+                }
+            })
         // Keyed on the rows themselves, not how many there are: a refresh
-        // returning as many files as it replaced never fired, leaving the
-        // highlight on whatever moved into the old position.
+        // returning as many files as it replaced never fired at all.
         .onChange(of: files.map { $0.map(\.id) }) {
-            if let files = files, !files.isEmpty {
-                focusedIndex = 0
-            } else {
-                focusedIndex = nil
-            }
+            model.reconcileFocus(in: sortedFiles, seed: .first)
         }
     }
 
@@ -163,13 +164,9 @@ struct LedgerFilesView: View {
                         .frame(width: tableWidth)
                     }
                 }
-                .onChange(of: focusedIndex) {
-                    if let idx = focusedIndex,
-                       idx < sortedFiles.count
-                    {
-                        scrollProxy.scrollTo(
-                            sortedFiles[idx].id
-                        )
+                .onChange(of: model.focusedId) {
+                    if let id = model.focusedId {
+                        scrollProxy.scrollTo(id)
                     }
                 }
             }
@@ -180,37 +177,33 @@ struct LedgerFilesView: View {
 
     private func headerRow(flexWidth: CGFloat) -> some View {
         HStack(spacing: Self.colSpacing) {
-            sortableHeader("Ops", column: .ops, width: Self.colOps)
-            sortableHeader("Type", column: .fileType, width: Self.colType)
-            sortableHeader("File Path", column: .filePath, width: flexWidth)
-            sortableHeader("Pattern", column: .pattern, width: Self.colPattern)
-            sortableHeader("Accesses", column: .accesses, width: Self.colAccesses)
-            sortableHeader("Last Seen", column: .lastSeen, width: Self.colLastSeen)
+            sortableHeader(.ops, width: Self.colOps)
+            sortableHeader(.fileType, width: Self.colType)
+            sortableHeader(.filePath, width: flexWidth)
+            sortableHeader(.pattern, width: Self.colPattern)
+            sortableHeader(.accesses, width: Self.colAccesses)
+            sortableHeader(.lastSeen, width: Self.colLastSeen)
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
         .background(Color.primary.opacity(0.05))
     }
 
-    private func sortableHeader(_ title: String, column: SortColumn, width: CGFloat) -> some View {
-        Button(action: {
-            if sortColumn == column {
-                sortAscending.toggle()
-            } else {
-                sortColumn = column
-                sortAscending = true
-            }
-        }) {
+    private func sortableHeader(_ column: SortColumn, width: CGFloat) -> some View {
+        Button(action: { model.select(column) }) {
             HStack(spacing: 3) {
-                Text(title)
+                Text(model.title(for: column))
                     .chromeFont(size: fontSize.caption2, weight: .semibold)
                     .foregroundColor(.secondary)
                     .textCase(.uppercase)
                     .lineLimit(1)
-                if sortColumn == column {
-                    Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 8))
-                        .foregroundColor(.secondary)
+                if model.sortColumn == column {
+                    Image(
+                        systemName: model.sortAscending
+                            ? "chevron.up" : "chevron.down"
+                    )
+                    .font(.system(size: 8))
+                    .foregroundColor(.secondary)
                 }
             }
         }
@@ -221,10 +214,10 @@ struct LedgerFilesView: View {
     // MARK: - Data Row
 
     private func fileRow(_ file: LedgerFile, index: Int, flexWidth: CGFloat) -> some View {
-        let isFocused = focusedIndex == index
+        let isFocused = model.focusedId == file.id
 
         return HStack(spacing: Self.colSpacing) {
-            Text(opsString(file))
+            Text(Self.opsString(file))
                 .chromeFontMono(size: fontSize.caption2)
                 .foregroundColor(.secondary)
                 .lineLimit(1)
@@ -271,35 +264,10 @@ struct LedgerFilesView: View {
         )
     }
 
-    // MARK: - List Focus Navigation
-
-    private func handleListNavAction(_ action: ListNavAction) {
-        let items = sortedFiles
-        guard !items.isEmpty else { return }
-
-        switch action {
-        case .up:
-            if let current = focusedIndex {
-                guard current > 0 else { return }
-                focusedIndex = current - 1
-            } else {
-                focusedIndex = items.count - 1
-            }
-        case .down:
-            if let current = focusedIndex {
-                guard current < items.count - 1 else { return }
-                focusedIndex = current + 1
-            } else {
-                focusedIndex = 0
-            }
-        case .activate:
-            break  // No-op for files
-        }
-    }
-
     // MARK: - Helpers
 
-    private func opsString(_ file: LedgerFile) -> String {
+    /// Static so the column table can reach it without an instance.
+    static func opsString(_ file: LedgerFile) -> String {
         var ops: [String] = []
         if file.isRead { ops.append("R") }
         if file.isEdited { ops.append("E") }
