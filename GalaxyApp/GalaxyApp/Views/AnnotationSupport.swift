@@ -96,6 +96,11 @@ func buildAnnotationInitJS(
         // which nine belong to a review that already happened, and the bar
         // reports what pressing it would send.
         sendBarNoun: "pending annotation",
-        sendBarCount: sendBarCount
+        sendBarCount: sendBarCount,
+        // Both readers ask for the overall comment. What it leads here is a
+        // pointer at the review CLI rather than the annotations themselves,
+        // so it is the only prose in the message and carries the whole of
+        // what the reader wanted to say about the set.
+        sendBarComment: true
     )
 }

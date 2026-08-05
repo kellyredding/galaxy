@@ -1192,9 +1192,9 @@ struct SnapshotsView: View {
                 startIdx: startIdx,
                 endIdx: endIdx
             )
-        case .reviewWithClaude:
+        case .reviewWithClaude(let comment):
             guard let snapshot = openSnapshot else { break }
-            submitReview(snapshotId: snapshot.id)
+            submitReview(snapshotId: snapshot.id, comment: comment)
         case .createDiffRange, .createRowRange,
              .createBlockRange, .createWhole,
              .setViewed:
@@ -1279,7 +1279,7 @@ struct SnapshotsView: View {
         }
     }
 
-    private func submitReview(snapshotId: Int64) {
+    private func submitReview(snapshotId: Int64, comment: String) {
         // Optimistic, to stop a second press landing while the first is
         // still in flight. Every failure path below puts the real count back.
         setPendingCount(0)
@@ -1311,7 +1311,8 @@ struct SnapshotsView: View {
                 // needs lsid and snapshotNumber, not the review result.
                 let message = buildReviewMessage(
                     ledgerSessionId: lsid,
-                    snapshotNumber: snapshotNumber
+                    snapshotNumber: snapshotNumber,
+                    comment: comment
                 )
 
                 // Register the review action and resume in a
@@ -1390,7 +1391,8 @@ struct SnapshotsView: View {
 
                     let message = buildReviewMessage(
                         ledgerSessionId: lsid,
-                        snapshotNumber: snapshotNumber
+                        snapshotNumber: snapshotNumber,
+                        comment: comment
                     )
 
                     await MainActor.run {
@@ -1522,13 +1524,22 @@ struct SnapshotsView: View {
         }
     }
 
+    /// The message the agent is sent, with the reader's overall comment ahead
+    /// of it.
+    ///
+    /// The comment leads for the reason it leads a code review: it is what the
+    /// whole set is about, and everything after it here is a set of commands
+    /// for fetching the parts. Blank leaves the message exactly as it was.
     private func buildReviewMessage(
         ledgerSessionId: Int64,
-        snapshotNumber: Int32
+        snapshotNumber: Int32,
+        comment: String
     ) -> String {
+        let lead = comment.isEmpty ? "" : comment + "\n\n"
         let sid = ledgerSessionId
         let sn = snapshotNumber
-        return "I've submitted snapshot annotations for your review."
+        return lead
+            + "I've submitted snapshot annotations for your review."
             + " List pending reviews with"
             + " `galaxy-snapshots review list --json --pending"
             + " --ledger-session-id \(sid) --snapshot \(sn)`,"

@@ -420,7 +420,8 @@ enum KeystrokeCatalog {
               section: .reader,
               availability: .viewsWithReader(readerViews),
               aliases: "submit the annotation, post the comment, "
-                  + "commit the note on the document"),
+                  + "commit the note on the document, send the overall "
+                  + "comment"),
         .init(binding: .textEntryNewline,
               label: "Insert a newline in the annotation",
               section: .reader,
@@ -429,12 +430,18 @@ enum KeystrokeCatalog {
         // The chord is `SendBarJS.matchesChord`, which is also what
         // draws the glyphs on the button — so the row cannot disagree
         // with the button the reader is looking at.
+        //
+        // Two presses, and the label says so: the first opens an overall
+        // comment on the bar and the second sends. Spelling only the send
+        // would describe what the second press does and leave a reader
+        // wondering what the first one did.
         .init(binding: .literal("⇧⌘↩"),
-              label: "Send the pending annotations",
+              label: "Comment on the set, then send it",
               section: .reader,
               availability: .viewsWithReader(readerViews),
               aliases: "hand the annotations to the agent, submit the "
-                  + "review, send the comments to claude"),
+                  + "review, send the comments to claude, overall "
+                  + "comment, summary comment, say what this is about"),
         // One row for a staged key. Escape unwinds a reader from the
         // outside in — the find bar first, then whatever the page has
         // open (an emoji picker, an edit in progress, an expanded note,
@@ -635,15 +642,20 @@ enum KeystrokeCatalog {
                   + "i selected, quote this into a note"),
         .init(binding: .textEntrySubmit, label: "Save the note",
               section: .scrollback, availability: .scrollback,
-              aliases: "submit the note, commit the note, add the note"),
+              aliases: "submit the note, commit the note, add the note, "
+                  + "send the overall comment"),
         .init(binding: .textEntryNewline,
               label: "Insert a newline in the note",
               section: .scrollback, availability: .scrollback,
               aliases: "line break, multiline note, soft return"),
-        .init(binding: .literal("⇧⌘↩"), label: "Send the notes",
+        // Two presses: the first opens an overall comment on the bar, the
+        // second sends it ahead of the notes.
+        .init(binding: .literal("⇧⌘↩"),
+              label: "Comment on the notes, then send them",
               section: .scrollback, availability: .scrollback,
               aliases: "hand the notes to the agent, send them to "
-                  + "claude, submit the notes"),
+                  + "claude, submit the notes, overall comment, summary "
+                  + "comment, say what these are about"),
     ]
 
     // MARK: - Find

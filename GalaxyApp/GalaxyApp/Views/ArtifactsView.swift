@@ -1967,8 +1967,9 @@ struct ArtifactsView: View {
                 isViewed: isViewed
             )
 
-        case .reviewWithClaude:
-            submitReview(artifact: artifact)
+        case .reviewWithClaude(let comment):
+            submitReview(
+                artifact: artifact, comment: comment)
         }
     }
 
@@ -2268,7 +2269,8 @@ struct ArtifactsView: View {
     }
 
     private func submitReview(
-        artifact: ArtifactSummary
+        artifact: ArtifactSummary,
+        comment: String
     ) {
         // Optimistic, to stop a second press landing while the first is still
         // in flight. Every failure path below puts the real count back.
@@ -2303,7 +2305,8 @@ struct ArtifactsView: View {
 
                 let message = buildReviewMessage(
                     ledgerSessionId: lsid,
-                    artifactNumber: artifact.number
+                    artifactNumber: artifact.number,
+                    comment: comment
                 )
 
                 await MainActor.run {
@@ -2388,7 +2391,8 @@ struct ArtifactsView: View {
 
                     let message = buildReviewMessage(
                         ledgerSessionId: lsid,
-                        artifactNumber: artifact.number
+                        artifactNumber: artifact.number,
+                        comment: comment
                     )
 
                     await MainActor.run {
@@ -2507,13 +2511,22 @@ struct ArtifactsView: View {
         }
     }
 
+    /// The message the agent is sent, with the reader's overall comment ahead
+    /// of it.
+    ///
+    /// The comment leads for the reason it leads a code review: it is what the
+    /// whole set is about, and everything after it here is a set of commands
+    /// for fetching the parts. Blank leaves the message exactly as it was.
     private func buildReviewMessage(
         ledgerSessionId: Int64,
-        artifactNumber: Int32
+        artifactNumber: Int32,
+        comment: String
     ) -> String {
+        let lead = comment.isEmpty ? "" : comment + "\n\n"
         let sid = ledgerSessionId
         let an = artifactNumber
-        return "I've submitted artifact annotations "
+        return lead
+            + "I've submitted artifact annotations "
             + "for your review."
             + " List pending reviews with"
             + " `galaxy-artifacts review list --json"
