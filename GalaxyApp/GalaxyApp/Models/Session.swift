@@ -1351,7 +1351,7 @@ class Session: Identifiable, ObservableObject {
             // Cleared from here rather than from the host's teardown because
             // the registry outlives the host across a stop/resume, so a host
             // going away is not evidence the flag should drop.
-            self.paneRegistry.setSessionPaneScrollbackActive(false)
+            self.paneRegistry.setScrollbackOpen(false, kind: .session)
 
             // Cancel any pending post-turn-end actions (e.g., a
             // queued review-message send waiting on the next turn

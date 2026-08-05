@@ -564,6 +564,24 @@ check("availability: the sessions-panel pair is its own inverse") {
     return true
 }
 
+// 21. Every Scrollback row is gated on a scrollback being open, and none
+// of them is live without one.
+//
+// What this cannot reach, said plainly: which *pane* the snapshot asked
+// about. That answer is assembled in `KeystrokeSheetModel`, which links
+// Galactic and so is not in this target — and it is where this section was
+// wrong for a shell scrollback, reading a flag that only ever described the
+// agent's pane. What is checkable from here is that the rows depend on the
+// answer at all, so a future edit cannot quietly hand one of them `.app`.
+check("availability: no Scrollback row is live without a scrollback") {
+    let rows = KeystrokeCatalog.all.filter { $0.section == .scrollback }
+    if rows.isEmpty { return false }
+    let closed = ctx(scrollbackOpen: false)
+    let open = ctx(sessionPaneFocused: true, scrollbackOpen: true)
+    return rows.allSatisfy { !$0.availability.isActive(in: closed) }
+        && rows.contains { $0.availability.isActive(in: open) }
+}
+
 // MARK: - Tier 3: concept searches
 
 /// The real catalog as search candidates, composed exactly as

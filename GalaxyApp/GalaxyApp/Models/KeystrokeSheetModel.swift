@@ -79,11 +79,13 @@ enum KeystrokeSheetModel {
             agentRunOpen: session?.selectedAgentId != nil,
             sessionPaneFocused: focusedPane == .session,
             shellPaneFocused: focusedPane == .shell,
-            // Tracks the session pane only; the shell pane's overlay is
-            // private to its host. `KeystrokeContext.scrollbackOpen`
-            // records that gap rather than guessing at it.
-            scrollbackOpen:
-                session?.paneRegistry.sessionPaneScrollbackActive ?? false,
+            // The pane the caret is in, not "any pane" — a scrollback open on
+            // the pane beside the one being typed in does not make these keys
+            // live. With no pane focused there is nothing to be reading, so
+            // neither is any scrollback the sheet should describe.
+            scrollbackOpen: focusedPane.map {
+                session?.paneRegistry.scrollbackOpenKinds.contains($0) ?? false
+            } ?? false,
             findBarOpen: FindBarPanelController.shared.isPresenting
         )
     }

@@ -70,15 +70,14 @@ struct KeystrokeContext: Equatable {
 
     let sessionPaneFocused: Bool
     let shellPaneFocused: Bool
-    /// A scrollback overlay is up.
+    /// A scrollback overlay is up on the pane the caret is in.
     ///
-    /// Answered from `TerminalPaneCoordinator.sessionPaneScrollbackActive`,
-    /// which tracks only the session pane — the shell pane's overlay is
-    /// private to its host. So this under-reports while a shell
-    /// scrollback is open, and the Scrollback rows read dimmed when they
-    /// are in fact live. Recorded here as a known gap rather than
-    /// guessed at; closing it wants a shell-pane twin of that flag in
-    /// Galactic, which is its own change.
+    /// Answered per pane, from `TerminalPaneCoordinator.scrollbackOpenKinds`.
+    /// It began as a session-pane-only flag — which existed to tell a shell
+    /// whether it could send to the agent, and was right for that — so these
+    /// rows read dimmed for a shell scrollback, which is exactly the surface
+    /// they describe. The pane's own answer is now recorded for every pane and
+    /// this asks about the focused one.
     let scrollbackOpen: Bool
 
     let findBarOpen: Bool
