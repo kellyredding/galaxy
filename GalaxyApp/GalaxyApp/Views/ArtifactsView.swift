@@ -2627,6 +2627,13 @@ struct ArtifactsView: View {
             NSEvent.addLocalMonitorForEvents(
                 matching: .keyDown
             ) { [self] event in
+                // Stand down while the cheat sheet claims the keyboard.
+                // Same two-stage path as Snapshots, and this monitor
+                // deliberately does not bail for a focused text view
+                // because the annotation textarea *is* one — so nothing
+                // else here would stop it.
+                if KeystrokeSheetModel.isClaimingKeyboard { return event }
+
                 if event.keyCode == 53 {
                     guard session.id
                         == sessionManager

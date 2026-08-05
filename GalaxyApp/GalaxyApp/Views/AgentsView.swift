@@ -797,6 +797,12 @@ struct AgentsView: View {
             NSEvent.addLocalMonitorForEvents(
                 matching: .keyDown
             ) { event in
+                // Stand down while the cheat sheet claims the keyboard.
+                // This one clears `selectedAgent` — silently losing the
+                // row the user was on, with no visible cue that anything
+                // happened.
+                if KeystrokeSheetModel.isClaimingKeyboard { return event }
+
                 // 53 = Escape
                 if event.keyCode == 53 {
                     guard self.session.id

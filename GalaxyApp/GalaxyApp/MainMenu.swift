@@ -764,10 +764,37 @@ class MainMenu: NSObject, NSMenuDelegate {
 
     // MARK: - Help Menu
 
+    /// No `delegate = self`, and that is not a compromise. The four menus
+    /// that carry one need it because their *items* change — ⌘R swaps
+    /// between Refresh artifact and Resume session, ⌘W four ways, the
+    /// session list grows. Nothing here changes shape: two items, two
+    /// fixed titles, and ⌘/'s only state-dependent behaviour (open vs.
+    /// close) is inside `toggle()`. Its one live gate — not beneath a
+    /// modal — is `validateMenuItem`'s job, which needs no delegate and
+    /// keeps the visible menu and the key equivalent in lockstep. A
+    /// delegate would rebuild an identical menu on every open.
     private func buildHelpMenu(_ menu: NSMenu) {
         let appName = ProcessInfo.processInfo.processName
         let helpItem = NSMenuItem(title: "\(appName) Help", action: #selector(NSApplication.showHelp(_:)), keyEquivalent: "?")
         menu.addItem(helpItem)
+
+        // Keyboard Shortcuts (⌘/) opens the in-window cheat sheet. A menu
+        // item rather than another local key monitor: this app already
+        // runs several of those and they have to reason about one
+        // another, whereas a menu item gets dispatch, validation, and
+        // menu-bar discoverability for free.
+        //
+        // ⌘/ and the ⌘? above are the same physical key with different
+        // modifier masks, so AppKit matches them separately — no need to
+        // reach for keyEquivalentModifierMask.
+        menu.addItem(.separator())
+        let shortcutsItem = NSMenuItem(
+            title: "Keyboard Shortcuts",
+            action: #selector(MenuActions.showCheatSheet(_:)),
+            keyEquivalent: "/"
+        )
+        shortcutsItem.target = MenuActions.shared
+        menu.addItem(shortcutsItem)
 
         NSApp.helpMenu = menu
     }
@@ -998,13 +1025,28 @@ class MenuActions: NSObject {
             : session.sessionPane
     }
 
+    /// Which pane the caret is literally in, or nil when it is anywhere
+    /// else.
+    ///
+    /// The half-answer below, exposed — and only because one caller wants
+    /// exactly the half. `KeystrokeSheetModel` records where focus *is*,
+    /// so `KeystrokeAvailability` can tell the keys that need the caret in
+    /// a pane (⌘S, the line jumps, the interrupt) from the ones that
+    /// settle for the focus memory (the font keys, Trim, Reflow). Every
+    /// other caller wants `targetTerminalPane()`, which composes this with
+    /// that memory.
+    static func focusedPaneKind() -> TerminalPaneKind? {
+        focusedTerminalPane()?.paneKind
+    }
+
     /// Walk up from the current first responder looking for
     /// a `TerminalHostView` and return its hosted
     /// `TerminalPane` (Session or Shell).
     ///
     /// Private, and deliberately only half an answer: it reports where the
     /// caret literally is, which is nil for every case
-    /// `targetTerminalPane` exists to cover. Callers want that one.
+    /// `targetTerminalPane` exists to cover. Callers want that one, or the
+    /// kind-only accessor above.
     private static func focusedTerminalPane() -> TerminalPane? {
         guard let window = NSApp.keyWindow,
               let responder =
@@ -1056,6 +1098,22 @@ class MenuActions: NSObject {
         SessionManager.shared.activateFind()
     }
 
+    // MARK: - Help Menu Actions
+
+    /// Help ▸ Keyboard Shortcuts (⌘/). Toggles, so the same keystroke
+    /// that summons the sheet puts it away.
+    ///
+    /// `assumeIsolated` rather than a hop: AppKit dispatches menu actions
+    /// on the main thread, and hopping would let the sheet's snapshot be
+    /// taken a runloop turn later than the keystroke that asked for it —
+    /// long enough for the first responder it reads to have moved. The
+    /// snapshot is taken inside the sections provider `toggle()` invokes
+    /// (see `KeystrokeSheetModel`), so a hop would move the reading of
+    /// focus, not just the presentation.
+    @objc func showCheatSheet(_ sender: Any?) {
+        MainActor.assumeIsolated { CheatSheetPresenter.shared.toggle() }
+    }
+
 }
 
 // MARK: - Menu Validation
@@ -1093,12 +1151,26 @@ extension MenuActions: NSMenuItemValidation {
             return Self.targetTerminalPane()?
                 .canDecreaseFontSize ?? false
 
-        // Sessions ▸ Trim buffer / Reflow buffer. Live-gated on a
-        // terminal pane being nameable, so the items (and their ⌃⌘K /
-        // ⌃L equivalents) are active only on the Terminal tab.
-        case #selector(trimBuffer(_:)),
-             #selector(reflowBuffer(_:)):
+        // Sessions ▸ Trim buffer. Live-gated on a terminal pane being
+        // nameable, so the item (and its ⌃⌘K equivalent) is active only
+        // on the Terminal tab.
+        case #selector(trimBuffer(_:)):
             return Self.targetTerminalPane() != nil
+        // Split from Trim for one reason: ⌃L carries no Command, so it is
+        // reachable from a text field the user is typing in — including
+        // the cheat sheet's search field, which is why the sheet has to
+        // be able to take it back.
+        case #selector(reflowBuffer(_:)):
+            return !KeystrokeSheetModel.isClaimingKeyboard
+                && Self.targetTerminalPane() != nil
+
+        // Help ▸ Keyboard Shortcuts. Live everywhere except beneath a
+        // modal: Settings and Restore Session run their own
+        // `NSApp.runModal` loops, and a sheet opened behind one would be
+        // invisible while its Escape monitor took Escape from the panel
+        // the user is actually looking at.
+        case #selector(showCheatSheet(_:)):
+            return NSApp.modalWindow == nil
 
         // Chrome font items: bound-checked against the live
         // settings value, never gated on focus — the user
@@ -1144,7 +1216,13 @@ extension MenuActions: NSMenuItemValidation {
         // and the enable gate are guaranteed to agree about
         // which surfaces own the Enter shortcut.
         case #selector(activateFocusedListItem(_:)):
-            return Self.openFocusedItemDescriptor().enabled
+            // The one bare key equivalent in this app's menus. AppKit
+            // matches menu equivalents in `sendEvent` ahead of the
+            // responder chain, so while the cheat sheet's search field
+            // has the caret this item would otherwise open a row behind
+            // the sheet and the reader would see their Return vanish.
+            return !KeystrokeSheetModel.isClaimingKeyboard
+                && Self.openFocusedItemDescriptor().enabled
 
         // For everything else, the explicit `isEnabled` set
         // by the relevant `buildXxxMenu` IS the answer. Once

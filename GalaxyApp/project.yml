@@ -50,7 +50,44 @@ targets:
       - package: Markdown
         product: Markdown
 
-  # The keystroke model and its assertions now live in Galactic, which tests
-  # the Swift matcher and its JavaScript twin against one fixture in one
-  # process. A standalone tool here could only re-check half of that against a
-  # second copy of the fixture.
+  # Galaxy's only test surface. A standalone tool that links the
+  # Foundation-only keystroke catalog and asserts against it — no app, no
+  # AppKit of its own, no WebView, no window. Mirrors assist-ant's ItemsSmoke.
+  #
+  # Listing sources file-by-file rather than by directory is deliberate: the
+  # target compiles exactly these five files, so a catalog that grew a
+  # dependency on app state — SettingsManager, a coordinator, a view — fails
+  # to link here rather than quietly moving the sheet's decisions somewhere
+  # nothing can assert them. `Models/Keystrokes/` stays `import Foundation`
+  # only, and that is what this list enforces.
+  #
+  # The gates are the reason this exists — they restate what MainMenu decides,
+  # and nothing else can tell you when the two have drifted.
+  KeystrokeSmoke:
+    type: tool
+    platform: macOS
+    sources:
+      - GalaxyApp/Models/Keystrokes/KeystrokeEntry.swift
+      - GalaxyApp/Models/Keystrokes/KeystrokeContext.swift
+      - GalaxyApp/Models/Keystrokes/KeystrokeCatalog.swift
+      # The two enums the context and every tab-shaped gate are written
+      # in terms of. Foundation-only: their SF Symbol names are plain
+      # strings, not Image initializers.
+      - GalaxyApp/Models/SessionTab.swift
+      - GalaxyApp/Models/LedgerSubTab.swift
+      - KeystrokeSmoke
+    dependencies:
+      # CheatSheetSearch, CheatSheetGlyphs and FuzzyMatch live in Galactic,
+      # and the concept checks assert the real catalog *through* them:
+      # "stop the session" reaching the ⌘W row and "backspace" reaching the
+      # two ⌫ rows are facts about the authored aliases, and only the shared
+      # matcher can decide them. Galaxy's labels are terse menu titles, so
+      # aliases carry more weight here than in assist-ant — a tier that
+      # cannot test them is the wrong trade. Compiling a second copy of the
+      # matcher to avoid the dependency is the duplication the extraction
+      # removed.
+      - package: Galactic
+        product: Galactic
+    settings:
+      base:
+        SWIFT_VERSION: "5.10"

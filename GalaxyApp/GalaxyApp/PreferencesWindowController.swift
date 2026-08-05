@@ -30,6 +30,14 @@ class PreferencesWindowController: NSWindowController {
         controller.escapeMonitor = NSEvent.addLocalMonitorForEvents(
             matching: .keyDown
         ) { event in
+            // Stand down while the cheat sheet claims the keyboard. Here
+            // Escape dismisses Settings and unwinds `runModal`, tearing
+            // down the window the sheet was drawn over. Passing the event
+            // on gives a deliberate two-stage unwind — the first Escape
+            // closes the sheet, the second the panel — which mirrors the
+            // readers' own two-stage Escape rather than inventing a rule.
+            if KeystrokeSheetModel.isClaimingKeyboard { return event }
+
             if event.keyCode == 53 {  // Escape
                 controller.dismiss()
                 return nil  // consume the event

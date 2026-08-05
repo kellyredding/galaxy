@@ -95,6 +95,12 @@ class RestoreSessionSheetController: NSObject, NSWindowDelegate {
         escapeMonitor = NSEvent.addLocalMonitorForEvents(
             matching: .keyDown
         ) { [weak self] event in
+            // Stand down while the cheat sheet claims the keyboard. This
+            // monitor claims Escape *and* ⌘J/⌘K/↑/↓/Return, and the bare
+            // Return and arrows are exactly the keys a reader uses inside
+            // the sheet's search field.
+            if KeystrokeSheetModel.isClaimingKeyboard { return event }
+
             // Escape — dismiss modal
             if event.keyCode == 53 {
                 self?.dismiss()

@@ -16,6 +16,14 @@ struct ContentView: View {
     @ObservedObject private var sidebarPrefs
         = SidebarPreferences.shared
 
+    /// Presentation state for ⌘/. Observed here because the overlay
+    /// lives in this body; a flip invalidates the whole root body,
+    /// which is acceptable at twice per ⌘/ — the six tab containers
+    /// are constructed on every body pass regardless, since they are
+    /// switched by opacity rather than by branching.
+    @ObservedObject private var cheatSheet
+        = CheatSheetPresenter.shared
+
     // Track width during drag (nil when not dragging, uses settings value)
     @State private var draggingWidth: CGFloat? = nil
 
@@ -73,6 +81,26 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 800, minHeight: 500)
+        // Mounted on the root HStack, above both columns, so ⌘/ reaches
+        // it from any of the six tabs and from the sidebar alike — and
+        // outside the inactive dimming the views column applies, because
+        // a reference should stay legible.
+        //
+        // The HStack rather than either column: `viewsColumn` and
+        // `sidebarColumn` are order-swapped by `sidebarOnLeft`, so a
+        // sheet anchored to a column would slide across the window when
+        // the user moved the sessions panel. After `.frame` so the scrim
+        // covers the whole window; before `.environment` so the sheet
+        // sits inside the same environment as the rest of the tree.
+        .overlay {
+            if cheatSheet.isPresented {
+                CheatSheetView()
+                    .transition(.opacity)
+            }
+        }
+        .animation(
+            .easeInOut(duration: 0.12), value: cheatSheet.isPresented
+        )
         .environment(\.chromeFontSize, settingsManager.settings.chromeFontSize)
     }
 

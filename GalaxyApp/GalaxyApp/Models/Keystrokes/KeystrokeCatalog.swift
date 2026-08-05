@@ -128,10 +128,16 @@ enum KeystrokeCatalog {
         // ⌘W's second, third and fifth meanings. The first belongs to a
         // pre-menu event monitor and is documented in Terminal & Agent;
         // the fourth is a disabled placeholder and has no row.
+        //
+        // The lead alias is the phrase itself, spelled out. Matching is
+        // ordered and each term is contiguous, so "stop the session" only
+        // reaches a row that says those three words in that order — and
+        // the label says two of them with nothing in between.
         .init(binding: .literal("⌘W"), label: "Stop session",
               section: .sessions, availability: .session(.live),
-              aliases: "end the session, kill the agent, quit claude, "
-                  + "halt the session, shut the session down"),
+              aliases: "stop the session, end the session, kill the "
+                  + "agent, quit claude, halt the session, shut the "
+                  + "session down"),
         .init(binding: .literal("⌘W"), label: "Dismiss session",
               section: .sessions, availability: .session(.stopped),
               aliases: "remove a stopped session, clear it out of the "

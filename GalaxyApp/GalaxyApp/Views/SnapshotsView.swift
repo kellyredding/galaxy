@@ -831,6 +831,14 @@ struct SnapshotsView: View {
     private func installEscapeMonitor() {
         guard escapeMonitor == nil else { return }
         escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [self] event in
+            // Stand down while the cheat sheet claims the keyboard. Its
+            // two-stage Escape closes find, then the annotation, then the
+            // reader — three things behind the sheet, none of them what
+            // the reader pressing Escape meant. A gate rather than an
+            // ordering assumption: AppKit does not contract the order
+            // local monitors run in.
+            if KeystrokeSheetModel.isClaimingKeyboard { return event }
+
             if event.keyCode == 53 {  // 53 = Escape
                 // Defense in depth: only consume if we're the active view
                 guard session.id == sessionManager.activeSessionId,

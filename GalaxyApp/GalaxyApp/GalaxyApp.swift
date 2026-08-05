@@ -34,6 +34,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             )
         }
 
+        // The cheat sheet's rows, supplied rather than captured. The
+        // presenter invokes this once per present, so each ⌘/ reads the
+        // surface it opened over — see KeystrokeSheetModel for why a
+        // snapshot cannot be read live. Registered here, next to the find
+        // bar's metrics provider, because both are the same shape: state
+        // this app owns, handed to shared code at the moment it is needed.
+        CheatSheetPresenter.shared.sectionsProvider = {
+            KeystrokeSheetModel.sections()
+        }
+
         // Disable macOS press-and-hold accent popover app-wide so held keys
         // produce normal key repeats. Without this, holding j/k in less (or
         // any pager/vim-style UI inside the shell pane) registers once and

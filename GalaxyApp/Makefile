@@ -1,4 +1,4 @@
-.PHONY: generate build release clean validate-js check
+.PHONY: generate build release clean validate-js smoke smoke-keystrokes check
 
 # Always use -derivedDataPath to avoid polluting ~/Library/Developer/Xcode/DerivedData
 DERIVED_DATA = build
@@ -25,14 +25,29 @@ build: generate validate-js
 release: generate validate-js
 	xcodebuild -scheme GalaxyApp -configuration Release -derivedDataPath $(DERIVED_DATA) -destination 'platform=macOS' build
 
+# Sandboxed smoke checks: build the standalone tools and run them. No app
+# launch — each runs as its own process. A dispatcher with one sibling today,
+# shaped like assist-ant's so a second tool is a line here rather than a
+# restructure.
+smoke: smoke-keystrokes
+
+# The ⌘/ catalog and its availability gates. Links Galactic so the concept
+# searches run through the real matcher and the real glyph table, which is why
+# the run step needs DYLD_FRAMEWORK_PATH — the same reason assist-ant's
+# ItemsSmoke does.
+smoke-keystrokes: generate
+	xcodebuild -scheme KeystrokeSmoke -configuration Debug -derivedDataPath $(DERIVED_DATA) -destination 'platform=macOS' build
+	DYLD_FRAMEWORK_PATH="$(DERIVED_DATA)/Build/Products/Debug/PackageFrameworks" \
+	  ./$(DERIVED_DATA)/Build/Products/Debug/KeystrokeSmoke
+
 # The pre-commit gate: everything that can fail without launching the app.
 #
-# The keystroke matchers are no longer checked here. Both of them — the Swift
-# one and its JavaScript twin — now live in Galactic and are asserted against a
-# single fixture in a single process by `swift test` there. Re-checking either
-# half from this side would mean a second copy of the fixture, which is the
-# thing that arrangement exists to prevent.
-check: build
+# The keystroke *matcher* is still not checked here, and must not be: both
+# halves of it — the Swift one and its JavaScript twin — live in Galactic and
+# are asserted against a single fixture in a single process by `swift test`
+# there. What `smoke` checks is this app's own ⌘/ catalog and the availability
+# gates it restates from MainMenu, which nothing outside this repo can see.
+check: build smoke
 
 clean:
 	xcodebuild -scheme GalaxyApp -derivedDataPath $(DERIVED_DATA) clean

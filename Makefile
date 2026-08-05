@@ -1,4 +1,4 @@
-.PHONY: all clean statusline-build statusline-dev statusline-test statusline-check statusline-install statusline-clean ledger-build ledger-dev ledger-test ledger-check ledger-install ledger-clean snapshots-build snapshots-dev snapshots-test snapshots-check snapshots-install snapshots-clean artifacts-build artifacts-dev artifacts-test artifacts-check artifacts-install artifacts-clean timeline-build timeline-dev timeline-test timeline-check timeline-install timeline-clean agents-build agents-dev agents-test agents-check agents-install agents-clean diff-build diff-dev diff-test diff-check diff-install diff-clean galaxy-build galaxy-dev galaxy-test galaxy-check galaxy-install galaxy-clean app-build app-release app-clean
+.PHONY: all clean statusline-build statusline-dev statusline-test statusline-check statusline-install statusline-clean ledger-build ledger-dev ledger-test ledger-check ledger-install ledger-clean snapshots-build snapshots-dev snapshots-test snapshots-check snapshots-install snapshots-clean artifacts-build artifacts-dev artifacts-test artifacts-check artifacts-install artifacts-clean timeline-build timeline-dev timeline-test timeline-check timeline-install timeline-clean agents-build agents-dev agents-test agents-check agents-install agents-clean diff-build diff-dev diff-test diff-check diff-install diff-clean galaxy-build galaxy-dev galaxy-test galaxy-check galaxy-install galaxy-clean app-build app-smoke app-check app-release app-clean
 
 all: statusline-build ledger-build snapshots-build artifacts-build timeline-build agents-build diff-build galaxy-build
 
@@ -161,6 +161,15 @@ galaxy-clean:
 # lands in GalaxyApp/build either way.
 app-build:
 	$(MAKE) -C GalaxyApp build
+
+# Delegated for the same reason app-build is: the smoke tool's run step uses a
+# path relative to GalaxyApp/, and `check` there is build + smoke — which is
+# where the JavaScript syntax gate runs.
+app-smoke:
+	$(MAKE) -C GalaxyApp smoke
+
+app-check:
+	$(MAKE) -C GalaxyApp check
 
 app-release:
 	$(MAKE) -C GalaxyApp release
