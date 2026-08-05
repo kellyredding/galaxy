@@ -70,39 +70,35 @@ struct AgentsView: View {
     @State private var isAbandoning: Bool = false
     @State private var abandonErrorMessage: String? = nil
 
-    // Focus state for keyboard navigation
-    @State private var focusedIndex: Int? = nil
-
-    // Sort state
-    @State private var sortColumn: SortColumn = .started
-    @State private var sortAscending: Bool = true
+    /// Order and selection. The selection is an identity rather than a row
+    /// number, so re-sorting cannot slide the highlight onto another run.
+    @State private var model = ListSortModel<AgentRun, SortColumn>(
+        columns: AgentsView.columns,
+        sortColumn: .started,
+        sortAscending: true)
 
     enum SortColumn {
         case type, status, duration, started
     }
 
-    private var sortedAgents: [AgentRun] {
-        guard let agents = agents else { return [] }
-        return agents.sorted { a, b in
-            let order: ComparisonResult
-            switch sortColumn {
-            case .type:
-                order = ListSorting.compareText(
-                    a.agentType, b.agentType)
-            case .status:
-                order = ListSorting.compareText(
-                    a.status, b.status)
-            case .duration:
-                order = ListSorting.compare(
-                    a.durationMs ?? 0, b.durationMs ?? 0)
-            case .started:
-                order = ListSorting.compare(
-                    a.startedAt, b.startedAt)
-            }
-            return ListSorting.ordered(
-                order, ascending: sortAscending)
-        }
-    }
+    /// Description is missing on purpose: it is the one column with nothing
+    /// to sort by, and its header is a plain label rather than a button.
+    private static let columns: [ListColumn<AgentRun, SortColumn>] = [
+        .init(.type, title: "Type") {
+            ListSorting.compareText($0.agentType, $1.agentType)
+        },
+        .init(.started, title: "Started", prefersAscending: false) {
+            ListSorting.compare($0.startedAt, $1.startedAt)
+        },
+        .init(.duration, title: "Duration", prefersAscending: false) {
+            ListSorting.compare($0.durationMs ?? 0, $1.durationMs ?? 0)
+        },
+        .init(.status, title: "Status") {
+            ListSorting.compareText($0.status, $1.status)
+        },
+    ]
+
+    private var sortedAgents: [AgentRun] { model.sorted(agents) }
 
     var body: some View {
         Group {
@@ -129,14 +125,25 @@ struct AgentsView: View {
             else { return }
             fetchAgents()
         }
-        .onChange(of: sessionManager.listNavAction) {
-            guard sessionManager.activeTab == .agents,
-                  session.id
-                      == sessionManager.activeSessionId,
-                  selectedAgent == nil
-            else { return }
-            handleListNavAction()
-        }
+        .listNavigation(
+            from: sessionManager,
+            isActive: {
+                sessionManager.activeTab == .agents
+                    && session.id
+                        == sessionManager.activeSessionId
+                    && selectedAgent == nil
+            },
+            onAction: { action in
+                switch action {
+                case .up:
+                    model.move(.up, in: sortedAgents)
+                case .down:
+                    model.move(.down, in: sortedAgents)
+                case .activate:
+                    selectedAgent = model.focusedElement(
+                        in: sortedAgents)
+                }
+            })
         .onChange(of: selectedAgent != nil) {
             updateEscapeMonitor()
         }
@@ -186,28 +193,28 @@ struct AgentsView: View {
         VStack(spacing: 0) {
             // Header row
             HStack(spacing: 0) {
-                sortableHeader("Type", .type)
+                sortableHeader(.type)
                     .frame(
                         width: 120,
                         alignment: .leading
                     )
-                sortableHeader("Started", .started)
+                sortableHeader(.started)
                     .frame(
                         width: 130,
                         alignment: .leading
                     )
-                sortableHeader("Duration", .duration)
+                sortableHeader(.duration)
                     .frame(
                         width: 80,
                         alignment: .trailing
                     )
-                sortableHeader("Description", nil)
+                fixedHeader("Description")
                     .frame(
                         maxWidth: .infinity,
                         alignment: .leading
                     )
                     .padding(.leading, 8)
-                sortableHeader("Status", .status)
+                sortableHeader(.status)
                     .frame(
                         width: 90,
                         alignment: .trailing
@@ -303,13 +310,9 @@ struct AgentsView: View {
                     .onChange(of: agents?.count) {
                         scrollToBottom(scrollProxy)
                     }
-                    .onChange(of: focusedIndex) {
-                        if let idx = focusedIndex,
-                           idx < sortedAgents.count
-                        {
-                            scrollProxy.scrollTo(
-                                sortedAgents[idx].id
-                            )
+                    .onChange(of: model.focusedId) {
+                        if let id = model.focusedId {
+                            scrollProxy.scrollTo(id)
                         }
                     }
                 }
@@ -322,13 +325,13 @@ struct AgentsView: View {
         index: Int
     ) -> some View {
         Button(action: {
-            focusedIndex = index
+            model.focusedId = agent.id
             selectedAgent = agent
         }) {
             HStack(spacing: 0) {
                 Text(agent.agentType)
                     .chromeFont(
-                        size: fontSize.caption
+                        size: fontSize.caption2
                     )
                     .lineLimit(1)
                     .frame(
@@ -338,7 +341,7 @@ struct AgentsView: View {
 
                 Text(agent.displayStartedAt)
                     .chromeFont(
-                        size: fontSize.caption
+                        size: fontSize.caption2
                     )
                     .lineLimit(1)
                     .frame(
@@ -348,7 +351,7 @@ struct AgentsView: View {
 
                 Text(agent.displayDuration)
                     .chromeFontMono(
-                        size: fontSize.caption
+                        size: fontSize.caption2
                     )
                     .frame(
                         width: 80,
@@ -360,7 +363,7 @@ struct AgentsView: View {
                         ?? agent.agentId
                 )
                 .chromeFont(
-                    size: fontSize.caption
+                    size: fontSize.caption2
                 )
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -376,7 +379,7 @@ struct AgentsView: View {
                         .frame(width: 6, height: 6)
                     Text(agent.statusLabel)
                         .chromeFont(
-                            size: fontSize.caption
+                            size: fontSize.caption2
                         )
                 }
                 .frame(
@@ -387,7 +390,7 @@ struct AgentsView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .background(
-                focusedIndex == index
+                model.focusedId == agent.id
                     ? Color.accentColor.opacity(0.15)
                     : (index % 2 == 0
                         ? Color.clear
@@ -399,29 +402,14 @@ struct AgentsView: View {
     }
 
     private func sortableHeader(
-        _ title: String,
-        _ column: SortColumn?
+        _ column: SortColumn
     ) -> some View {
-        Button(action: {
-            guard let column = column else { return }
-            if sortColumn == column {
-                sortAscending.toggle()
-            } else {
-                sortColumn = column
-                sortAscending = true
-            }
-        }) {
+        Button(action: { model.select(column) }) {
             HStack(spacing: 2) {
-                Text(title)
-                    .chromeFont(
-                        size: fontSize.caption2
-                    )
-                    .fontWeight(.semibold)
-                if let column = column,
-                   sortColumn == column
-                {
+                headerLabel(model.title(for: column))
+                if model.sortColumn == column {
                     Image(
-                        systemName: sortAscending
+                        systemName: model.sortAscending
                             ? "chevron.up"
                             : "chevron.down"
                     )
@@ -431,7 +419,18 @@ struct AgentsView: View {
             .foregroundColor(.secondary)
         }
         .buttonStyle(.plain)
-        .disabled(column == nil)
+    }
+
+    /// The one column with nothing to sort by, so nothing to press either.
+    private func fixedHeader(_ title: String) -> some View {
+        headerLabel(title)
+            .foregroundColor(.secondary)
+    }
+
+    private func headerLabel(_ title: String) -> some View {
+        Text(title)
+            .chromeFont(size: fontSize.caption2)
+            .fontWeight(.semibold)
     }
 
     // MARK: - Detail View
@@ -846,12 +845,10 @@ struct AgentsView: View {
                 }
                 agents = result
                 seedAgentTitles(result)
-                if focusedIndex == nil,
-                   !result.isEmpty
-                {
-                    focusedIndex =
-                        result.count - 1
-                }
+                // Seeded at the newest run, which is the end this list
+                // scrolls to.
+                model.reconcileFocus(
+                    in: sortedAgents, seed: .last)
 
             } catch {
                 guard !Task.isCancelled else {
@@ -1046,41 +1043,6 @@ struct AgentsView: View {
 
     // MARK: - Keyboard Navigation
 
-    private func handleListNavAction() {
-        guard let action =
-            sessionManager.listNavAction
-        else { return }
-
-        defer {
-            sessionManager.listNavAction = nil
-        }
-
-        let count = sortedAgents.count
-        guard count > 0 else { return }
-
-        switch action {
-        case .up:
-            if let idx = focusedIndex {
-                focusedIndex = max(0, idx - 1)
-            } else {
-                focusedIndex = count - 1
-            }
-        case .down:
-            if let idx = focusedIndex {
-                focusedIndex = min(
-                    count - 1, idx + 1
-                )
-            } else {
-                focusedIndex = 0
-            }
-        case .activate:
-            if let idx = focusedIndex,
-               idx < count
-            {
-                selectedAgent = sortedAgents[idx]
-            }
-        }
-    }
 }
 
 // MARK: - Agent Running Badge
