@@ -29,6 +29,14 @@ struct SnapshotsView: View {
 
     private var fontSize: ChromeFontSize { ChromeFontSize(chromeFontSize) }
 
+    /// Whether this view is the surface in front of the user — both halves,
+    /// composed once, the way `ContentView` composes the terminal's. See
+    /// `ArtifactsView`'s twin for what goes wrong without it.
+    private var isVisibleSurface: Bool {
+        session.id == sessionManager.activeSessionId
+            && sessionManager.activeTab == .snapshots
+    }
+
     // JIT data state
     @State private var snapshots: [SnapshotSummary]? = nil
     @State private var isLoading: Bool = false
@@ -508,6 +516,7 @@ struct SnapshotsView: View {
                 annotations: openAnnotations,
                 annotationHTMLMap: annotationHTMLMap,
                 pendingReviewCount: pendingAnnotationCount,
+                isVisibleSurface: isVisibleSurface,
                 webViewRef: $webViewRef,
                 onAnnotationMessage: { message in
                     handleAnnotationMessage(

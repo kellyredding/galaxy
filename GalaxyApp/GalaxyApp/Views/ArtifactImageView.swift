@@ -16,6 +16,10 @@ struct ArtifactImageView: View {
     let pendingReviewCount: Int
     let itemLabel: String
     var onAnnotationMessage: ((AnnotationMessage) -> Void)?
+    /// Whether this reader is the surface in front of the user.
+    /// Handed to `ReaderHostView`, which needs it to stop answering
+    /// key equivalents from a tab the user has moved away from.
+    let isVisibleSurface: Bool
     @Binding var webViewRef: WKWebView?
 
     var body: some View {
@@ -40,6 +44,7 @@ struct ArtifactImageView: View {
                     .deletingLastPathComponent
             ),
             webView: $webViewRef,
+            isVisibleSurface: isVisibleSurface,
             onAnnotationMessage: onAnnotationMessage,
             isInspectable: true
         )

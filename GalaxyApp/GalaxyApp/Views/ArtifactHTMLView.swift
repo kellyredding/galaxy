@@ -16,6 +16,10 @@ struct ArtifactHTMLView: View {
     /// the reader neither computes nor interprets it.
     let pendingReviewCount: Int
     let itemLabel: String
+    /// Whether this reader is the surface in front of the user.
+    /// Handed to `ReaderHostView`, which needs it to stop answering
+    /// key equivalents from a tab the user has moved away from.
+    let isVisibleSurface: Bool
     @Binding var webViewRef: WKWebView?
     var onAnnotationMessage: ((AnnotationMessage) -> Void)?
 
@@ -38,6 +42,7 @@ struct ArtifactHTMLView: View {
             },
             baseURL: URL(string: "galaxy://artifact-reader"),
             webView: $webViewRef,
+            isVisibleSurface: isVisibleSurface,
             onAnnotationMessage: onAnnotationMessage
         )
     }

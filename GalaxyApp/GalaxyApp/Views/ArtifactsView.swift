@@ -40,6 +40,20 @@ struct ArtifactsView: View {
         ChromeFontSize(chromeFontSize)
     }
 
+    /// Whether this view is the surface in front of the user — both halves,
+    /// composed once, the way `ContentView` composes the terminal's.
+    ///
+    /// Every artifacts container stays mounted and is switched by opacity, so
+    /// a reader open here is still in the window after the user moves to
+    /// another tab or session. A zero alpha is not hidden, and
+    /// `performKeyEquivalent` is offered to the whole hierarchy before the menu
+    /// bar — which is how an unseen reader came to answer ⌘=/⌘-/⌘0 and zoom
+    /// itself while the Terminal tab's font-size items sat unreached.
+    private var isVisibleSurface: Bool {
+        session.id == sessionManager.activeSessionId
+            && sessionManager.activeTab == .artifacts
+    }
+
     // JIT data state
     @State private var artifacts: [ArtifactSummary]? = nil
     @State private var isLoading: Bool = false
@@ -726,6 +740,7 @@ struct ArtifactsView: View {
                                 artifact: artifact
                             )
                         },
+                        isVisibleSurface: isVisibleSurface,
                         webViewRef: $webViewRef
                     )
                     .id(imageRefreshToken)
@@ -874,6 +889,7 @@ struct ArtifactsView: View {
                 annotations: activeAnns,
                 annotationHTMLMap: annotationHTMLMap,
                 pendingReviewCount: pendingAnnotationCount,
+                isVisibleSurface: isVisibleSurface,
                 webViewRef: $webViewRef,
                 onAnnotationMessage: { message in
                     handleAnnotationMessage(
@@ -895,6 +911,7 @@ struct ArtifactsView: View {
                 annotationHTMLMap: annotationHTMLMap,
                 pendingReviewCount: pendingAnnotationCount,
                 itemLabel: label,
+                isVisibleSurface: isVisibleSurface,
                 webViewRef: $webViewRef,
                 onAnnotationMessage: { message in
                     handleAnnotationMessage(
@@ -922,6 +939,7 @@ struct ArtifactsView: View {
                         artifact: artifact
                     )
                 },
+                isVisibleSurface: isVisibleSurface,
                 webViewRef: $webViewRef
             )
         case .html:
@@ -933,6 +951,7 @@ struct ArtifactsView: View {
                 annotationHTMLMap: annotationHTMLMap,
                 pendingReviewCount: pendingAnnotationCount,
                 itemLabel: label,
+                isVisibleSurface: isVisibleSurface,
                 webViewRef: $webViewRef,
                 onAnnotationMessage: { message in
                     handleAnnotationMessage(
@@ -953,6 +972,7 @@ struct ArtifactsView: View {
                 pendingReviewCount:
                     pendingAnnotationCount,
                 itemLabel: label,
+                isVisibleSurface: isVisibleSurface,
                 webViewRef: $webViewRef,
                 onAnnotationMessage: { msg in
                     handleAnnotationMessage(
@@ -989,6 +1009,7 @@ struct ArtifactsView: View {
                 pendingReviewCount: pendingAnnotationCount,
                 itemLabel: label,
                 viewedFilePaths: viewed,
+                isVisibleSurface: isVisibleSurface,
                 webViewRef: $webViewRef,
                 onAnnotationMessage: { message in
                     handleAnnotationMessage(
@@ -1010,6 +1031,7 @@ struct ArtifactsView: View {
                 annotationHTMLMap: annotationHTMLMap,
                 pendingReviewCount: pendingAnnotationCount,
                 itemLabel: label,
+                isVisibleSurface: isVisibleSurface,
                 webViewRef: $webViewRef,
                 onAnnotationMessage: { message in
                     handleAnnotationMessage(

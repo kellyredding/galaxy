@@ -21,6 +21,10 @@ struct MarkdownReaderView: View {
     /// How many annotations a review would carry. Displayed by the send bar;
     /// the reader neither computes nor interprets it.
     let pendingReviewCount: Int
+    /// Whether this reader is the surface in front of the user.
+    /// Handed to `ReaderHostView`, which needs it to stop answering
+    /// key equivalents from a tab the user has moved away from.
+    let isVisibleSurface: Bool
     @Binding var webViewRef: WKWebView?
     var onAnnotationMessage: ((AnnotationMessage) -> Void)?
     var annotationsEnabled: Bool = true
@@ -70,6 +74,7 @@ struct MarkdownReaderView: View {
             },
             baseURL: URL(string: "galaxy://\(baseUrlName)"),
             webView: $webViewRef,
+            isVisibleSurface: isVisibleSurface,
             onAnnotationMessage: onAnnotationMessage,
             isInspectable: true
         )
