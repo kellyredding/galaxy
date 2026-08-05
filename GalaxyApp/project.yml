@@ -91,3 +91,22 @@ targets:
     settings:
       base:
         SWIFT_VERSION: "5.10"
+
+  # The sortable lists' model, on the same bargain as KeystrokeSmoke: sources
+  # listed one by one, so a model that grew a dependency on SwiftUI or on app
+  # state fails to link here rather than quietly becoming untestable again.
+  # `Models/Lists/` stays `import Foundation` only, and this list is what says
+  # so.
+  #
+  # No Galactic dependency, and so no DYLD_FRAMEWORK_PATH on the run step:
+  # ordering, selection and a date format are answerable without a matcher.
+  ListSmoke:
+    type: tool
+    platform: macOS
+    sources:
+      - GalaxyApp/Models/Lists/ListSorting.swift
+      - GalaxyApp/Models/Lists/ListTimestamp.swift
+      - ListSmoke
+    settings:
+      base:
+        SWIFT_VERSION: "5.10"

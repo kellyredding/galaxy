@@ -1,4 +1,4 @@
-.PHONY: generate build release clean validate-js smoke smoke-keystrokes check
+.PHONY: generate build release clean validate-js smoke smoke-keystrokes smoke-lists check
 
 # Always use -derivedDataPath to avoid polluting ~/Library/Developer/Xcode/DerivedData
 DERIVED_DATA = build
@@ -26,10 +26,8 @@ release: generate validate-js
 	xcodebuild -scheme GalaxyApp -configuration Release -derivedDataPath $(DERIVED_DATA) -destination 'platform=macOS' build
 
 # Sandboxed smoke checks: build the standalone tools and run them. No app
-# launch — each runs as its own process. A dispatcher with one sibling today,
-# shaped like assist-ant's so a second tool is a line here rather than a
-# restructure.
-smoke: smoke-keystrokes
+# launch — each runs as its own process.
+smoke: smoke-keystrokes smoke-lists
 
 # The ⌘/ catalog and its availability gates. Links Galactic so the concept
 # searches run through the real matcher and the real glyph table, which is why
@@ -39,6 +37,13 @@ smoke-keystrokes: generate
 	xcodebuild -scheme KeystrokeSmoke -configuration Debug -derivedDataPath $(DERIVED_DATA) -destination 'platform=macOS' build
 	DYLD_FRAMEWORK_PATH="$(DERIVED_DATA)/Build/Products/Debug/PackageFrameworks" \
 	  ./$(DERIVED_DATA)/Build/Products/Debug/KeystrokeSmoke
+
+# The sortable lists' ordering, selection and timestamp policy. Foundation
+# only, so unlike the keystroke catalog this links nothing and needs no
+# framework path to run.
+smoke-lists: generate
+	xcodebuild -scheme ListSmoke -configuration Debug -derivedDataPath $(DERIVED_DATA) -destination 'platform=macOS' build
+	./$(DERIVED_DATA)/Build/Products/Debug/ListSmoke
 
 # The pre-commit gate: everything that can fail without launching the app.
 #

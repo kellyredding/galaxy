@@ -379,7 +379,7 @@ struct LedgerEntriesView: View {
                 .truncationMode(.tail)
                 .frame(width: Self.colCategory, alignment: .leading)
 
-            Text(formatTimestamp(entry.createdAt))
+            Text(ListTimestamp.format(entry.createdAt))
                 .chromeFontMono(size: fontSize.caption2)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -443,46 +443,6 @@ struct LedgerEntriesView: View {
         case "medium": return .orange
         default: return .secondary
         }
-    }
-
-    private static let iso8601WithFractional: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f
-    }()
-
-    private static let iso8601Standard: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime]
-        return f
-    }()
-
-    private static let sqliteDateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        f.timeZone = TimeZone(identifier: "UTC")
-        f.locale = Locale(identifier: "en_US_POSIX")
-        return f
-    }()
-
-    private static let displayDateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateStyle = .medium
-        f.timeStyle = .short
-        return f
-    }()
-
-    private func formatTimestamp(_ ts: String) -> String {
-        if let date = Self.iso8601WithFractional.date(from: ts) {
-            return Self.displayDateFormatter.string(from: date)
-        }
-        if let date = Self.iso8601Standard.date(from: ts) {
-            return Self.displayDateFormatter.string(from: date)
-        }
-        if let date = Self.sqliteDateFormatter.date(from: ts) {
-            return Self.displayDateFormatter.string(from: date)
-        }
-        return ts
     }
 }
 

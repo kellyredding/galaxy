@@ -205,7 +205,9 @@ struct LedgerView: View {
             // Usage column
             ledgerSection("Usage") {
                 if let started = session.ledgerStartedAt {
-                    ledgerRow("Started", value: formatTimestamp(started))
+                    ledgerRow(
+                        "Started",
+                        value: ListTimestamp.format(started))
                 }
                 if let pct = session.ledgerContextPercentage {
                     contextRow(percentage: pct)
@@ -638,36 +640,7 @@ struct LedgerView: View {
 
     // MARK: - Formatting
 
-    /// Static formatters — allocated once, reused across re-renders.
-    private static let iso8601WithFractional: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f
-    }()
-
-    private static let iso8601Standard: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime]
-        return f
-    }()
-
-    /// SQLite datetime('now') format — stored as UTC with no timezone suffix.
-    private static let sqliteDateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        f.timeZone = TimeZone(identifier: "UTC")
-        f.locale = Locale(identifier: "en_US_POSIX")
-        return f
-    }()
-
-    /// Localized display formatter — uses system locale and local timezone.
-    private static let displayDateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateStyle = .medium
-        f.timeStyle = .short
-        return f
-    }()
-
+    /// Allocated once, reused across re-renders.
     private static let numberFormatter: NumberFormatter = {
         let f = NumberFormatter()
         f.numberStyle = .decimal
@@ -680,19 +653,6 @@ struct LedgerView: View {
             return "~" + path.dropFirst(home.count)
         }
         return path
-    }
-
-    func formatTimestamp(_ iso: String) -> String {
-        if let date = Self.iso8601WithFractional.date(from: iso) {
-            return Self.displayDateFormatter.string(from: date)
-        }
-        if let date = Self.iso8601Standard.date(from: iso) {
-            return Self.displayDateFormatter.string(from: date)
-        }
-        if let date = Self.sqliteDateFormatter.date(from: iso) {
-            return Self.displayDateFormatter.string(from: date)
-        }
-        return iso
     }
 
     private func formatNumber(_ n: Int) -> String {

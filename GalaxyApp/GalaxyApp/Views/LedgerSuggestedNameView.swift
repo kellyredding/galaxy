@@ -56,7 +56,9 @@ struct LedgerSuggestedNameView: View {
             infoRow("Attempts", value: "\(state.attempts) of 3")
             infoRow("Exchanges", value: "\(state.exchangeCount)")
             if let lastAttempt = state.lastAttemptAt {
-                infoRow("Last attempt", value: formatTimestamp(lastAttempt))
+                infoRow(
+                    "Last attempt",
+                    value: ListTimestamp.format(lastAttempt))
             } else {
                 infoRow("Last attempt", value: "--")
             }
@@ -119,37 +121,6 @@ struct LedgerSuggestedNameView: View {
                 .foregroundColor(.primary)
                 .textSelection(.enabled)
         }
-    }
-
-    // MARK: - Formatting
-
-    private static let iso8601WithFractional: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f
-    }()
-
-    private static let iso8601Standard: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime]
-        return f
-    }()
-
-    private static let displayDateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateStyle = .medium
-        f.timeStyle = .short
-        return f
-    }()
-
-    private func formatTimestamp(_ iso: String) -> String {
-        if let date = Self.iso8601WithFractional.date(from: iso) {
-            return Self.displayDateFormatter.string(from: date)
-        }
-        if let date = Self.iso8601Standard.date(from: iso) {
-            return Self.displayDateFormatter.string(from: date)
-        }
-        return iso
     }
 }
 

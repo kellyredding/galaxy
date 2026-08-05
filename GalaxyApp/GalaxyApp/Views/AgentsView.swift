@@ -576,7 +576,7 @@ struct AgentsView: View {
                 if let completed = agent.completedAt {
                     detailField(
                         "Completed",
-                        AgentRun.formatTimestamp(
+                        ListTimestamp.format(
                             completed
                         )
                     )

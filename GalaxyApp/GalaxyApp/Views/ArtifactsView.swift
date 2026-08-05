@@ -545,7 +545,7 @@ struct ArtifactsView: View {
                     .foregroundColor(.secondary)
                     .frame(width: 80, alignment: .leading)
 
-                Text(formatTimestamp(artifact.createdAt))
+                Text(ListTimestamp.format(artifact.createdAt))
                     .chromeFontMono(
                         size: fontSize.caption2
                     )
@@ -673,7 +673,7 @@ struct ArtifactsView: View {
                 Text("\u{00B7}")
                     .foregroundColor(.secondary)
                 Text(
-                    formatTimestamp(artifact.createdAt)
+                    ListTimestamp.format(artifact.createdAt)
                 )
                 .chromeFont(size: fontSize.caption2)
                 .foregroundColor(.secondary)
@@ -2838,54 +2838,5 @@ struct ArtifactsView: View {
             )
         }
         return "\(bytes)B"
-    }
-
-    private static let iso8601WithFractional: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSSSZ"
-        f.locale = Locale(identifier: "en_US_POSIX")
-        return f
-    }()
-
-    private static let iso8601Standard: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd'T'HH:mm:ssZ"
-        f.locale = Locale(identifier: "en_US_POSIX")
-        return f
-    }()
-
-    private static let sqliteDateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.timeZone = TimeZone(identifier: "UTC")
-        return f
-    }()
-
-    private static let displayDateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateStyle = .short
-        f.timeStyle = .medium
-        return f
-    }()
-
-    private func formatTimestamp(
-        _ timestamp: String
-    ) -> String {
-        let formatters = [
-            Self.iso8601WithFractional,
-            Self.iso8601Standard,
-            Self.sqliteDateFormatter,
-        ]
-        for formatter in formatters {
-            if let date = formatter.date(
-                from: timestamp
-            ) {
-                return Self.displayDateFormatter.string(
-                    from: date
-                )
-            }
-        }
-        return timestamp
     }
 }

@@ -256,7 +256,7 @@ struct LedgerFilesView: View {
                 .lineLimit(1)
                 .frame(width: Self.colAccesses, alignment: .leading)
 
-            Text(file.lastSeenAt.map { formatTimestamp($0) } ?? "--")
+            Text(file.lastSeenAt.map { ListTimestamp.format($0) } ?? "--")
                 .chromeFontMono(size: fontSize.caption2)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -314,45 +314,5 @@ struct LedgerFilesView: View {
             return "~" + path.dropFirst(home.count)
         }
         return path
-    }
-
-    private static let iso8601WithFractional: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f
-    }()
-
-    private static let iso8601Standard: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime]
-        return f
-    }()
-
-    private static let sqliteDateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        f.timeZone = TimeZone(identifier: "UTC")
-        f.locale = Locale(identifier: "en_US_POSIX")
-        return f
-    }()
-
-    private static let displayDateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateStyle = .medium
-        f.timeStyle = .short
-        return f
-    }()
-
-    private func formatTimestamp(_ ts: String) -> String {
-        if let date = Self.iso8601WithFractional.date(from: ts) {
-            return Self.displayDateFormatter.string(from: date)
-        }
-        if let date = Self.iso8601Standard.date(from: ts) {
-            return Self.displayDateFormatter.string(from: date)
-        }
-        if let date = Self.sqliteDateFormatter.date(from: ts) {
-            return Self.displayDateFormatter.string(from: date)
-        }
-        return ts
     }
 }

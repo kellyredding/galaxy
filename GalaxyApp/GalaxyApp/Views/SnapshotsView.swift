@@ -404,7 +404,7 @@ struct SnapshotsView: View {
                     .foregroundColor(.secondary)
                     .frame(width: 70, alignment: .leading)
 
-                Text(formatTimestamp(snap.createdAt))
+                Text(ListTimestamp.format(snap.createdAt))
                     .chromeFontMono(size: fontSize.caption2)
                     .frame(width: 160, alignment: .leading)
             }
@@ -489,7 +489,7 @@ struct SnapshotsView: View {
                     .foregroundColor(.secondary)
                 Text("\u{00B7}")
                     .foregroundColor(.secondary)
-                Text(formatTimestamp(snapshot.createdAt))
+                Text(ListTimestamp.format(snapshot.createdAt))
                     .chromeFont(size: fontSize.caption2)
                     .foregroundColor(.secondary)
 
@@ -1614,46 +1614,6 @@ struct SnapshotsView: View {
     }
 
     // MARK: - Formatting
-
-    private static let iso8601WithFractional: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f
-    }()
-
-    private static let iso8601Standard: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime]
-        return f
-    }()
-
-    private static let sqliteDateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        f.timeZone = TimeZone(identifier: "UTC")
-        f.locale = Locale(identifier: "en_US_POSIX")
-        return f
-    }()
-
-    private static let displayDateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateStyle = .medium
-        f.timeStyle = .short
-        return f
-    }()
-
-    private func formatTimestamp(_ ts: String) -> String {
-        if let date = Self.iso8601WithFractional.date(from: ts) {
-            return Self.displayDateFormatter.string(from: date)
-        }
-        if let date = Self.iso8601Standard.date(from: ts) {
-            return Self.displayDateFormatter.string(from: date)
-        }
-        if let date = Self.sqliteDateFormatter.date(from: ts) {
-            return Self.displayDateFormatter.string(from: date)
-        }
-        return ts
-    }
 
     private func formatCharCount(_ count: Int32) -> String {
         if count >= 1_000_000 {

@@ -53,52 +53,6 @@ struct AgentRun: Codable, Identifiable {
     }
 
     var displayStartedAt: String {
-        Self.formatTimestamp(startedAt)
-    }
-
-    /// Parse "YYYY-MM-DD HH:MM:SS" (UTC) and format
-    /// with tiered conciseness:
-    ///   Today:      "4:03 PM"
-    ///   This week:  "Mon 4:03 PM"
-    ///   This year:  "Mar 30, 4:03 PM"
-    ///   Older:      "Mar 30, 2025, 4:03 PM"
-    private static let utcParser: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        f.timeZone = TimeZone(identifier: "UTC")
-        return f
-    }()
-
-    static func formatTimestamp(
-        _ ts: String
-    ) -> String {
-        guard let date = utcParser.date(from: ts)
-        else { return ts }
-
-        let cal = Calendar.current
-        let now = Date()
-
-        let fmt = DateFormatter()
-        fmt.timeZone = .current
-
-        if cal.isDateInToday(date) {
-            // "4:03 PM"
-            fmt.dateFormat = "h:mm a"
-        } else if let weekAgo = cal.date(
-            byAdding: .day, value: -6, to: now
-        ), date >= weekAgo {
-            // "Mon 4:03 PM"
-            fmt.dateFormat = "EEE h:mm a"
-        } else if cal.component(.year, from: date)
-            == cal.component(.year, from: now)
-        {
-            // "Mar 30, 4:03 PM"
-            fmt.dateFormat = "MMM d, h:mm a"
-        } else {
-            // "Mar 30, 2025, 4:03 PM"
-            fmt.dateFormat = "MMM d, yyyy, h:mm a"
-        }
-
-        return fmt.string(from: date)
+        ListTimestamp.format(startedAt)
     }
 }
