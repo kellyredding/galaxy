@@ -90,45 +90,44 @@ struct ArtifactsView: View {
     // Duration tracking for timeline events
     @State private var artifactDurationId: String? = nil
 
-    // Focus state for keyboard navigation
-    @State private var focusedIndex: Int? = nil
-
-    // Sort state
-    @State private var sortColumn: SortColumn = .number
-    @State private var sortAscending: Bool = true
+    /// Order and selection. The selection is an identity rather than a row
+    /// number, so re-sorting cannot slide the highlight onto another artifact.
+    @State private var model = ListSortModel<ArtifactSummary, SortColumn>(
+        columns: ArtifactsView.columns,
+        sortColumn: .number,
+        sortAscending: true)
 
     enum SortColumn {
         case number, title, type, filename, size, created
     }
 
+    /// What each column is called and how it orders. A number, a size or a
+    /// timestamp opens at its largest, which is what a reader picking that
+    /// column is after; text opens at A.
+    private static let columns: [ListColumn<ArtifactSummary, SortColumn>] = [
+        .init(.number, title: "#") {
+            ListSorting.compare($0.number, $1.number)
+        },
+        .init(.title, title: "Title") {
+            ListSorting.compareText($0.title, $1.title)
+        },
+        .init(.type, title: "Type") {
+            ListSorting.compareText($0.artifactType, $1.artifactType)
+        },
+        .init(.filename, title: "Filename") {
+            ListSorting.compareText(
+                $0.originalFilename, $1.originalFilename)
+        },
+        .init(.size, title: "Size", prefersAscending: false) {
+            ListSorting.compare($0.fileSize, $1.fileSize)
+        },
+        .init(.created, title: "Created", prefersAscending: false) {
+            ListSorting.compare($0.createdAt, $1.createdAt)
+        },
+    ]
+
     private var sortedArtifacts: [ArtifactSummary] {
-        guard let artifacts = artifacts else { return [] }
-        return artifacts.sorted { a, b in
-            let order: ComparisonResult
-            switch sortColumn {
-            case .number:
-                order = ListSorting.compare(
-                    a.number, b.number)
-            case .title:
-                order = ListSorting.compareText(
-                    a.title, b.title)
-            case .type:
-                order = ListSorting.compareText(
-                    a.artifactType, b.artifactType)
-            case .filename:
-                order = ListSorting.compareText(
-                    a.originalFilename,
-                    b.originalFilename)
-            case .size:
-                order = ListSorting.compare(
-                    a.fileSize, b.fileSize)
-            case .created:
-                order = ListSorting.compare(
-                    a.createdAt, b.createdAt)
-            }
-            return ListSorting.ordered(
-                order, ascending: sortAscending)
-        }
+        model.sorted(artifacts)
     }
 
     var body: some View {
@@ -212,18 +211,31 @@ struct ArtifactsView: View {
             fetchArtifactList()
             syncFindHandler()
         }
-        .onChange(of: sessionManager.listNavAction) {
-            guard session.id
-                == sessionManager.activeSessionId
-            else { return }
-            guard sessionManager.activeTab == .artifacts
-            else { return }
-            guard openArtifact == nil else { return }
-            guard let action = sessionManager.listNavAction
-            else { return }
-            sessionManager.listNavAction = nil
-            handleListNavAction(action)
-        }
+        .listNavigation(
+            from: sessionManager,
+            isActive: {
+                session.id
+                    == sessionManager.activeSessionId
+                    && sessionManager.activeTab
+                        == .artifacts
+                    && openArtifact == nil
+            },
+            onAction: { action in
+                switch action {
+                case .up:
+                    model.move(.up, in: sortedArtifacts)
+                case .down:
+                    model.move(
+                        .down, in: sortedArtifacts)
+                case .activate:
+                    if let artifact = model.focusedElement(
+                        in: sortedArtifacts)
+                    {
+                        openArtifactReader(
+                            artifact: artifact)
+                    }
+                }
+            })
         .onChange(
             of: sessionManager.pendingArtifactReviewCheck
         ) {
@@ -368,7 +380,7 @@ struct ArtifactsView: View {
             GeometryReader { geo in
                 ScrollViewReader { scrollProxy in
                     ScrollView {
-                        VStack(
+                        LazyVStack(
                             alignment: .leading,
                             spacing: 0
                         ) {
@@ -405,13 +417,9 @@ struct ArtifactsView: View {
                             )
                         }
                     }
-                    .onChange(of: focusedIndex) {
-                        if let idx = focusedIndex,
-                           idx < sortedArtifacts.count
-                        {
-                            scrollProxy.scrollTo(
-                                sortedArtifacts[idx].id
-                            )
+                    .onChange(of: model.focusedId) {
+                        if let id = model.focusedId {
+                            scrollProxy.scrollTo(id)
                         }
                     }
                 }
@@ -423,25 +431,12 @@ struct ArtifactsView: View {
 
     private var headerRow: some View {
         HStack(spacing: 0) {
-            sortableHeader(
-                "#", column: .number, width: 40
-            )
-            sortableHeader(
-                "Title", column: .title, width: nil
-            )
-            sortableHeader(
-                "Type", column: .type, width: 80
-            )
-            sortableHeader(
-                "Filename", column: .filename,
-                width: nil
-            )
-            sortableHeader(
-                "Size", column: .size, width: 80
-            )
-            sortableHeader(
-                "Created", column: .created, width: 160
-            )
+            sortableHeader(.number, width: 40)
+            sortableHeader(.title, width: nil)
+            sortableHeader(.type, width: 80)
+            sortableHeader(.filename, width: nil)
+            sortableHeader(.size, width: 80)
+            sortableHeader(.created, width: 160)
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
@@ -449,30 +444,20 @@ struct ArtifactsView: View {
     }
 
     private func sortableHeader(
-        _ title: String,
-        column: SortColumn,
+        _ column: SortColumn,
         width: CGFloat?
     ) -> some View {
-        Button(action: {
-            if sortColumn == column {
-                sortAscending.toggle()
-            } else {
-                sortColumn = column
-                sortAscending =
-                    column == .title
-                    || column == .filename
-            }
-        }) {
+        Button(action: { model.select(column) }) {
             HStack(spacing: 3) {
-                Text(title)
+                Text(model.title(for: column))
                     .chromeFont(
                         size: fontSize.caption2,
                         weight: .semibold
                     )
                     .foregroundColor(.secondary)
-                if sortColumn == column {
+                if model.sortColumn == column {
                     Image(
-                        systemName: sortAscending
+                        systemName: model.sortAscending
                             ? "chevron.up"
                             : "chevron.down"
                     )
@@ -495,7 +480,7 @@ struct ArtifactsView: View {
         _ artifact: ArtifactSummary,
         index: Int
     ) -> some View {
-        let isFocused = focusedIndex == index
+        let isFocused = model.focusedId == artifact.id
 
         return Button(action: {
             openArtifactReader(artifact: artifact)
@@ -1096,13 +1081,11 @@ struct ArtifactsView: View {
                     artifacts = result
                     seedArtifactTitles(result)
                     isLoading = false
-                    // The list opens scrolled to its last row, so
-                    // seeding focus at the first one left the
-                    // highlight off screen until an arrow key moved
-                    // it. Seed where the scroll already went.
-                    focusedIndex =
-                        result.isEmpty
-                        ? nil : result.count - 1
+                    // Seeded at the last row, which is the end this
+                    // list scrolls to when it appears.
+                    model.reconcileFocus(
+                        in: model.sorted(result),
+                        seed: .last)
                 }
             } catch {
                 guard !Task.isCancelled else { return }
@@ -1702,7 +1685,6 @@ struct ArtifactsView: View {
             artifactDurationId = nil
         }
 
-        let closingNumber = openArtifact?.number
         removeEscapeMonitor()
         sessionManager.isArtifactReaderOpen = false
         webViewRef = nil
@@ -1714,12 +1696,8 @@ struct ArtifactsView: View {
         // already gone, so there is nothing left to tell.
         pendingAnnotationCount = 0
 
-        if let number = closingNumber {
-            focusedIndex = sortedArtifacts
-                .firstIndex(where: {
-                    $0.number == number
-                })
-        }
+        // Nothing to refocus: the selection is the row's identity, so it
+        // survived the round trip through the reader on its own.
     }
 
     // MARK: - Annotation Bridge
@@ -2784,40 +2762,6 @@ struct ArtifactsView: View {
         if let monitor = escapeMonitor {
             NSEvent.removeMonitor(monitor)
             escapeMonitor = nil
-        }
-    }
-
-    // MARK: - List Focus Navigation
-
-    private func handleListNavAction(
-        _ action: ListNavAction
-    ) {
-        let items = sortedArtifacts
-        guard !items.isEmpty else { return }
-
-        switch action {
-        case .up:
-            if let current = focusedIndex {
-                guard current > 0 else { return }
-                focusedIndex = current - 1
-            } else {
-                focusedIndex = items.count - 1
-            }
-        case .down:
-            if let current = focusedIndex {
-                guard current < items.count - 1
-                else { return }
-                focusedIndex = current + 1
-            } else {
-                focusedIndex = 0
-            }
-        case .activate:
-            guard let idx = focusedIndex,
-                  idx < items.count
-            else { return }
-            openArtifactReader(
-                artifact: items[idx]
-            )
         }
     }
 
