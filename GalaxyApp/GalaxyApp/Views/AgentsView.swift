@@ -84,28 +84,23 @@ struct AgentsView: View {
     private var sortedAgents: [AgentRun] {
         guard let agents = agents else { return [] }
         return agents.sorted { a, b in
-            let result: Bool
+            let order: ComparisonResult
             switch sortColumn {
             case .type:
-                result =
-                    a.agentType
-                    .localizedCaseInsensitiveCompare(
-                        b.agentType
-                    ) == .orderedAscending
+                order = ListSorting.compareText(
+                    a.agentType, b.agentType)
             case .status:
-                result =
-                    a.status
-                    .localizedCaseInsensitiveCompare(
-                        b.status
-                    ) == .orderedAscending
+                order = ListSorting.compareText(
+                    a.status, b.status)
             case .duration:
-                result =
-                    (a.durationMs ?? 0)
-                    < (b.durationMs ?? 0)
+                order = ListSorting.compare(
+                    a.durationMs ?? 0, b.durationMs ?? 0)
             case .started:
-                result = a.startedAt < b.startedAt
+                order = ListSorting.compare(
+                    a.startedAt, b.startedAt)
             }
-            return sortAscending ? result : !result
+            return ListSorting.ordered(
+                order, ascending: sortAscending)
         }
     }
 

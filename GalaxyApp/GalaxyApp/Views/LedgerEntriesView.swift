@@ -37,22 +37,27 @@ struct LedgerEntriesView: View {
     private var sortedEntries: [LedgerEntry] {
         guard let entries = entries else { return [] }
         return entries.sorted { a, b in
-            let result: Bool
+            let order: ComparisonResult
             switch sortColumn {
             case .entryType:
-                result = a.entryType < b.entryType
+                order = ListSorting.compareText(a.entryType, b.entryType)
             case .importance:
-                result = a.importance < b.importance
+                // Ranked, not spelled: ascending now reads high, medium, low
+                // rather than the alphabet's high, low, medium.
+                order = ListSorting.compare(
+                    ListSorting.importanceRank(a.importance),
+                    ListSorting.importanceRank(b.importance))
             case .source:
-                result = (a.source ?? "") < (b.source ?? "")
+                order = ListSorting.compareText(a.source ?? "", b.source ?? "")
             case .content:
-                result = a.content < b.content
+                order = ListSorting.compareText(a.content, b.content)
             case .category:
-                result = (a.category ?? "") < (b.category ?? "")
+                order = ListSorting.compareText(
+                    a.category ?? "", b.category ?? "")
             case .created:
-                result = a.createdAt < b.createdAt
+                order = ListSorting.compare(a.createdAt, b.createdAt)
             }
-            return sortAscending ? result : !result
+            return ListSorting.ordered(order, ascending: sortAscending)
         }
     }
 

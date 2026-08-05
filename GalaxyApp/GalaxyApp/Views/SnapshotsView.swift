@@ -82,22 +82,22 @@ struct SnapshotsView: View {
     private var sortedSnapshots: [SnapshotSummary] {
         guard let snapshots = snapshots else { return [] }
         return snapshots.sorted { a, b in
-            let result: Bool
+            let order: ComparisonResult
             switch sortColumn {
             case .number:
-                result = a.number < b.number
+                order = ListSorting.compare(a.number, b.number)
             case .title:
-                result = a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
+                order = ListSorting.compareText(a.title, b.title)
             case .exchanges:
-                result = a.exchangeCount < b.exchangeCount
+                order = ListSorting.compare(a.exchangeCount, b.exchangeCount)
             case .size:
-                result = a.charCount < b.charCount
+                order = ListSorting.compare(a.charCount, b.charCount)
             case .reviews:
-                result = a.reviewCount < b.reviewCount
+                order = ListSorting.compare(a.reviewCount, b.reviewCount)
             case .created:
-                result = a.createdAt < b.createdAt
+                order = ListSorting.compare(a.createdAt, b.createdAt)
             }
-            return sortAscending ? result : !result
+            return ListSorting.ordered(order, ascending: sortAscending)
         }
     }
 

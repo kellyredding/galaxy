@@ -24,22 +24,24 @@ struct LedgerFilesView: View {
     private var sortedFiles: [LedgerFile] {
         guard let files = files else { return [] }
         return files.sorted { a, b in
-            let result: Bool
+            let order: ComparisonResult
             switch sortColumn {
             case .ops:
-                result = opsString(a) < opsString(b)
+                order = ListSorting.compareText(opsString(a), opsString(b))
             case .fileType:
-                result = a.fileType < b.fileType
+                order = ListSorting.compareText(a.fileType, b.fileType)
             case .filePath:
-                result = a.filePath < b.filePath
+                order = ListSorting.compareText(a.filePath, b.filePath)
             case .pattern:
-                result = a.searchPattern < b.searchPattern
+                order = ListSorting.compareText(
+                    a.searchPattern, b.searchPattern)
             case .accesses:
-                result = a.accessCount < b.accessCount
+                order = ListSorting.compare(a.accessCount, b.accessCount)
             case .lastSeen:
-                result = (a.lastSeenAt ?? "") < (b.lastSeenAt ?? "")
+                order = ListSorting.compare(
+                    a.lastSeenAt ?? "", b.lastSeenAt ?? "")
             }
-            return sortAscending ? result : !result
+            return ListSorting.ordered(order, ascending: sortAscending)
         }
     }
 

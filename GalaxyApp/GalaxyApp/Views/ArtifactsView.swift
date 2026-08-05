@@ -104,28 +104,30 @@ struct ArtifactsView: View {
     private var sortedArtifacts: [ArtifactSummary] {
         guard let artifacts = artifacts else { return [] }
         return artifacts.sorted { a, b in
-            let result: Bool
+            let order: ComparisonResult
             switch sortColumn {
             case .number:
-                result = a.number < b.number
+                order = ListSorting.compare(
+                    a.number, b.number)
             case .title:
-                result = a.title
-                    .localizedCaseInsensitiveCompare(
-                        b.title
-                    ) == .orderedAscending
+                order = ListSorting.compareText(
+                    a.title, b.title)
             case .type:
-                result = a.artifactType < b.artifactType
+                order = ListSorting.compareText(
+                    a.artifactType, b.artifactType)
             case .filename:
-                result = a.originalFilename
-                    .localizedCaseInsensitiveCompare(
-                        b.originalFilename
-                    ) == .orderedAscending
+                order = ListSorting.compareText(
+                    a.originalFilename,
+                    b.originalFilename)
             case .size:
-                result = a.fileSize < b.fileSize
+                order = ListSorting.compare(
+                    a.fileSize, b.fileSize)
             case .created:
-                result = a.createdAt < b.createdAt
+                order = ListSorting.compare(
+                    a.createdAt, b.createdAt)
             }
-            return sortAscending ? result : !result
+            return ListSorting.ordered(
+                order, ascending: sortAscending)
         }
     }
 
