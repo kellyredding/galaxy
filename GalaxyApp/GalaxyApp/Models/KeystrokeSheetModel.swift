@@ -66,6 +66,10 @@ enum KeystrokeSheetModel {
             // on. The settings value only seeds it at launch and is
             // written back a runloop later, so a sheet opened in that
             // window would disagree with the menu.
+            //
+            // And `isVisible` rather than `preferredVisible`: the sheet
+            // says what the key will do, which is a fact about the panel
+            // on screen and not about the choice behind it.
             sessionsPanelVisible: SidebarPreferences.shared.isVisible,
             // Global flags set by per-session views, so either can be
             // true for a tab you are no longer on. Every gate that reads

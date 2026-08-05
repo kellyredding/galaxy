@@ -111,3 +111,24 @@ targets:
     settings:
       base:
         SWIFT_VERSION: "5.10"
+
+  # The sessions panel's visibility rule, on the same bargain as ListSmoke:
+  # sources one by one, so `Models/SessionsPanel/` staying `import Foundation`
+  # only is a fact this list enforces rather than a habit. The rule must stay
+  # answerable without SettingsManager, the display throttle, or a view — the
+  # three things the wiring in `SidebarPreferences` needs and the rule does not.
+  #
+  # It is the transition table that needs asserting, not the collapse. Which of
+  # a preference and a condition wins, what a reader overruling one gets to
+  # keep, and whether two surfaces can cancel each other are all answerable
+  # here and nowhere in the app.
+  SessionsPanelSmoke:
+    type: tool
+    platform: macOS
+    sources:
+      - GalaxyApp/Models/SessionsPanel/SessionsPanelCollapseCondition.swift
+      - GalaxyApp/Models/SessionsPanel/SessionsPanelModel.swift
+      - SessionsPanelSmoke
+    settings:
+      base:
+        SWIFT_VERSION: "5.10"

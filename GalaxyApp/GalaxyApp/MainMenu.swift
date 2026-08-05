@@ -893,11 +893,11 @@ class MenuActions: NSObject {
     // MARK: - View Menu Actions
 
     @objc func hideSessions(_ sender: Any?) {
-        SidebarPreferences.shared.isVisible = false
+        SidebarPreferences.shared.setPreferred(false)
     }
 
     @objc func showSessions(_ sender: Any?) {
-        SidebarPreferences.shared.isVisible = true
+        SidebarPreferences.shared.setPreferred(true)
     }
 
     @objc func historyBack(_ sender: Any?) {
@@ -1205,6 +1205,12 @@ extension MenuActions: NSMenuItemValidation {
         // immediately. Reads the narrow `SidebarPreferences`
         // publisher — same source the action handlers
         // mutate, so the gate and the dispatch agree.
+        //
+        // Deliberately the effective value and not
+        // `preferredVisible`: while a collapse condition holds
+        // the panel shut, Show is the item that does something
+        // and Hide is the one that would be a no-op. Gating on
+        // the choice would offer the reader the wrong half.
         case #selector(hideSessions(_:)):
             return SidebarPreferences.shared.isVisible
         case #selector(showSessions(_:)):

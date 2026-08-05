@@ -1,4 +1,4 @@
-.PHONY: generate build release clean validate-js smoke smoke-keystrokes smoke-lists check
+.PHONY: generate build release clean validate-js smoke smoke-keystrokes smoke-lists smoke-sessions-panel check
 
 # Always use -derivedDataPath to avoid polluting ~/Library/Developer/Xcode/DerivedData
 DERIVED_DATA = build
@@ -27,7 +27,7 @@ release: generate validate-js
 
 # Sandboxed smoke checks: build the standalone tools and run them. No app
 # launch — each runs as its own process.
-smoke: smoke-keystrokes smoke-lists
+smoke: smoke-keystrokes smoke-lists smoke-sessions-panel
 
 # The ⌘/ catalog and its availability gates. Links Galactic so the concept
 # searches run through the real matcher and the real glyph table, which is why
@@ -44,6 +44,12 @@ smoke-keystrokes: generate
 smoke-lists: generate
 	xcodebuild -scheme ListSmoke -configuration Debug -derivedDataPath $(DERIVED_DATA) -destination 'platform=macOS' build
 	./$(DERIVED_DATA)/Build/Products/Debug/ListSmoke
+
+# The sessions panel's preference-versus-condition rule. Foundation only, so
+# like the lists this links nothing and needs no framework path to run.
+smoke-sessions-panel: generate
+	xcodebuild -scheme SessionsPanelSmoke -configuration Debug -derivedDataPath $(DERIVED_DATA) -destination 'platform=macOS' build
+	./$(DERIVED_DATA)/Build/Products/Debug/SessionsPanelSmoke
 
 # The pre-commit gate: everything that can fail without launching the app.
 #

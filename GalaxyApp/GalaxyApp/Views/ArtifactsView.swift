@@ -54,6 +54,21 @@ struct ArtifactsView: View {
             && sessionManager.activeTab == .artifacts
     }
 
+    /// Whether the artifact on screen is the one `ArtifactDiffView` renders.
+    ///
+    /// Asked of the filename, because that is what `artifactContentView`
+    /// dispatches on. `artifact.artifactType` is a label the CLI hands back
+    /// verbatim from `--artifact-type`, so a "diff"-typed file not named
+    /// `.gdiff` renders as source and must not take the sessions panel. The
+    /// two inputs here are the two the switch has, so this cannot answer
+    /// differently from the view that mounts.
+    private var openArtifactIsDiffReader: Bool {
+        guard let artifact = openArtifact else { return false }
+        return FileKind.resolve(
+            filename: artifact.originalFilename
+        ) == .unhandled("gdiff")
+    }
+
     // JIT data state
     @State private var artifacts: [ArtifactSummary]? = nil
     @State private var isLoading: Bool = false
@@ -142,6 +157,7 @@ struct ArtifactsView: View {
         .background(Color(.textBackgroundColor))
         .onChange(of: openArtifact != nil) {
             syncReaderOpenState()
+            syncSessionsPanelCondition()
             updateEscapeMonitor()
             syncFindHandler()
 
@@ -156,6 +172,7 @@ struct ArtifactsView: View {
         }
         .onChange(of: sessionManager.activeSessionId) {
             syncReaderOpenState()
+            syncSessionsPanelCondition()
             updateEscapeMonitor()
             restoreWebViewFocus()
             syncFindHandler()
@@ -185,6 +202,7 @@ struct ArtifactsView: View {
         }
         .onChange(of: sessionManager.activeTab) {
             syncReaderOpenState()
+            syncSessionsPanelCondition()
             updateEscapeMonitor()
             restoreWebViewFocus()
             syncFindHandler()
@@ -2630,6 +2648,26 @@ struct ArtifactsView: View {
         } else {
             sessionManager.isArtifactReaderOpen = false
         }
+    }
+
+    /// Hold the sessions panel collapsed while the diff reader is the
+    /// surface on screen.
+    ///
+    /// The active-session guard is load-bearing here in a way it is not in
+    /// `syncReaderOpenState`. `isVisibleSurface` already includes that
+    /// check, so the guard changes nothing about computing a *true*
+    /// answer — it exists to stop every *other* session's mounted
+    /// artifacts view from writing its own `false` over the condition the
+    /// visible one is holding. Exactly one view passes it, and that view's
+    /// state is the whole answer.
+    private func syncSessionsPanelCondition() {
+        guard session.id
+            == sessionManager.activeSessionId
+        else { return }
+        SidebarPreferences.shared.setCondition(
+            isVisibleSurface && openArtifactIsDiffReader,
+            .diffReader
+        )
     }
 
     private func updateEscapeMonitor() {

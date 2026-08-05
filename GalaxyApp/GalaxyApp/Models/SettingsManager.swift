@@ -120,7 +120,10 @@ enum GitStatusStyle: String, Codable, CaseIterable {
 struct AppSettings: Codable, Equatable {
     var sidebarPosition: SidebarPosition = .left
     var sidebarWidth: CGFloat = 220.0  // Width of sessions panel
-    var isSidebarVisible: Bool = true  // Sidebar expanded/collapsed state
+    // The reader's choice, not what is on screen: a collapse condition
+    // can hold the panel shut without ever reaching this field. See
+    // `SessionsPanelModel`.
+    var isSidebarVisible: Bool = true
     var themePreference: ThemePreference = .system
     var bellSound: SoundPreference = .system
     var bellVisualFlash: Bool = false
@@ -670,9 +673,14 @@ class SettingsManager: ObservableObject {
         // is intentionally not kept in sync with
         // `SidebarPreferences` to keep toggles off the fat
         // publisher; this snapshot is the rendezvous point.
+        //
+        // `preferredVisible`, not `isVisible`: a collapse
+        // condition holding the panel shut must never reach
+        // disk, or an unrelated save during a diff would
+        // persist an override the reader never chose.
         var settingsToSave = settings
         settingsToSave.isSidebarVisible =
-            SidebarPreferences.shared.isVisible
+            SidebarPreferences.shared.preferredVisible
         do {
             let data = try JSONEncoder().encode(settingsToSave)
             try data.write(to: settingsURL, options: .atomic)

@@ -43,6 +43,11 @@ struct KeystrokeContext: Equatable {
     /// same narrow publisher `validateMenuItem` gates Hide / Show on —
     /// not `AppSettings.isSidebarVisible`, which only seeds it at launch
     /// and is written back a runloop later.
+    ///
+    /// Nor `SidebarPreferences.preferredVisible`. This row describes what
+    /// the key will do, and while a collapse condition holds the panel
+    /// shut the key that does something is Show — whatever the reader
+    /// chose before the surface asked for the room.
     let sessionsPanelVisible: Bool
 
     // MARK: - Readers

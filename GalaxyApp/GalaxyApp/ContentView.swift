@@ -128,7 +128,7 @@ struct ContentView: View {
 
     private var sidebarToggleButton: some View {
         Button(action: {
-            sidebarPrefs.isVisible.toggle()
+            sidebarPrefs.togglePreferred()
         }) {
             Image(systemName: sidebarOnLeft ? "sidebar.left" : "sidebar.right")
                 .font(.system(size: 14))

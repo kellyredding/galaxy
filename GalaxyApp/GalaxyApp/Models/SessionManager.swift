@@ -82,21 +82,6 @@ class SessionManager: ObservableObject {
     // Track whether the main window is focused (for bell indicator logic)
     @Published var isWindowFocused: Bool = true
 
-    // Sidebar visibility — persisted in AppSettings, accessed via
-    // SettingsManager. Computed property delegates read/write so
-    // existing view code (ContentView, MainMenu) works unchanged.
-    var isSidebarVisible: Bool {
-        // Routed through the narrow publisher
-        // (`SidebarPreferences`) so legacy callers don't
-        // re-introduce the fat-publisher invalidation
-        // cascade that gated the toggle animation. The
-        // SidebarPreferences sink mirrors the value back
-        // into `settings.isSidebarVisible` on a deferred
-        // runloop tick for persistence.
-        get { SidebarPreferences.shared.isVisible }
-        set { SidebarPreferences.shared.isVisible = newValue }
-    }
-
     // Active tab in the views area — driven by the active session.
     // Not persisted — always starts on Terminal at launch.
     @Published var activeTab: SessionTab = .terminal
@@ -1421,6 +1406,13 @@ class SessionManager: ObservableObject {
                let nextSession = sessions.first(where: { $0.id == nextId })
             {
                 restoreViewState(for: nextSession)
+            } else {
+                // No session left to be the active surface, so no
+                // artifacts view will notice that the diff it was
+                // holding the sessions panel for is gone. Its own
+                // `closeReader` ran on unmount and was correctly
+                // declined by the active-session guard.
+                SidebarPreferences.shared.clearAllConditions()
             }
         }
 
