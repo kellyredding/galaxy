@@ -68,38 +68,42 @@ struct SnapshotsView: View {
     // Duration tracking for timeline events
     @State private var snapshotDurationId: String? = nil
 
-    // Focus state for keyboard navigation
-    @State private var focusedIndex: Int? = nil
-
-    // Sort state
-    @State private var sortColumn: SortColumn = .number
-    @State private var sortAscending: Bool = true
+    /// Order and selection. The selection is an identity rather than a row
+    /// number, so re-sorting cannot slide the highlight onto another snapshot.
+    @State private var model = ListSortModel<SnapshotSummary, SortColumn>(
+        columns: SnapshotsView.columns,
+        sortColumn: .number,
+        sortAscending: true)
 
     enum SortColumn {
         case number, title, exchanges, size, reviews, created
     }
 
-    private var sortedSnapshots: [SnapshotSummary] {
-        guard let snapshots = snapshots else { return [] }
-        return snapshots.sorted { a, b in
-            let order: ComparisonResult
-            switch sortColumn {
-            case .number:
-                order = ListSorting.compare(a.number, b.number)
-            case .title:
-                order = ListSorting.compareText(a.title, b.title)
-            case .exchanges:
-                order = ListSorting.compare(a.exchangeCount, b.exchangeCount)
-            case .size:
-                order = ListSorting.compare(a.charCount, b.charCount)
-            case .reviews:
-                order = ListSorting.compare(a.reviewCount, b.reviewCount)
-            case .created:
-                order = ListSorting.compare(a.createdAt, b.createdAt)
-            }
-            return ListSorting.ordered(order, ascending: sortAscending)
-        }
-    }
+    /// What each column is called and how it orders. A count, a size or a
+    /// timestamp opens at its largest, which is what a reader picking that
+    /// column is after; text opens at A.
+    private static let columns: [ListColumn<SnapshotSummary, SortColumn>] = [
+        .init(.number, title: "#") {
+            ListSorting.compare($0.number, $1.number)
+        },
+        .init(.title, title: "Title") {
+            ListSorting.compareText($0.title, $1.title)
+        },
+        .init(.exchanges, title: "Exchanges", prefersAscending: false) {
+            ListSorting.compare($0.exchangeCount, $1.exchangeCount)
+        },
+        .init(.size, title: "Size", prefersAscending: false) {
+            ListSorting.compare($0.charCount, $1.charCount)
+        },
+        .init(.reviews, title: "Reviews", prefersAscending: false) {
+            ListSorting.compare($0.reviewCount, $1.reviewCount)
+        },
+        .init(.created, title: "Created", prefersAscending: false) {
+            ListSorting.compare($0.createdAt, $1.createdAt)
+        },
+    ]
+
+    private var sortedSnapshots: [SnapshotSummary] { model.sorted(snapshots) }
 
     var body: some View {
         Group {
@@ -212,14 +216,23 @@ struct SnapshotsView: View {
                 closeReader(reason: "history-nav")
             }
         }
-        .onChange(of: sessionManager.listNavAction) {
-            guard session.id == sessionManager.activeSessionId else { return }
-            guard sessionManager.activeTab == .snapshots else { return }
-            guard openSnapshot == nil else { return }
-            guard let action = sessionManager.listNavAction else { return }
-            sessionManager.listNavAction = nil
-            handleListNavAction(action)
-        }
+        .listNavigation(
+            from: sessionManager,
+            isActive: {
+                session.id == sessionManager.activeSessionId
+                    && sessionManager.activeTab == .snapshots
+                    && openSnapshot == nil
+            },
+            onAction: { action in
+                switch action {
+                case .up: model.move(.up, in: sortedSnapshots)
+                case .down: model.move(.down, in: sortedSnapshots)
+                case .activate:
+                    if let snap = model.focusedElement(in: sortedSnapshots) {
+                        openSnapshotReader(number: snap.number)
+                    }
+                }
+            })
         .onChange(of: sessionManager.pendingReviewCheck) {
             guard session.id == sessionManager.activeSessionId else { return }
             guard let snapshotId = sessionManager.pendingReviewCheck
@@ -304,7 +317,7 @@ struct SnapshotsView: View {
             GeometryReader { geo in
                 ScrollViewReader { scrollProxy in
                     ScrollView {
-                        VStack(alignment: .leading, spacing: 0) {
+                        LazyVStack(alignment: .leading, spacing: 0) {
                             headerRow
                             ForEach(Array(sortedSnapshots.enumerated()), id: \.element.id) { index, snap in
                                 snapshotRow(snap, index: index)
@@ -321,9 +334,9 @@ struct SnapshotsView: View {
                             scrollProxy.scrollTo(lastId, anchor: .bottom)
                         }
                     }
-                    .onChange(of: focusedIndex) {
-                        if let idx = focusedIndex, idx < sortedSnapshots.count {
-                            scrollProxy.scrollTo(sortedSnapshots[idx].id)
+                    .onChange(of: model.focusedId) {
+                        if let id = model.focusedId {
+                            scrollProxy.scrollTo(id)
                         }
                     }
                 }
@@ -335,35 +348,31 @@ struct SnapshotsView: View {
 
     private var headerRow: some View {
         HStack(spacing: 0) {
-            sortableHeader("#", column: .number, width: 40)
-            sortableHeader("Title", column: .title, width: nil)
-            sortableHeader("Exchanges", column: .exchanges, width: 90)
-            sortableHeader("Size", column: .size, width: 80)
-            sortableHeader("Reviews", column: .reviews, width: 70)
-            sortableHeader("Created", column: .created, width: 160)
+            sortableHeader(.number, width: 40)
+            sortableHeader(.title, width: nil)
+            sortableHeader(.exchanges, width: 90)
+            sortableHeader(.size, width: 80)
+            sortableHeader(.reviews, width: 70)
+            sortableHeader(.created, width: 160)
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
         .background(Color.primary.opacity(0.05))
     }
 
-    private func sortableHeader(_ title: String, column: SortColumn, width: CGFloat?) -> some View {
-        Button(action: {
-            if sortColumn == column {
-                sortAscending.toggle()
-            } else {
-                sortColumn = column
-                sortAscending = column == .title  // Title defaults ascending, others descending
-            }
-        }) {
+    private func sortableHeader(_ column: SortColumn, width: CGFloat?) -> some View {
+        Button(action: { model.select(column) }) {
             HStack(spacing: 3) {
-                Text(title)
+                Text(model.title(for: column))
                     .chromeFont(size: fontSize.caption2, weight: .semibold)
                     .foregroundColor(.secondary)
-                if sortColumn == column {
-                    Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 8))
-                        .foregroundColor(.secondary)
+                if model.sortColumn == column {
+                    Image(
+                        systemName: model.sortAscending
+                            ? "chevron.up" : "chevron.down"
+                    )
+                    .font(.system(size: 8))
+                    .foregroundColor(.secondary)
                 }
             }
         }
@@ -375,7 +384,7 @@ struct SnapshotsView: View {
     // MARK: - Index Row
 
     private func snapshotRow(_ snap: SnapshotSummary, index: Int) -> some View {
-        let isFocused = focusedIndex == index
+        let isFocused = model.focusedId == snap.id
 
         return Button(action: { openSnapshotReader(number: snap.number) }) {
             HStack(spacing: 0) {
@@ -615,10 +624,10 @@ struct SnapshotsView: View {
                     snapshots = result
                     seedSnapshotTitles(result)
                     isLoading = false
-                    // The list opens scrolled to its last row, so seeding
-                    // focus at the first one left the highlight off screen
-                    // until an arrow key moved it.
-                    focusedIndex = result.isEmpty ? nil : result.count - 1
+                    // Seeded at the last row, which is the end this list
+                    // scrolls to when it appears.
+                    model.reconcileFocus(
+                        in: model.sorted(result), seed: .last)
                 }
             } catch {
                 guard !Task.isCancelled else { return }
@@ -770,7 +779,6 @@ struct SnapshotsView: View {
             snapshotDurationId = nil
         }
 
-        let closingNumber = openSnapshot?.number
         removeEscapeMonitor()
         sessionManager.isSnapshotReaderOpen = false
         webViewRef = nil
@@ -781,10 +789,8 @@ struct SnapshotsView: View {
         // already gone, so there is nothing left to tell.
         pendingAnnotationCount = 0
 
-        // Refocus the row that was open
-        if let number = closingNumber {
-            focusedIndex = sortedSnapshots.firstIndex(where: { $0.number == number })
-        }
+        // Nothing to refocus: the selection is the row's identity, so it
+        // survived the round trip through the reader on its own.
     }
 
     // MARK: - Active View State Sync
@@ -1090,32 +1096,6 @@ struct SnapshotsView: View {
         }
     }
 
-    // MARK: - List Focus Navigation
-
-    private func handleListNavAction(_ action: ListNavAction) {
-        let items = sortedSnapshots
-        guard !items.isEmpty else { return }
-
-        switch action {
-        case .up:
-            if let current = focusedIndex {
-                guard current > 0 else { return }
-                focusedIndex = current - 1
-            } else {
-                focusedIndex = items.count - 1
-            }
-        case .down:
-            if let current = focusedIndex {
-                guard current < items.count - 1 else { return }
-                focusedIndex = current + 1
-            } else {
-                focusedIndex = 0
-            }
-        case .activate:
-            guard let idx = focusedIndex, idx < items.count else { return }
-            openSnapshotReader(number: items[idx].number)
-        }
-    }
 
     // MARK: - Annotation Messages
 
