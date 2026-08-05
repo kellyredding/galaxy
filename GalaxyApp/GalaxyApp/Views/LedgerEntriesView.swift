@@ -63,6 +63,11 @@ struct LedgerEntriesView: View {
                 searchFocusTrigger += 1
             }
             .onChange(of: sessionManager.listNavAction) {
+                // Mounted on every tab, hidden by opacity — so the tab has to
+                // be checked here too, or this claims and consumes the action
+                // from whichever list is actually on screen. `focusSearchIfActive`
+                // below already asks the same three questions.
+                guard sessionManager.activeTab == .ledger else { return }
                 guard sessionId == sessionManager.activeSessionId else { return }
                 guard sessionManager.activeLedgerSubTab == .entries else { return }
                 guard let action = sessionManager.listNavAction else { return }

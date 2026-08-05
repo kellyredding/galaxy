@@ -63,6 +63,12 @@ struct LedgerFilesView: View {
             }
         }
         .onChange(of: sessionManager.listNavAction) {
+            // Every tab container stays mounted, hidden by opacity, so this
+            // handler runs on every tab. Without the tab check it claims the
+            // action from Artifacts, Snapshots or Agents — and consumes it,
+            // since the first reader to answer nils the shared value —
+            // whenever the sticky sub-tab happens to be Files.
+            guard sessionManager.activeTab == .ledger else { return }
             guard sessionManager.activeLedgerSubTab == .files else { return }
             guard let action = sessionManager.listNavAction else { return }
             sessionManager.listNavAction = nil
