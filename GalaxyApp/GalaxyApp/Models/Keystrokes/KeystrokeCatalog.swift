@@ -350,11 +350,12 @@ enum KeystrokeCatalog {
               section: .lists, availability: .views([.agents]),
               aliases: "view an agent run, expand the agent, "
                   + "agent detail, subagent detail"),
-        .init(binding: .literal("↩"), label: "Open file",
+        .init(binding: .literal("↩"), label: "Reveal file in Finder",
               section: .lists,
               availability: .ledgerSubTabs([.files]),
-              aliases: "view a ledger file, read the file, "
-                  + "open the file the session touched"),
+              aliases: "show the file in Finder, find the file on disk, "
+                  + "locate the file the session touched, "
+                  + "open the enclosing folder"),
         .init(binding: .literal("↩"), label: "Open entry",
               section: .lists,
               availability: .ledgerSubTabs([.entries]),

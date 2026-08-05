@@ -1262,7 +1262,7 @@ extension MenuActions: NSMenuItemValidation {
             return ("Open agent run", true)
         case .ledger:
             switch sm.activeLedgerSubTab {
-            case .files: return ("Open file", true)
+            case .files: return ("Reveal file in Finder", true)
             case .entries: return ("Open entry", true)
             case .identifiers, .lastActivity,
                  .suggestedName:

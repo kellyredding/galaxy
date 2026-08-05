@@ -373,7 +373,7 @@ let openRows = [
     ("Open snapshot", gate("↩", "Open snapshot")),
     ("Open artifact", gate("↩", "Open artifact")),
     ("Open agent run", gate("↩", "Open agent run")),
-    ("Open file", gate("↩", "Open file")),
+    ("Reveal file in Finder", gate("↩", "Reveal file in Finder")),
     ("Open entry", gate("↩", "Open entry")),
 ]
 

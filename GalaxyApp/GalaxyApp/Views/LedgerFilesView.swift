@@ -79,7 +79,7 @@ struct LedgerFilesView: View {
                 switch action {
                 case .up: model.move(.up, in: sortedFiles)
                 case .down: model.move(.down, in: sortedFiles)
-                case .activate: break  // Nothing to open on a file yet
+                case .activate: revealFocusedFile()
                 }
             })
         // Keyed on the rows themselves, not how many there are: a refresh
@@ -250,6 +250,25 @@ struct LedgerFilesView: View {
                 ? Color.accentColor.opacity(0.15)
                 : (index % 2 == 1 ? Color.primary.opacity(0.03) : Color.clear)
         )
+        // Selecting, not revealing: a stray click should not open Finder, and
+        // until now there was no way to select a row with the pointer at all.
+        .contentShape(Rectangle())
+        .onTapGesture { model.focusedId = file.id }
+    }
+
+    /// Show the selected file where it lives.
+    ///
+    /// A ledger row outlives the file it names, so a path that has since been
+    /// deleted does nothing rather than opening a window on nothing. The menu
+    /// item stays enabled on this sub-tab either way: what it offers is a
+    /// property of the surface, and whether one particular row still exists on
+    /// disk is not something the menu bar can see.
+    private func revealFocusedFile() {
+        guard let file = model.focusedElement(in: sortedFiles),
+            FileManager.default.fileExists(atPath: file.filePath)
+        else { return }
+        NSWorkspace.shared.selectFile(
+            file.filePath, inFileViewerRootedAtPath: "")
     }
 
     // MARK: - Helpers

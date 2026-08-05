@@ -86,7 +86,7 @@ struct LedgerEntriesView: View {
                     switch action {
                     case .up: model.move(.up, in: sortedEntries)
                     case .down: model.move(.down, in: sortedEntries)
-                    case .activate: break  // Given a meaning below the table
+                    case .activate: toggleFocusedEntry()
                     }
                 })
             // Keyed on the rows themselves, not how many there are: a search
@@ -373,6 +373,26 @@ struct LedgerEntriesView: View {
                 ? Color.accentColor.opacity(0.15)
                 : (index % 2 == 1 ? Color.primary.opacity(0.03) : Color.clear)
         )
+        // Selecting, not expanding. The Show more button inside the row keeps
+        // its own taps, and until now there was no way to select a row with
+        // the pointer at all.
+        .contentShape(Rectangle())
+        .onTapGesture { model.focusedId = entry.id }
+    }
+
+    /// Expand or collapse the selected entry.
+    ///
+    /// The same thing the row's own Show more button does — the content column
+    /// is clamped to one line until a reader asks for the rest, and that ask is
+    /// the only thing an entry has to open.
+    private func toggleFocusedEntry() {
+        guard let entry = model.focusedElement(in: sortedEntries)
+        else { return }
+        if expandedEntryIds.contains(entry.id) {
+            expandedEntryIds.remove(entry.id)
+        } else {
+            expandedEntryIds.insert(entry.id)
+        }
     }
 
     // MARK: - Search Debounce
