@@ -149,8 +149,13 @@ struct ContentView: View {
             // subtree (20 rows + layout + NSHostingView
             // wrapping) synchronously before `withAnimation`
             // could compute a start/end pair to interpolate.
-            // With both subtrees pre-built, toggling is a
-            // pure opacity animation that starts on frame 1.
+            // With both subtrees pre-built, the toggle is a
+            // bare opacity change with nothing to construct
+            // first. It is not animated: the slide came out
+            // with the rebuild and stayed out, because
+            // SwiftUI's cadence caps at 30Hz on a
+            // non-ProMotion display and a snap reads better
+            // than a stutter.
             //
             // Lifecycle note: `onAppear` / `onDisappear` on
             // these two children fire once at parent load,

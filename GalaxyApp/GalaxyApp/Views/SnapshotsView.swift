@@ -804,7 +804,14 @@ struct SnapshotsView: View {
         }
 
         removeEscapeMonitor()
-        sessionManager.isSnapshotReaderOpen = false
+        // Not written here. This is the global flag, and every session's
+        // view stays mounted — so a background session tearing down (a
+        // session removed, the app quitting) would clear it while the
+        // visible session still has a reader open, leaving ⌘R and the
+        // cheat sheet describing a surface nobody is on. Nilling
+        // `openSnapshot` below fires the observer that calls
+        // `syncReaderOpenState`, which is guarded on the active session
+        // and is the one place allowed to answer this.
         webViewRef = nil
         openSnapshot = nil  // Purge content from memory
         openAnnotations = []

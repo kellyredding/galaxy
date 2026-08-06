@@ -64,9 +64,28 @@ struct ArtifactsView: View {
     /// differently from the view that mounts.
     private var openArtifactIsDiffReader: Bool {
         guard let artifact = openArtifact else { return false }
-        return FileKind.resolve(
-            filename: artifact.originalFilename
-        ) == .unhandled("gdiff")
+        return Self.isDiffReader(kind: Self.kind(of: artifact))
+    }
+
+    /// How a filename resolves, asked in one place.
+    ///
+    /// Four sites needed this and each called `FileKind.resolve` itself —
+    /// the renderer switch, the size cap that rescues gdiff from the
+    /// open-externally fallback, the annotation anchoring, and the
+    /// sessions-panel condition. They agreed, but only by hand.
+    static func kind(of artifact: ArtifactSummary) -> FileKind {
+        FileKind.resolve(filename: artifact.originalFilename)
+    }
+
+    /// Whether `kind` is the one `ArtifactDiffView` renders.
+    ///
+    /// A named predicate rather than the literal, because the literal is
+    /// the thing that drifts: `artifact_type == "diff"` is a label the CLI
+    /// hands back verbatim from `--artifact-type`, so a diff-typed file not
+    /// named `.gdiff` renders as source. The filename is what dispatches,
+    /// and this is the only place that says so.
+    static func isDiffReader(kind: FileKind) -> Bool {
+        kind == .unhandled("gdiff")
     }
 
     // JIT data state
@@ -865,10 +884,6 @@ struct ArtifactsView: View {
         artifact: ArtifactSummary,
         content: String
     ) -> some View {
-        let ext = (
-            artifact.originalFilename as NSString
-        ).pathExtension.lowercased()
-
         switch FileKind.resolve(
             filename: artifact.originalFilename,
             firstLine: content.split(
@@ -986,7 +1001,7 @@ struct ArtifactsView: View {
                     )
                 }
             )
-        case .unhandled("gdiff"):
+        case let kind where Self.isDiffReader(kind: kind):
             let label = "Artifact #\(artifact.number)"
             // Pre-render the diff with any viewed files
             // already checked + collapsed. Persistence
@@ -1077,7 +1092,7 @@ struct ArtifactsView: View {
                 separator: "\n", maxSplits: 1
             ).first.map(String.init)
         )
-        if case .unhandled("gdiff") = kind { return diffAnchoring }
+        if Self.isDiffReader(kind: kind) { return diffAnchoring }
         return kind.anchoring
     }
 
@@ -1395,7 +1410,7 @@ struct ArtifactsView: View {
         let kind = FileKind.resolve(
             filename: artifact.originalFilename
         )
-        let isGdiff = kind == .unhandled("gdiff")
+        let isGdiff = Self.isDiffReader(kind: kind)
         let sizeLimit = isGdiff
             ? 5_000_000
             : kind.defaultSizeCap
@@ -1409,9 +1424,7 @@ struct ArtifactsView: View {
 
         // Images use file path directly — no need
         // to read content into a String.
-        if kind == .image,
-           let path = artifact.sourcePath
-        {
+        if kind == .image, artifact.sourcePath != nil {
             isLoadingContent = true
             fetchTask = Task {
                 let annotations: [ArtifactAnnotation]
@@ -1726,7 +1739,14 @@ struct ArtifactsView: View {
         }
 
         removeEscapeMonitor()
-        sessionManager.isArtifactReaderOpen = false
+        // Not written here. This is the global flag, and every session's
+        // view stays mounted — so a background session tearing down (a
+        // session removed, the app quitting) would clear it while the
+        // visible session still has a reader open, leaving ⌘R and the
+        // cheat sheet describing a surface nobody is on. Nilling
+        // `openArtifact` below fires the observer that calls
+        // `syncReaderOpenState`, which is guarded on the active session
+        // and is the one place allowed to answer this.
         webViewRef = nil
         openArtifact = nil
         openArtifactContent = nil
