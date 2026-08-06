@@ -27,20 +27,34 @@ struct SessionStatusDot: View {
             )
             .frame(width: 8, height: 8)
             .opacity(isPulsePhase ? 0.3 : 1.0)
+            .animation(pulseAnimation, value: isPulsePhase)
             .onChange(of: session.isInTurn) { _, newValue in
-                if newValue {
-                    withAnimation(
-                        .easeInOut(duration: 0.6)
-                        .repeatForever(autoreverses: true)
-                    ) {
-                        isPulsePhase = true
-                    }
-                } else {
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        isPulsePhase = false
-                    }
-                }
+                isPulsePhase = newValue
             }
+    }
+
+    /// The pulse curve, scoped to this view rather than handed to
+    /// `withAnimation`.
+    ///
+    /// `withAnimation` puts its curve on the transaction and not on a
+    /// view, so every animatable change committed in the same update
+    /// pass inherits it — and a `repeatForever` curve inherited by a
+    /// *frame* never ends, because there is no completion to return it
+    /// to rest. A sibling row's `ViewThatFits` measuring its CWD line in
+    /// the pass where some session began a turn would then slide back
+    /// and forth on this 0.6s autoreversing cycle for the life of the
+    /// window, and rows joined that state one at a time for as long as
+    /// the app stayed up. Scoped here, the curve reaches nothing but
+    /// this circle's opacity.
+    ///
+    /// The same shape the refresh spinners in `ArtifactsView` and
+    /// `SnapshotsView` already use, which repeat forever without
+    /// leaking for exactly this reason.
+    private var pulseAnimation: Animation {
+        session.isInTurn
+            ? .easeInOut(duration: 0.6)
+                .repeatForever(autoreverses: true)
+            : .easeInOut(duration: 0.3)
     }
 
     private var statusColor: Color {
