@@ -113,6 +113,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         mainMenu = MainMenu()
         NSApp.mainMenu = mainMenu?.createMainMenu()
 
+        // Two items sharing a key equivalent leave one of them silently
+        // unbound — no build error, no runtime warning, and a menu that
+        // still looks right. ⌘K spent a day dead that way. This says so
+        // at launch instead.
+        if let menu = NSApp.mainMenu {
+            MenuKeyEquivalentAudit.report(menu) {
+                GalaxyLog.dbg("menu-audit", $0)
+            }
+        }
+
         // Eager-init the Terminal-tab command hub so its
         // Cmd+W local monitor is installed at launch rather
         // than lazily on first SwiftUI body evaluation. The

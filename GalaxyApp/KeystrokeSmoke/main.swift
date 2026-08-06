@@ -382,7 +382,7 @@ let openRows = [
 // here independently — not through `KeystrokeCatalog.ledgerListSubTabs` —
 // so this is a second opinion rather than a tautology.
 check("availability: list nav is live on exactly six of ten surfaces") {
-    let listNav = gate("⇧⌘J", "Next item")
+    let listNav = gate("⌘J", "Next item")
     for (tab, sub) in surfaces {
         let expected: Bool
         switch tab {
@@ -409,7 +409,7 @@ check("availability: list nav is live on exactly six of ten surfaces") {
 // exactly one row where it is live, since two live ↩ rows would be two
 // commands claiming one key.
 check("availability: list nav and Open agree on every surface") {
-    let listNav = gate("⇧⌘J", "Next item")
+    let listNav = gate("⌘J", "Next item")
     for (tab, sub) in surfaces {
         let c = ctx(tab: tab, ledgerSubTab: sub)
         let nav = listNav.isActive(in: c)
@@ -424,10 +424,10 @@ check("availability: list nav and Open agree on every surface") {
 }
 
 // 15. And the one place they diverge, which is not drift but the rule: an
-// open reader keeps ⇧⌘J/K moving the list behind it while ↩ stops opening
+// open reader keeps ⌘J/K moving the list behind it while ↩ stops opening
 // anything, because the thing ↩ would open is already on screen.
 check("availability: an open reader keeps list nav, drops Open") {
-    let listNav = gate("⇧⌘J", "Next item")
+    let listNav = gate("⌘J", "Next item")
     let states = [
         ctx(tab: .artifacts, artifactReaderOpen: true),
         ctx(tab: .snapshots, snapshotReaderOpen: true),

@@ -185,13 +185,19 @@ class MainMenu: NSObject, NSMenuDelegate {
         newMarkerItem.target = MenuActions.shared
         menu.addItem(newMarkerItem)
 
-        // Restore Session (⌘O) - always available
+        // Restore Session (⇧⌘T) - always available.
+        //
+        // The browser gesture, and sessions are this app's tabs: ⌘W
+        // dismisses one, ⇧⌘T brings the last one back. It moved off ⌘O
+        // so the Terminal tab could give that to Open Shell Pane, which
+        // is a many-times-a-day action where this is not.
         let restoreItem = NSMenuItem(
             title: "Restore Session...",
             action: #selector(MenuActions.restoreSession(_:)),
-            keyEquivalent: "o"
+            keyEquivalent: "t"
         )
         restoreItem.target = MenuActions.shared
+        restoreItem.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(restoreItem)
 
         menu.addItem(.separator())
@@ -357,21 +363,23 @@ class MainMenu: NSObject, NSMenuDelegate {
 
         let prevItem = NSMenuItem(title: prevTitle, action: #selector(MenuActions.previousSession(_:)), keyEquivalent: "k")
         prevItem.target = MenuActions.shared
+        prevItem.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(prevItem)
 
         let prevArrowItem = NSMenuItem(title: prevTitle, action: #selector(MenuActions.previousSession(_:)), keyEquivalent: String(UnicodeScalar(NSUpArrowFunctionKey)!))
         prevArrowItem.target = MenuActions.shared
-        prevArrowItem.keyEquivalentModifierMask = .command
+        prevArrowItem.keyEquivalentModifierMask = [.command, .shift]
         prevArrowItem.isAlternate = true
         menu.addItem(prevArrowItem)
 
         let nextItem = NSMenuItem(title: nextTitle, action: #selector(MenuActions.nextSession(_:)), keyEquivalent: "j")
         nextItem.target = MenuActions.shared
+        nextItem.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(nextItem)
 
         let nextArrowItem = NSMenuItem(title: nextTitle, action: #selector(MenuActions.nextSession(_:)), keyEquivalent: String(UnicodeScalar(NSDownArrowFunctionKey)!))
         nextArrowItem.target = MenuActions.shared
-        nextArrowItem.keyEquivalentModifierMask = .command
+        nextArrowItem.keyEquivalentModifierMask = [.command, .shift]
         nextArrowItem.isAlternate = true
         menu.addItem(nextArrowItem)
 
@@ -403,28 +411,19 @@ class MainMenu: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        // Terminal-tab pane controls. Both shortcuts always
-        // navigate to the Terminal tab first, regardless of
-        // which tab the user is on. ⌘T then focuses the
-        // Claude session pane (if a session exists); ⌘⇧T
-        // opens-or-focuses the shell pane. With no active
-        // session the shortcuts still switch to the Terminal
-        // tab and otherwise no-op.
-        let focusSessionItem = NSMenuItem(
-            title: "Focus Session Pane",
-            action: #selector(MenuActions.focusSessionPane(_:)),
-            keyEquivalent: "t"
-        )
-        focusSessionItem.target = MenuActions.shared
-        menu.addItem(focusSessionItem)
-
+        // Pane focus is NOT a menu item of its own. ⌘K/⌘J mean
+        // "previous/next thing on this surface", and on the Terminal
+        // tab that thing is a pane — so the View menu's single pair
+        // carries both meanings. Two items sharing one key equivalent
+        // do not both stay bound: AppKit resolves the duplicate by
+        // unbinding one, silently, which is what left ⌘K dead here
+        // while ⌘O beside it worked.
         let openShellItem = NSMenuItem(
             title: "Open Shell Pane",
             action: #selector(MenuActions.openShell(_:)),
-            keyEquivalent: "t"
+            keyEquivalent: "o"
         )
         openShellItem.target = MenuActions.shared
-        openShellItem.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(openShellItem)
 
         let activeSession = sessionManager.activeSession
@@ -514,55 +513,23 @@ class MainMenu: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        // View switching: ⌘H / ⌘L and ⌘← / ⌘→
-        let prevViewItem = NSMenuItem(
-            title: "Previous view",
-            action: #selector(MenuActions.previousView(_:)),
-            keyEquivalent: "h"
-        )
-        prevViewItem.target = MenuActions.shared
-        menu.addItem(prevViewItem)
-
-        let prevViewArrowItem = NSMenuItem(
-            title: "Previous view",
-            action: #selector(MenuActions.previousView(_:)),
-            keyEquivalent: String(UnicodeScalar(NSLeftArrowFunctionKey)!)
-        )
-        prevViewArrowItem.target = MenuActions.shared
-        prevViewArrowItem.keyEquivalentModifierMask = .command
-        prevViewArrowItem.isAlternate = true
-        menu.addItem(prevViewArrowItem)
-
-        let nextViewItem = NSMenuItem(
-            title: "Next view",
-            action: #selector(MenuActions.nextView(_:)),
-            keyEquivalent: "l"
-        )
-        nextViewItem.target = MenuActions.shared
-        menu.addItem(nextViewItem)
-
-        let nextViewArrowItem = NSMenuItem(
-            title: "Next view",
-            action: #selector(MenuActions.nextView(_:)),
-            keyEquivalent: String(UnicodeScalar(NSRightArrowFunctionKey)!)
-        )
-        nextViewArrowItem.target = MenuActions.shared
-        nextViewArrowItem.keyEquivalentModifierMask = .command
-        nextViewArrowItem.isAlternate = true
-        menu.addItem(nextViewArrowItem)
-
-        // Tab switching within views: ⌘⇧H / ⌘⇧L and ⌘⇧← / ⌘⇧→
-        // Only enabled when the active view has inner tabs
-        let hasInnerTabs = sessionManager.activeTab.hasInnerTabs
-
+        // Horizontal navigation, one level per modifier.
+        //
+        // Unshifted acts on the innermost thing you are in; shifted acts
+        // one level out. So ⌘H/L moves between a view's inner tabs and
+        // ⇧⌘H/L moves between the views themselves — which is the
+        // inverse of how this shipped originally, when the unshifted key
+        // took the outer level and the shifted one the inner.
+        //
+        // ⌘H/L is therefore dead on a view with no inner tabs, and that
+        // is deliberate: ⇧⌘H/L means "switch view" everywhere, always,
+        // rather than meaning different levels on different tabs.
         let prevTabItem = NSMenuItem(
             title: "Previous tab",
             action: #selector(MenuActions.previousTab(_:)),
             keyEquivalent: "h"
         )
         prevTabItem.target = MenuActions.shared
-        prevTabItem.keyEquivalentModifierMask = [.command, .shift]
-        prevTabItem.isEnabled = hasInnerTabs
         menu.addItem(prevTabItem)
 
         let prevTabArrowItem = NSMenuItem(
@@ -571,8 +538,7 @@ class MainMenu: NSObject, NSMenuDelegate {
             keyEquivalent: String(UnicodeScalar(NSLeftArrowFunctionKey)!)
         )
         prevTabArrowItem.target = MenuActions.shared
-        prevTabArrowItem.keyEquivalentModifierMask = [.command, .shift]
-        prevTabArrowItem.isEnabled = hasInnerTabs
+        prevTabArrowItem.keyEquivalentModifierMask = .command
         prevTabArrowItem.isAlternate = true
         menu.addItem(prevTabArrowItem)
 
@@ -582,8 +548,6 @@ class MainMenu: NSObject, NSMenuDelegate {
             keyEquivalent: "l"
         )
         nextTabItem.target = MenuActions.shared
-        nextTabItem.keyEquivalentModifierMask = [.command, .shift]
-        nextTabItem.isEnabled = hasInnerTabs
         menu.addItem(nextTabItem)
 
         let nextTabArrowItem = NSMenuItem(
@@ -592,64 +556,89 @@ class MainMenu: NSObject, NSMenuDelegate {
             keyEquivalent: String(UnicodeScalar(NSRightArrowFunctionKey)!)
         )
         nextTabArrowItem.target = MenuActions.shared
-        nextTabArrowItem.keyEquivalentModifierMask = [.command, .shift]
-        nextTabArrowItem.isEnabled = hasInnerTabs
+        nextTabArrowItem.keyEquivalentModifierMask = .command
         nextTabArrowItem.isAlternate = true
         menu.addItem(nextTabArrowItem)
 
-        // List item navigation: ⌘⇧K / ⌘⇧J and ⌘⇧↑ / ⌘⇧↓
-        let hasListFocus: Bool = {
-            switch sessionManager.activeTab {
-            case .snapshots: return true
-            case .artifacts: return true
-            case .agents: return true
-            case .ledger: return [.files, .entries].contains(sessionManager.activeLedgerSubTab)
-            case .terminal: return false
-            case .timeline: return false
-            }
-        }()
-        let focusPrevTitle = "Previous item"
-        let focusNextTitle = "Next item"
+        let prevViewItem = NSMenuItem(
+            title: "Previous view",
+            action: #selector(MenuActions.previousView(_:)),
+            keyEquivalent: "h"
+        )
+        prevViewItem.target = MenuActions.shared
+        prevViewItem.keyEquivalentModifierMask = [.command, .shift]
+        menu.addItem(prevViewItem)
+
+        let prevViewArrowItem = NSMenuItem(
+            title: "Previous view",
+            action: #selector(MenuActions.previousView(_:)),
+            keyEquivalent: String(UnicodeScalar(NSLeftArrowFunctionKey)!)
+        )
+        prevViewArrowItem.target = MenuActions.shared
+        prevViewArrowItem.keyEquivalentModifierMask = [.command, .shift]
+        prevViewArrowItem.isAlternate = true
+        menu.addItem(prevViewArrowItem)
+
+        let nextViewItem = NSMenuItem(
+            title: "Next view",
+            action: #selector(MenuActions.nextView(_:)),
+            keyEquivalent: "l"
+        )
+        nextViewItem.target = MenuActions.shared
+        nextViewItem.keyEquivalentModifierMask = [.command, .shift]
+        menu.addItem(nextViewItem)
+
+        let nextViewArrowItem = NSMenuItem(
+            title: "Next view",
+            action: #selector(MenuActions.nextView(_:)),
+            keyEquivalent: String(UnicodeScalar(NSRightArrowFunctionKey)!)
+        )
+        nextViewArrowItem.target = MenuActions.shared
+        nextViewArrowItem.keyEquivalentModifierMask = [.command, .shift]
+        nextViewArrowItem.isAlternate = true
+        menu.addItem(nextViewArrowItem)
+
+        // Vertical navigation, same rule as the horizontal pair
+        // above: unshifted is the innermost thing you are in. On a list
+        // surface that is the list, so ⌘K/J move the selection and
+        // ⇧⌘K/J move between sessions one level out.
+        let vertical = MenuActions.verticalNavDescriptor()
+        let focusPrevTitle = vertical.previous
+        let focusNextTitle = vertical.next
 
         let focusPrevItem = NSMenuItem(
             title: focusPrevTitle,
-            action: #selector(MenuActions.focusPreviousListItem(_:)),
+            action: #selector(MenuActions.verticalNavPrevious(_:)),
             keyEquivalent: "k"
         )
         focusPrevItem.target = MenuActions.shared
-        focusPrevItem.keyEquivalentModifierMask = [.command, .shift]
-        focusPrevItem.isEnabled = hasListFocus
         menu.addItem(focusPrevItem)
 
         let focusPrevArrowItem = NSMenuItem(
             title: focusPrevTitle,
-            action: #selector(MenuActions.focusPreviousListItem(_:)),
+            action: #selector(MenuActions.verticalNavPrevious(_:)),
             keyEquivalent: String(UnicodeScalar(NSUpArrowFunctionKey)!)
         )
         focusPrevArrowItem.target = MenuActions.shared
-        focusPrevArrowItem.keyEquivalentModifierMask = [.command, .shift]
-        focusPrevArrowItem.isEnabled = hasListFocus
+        focusPrevArrowItem.keyEquivalentModifierMask = .command
         focusPrevArrowItem.isAlternate = true
         menu.addItem(focusPrevArrowItem)
 
         let focusNextItem = NSMenuItem(
             title: focusNextTitle,
-            action: #selector(MenuActions.focusNextListItem(_:)),
+            action: #selector(MenuActions.verticalNavNext(_:)),
             keyEquivalent: "j"
         )
         focusNextItem.target = MenuActions.shared
-        focusNextItem.keyEquivalentModifierMask = [.command, .shift]
-        focusNextItem.isEnabled = hasListFocus
         menu.addItem(focusNextItem)
 
         let focusNextArrowItem = NSMenuItem(
             title: focusNextTitle,
-            action: #selector(MenuActions.focusNextListItem(_:)),
+            action: #selector(MenuActions.verticalNavNext(_:)),
             keyEquivalent: String(UnicodeScalar(NSDownArrowFunctionKey)!)
         )
         focusNextArrowItem.target = MenuActions.shared
-        focusNextArrowItem.keyEquivalentModifierMask = [.command, .shift]
-        focusNextArrowItem.isEnabled = hasListFocus
+        focusNextArrowItem.keyEquivalentModifierMask = .command
         focusNextArrowItem.isAlternate = true
         menu.addItem(focusNextArrowItem)
 
@@ -934,12 +923,28 @@ class MenuActions: NSObject {
 
     // MARK: - List Navigation Actions
 
-    @objc func focusPreviousListItem(_ sender: Any?) {
-        SessionManager.shared.listNavAction = .up
+    /// ⌘K — the previous thing on this surface: the pane above on the
+    /// Terminal tab, the row above on a list.
+    @objc func verticalNavPrevious(_ sender: Any?) {
+        let sm = SessionManager.shared
+        if sm.activeTab == .terminal {
+            guard let id = sm.activeSessionId else { return }
+            TerminalTabCommands.shared.focusSession.send(id)
+        } else {
+            sm.listNavAction = .up
+        }
     }
 
-    @objc func focusNextListItem(_ sender: Any?) {
-        SessionManager.shared.listNavAction = .down
+    /// ⌘J — the next thing on this surface: the pane below, or the row
+    /// below. Declines to open a shell that is not there; that is ⌘O.
+    @objc func verticalNavNext(_ sender: Any?) {
+        let sm = SessionManager.shared
+        if sm.activeTab == .terminal {
+            guard let id = sm.activeSessionId else { return }
+            TerminalTabCommands.shared.focusShell.send(id)
+        } else {
+            sm.listNavAction = .down
+        }
     }
 
     @objc func activateFocusedListItem(_ sender: Any?) {
@@ -990,14 +995,7 @@ class MenuActions: NSObject {
         TerminalTabCommands.shared.openShell.send(id)
     }
 
-    @objc func focusSessionPane(_ sender: Any?) {
-        let sm = SessionManager.shared
-        if sm.activeTab != .terminal {
-            sm.activeTab = .terminal
-        }
-        guard let id = sm.activeSessionId else { return }
-        TerminalTabCommands.shared.focusSession.send(id)
-    }
+
 
     /// The pane a pane-directed command should act on.
     ///
@@ -1211,6 +1209,26 @@ extension MenuActions: NSMenuItemValidation {
         // the panel shut, Show is the item that does something
         // and Hide is the one that would be a no-op. Gating on
         // the choice would offer the reader the wrong half.
+        // Sessions ▸ Open Shell Pane. Gated on the Terminal tab:
+        // the panes it opens only exist there.
+        case #selector(openShell(_:)):
+            return SessionManager.shared.activeTab == .terminal
+                && SessionManager.shared.activeSessionId != nil
+
+        // View ▸ list navigation and inner tabs. Live for the
+        // same reason the terminal font items above are: the View
+        // menu rebuilds only on visual open, so a build-time
+        // `isEnabled` goes stale the moment the reader changes tab
+        // — and a stale-disabled item drops its key equivalent on
+        // the floor, where SwiftTerm takes it as terminal input.
+        case #selector(verticalNavPrevious(_:)),
+             #selector(verticalNavNext(_:)):
+            return Self.verticalNavDescriptor().enabled
+
+        case #selector(previousTab(_:)),
+             #selector(nextTab(_:)):
+            return SessionManager.shared.activeTab.hasInnerTabs
+
         case #selector(hideSessions(_:)):
             return SidebarPreferences.shared.isVisible
         case #selector(showSessions(_:)):
@@ -1251,6 +1269,52 @@ extension MenuActions: NSMenuItemValidation {
     /// consume `SessionManager.listNavAction = .activate`.
     /// All other tabs (Terminal, Timeline, the read-only
     /// Ledger sub-tabs) collapse to a neutral disabled "Open".
+    /// Titles and enable gate for the View menu's ⌘K / ⌘J pair.
+    ///
+    /// One pair of items rather than one per meaning. Two menu items
+    /// sharing a key equivalent do not both stay bound — AppKit resolves
+    /// the duplicate by unbinding one, with no warning and no way to see
+    /// it from the source. That is the trap `KeystrokeSmoke` already
+    /// records as "⌘R's two meanings and its hole", and it is why the
+    /// pane-focus commands have no menu items of their own.
+    ///
+    /// Same shape as `openFocusedItemDescriptor`: buildViewMenu reads the
+    /// titles, validateMenuItem reads the gate, so the words and the
+    /// dispatch cannot disagree.
+    static func verticalNavDescriptor() -> (
+        previous: String, next: String, enabled: Bool
+    ) {
+        let sm = SessionManager.shared
+        if sm.activeTab == .terminal {
+            return (
+                "Focus Session Pane", "Focus Shell Pane",
+                sm.activeSessionId != nil
+            )
+        }
+        return ("Previous item", "Next item", hasListFocus())
+    }
+
+    /// Whether the active surface has a focusable list, in the sense
+    /// `buildViewMenu` means it.
+    ///
+    /// Live rather than a stored flag, and shared by the menu builder
+    /// and the validator so the two cannot disagree about which
+    /// surfaces own ⌘J/K. Asks `KeystrokeCatalog.ledgerListSubTabs`
+    /// for the Ledger's answer rather than restating it, which is the
+    /// third caller of that set and the reason it is named once.
+    static func hasListFocus() -> Bool {
+        let sm = SessionManager.shared
+        switch sm.activeTab {
+        case .snapshots, .artifacts, .agents:
+            return true
+        case .ledger:
+            return KeystrokeCatalog.ledgerListSubTabs
+                .contains(sm.activeLedgerSubTab)
+        case .terminal, .timeline:
+            return false
+        }
+    }
+
     static func openFocusedItemDescriptor() -> (
         title: String, enabled: Bool
     ) {

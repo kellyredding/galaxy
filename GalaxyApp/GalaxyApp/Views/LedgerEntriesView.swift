@@ -28,6 +28,13 @@ struct LedgerEntriesView: View {
     /// Incrementing counter — each bump triggers one focus request
     /// on the SafeSearchField via AppKit's makeFirstResponder.
     @State private var searchFocusTrigger: Int = 0
+    /// Counterpart to `searchFocusTrigger`. Vertical navigation hands the
+    /// caret out of the search field, because ↩ is a modifier-less key
+    /// equivalent and loses to whatever holds first responder — with the
+    /// caret in search, Return went to the field and an entry could never
+    /// be opened from the keyboard.
+    @State private var searchBlurTrigger: Int = 0
+    @State private var escapeMonitor: Any?
 
     /// Debounce publisher for search input
     @State private var searchSubject = PassthroughSubject<String, Never>()
@@ -84,8 +91,12 @@ struct LedgerEntriesView: View {
                 },
                 onAction: { action in
                     switch action {
-                    case .up: model.move(.up, in: sortedEntries)
-                    case .down: model.move(.down, in: sortedEntries)
+                    case .up:
+                        searchBlurTrigger += 1
+                        model.move(.up, in: sortedEntries)
+                    case .down:
+                        searchBlurTrigger += 1
+                        model.move(.down, in: sortedEntries)
                     case .activate: toggleFocusedEntry()
                     }
                 })
@@ -94,9 +105,20 @@ struct LedgerEntriesView: View {
             .onChange(of: entries.map { $0.map(\.id) }) {
                 model.reconcileFocus(in: sortedEntries, seed: .first)
             }
-            .onChange(of: sessionManager.activeTab) { focusSearchIfActive() }
-            .onChange(of: sessionManager.activeSessionId) { focusSearchIfActive() }
-            .onChange(of: sessionManager.activeLedgerSubTab) { focusSearchIfActive() }
+            .onChange(of: sessionManager.activeTab) {
+                focusSearchIfActive()
+                updateEscapeMonitor()
+            }
+            .onChange(of: sessionManager.activeSessionId) {
+                focusSearchIfActive()
+                updateEscapeMonitor()
+            }
+            .onChange(of: sessionManager.activeLedgerSubTab) {
+                focusSearchIfActive()
+                updateEscapeMonitor()
+            }
+            .onAppear { updateEscapeMonitor() }
+            .onDisappear { removeEscapeMonitor() }
     }
 
     /// Focus the search field when navigating to the Entries subtab.
@@ -181,6 +203,7 @@ struct LedgerEntriesView: View {
                 placeholder: "Search entries...",
                 fontSize: fontSize.caption2,
                 focusTrigger: searchFocusTrigger,
+                blurTrigger: searchBlurTrigger,
                 isActive: isSearchActive,
                 onTextChange: { searchSubject.send($0) },
                 onSubmit: {
@@ -395,6 +418,71 @@ struct LedgerEntriesView: View {
         }
     }
 
+
+    // MARK: - Escape (AppKit monitor)
+
+    /// Escape unwinds one layer at a time: an expanded row collapses, and
+    /// only once nothing is expanded does the caret go back to search.
+    ///
+    /// A monitor rather than a menu item because Escape carries no
+    /// modifier, and a modifier-less key equivalent loses to whatever holds
+    /// first responder — which on this surface is usually the search field.
+    private func installEscapeMonitor() {
+        guard escapeMonitor == nil else { return }
+        escapeMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: .keyDown
+        ) { event in
+            // The cheat sheet owns the keyboard while it is up.
+            guard !KeystrokeSheetModel.isClaimingKeyboard else {
+                return event
+            }
+            guard event.keyCode == 53 else { return event }
+            guard sessionManager.activeTab == .ledger,
+                  sessionManager.activeLedgerSubTab == .entries,
+                  sessionId == sessionManager.activeSessionId
+            else { return event }
+
+            // While the caret is in the search field, Escape belongs to the
+            // field — abandoning a half-typed query is what it means there,
+            // and this surface has nothing to unwind above it.
+            if NSApp.keyWindow?.firstResponder is NSTextView {
+                return event
+            }
+
+            if let entry = model.focusedElement(in: sortedEntries),
+               expandedEntryIds.contains(entry.id) {
+                expandedEntryIds.remove(entry.id)
+                return nil
+            }
+
+            searchFocusTrigger += 1
+            return nil
+        }
+    }
+
+    private func removeEscapeMonitor() {
+        if let monitor = escapeMonitor {
+            NSEvent.removeMonitor(monitor)
+            escapeMonitor = nil
+        }
+    }
+
+    /// One monitor, and only on the surface a reader is looking at. Every
+    /// session's entries view stays mounted behind an opacity of zero, so
+    /// installing unconditionally would stack N monitors racing for one
+    /// Escape.
+    private func updateEscapeMonitor() {
+        let shouldInstall =
+            sessionManager.activeTab == .ledger
+            && sessionManager.activeLedgerSubTab == .entries
+            && sessionId == sessionManager.activeSessionId
+        if shouldInstall {
+            installEscapeMonitor()
+        } else {
+            removeEscapeMonitor()
+        }
+    }
+
     // MARK: - Search Debounce
 
     private func setupSearchDebounce() {
@@ -434,6 +522,13 @@ struct SafeSearchField: NSViewRepresentable {
     /// Incrementing counter — each change from the last-seen value
     /// triggers one makeFirstResponder call via AppKit.
     let focusTrigger: Int
+    /// Incrementing counter — each change surrenders first responder,
+    /// but only if this field still holds it. Guarded so a blur meant for
+    /// the search field cannot take the caret from somewhere else.
+    ///
+    /// Defaulted: the Restore Session dialog's field has nowhere to hand
+    /// the caret to, so it never needs this.
+    var blurTrigger: Int = 0
     /// Only the active session's search field should grab focus.
     /// Without this guard, all ZStack instances dispatch focus and
     /// the last hidden one wins.
@@ -478,12 +573,28 @@ struct SafeSearchField: NSViewRepresentable {
                 nsView.window?.makeFirstResponder(nsView)
             }
         }
+
+        if isActive && blurTrigger != context.coordinator.lastSeenBlur {
+            context.coordinator.lastSeenBlur = blurTrigger
+            DispatchQueue.main.async {
+                // Only if the caret is actually here. The field editor is
+                // the responder while editing, not the field itself.
+                guard let window = nsView.window else { return }
+                let holdsCaret = window.firstResponder === nsView
+                    || (window.firstResponder as? NSView)?
+                        .isDescendant(of: nsView) == true
+                guard holdsCaret else { return }
+                window.makeFirstResponder(nil)
+            }
+        }
     }
 
     class Coordinator: NSObject, NSTextFieldDelegate {
         var parent: SafeSearchField
         /// Last focusTrigger value we acted on
         var lastSeenTrigger: Int = 0
+        /// Last blurTrigger value we acted on
+        var lastSeenBlur: Int = 0
 
         init(_ parent: SafeSearchField) {
             self.parent = parent

@@ -125,6 +125,17 @@ struct TerminalTabSplitView: View {
             session.paneRegistry.restoreFocus(kind: .session)
         }
         .onReceive(
+            TerminalTabCommands.shared.focusShell
+        ) { sessionId in
+            guard TerminalTabCommands.addresses(
+                sessionID: session.id, target: sessionId
+            ), state.shellPane != nil else { return }
+            // Declines rather than opens when there is no shell: a
+            // directional key means the pane that is there. Opening one
+            // is `openShell`, and it has its own keystroke.
+            session.paneRegistry.restoreFocus(kind: .shell)
+        }
+        .onReceive(
             TerminalTabCommands.shared.closeFocusedShell
         ) { sessionId in
             guard TerminalTabCommands.addresses(

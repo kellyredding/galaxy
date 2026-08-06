@@ -502,6 +502,8 @@ struct TerminalContainerView: View {
         .onChange(of: sessionManager.activeTab) {
             if sessionManager.activeTab == .terminal {
                 restoreTerminalFocus()
+            } else {
+                releaseTerminalFocus()
             }
         }
         .onChange(of: sessionManager.activeSessionId) {
@@ -509,6 +511,28 @@ struct TerminalContainerView: View {
                 restoreTerminalFocus()
             }
         }
+    }
+
+    /// Let go of first responder when the terminal stops being the surface
+    /// the user is on.
+    ///
+    /// The counterpart to `restoreTerminalFocus`, and its absence was a
+    /// bug rather than a decision: every tab container stays mounted, so
+    /// leaving the Terminal tab left the caret in a terminal the user
+    /// could no longer see. A key equivalent carrying no modifier loses to
+    /// whatever holds first responder, so Return on the Artifacts tab went
+    /// to the hidden terminal as a newline instead of opening the focused
+    /// artifact — the menu item was enabled the whole time and never got
+    /// the event.
+    ///
+    /// Each pane decides whether it actually holds focus, so this is safe
+    /// when the answer is already no.
+    private func releaseTerminalFocus() {
+        guard let activeId = sessionManager.activeSessionId,
+              let session = sessionManager.sessions
+                .first(where: { $0.id == activeId })
+        else { return }
+        session.paneRegistry.resignPaneFocus()
     }
 
     /// Restore AppKit first responder to the active session's

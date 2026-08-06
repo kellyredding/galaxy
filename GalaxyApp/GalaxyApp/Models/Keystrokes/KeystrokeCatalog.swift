@@ -81,10 +81,11 @@ enum KeystrokeCatalog {
               section: .sessions, availability: .app,
               aliases: "add a marker, label the sidebar, divider, "
                   + "separator, group the sessions"),
-        .init(binding: .literal("⌘O"), label: "Restore Session...",
+        .init(binding: .literal("⇧⌘T"), label: "Restore Session...",
               section: .sessions, availability: .app,
               aliases: "reopen a closed session, bring back a session, "
-                  + "open a past session, the closed session archive"),
+                  + "open a past session, the closed session archive, "
+                  + "undo closing a session"),
 
         // One row for nine keys. The menu builds an item per session, so
         // the ninth exists only with nine sessions open — but a row per
@@ -108,19 +109,19 @@ enum KeystrokeCatalog {
         // their own rows for the same reason assist-ant writes ⌘H and ⌘←
         // twice: a row is one keystroke, and stacking two into one cell
         // blows out a column every other row aligns to.
-        .init(binding: .literal("⌘K"), label: "Previous session",
+        .init(binding: .literal("⇧⌘K"), label: "Previous session",
               section: .sessions, availability: .session(.active),
               aliases: "move up the session list, the session above, "
                   + "earlier session, back up the sidebar"),
-        .init(binding: .literal("⌘↑"), label: "Previous session",
+        .init(binding: .literal("⇧⌘↑"), label: "Previous session",
               section: .sessions, availability: .session(.active),
               aliases: "move up the session list, the session above, "
                   + "earlier session, back up the sidebar"),
-        .init(binding: .literal("⌘J"), label: "Next session",
+        .init(binding: .literal("⇧⌘J"), label: "Next session",
               section: .sessions, availability: .session(.active),
               aliases: "move down the session list, the session below, "
                   + "later session, on down the sidebar"),
-        .init(binding: .literal("⌘↓"), label: "Next session",
+        .init(binding: .literal("⇧⌘↓"), label: "Next session",
               section: .sessions, availability: .session(.active),
               aliases: "move down the session list, the session below, "
                   + "later session, on down the sidebar"),
@@ -182,36 +183,36 @@ enum KeystrokeCatalog {
     /// inner pair has to say *inner*, because otherwise the two pairs
     /// are four rows answering to "tab" with no way to tell them apart.
     private static let windowAndViews: [KeystrokeEntry] = [
-        .init(binding: .literal("⌘H"), label: "Previous view",
+        .init(binding: .literal("⇧⌘H"), label: "Previous view",
               section: .windowAndViews, availability: .app,
               aliases: "previous tab, switch tabs, change view, "
                   + "move left along the tab strip"),
-        .init(binding: .literal("⌘←"), label: "Previous view",
+        .init(binding: .literal("⇧⌘←"), label: "Previous view",
               section: .windowAndViews, availability: .app,
               aliases: "previous tab, switch tabs, change view, "
                   + "move left along the tab strip"),
-        .init(binding: .literal("⌘L"), label: "Next view",
+        .init(binding: .literal("⇧⌘L"), label: "Next view",
               section: .windowAndViews, availability: .app,
               aliases: "next tab, switch tabs, change view, "
                   + "move right along the tab strip"),
-        .init(binding: .literal("⌘→"), label: "Next view",
+        .init(binding: .literal("⇧⌘→"), label: "Next view",
               section: .windowAndViews, availability: .app,
               aliases: "next tab, switch tabs, change view, "
                   + "move right along the tab strip"),
 
-        .init(binding: .literal("⇧⌘H"), label: "Previous tab",
+        .init(binding: .literal("⌘H"), label: "Previous tab",
               section: .windowAndViews, availability: .innerTabs,
               aliases: "previous inner tab, previous ledger tab, "
                   + "move left inside the view"),
-        .init(binding: .literal("⇧⌘←"), label: "Previous tab",
+        .init(binding: .literal("⌘←"), label: "Previous tab",
               section: .windowAndViews, availability: .innerTabs,
               aliases: "previous inner tab, previous ledger tab, "
                   + "move left inside the view"),
-        .init(binding: .literal("⇧⌘L"), label: "Next tab",
+        .init(binding: .literal("⌘L"), label: "Next tab",
               section: .windowAndViews, availability: .innerTabs,
               aliases: "next inner tab, next ledger tab, "
                   + "move right inside the view"),
-        .init(binding: .literal("⇧⌘→"), label: "Next tab",
+        .init(binding: .literal("⌘→"), label: "Next tab",
               section: .windowAndViews, availability: .innerTabs,
               aliases: "next inner tab, next ledger tab, "
                   + "move right inside the view"),
@@ -317,19 +318,19 @@ enum KeystrokeCatalog {
     /// disabled titles get no rows: a key that is dead by construction
     /// has nothing to document.
     private static let lists: [KeystrokeEntry] = [
-        .init(binding: .literal("⇧⌘K"), label: "Previous item",
+        .init(binding: .literal("⌘K"), label: "Previous item",
               section: .lists, availability: .listFocus,
               aliases: "move up the list, the row above, navigate up, "
                   + "focus the one above"),
-        .init(binding: .literal("⇧⌘↑"), label: "Previous item",
+        .init(binding: .literal("⌘↑"), label: "Previous item",
               section: .lists, availability: .listFocus,
               aliases: "move up the list, the row above, navigate up, "
                   + "focus the one above"),
-        .init(binding: .literal("⇧⌘J"), label: "Next item",
+        .init(binding: .literal("⌘J"), label: "Next item",
               section: .lists, availability: .listFocus,
               aliases: "move down the list, the row below, navigate "
                   + "down, focus the one below"),
-        .init(binding: .literal("⇧⌘↓"), label: "Next item",
+        .init(binding: .literal("⌘↓"), label: "Next item",
               section: .lists, availability: .listFocus,
               aliases: "move down the list, the row below, navigate "
                   + "down, focus the one below"),
@@ -475,12 +476,16 @@ enum KeystrokeCatalog {
         // that is *all* they do — there is no session pane to focus and
         // no shell to open beside it, so a live row would promise a
         // surface that does not exist.
-        .init(binding: .literal("⌘T"), label: "Focus Session Pane",
-              section: .terminal, availability: .session(.active),
+        .init(binding: .literal("⌘K"), label: "Focus Session Pane",
+              section: .terminal, availability: .views([.terminal]),
               aliases: "jump to the agent, go to claude, put the caret "
-                  + "in the prompt, focus the session"),
-        .init(binding: .literal("⇧⌘T"), label: "Open Shell Pane",
-              section: .terminal, availability: .session(.active),
+                  + "in the prompt, focus the session, go up a pane"),
+        .init(binding: .literal("⌘J"), label: "Focus Shell Pane",
+              section: .terminal, availability: .views([.terminal]),
+              aliases: "go to the shell, focus the command line, "
+                  + "go down a pane, switch to bash"),
+        .init(binding: .literal("⌘O"), label: "Open Shell Pane",
+              section: .terminal, availability: .views([.terminal]),
               aliases: "new shell, split the terminal, bash, zsh, "
                   + "open a command line"),
 
