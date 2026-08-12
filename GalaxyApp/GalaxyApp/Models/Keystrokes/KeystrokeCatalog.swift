@@ -105,7 +105,7 @@ enum KeystrokeCatalog {
         // not already at the end of the list — is a "nowhere left to go"
         // and stays unmodelled, for the reason `.app` gives.
         //
-        // The arrow twins are `isAlternate` items on one command, and get
+        // The arrow twins are `isHidden` items on one command, and get
         // their own rows for the same reason assist-ant writes ⌘H and ⌘←
         // twice: a row is one keystroke, and stacking two into one cell
         // blows out a column every other row aligns to.

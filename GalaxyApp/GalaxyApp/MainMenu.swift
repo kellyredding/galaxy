@@ -352,8 +352,10 @@ class MainMenu: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        // Previous / Next session — vim-style ⌘K/⌘J with arrow
-        // alternates ⌘↑/⌘↓. Enable state is dynamic via
+        // Previous / Next session — vim-style ⇧⌘K/⇧⌘J with hidden
+        // arrow twins ⇧⌘↑/⇧⌘↓. Sessions sit one level out from the
+        // panes, which is why these carry Shift and the pane pair
+        // does not. Enable state is dynamic via
         // `MenuActions.validateMenuItem`, which the Sessions
         // menu only rebuilds on visual open — pressing the
         // shortcut after creating a second session no longer
@@ -369,7 +371,7 @@ class MainMenu: NSObject, NSMenuDelegate {
         let prevArrowItem = NSMenuItem(title: prevTitle, action: #selector(MenuActions.previousSession(_:)), keyEquivalent: String(UnicodeScalar(NSUpArrowFunctionKey)!))
         prevArrowItem.target = MenuActions.shared
         prevArrowItem.keyEquivalentModifierMask = [.command, .shift]
-        prevArrowItem.isAlternate = true
+        prevArrowItem.isHidden = true
         menu.addItem(prevArrowItem)
 
         let nextItem = NSMenuItem(title: nextTitle, action: #selector(MenuActions.nextSession(_:)), keyEquivalent: "j")
@@ -380,7 +382,7 @@ class MainMenu: NSObject, NSMenuDelegate {
         let nextArrowItem = NSMenuItem(title: nextTitle, action: #selector(MenuActions.nextSession(_:)), keyEquivalent: String(UnicodeScalar(NSDownArrowFunctionKey)!))
         nextArrowItem.target = MenuActions.shared
         nextArrowItem.keyEquivalentModifierMask = [.command, .shift]
-        nextArrowItem.isAlternate = true
+        nextArrowItem.isHidden = true
         menu.addItem(nextArrowItem)
 
         menu.addItem(.separator())
@@ -539,7 +541,7 @@ class MainMenu: NSObject, NSMenuDelegate {
         )
         prevTabArrowItem.target = MenuActions.shared
         prevTabArrowItem.keyEquivalentModifierMask = .command
-        prevTabArrowItem.isAlternate = true
+        prevTabArrowItem.isHidden = true
         menu.addItem(prevTabArrowItem)
 
         let nextTabItem = NSMenuItem(
@@ -557,7 +559,7 @@ class MainMenu: NSObject, NSMenuDelegate {
         )
         nextTabArrowItem.target = MenuActions.shared
         nextTabArrowItem.keyEquivalentModifierMask = .command
-        nextTabArrowItem.isAlternate = true
+        nextTabArrowItem.isHidden = true
         menu.addItem(nextTabArrowItem)
 
         let prevViewItem = NSMenuItem(
@@ -576,7 +578,7 @@ class MainMenu: NSObject, NSMenuDelegate {
         )
         prevViewArrowItem.target = MenuActions.shared
         prevViewArrowItem.keyEquivalentModifierMask = [.command, .shift]
-        prevViewArrowItem.isAlternate = true
+        prevViewArrowItem.isHidden = true
         menu.addItem(prevViewArrowItem)
 
         let nextViewItem = NSMenuItem(
@@ -595,7 +597,7 @@ class MainMenu: NSObject, NSMenuDelegate {
         )
         nextViewArrowItem.target = MenuActions.shared
         nextViewArrowItem.keyEquivalentModifierMask = [.command, .shift]
-        nextViewArrowItem.isAlternate = true
+        nextViewArrowItem.isHidden = true
         menu.addItem(nextViewArrowItem)
 
         // Vertical navigation, same rule as the horizontal pair
@@ -621,7 +623,7 @@ class MainMenu: NSObject, NSMenuDelegate {
         )
         focusPrevArrowItem.target = MenuActions.shared
         focusPrevArrowItem.keyEquivalentModifierMask = .command
-        focusPrevArrowItem.isAlternate = true
+        focusPrevArrowItem.isHidden = true
         menu.addItem(focusPrevArrowItem)
 
         let focusNextItem = NSMenuItem(
@@ -639,7 +641,7 @@ class MainMenu: NSObject, NSMenuDelegate {
         )
         focusNextArrowItem.target = MenuActions.shared
         focusNextArrowItem.keyEquivalentModifierMask = .command
-        focusNextArrowItem.isAlternate = true
+        focusNextArrowItem.isHidden = true
         menu.addItem(focusNextArrowItem)
 
         // Activate focused item: Enter. The action is consumed
