@@ -67,13 +67,13 @@ galaxy help               # Show help
 
 ```bash
 # Navigate to your project
-cd ~/projects/kajabi/kajabi-products
+cd ~/projects/acme/acme-products
 
 # Launch Galaxy session
 galaxy
 
 # Galaxy.app opens (or activates if already running)
-# A new Claude Code session starts in kajabi-products/
+# A new Claude Code session starts in acme-products/
 ```
 
 ## How It Works

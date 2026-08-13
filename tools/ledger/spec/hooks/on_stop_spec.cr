@@ -536,7 +536,7 @@ describe "OnStop last_stop_cwd stamping" do
   end
 
   it "survives concurrent status line updates without being clobbered" do
-    # Simulate: session starts with cwd=/projects/kajabi
+    # Simulate: session starts with cwd=/projects/my-app
     status1 = GalaxyLedger::ContextStatus.from_json(
       %({"cwd":"/projects/galaxy-poc","context":{"percentage":30.0}})
     )
@@ -560,7 +560,7 @@ describe "OnStop last_stop_cwd stamping" do
 
     # Status line fires AFTER reset → pushes project root
     status2 = GalaxyLedger::ContextStatus.from_json(
-      %({"cwd":"/projects/kajabi","context":{"percentage":5.0}})
+      %({"cwd":"/projects/my-app","context":{"percentage":5.0}})
     )
     GalaxyLedger::Database.update_session_metrics(ledger_session_id, status2)
 

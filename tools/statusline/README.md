@@ -43,13 +43,13 @@ Add to `~/.claude/settings.json`:
 
 ```
 WIDE (120+ cols):
-~/projects/kajabi/kajabi-products[main=*] | ████████████████░░░░ 78% | Sonnet | $0.42 | 6:41 AM
+~/projects/acme/acme-products[main=*] | ████████████████░░░░ 78% | Sonnet | $0.42 | 6:41 AM
 
 MEDIUM (80-119 cols):
-~/p/k/kajabi-products[main=*] | ██████████░░░░ 78% | Sonnet | $0.42
+~/p/a/acme-products[main=*] | ██████████░░░░ 78% | Sonnet | $0.42
 
 NARROW (60-79 cols):
-kajabi-products[main=*] | ██████░░ 78% | Son
+acme-products[main=*] | ██████░░ 78% | Son
 
 VERY NARROW (<60 cols):
 [main=*] | ████░░ 78%

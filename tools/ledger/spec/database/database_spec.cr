@@ -1180,7 +1180,7 @@ describe GalaxyLedger::Database do
       )
 
       # Simulate status line pushing a new cwd (e.g., after context reset)
-      status_json = %({"session_id":"spec-proc","cwd":"/home/user/projects/kajabi","context":{"percentage":10.0}})
+      status_json = %({"session_id":"spec-proc","cwd":"/home/user/projects/my-app","context":{"percentage":10.0}})
       status = GalaxyLedger::ContextStatus.from_json(status_json)
 
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
@@ -1189,7 +1189,7 @@ describe GalaxyLedger::Database do
       session.should_not be_nil
       s = session.not_nil!
       # cwd should be the new value
-      s.cwd.should eq("/home/user/projects/kajabi")
+      s.cwd.should eq("/home/user/projects/my-app")
       # previous_cwd should be the old value, saved in context JSON
       ctx = JSON.parse(s.context)
       ctx["previous_cwd"]?.should_not be_nil
@@ -1259,7 +1259,7 @@ describe GalaxyLedger::Database do
       # Pre-populate context with an existing key
       GalaxyLedger::Database.merge_session_context(ledger_session_id, "injected_context", "some data")
 
-      status = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","cwd":"/home/user/kajabi","context":{"percentage":10.0}}))
+      status = GalaxyLedger::ContextStatus.from_json(%({"session_id":"spec-proc","cwd":"/home/user/my-app","context":{"percentage":10.0}}))
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
 
       session = GalaxyLedger::Database.get_session("sess-metrics-ctx-merge").not_nil!
@@ -1280,7 +1280,7 @@ describe GalaxyLedger::Database do
   describe ".stamp_stop_cwd" do
     it "writes last_stop_cwd into context JSON" do
       ledger_session_id = GalaxyLedger::Database.create_session("sess-stop-cwd-basic",
-        cwd: "/home/user/projects/kajabi",
+        cwd: "/home/user/projects/my-app",
       )
 
       result = GalaxyLedger::Database.stamp_stop_cwd(ledger_session_id, "/home/user/projects/galaxy")

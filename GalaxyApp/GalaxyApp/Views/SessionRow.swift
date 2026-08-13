@@ -471,8 +471,8 @@ struct SessionRow: View {
     /// Adaptive 3-tier CWD line wrapped in `ViewThatFits`.
     /// SwiftUI's layout system picks the largest tier whose
     /// natural size fits the proposed horizontal space:
-    ///   Tier 1: full path — ~/projects/kajabi/products
-    ///   Tier 2: abbreviated — ~/p/k/products
+    ///   Tier 1: full path — ~/projects/acme/acme-products
+    ///   Tier 2: abbreviated — ~/p/a/acme-products
     ///   Tier 3: basename only — products
     /// Tier 3 is the fallback when even the basename is
     /// wider than the proposal; the caller's
@@ -597,7 +597,7 @@ struct SessionRow: View {
     // MARK: - Adaptive CWD Truncation
 
     /// Abbreviate path: first char of each intermediate dir, keep full basename.
-    /// ~/projects/kajabi/products → ~/p/k/products
+    /// ~/projects/acme/acme-products → ~/p/a/acme-products
     private func abbreviatePath(_ path: String) -> String {
         let parts = path.split(separator: "/", omittingEmptySubsequences: false)
         guard parts.count > 2 else { return path }

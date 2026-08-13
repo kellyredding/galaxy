@@ -2996,7 +2996,7 @@ module GalaxyLedger
               "current_session_identifier": "def-456",
               "claude_pids": [12345, 11000],
               "current_claude_pid": 12345,
-              "cwd": "/Users/kelly/projects/kajabi",
+              "cwd": "/Users/you/projects/my-app",
               ...
             }
           ]

@@ -380,7 +380,7 @@ describe "OnClear cwd and git_branch in additionalContext" do
 
     # Simulate the timing issue: status line fires after reset and overwrites
     # cwd to the project root, but previous_cwd is preserved in context JSON.
-    status = GalaxyLedger::ContextStatus.from_json(%({"cwd":"#{Path.home}/projects/kajabi","context":{"percentage":5.0}}))
+    status = GalaxyLedger::ContextStatus.from_json(%({"cwd":"#{Path.home}/projects/my-app","context":{"percentage":5.0}}))
     GalaxyLedger::Database.update_session_metrics(ledger_session_id, status)
 
     # Add data so we get full context (not empty)
@@ -394,7 +394,7 @@ describe "OnClear cwd and git_branch in additionalContext" do
     # Should show the PREVIOUS cwd (where user was working), not the current
     # cwd (project root after reset)
     ctx.should contain("**Working directory**: `~/projects/galaxy`")
-    ctx.should_not contain("**Working directory**: `~/projects/kajabi`")
+    ctx.should_not contain("**Working directory**: `~/projects/my-app`")
   end
 
   it "includes git branch when session has git_branch" do
@@ -480,13 +480,13 @@ describe "OnClear cwd reset timing regression" do
   # End-to-end test for the cwd timing issue:
   # 1. Session starts in /projects/galaxy (status line updates cwd)
   # 2. /clear fires → Claude resets to project root
-  # 3. Status line fires → overwrites cwd to /projects/kajabi
+  # 3. Status line fires → overwrites cwd to /projects/my-app
   # 4. Handoff should still report /projects/galaxy (from previous_cwd)
 
   it "full cycle: status line updates, cwd changes on reset, handoff reports previous" do
     session_id = "e2e-cwd-reset-#{Random.rand(100000)}"
     ledger_session_id = GalaxyLedger::Database.create_session(session_id,
-      cwd: "#{Path.home}/projects/kajabi",
+      cwd: "#{Path.home}/projects/my-app",
     )
 
     begin
@@ -496,10 +496,10 @@ describe "OnClear cwd reset timing regression" do
       )
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status1)
 
-      # Verify: cwd is now galaxy, previous_cwd is kajabi
+      # Verify: cwd is now galaxy, previous_cwd is my-app
       s1 = GalaxyLedger::Database.get_session(session_id).not_nil!
       s1.cwd.should eq("#{Path.home}/projects/galaxy")
-      JSON.parse(s1.context)["previous_cwd"].as_s.should eq("#{Path.home}/projects/kajabi")
+      JSON.parse(s1.context)["previous_cwd"].as_s.should eq("#{Path.home}/projects/my-app")
 
       # Step 2: More status line ticks with same cwd (previous_cwd stays put)
       status2 = GalaxyLedger::ContextStatus.from_json(
@@ -508,17 +508,17 @@ describe "OnClear cwd reset timing regression" do
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status2)
 
       s2 = GalaxyLedger::Database.get_session(session_id).not_nil!
-      JSON.parse(s2.context)["previous_cwd"].as_s.should eq("#{Path.home}/projects/kajabi")
+      JSON.parse(s2.context)["previous_cwd"].as_s.should eq("#{Path.home}/projects/my-app")
 
       # Step 3: /clear happens → Claude resets → status line pushes project root
       status3 = GalaxyLedger::ContextStatus.from_json(
-        %({"cwd":"#{Path.home}/projects/kajabi","context":{"percentage":5.0}})
+        %({"cwd":"#{Path.home}/projects/my-app","context":{"percentage":5.0}})
       )
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status3)
 
-      # Verify: cwd is now kajabi (wrong), but previous_cwd is galaxy (correct)
+      # Verify: cwd is now my-app (wrong), but previous_cwd is galaxy (correct)
       s3 = GalaxyLedger::Database.get_session(session_id).not_nil!
-      s3.cwd.should eq("#{Path.home}/projects/kajabi")
+      s3.cwd.should eq("#{Path.home}/projects/my-app")
       JSON.parse(s3.context)["previous_cwd"].as_s.should eq("#{Path.home}/projects/galaxy")
 
       # Step 4: Handoff runs — should use previous_cwd, not cwd
@@ -531,7 +531,7 @@ describe "OnClear cwd reset timing regression" do
       output = JSON.parse(result[:output])
       ctx = output["hookSpecificOutput"]["additionalContext"].as_s
       ctx.should contain("**Working directory**: `~/projects/galaxy`")
-      ctx.should_not contain("**Working directory**: `~/projects/kajabi`")
+      ctx.should_not contain("**Working directory**: `~/projects/my-app`")
     ensure
       GalaxyLedger::Database.delete_session(session_id)
     end
@@ -571,7 +571,7 @@ describe "OnClear last_stop_cwd handoff preference" do
   it "prefers last_stop_cwd over previous_cwd in handoff" do
     session_id = "clear-stop-cwd-pref-#{Random.rand(100000)}"
     ledger_session_id = GalaxyLedger::Database.create_session(session_id,
-      cwd: "#{Path.home}/projects/kajabi",
+      cwd: "#{Path.home}/projects/my-app",
     )
 
     begin
@@ -596,7 +596,7 @@ describe "OnClear last_stop_cwd handoff preference" do
       # Should use last_stop_cwd, NOT previous_cwd or live cwd
       ctx.should contain("**Working directory**: `~/projects/galaxy-poc`")
       ctx.should_not contain("**Working directory**: `~/projects/galaxy`")
-      ctx.should_not contain("**Working directory**: `~/projects/kajabi`")
+      ctx.should_not contain("**Working directory**: `~/projects/my-app`")
     ensure
       GalaxyLedger::Database.delete_session(session_id)
     end
@@ -605,7 +605,7 @@ describe "OnClear last_stop_cwd handoff preference" do
   it "falls back to previous_cwd when last_stop_cwd is absent" do
     session_id = "clear-no-stop-cwd-#{Random.rand(100000)}"
     ledger_session_id = GalaxyLedger::Database.create_session(session_id,
-      cwd: "#{Path.home}/projects/kajabi",
+      cwd: "#{Path.home}/projects/my-app",
     )
 
     begin
@@ -623,8 +623,8 @@ describe "OnClear last_stop_cwd handoff preference" do
 
       output = JSON.parse(result[:output])
       ctx = output["hookSpecificOutput"]["additionalContext"].as_s
-      # Should fall back to previous_cwd (kajabi was the cwd before galaxy)
-      ctx.should contain("**Working directory**: `~/projects/kajabi`")
+      # Should fall back to previous_cwd (my-app was the cwd before galaxy)
+      ctx.should contain("**Working directory**: `~/projects/my-app`")
     ensure
       GalaxyLedger::Database.delete_session(session_id)
     end
@@ -633,7 +633,7 @@ describe "OnClear last_stop_cwd handoff preference" do
   it "full cycle: stop stamps cwd, status line clobbers after reset, handoff still correct" do
     session_id = "clear-full-cycle-#{Random.rand(100000)}"
     ledger_session_id = GalaxyLedger::Database.create_session(session_id,
-      cwd: "#{Path.home}/projects/kajabi",
+      cwd: "#{Path.home}/projects/my-app",
     )
 
     begin
@@ -660,15 +660,15 @@ describe "OnClear last_stop_cwd handoff preference" do
 
       # Step 5: /clear happens → Claude resets → status line pushes project root
       status4 = GalaxyLedger::ContextStatus.from_json(
-        %({"cwd":"#{Path.home}/projects/kajabi","context":{"percentage":5.0}})
+        %({"cwd":"#{Path.home}/projects/my-app","context":{"percentage":5.0}})
       )
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status4)
 
-      # Verify intermediate state: cwd is kajabi (wrong), previous_cwd is
+      # Verify intermediate state: cwd is my-app (wrong), previous_cwd is
       # galaxy-poc (would be correct by luck here), but last_stop_cwd is
       # galaxy-poc (deterministically correct)
       s = GalaxyLedger::Database.get_session(session_id).not_nil!
-      s.cwd.should eq("#{Path.home}/projects/kajabi")
+      s.cwd.should eq("#{Path.home}/projects/my-app")
       ctx = JSON.parse(s.context)
       ctx["last_stop_cwd"].as_s.should eq("#{Path.home}/projects/galaxy-poc")
 
@@ -682,7 +682,7 @@ describe "OnClear last_stop_cwd handoff preference" do
       output = JSON.parse(result[:output])
       handoff_ctx = output["hookSpecificOutput"]["additionalContext"].as_s
       handoff_ctx.should contain("**Working directory**: `~/projects/galaxy-poc`")
-      handoff_ctx.should_not contain("**Working directory**: `~/projects/kajabi`")
+      handoff_ctx.should_not contain("**Working directory**: `~/projects/my-app`")
       handoff_ctx.should_not contain("**Working directory**: `~/projects/galaxy`")
     ensure
       GalaxyLedger::Database.delete_session(session_id)
@@ -695,11 +695,11 @@ describe "OnClear last_stop_cwd handoff preference" do
     # previous_cwd captures galaxy (wrong), but last_stop_cwd is galaxy-poc.
     session_id = "clear-drift-#{Random.rand(100000)}"
     ledger_session_id = GalaxyLedger::Database.create_session(session_id,
-      cwd: "#{Path.home}/projects/kajabi",
+      cwd: "#{Path.home}/projects/my-app",
     )
 
     begin
-      # Status line ticks: kajabi → galaxy-poc
+      # Status line ticks: my-app → galaxy-poc
       status1 = GalaxyLedger::ContextStatus.from_json(
         %({"cwd":"#{Path.home}/projects/galaxy-poc","context":{"percentage":20.0}})
       )
@@ -723,10 +723,10 @@ describe "OnClear last_stop_cwd handoff preference" do
 
       # /clear → status line pushes project root
       status4 = GalaxyLedger::ContextStatus.from_json(
-        %({"cwd":"#{Path.home}/projects/kajabi","context":{"percentage":5.0}})
+        %({"cwd":"#{Path.home}/projects/my-app","context":{"percentage":5.0}})
       )
       GalaxyLedger::Database.update_session_metrics(ledger_session_id, status4)
-      # Now: cwd=kajabi, previous_cwd=galaxy-poc, last_stop_cwd=galaxy-poc
+      # Now: cwd=my-app, previous_cwd=galaxy-poc, last_stop_cwd=galaxy-poc
       # Without last_stop_cwd, if previous_cwd had drifted to galaxy,
       # handoff would report the wrong directory.
 
