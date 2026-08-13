@@ -83,7 +83,8 @@ final class EventCoordinator {
     private static let agentStartEvent =
         "timeline.agent:started"
 
-    /// Agent-end events that decrement runningAgentCount.
+    /// Agent-end events. Each prompts a re-read of the count
+    /// rather than adjusting it.
     private static let agentEndEvents: Set<String> = [
         "timeline.agent:stopped",
         "timeline.agent:failed",
@@ -172,6 +173,13 @@ final class EventCoordinator {
         // Step 1: Start listening (events buffer until sync completes)
         phase = .listening
         GalaxyLog.events("Phase → listening")
+
+        // Scheduled before the socket guard, deliberately. A
+        // lost flock disables the event system, and that is
+        // precisely when a periodic re-read is the only thing
+        // keeping the count honest — a backstop downstream of
+        // the thing it backs up is not a backstop.
+        startPeriodicMonitors()
 
         guard socketListener.start() else {
             GalaxyLog.events("Socket listener failed to start — event system disabled")
@@ -292,10 +300,15 @@ final class EventCoordinator {
             return
         }
 
-        // Agent-start event: track the agent as running
-        // and notify AgentsView to refresh its list.
-        // Socket events own the count; the CLI fetch
-        // only refreshes the list (no count correction).
+        // Agent-start event: ask the CLI what is running now.
+        //
+        // The event is a trigger, not data. It used to carry the
+        // count itself by incrementing a set, which meant an
+        // event that never arrived — a session the cache could
+        // not match, a payload without an agent_id, a socket
+        // that never came up — left the number permanently
+        // wrong. Reading the database instead makes a missed
+        // event cost accuracy only until the next read.
         if envelope.event == Self.agentStartEvent {
             if let appSessionId =
                 ledgerSessionIdCache[
@@ -306,25 +319,11 @@ final class EventCoordinator {
                        $0.id == appSessionId
                    })
             {
-                if let agentId = envelope.detailValue(
-                    "agent_id", as: String.self
-                ) {
-                    session.agentStarted(agentId)
-                    GalaxyLog.events(
-                        "[\(session.sessionRef)]"
-                        + " routeEvent:"
-                        + " agent \(agentId) running"
-                        + " (\(session.runningAgentCount))"
-                        + " via \(envelope.event)"
-                    )
-                } else {
-                    GalaxyLog.events(
-                        "[\(session.sessionRef)]"
-                        + " routeEvent:"
-                        + " \(envelope.event) carried no"
-                        + " agent_id; count unchanged"
-                    )
-                }
+                GalaxyLog.events(
+                    "[\(session.sessionRef)]"
+                    + " routeEvent: \(envelope.event)"
+                    + " — refreshing from the CLI"
+                )
                 sessionManager?
                     .agentRefreshTrigger =
                     (appSessionId, Date())
@@ -333,10 +332,9 @@ final class EventCoordinator {
             return
         }
 
-        // Agent-end events: drop the agent from the running
-        // set and notify AgentsView to refresh its list.
-        // Socket events own the count; the CLI fetch
-        // only refreshes the list (no count correction).
+        // Agent-end event: same trigger, same re-read. Covers
+        // stopped, failed and abandoned alike, so a row swept by
+        // reconcile lands here too and the badge follows.
         if Self.agentEndEvents.contains(
             envelope.event
         ) {
@@ -349,25 +347,11 @@ final class EventCoordinator {
                        $0.id == appSessionId
                    })
             {
-                if let agentId = envelope.detailValue(
-                    "agent_id", as: String.self
-                ) {
-                    session.agentStopped(agentId)
-                    GalaxyLog.events(
-                        "[\(session.sessionRef)]"
-                        + " routeEvent:"
-                        + " agent \(agentId) ended"
-                        + " (\(session.runningAgentCount))"
-                        + " via \(envelope.event)"
-                    )
-                } else {
-                    GalaxyLog.events(
-                        "[\(session.sessionRef)]"
-                        + " routeEvent:"
-                        + " \(envelope.event) carried no"
-                        + " agent_id; count unchanged"
-                    )
-                }
+                GalaxyLog.events(
+                    "[\(session.sessionRef)]"
+                    + " routeEvent: \(envelope.event)"
+                    + " — refreshing from the CLI"
+                )
                 sessionManager?
                     .agentRefreshTrigger =
                     (appSessionId, Date())
@@ -844,17 +828,13 @@ final class EventCoordinator {
             if let response = response {
                 GalaxyLog.events("Startup sync complete — \(response.sessions.count) session(s) enriched")
                 self.applyEnrichmentData(response, sessionManager: sessionManager)
-
-                // Validate process liveness for sessions that claim to be running
-                self.validateProcessLiveness(sessionManager: sessionManager, enrichmentData: response)
             } else {
                 GalaxyLog.events("Startup sync returned no data")
             }
 
-            // Seed running agent counts from CLI
-            self.seedRunningAgentCounts(
-                sessionManager: sessionManager
-            )
+            // Sweep anything stranded while the app was down,
+            // then take the counts that sweep reported.
+            self.reconcileAndResync()
 
             // Step 3: Drain buffer
             self.phase = .draining
@@ -893,24 +873,34 @@ final class EventCoordinator {
                 + " \(summary)"
             )
         }
-
-        startDiagnosticMonitors()
     }
 
-    // MARK: - Diagnostic Monitors (drift detector + heartbeat)
+    // MARK: - Periodic Monitors (heartbeat + reconcile)
 
-    /// Schedule the periodic drift detector and heartbeat
-    /// timers. Both fire on `RunLoop.main` in `.common` mode
-    /// so they continue during modal UI, scrolling, etc.
-    private func startDiagnosticMonitors() {
-        let heartbeat = Timer(
+    /// Schedule the periodic heartbeat and agent reconcile.
+    /// Fires on `RunLoop.main` in `.common` mode so it
+    /// continues during modal UI, scrolling, etc.
+    ///
+    /// The reconcile is a sibling of the heartbeat rather than
+    /// a line inside it: `logHeartbeat` returns early when no
+    /// session is running, and cleanup matters most in exactly
+    /// that state.
+    ///
+    /// Idempotent — a second call replaces the timer rather
+    /// than stacking one, since this now runs before the
+    /// socket guard and must not double up on a restart.
+    private func startPeriodicMonitors() {
+        heartbeatTimer?.invalidate()
+
+        let timer = Timer(
             timeInterval: Self.heartbeatInterval,
             repeats: true
         ) { [weak self] _ in
             self?.logHeartbeat()
+            self?.reconcileAndResync()
         }
-        RunLoop.main.add(heartbeat, forMode: .common)
-        heartbeatTimer = heartbeat
+        RunLoop.main.add(timer, forMode: .common)
+        heartbeatTimer = timer
     }
 
     /// Periodic per-session turn-state digest. Skips when
@@ -942,74 +932,64 @@ final class EventCoordinator {
         )
     }
 
-    /// Validate that sessions claiming to be running actually have live processes.
-    /// Called after startup sync to catch sessions whose process died while app was stopped.
-    private func validateProcessLiveness(sessionManager: SessionManager, enrichmentData: EnrichmentService.EnrichmentResponse) {
-        for sessionData in enrichmentData.sessions {
-            guard let pids = sessionData.claudePids else { continue }
+    // MARK: - Agent Count Reconciliation
 
-            for pid in pids {
-                _ = kill(pid_t(pid), 0) == 0
-            }
-        }
-    }
-
-    // MARK: - Agent Count Seeding
-
-    /// Seed running agent counts from the CLI during
-    /// startup sync. Called on the main queue after
-    /// enrichment completes.
+    /// Sweep agents whose owning process is gone, then apply
+    /// the counts the sweep reported.
     ///
-    /// Fetches the agent rows rather than a bare count
-    /// because the session tracks which agents are running,
-    /// not how many — a count could not populate the id set
-    /// the socket events later add to and remove from.
-    private func seedRunningAgentCounts(
-        sessionManager: SessionManager
-    ) {
-        for session in sessionManager.sessions {
-            guard let lsid = session.ledgerSessionId
-            else { continue }
+    /// One subprocess for every session, not one per session:
+    /// reconcile resolves ownership itself and answers for the
+    /// whole database, which matters at twenty-odd open
+    /// sessions where a per-session read would mean twenty
+    /// spawns a minute forever.
+    ///
+    /// The counts are read by the CLI *after* it sweeps, so
+    /// there is no window in which this applies a pre-sweep
+    /// number and sits wrong until the next tick.
+    ///
+    /// Safe to call before startup sync finishes: sessions
+    /// without a resolved ledger id are simply skipped, and
+    /// they will be picked up by whichever read comes next.
+    private func reconcileAndResync() {
+        guard let manager = sessionManager else { return }
 
-            // Fire-and-forget async query per session
-            Task {
-                do {
-                    let agents =
-                        try await AgentsQueryService
-                        .shared
-                        .fetchAgents(
-                            ledgerSessionId: lsid
+        Task {
+            do {
+                let result = try await AgentsQueryService
+                    .shared.reconcile()
+
+                await MainActor.run {
+                    if result.skipped {
+                        GalaxyLog.events(
+                            "reconcile skipped by"
+                            + " GALAXY_AGENTS_SKIP_RECONCILE"
                         )
-                    let runningIds = Set(
-                        agents
-                            .filter(\.isRunning)
-                            .map(\.agentId)
-                    )
-                    await MainActor.run {
-                        let before =
-                            session.runningAgentCount
-                        session.seedRunningAgents(
-                            runningIds
-                        )
-                        if before
-                            != session.runningAgentCount
-                        {
-                            GalaxyLog.events(
-                                "[\(session.sessionRef)]"
-                                + " seeded"
-                                + " runningAgentCount"
-                                + " = \(runningIds.count)"
-                            )
-                        }
+                        return
                     }
-                } catch {
-                    GalaxyLog.events(
-                        "Agent count seed failed"
-                        + " for session"
-                        + " \(session.sessionRef):"
-                        + " \(error)"
-                    )
+
+                    for session in manager.sessions {
+                        guard let lsid =
+                            session.ledgerSessionId
+                        else { continue }
+
+                        let fresh = result.count(for: lsid)
+                        guard fresh
+                            != session.runningAgentCount
+                        else { continue }
+
+                        GalaxyLog.events(
+                            "[\(session.sessionRef)]"
+                            + " runningAgentCount"
+                            + " \(session.runningAgentCount)"
+                            + " → \(fresh) via reconcile"
+                        )
+                        session.setRunningAgentCount(fresh)
+                    }
                 }
+            } catch {
+                GalaxyLog.events(
+                    "reconcile failed: \(error)"
+                )
             }
         }
     }

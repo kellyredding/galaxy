@@ -163,34 +163,23 @@ class Session: Identifiable, ObservableObject {
     /// since the decrement clamps at zero and an over-count is
     /// never worked back off. Set membership is idempotent, so
     /// a repeated start and a missing stop are both harmless.
-    private var runningAgentIds: Set<String> = []
-
-    /// Number of currently running agents, derived from
-    /// runningAgentIds. Maintained by EventCoordinator and
-    /// seeded once from the agents CLI during startup sync —
-    /// nothing polls, so the id set is what keeps this honest
-    /// for the life of the app.
+    /// Number of currently running agents.
+    ///
+    /// A projection of the agents database, never an
+    /// accumulator. Whoever last read the database replaces it
+    /// wholesale; socket events trigger a read rather than
+    /// adjusting this themselves. The distinction is the whole
+    /// point: a counter fed by deltas keeps every event it ever
+    /// missed, because nothing later can tell it what the right
+    /// answer was. A projection is wrong only until the next
+    /// read, and every path that could change the number takes
+    /// one — an agent event, a session exiting, the socket
+    /// reconnecting, or the periodic sweep.
     @Published private(set) var runningAgentCount: Int = 0
 
-    /// Record an agent as running. Idempotent — a second start
-    /// for an id already tracked leaves the count alone.
-    func agentStarted(_ agentId: String) {
-        runningAgentIds.insert(agentId)
-        runningAgentCount = runningAgentIds.count
-    }
-
-    /// Record an agent as no longer running. Idempotent, and
-    /// safe for an id that was never tracked.
-    func agentStopped(_ agentId: String) {
-        runningAgentIds.remove(agentId)
-        runningAgentCount = runningAgentIds.count
-    }
-
-    /// Replace the tracked set with an authoritative snapshot
-    /// from the agents CLI.
-    func seedRunningAgents(_ agentIds: Set<String>) {
-        runningAgentIds = agentIds
-        runningAgentCount = runningAgentIds.count
+    /// Replace the count with what the database just reported.
+    func setRunningAgentCount(_ count: Int) {
+        runningAgentCount = max(0, count)
     }
 
     /// When the current turn started (startTurn called).
@@ -1342,6 +1331,13 @@ class Session: Identifiable, ObservableObject {
             if self.isReady {
                 self.isReady = false
             }
+
+            // A dead process owns no running agents. Its rows
+            // are swept by the periodic reconcile; this is the
+            // superscript catching up now rather than at the
+            // next tick, since a session that has visibly
+            // exited should not still be advertising work.
+            self.runningAgentCount = 0
 
             // A dead process can't have an active scrollback —
             // the TerminalHostView is being torn down by SwiftUI

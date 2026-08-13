@@ -845,6 +845,17 @@ struct AgentsView: View {
                 }
                 agents = result
                 seedAgentTitles(result)
+
+                // The rows just answered the badge's question,
+                // so answer it here rather than spawning a
+                // second process to ask again. This fetch
+                // already runs on every agent lifecycle event,
+                // which is what makes the count immediate
+                // without any polling.
+                session.setRunningAgentCount(
+                    result.filter(\.isRunning).count
+                )
+
                 // Seeded at the newest run, which is the end this list
                 // scrolls to.
                 model.reconcileFocus(

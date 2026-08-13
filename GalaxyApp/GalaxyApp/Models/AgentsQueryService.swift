@@ -72,25 +72,36 @@ class AgentsQueryService {
         return response.agents
     }
 
-    /// Fetch count of running agents for a session.
-    func fetchRunningCount(
-        ledgerSessionId: Int64
-    ) async throws -> Int {
-        let data = try await runCLI(
-            ledgerSessionId: ledgerSessionId,
-            args: [
-                "running",
-                "--ledger-session-id",
-                String(ledgerSessionId),
-            ]
+
+    /// Result of a reconcile pass: running counts keyed by
+    /// ledger session id, taken after the sweep.
+    struct ReconcileResult: Decodable {
+        let skipped: Bool
+        let running: [String: Int]
+
+        /// Count for a session, absent meaning none running.
+        func count(for ledgerSessionId: Int64) -> Int {
+            running[String(ledgerSessionId)] ?? 0
+        }
+    }
+
+    /// Sweep agents whose owning process is gone, and return
+    /// what is running afterwards.
+    ///
+    /// Deliberately not per-session, and deliberately not on
+    /// the read lane: it takes no session id because a live
+    /// session's rows are never sweepable — the rows worth
+    /// sweeping belong to sessions that already exited. One
+    /// invocation therefore covers every session at once,
+    /// which also keeps the tick to a single subprocess no
+    /// matter how many sessions are open.
+    func reconcile() async throws -> ReconcileResult {
+        let data = try await runMutationCLI(
+            args: ["reconcile"]
         )
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy =
-            .convertFromSnakeCase
-        let response = try decoder.decode(
-            RunningCountResponse.self, from: data
+        return try JSONDecoder().decode(
+            ReconcileResult.self, from: data
         )
-        return response.count
     }
 
     /// Mark a single agent as abandoned. Idempotent — the
@@ -211,6 +222,3 @@ private struct AgentsResponse: Codable {
     let agents: [AgentRun]
 }
 
-private struct RunningCountResponse: Codable {
-    let count: Int
-}
