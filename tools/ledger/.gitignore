@@ -19,3 +19,6 @@
 .idea/
 *.swp
 *~
+
+# Debug binaries (build output that was tracked by accident)
+/bin/
