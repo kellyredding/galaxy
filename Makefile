@@ -1,4 +1,4 @@
-.PHONY: all clean statusline-build statusline-dev statusline-test statusline-check statusline-install statusline-clean ledger-build ledger-dev ledger-test ledger-check ledger-install ledger-clean snapshots-build snapshots-dev snapshots-test snapshots-check snapshots-install snapshots-clean artifacts-build artifacts-dev artifacts-test artifacts-check artifacts-install artifacts-clean timeline-build timeline-dev timeline-test timeline-check timeline-install timeline-clean agents-build agents-dev agents-test agents-check agents-install agents-clean diff-build diff-dev diff-test diff-check diff-install diff-clean galaxy-build galaxy-dev galaxy-test galaxy-check galaxy-install galaxy-clean app-build app-smoke app-check app-release app-clean
+.PHONY: all clean audit check statusline-build statusline-dev statusline-test statusline-check statusline-install statusline-clean ledger-build ledger-dev ledger-test ledger-check ledger-install ledger-clean snapshots-build snapshots-dev snapshots-test snapshots-check snapshots-install snapshots-clean artifacts-build artifacts-dev artifacts-test artifacts-check artifacts-install artifacts-clean timeline-build timeline-dev timeline-test timeline-check timeline-install timeline-clean agents-build agents-dev agents-test agents-check agents-install agents-clean diff-build diff-dev diff-test diff-check diff-install diff-clean galaxy-build galaxy-dev galaxy-test galaxy-check galaxy-install galaxy-clean app-build app-smoke app-check app-release app-clean
 
 all: statusline-build ledger-build snapshots-build artifacts-build timeline-build agents-build diff-build galaxy-build
 
@@ -178,3 +178,22 @@ app-clean:
 	$(MAKE) -C GalaxyApp clean
 
 clean: statusline-clean ledger-clean snapshots-clean artifacts-clean timeline-clean agents-clean diff-clean galaxy-clean app-clean
+
+# --- Disclosure audit ---
+
+# Refuses employer- and deployment-specific details in tracked files. This
+# repository is public, and example output and spec fixtures are where such
+# details arrive by accident — the easiest example to write is whatever was on
+# screen at the time.
+#
+# A leak cannot be undone by a later commit, so the only useful time to catch
+# one is before it is committed. Run this before committing, not after.
+audit:
+	./scripts/check-disclosure.sh
+
+# The pre-commit gate: the audit, then every tool's own lint + build + specs.
+#
+# Deliberately not wired into `all`, which is a build target — but the audit is
+# worth running on its own far more often than this, since `check` takes a few
+# minutes with the ledger suite in it.
+check: audit statusline-check ledger-check snapshots-check artifacts-check timeline-check agents-check diff-check galaxy-check
