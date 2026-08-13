@@ -263,6 +263,47 @@ def dead_pid : Int64
   pid
 end
 
+# Transcripts live two levels down from the projects root:
+# projects/<project>/<session>/subagents/agent-<id>.jsonl
+def write_transcript(agent_id : String, lines : Array(String))
+  dir = SPEC_CLAUDE_CONFIG_DIR / "projects" /
+        "-Users-someone-projects" /
+        "11111111-2222-3333-4444-555555555555" / "subagents"
+  Dir.mkdir_p(dir)
+  File.write(
+    dir / "agent-#{agent_id}.jsonl",
+    lines.join("\n") + "\n",
+  )
+end
+
+def error_record(
+  text : String = "API Error: Connection lost mid-response.",
+  timestamp : String = "2026-08-13T19:45:10.130Z",
+) : String
+  {
+    "type"              => "assistant",
+    "isApiErrorMessage" => true,
+    "error"             => "server_error",
+    "timestamp"         => timestamp,
+    "message"           => {
+      "role"    => "assistant",
+      "content" => [{"type" => "text", "text" => text}],
+    },
+  }.to_json
+end
+
+def clean_record : String
+  {
+    "type"      => "assistant",
+    "timestamp" => "2026-08-13T20:07:02.838Z",
+    "message"   => {
+      "role"        => "assistant",
+      "stop_reason" => "end_turn",
+      "content"     => [{"type" => "text", "text" => "Done."}],
+    },
+  }.to_json
+end
+
 # Flush WAL to main DB so subprocess connections
 # see recently committed data.
 def flush_wal

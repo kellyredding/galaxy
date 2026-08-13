@@ -1,11 +1,14 @@
 require "../spec_helper"
 
-# Reconcile decides one thing: is the process that owned this
-# agent still alive? Every example here is a different way of
-# answering that, because every wrong answer is expensive —
-# a false sweep marks a live agent abandoned permanently, and a
-# missed sweep leaves the count inflated until the session is
-# dismissed.
+# Reconcile decides one thing: is the process that owns this agent still
+# alive? Every example here is a different way of answering that, because the
+# two wrong answers cost very differently. A missed sweep leaves a count too
+# high, which the next sweep or a manual abandon still fixes. A false sweep
+# marks a live agent abandoned, and `stop_agent` will not move a terminal row
+# back — the agent finishes and is recorded as abandoned forever.
+#
+# So every example below biases the same way: when ownership cannot be
+# established, the row is kept.
 describe "reconcile" do
   before_each do
     db_path = GalaxyAgents::Database.database_path
@@ -50,11 +53,10 @@ describe "reconcile" do
       end
     end
 
-    # The pid is live, but it belongs to something else — the
-    # OS recycled the number after the session exited. This is
-    # the same live process as the example above, judged against
-    # a different name, so the refusal can only come from the
-    # name check itself.
+    # The pid is live, but it belongs to something else — the OS
+    # recycled the number after the session exited. Same live
+    # process as the example above, judged against a different
+    # name, so the refusal can only come from the name check.
     it "refuses a live pid held by another command" do
       with_live_process do |pid|
         GalaxyAgents::ProcessLiveness.claude_alive?(
@@ -98,14 +100,11 @@ describe "reconcile" do
   end
 
   describe ".running_with_owner_pids" do
-    it "resolves the pid registered at agent start" do
+    it "resolves the session's current pid" do
       GalaxyAgents::Database.start_agent(
         1_i64, "agent-a", "Explore",
       )
-      build_ledger_db(
-        [{1_i64, 4242_i64}],
-        [{1_i64, 4242_i64, "2026-01-01 00:00:00"}],
-      )
+      build_ledger_db([{1_i64, 4242_i64}])
 
       rows = GalaxyAgents::Database
         .running_with_owner_pids
@@ -114,46 +113,63 @@ describe "reconcile" do
       rows[0].owner_pid.should eq(4242_i64)
     end
 
-    # The regression that matters most. 87% of recorded agents
-    # belong to sessions resumed since they started. Judging by
-    # the session's CURRENT pid checks a process that never ran
-    # the agent — and when that newer process is alive, the
-    # stranded row is kept forever.
-    it "ignores a newer pid registered after the agent" do
-      GalaxyAgents::Database.start_agent(
-        1_i64, "agent-a", "Explore",
-      )
-      GalaxyAgents::Database.open do |db|
-        db.exec(
-          "UPDATE agents SET started_at = ? " \
-          "WHERE agent_id = ?",
-          "2026-01-01 12:00:00", "agent-a",
+    # THE REGRESSION. An earlier version resolved ownership from
+    # `ledger_session_pids`, taking the registration nearest the
+    # agent's start, on the theory that a resumed session would
+    # otherwise be judged by a newer process than the one that ran
+    # the agent.
+    #
+    # That table is not a handover log. It accumulates every pid
+    # that ever resolved to the session, including the short-lived
+    # ones behind hook invocations — a real session held fifteen,
+    # arriving in bursts twenty seconds apart, every one dead while
+    # the session ran on under a pid registered long before them.
+    # Judging by the newest registration therefore picked a corpse
+    # and swept a live agent forty-three seconds into its run.
+    #
+    # Ownership comes from `current_claude_pid` and nothing else.
+    it "keeps an owner alive behind later dead registrations" do
+      with_live_process do |owner|
+        gone_a = dead_pid
+        gone_b = dead_pid
+
+        GalaxyAgents::Database.start_agent(
+          1_i64, "agent-a", "Explore",
         )
+        GalaxyAgents::Database.open do |db|
+          db.exec(
+            "UPDATE agents SET started_at = ? " \
+            "WHERE agent_id = ?",
+            "2026-01-01 12:00:00", "agent-a",
+          )
+        end
+
+        # The owner registered first, then ephemeral hook pids
+        # registered and died — all BEFORE the agent started.
+        # That ordering is the trap: the newest registration at or
+        # before `started_at` is a corpse, while the owner that is
+        # actually running the agent registered earlier still.
+        build_ledger_db(
+          [{1_i64, owner}],
+          [
+            {1_i64, owner, "2026-01-01 09:00:00"},
+            {1_i64, gone_a, "2026-01-01 10:00:00"},
+            {1_i64, gone_b, "2026-01-01 10:00:20"},
+          ],
+        )
+
+        rows = GalaxyAgents::Database
+          .running_with_owner_pids
+        rows[0].owner_pid.should eq(owner)
+
+        sweepable = rows.reject do |row|
+          GalaxyAgents::ProcessLiveness.claude_alive?(
+            row.owner_pid,
+            expected: SPEC_LIVE_PROCESS_COMMAND,
+          )
+        end
+        sweepable.should be_empty
       end
-
-      build_ledger_db(
-        [{1_i64, 9999_i64}],
-        [
-          {1_i64, 1111_i64, "2026-01-01 09:00:00"},
-          {1_i64, 9999_i64, "2026-01-01 18:00:00"},
-        ],
-      )
-
-      rows = GalaxyAgents::Database
-        .running_with_owner_pids
-      rows.size.should eq(1)
-      rows[0].owner_pid.should eq(1111_i64)
-    end
-
-    it "falls back to the current pid with no history" do
-      GalaxyAgents::Database.start_agent(
-        1_i64, "agent-a", "Explore",
-      )
-      build_ledger_db([{1_i64, 7777_i64}])
-
-      rows = GalaxyAgents::Database
-        .running_with_owner_pids
-      rows[0].owner_pid.should eq(7777_i64)
     end
 
     it "yields a nil owner when the session is unknown" do
@@ -212,10 +228,7 @@ describe "reconcile" do
         GalaxyAgents::Database.start_agent(
           1_i64, "agent-a", "Explore",
         )
-        build_ledger_db(
-          [{1_i64, pid}],
-          [{1_i64, pid, "2026-01-01 00:00:00"}],
-        )
+        build_ledger_db([{1_i64, pid}])
 
         sweepable = GalaxyAgents::Database
           .running_with_owner_pids
@@ -235,10 +248,7 @@ describe "reconcile" do
       GalaxyAgents::Database.start_agent(
         1_i64, "agent-a", "Explore",
       )
-      build_ledger_db(
-        [{1_i64, gone}],
-        [{1_i64, gone, "2026-01-01 00:00:00"}],
-      )
+      build_ledger_db([{1_i64, gone}])
 
       sweepable = GalaxyAgents::Database
         .running_with_owner_pids
@@ -251,40 +261,68 @@ describe "reconcile" do
       sweepable[0].agent_id.should eq("agent-a")
     end
 
-    # The resume case, end to end: the agent's own process is
-    # gone, the session has since come back under a live pid,
-    # and the row must still be swept.
-    it "sweeps despite a live pid registered later" do
-      with_live_process do |live|
-        gone = dead_pid
-        GalaxyAgents::Database.start_agent(
-          1_i64, "agent-a", "Explore",
-        )
-        GalaxyAgents::Database.open do |db|
-          db.exec(
-            "UPDATE agents SET started_at = ? " \
-            "WHERE agent_id = ?",
-            "2026-01-01 12:00:00", "agent-a",
-          )
+    it "sweeps an agent whose session left no ledger row" do
+      GalaxyAgents::Database.start_agent(
+        7_i64, "agent-a", "Explore",
+      )
+      build_ledger_db([] of Tuple(Int64, Int64?))
+
+      sweepable = GalaxyAgents::Database
+        .running_with_owner_pids
+        .reject do |row|
+          GalaxyAgents::ProcessLiveness
+            .claude_alive?(row.owner_pid)
         end
-        build_ledger_db(
-          [{1_i64, live}],
-          [
-            {1_i64, gone, "2026-01-01 09:00:00"},
-            {1_i64, live, "2026-01-01 18:00:00"},
-          ],
+
+      sweepable.size.should eq(1)
+    end
+
+    # The case ownership structurally cannot see. The session is
+    # alive and healthy — only the agent died, and the only place
+    # that fact exists is the agent's own transcript.
+    it "closes a declared death though the owner is alive" do
+      with_live_process do |owner|
+        GalaxyAgents::Database.start_agent(
+          1_i64, "died-1", "Explore",
         )
+        build_ledger_db([{1_i64, owner}])
+        write_transcript("died-1", [error_record])
 
-        sweepable = GalaxyAgents::Database
-          .running_with_owner_pids
-          .reject do |row|
-            GalaxyAgents::ProcessLiveness.claude_alive?(
-              row.owner_pid,
-              expected: SPEC_LIVE_PROCESS_COMMAND,
-            )
-          end
+        row = GalaxyAgents::Database
+          .running_with_owner_pids.first
+        GalaxyAgents::ProcessLiveness.claude_alive?(
+          row.owner_pid,
+          expected: SPEC_LIVE_PROCESS_COMMAND,
+        ).should be_true
 
-        sweepable.size.should eq(1)
+        GalaxyAgents::AgentOutcome
+          .error_death("died-1").should_not be_nil
+      end
+    end
+
+    it "leaves a healthy agent with a clean transcript alone" do
+      with_live_process do |owner|
+        GalaxyAgents::Database.start_agent(
+          1_i64, "healthy-1", "Explore",
+        )
+        build_ledger_db([{1_i64, owner}])
+        write_transcript("healthy-1", [clean_record])
+
+        GalaxyAgents::AgentOutcome
+          .error_death("healthy-1").should be_nil
+      end
+    end
+
+    # No transcript is not evidence of anything.
+    it "leaves a healthy agent with no transcript alone" do
+      with_live_process do |owner|
+        GalaxyAgents::Database.start_agent(
+          1_i64, "notranscript-1", "Explore",
+        )
+        build_ledger_db([{1_i64, owner}])
+
+        GalaxyAgents::AgentOutcome
+          .error_death("notranscript-1").should be_nil
       end
     end
 
@@ -293,10 +331,7 @@ describe "reconcile" do
       GalaxyAgents::Database.start_agent(
         1_i64, "agent-a", "Explore",
       )
-      build_ledger_db(
-        [{1_i64, gone}],
-        [{1_i64, gone, "2026-01-01 00:00:00"}],
-      )
+      build_ledger_db([{1_i64, gone}])
 
       GalaxyAgents::Database.abandon_agent(
         1_i64, "agent-a",

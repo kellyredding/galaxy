@@ -158,4 +158,92 @@ describe "CLI reconcile command", tags: "integration" do
     result[:status].should eq(1)
     result[:error].should contain("Unknown option")
   end
+
+  # End to end through the real binary: a declared death closes as
+  # failed, carrying its reason and the time it actually died.
+  it "closes a declared death as failed, with the reason" do
+    with_live_process do |owner|
+      run_binary([
+        "start", "--ledger-session-id", "8",
+        "--agent-id", "e1", "--agent-type", "Explore",
+      ])
+      build_ledger_db([{8_i64, owner}])
+      write_transcript("e1", [error_record])
+      flush_wal
+
+      result = run_binary(
+        ["reconcile"],
+        extra_env: {
+          "GALAXY_AGENTS_CLAUDE_COMMAND" => SPEC_LIVE_PROCESS_COMMAND,
+        },
+      )
+      result[:status].should eq(0)
+
+      parsed = JSON.parse(result[:output])
+      parsed["failed"].as_a.size.should eq(1)
+      parsed["failed"][0]["agent_id"].as_s.should eq("e1")
+      parsed["failed"][0]["message"].as_s
+        .should contain("Connection lost")
+      # Not swept: the owner is alive, so only the transcript
+      # could have closed this.
+      parsed["swept"].as_a.should be_empty
+      parsed["running"].as_h.has_key?("8").should be_false
+
+      detail = JSON.parse(run_binary([
+        "show", "--ledger-session-id", "8",
+        "--agent-id", "e1", "--json",
+      ])[:output])
+      detail["status"].as_s.should eq("failed")
+      detail["last_message"].as_s.should contain("API Error")
+    end
+  end
+
+  it "leaves a healthy agent alone under --dry-run and for real" do
+    with_live_process do |owner|
+      run_binary([
+        "start", "--ledger-session-id", "9",
+        "--agent-id", "h1", "--agent-type", "Explore",
+      ])
+      build_ledger_db([{9_i64, owner}])
+      write_transcript("h1", [clean_record])
+      flush_wal
+
+      result = run_binary(
+        ["reconcile"],
+        extra_env: {
+          "GALAXY_AGENTS_CLAUDE_COMMAND" => SPEC_LIVE_PROCESS_COMMAND,
+        },
+      )
+      parsed = JSON.parse(result[:output])
+      parsed["failed"].as_a.should be_empty
+      parsed["swept"].as_a.should be_empty
+      parsed["running"]["9"].as_i.should eq(1)
+    end
+  end
+
+  it "reports a declared death under --dry-run without writing" do
+    with_live_process do |owner|
+      run_binary([
+        "start", "--ledger-session-id", "10",
+        "--agent-id", "d1", "--agent-type", "Explore",
+      ])
+      build_ledger_db([{10_i64, owner}])
+      write_transcript("d1", [error_record])
+      flush_wal
+
+      parsed = JSON.parse(run_binary(
+        ["reconcile", "--dry-run"],
+        extra_env: {
+          "GALAXY_AGENTS_CLAUDE_COMMAND" => SPEC_LIVE_PROCESS_COMMAND,
+        },
+      )[:output])
+      parsed["failed"].as_a.size.should eq(1)
+
+      detail = JSON.parse(run_binary([
+        "show", "--ledger-session-id", "10",
+        "--agent-id", "d1", "--json",
+      ])[:output])
+      detail["status"].as_s.should eq("running")
+    end
+  end
 end

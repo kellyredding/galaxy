@@ -206,6 +206,10 @@ module GalaxyAgents
       last_message : String? = nil,
       transcript_path : String? = nil,
       duration_ms : Int64? = nil,
+      # When the caller knows when this actually ended — a
+      # recovered death reads the moment out of the agent's own
+      # transcript — that beats stamping the moment we noticed.
+      completed_at : String? = nil,
     ) : Bool
       return false if ledger_session_id <= 0
 
@@ -221,6 +225,7 @@ module GalaxyAgents
             last_message: last_message,
             transcript_path: transcript_path,
             duration_ms: duration_ms,
+            completed_at: completed_at,
           )
         rescue
           # Out of attempts leaves the row running, for the
@@ -244,6 +249,7 @@ module GalaxyAgents
       last_message : String?,
       transcript_path : String?,
       duration_ms : Int64?,
+      completed_at : String? = nil,
     ) : Bool
       open do |db|
         # Primary path: transition running -> terminal
@@ -251,7 +257,8 @@ module GalaxyAgents
           <<-SQL,
               UPDATE agents
               SET status = ?,
-                  completed_at = datetime('now'),
+                  completed_at =
+                    COALESCE(?, datetime('now')),
                   duration_ms = ?,
                   prompt = ?,
                   last_message = ?,
@@ -300,7 +307,8 @@ module GalaxyAgents
             <<-SQL,
                 UPDATE agents
                 SET status = ?,
-                    completed_at = datetime('now'),
+                    completed_at =
+                      COALESCE(?, datetime('now')),
                     duration_ms = ?,
                     prompt = ?,
                     last_message = ?,
@@ -310,6 +318,7 @@ module GalaxyAgents
                   AND status = 'running'
               SQL
             status,
+            completed_at,
             duration_ms,
             prompt,
             last_message,
@@ -493,17 +502,19 @@ module GalaxyAgents
       end
     end
 
-    # A running row paired with the pid that owned its session
-    # at the moment the agent started.
+    # A running row paired with the pid that owns its session.
     struct RunningOwner
       getter agent_id : String
       getter agent_type : String
       getter ledger_session_id : Int64
       getter owner_pid : Int64?
+      # Carried so a declared death can be timed from when the
+      # agent began rather than from when a sweep noticed.
+      getter started_at : String
 
       def initialize(
         @agent_id, @agent_type,
-        @ledger_session_id, @owner_pid,
+        @ledger_session_id, @owner_pid, @started_at,
       )
       end
     end
@@ -523,22 +534,36 @@ module GalaxyAgents
       )
     end
 
-    # Every running row, with the pid that owned its session when
-    # it started.
+    # Every running row, with the pid that owns its session.
     #
-    # Deliberately NOT `ledger_sessions.current_claude_pid`. That
-    # column holds a session's LATEST pid, and 87% of recorded
-    # agents belong to sessions resumed since they started — for
-    # those, the current pid names a different and often live
-    # process, so judging liveness by it keeps stranded rows
-    # forever. `ledger_session_pids.registered_at` records when
-    # each pid took over, which is what makes the right one
-    # recoverable after the fact.
+    # `ledger_sessions.current_claude_pid` is the only column that
+    # names the owning process. It is tempting to reach instead
+    # for `ledger_session_pids` and pick the registration nearest
+    # the agent's start, on the theory that a resumed session
+    # would otherwise be judged by a newer process than the one
+    # that ran the agent. That was tried and it marked live agents
+    # abandoned within a minute of starting.
     #
-    # Falls back to the session's current pid when no
-    # registration predates the agent, and yields nil when the
-    # ledger has no row for the session at all — which is itself
-    # proof that nothing is running.
+    # `ledger_session_pids` is not a handover log. It accumulates
+    # EVERY pid that ever resolved to the session, including the
+    # short-lived ones behind hook invocations — one real session
+    # here held fifteen, arriving in bursts twenty seconds apart,
+    # every one of them dead while the session ran on. The newest
+    # registration is therefore usually an ephemeral corpse, and
+    # judging by it sweeps agents that are running perfectly well.
+    # A false sweep is unrecoverable, because `stop_agent` will
+    # not move a terminal row back, so the agent completes and is
+    # recorded as abandoned forever.
+    #
+    # The cost of this simpler rule is a miss, not a lie: an agent
+    # stranded by a process that has since been replaced is judged
+    # against the live replacement and kept. That leaves a count
+    # too high, which the next honest sweep or a manual abandon
+    # can still correct — the failure that cannot be corrected is
+    # the one this avoids.
+    #
+    # Yields nil when the ledger has no row for the session at
+    # all, which is itself proof that nothing is running.
     def self.running_with_owner_pids : Array(RunningOwner)
       rows = [] of RunningOwner
       ledger = ledger_database_path
@@ -551,17 +576,10 @@ module GalaxyAgents
             db.query(<<-SQL) do |rs|
               SELECT a.agent_id, a.agent_type,
                      a.ledger_session_id,
-                     COALESCE(
-                       (SELECT p.claude_pid
-                          FROM ledgerdb.ledger_session_pids p
-                         WHERE p.ledger_session_id
-                                 = a.ledger_session_id
-                           AND p.registered_at <= a.started_at
-                         ORDER BY p.registered_at DESC
-                         LIMIT 1),
-                       (SELECT s.current_claude_pid
-                          FROM ledgerdb.ledger_sessions s
-                         WHERE s.id = a.ledger_session_id))
+                     (SELECT s.current_claude_pid
+                        FROM ledgerdb.ledger_sessions s
+                       WHERE s.id = a.ledger_session_id),
+                     a.started_at
               FROM agents a
               WHERE a.status = 'running'
               ORDER BY a.id
@@ -572,6 +590,7 @@ module GalaxyAgents
                   rs.read(String),
                   rs.read(Int64),
                   rs.read(Int64?),
+                  rs.read(String),
                 )
               end
             end

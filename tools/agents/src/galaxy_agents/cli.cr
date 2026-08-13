@@ -560,12 +560,53 @@ module GalaxyAgents
         return
       end
 
-      swept = Database.running_with_owner_pids.reject do |row|
-        ProcessLiveness.claude_alive?(row.owner_pid)
+      # Ordered deliberately. A death the agent recorded about
+      # itself outranks an inference drawn from whether some
+      # process is still alive — it is a fact rather than a
+      # deduction, it is true even while the session runs on, and
+      # it can say why, which abandonment never can.
+      died = [] of {Database::RunningOwner, AgentOutcome::ErrorDeath}
+      orphaned = [] of Database::RunningOwner
+
+      Database.running_with_owner_pids.each do |row|
+        if death = AgentOutcome.error_death(row.agent_id)
+          died << {row, death}
+        elsif !ProcessLiveness.claude_alive?(row.owner_pid)
+          orphaned << row
+        end
       end
 
       unless dry_run
-        swept.each do |row|
+        died.each do |(row, death)|
+          # The ordinary completion write, so a recovered row
+          # ends up the same shape a normal stop would have left.
+          recorded = Database.stop_agent(
+            row.ledger_session_id,
+            row.agent_id,
+            "failed",
+            last_message: death.message,
+            duration_ms: AgentOutcome.duration_ms(
+              started_at: row.started_at,
+              died_at: death.died_at,
+            ),
+            completed_at: death.died_at,
+          )
+          next unless recorded
+
+          TimelinePublisher.agent_failed(
+            row.ledger_session_id,
+            agent_id: row.agent_id,
+            agent_type: row.agent_type,
+            duration_ms: AgentOutcome.duration_ms(
+              started_at: row.started_at,
+              died_at: death.died_at,
+            ) || 0_i64,
+            prompt: nil,
+            last_message: death.message,
+          )
+        end
+
+        orphaned.each do |row|
           agent = Database.abandon_agent(
             row.ledger_session_id, row.agent_id,
           )
@@ -582,6 +623,8 @@ module GalaxyAgents
         end
       end
 
+      swept = orphaned
+
       # Read after the sweep, so a caller can never render a
       # pre-sweep number and sit wrong until the next tick.
       counts = Database.running_counts_by_session
@@ -591,6 +634,22 @@ module GalaxyAgents
           json.object do
             json.field "skipped", false
             json.field "dry_run", dry_run
+            json.field "failed" do
+              json.array do
+                died.each do |(row, death)|
+                  json.object do
+                    json.field "agent_id", row.agent_id
+                    json.field "agent_type", row.agent_type
+                    json.field(
+                      "ledger_session_id",
+                      row.ledger_session_id,
+                    )
+                    json.field "message", death.message
+                    json.field "died_at", death.died_at
+                  end
+                end
+              end
+            end
             json.field "swept" do
               json.array do
                 swept.each do |row|
@@ -1580,9 +1639,25 @@ module GalaxyAgents
                      writing anything.
 
       DESCRIPTION:
-        Marks as abandoned every running agent whose owning
-        Claude Code process is no longer alive, then reports the
-        running count for each session as JSON.
+        Closes running agents that cannot still be running, then
+        reports the running count for each session as JSON.
+
+        Two ways an agent qualifies.
+
+        It recorded its own death. An agent that ends on an API
+        error writes a final transcript record saying so, and
+        SubagentStop never lands for those — so the row is closed
+        as FAILED, carrying that error as its last message and
+        the time from the record rather than from this sweep.
+        True even while the session runs on, which is the case
+        the liveness check below structurally cannot see.
+
+        Or its owning Claude Code process is gone, in which case
+        the row is marked ABANDONED.
+
+        A clean final record, an unreadable transcript, or no
+        transcript at all leaves the row alone. None of those
+        prove death, and a wrong close cannot be undone.
 
         Takes no session argument, deliberately. A live session
         has a live process, so none of its rows are ever
