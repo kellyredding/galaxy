@@ -19,6 +19,12 @@ ENV["GALAXY_DIR"] = SPEC_GALAXY_DIR.to_s
 ENV["GALAXY_AGENTS_DATABASE_PATH"] =
   SPEC_DATABASE_PATH.to_s
 
+# Reconcile reads owner pids out of the ledger database. Same
+# variable the ledger tool honours, so both point at one file.
+SPEC_LEDGER_DATABASE_PATH = SPEC_DATA_DIR / "ledger.db"
+ENV["GALAXY_LEDGER_DATABASE_PATH"] =
+  SPEC_LEDGER_DATABASE_PATH.to_s
+
 # Point timeline binary to a no-op so fire-and-forget
 # calls don't hit the real timeline during tests.
 SPEC_TIMELINE_NOOP = SPEC_GALAXY_DIR / "bin" /
@@ -104,6 +110,7 @@ def run_binary(
     "GALAXY_AGENTS_CONFIG_DIR"    => SPEC_CONFIG_DIR.to_s,
     "GALAXY_DIR"                  => SPEC_GALAXY_DIR.to_s,
     "GALAXY_AGENTS_DATABASE_PATH" => SPEC_DATABASE_PATH.to_s,
+    "GALAXY_LEDGER_DATABASE_PATH" => SPEC_LEDGER_DATABASE_PATH.to_s,
     "GALAXY_TIMELINE_BIN"         => SPEC_TIMELINE_NOOP.to_s,
     "GALAXY_ARTIFACTS_BIN"        => SPEC_ARTIFACTS_NOOP.to_s,
     "HOME"                        => ENV["HOME"],
@@ -155,6 +162,105 @@ Spec.before_each do
     SPEC_GALAXY_DIR / "config.json",
     SPEC_SHARED_CONFIG,
   )
+end
+
+# Build a ledger database carrying just the two tables
+# reconcile reads. `pids` is a list of
+# {ledger_session_id, claude_pid, registered_at}.
+def build_ledger_db(
+  sessions : Array(Tuple(Int64, Int64?)),
+  pids : Array(Tuple(Int64, Int64, String)) = (
+    [] of Tuple(Int64, Int64, String)
+  ),
+)
+  path = SPEC_LEDGER_DATABASE_PATH.to_s
+  File.delete(path) if File.exists?(path)
+
+  DB.open("sqlite3://#{path}") do |db|
+    db.exec(<<-SQL)
+      CREATE TABLE ledger_sessions (
+        id INTEGER PRIMARY KEY,
+        current_claude_pid INTEGER
+      )
+    SQL
+    # claude_pid is UNIQUE in the real ledger — one pid belongs
+    # to exactly one session, ever. Mirrored here so a fixture
+    # cannot express a history the production schema forbids.
+    db.exec(<<-SQL)
+      CREATE TABLE ledger_session_pids (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ledger_session_id INTEGER NOT NULL,
+        claude_pid INTEGER NOT NULL UNIQUE,
+        registered_at TEXT NOT NULL
+      )
+    SQL
+
+    sessions.each do |(id, pid)|
+      db.exec(
+        "INSERT INTO ledger_sessions " \
+        "(id, current_claude_pid) VALUES (?, ?)",
+        id, pid,
+      )
+    end
+
+    pids.each do |(session_id, pid, registered_at)|
+      db.exec(
+        "INSERT INTO ledger_session_pids " \
+        "(ledger_session_id, claude_pid, registered_at) " \
+        "VALUES (?, ?, ?)",
+        session_id, pid, registered_at,
+      )
+    end
+  end
+end
+
+# A live process with a known command name.
+#
+# Runs the real /bin/sleep rather than a copy renamed "claude".
+# A copied system binary loses its code signature and is killed
+# the instant it execs, which made an earlier version of this
+# helper yield a pid that was already dead — and the liveness
+# check answered "alive" anyway, through its unreadable-name
+# fallback. The specs passed while testing nothing.
+#
+# Callers pair this with GALAXY_AGENTS_CLAUDE_COMMAND, so the
+# name being matched is real on both sides.
+SPEC_LIVE_PROCESS_COMMAND = "sleep"
+
+def with_live_process(&)
+  process = Process.new(
+    "/bin/sleep",
+    args: ["30"],
+    output: Process::Redirect::Close,
+    error: Process::Redirect::Close,
+  )
+  begin
+    yield process.pid.to_i64
+  ensure
+    begin
+      process.signal(Signal::KILL)
+      process.wait
+    rescue
+      # Already gone.
+    end
+  end
+end
+
+# A pid that is certainly not in use.
+#
+# Spawns a process, waits for it, and returns the pid it had —
+# guaranteed dead, and guaranteed to have existed, unlike a
+# large number picked out of the air.
+def dead_pid : Int64
+  process = Process.new(
+    "/bin/sh",
+    args: ["-c", "exit 0"],
+    output: Process::Redirect::Close,
+    error: Process::Redirect::Close,
+  )
+  pid = process.pid.to_i64
+  process.wait
+  pid
 end
 
 # Flush WAL to main DB so subprocess connections

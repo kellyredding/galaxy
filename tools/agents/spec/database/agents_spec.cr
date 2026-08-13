@@ -353,6 +353,72 @@ describe GalaxyAgents::Database do
       )
       result.should be_false
     end
+
+    # The session id is resolved again at stop time and can land
+    # somewhere other than where the start recorded it. Before
+    # the agent_id fallback the keyed update matched nothing,
+    # the caller's stderr was closed, and the row stayed running
+    # forever with nothing recording the miss.
+    it "completes a row whose session id has moved" do
+      GalaxyAgents::Database.start_agent(
+        1_i64, "abc123", "Explore",
+      )
+
+      result = GalaxyAgents::Database.stop_agent(
+        99_i64, "abc123",
+        status: "stopped",
+        last_message: "done",
+      )
+      result.should be_true
+
+      a = GalaxyAgents::Database.get_agent(
+        1_i64, "abc123",
+      ).not_nil!
+      a.status.should eq("stopped")
+      a.last_message.should eq("done")
+      a.completed_at.should_not be_nil
+    end
+
+    # The unique key is (ledger_session_id, agent_id), so the
+    # schema alone does not forbid one agent_id under two
+    # sessions. Being unambiguous is what makes the fallback
+    # safe, so when it is not, it must decline rather than pick.
+    it "declines to guess when an agent id is ambiguous" do
+      GalaxyAgents::Database.start_agent(
+        1_i64, "dupe", "Explore",
+      )
+      GalaxyAgents::Database.start_agent(
+        2_i64, "dupe", "Explore",
+      )
+
+      result = GalaxyAgents::Database.stop_agent(
+        99_i64, "dupe",
+        status: "stopped",
+        last_message: "done",
+      )
+      result.should be_false
+
+      GalaxyAgents::Database.get_agent(
+        1_i64, "dupe",
+      ).not_nil!.status.should eq("running")
+      GalaxyAgents::Database.get_agent(
+        2_i64, "dupe",
+      ).not_nil!.status.should eq("running")
+    end
+
+    # A start that landed under one session and a stop that
+    # resolves to another must not create a second row.
+    it "does not insert a row when the id is unknown" do
+      GalaxyAgents::Database.stop_agent(
+        7_i64, "never-started",
+        status: "stopped",
+        last_message: "done",
+      ).should be_false
+
+      GalaxyAgents::Database.get_agent(
+        7_i64, "never-started",
+      ).should be_nil
+    end
   end
 
   describe ".abandon_running" do

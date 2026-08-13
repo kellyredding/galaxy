@@ -186,6 +186,13 @@ module GalaxyAgents
       "stopped", "failed", "abandoned",
     ]
 
+    # A dropped completion write strands its row permanently and
+    # reports nothing, so a lock held by a concurrent writer is
+    # worth waiting out rather than swallowing. Retries sit on
+    # top of the 5s busy_timeout each connection already sets.
+    STOP_WRITE_ATTEMPTS = 3
+    STOP_WRITE_BACKOFF  = 50.milliseconds
+
     # Update an existing agent to stopped/failed
     # status. Idempotent: if the agent is already in
     # a terminal state, selectively updates only
@@ -202,11 +209,46 @@ module GalaxyAgents
     ) : Bool
       return false if ledger_session_id <= 0
 
-      begin
-        open do |db|
-          # Primary path: transition running -> terminal
-          result = db.exec(
-            <<-SQL,
+      attempt = 0
+      loop do
+        attempt += 1
+        begin
+          return stop_agent_once(
+            ledger_session_id: ledger_session_id,
+            agent_id: agent_id,
+            status: status,
+            prompt: prompt,
+            last_message: last_message,
+            transcript_path: transcript_path,
+            duration_ms: duration_ms,
+          )
+        rescue
+          # Out of attempts leaves the row running, for the
+          # periodic reconcile to close later. That is still
+          # better than the bare `rescue false` this replaced,
+          # which gave a lock held for a millisecond the same
+          # weight as a permanent failure.
+          return false if attempt >= STOP_WRITE_ATTEMPTS
+          sleep STOP_WRITE_BACKOFF
+        end
+      end
+    end
+
+    # One attempt at the completion write. Lets a locked
+    # database raise, so the caller can decide to wait.
+    private def self.stop_agent_once(
+      ledger_session_id : Int64,
+      agent_id : String,
+      status : String,
+      prompt : String?,
+      last_message : String?,
+      transcript_path : String?,
+      duration_ms : Int64?,
+    ) : Bool
+      open do |db|
+        # Primary path: transition running -> terminal
+        result = db.exec(
+          <<-SQL,
               UPDATE agents
               SET status = ?,
                   completed_at = datetime('now'),
@@ -219,38 +261,86 @@ module GalaxyAgents
                 AND agent_id = ?
                 AND status = 'running'
             SQL
+          status,
+          duration_ms,
+          prompt,
+          last_message,
+          transcript_path,
+          ledger_session_id,
+          agent_id,
+        )
+        return true if result.rows_affected > 0
+
+        # The session id is resolved again at stop time and can
+        # land somewhere other than where the start recorded
+        # it — a resumed session, a recycled pid, an absent env
+        # var falling back to the parent pid. When that
+        # happens the keyed update above matches nothing and
+        # the row strands forever, silently, because the
+        # dispatcher closes this process's stderr and nothing
+        # anywhere records the miss.
+        #
+        # agent_id carries no session in it, so retrying on it
+        # alone recovers the row. Guarded on being unambiguous:
+        # the table's unique key is
+        # (ledger_session_id, agent_id), which does not by
+        # itself forbid one agent_id appearing under two
+        # sessions, so a count of exactly one is what makes
+        # this safe rather than the schema.
+        orphan_matches = db.scalar(
+          <<-SQL,
+              SELECT COUNT(*) FROM agents
+              WHERE agent_id = ? AND status = 'running'
+            SQL
+          agent_id,
+        ).as(Int64)
+
+        if orphan_matches == 1
+          recovered = db.exec(
+            <<-SQL,
+                UPDATE agents
+                SET status = ?,
+                    completed_at = datetime('now'),
+                    duration_ms = ?,
+                    prompt = ?,
+                    last_message = ?,
+                    transcript_path = ?,
+                    updated_at = datetime('now')
+                WHERE agent_id = ?
+                  AND status = 'running'
+              SQL
             status,
             duration_ms,
             prompt,
             last_message,
             transcript_path,
-            ledger_session_id,
             agent_id,
           )
-          return true if result.rows_affected > 0
+          return true if recovered.rows_affected > 0
+        end
 
-          # Idempotent path: agent already terminal.
-          # Selectively update only non-blank fields;
-          # never overwrite existing values with blanks.
-          existing_status = db.query_one?(
-            <<-SQL,
+        # Idempotent path: agent already terminal.
+        # Selectively update only non-blank fields;
+        # never overwrite existing values with blanks.
+        existing_status = db.query_one?(
+          <<-SQL,
               SELECT status FROM agents
               WHERE ledger_session_id = ?
                 AND agent_id = ?
             SQL
-            ledger_session_id,
-            agent_id,
-            as: String,
-          )
-          return false unless existing_status
-          unless TERMINAL_STATUSES.includes?(
-                   existing_status,
-                 )
-            return false
-          end
+          ledger_session_id,
+          agent_id,
+          as: String,
+        )
+        return false unless existing_status
+        unless TERMINAL_STATUSES.includes?(
+                 existing_status,
+               )
+          return false
+        end
 
-          db.exec(
-            <<-SQL,
+        db.exec(
+          <<-SQL,
               UPDATE agents SET
                 prompt = CASE
                   WHEN ? IS NOT NULL AND ? != ''
@@ -268,18 +358,15 @@ module GalaxyAgents
               WHERE ledger_session_id = ?
                 AND agent_id = ?
             SQL
-            prompt, prompt, prompt,
-            last_message, last_message, last_message,
-            transcript_path, transcript_path,
-            transcript_path,
-            duration_ms, duration_ms,
-            ledger_session_id,
-            agent_id,
-          )
-          true
-        end
-      rescue
-        false
+          prompt, prompt, prompt,
+          last_message, last_message, last_message,
+          transcript_path, transcript_path,
+          transcript_path,
+          duration_ms, duration_ms,
+          ledger_session_id,
+          agent_id,
+        )
+        true
       end
     end
 
@@ -404,6 +491,128 @@ module GalaxyAgents
       rescue
         nil
       end
+    end
+
+    # A running row paired with the pid that owned its session
+    # at the moment the agent started.
+    struct RunningOwner
+      getter agent_id : String
+      getter agent_type : String
+      getter ledger_session_id : Int64
+      getter owner_pid : Int64?
+
+      def initialize(
+        @agent_id, @agent_type,
+        @ledger_session_id, @owner_pid,
+      )
+      end
+    end
+
+    # The ledger database, read-only, for owner-pid resolution.
+    #
+    # Honours the same override the ledger tool itself reads, so
+    # a spec or a relocated install points both at one file
+    # rather than silently disagreeing about where the sessions
+    # live.
+    def self.ledger_database_path : Path
+      Path.new(
+        ENV.fetch(
+          "GALAXY_LEDGER_DATABASE_PATH",
+          (GalaxyAgents::DATA_DIR / "ledger.db").to_s,
+        ),
+      )
+    end
+
+    # Every running row, with the pid that owned its session when
+    # it started.
+    #
+    # Deliberately NOT `ledger_sessions.current_claude_pid`. That
+    # column holds a session's LATEST pid, and 87% of recorded
+    # agents belong to sessions resumed since they started — for
+    # those, the current pid names a different and often live
+    # process, so judging liveness by it keeps stranded rows
+    # forever. `ledger_session_pids.registered_at` records when
+    # each pid took over, which is what makes the right one
+    # recoverable after the fact.
+    #
+    # Falls back to the session's current pid when no
+    # registration predates the agent, and yields nil when the
+    # ledger has no row for the session at all — which is itself
+    # proof that nothing is running.
+    def self.running_with_owner_pids : Array(RunningOwner)
+      rows = [] of RunningOwner
+      ledger = ledger_database_path
+      return rows unless File.exists?(ledger)
+
+      begin
+        open do |db|
+          db.exec("ATTACH ? AS ledgerdb", ledger.to_s)
+          begin
+            db.query(<<-SQL) do |rs|
+              SELECT a.agent_id, a.agent_type,
+                     a.ledger_session_id,
+                     COALESCE(
+                       (SELECT p.claude_pid
+                          FROM ledgerdb.ledger_session_pids p
+                         WHERE p.ledger_session_id
+                                 = a.ledger_session_id
+                           AND p.registered_at <= a.started_at
+                         ORDER BY p.registered_at DESC
+                         LIMIT 1),
+                       (SELECT s.current_claude_pid
+                          FROM ledgerdb.ledger_sessions s
+                         WHERE s.id = a.ledger_session_id))
+              FROM agents a
+              WHERE a.status = 'running'
+              ORDER BY a.id
+            SQL
+              rs.each do
+                rows << RunningOwner.new(
+                  rs.read(String),
+                  rs.read(String),
+                  rs.read(Int64),
+                  rs.read(Int64?),
+                )
+              end
+            end
+          ensure
+            db.exec("DETACH ledgerdb") rescue nil
+          end
+        end
+      rescue
+        # An unreadable ledger means liveness is unknowable, and
+        # an unknowable owner must never be swept. Returning
+        # nothing is the safe answer.
+        return [] of RunningOwner
+      end
+      rows
+    end
+
+    # Running-agent counts keyed by ledger session id.
+    #
+    # Sessions with no running agents are absent rather than
+    # zero — the caller knows which sessions it cares about and
+    # reads a missing key as zero.
+    def self.running_counts_by_session : Hash(Int64, Int64)
+      counts = {} of Int64 => Int64
+      begin
+        open do |db|
+          db.query(<<-SQL) do |rs|
+            SELECT ledger_session_id, COUNT(*)
+            FROM agents
+            WHERE status = 'running'
+            GROUP BY ledger_session_id
+          SQL
+            rs.each do
+              counts[rs.read(Int64)] = rs.read(Int64)
+            end
+          end
+        end
+      rescue
+        # An empty map is indistinguishable from "no agents
+        # running", which is the conservative reading.
+      end
+      counts
     end
 
     # List agents for a session ordered by started_at.

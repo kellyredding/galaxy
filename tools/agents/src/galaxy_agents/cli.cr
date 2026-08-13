@@ -30,6 +30,12 @@ module GalaxyAgents
         else
           handle_abandon(rest)
         end
+      when "reconcile"
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_reconcile_help
+        else
+          handle_reconcile(rest)
+        end
       when "list"
         if rest.includes?("-h") || rest.includes?("--help")
           show_list_help
@@ -500,6 +506,116 @@ module GalaxyAgents
       end
 
       puts "Abandoned #{abandoned.size} agents"
+    end
+
+    # ==========================================================
+    # reconcile
+    # ==========================================================
+
+    # Sweep every running row whose owning process is gone, then
+    # report the running count per session.
+    #
+    # Global rather than session-scoped, deliberately. Scoping to
+    # live sessions would find nothing by construction: a live
+    # session has a live pid, and a live pid means none of its
+    # rows are sweepable. The rows worth sweeping belong to
+    # sessions that are no longer running, which no caller can
+    # enumerate — so this resolves ownership itself rather than
+    # being told.
+    private def self.handle_reconcile(args : Array(String))
+      dry_run = false
+
+      i = 0
+      while i < args.size
+        case args[i]
+        when "--dry-run"
+          dry_run = true
+          i += 1
+        else
+          STDERR.puts(
+            "Error: Unknown option '#{args[i]}'",
+          )
+          STDERR.puts(
+            "Run 'galaxy-agents reconcile --help' " \
+            "for usage",
+          )
+          exit(1)
+        end
+      end
+
+      # Mirrors GALAXY_SKIP_HOOKS: one variable stops the writing
+      # without stopping the tool, so a sweep behaving badly can
+      # be halted without editing settings or waiting on a
+      # release. Reported in the output rather than silently, so
+      # a caller cannot mistake "disabled" for "nothing to do".
+      if ENV["GALAXY_AGENTS_SKIP_RECONCILE"]? == "1"
+        puts(
+          {
+            skipped: true,
+            dry_run: dry_run,
+            swept:   [] of String,
+            running: {} of String => Int64,
+          }.to_json,
+        )
+        return
+      end
+
+      swept = Database.running_with_owner_pids.reject do |row|
+        ProcessLiveness.claude_alive?(row.owner_pid)
+      end
+
+      unless dry_run
+        swept.each do |row|
+          agent = Database.abandon_agent(
+            row.ledger_session_id, row.agent_id,
+          )
+          next unless agent
+
+          # Same publication a manual abandon makes. The
+          # timeline opened a duration for this agent at start
+          # and needs its close, or the bar runs forever.
+          TimelinePublisher.agent_abandoned(
+            row.ledger_session_id,
+            agent_id: agent.agent_id,
+            agent_type: agent.agent_type,
+          )
+        end
+      end
+
+      # Read after the sweep, so a caller can never render a
+      # pre-sweep number and sit wrong until the next tick.
+      counts = Database.running_counts_by_session
+
+      puts(
+        JSON.build do |json|
+          json.object do
+            json.field "skipped", false
+            json.field "dry_run", dry_run
+            json.field "swept" do
+              json.array do
+                swept.each do |row|
+                  json.object do
+                    json.field "agent_id", row.agent_id
+                    json.field "agent_type", row.agent_type
+                    json.field(
+                      "ledger_session_id",
+                      row.ledger_session_id,
+                    )
+                    json.field "owner_pid", row.owner_pid
+                  end
+                end
+              end
+            end
+            json.field "running" do
+              json.object do
+                counts.each do |session_id, count|
+                  json.field session_id.to_s, count
+                end
+              end
+            end
+          end
+        end,
+      )
     end
 
     # ==========================================================
@@ -1355,6 +1471,7 @@ module GalaxyAgents
         start       Record a new agent starting
         stop        Record an agent stopping
         abandon     Mark running agents as abandoned
+        reconcile   Sweep agents whose process is gone (JSON)
         list        List agents for a session
         show        Show full agent detail
         stats       Get agent counts by status (JSON)
@@ -1447,6 +1564,55 @@ module GalaxyAgents
         When --agent-id is provided and the agent is already
         terminal (or doesn't exist), the command exits 0
         with a no-op message so callers can retry safely.
+      HELP
+    end
+
+    private def self.show_reconcile_help
+      puts <<-HELP
+      galaxy-agents reconcile - Sweep agents whose process is gone
+
+      USAGE:
+        galaxy-agents reconcile
+        galaxy-agents reconcile --dry-run
+
+      OPTIONS:
+        --dry-run    Report what would be swept without
+                     writing anything.
+
+      DESCRIPTION:
+        Marks as abandoned every running agent whose owning
+        Claude Code process is no longer alive, then reports the
+        running count for each session as JSON.
+
+        Takes no session argument, deliberately. A live session
+        has a live process, so none of its rows are ever
+        sweepable — the rows worth sweeping belong to sessions
+        that already exited, which no caller can enumerate.
+        Ownership is resolved here instead.
+
+        Liveness is judged against the pid that owned the
+        session when the agent STARTED, read from
+        ledger_session_pids, not the session's current pid. Most
+        recorded agents belong to sessions resumed since they
+        started, where the current pid is a different and often
+        live process.
+
+        A row is swept only when its owner is provably gone: a
+        pid that no longer exists, a session with no ledger row,
+        or a pid now held by some other command. A process that
+        exists but cannot be signalled counts as alive.
+
+        Publishes agent:abandoned per swept row, exactly as a
+        manual abandon does.
+
+        Set GALAXY_AGENTS_SKIP_RECONCILE=1 to disable sweeping;
+        the output then reports "skipped": true.
+
+        Output:
+          {"skipped":false,"dry_run":false,
+           "swept":[{"agent_id":"…","agent_type":"…",
+                     "ledger_session_id":1,"owner_pid":123}],
+           "running":{"2":1}}
       HELP
     end
 
