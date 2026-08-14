@@ -20,7 +20,18 @@ module GalaxyAgents
     # A death the agent wrote down, with the moment it happened.
     record ErrorDeath, message : String, died_at : String?
 
-    DEFAULT_MESSAGE = "Agent ended on an API error"
+    # A cancellation the parent wrote down, with the moment it happened.
+    record Cancellation, died_at : String?
+
+    DEFAULT_MESSAGE   = "Agent ended on an API error"
+    CANCELLED_MESSAGE = "Agent stopped by request"
+
+    # The marker a cancellation leaves in the parent transcript. Matched as a
+    # literal rather than by parsing every line as JSON: these sessions reach
+    # several megabytes and the sweep reads one per running row on every tick,
+    # so the common answer — no match anywhere — has to cost a substring scan
+    # rather than a parse of every record in the session.
+    CANCEL_MARKER = "Successfully stopped task"
 
     # Where Claude Code keeps subagent transcripts, two levels down:
     # projects/<project>/<session-uuid>/subagents/agent-<id>.jsonl
@@ -60,6 +71,103 @@ module GalaxyAgents
         died_at: normalized_timestamp(
           json["timestamp"]?.try(&.as_s?),
         ),
+      )
+    rescue
+      nil
+    end
+
+    # Whether the parent recorded stopping this agent.
+    #
+    # `SubagentStop` does not fire for a cancellation — spawning an agent,
+    # killing it, and polling for eighteen seconds leaves the row `running`
+    # with no stop event — so the database is never told and the row waits for
+    # the owning process to die, a median of four days on measured data. The
+    # parent's own transcript is the only place that outcome exists, which is
+    # the situation `error_death` answers and the same remedy.
+    #
+    # Positive evidence, deliberately. A missing marker means "not proven
+    # cancelled" and the caller keeps the row, exactly as for an unreadable
+    # transcript. Nothing here infers a stop from silence, which is what rules
+    # transcript staleness out: an agent cancelled a minute ago and one
+    # thinking for a minute leave identical files.
+    def self.cancellation(agent_id : String) : Cancellation?
+      return nil if agent_id.empty?
+
+      path = transcript_path(agent_id)
+      return nil unless path
+
+      parent = parent_transcript_path(path)
+      return nil unless parent && File.exists?(parent)
+
+      File.each_line(parent) do |line|
+        next unless line.includes?(CANCEL_MARKER)
+        next unless names_agent?(line, agent_id)
+        return Cancellation.new(died_at: line_timestamp(line))
+      end
+      nil
+    rescue
+      nil
+    end
+
+    # Whether a marker line names *this* agent and not one whose id merely
+    # contains it.
+    #
+    # A plain `includes?` closes the wrong row: cancel `abcdef` and an agent
+    # called `abc` matches the same line, and `stop_agent` will not move a
+    # terminal row back. Ids are long and random enough that a collision is
+    # unlikely rather than impossible, and "unlikely" is the wrong standard
+    # for a write that cannot be undone.
+    #
+    # Both sides are checked because the id can be embedded either way, and
+    # the surrounding characters in the payload — a quote, a space, a
+    # bracket — are never identifier characters.
+    private def self.names_agent?(
+      line : String, agent_id : String,
+    ) : Bool
+      offset = 0
+      while found = line.index(agent_id, offset)
+        before = found == 0 ? nil : line[found - 1]
+        after_index = found + agent_id.size
+        after = after_index < line.size ? line[after_index] : nil
+
+        unless identifier_char?(before) || identifier_char?(after)
+          return true
+        end
+        offset = found + 1
+      end
+      false
+    end
+
+    private def self.identifier_char?(char : Char?) : Bool
+      return false unless char
+      char.ascii_alphanumeric? || char == '-' || char == '_'
+    end
+
+    # The session transcript that owns a subagent transcript.
+    #
+    # `…/<session>/subagents/agent-<id>.jsonl` sits beside `…/<session>.jsonl`,
+    # so the parent is two directories up with the extension put back. Derived
+    # rather than stored, for the same reason the agent transcript is globbed:
+    # rows written before this existed stay recoverable.
+    private def self.parent_transcript_path(
+      agent_path : String,
+    ) : String?
+      session_dir = File.dirname(File.dirname(agent_path))
+      return nil if session_dir.empty? || session_dir == "."
+      "#{session_dir}.jsonl"
+    rescue
+      nil
+    end
+
+    # The record's own time, or nil when the line will not parse.
+    #
+    # Separated from `cancellation` so a parse failure cannot reach that
+    # method's rescue and turn a cancellation we have already proven back into
+    # "not proven". A matched marker is proof the stop happened; only *when* is
+    # in doubt, and the caller stamps its own time for a nil.
+    private def self.line_timestamp(line : String) : String?
+      normalized_timestamp(
+        JSON.parse(line)["timestamp"]?.try(&.as_s?),
       )
     rescue
       nil

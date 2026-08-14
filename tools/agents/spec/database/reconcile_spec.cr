@@ -300,6 +300,99 @@ describe "reconcile" do
       end
     end
 
+    # The other case ownership cannot see, and the one the
+    # liveness rule leaves waiting a median of four days: the
+    # session is alive, the agent was cancelled, and no hook
+    # fired to say so.
+    it "closes a cancellation though the owner is alive" do
+      with_live_process do |owner|
+        GalaxyAgents::Database.start_agent(
+          1_i64, "cancelled-1", "Explore",
+        )
+        build_ledger_db([{1_i64, owner}])
+        write_transcript("cancelled-1", [clean_record])
+        write_parent_transcript([
+          cancel_record("cancelled-1"),
+        ])
+
+        row = GalaxyAgents::Database
+          .running_with_owner_pids.first
+        GalaxyAgents::ProcessLiveness.claude_alive?(
+          row.owner_pid,
+          expected: SPEC_LIVE_PROCESS_COMMAND,
+        ).should be_true
+
+        GalaxyAgents::AgentOutcome
+          .cancellation("cancelled-1").should_not be_nil
+      end
+    end
+
+    # Both signals present. Mirrors the handler's order, so the
+    # precedence is pinned rather than merely intended: a death
+    # the agent wrote about itself says why, which a
+    # cancellation never can.
+    it "prefers a declared death over a cancellation" do
+      GalaxyAgents::Database.start_agent(
+        1_i64, "both-1", "Explore",
+      )
+      write_transcript("both-1", [error_record])
+      write_parent_transcript([cancel_record("both-1")])
+
+      outcome =
+        if GalaxyAgents::AgentOutcome.error_death("both-1")
+          "failed"
+        elsif GalaxyAgents::AgentOutcome
+                .cancellation("both-1")
+          "canceled"
+        else
+          "kept"
+        end
+
+      outcome.should eq("failed")
+    end
+
+    # The write itself, so a recovered row ends up the shape a
+    # normal stop would have left — with the cancellation's own
+    # time rather than whenever the sweep noticed.
+    it "records a cancellation through the shared write" do
+      GalaxyAgents::Database.start_agent(
+        1_i64, "cancelled-2", "Explore",
+      )
+
+      GalaxyAgents::Database.stop_agent(
+        1_i64,
+        "cancelled-2",
+        "canceled",
+        last_message: GalaxyAgents::AgentOutcome::CANCELLED_MESSAGE,
+        duration_ms: 5_000_i64,
+        completed_at: "2026-08-14 21:05:00",
+      ).should_not be_nil
+
+      agent = GalaxyAgents::Database
+        .get_agent(1_i64, "cancelled-2").not_nil!
+      agent.status.should eq("canceled")
+      agent.completed_at.should eq("2026-08-14 21:05:00")
+      agent.last_message.should eq(
+        GalaxyAgents::AgentOutcome::CANCELLED_MESSAGE,
+      )
+    end
+
+    it "leaves an agent alone when nothing cancelled it" do
+      with_live_process do |owner|
+        GalaxyAgents::Database.start_agent(
+          1_i64, "uncancelled-1", "Explore",
+        )
+        build_ledger_db([{1_i64, owner}])
+        write_transcript("uncancelled-1", [clean_record])
+        write_parent_transcript([
+          %({"type":"user","timestamp":"2026-08-14T21:00:00.000Z"}),
+        ])
+
+        GalaxyAgents::AgentOutcome
+          .cancellation("uncancelled-1").should be_nil
+      end
+    end
+
     it "leaves a healthy agent with a clean transcript alone" do
       with_live_process do |owner|
         GalaxyAgents::Database.start_agent(

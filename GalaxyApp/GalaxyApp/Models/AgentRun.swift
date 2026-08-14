@@ -22,7 +22,10 @@ struct AgentRun: Codable, Identifiable {
         case "running": return .green
         case "stopped": return .secondary
         case "failed": return .red
-        case "abandoned": return .orange
+        // Orange with abandoned, because both mean the agent
+        // never finished. Not red: a cancellation is something
+        // we asked for, and nothing went wrong.
+        case "abandoned", "canceled": return .orange
         default: return .secondary
         }
     }
@@ -33,6 +36,7 @@ struct AgentRun: Codable, Identifiable {
         case "stopped": return "Stopped"
         case "failed": return "Failed"
         case "abandoned": return "Abandoned"
+        case "canceled": return "Canceled"
         default: return status
         }
     }

@@ -198,6 +198,160 @@ describe "CLI reconcile command", tags: "integration" do
     end
   end
 
+  it "closes a cancellation the parent recorded" do
+    with_live_process do |owner|
+      run_binary([
+        "start", "--ledger-session-id", "20",
+        "--agent-id", "c1", "--agent-type", "Explore",
+      ])
+      build_ledger_db([{20_i64, owner}])
+      write_transcript("c1", [clean_record])
+      write_parent_transcript([cancel_record("c1")])
+      flush_wal
+
+      result = run_binary(
+        ["reconcile"],
+        extra_env: {
+          "GALAXY_AGENTS_CLAUDE_COMMAND" => SPEC_LIVE_PROCESS_COMMAND,
+        },
+      )
+      result[:status].should eq(0)
+
+      parsed = JSON.parse(result[:output])
+      parsed["cancelled"].as_a.size.should eq(1)
+      parsed["cancelled"][0]["agent_id"].as_s.should eq("c1")
+      # The record's own moment, not the sweep's.
+      parsed["cancelled"][0]["died_at"].as_s
+        .should eq("2026-08-14 21:05:00")
+      # Neither other rule fired: the owner is alive and the
+      # agent declared no death.
+      parsed["failed"].as_a.should be_empty
+      parsed["swept"].as_a.should be_empty
+      parsed["running"].as_h.has_key?("20").should be_false
+
+      detail = JSON.parse(run_binary([
+        "show", "--ledger-session-id", "20",
+        "--agent-id", "c1", "--json",
+      ])[:output])
+      detail["status"].as_s.should eq("canceled")
+      detail["completed_at"].as_s
+        .should eq("2026-08-14 21:05:00")
+      detail["last_message"].as_s
+        .should contain("stopped by request")
+    end
+  end
+
+  it "reports a cancellation under --dry-run without writing" do
+    with_live_process do |owner|
+      run_binary([
+        "start", "--ledger-session-id", "21",
+        "--agent-id", "c2", "--agent-type", "Explore",
+      ])
+      build_ledger_db([{21_i64, owner}])
+      write_transcript("c2", [clean_record])
+      write_parent_transcript([cancel_record("c2")])
+      flush_wal
+
+      result = run_binary(
+        ["reconcile", "--dry-run"],
+        extra_env: {
+          "GALAXY_AGENTS_CLAUDE_COMMAND" => SPEC_LIVE_PROCESS_COMMAND,
+        },
+      )
+      parsed = JSON.parse(result[:output])
+      parsed["cancelled"].as_a.size.should eq(1)
+      # Still counted as running, because nothing was written.
+      parsed["running"]["21"].as_i.should eq(1)
+
+      detail = JSON.parse(run_binary([
+        "show", "--ledger-session-id", "21",
+        "--agent-id", "c2", "--json",
+      ])[:output])
+      detail["status"].as_s.should eq("running")
+    end
+  end
+
+  # A cancellation naming a sibling must not take this row with
+  # it — the marker is matched against one agent id.
+  it "leaves an agent alone when a sibling was cancelled" do
+    with_live_process do |owner|
+      run_binary([
+        "start", "--ledger-session-id", "22",
+        "--agent-id", "keep-me", "--agent-type", "Explore",
+      ])
+      build_ledger_db([{22_i64, owner}])
+      write_transcript("keep-me", [clean_record])
+      write_parent_transcript([cancel_record("some-other")])
+      flush_wal
+
+      result = run_binary(
+        ["reconcile"],
+        extra_env: {
+          "GALAXY_AGENTS_CLAUDE_COMMAND" => SPEC_LIVE_PROCESS_COMMAND,
+        },
+      )
+      parsed = JSON.parse(result[:output])
+      parsed["cancelled"].as_a.should be_empty
+      parsed["running"]["22"].as_i.should eq(1)
+    end
+  end
+
+  # Both signals present. The death the agent wrote about itself
+  # wins, because it can say why.
+  it "prefers a declared death over a cancellation" do
+    with_live_process do |owner|
+      run_binary([
+        "start", "--ledger-session-id", "23",
+        "--agent-id", "b1", "--agent-type", "Explore",
+      ])
+      build_ledger_db([{23_i64, owner}])
+      write_transcript("b1", [error_record])
+      write_parent_transcript([cancel_record("b1")])
+      flush_wal
+
+      result = run_binary(
+        ["reconcile"],
+        extra_env: {
+          "GALAXY_AGENTS_CLAUDE_COMMAND" => SPEC_LIVE_PROCESS_COMMAND,
+        },
+      )
+      parsed = JSON.parse(result[:output])
+      parsed["failed"].as_a.size.should eq(1)
+      parsed["cancelled"].as_a.should be_empty
+
+      detail = JSON.parse(run_binary([
+        "show", "--ledger-session-id", "23",
+        "--agent-id", "b1", "--json",
+      ])[:output])
+      detail["status"].as_s.should eq("failed")
+    end
+  end
+
+  # A cancelled agent whose owner also died: the cancellation is
+  # the better answer, since it knows when and the sweep does
+  # not.
+  it "prefers a cancellation over sweeping a dead owner" do
+    run_binary([
+      "start", "--ledger-session-id", "24",
+      "--agent-id", "c3", "--agent-type", "Explore",
+    ])
+    build_ledger_db([{24_i64, dead_pid}])
+    write_transcript("c3", [clean_record])
+    write_parent_transcript([cancel_record("c3")])
+    flush_wal
+
+    result = run_binary(["reconcile"])
+    parsed = JSON.parse(result[:output])
+    parsed["cancelled"].as_a.size.should eq(1)
+    parsed["swept"].as_a.should be_empty
+
+    detail = JSON.parse(run_binary([
+      "show", "--ledger-session-id", "24",
+      "--agent-id", "c3", "--json",
+    ])[:output])
+    detail["status"].as_s.should eq("canceled")
+  end
+
   it "leaves a healthy agent alone under --dry-run and for real" do
     with_live_process do |owner|
       run_binary([

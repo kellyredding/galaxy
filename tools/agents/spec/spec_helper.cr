@@ -276,6 +276,42 @@ def write_transcript(agent_id : String, lines : Array(String))
   )
 end
 
+# The session transcript that owns the agent transcripts above.
+#
+# Written to the path `AgentOutcome` derives rather than one passed in, so an
+# example proves the derivation as well as the scan: `…/<session>/subagents/`
+# holds the agents, and `…/<session>.jsonl` is their parent.
+def write_parent_transcript(lines : Array(String))
+  session = SPEC_CLAUDE_CONFIG_DIR / "projects" /
+            "-Users-someone-projects" /
+            "11111111-2222-3333-4444-555555555555"
+  Dir.mkdir_p(File.dirname(session.to_s))
+  File.write("#{session}.jsonl", lines.join("\n") + "\n")
+end
+
+# The line a cancellation leaves in the parent transcript: a tool_result
+# carrying the TaskStop payload, which names the agent it stopped.
+def cancel_record(
+  agent_id : String,
+  timestamp : String = "2026-08-14T21:05:00.000Z",
+) : String
+  inner = {
+    "message" => "Successfully stopped task: " \
+                 "#{agent_id} (a probe)",
+    "task_id" => agent_id,
+  }.to_json
+
+  {
+    "type"      => "user",
+    "timestamp" => timestamp,
+    "message"   => {
+      "content" => [
+        {"type" => "tool_result", "content" => inner},
+      ],
+    },
+  }.to_json
+end
+
 def error_record(
   text : String = "API Error: Connection lost mid-response.",
   timestamp : String = "2026-08-13T19:45:10.130Z",

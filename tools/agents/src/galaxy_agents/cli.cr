@@ -566,11 +566,17 @@ module GalaxyAgents
       # deduction, it is true even while the session runs on, and
       # it can say why, which abandonment never can.
       died = [] of {Database::RunningOwner, AgentOutcome::ErrorDeath}
+      cancelled = [] of {Database::RunningOwner, AgentOutcome::Cancellation}
       orphaned = [] of Database::RunningOwner
 
       Database.running_with_owner_pids.each do |row|
         if death = AgentOutcome.error_death(row.agent_id)
           died << {row, death}
+        elsif cancel = AgentOutcome.cancellation(row.agent_id)
+          # Above liveness for the reason stated there: the parent
+          # wrote this down, so it is a fact rather than a
+          # deduction, and it holds while the session runs on.
+          cancelled << {row, cancel}
         elsif !ProcessLiveness.claude_alive?(row.owner_pid)
           orphaned << row
         end
@@ -603,6 +609,39 @@ module GalaxyAgents
             ) || 0_i64,
             prompt: nil,
             last_message: death.message,
+          )
+        end
+
+        cancelled.each do |(row, cancel)|
+          # `canceled` rather than any status already in use.
+          # Not `failed`, because nothing failed. Not
+          # `abandoned`, because the owner is alive — which is
+          # the case this exists for. And not `stopped`, which
+          # a normal completion writes, so reusing it would
+          # hide that the agent never finished its work.
+          recorded = Database.stop_agent(
+            row.ledger_session_id,
+            row.agent_id,
+            "canceled",
+            last_message: AgentOutcome::CANCELLED_MESSAGE,
+            duration_ms: AgentOutcome.duration_ms(
+              started_at: row.started_at,
+              died_at: cancel.died_at,
+            ),
+            completed_at: cancel.died_at,
+          )
+          next unless recorded
+
+          TimelinePublisher.agent_failed(
+            row.ledger_session_id,
+            agent_id: row.agent_id,
+            agent_type: row.agent_type,
+            duration_ms: AgentOutcome.duration_ms(
+              started_at: row.started_at,
+              died_at: cancel.died_at,
+            ) || 0_i64,
+            prompt: nil,
+            last_message: AgentOutcome::CANCELLED_MESSAGE,
           )
         end
 
@@ -646,6 +685,21 @@ module GalaxyAgents
                     )
                     json.field "message", death.message
                     json.field "died_at", death.died_at
+                  end
+                end
+              end
+            end
+            json.field "cancelled" do
+              json.array do
+                cancelled.each do |(row, cancel)|
+                  json.object do
+                    json.field "agent_id", row.agent_id
+                    json.field "agent_type", row.agent_type
+                    json.field(
+                      "ledger_session_id",
+                      row.ledger_session_id,
+                    )
+                    json.field "died_at", cancel.died_at
                   end
                 end
               end
