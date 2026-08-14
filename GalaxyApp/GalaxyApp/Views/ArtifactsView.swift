@@ -1411,9 +1411,27 @@ struct ArtifactsView: View {
             filename: artifact.originalFilename
         )
         let isGdiff = Self.isDiffReader(kind: kind)
+        // Mirrored in `galaxy-artifacts` as
+        // GDIFF_READER_SIZE_LIMIT, which warns at save time.
+        // Change one and you must change the other.
         let sizeLimit = isGdiff
             ? 5_000_000
             : kind.defaultSizeCap
+
+        // A .gdiff has no external handler. This app is the
+        // only thing that reads the format and no document
+        // type is registered for it, so handing an oversized
+        // one to Launch Services could only ever produce
+        // "there is no application set to open the document" —
+        // a dialog naming neither the size, nor the cap, nor
+        // the remedy, with the real reason reachable only from
+        // a dbg line in the log.
+        if isGdiff, artifact.fileSize > sizeLimit {
+            presentOversizedDiffNotice(
+                artifact: artifact, limit: sizeLimit
+            )
+            return
+        }
 
         if (!isGdiff && kind.isUnhandled)
             || artifact.fileSize > sizeLimit
@@ -1586,6 +1604,49 @@ struct ArtifactsView: View {
     /// from a click that never landed — no window, no error, nothing in the
     /// log. The comment here promised the fallback that the code did not
     /// have.
+    /// Say why an oversized diff will not open, and offer the
+    /// one action that actually succeeds.
+    ///
+    /// Revealing rather than opening is the point. `open` on a
+    /// `.gdiff` fails by construction — nothing is registered
+    /// for the extension — so the previous behaviour was to
+    /// attempt something guaranteed to fail and report it only
+    /// to the log. Finder can always select a file, so the
+    /// user ends up somewhere useful either way.
+    private func presentOversizedDiffNotice(
+        artifact: ArtifactSummary,
+        limit: Int64
+    ) {
+        let size = ByteCountFormatter.string(
+            fromByteCount: artifact.fileSize,
+            countStyle: .file
+        )
+        let cap = ByteCountFormatter.string(
+            fromByteCount: limit,
+            countStyle: .file
+        )
+        let path = artifact.storedPath ?? artifact.sourcePath
+
+        guard let window = SheetAlert.hostWindow() else { return }
+        SheetAlert.confirm(
+            in: window,
+            message: "This diff is too large to open",
+            detail: "\(artifact.originalFilename) is \(size), "
+                + "above the \(cap) the diff reader will "
+                + "render. Capture a narrower range with "
+                + "'galaxy-diff capture -- <path>' and save "
+                + "the pieces as separate artifacts.",
+            confirm: "Reveal in Finder",
+            onConfirm: {
+                guard let path else { return }
+                NSWorkspace.shared
+                    .activateFileViewerSelecting(
+                        [URL(fileURLWithPath: path)]
+                    )
+            }
+        )
+    }
+
     private func openExternally(
         artifact: ArtifactSummary
     ) {

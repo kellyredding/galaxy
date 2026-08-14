@@ -54,11 +54,24 @@ struct GdiffFile: Codable {
     let before: String?
     let after: String?
     let hunks: [GdiffHunk]
+    /// Separate from `status` because a binary file can be
+    /// added, deleted, renamed or modified — folding the two
+    /// together cost the producer every case but modification.
+    /// Optional rather than defaulted: documents captured
+    /// before the flag existed simply do not carry the key.
+    let binary: Bool?
+    /// Populated for binary entries only — the sole size
+    /// information a reader can show for content it
+    /// deliberately does not carry.
+    let beforeBytes: Int64?
+    let afterBytes: Int64?
 
     enum CodingKeys: String, CodingKey {
         case path
         case oldPath = "old_path"
-        case status, language, before, after, hunks
+        case status, language, before, after, hunks, binary
+        case beforeBytes = "before_bytes"
+        case afterBytes = "after_bytes"
     }
 }
 
@@ -1207,9 +1220,7 @@ private func renderFileBody(
     fileAttrs: String
 ) -> FileCardResult {
     // Binary or otherwise missing content
-    let isBinary =
-        file.before == nil && file.after == nil
-    if isBinary {
+    if isBinaryEntry(file) {
         let line = startingLine
         let html =
             "<tr class=\"code-line\""
@@ -1218,7 +1229,7 @@ private func renderFileBody(
             + " data-kind=\"binary\">"
             + "<td colspan=\"4\" class=\"line-content\">"
             + "<div class=\"binary-notice\">"
-            + "Binary file — contents not shown"
+            + binaryNotice(for: file)
             + "</div></td></tr>"
         return FileCardResult(
             html: html,
@@ -2716,6 +2727,18 @@ private func renderTreeNode(
 private func tocStatusIcon(
     for file: GdiffFile
 ) -> (String, String) {
+    // Binary wins the glyph. One character has to answer "is
+    // this worth opening", and "you cannot read this one"
+    // outranks which way it moved — the badge beside it still
+    // says added or deleted.
+    //
+    // Without this the marker would vanish entirely: once
+    // binariness lives in its own field, nothing emits
+    // `status == "binary"` any more, so the case below became
+    // unreachable for every new capture.
+    if isBinaryEntry(file) {
+        return ("toc-status-binary", "B")
+    }
     switch effectiveStatus(for: file) {
     case "added":
         return ("toc-status-added", "A")
@@ -2787,6 +2810,38 @@ private func effectiveStatus(
         return "modified"
     }
     return file.status
+}
+
+/// A binary entry, however the document says so.
+///
+/// Current captures set `binary`; ones from before the flag
+/// existed said it in `status`; and the nil-nil test catches
+/// both plus anything else that arrives without content.
+///
+/// That last arm is load-bearing and fragile in one specific
+/// way: it requires `before`/`after` to be **nil, never ""**.
+/// An empty string is not nil, so a capture that emitted `""`
+/// for a binary would fall through to `renderWithHunkOverlay`
+/// with empty source and empty hunks and draw a blank file
+/// card with no notice at all. The capture side is specced to
+/// return nil.
+private func isBinaryEntry(_ file: GdiffFile) -> Bool {
+    file.binary == true
+        || file.status == "binary"
+        || (file.before == nil && file.after == nil)
+}
+
+/// Mirrors git's own `Bin 6547712 -> 0 bytes`, so the wording
+/// is already familiar. Falls back to the old sentence for a
+/// document captured before byte counts existed — saying
+/// nothing about a size we do not have beats inventing a zero.
+private func binaryNotice(for file: GdiffFile) -> String {
+    guard let before = file.beforeBytes,
+          let after = file.afterBytes
+    else {
+        return "Binary file — contents not shown"
+    }
+    return "Binary file — \(before) bytes → \(after) bytes"
 }
 
 private func countChanges(
