@@ -106,8 +106,10 @@ describe GalaxyDiff::GdiffDocument do
       .should eq(GalaxyDiff::GdiffLineType::Add)
   end
 
+  # "binary" is no longer one of these — binariness moved to
+  # its own field, so a status only ever names a transition.
   it "supports files with every status" do
-    %w[modified added deleted renamed binary].each do |status|
+    %w[modified added deleted renamed].each do |status|
       file = GalaxyDiff::GdiffFile.new(
         path: "f", old_path: nil, status: status,
         language: nil, before: nil, after: nil,
@@ -117,5 +119,46 @@ describe GalaxyDiff::GdiffDocument do
       parsed = GalaxyDiff::GdiffFile.from_json(json)
       parsed.status.should eq(status)
     end
+  end
+
+  it "round-trips a binary entry with byte counts" do
+    file = GalaxyDiff::GdiffFile.new(
+      path: "img.png", old_path: nil, status: "deleted",
+      language: nil, before: nil, after: nil,
+      hunks: [] of GalaxyDiff::GdiffHunk,
+      binary: true,
+      before_bytes: 6_547_712_i64,
+      after_bytes: 0_i64,
+    )
+    parsed = GalaxyDiff::GdiffFile.from_json(file.to_json)
+    parsed.binary.should be_true
+    parsed.status.should eq("deleted")
+    parsed.before_bytes.should eq(6_547_712)
+    parsed.after_bytes.should eq(0)
+  end
+
+  # A document written before `binary` existed must still
+  # decode — there are stored artifacts in this shape.
+  it "defaults binary to false when the key is absent" do
+    json = %({"path":"a.txt","old_path":null,) +
+           %("status":"modified","language":null,) +
+           %("before":"x","after":"y","hunks":[]})
+    file = GalaxyDiff::GdiffFile.from_json(json)
+    file.binary.should be_false
+    file.before_bytes.should be_nil
+    file.after_bytes.should be_nil
+  end
+
+  # Nil byte counts are omitted rather than emitted as null,
+  # so a text entry grows by exactly one key.
+  it "omits byte counts for a text entry" do
+    file = GalaxyDiff::GdiffFile.new(
+      path: "a.txt", old_path: nil, status: "modified",
+      language: nil, before: "x", after: "y",
+      hunks: [] of GalaxyDiff::GdiffHunk,
+    )
+    json = file.to_json
+    json.includes?("before_bytes").should be_false
+    json.includes?(%("binary":false)).should be_true
   end
 end

@@ -51,6 +51,16 @@ module GalaxyDiff
     end
   end
 
+  # `binary` is deliberately separate from `status`: a binary file can be
+  # added, deleted, renamed or modified, and folding the two together cost
+  # us every case but modification. Git names the transition before it
+  # names the binariness, so a status assigned first won the race and the
+  # binary marker declined.
+  #
+  # `before_bytes`/`after_bytes` are populated for binary entries only,
+  # where they are the sole size information a reader can show for content
+  # deliberately not carried. Text entries leave them nil rather than
+  # restating what `before`/`after` already say.
   struct GdiffFile
     include JSON::Serializable
 
@@ -61,10 +71,16 @@ module GalaxyDiff
     getter before : String?
     getter after : String?
     getter hunks : Array(GdiffHunk)
+    getter binary : Bool = false
+    getter before_bytes : Int64?
+    getter after_bytes : Int64?
 
     def initialize(
       @path, @old_path, @status, @language,
       @before, @after, @hunks,
+      @binary = false,
+      @before_bytes = nil,
+      @after_bytes = nil,
     )
     end
   end

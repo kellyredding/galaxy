@@ -89,6 +89,45 @@ def with_temp_repo(&)
   end
 end
 
+# Write a file shaped like a real binary: NUL bytes early,
+# plus high bytes.
+#
+# The NULs are load-bearing for what this fixture tests. Git
+# calls a file binary when it finds a NUL in the first 8000
+# bytes, so without them git reports TEXT and only the
+# encoding guard in `DiffCapture` ever fires — meaning the
+# parser's own binary detection would go untested end to end
+# while the specs still passed. A PNG or a Mach-O has NULs;
+# so does this.
+def write_binary_fixture(path : String, size : Int32 = 256)
+  File.open(path, "wb") do |f|
+    size.times do |i|
+      f.write_byte(i % 4 == 0 ? 0x00_u8 : (0x80 + (i % 0x40)).to_u8)
+    end
+  end
+end
+
+# High bytes with NO NUL, so git reports TEXT. Only the
+# encoding guard catches this one — the complement to
+# `write_binary_fixture`.
+def write_invalid_utf8_fixture(path : String, size : Int32 = 256)
+  File.open(path, "wb") do |f|
+    size.times { |i| f.write_byte((0x80 + (i % 0x40)).to_u8) }
+  end
+end
+
+# Write a file git will call TEXT that still cannot be
+# embedded: mostly ASCII, with one NUL past git's 8000-byte
+# sniff window. `valid_encoding?` accepts NUL, so only the
+# explicit NUL check catches this one.
+def write_late_nul_fixture(path : String)
+  File.open(path, "wb") do |f|
+    f.print("A" * 9000)
+    f.write_byte(0x00_u8)
+    f.print("tail\n")
+  end
+end
+
 # Helper: commit a file's current state in a repo.
 def git_commit(repo : String, message : String)
   Process.run("git", ["add", "-A"], chdir: repo)

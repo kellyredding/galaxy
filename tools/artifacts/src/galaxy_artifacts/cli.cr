@@ -194,6 +194,87 @@ module GalaxyArtifacts
     # extension lookup for the common cases; JSONL gets
     # promoted to "transcript" only when a first-line
     # content sniff matches the agent-transcript shape.
+    # The diff reader's own ceiling, mirrored.
+    # `ArtifactsView.swift` holds the same number for
+    # `.gdiff`; change one and you must change the other.
+    #
+    # It lives in two places rather than three because
+    # `galaxy-diff` is deliberately kept ignorant of it — a
+    # producer that knew the reader's limits would be the
+    # wrong shape, and a third copy is a third thing to
+    # forget.
+    GDIFF_READER_SIZE_LIMIT = 5_000_000_i64
+
+    # Keyed on the extension, not `--artifact-type`. The app
+    # picks the diff reader by filename
+    # (`ArtifactsView.isDiffReader`), and `--artifact-type` is
+    # an unvalidated free-form label — `--artifact-type
+    # banana` is accepted today. Keying on the type would both
+    # miss a `.gdiff` saved without the flag and fire on a
+    # non-diff file saved with it.
+    private def self.gdiff?(filename : String) : Bool
+      File.extname(filename).downcase == ".gdiff"
+    end
+
+    # Whether a `.gdiff` can actually be read back.
+    #
+    # The encoding check is the load-bearing one, and the
+    # order is not stylistic: Crystal's `JSON.parse` ACCEPTS
+    # invalid UTF-8, because a Crystal String tolerates
+    # arbitrary bytes. A validator written with `JSON.parse`
+    # alone would have accepted the 18 MB artifact this exists
+    # to reject.
+    #
+    # Encoding and well-formedness only, deliberately not the
+    # schema — `GdiffDocument`'s shape is the producer's
+    # business, and asserting it here would reject the
+    # deliberately-minimal fixtures other specs save.
+    private def self.gdiff_invalid_reason(
+      path : String,
+    ) : String?
+      raw = File.read(path)
+      unless raw.valid_encoding?
+        return "is not valid UTF-8 — a .gdiff carrying raw " \
+               "bytes cannot be parsed by the reader"
+      end
+      begin
+        JSON.parse(raw)
+      rescue
+        return "is not valid JSON"
+      end
+      nil
+    rescue
+      "could not be read"
+    end
+
+    # Refuse and exit. Used where nothing has been written
+    # yet, so there is nothing to clean up.
+    private def self.validate_gdiff!(path : String)
+      if reason = gdiff_invalid_reason(path)
+        STDERR.puts(
+          "Error: #{File.basename(path)} #{reason}",
+        )
+        exit(1)
+      end
+    end
+
+    # An oversized .gdiff is valid data one reader cannot
+    # display, so it stores with a note rather than being
+    # refused. Refusing would discard something correct.
+    private def self.warn_if_oversized_gdiff(
+      filename : String, size : Int64,
+    )
+      return unless size > GDIFF_READER_SIZE_LIMIT
+      STDERR.puts(
+        "Note: #{filename} is #{format_file_size(size)}, " \
+        "above the " \
+        "#{format_file_size(GDIFF_READER_SIZE_LIMIT)} the " \
+        "diff reader will open. Capture a narrower range " \
+        "with 'galaxy-diff capture -- <path>' and save the " \
+        "pieces as separate artifacts.",
+      )
+    end
+
     def self.default_artifact_type(
       filename : String,
       content_path : String,
@@ -379,6 +460,14 @@ module GalaxyArtifacts
       end
 
       original_filename = File.basename(source_path)
+
+      # Before anything is written. A .gdiff that will not
+      # parse is worth nothing to anybody, and until now it
+      # stored and reported success — the failure surfaced
+      # when a human clicked it, possibly days later, with no
+      # way to tell a bad capture from a bad reader.
+      validate_gdiff!(source_path) if gdiff?(original_filename)
+
       artifact_title = title || ArtifactStorage.title_from_filename(original_filename)
 
       # Use provided type/mime or defaults. Explicit
@@ -396,6 +485,10 @@ module GalaxyArtifacts
       # Compute hash and size from file if not provided
       hash = content_hash_arg || ArtifactStorage.file_hash(source_path)
       fsize = file_size_arg || ArtifactStorage.file_size(source_path)
+
+      if gdiff?(original_filename)
+        warn_if_oversized_gdiff(original_filename, fsize)
+      end
 
       # Save DB record (upserts on source_path within session)
       result = Database.save_artifact(
@@ -558,6 +651,22 @@ module GalaxyArtifacts
       path = stream_result[:path]
       hash = stream_result[:hash]
       fsize = stream_result[:size]
+
+      # Nothing can be inspected until the stream has landed,
+      # so unlike the source-path branch this validates after
+      # writing and has to clean up after itself. The reserved
+      # number is not released — same as the DB-failure path
+      # below.
+      if gdiff?(original_filename)
+        if reason = gdiff_invalid_reason(path)
+          File.delete(path) if File.exists?(path)
+          STDERR.puts(
+            "Error: #{original_filename} #{reason}",
+          )
+          exit(1)
+        end
+        warn_if_oversized_gdiff(original_filename, fsize)
+      end
 
       # Default the artifact type now that the written
       # file is available for JSONL agent-transcript
@@ -918,6 +1027,13 @@ module GalaxyArtifacts
       resaved = false
       if source = artifact.source_path
         if File.exists?(source)
+          # `refresh` re-reads the source and re-copies it
+          # without ever entering `handle_save`, so it does
+          # not inherit that path's gate and needs its own.
+          if gdiff?(File.basename(source))
+            validate_gdiff!(source)
+          end
+
           hash = ArtifactStorage.file_hash(source)
           fsize = ArtifactStorage.file_size(source)
 

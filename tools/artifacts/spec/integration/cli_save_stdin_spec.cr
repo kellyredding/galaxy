@@ -42,6 +42,11 @@ describe "CLI save (stdin mode)", tags: "integration" do
     File.read(art.stored_path).should eq(content)
   end
 
+  # The payload is real gdiff JSON because the filename says
+  # `.gdiff` and `save` now checks that claim. It used to be
+  # the literal string "diff content" — which passed only
+  # because nothing had ever asserted that a .gdiff contains
+  # a diff. This spec's subject is title derivation.
   it "derives title from filename when not provided" do
     result = run_binary(
       [
@@ -49,11 +54,61 @@ describe "CLI save (stdin mode)", tags: "integration" do
         "--ledger-session-id", "1",
         "--filename", "quarterly-report.gdiff",
       ],
-      stdin: "diff content",
+      stdin: %({"version":1,"metadata":{},"files":[]}),
     )
 
     result[:status].should eq(0)
     result[:output].should contain("quarterly report")
+  end
+
+  it "refuses a piped .gdiff that is not valid JSON" do
+    result = run_binary(
+      [
+        "save",
+        "--ledger-session-id", "1",
+        "--filename", "broken.gdiff",
+      ],
+      stdin: "this is not json",
+    )
+
+    result[:status].should_not eq(0)
+    result[:error].should contain("not valid JSON")
+  end
+
+  # The cleanup branch: the stream has already written the
+  # file by the time it can be inspected, so a refusal must
+  # not leave an orphan behind.
+  it "removes the streamed file when it refuses a .gdiff" do
+    before = Dir.glob(
+      File.join(SPEC_GALAXY_DIR.to_s, "**", "*.gdiff"),
+    ).size
+
+    result = run_binary(
+      [
+        "save",
+        "--ledger-session-id", "1",
+        "--filename", "orphan.gdiff",
+      ],
+      stdin: "not json at all",
+    )
+
+    result[:status].should_not eq(0)
+    Dir.glob(
+      File.join(SPEC_GALAXY_DIR.to_s, "**", "*.gdiff"),
+    ).size.should eq(before)
+  end
+
+  it "accepts a piped .gdiff that parses" do
+    result = run_binary(
+      [
+        "save",
+        "--ledger-session-id", "1",
+        "--filename", "good.gdiff",
+      ],
+      stdin: %({"version":1,"metadata":{},"files":[]}),
+    )
+
+    result[:status].should eq(0)
   end
 
   it "errors when --filename is missing and stdin piped" do

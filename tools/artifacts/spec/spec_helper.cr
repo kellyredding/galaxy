@@ -161,6 +161,24 @@ def create_test_file(
   path
 end
 
+# Create a temp file from raw bytes rather than a String.
+#
+# `File.write` with a String cannot express the case that
+# matters here — content that is not valid UTF-8. A Crystal
+# String tolerates such bytes, but building one to hand to
+# `File.write` obscures what is being tested; writing bytes
+# says it plainly.
+def create_test_binary_file(
+  filename : String,
+  bytes : Bytes,
+) : String
+  dir = Path.new(Dir.tempdir) / "galaxy-artifacts-test-files"
+  Dir.mkdir_p(dir) unless Dir.exists?(dir)
+  path = (dir / filename).to_s
+  File.open(path, "wb") { |f| f.write(bytes) }
+  path
+end
+
 # Clean up entire test directory after all specs
 Spec.after_suite do
   FileUtils.rm_rf(SPEC_CLAUDE_CONFIG_DIR.to_s) if Dir.exists?(SPEC_CLAUDE_CONFIG_DIR)

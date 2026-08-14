@@ -46,6 +46,9 @@ module GalaxyDiff
     ## Capture Options
 
     ```bash
+    # Limit to specific paths (anything after `--`):
+    galaxy-diff capture -- tools/diff GalaxyApp
+
     # Working tree changes vs HEAD (default):
     galaxy-diff capture
 
@@ -94,8 +97,47 @@ module GalaxyDiff
     - Full file contents (before and after) for context
     - Parsed hunk data with line-level change tracking
     - File status (added, modified, deleted, renamed)
+    - Whether a file is binary, and its before/after byte
+      sizes when it is
     - Syntax highlighting language per file
     - Branch, commit refs, and repository metadata
+
+    Binary files carry no contents — only a size pair, shown
+    in the reader as `N bytes -> M bytes`. This is deliberate:
+    raw bytes cannot be represented in a JSON string, and
+    embedding them produced an artifact the reader could not
+    parse at all. Content that is not valid UTF-8 is treated
+    the same way even when git calls it text.
+
+    ## When a Capture Is Too Large
+
+    `save` prints a `Note:` when a `.gdiff` exceeds what the
+    diff reader will open (5 MB). The artifact is still
+    stored, but the reader will decline it.
+
+    The fix is to narrow the capture rather than abandon it —
+    pass paths after `--` and save the pieces as separate
+    artifacts:
+
+    ```bash
+    galaxy-diff capture -- tools/diff | galaxy-artifacts save \
+      --pid $LEDGER_PID --filename "changes-tools.gdiff" \
+      --title "Changes: tools" --artifact-type diff
+
+    galaxy-diff capture -- GalaxyApp | galaxy-artifacts save \
+      --pid $LEDGER_PID --filename "changes-app.gdiff" \
+      --title "Changes: app" --artifact-type diff
+    ```
+
+    Size runs ahead of intuition because the format stores
+    full before *and* after contents plus hunk lines — roughly
+    two to three times the changed content. A wide branch
+    review reaches the cap on text alone.
+
+    `save` refuses outright — rather than warning — a `.gdiff`
+    that is not valid UTF-8 or not valid JSON. That is a
+    malformed capture, and storing one only defers the failure
+    to whoever opens it later.
 
     ## Reviewing in Galaxy.app
 

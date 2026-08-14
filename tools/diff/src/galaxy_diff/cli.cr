@@ -51,11 +51,20 @@ module GalaxyDiff
       from_ref : String? = nil
       to_ref : String? = nil
       repo_path : String? = nil
+      pathspecs = [] of String
 
       i = 0
       while i < args.size
         arg = args[i]
         case arg
+        when "--"
+          # Everything after `--` is a path, git's own
+          # convention. This is the remedy for an oversized
+          # capture: a diff too large for the reader can be
+          # taken in two narrower passes instead of not at
+          # all, which until now was the only option.
+          pathspecs = args[(i + 1)..]
+          break
         when "--from"
           if i + 1 < args.size
             from_ref = args[i + 1]
@@ -95,6 +104,7 @@ module GalaxyDiff
         from_ref: effective_from,
         to_ref: to_ref,
         repo_path: repo_path,
+        pathspecs: pathspecs,
       )
 
       STDOUT.puts result.to_json
@@ -134,10 +144,15 @@ module GalaxyDiff
                       Special value "staged" captures the
                       index vs the base ref.
         --repo PATH   Repository path (default: cwd)
+        -- PATH...    Limit the capture to these paths
 
       EXAMPLES:
         # Working tree changes vs HEAD:
         galaxy-diff capture
+
+        # One subtree only — also the fix when a capture
+        # comes out too large for the diff reader:
+        galaxy-diff capture -- tools/diff
 
         # Staged changes only:
         galaxy-diff capture --from HEAD --to staged

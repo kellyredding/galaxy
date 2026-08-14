@@ -201,7 +201,7 @@ describe GalaxyDiff::DiffParser do
     f.status.should eq("renamed")
   end
 
-  it "marks binary files with status 'binary'" do
+  it "flags a modified binary without claiming a status" do
     raw = <<-DIFF
     diff --git a/img.png b/img.png
     index abc..def 100644
@@ -210,8 +210,67 @@ describe GalaxyDiff::DiffParser do
 
     f = GalaxyDiff::DiffParser.parse(raw)[0]
     f.path.should eq("img.png")
-    f.status.should eq("binary")
+    f.binary.should be_true
+    f.status.should eq("modified")
     f.hunks.should be_empty
+  end
+
+  # The three cases the old status-based flag lost. Git names
+  # the transition before it names the binariness, so a guard
+  # on an empty status could only ever catch a modification.
+  it "flags an added binary and keeps its status" do
+    raw = <<-DIFF
+    diff --git a/img.png b/img.png
+    new file mode 100644
+    index 000000..def
+    Binary files /dev/null and b/img.png differ
+    DIFF
+
+    f = GalaxyDiff::DiffParser.parse(raw)[0]
+    f.binary.should be_true
+    f.status.should eq("added")
+  end
+
+  it "flags a deleted binary and keeps its status" do
+    raw = <<-DIFF
+    diff --git a/img.png b/img.png
+    deleted file mode 100644
+    index abc..000000
+    Binary files a/img.png and /dev/null differ
+    DIFF
+
+    f = GalaxyDiff::DiffParser.parse(raw)[0]
+    f.binary.should be_true
+    f.status.should eq("deleted")
+  end
+
+  it "flags a renamed binary and keeps its status" do
+    raw = <<-DIFF
+    diff --git a/old.png b/new.png
+    similarity index 100%
+    rename from old.png
+    rename to new.png
+    Binary files a/old.png and b/new.png differ
+    DIFF
+
+    f = GalaxyDiff::DiffParser.parse(raw)[0]
+    f.binary.should be_true
+    f.status.should eq("renamed")
+    f.old_path.should eq("old.png")
+  end
+
+  it "leaves a text file unflagged" do
+    raw = <<-DIFF
+    diff --git a/f.txt b/f.txt
+    --- a/f.txt
+    +++ b/f.txt
+    @@ -1 +1 @@
+    -old
+    +new
+    DIFF
+
+    f = GalaxyDiff::DiffParser.parse(raw)[0]
+    f.binary.should be_false
   end
 
   it "skips the 'No newline at end of file' marker" do

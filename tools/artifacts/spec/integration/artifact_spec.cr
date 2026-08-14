@@ -120,6 +120,99 @@ describe "CLI artifact commands", tags: "integration" do
       result[:output].should contain("type: diff")
     end
 
+    # Structural minimalism stays the producer's problem, not
+    # the store's — this is the same payload as above, kept
+    # deliberately to pin that the gate stops at
+    # well-formedness rather than schema.
+    it "accepts a structurally minimal .gdiff" do
+      source = create_test_file(
+        "minimal.gdiff", "{\"files\":[]}",
+      )
+      result = run_binary([
+        "save",
+        "--ledger-session-id", "1",
+        "--source-path", source,
+      ])
+      result[:status].should eq(0)
+    end
+
+    # The real specimen's shape: raw bytes spliced into a
+    # JSON string. Crystal's JSON.parse ACCEPTS this, so only
+    # the encoding check catches it — which is why this spec
+    # asserts the UTF-8 message specifically.
+    it "refuses a .gdiff that is not valid UTF-8" do
+      prefix = %({"version":1,"files":[{"before":").to_slice
+      suffix = %("}]}).to_slice
+      bytes = Bytes.new(prefix.size + 1 + suffix.size)
+      prefix.copy_to(bytes)
+      bytes[prefix.size] = 0x9B_u8
+      suffix.copy_to(bytes + prefix.size + 1)
+      source = create_test_binary_file(
+        "raw-bytes.gdiff", bytes,
+      )
+
+      result = run_binary([
+        "save",
+        "--ledger-session-id", "1",
+        "--source-path", source,
+      ])
+      result[:status].should_not eq(0)
+      result[:error].should contain("not valid UTF-8")
+    end
+
+    it "refuses a .gdiff that is not valid JSON" do
+      source = create_test_file(
+        "not-json.gdiff", "this is not json",
+      )
+      result = run_binary([
+        "save",
+        "--ledger-session-id", "1",
+        "--source-path", source,
+      ])
+      result[:status].should_not eq(0)
+      result[:error].should contain("not valid JSON")
+    end
+
+    # Only .gdiff is gated. A malformed .md is still just a
+    # file, and nothing tries to parse it.
+    it "does not gate non-gdiff files" do
+      source = create_test_file(
+        "notes.md", "this is not json either",
+      )
+      result = run_binary([
+        "save",
+        "--ledger-session-id", "1",
+        "--source-path", source,
+      ])
+      result[:status].should eq(0)
+    end
+
+    it "warns but still saves an oversized .gdiff" do
+      big = %({"version":1,"metadata":{},"files":[]}) +
+            " " * 5_000_001
+      source = create_test_file("big.gdiff", big)
+      result = run_binary([
+        "save",
+        "--ledger-session-id", "1",
+        "--source-path", source,
+      ])
+      result[:status].should eq(0)
+      result[:error].should contain("diff reader will open")
+    end
+
+    it "does not warn about a .gdiff under the cap" do
+      source = create_test_file(
+        "small.gdiff", %({"version":1,"files":[]}),
+      )
+      result = run_binary([
+        "save",
+        "--ledger-session-id", "1",
+        "--source-path", source,
+      ])
+      result[:status].should eq(0)
+      result[:error].should_not contain("diff reader")
+    end
+
     it "infers code for unknown extensions in source-path mode" do
       source = create_test_file(
         "impl.rb", "class Foo; end\n",
@@ -579,6 +672,53 @@ describe "CLI artifact commands", tags: "integration" do
   end
 
   describe "refresh" do
+    # `refresh` re-reads the source and re-copies it without
+    # entering `handle_save`, so it does not inherit that
+    # path's gate. A .gdiff saved clean and then corrupted at
+    # its source must be refused here too, or refresh becomes
+    # the way a broken artifact gets into the store.
+    it "refuses a .gdiff whose source became malformed" do
+      source = create_test_file(
+        "refresh-gdiff.gdiff", %({"version":1,"files":[]}),
+      )
+
+      run_binary([
+        "save", "--ledger-session-id", "1",
+        "--source-path", source, "--title", "Diff refresh",
+      ])
+
+      # The source goes bad after a clean save.
+      File.write(source, "no longer json")
+
+      result = run_binary([
+        "refresh", "--ledger-session-id", "1", "1",
+      ])
+
+      result[:status].should_not eq(0)
+      result[:error].should contain("not valid JSON")
+    end
+
+    it "refreshes a .gdiff whose source is still valid" do
+      source = create_test_file(
+        "refresh-ok.gdiff", %({"version":1,"files":[]}),
+      )
+
+      run_binary([
+        "save", "--ledger-session-id", "1",
+        "--source-path", source, "--title", "Diff ok",
+      ])
+
+      File.write(
+        source, %({"version":1,"metadata":{},"files":[]}),
+      )
+
+      result = run_binary([
+        "refresh", "--ledger-session-id", "1", "1",
+      ])
+
+      result[:status].should eq(0)
+    end
+
     it "refreshes an artifact with unchanged content" do
       source = create_test_file("refresh-same.csv", "data")
 

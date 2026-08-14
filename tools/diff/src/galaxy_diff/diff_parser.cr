@@ -8,6 +8,7 @@ module GalaxyDiff
     property old_path : String? = nil
     property old_path_raw : String? = nil
     property status : String = ""
+    property binary : Bool = false
     property hunks : Array(GdiffHunk) = [] of GdiffHunk
   end
 
@@ -101,8 +102,16 @@ module GalaxyDiff
           # Git skips content for binaries; mark the file
           # so downstream renderers know there's nothing
           # to display.
+          #
+          # Unconditional, unlike the status this used to
+          # set. Git names the transition first (`new file
+          # mode`, `deleted file mode`, `rename from`), so
+          # a guard on an empty status meant only a plain
+          # modification was ever recognised as binary —
+          # and an added or deleted binary had its bytes
+          # read as text and spliced into JSON.
           if file = current_file
-            file.status = "binary" if file.status.empty?
+            file.binary = true
           end
         elsif line.starts_with?("@@")
           if (hunk = current_hunk) && (file = current_file)

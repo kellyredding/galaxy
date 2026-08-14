@@ -35,10 +35,12 @@ module GalaxyDiff
       from_ref : String,
       to_ref : String?,
       repo_path : String?,
+      pathspecs : Array(String) = [] of String,
     ) : GdiffDocument
       dir = repo_path || Dir.current
 
       diff_args = build_diff_args(from_ref, to_ref)
+      diff_args += ["--"] + pathspecs unless pathspecs.empty?
       raw_diff = run_git(
         dir,
         ["diff", "--no-color", "-U3"] + diff_args,
@@ -52,6 +54,33 @@ module GalaxyDiff
         after = read_after(dir, pf, to_ref)
         language = language_for_path(pf.path)
 
+        # Git's detection is authoritative about intent but
+        # not about encoding: a latin-1 source, or a fixture
+        # with a stray high byte, is "text" to git and still
+        # cannot be spliced into a JSON string. Emitting it
+        # produced a .gdiff no strict decoder would read,
+        # while every layer reported success.
+        unless embeddable?(before) && embeddable?(after)
+          pf.binary = true
+          before = nil
+          after = nil
+        end
+
+        before_bytes, after_bytes =
+          if pf.binary
+            {
+              blob_size(
+                dir, pf.old_path || pf.path,
+                from_ref, pf.status, :before,
+              ),
+              blob_size(
+                dir, pf.path, to_ref, pf.status, :after,
+              ),
+            }
+          else
+            {nil, nil}
+          end
+
         files << GdiffFile.new(
           path: pf.path,
           old_path: pf.old_path,
@@ -59,7 +88,14 @@ module GalaxyDiff
           language: language,
           before: before,
           after: after,
-          hunks: pf.hunks,
+          # Git supplies no hunks for a binary it detected,
+          # but a file caught by the check above does — full
+          # of the same bytes. Dropping them is what makes
+          # the check complete rather than half-applied.
+          hunks: pf.binary ? [] of GdiffHunk : pf.hunks,
+          binary: pf.binary,
+          before_bytes: before_bytes,
+          after_bytes: after_bytes,
         )
       end
 
@@ -70,10 +106,10 @@ module GalaxyDiff
       # for each so the reader renders them alongside
       # tracked changes.
       if to_ref.nil?
-        list_untracked(dir).each do |rel|
+        list_untracked(dir, pathspecs).each do |rel|
           content = read_working_file(dir, rel)
           next if content.nil?
-          files << build_untracked_file(rel, content)
+          files << build_untracked_file(dir, rel, content)
         end
       end
 
@@ -138,7 +174,7 @@ module GalaxyDiff
       # A newly-added file has no prior content.
       return nil if pf.status == "added"
       # Binary files can't be read as text.
-      return nil if pf.status == "binary"
+      return nil if pf.binary
       target = pf.old_path || pf.path
       read_file_at_ref(dir, target, from_ref)
     end
@@ -149,7 +185,7 @@ module GalaxyDiff
       to_ref : String?,
     ) : String?
       return nil if pf.status == "deleted"
-      return nil if pf.status == "binary"
+      return nil if pf.binary
 
       case to_ref
       when nil
@@ -200,11 +236,11 @@ module GalaxyDiff
     # Returns relative paths from the repo root.
     private def list_untracked(
       dir : String,
+      pathspecs : Array(String) = [] of String,
     ) : Array(String)
-      output, status = run_git_with_status(
-        dir,
-        ["ls-files", "--others", "--exclude-standard"],
-      )
+      args = ["ls-files", "--others", "--exclude-standard"]
+      args += ["--"] + pathspecs unless pathspecs.empty?
+      output, status = run_git_with_status(dir, args)
       return [] of String unless status.success?
       output.split('\n').reject(&.empty?)
     end
@@ -217,8 +253,28 @@ module GalaxyDiff
     # renderer overlay) behave identically to a git-
     # reported added file.
     private def build_untracked_file(
-      rel : String, content : String,
+      dir : String, rel : String, content : String,
     ) : GdiffFile
+      # An untracked binary — a new icon, a build artifact —
+      # never reached git's binary detection, because it
+      # never appeared in a diff at all. Without this its
+      # bytes landed in `after` AND, split on 0x0A, in every
+      # synthesized hunk line.
+      unless embeddable?(content)
+        return GdiffFile.new(
+          path: rel,
+          old_path: nil,
+          status: "added",
+          language: nil,
+          before: nil,
+          after: nil,
+          hunks: [] of GdiffHunk,
+          binary: true,
+          before_bytes: 0_i64,
+          after_bytes: file_size_or_nil(dir, rel),
+        )
+      end
+
       raw = content.split('\n')
       # Drop trailing empty element if content ended
       # with "\n" — Unix convention, not a real line.
@@ -350,6 +406,63 @@ module GalaxyDiff
     ) : String?
       ext = File.extname(path).downcase
       LANGUAGE_MAP[ext]?
+    end
+
+    # Whether content can be spliced into a JSON string.
+    #
+    # `nil` is embeddable — it means "no content on this
+    # side", a legitimate state for an added or deleted file.
+    #
+    # NUL is rejected separately because `valid_encoding?`
+    # accepts it: NUL is a legal codepoint, so a file whose
+    # first NUL falls past git's 8000-byte sniff window is
+    # "text" to git and "valid" to Crystal, and embeds as the
+    # six characters \\u0000 apiece — valid JSON, and NUL
+    # characters delivered into the reader's DOM.
+    private def embeddable?(content : String?) : Bool
+      return true if content.nil?
+      return false unless content.valid_encoding?
+      !content.includes?('\0')
+    end
+
+    # Size of a blob without reading it. `cat-file -s` asks
+    # the object database for the size alone, so a 6 MB
+    # binary costs no transfer — which is why a binary entry
+    # can afford to report sizes while refusing content.
+    private def blob_size(
+      dir : String,
+      path : String,
+      ref : String?,
+      status : String,
+      side : Symbol,
+    ) : Int64?
+      return 0_i64 if side == :before && status == "added"
+      return 0_i64 if side == :after && status == "deleted"
+
+      spec =
+        case ref
+        when nil
+          return file_size_or_nil(dir, path)
+        when "staged"
+          ":#{path}"
+        else
+          "#{ref}:#{path}"
+        end
+
+      output, st = run_git_with_status(
+        dir, ["cat-file", "-s", spec], silent: true)
+      return nil unless st.success?
+      output.strip.to_i64?
+    end
+
+    private def file_size_or_nil(
+      dir : String, path : String,
+    ) : Int64?
+      full = File.join(dir, path)
+      return nil unless File.exists?(full)
+      File.size(full).to_i64
+    rescue
+      nil
     end
 
     # Run `git` in `dir` and return stdout as a String.
