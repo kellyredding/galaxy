@@ -52,6 +52,7 @@ final class EventCoordinator {
         "timeline.turn:failed",
         "timeline.turn:continued",
         "timeline.turn:interrupted",
+        "timeline.turn:abandoned",
         "timeline.agent:started",
         "timeline.agent:stopped",
         "timeline.agent:failed",
@@ -77,6 +78,12 @@ final class EventCoordinator {
         "timeline.turn:failed",
         "timeline.turn:continued",
         "timeline.turn:interrupted",
+        // A turn the ledger closed on the session's behalf, because a
+        // clear, a compact or a session ending found one still open.
+        // The turn is over by the time this is written, and without it a
+        // session that ended mid-turn stayed in-turn until the process
+        // exit cleared it by a different route.
+        "timeline.turn:abandoned",
     ]
 
     /// Agent-start event that increments runningAgentCount.
