@@ -44,6 +44,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             KeystrokeSheetModel.sections()
         }
 
+        // Which queue ⇧⌘I shows. Resolved per present rather than captured,
+        // because the answer moves: the modal is about whichever session the
+        // reader is looking at, and a session selected after launch is the
+        // usual case rather than the exception. Nil is a real answer — with no
+        // session the modal says so, instead of showing an empty queue that
+        // would read as "your message went".
+        AgentInboxPresenter.shared.inboxProvider = {
+            SessionManager.shared.activeSession?.inbox
+        }
+
         // Disable macOS press-and-hold accent popover app-wide so held keys
         // produce normal key repeats. Without this, holding j/k in less (or
         // any pager/vim-style UI inside the shell pane) registers once and
@@ -280,6 +290,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 case .unsavedScrollback:
                     reasonText =
                         "has unsaved scrollback notes"
+                case .undeliveredInbox(let count):
+                    reasonText =
+                        "\(count) message(s) waiting to send"
                 case .inTurn:
                     reasonText =
                         "Claude is responding"

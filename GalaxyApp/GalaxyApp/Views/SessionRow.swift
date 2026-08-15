@@ -320,15 +320,26 @@ struct SessionRow: View {
                         )
                         .frame(height: fontSize.caption1LineHeight)
                     } else {
-                        Text(session.sidebarTitle)
-                            .chromeFont(size: fontSize.caption1, weight: .bold)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .foregroundColor(isSelected ? .white : .primary)
-                            .frame(height: fontSize.caption1LineHeight)
-                            .onTapGesture(count: 2) {
-                                beginNameEdit()
-                            }
+                        // The envelope leads the title rather than trailing
+                        // it: the title is tail-truncated in a narrow column,
+                        // so anything after it disappears first on exactly the
+                        // rows most likely to have a long name.
+                        HStack(spacing: 4) {
+                            AgentInboxIndicator(
+                                inbox: session.inbox,
+                                size: fontSize.caption1 - 1)
+                            Text(session.sidebarTitle)
+                                .chromeFont(
+                                    size: fontSize.caption1, weight: .bold)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                                .foregroundColor(
+                                    isSelected ? .white : .primary)
+                        }
+                        .frame(height: fontSize.caption1LineHeight)
+                        .onTapGesture(count: 2) {
+                            beginNameEdit()
+                        }
                     }
 
                     // Persona name (or "--" for vanilla Claude sessions)

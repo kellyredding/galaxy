@@ -487,6 +487,24 @@ class MainMenu: NSObject, NSMenuDelegate {
             compactItem.keyEquivalentModifierMask = [.command, .control]
             menu.addItem(compactItem)
         }
+
+        // Inbox (⇧⌘I) — what is waiting to reach the active session.
+        //
+        // Outside the running-session block above, unlike Clear and Compact.
+        // Those act on a session and are meaningless without one; this reports
+        // on a queue that outlives the session it belongs to, and the question
+        // it answers — "where did my message go" — is asked most often when
+        // something has just stopped. Lowercase "i" plus an explicit mask, the
+        // idiom `newMarkerItem` documents.
+        menu.addItem(.separator())
+        let inboxItem = NSMenuItem(
+            title: "Inbox",
+            action: #selector(MenuActions.showAgentInbox(_:)),
+            keyEquivalent: "i"
+        )
+        inboxItem.keyEquivalentModifierMask = [.command, .shift]
+        inboxItem.target = MenuActions.shared
+        menu.addItem(inboxItem)
     }
 
     // MARK: - View Menu
@@ -1114,6 +1132,11 @@ class MenuActions: NSObject {
         MainActor.assumeIsolated { CheatSheetPresenter.shared.toggle() }
     }
 
+    /// Sessions ▸ Inbox. Opens what is waiting to reach the active session.
+    @objc func showAgentInbox(_ sender: Any?) {
+        MainActor.assumeIsolated { AgentInboxPresenter.shared.toggle() }
+    }
+
 }
 
 // MARK: - Menu Validation
@@ -1170,6 +1193,18 @@ extension MenuActions: NSMenuItemValidation {
         // invisible while its Escape monitor took Escape from the panel
         // the user is actually looking at.
         case #selector(showCheatSheet(_:)):
+            return NSApp.modalWindow == nil
+
+        // Sessions ▸ Inbox. Same modal gate as the cheat sheet, and for the
+        // same reason: Settings and Restore Session run their own
+        // `NSApp.runModal` loops, and an overlay opened behind one would be
+        // invisible while its Escape monitor took Escape from the panel the
+        // reader is actually looking at.
+        //
+        // No session gate. A queue survives the session it was filled for, so
+        // dimming this when nothing is running would hide the messages exactly
+        // when someone is looking for them.
+        case #selector(showAgentInbox(_:)):
             return NSApp.modalWindow == nil
 
         // Chrome font items: bound-checked against the live

@@ -486,6 +486,14 @@ class SessionManager: ObservableObject {
     /// Priority order: unsavedScrollback > inTurn > runningAgents.
     enum StopWarningReason {
         case unsavedScrollback
+        /// Messages queued for this session that have not gone yet.
+        ///
+        /// Ranked above `inTurn`, and the ordering is the whole point: an
+        /// interrupted turn can be asked again, and a queued message cannot —
+        /// its composing surface was destroyed before it was handed over, and
+        /// the queue is in memory only. Of the reasons here it is the one
+        /// naming something unrecoverable.
+        case undeliveredInbox(count: Int)
         case inTurn
         case runningAgents(count: Int)
 
@@ -494,6 +502,9 @@ class SessionManager: ObservableObject {
             case .unsavedScrollback:
                 return "Stop session with unsaved "
                     + "scrollback notes?"
+            case .undeliveredInbox:
+                return "Stop session with messages "
+                    + "waiting to send?"
             case .inTurn:
                 return "Stop session while Claude "
                     + "is responding?"
@@ -508,6 +519,10 @@ class SessionManager: ObservableObject {
             case .unsavedScrollback:
                 return "Unsaved notes will be lost "
                     + "when the session stops."
+            case .undeliveredInbox(let count):
+                return "\(count) message(s) in this "
+                    + "session's inbox have not been "
+                    + "delivered yet."
             case .inTurn:
                 return "Claude's current response "
                     + "will be interrupted."
@@ -533,6 +548,7 @@ class SessionManager: ObservableObject {
 
         let inTurn = session.isInTurn
         let agentCount = session.runningAgentCount
+        let queued = session.inbox.entries.count
 
         // Stop-session only consults the SESSION pane's
         // scrollback. Shell-pane notes are explicitly
@@ -543,6 +559,10 @@ class SessionManager: ObservableObject {
         ) { panesWithWork in
             if !panesWithWork.isEmpty {
                 completion(.unsavedScrollback)
+            } else if queued > 0 {
+                completion(
+                    .undeliveredInbox(count: queued)
+                )
             } else if inTurn {
                 completion(.inTurn)
             } else if agentCount > 0 {
@@ -610,6 +630,23 @@ class SessionManager: ObservableObject {
                 // warnings (those don't apply to stopped
                 // sessions, which have no process left to
                 // be busy or run agents).
+                // Ahead of the `hasExited` check, unlike every reason
+                // below it: a stopped session still holds its queue, and
+                // quitting is what destroys it.
+                if !session.inbox.isEmpty {
+                    lock.lock()
+                    warnings.append(
+                        (
+                            session,
+                            .undeliveredInbox(
+                                count: session.inbox.entries.count
+                            )
+                        )
+                    )
+                    lock.unlock()
+                    group.leave()
+                    return
+                }
                 if !session.hasExited {
                     if session.isInTurn {
                         lock.lock()
@@ -1105,10 +1142,20 @@ class SessionManager: ObservableObject {
         // A crossing that answers "clear" comes back disarmed, so consulting
         // the policy and then declining to act would spend the one clear that
         // crossing was owed and leave the next turn with nothing to do.
-        if session.didFirePostTurnActions || session.hasPendingReadyActions {
+        //
+        // The inbox joins the same rule, and had to: a message waiting there is
+        // prose composed against the context a clear would throw away, and the
+        // surface that composed it is already gone. `hasSendableWork` rather
+        // than `isEmpty`, because a queue holding only paused or stalled rows
+        // is one the reader has taken out of play — it must not defer the clear
+        // forever.
+        if session.didFirePostTurnActions || session.hasPendingReadyActions
+            || session.inbox.hasSendableWork
+        {
             GalaxyLog.submit(
                 "auto-clear deferred \(session.sessionRef)"
                     + " — post-turn work in flight"
+                    + " (\(session.inbox.entries.count) in the inbox)"
             )
             return
         }

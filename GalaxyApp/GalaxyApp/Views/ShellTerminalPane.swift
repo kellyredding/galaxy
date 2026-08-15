@@ -115,7 +115,7 @@ final class ShellTerminalPane: BackendBackedPane, ObservableObject {
             // pane's: the payload is unbounded user selection, so a spurious
             // second copy is worse than a reported loss.
             send: { [weak s] text in
-                s?.sendCommand(text, retry: .reportOnly)
+                s?.enqueueMessage(text, sourceLabel: "Shell scrollback")
             },
             disabledReason: { [weak s] in
                 guard let s = s else {

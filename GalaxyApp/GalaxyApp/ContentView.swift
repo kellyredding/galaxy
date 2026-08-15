@@ -24,6 +24,10 @@ struct ContentView: View {
     @ObservedObject private var cheatSheet
         = CheatSheetPresenter.shared
 
+    /// Presentation state for ⇧⌘I, observed for the same reason as ⌘/ above.
+    @ObservedObject private var inboxModal
+        = AgentInboxPresenter.shared
+
     // Track width during drag (nil when not dragging, uses settings value)
     @State private var draggingWidth: CGFloat? = nil
 
@@ -100,6 +104,19 @@ struct ContentView: View {
         }
         .animation(
             .easeInOut(duration: 0.12), value: cheatSheet.isPresented
+        )
+        // Mounted alongside the cheat sheet and for the same reasons: ⇧⌘I
+        // reaches it from any of the six tabs, and what is waiting to be sent
+        // should stay legible outside the views column's inactive dimming —
+        // that being exactly when a reader wonders whether their message went.
+        .overlay {
+            if inboxModal.isPresented {
+                AgentInboxView()
+                    .transition(.opacity)
+            }
+        }
+        .animation(
+            .easeInOut(duration: 0.12), value: inboxModal.isPresented
         )
         .environment(\.chromeFontSize, settingsManager.settings.chromeFontSize)
     }
@@ -381,6 +398,19 @@ struct ContentView: View {
                             session: session
                         )
                         .offset(x: -2, y: -2)
+                    }
+                    // The terminal tab's own trailing corner, free because the
+                    // branch above is gated to the Agents tab. `.topLeading` is
+                    // spoken for by the unread dot, and the two must not share
+                    // a corner: unread means "something arrived for you" and
+                    // this means "something has not left yet" — opposite
+                    // directions, and a reader should not have to tell them
+                    // apart by colour alone.
+                    if tab == .terminal,
+                       let session = activeSession
+                    {
+                        AgentInboxIndicator(inbox: session.inbox, size: 9)
+                            .offset(x: -2, y: -2)
                     }
                 }
             }

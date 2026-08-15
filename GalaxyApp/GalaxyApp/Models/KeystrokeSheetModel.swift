@@ -108,9 +108,13 @@ enum KeystrokeSheetModel {
     /// correctly objects to reaching main-actor state. One accessor rather
     /// than five, so the isolation is stated once and every guard below
     /// reads the same.
+    /// Now asks about every Galactic-owned modal rather than the cheat sheet
+    /// alone. A second one shipped, and each of the five guards below would
+    /// otherwise have kept answering keys behind it — silently, since a
+    /// keystroke that does the wrong thing reports nothing.
     nonisolated static var isClaimingKeyboard: Bool {
         MainActor.assumeIsolated {
-            CheatSheetPresenter.isClaimingKeyboard
+            GalacticModals.isClaimingKeyboard
         }
     }
 }

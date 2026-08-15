@@ -489,6 +489,53 @@ class Session: Identifiable, ObservableObject {
     /// command, and anything sent ahead of it arrives out of order.
     var hasPendingReadyActions: Bool { !pendingReadyActions.isEmpty }
 
+    // MARK: - The inbox
+
+    /// Messages composed for this session and not yet delivered.
+    ///
+    /// Per session rather than per app, because a message is addressed to a
+    /// conversation and not to Galaxy: two sessions each drain at their own
+    /// turn ends, and neither can reach the other's queue.
+    ///
+    /// Everything routed here survives the surface that composed it, which is
+    /// the point. A scrollback comment lives only in a web view's textarea, and
+    /// that view is torn down before the send — so a send that cannot land has
+    /// nowhere to put the text back.
+    let inbox = AgentInbox()
+
+    /// Drains this session's inbox whenever it can take a prompt.
+    ///
+    /// Bound to the session, so its existence is the gate: nothing can drain
+    /// into a terminal that is not there.
+    private(set) lazy var inboxConsumer = AgentInboxConsumer(
+        inbox: inbox, host: self)
+
+    /// Put a composed message in this session's inbox.
+    ///
+    /// The whole producer-facing surface, and deliberately usable while the
+    /// session is stopped: the message being queued is one nobody can retype,
+    /// so refusing it because no agent is up would destroy exactly what the
+    /// queue exists to keep. It waits for the session to come back.
+    ///
+    /// `retry` defaults to `.reportOnly` because these payloads are unbounded
+    /// composed prose — a retype doubles a message in the case where the text
+    /// landed and only the submit was lost, which nothing can tell from a
+    /// total loss.
+    func enqueueMessage(
+        _ text: String,
+        sourceLabel: String,
+        delivery: AgentInboxEntry.Delivery = .coalescable,
+        retry: SubmitRetryPolicy = .reportOnly
+    ) {
+        inbox.enqueue(
+            AgentInboxEntry(
+                body: text,
+                sourceLabel: sourceLabel,
+                delivery: delivery,
+                retry: retry))
+        inboxConsumer.wake()
+    }
+
     init(workingDirectory: String, sessionRef: String, personaName: String? = nil, isVibe: Bool = false, resumeSessionId: UUID? = nil) {
         // Use provided resume UUID if resuming a specific session, otherwise generate new
         self.id = resumeSessionId ?? UUID()
@@ -768,13 +815,20 @@ class Session: Identifiable, ObservableObject {
         sendCommand("/\(skill)", verifyAccepted: verifyAccepted)
     }
 
+    /// - Parameter outcome: Runs exactly once with what became of the prompt,
+    ///   after any retries have settled — including on the paths that refuse to
+    ///   send at all. A caller holding the message needs an answer on every
+    ///   path, because silence here is indistinguishable from a verification
+    ///   still running and would leave it waiting forever.
     func sendCommand(
         _ command: String,
         verifyAccepted: Bool = true,
-        retry: SubmitRetryPolicy = .retype
+        retry: SubmitRetryPolicy = .retype,
+        outcome: ((SubmitOutcome) -> Void)? = nil
     ) {
         guard isRunning && !hasExited else {
             SessionSubmit.log("sendCommand refused — session not running")
+            outcome?(.abandoned)
             return
         }
 
@@ -857,6 +911,7 @@ class Session: Identifiable, ObservableObject {
 
         guard let backend = backend else {
             SessionSubmit.log("  no backend — nothing sent")
+            outcome?(.abandoned)
             return
         }
 
@@ -875,7 +930,8 @@ class Session: Identifiable, ObservableObject {
                 return self.isRunning && !self.hasExited
             },
             verification: verifiable ? submitVerification : nil,
-            retry: retry
+            retry: retry,
+            outcome: outcome
         )
     }
 
@@ -928,6 +984,25 @@ class Session: Identifiable, ObservableObject {
         source: String = "unknown",
         ref: String? = nil
     ) {
+        // Deferred so it runs on the way out of every path, including the one
+        // just below that returns without a transition.
+        //
+        // That early return used to skip it, and the queue paid for it: an end
+        // arriving for a turn already closed is precisely when a message left
+        // over from a failed attempt gets its next chance, and it was the one
+        // moment nothing woke. "Wake liberally, gate strictly" only works if
+        // the waking is actually liberal.
+        //
+        // Unconditional, including the interrupt this app infers from a
+        // keystroke rather than receives. Suppressing that one was tried and
+        // reverted: it bought almost nothing, because a wrong interrupt clears
+        // the turn flag either way and the next wake from any source drains
+        // through the same open window. What it cost was real — a reader who
+        // aborts a turn and walks away leaves the message sitting beside an
+        // idle agent. False interrupts are answered where they are made, in
+        // `TurnInterrupt`.
+        defer { inboxConsumer.wake() }
+
         let refTag = ref.map { " ref=\($0)" } ?? ""
         if !isInTurn {
             // Silent bail-out under the old code path;
@@ -1002,6 +1077,13 @@ class Session: Identifiable, ObservableObject {
                     self.sessionRef
                 )
             }
+            // The other moment worth waking for, and the one a turn end cannot
+            // cover: `/clear` and `/compact` are intercepted before the prompt
+            // pipeline, so they produce no Stop and end no turn. A queue that
+            // only watched turn ends would sit through a context reset waiting
+            // for a boundary that never comes. This also catches a session
+            // coming back with messages queued while it was down.
+            self.inboxConsumer.wake()
         }
     }
 
@@ -1400,6 +1482,20 @@ class Session: Identifiable, ObservableObject {
             // for any future resumed lifecycle anyway.
             self.pendingReadyActions.removeAll()
 
+            // The inbox is deliberately NOT cleared here, unlike the two
+            // stores above, and the difference is what each of them holds.
+            // Those are *actions* — closures bound to a lifecycle that has
+            // ended, meaningless to run against the next one. The inbox holds
+            // *text a person wrote*, whose composing surface was destroyed
+            // before it was ever handed over.
+            //
+            // Discarding it would be the failure this queue exists to prevent,
+            // arriving by a different route: a message the reader can never
+            // retype, gone without being shown to anyone. Keeping it costs a
+            // message arriving into a fresher context than it was written
+            // against — visible in the modal, and the reader's to delete. One
+            // of those is recoverable and the other is not.
+
             // Release the backend to free ~32MB scrollback buffer.
             // The view shows StoppedSessionView now, not the terminal.
             self.releaseBackend()
@@ -1420,5 +1516,68 @@ class Session: Identifiable, ObservableObject {
             return
         }
         backend.terminateProcess(signal: SIGHUP)
+    }
+}
+
+// MARK: - AgentInboxHost
+
+/// What the inbox needs from a session, and nothing more.
+extension Session: AgentInboxHost {
+
+    /// Whether this session can read a prompt right now.
+    ///
+    /// Stricter than "not mid-turn", and the last two terms are the reason
+    /// Galaxy needs its own answer rather than the sibling app's. A context
+    /// reset here is followed by a `/handoff` that waits on `session:ready`,
+    /// and a resume is followed by `/galaxy:resume` the same way. Those are
+    /// out of the inbox's scope on purpose — they are owed to a lifecycle
+    /// rather than to a turn — so the queue has to stand aside until they have
+    /// gone, or it races a sequence that must arrive in order.
+    ///
+    /// `isReady` covers the same ground from the other side: a session that has
+    /// spawned but not reported ready is one whose input layer may not exist
+    /// yet.
+    var canSendNow: Bool {
+        isRunning
+            && !hasExited
+            && !isInTurn
+            && isReady
+            && !hasPendingReadyActions
+    }
+
+    /// Put one unit in front of the agent and report what became of it.
+    ///
+    /// Routed through `sendCommand` rather than at the backend, so a queued
+    /// message inherits everything an automated send already knows: the
+    /// readiness wait, the pacing, the trailing space that closes a completion
+    /// popup, the harness's own list of commands no acceptance can be reported
+    /// for, and the synthetic-turn bookkeeping a context reset needs.
+    /// Reimplementing any of that here would be a second copy of the one
+    /// function this codebase went to some trouble to have only once.
+    func deliver(
+        _ unit: AgentInboxUnit,
+        accepted: @escaping (Bool) -> Void
+    ) {
+        SessionSubmit.log(
+            "inbox delivering \(unit.entryIDs.count) "
+                + "entr\(unit.entryIDs.count == 1 ? "y" : "ies") "
+                + "session=\(sessionRef) retry=\(unit.retry)")
+
+        sendCommand(
+            unit.body,
+            retry: unit.retry,
+            outcome: { outcome in
+                switch outcome {
+                case .accepted:
+                    accepted(true)
+                case .unverifiable:
+                    // No report was ever possible for this send, so waiting
+                    // for one and retrying would only ever produce a
+                    // duplicate. The entry has done all it can and leaves.
+                    accepted(true)
+                case .unconfirmed, .abandoned:
+                    accepted(false)
+                }
+            })
     }
 }

@@ -32,6 +32,7 @@ final class EventCoordinator {
     private static let knownEvents: Set<String> = [
         // Refresh signals (direct socket, no DB)
         "session.metrics",
+        "session.idle",
         "ledger.entry",
         "artifact.show",
         "snapshot.show",
@@ -396,6 +397,40 @@ final class EventCoordinator {
                     ref: envelope.ref
                 )
             }
+        }
+
+        // The agent reporting it is waiting for input, from the
+        // Notification hook matched on `idle_prompt`.
+        //
+        // The third turn-end signal, and the only one that can
+        // reach an aborted turn. `Stop` and `StopFailure`
+        // announce the turns that end on their own; an abort
+        // announces nothing, because Claude Code returns before
+        // the hook that would say so. Galaxy notices the Escape
+        // keystroke, but a keystroke says a turn was *asked* to
+        // stop — the agent is still unwinding, and a prompt
+        // written into that window is lost rather than queued.
+        //
+        // A backstop rather than the normal path: the agent
+        // gates this behind its own idle threshold and drops it
+        // entirely if the user touches anything meanwhile. The
+        // queue's own retry resolves an abort in about two
+        // seconds; this catches the reader who aborted and
+        // walked away, where nothing else would.
+        if envelope.event == "session.idle" {
+            if let appSessionId =
+                ledgerSessionIdCache[envelope.ledgerSessionId],
+               let session = sessionManager?.sessions
+                   .first(where: { $0.id == appSessionId })
+            {
+                GalaxyLog.events(
+                    "[\(session.sessionRef)] routeEvent:"
+                    + " agent reports idle —"
+                    + " \(session.inbox.entries.count) in the inbox"
+                )
+                session.inboxConsumer.wake()
+            }
+            return
         }
 
         // Resume event: the on_resume hook records a

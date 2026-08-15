@@ -86,6 +86,16 @@ enum KeystrokeCatalog {
               aliases: "reopen a closed session, bring back a session, "
                   + "open a past session, the closed session archive, "
                   + "undo closing a session"),
+        // `.app` rather than any `.session` requirement, and it is the honest
+        // answer rather than the lazy one: a queue outlives the session it was
+        // filled for, so the one question this opens onto — where did my
+        // message go — is asked most often when nothing is running. The menu
+        // item is ungated to match.
+        .init(binding: .literal("⇧⌘I"), label: "Inbox",
+              section: .sessions, availability: .app,
+              aliases: "queued messages, waiting to send, pending messages, "
+                  + "outbox, what is queued, unsent, messages waiting for "
+                  + "the agent, where did my message go, the envelope"),
 
         // One row for nine keys. The menu builds an item per session, so
         // the ninth exists only with nine sessions open — but a row per
