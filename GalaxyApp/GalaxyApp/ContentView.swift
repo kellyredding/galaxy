@@ -354,6 +354,32 @@ struct ContentView: View {
     // MARK: - Tab Picker
 
     private var tabPicker: some View {
+        // Leading the row rather than inside it, and an overlay rather than an
+        // HStack member, because the glyph comes and goes with the queue: as a
+        // member it would shove the tabs sideways every time a message queued
+        // and again when it drained. An overlay takes part in no layout, so
+        // the tabs sit exactly where they always did.
+        //
+        // Sized as a tab, and coloured as one: muted at rest like a tab you
+        // are not on, and taking the selected tab's colour under the pointer.
+        // It is a sibling of these controls rather than an annotation on them,
+        // so it answers to the same two states they do.
+        tabRow
+            .overlay(alignment: .leading) {
+                if let session = activeSession {
+                    AgentInboxIndicator(
+                        inbox: session.inbox,
+                        size: ChromeFontSize(chromeFontSize).caption2,
+                        tint: .secondary,
+                        hoverTint: .primary,
+                        onOpen: { AgentInboxPresenter.shared.toggle() }
+                    )
+                    .offset(x: -22)
+                }
+            }
+    }
+
+    private var tabRow: some View {
         HStack(spacing: 0) {
             ForEach(SessionTab.allCases, id: \.self) { tab in
                 Button(action: { sessionManager.activeTab = tab }) {
@@ -398,19 +424,6 @@ struct ContentView: View {
                             session: session
                         )
                         .offset(x: -2, y: -2)
-                    }
-                    // The terminal tab's own trailing corner, free because the
-                    // branch above is gated to the Agents tab. `.topLeading` is
-                    // spoken for by the unread dot, and the two must not share
-                    // a corner: unread means "something arrived for you" and
-                    // this means "something has not left yet" — opposite
-                    // directions, and a reader should not have to tell them
-                    // apart by colour alone.
-                    if tab == .terminal,
-                       let session = activeSession
-                    {
-                        AgentInboxIndicator(inbox: session.inbox, size: 9)
-                            .offset(x: -2, y: -2)
                     }
                 }
             }
