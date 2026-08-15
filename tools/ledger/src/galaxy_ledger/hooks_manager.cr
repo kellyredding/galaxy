@@ -53,6 +53,22 @@ module GalaxyLedger
           ],
         },
       ],
+      # Matched to `idle_prompt` alone, and the matcher is load-bearing:
+      # unmatched, Notification also fires for permission prompts, which is
+      # the opposite of the idleness this reports.
+      "Notification" => [
+        {
+          "matcher" => "idle_prompt",
+          "hooks"   => [
+            {
+              "type"    => "command",
+              "command" => "~/.claude/galaxy/bin/galaxy-ledger on-idle",
+              "async"   => true,
+              "timeout" => 10,
+            },
+          ],
+        },
+      ],
       "SessionEnd" => [
         {
           "hooks" => [

@@ -90,6 +90,8 @@ module GalaxyLedger
         handle_on_post_tool_use_command(rest)
       when "on-stop-failure"
         handle_on_stop_failure_command(rest)
+      when "on-idle"
+        handle_on_idle_command(rest)
       when "on-user-prompt-submit"
         handle_on_user_prompt_submit_command(rest)
       when "on-subagent-start"
@@ -168,6 +170,8 @@ module GalaxyLedger
         on-compact          Restore context after auto/manual compact
         on-stop             Capture last exchange, check thresholds
         on-stop-failure     Record turn:failed on API/response errors
+        on-idle             Publish session.idle when the agent reports
+                            it is waiting for input
         on-session-end      Record session:ended timeline event
         on-post-tool-use    Track file operations with type detection
         on-subagent-start      Dispatch agent start to galaxy-agents
@@ -1182,6 +1186,50 @@ module GalaxyLedger
       end
       handler = Hooks::OnStopFailure.new
       handler.run
+    end
+
+    private def self.handle_on_idle_command(
+      args : Array(String),
+    )
+      if args.first? == "-h" || args.first? == "--help"
+        show_on_idle_help
+        return
+      end
+      handler = Hooks::OnIdle.new
+      handler.run
+    end
+
+    private def self.show_on_idle_help
+      puts <<-HELP
+      galaxy-ledger on-idle - Handle the idle_prompt Notification hook
+
+      USAGE:
+        galaxy-ledger on-idle
+
+      DESCRIPTION:
+        Called by Claude Code's Notification hook, matched on
+        `idle_prompt` — the agent reporting that it is waiting
+        for input. Publishes a `session.idle` socket event so
+        Galaxy.app can act on it.
+
+        It matters because it is the only such report after an
+        aborted turn. Escape fires no hook of its own, so
+        without this nothing says an abort has finished
+        unwinding and the agent can be written to again.
+
+        A backstop rather than a fast signal: Claude Code gates
+        the notification behind its own idle threshold, and
+        suppresses it entirely if the user touches anything in
+        that window.
+
+      INPUT (stdin):
+        Notification hook JSON, carrying session_id and
+        notification_type.
+
+      OUTPUT:
+        None. Exits 0 always — a hook must never disrupt the
+        session.
+      HELP
     end
 
     private def self.show_on_stop_failure_help
