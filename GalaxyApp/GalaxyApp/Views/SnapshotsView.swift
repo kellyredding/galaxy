@@ -1315,8 +1315,11 @@ struct SnapshotsView: View {
         Task {
             let needsResume = await MainActor.run { session.hasExited }
 
+            // Asked before the review is created, not after: a resume
+            // that cannot happen is the one case where marking the
+            // annotations reviewed would strand them, since no session
+            // will ever come back to read what was queued for it.
             if needsResume {
-                // Pre-validate: can we actually resume?
                 let dirExists = await MainActor.run {
                     FileManager.default.fileExists(
                         atPath: session.workingDirectory
@@ -1331,111 +1334,63 @@ struct SnapshotsView: View {
                     }
                     return
                 }
+            }
 
-                // Build message before entering the closure — it only
-                // needs lsid and snapshotNumber, not the review result.
+            do {
+                let _ = try await SnapshotQueryService.shared
+                    .createReview(snapshotId: snapshotId)
+
+                await MainActor.run {
+                    recordSnapshotReviewedEvent(
+                        ledgerSessionId: lsid,
+                        snapshotId: snapshotId
+                    )
+                }
+
                 let message = buildReviewMessage(
                     ledgerSessionId: lsid,
                     snapshotNumber: snapshotNumber,
                     comment: comment
                 )
 
-                // Register the review action and resume in a
-                // SINGLE MainActor.run block so registration
-                // happens before resumeSession kicks off the new
-                // process. The queued action fires on the next
-                // endTurn — which is /galaxy:resume's turn end,
-                // since that's the first turn the resumed session
-                // runs.
+                // One path for a live session and a stopped one,
+                // where there were two. The queue is what collapses
+                // them: it takes a message whether or not an agent is
+                // up and holds it until one can read it, so a resume
+                // is now started alongside the send rather than being
+                // something the send has to be deferred behind.
+                //
+                // What that replaces is worth naming, because it was
+                // the fragile part. A stopped session used to register
+                // a closure for the next turn end, wait a fixed three
+                // seconds inside it for the resumed agent to settle,
+                // and only then create the review and write. The wait
+                // was a guess at boot time, and the closure was dropped
+                // outright if the session died first — taking a comment
+                // nobody could retype with it.
                 await MainActor.run {
-                    session.onceAfterTurnEnd { [weak session] in
-                        DispatchQueue.main.asyncAfter(
-                            deadline: .now() + 3.0
-                        ) {
-                            Task { [weak session] in
-                                guard let session = session else {
-                                    return
-                                }
-                                do {
-                                    // Create review at +3s, right
-                                    // before sending — no orphan if
-                                    // session dies during boot.
-                                    let _ = try await
-                                        SnapshotQueryService.shared
-                                        .createReview(
-                                            snapshotId: snapshotId
-                                        )
-                                    await MainActor.run {
-                                        recordSnapshotReviewedEvent(
-                                            ledgerSessionId: lsid,
-                                            snapshotId: snapshotId
-                                        )
-                                    }
-                                    await MainActor.run {
-                                        session.sendCommand(message)
-                                    }
-                                    // Refresh so cards reflect
-                                    // review assignment
-                                    await reloadAnnotations(
-                                        snapshotId: snapshotId
-                                    )
-                                } catch {
-                                    await MainActor.run {
-                                        recountPending(openAnnotations)
-                                    }
-                                    NSLog(
-                                        "SnapshotsView: submitReview"
-                                        + " error: %@",
-                                        error.localizedDescription
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // Resume the session. Internally calls
-                    // startProcess and gates /galaxy:resume on
-                    // the on_resume hook's session:ready event
-                    // via waitForReady.
-                    sessionManager.resumeSession(
-                        sessionId: session.id
+                    sessionManager.activeTab = .terminal
+                    session.enqueueMessage(
+                        message,
+                        sourceLabel: "Snapshot review"
                     )
-                }
-            } else {
-                // Session is running — create review and send
-                do {
-                    let _ = try await SnapshotQueryService.shared
-                        .createReview(snapshotId: snapshotId)
-
-                    await MainActor.run {
-                        recordSnapshotReviewedEvent(
-                            ledgerSessionId: lsid,
-                            snapshotId: snapshotId
+                    if needsResume {
+                        sessionManager.resumeSession(
+                            sessionId: session.id
                         )
                     }
-
-                    let message = buildReviewMessage(
-                        ledgerSessionId: lsid,
-                        snapshotNumber: snapshotNumber,
-                        comment: comment
-                    )
-
-                    await MainActor.run {
-                        sessionManager.activeTab = .terminal
-                        session.sendCommand(message)
-                    }
-
-                    // Refresh so cards reflect review assignment
-                    await reloadAnnotations(
-                        snapshotId: snapshotId
-                    )
-                } catch {
-                    await MainActor.run {
-                        recountPending(openAnnotations)
-                    }
-                    NSLog("SnapshotsView: submitReview error: %@",
-                          error.localizedDescription)
                 }
+
+                // Refresh so cards reflect review assignment
+                await reloadAnnotations(
+                    snapshotId: snapshotId
+                )
+            } catch {
+                await MainActor.run {
+                    recountPending(openAnnotations)
+                }
+                NSLog("SnapshotsView: submitReview error: %@",
+                      error.localizedDescription)
             }
         }
     }

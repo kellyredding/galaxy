@@ -2405,6 +2405,11 @@ struct ArtifactsView: View {
                 session.hasExited
             }
 
+            // Asked before the review is created, not after: a
+            // resume that cannot happen is the one case where
+            // marking the annotations reviewed would strand
+            // them, since no session will ever come back to
+            // read what was queued for it.
             if needsResume {
                 let dirExists = await MainActor.run {
                     FileManager.default.fileExists(
@@ -2423,6 +2428,23 @@ struct ArtifactsView: View {
                     }
                     return
                 }
+            }
+
+            do {
+                let _ = try await
+                    ArtifactQueryService.shared
+                    .createReview(
+                        ledgerSessionId: lsid,
+                        artifactNumber:
+                            artifact.number
+                    )
+
+                await MainActor.run {
+                    recordArtifactReviewedEvent(
+                        ledgerSessionId: lsid,
+                        artifact: artifact
+                    )
+                }
 
                 let message = buildReviewMessage(
                     ledgerSessionId: lsid,
@@ -2430,111 +2452,48 @@ struct ArtifactsView: View {
                     comment: comment
                 )
 
+                // One path for a live session and a stopped
+                // one, where there were two. The queue is what
+                // collapses them: it takes a message whether or
+                // not an agent is up and holds it until one can
+                // read it, so a resume is now something started
+                // alongside the send rather than something the
+                // send has to be deferred behind.
+                //
+                // What that replaces is worth naming, because
+                // it was the fragile part. A stopped session
+                // used to register a closure for the next turn
+                // end, wait a fixed three seconds inside it for
+                // the resumed agent to settle, and only then
+                // create the review and write. The wait was a
+                // guess at boot time, and the closure was
+                // dropped outright if the session died first —
+                // taking a comment nobody could retype with it.
                 await MainActor.run {
-                    session.onceAfterTurnEnd {
-                        [weak session] in
-                        DispatchQueue.main.asyncAfter(
-                            deadline: .now() + 3.0
-                        ) {
-                            Task { [weak session] in
-                                guard let session
-                                    = session
-                                else { return }
-                                do {
-                                    let _ = try await
-                                        ArtifactQueryService
-                                        .shared
-                                        .createReview(
-                                            ledgerSessionId:
-                                                lsid,
-                                            artifactNumber:
-                                                artifact
-                                                .number
-                                        )
-                                    await MainActor.run {
-                                        self
-                                            .recordArtifactReviewedEvent(
-                                                ledgerSessionId:
-                                                    lsid,
-                                                artifact:
-                                                    artifact
-                                            )
-                                    }
-                                    await MainActor.run {
-                                        session
-                                            .sendCommand(
-                                                message
-                                            )
-                                    }
-                                    await self
-                                        .refreshAnnotationsAfterReview(
-                                            artifact:
-                                                artifact
-                                        )
-                                } catch {
-                                    await MainActor.run {
-                                        self.recountPending(
-                                            self.openAnnotations
-                                        )
-                                    }
-                                    NSLog(
-                                        "ArtifactsView:"
-                                        + " submitReview"
-                                        + " error: %@",
-                                        error
-                                            .localizedDescription
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    sessionManager.resumeSession(
-                        sessionId: session.id
+                    sessionManager.activeTab = .terminal
+                    session.enqueueMessage(
+                        message,
+                        sourceLabel: "Artifact review"
                     )
-                }
-            } else {
-                do {
-                    let _ = try await
-                        ArtifactQueryService.shared
-                        .createReview(
-                            ledgerSessionId: lsid,
-                            artifactNumber:
-                                artifact.number
-                        )
-
-                    await MainActor.run {
-                        recordArtifactReviewedEvent(
-                            ledgerSessionId: lsid,
-                            artifact: artifact
+                    if needsResume {
+                        sessionManager.resumeSession(
+                            sessionId: session.id
                         )
                     }
-
-                    let message = buildReviewMessage(
-                        ledgerSessionId: lsid,
-                        artifactNumber: artifact.number,
-                        comment: comment
-                    )
-
-                    await MainActor.run {
-                        sessionManager.activeTab
-                            = .terminal
-                        session.sendCommand(message)
-                    }
-
-                    await refreshAnnotationsAfterReview(
-                        artifact: artifact
-                    )
-                } catch {
-                    await MainActor.run {
-                        recountPending(openAnnotations)
-                    }
-                    NSLog(
-                        "ArtifactsView: submitReview "
-                        + "error: %@",
-                        error.localizedDescription
-                    )
                 }
+
+                await refreshAnnotationsAfterReview(
+                    artifact: artifact
+                )
+            } catch {
+                await MainActor.run {
+                    recountPending(openAnnotations)
+                }
+                NSLog(
+                    "ArtifactsView: submitReview "
+                    + "error: %@",
+                    error.localizedDescription
+                )
             }
         }
     }

@@ -533,6 +533,18 @@ class Session: Identifiable, ObservableObject {
                 sourceLabel: sourceLabel,
                 delivery: delivery,
                 retry: retry))
+
+        // On the standing submit channel rather than a transient one, for
+        // the same reason the rest of that channel exists: a queued message
+        // is invisible from outside until it lands, and when one does not
+        // land the first question is always whether it was ever produced.
+        // A producer that reaches the queue and a producer that silently
+        // never called are indistinguishable at the terminal, and this is
+        // the line that tells them apart.
+        SessionSubmit.log(
+            "inbox enqueued \(sourceLabel) — \(text.utf8.count) bytes,"
+                + " \(inbox.entries.count) waiting")
+
         inboxConsumer.wake()
     }
 
