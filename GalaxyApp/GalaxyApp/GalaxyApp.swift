@@ -53,6 +53,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         AgentInboxPresenter.shared.inboxProvider = {
             SessionManager.shared.activeSession?.inbox
         }
+        // Resolved from the same session as the queue above, so a row's Send
+        // Now cannot reach a consumer belonging to a session the reader is not
+        // looking at.
+        AgentInboxPresenter.shared.consumerProvider = {
+            SessionManager.shared.activeSession?.inboxConsumer
+        }
 
         // Disable macOS press-and-hold accent popover app-wide so held keys
         // produce normal key repeats. Without this, holding j/k in less (or
