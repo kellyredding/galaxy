@@ -885,6 +885,30 @@ class Session: Identifiable, ObservableObject {
             isReady = false
             pendingReadyActions.removeAll()
             oneShotTurnEndActions.removeAll()
+
+            // Both of the steps below used to belong to the callers, and both
+            // moved here for the same reason: a reset can now arrive through
+            // the inbox, which puts an unknown amount of time between deciding
+            // to reset and writing one. Anything a caller does up front happens
+            // in the wrong context by the time the command actually lands.
+            //
+            // The trim is the visible half. Trimming at the call site wipes a
+            // buffer the agent then fills again before the reset goes out, so
+            // the post-reset session opens on exactly the history the trim was
+            // for.
+            trimTerminalBuffer()
+
+            // The follow-up is the half that breaks silently. Registered after
+            // the removeAll above, so this cycle's action survives the clearing
+            // of the last one's — and registered at the moment of writing
+            // rather than by the caller, because readiness is reset on the line
+            // above. A caller registering before the write asks a session that
+            // is still ready to wait for readiness, gets no wait at all, and
+            // sends its follow-up into the context this command is about to
+            // throw away.
+            waitForReady { [weak self] in
+                self?.sendSkill("handoff")
+            }
         }
 
         // One trailing space, and it is load-bearing — do not tidy it away.

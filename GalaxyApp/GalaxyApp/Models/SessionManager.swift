@@ -915,54 +915,24 @@ class SessionManager: ObservableObject {
     }
 
     /// Clear the active session and auto-handoff when Claude settles.
+    ///
+    /// Reaching for the reset directly, unlike auto-clear, which queues one:
+    /// this is a reader asking for a reset while looking at the session, so
+    /// there is nothing to order it behind.
     func clearActiveSession() {
         guard let session = activeSession, session.isRunning, !session.hasExited else { return }
-        clearAndHandoff(session)
+        session.sendCommand("/clear")
     }
 
     /// Compact the active session and auto-handoff when Claude settles.
+    ///
+    /// The scrollback trim, the unverified send and the post-reset handoff all
+    /// belong to the reset itself and are applied where it is written, so this
+    /// and every other route to a reset — the menu, auto-clear, a queued one —
+    /// get the same treatment without each restating it.
     func compactActiveSession() {
         guard let session = activeSession, session.isRunning, !session.hasExited else { return }
-        // Trim the terminal scrollback first so the compacted session
-        // opens on a clean buffer (same step clearAndHandoff runs
-        // before /clear).
-        session.trimTerminalBuffer()
-        // Unverified, and sendCommand works that out for itself: /compact
-        // bypasses Claude Code's UserPromptSubmit hook, so no turn:initiated
-        // event arrives and the isInTurn check would false-positive on the
-        // optimistic startTurn that sendCommand sets for these very commands.
-        // The harness names which commands do that, so this call site no
-        // longer has to.
         session.sendCommand("/compact")
-        // /handoff is gated on the on_compact hook's
-        // session:ready (ref="compact") event, which fires
-        // exactly when Claude is at-or-imminently-at the new
-        // prompt. sendCommand("/compact") above resets
-        // isReady so this won't be satisfied immediately by a
-        // stale isReady=true from a previous resume cycle.
-        session.waitForReady { [weak session] in
-            session?.sendSkill("handoff")
-        }
-    }
-
-    /// Send /clear to a session and queue /handoff after it settles.
-    /// Used by clearActiveSession, compactActiveSession, and auto-clear.
-    private func clearAndHandoff(_ session: Session) {
-        // Trim the terminal scrollback first so the cleared session
-        // opens on a clean buffer — /clear only resets Claude's own
-        // rendering, not the terminal's scrollback history.
-        session.trimTerminalBuffer()
-        // Unverified, detected rather than declared — same reasoning as
-        // compactActiveSession. /clear bypasses UserPromptSubmit, so a
-        // verifier could not distinguish "Claude accepted the submit" from
-        // "Galaxy optimistically set isInTurn."
-        session.sendCommand("/clear")
-        // /handoff is gated on the on_clear hook's
-        // session:ready (ref="clear") event — see
-        // compactActiveSession for the full rationale.
-        session.waitForReady { [weak session] in
-            session?.sendSkill("handoff")
-        }
     }
 
     /// Build the turn state file path for a session.
@@ -1128,38 +1098,18 @@ class SessionManager: ObservableObject {
         // on, so short-circuiting here would leave a session that spent its
         // crossing while enabled unable to earn another one.
         //
-        // Yield to post-turn work that is still on its way out. An action
-        // that fired during this turn end waits three seconds before it
-        // sends, and a post-reset follow-up is still owed its command —
-        // a clear landing in either gap wipes the context the queued
-        // message was written about and it arrives meaning nothing.
+        // Nothing is deferred here any more, where three conditions used to be.
+        // Each of them was a way of asking "is there work a reset would land in
+        // front of", and the queue answers that by construction now: a clear
+        // enqueued behind a waiting message goes out behind it, in the order
+        // both were added, instead of being skipped and reconsidered a turn
+        // later. Ordering something is a stronger guarantee than declining to
+        // do it and hoping the next attempt finds a quieter moment.
         //
-        // Nothing is lost by waiting: the threshold does not fall on its
-        // own, so the next turn end finds the same crossing and acts on
-        // it. A ceiling that fires one turn later is still a ceiling.
-        //
-        // Decided ahead of the policy because the decision carries the latch.
-        // A crossing that answers "clear" comes back disarmed, so consulting
-        // the policy and then declining to act would spend the one clear that
-        // crossing was owed and leave the next turn with nothing to do.
-        //
-        // The inbox joins the same rule, and had to: a message waiting there is
-        // prose composed against the context a clear would throw away, and the
-        // surface that composed it is already gone. `hasSendableWork` rather
-        // than `isEmpty`, because a queue holding only paused or stalled rows
-        // is one the reader has taken out of play — it must not defer the clear
-        // forever.
-        if session.didFirePostTurnActions || session.hasPendingReadyActions
-            || session.inbox.hasSendableWork
-        {
-            GalaxyLog.submit(
-                "auto-clear deferred \(session.sessionRef)"
-                    + " — post-turn work in flight"
-                    + " (\(session.inbox.entries.count) in the inbox)"
-            )
-            return
-        }
-
+        // The one case worth naming, since it is the price: a message composed
+        // *after* a clear is queued now lands after that clear, in the context
+        // the clear made. The window is one turn end wide and the row is
+        // visible in the modal the whole time.
         let decision = AutoClearPolicy.decide(
             contextPercentage: session.ledgerContextPercentage,
             threshold: settings.autoClearThreshold,
@@ -1194,7 +1144,25 @@ class SessionManager: ObservableObject {
                 )
         }
 
-        clearAndHandoff(session)
+        // Queued rather than sent, and it is the first entry to need both of
+        // the defaults overridden.
+        //
+        // `.standalone` is the load-bearing one: an agent reads one command per
+        // prompt, so a `/clear` merged behind prose under a `---` separator is
+        // read as argument text and silently does nothing — the context stays
+        // full, the crossing has been spent, and nothing reports a failure.
+        //
+        // `.retype` is the honest answer for a payload of six bytes going to an
+        // agent that has just ended a turn. The prose defaults to `.reportOnly`
+        // because a second copy of an unbounded message is worse than a missing
+        // one; here the reverse holds, and a reset that quietly did not happen
+        // is the more expensive outcome.
+        session.enqueueMessage(
+            "/clear",
+            sourceLabel: "Auto-clear",
+            delivery: .standalone,
+            retry: .retype
+        )
     }
 
     /// Extract a preview of the last assistant response by reading
