@@ -232,7 +232,8 @@ struct AppSettings: Codable, Equatable {
     static let terminalFontSizeStep: CGFloat =
         TerminalFontSizeBounds.standard.step
 
-    // Auto-clear threshold constraints
+    // Auto-clear threshold constraints. Mirrors Galactic's
+    // `AutoClearPolicy.thresholdRange`, which assist-ant reads directly.
     static let autoClearThresholdRange: ClosedRange<Int> = 50...99
 
     // Notification constraints

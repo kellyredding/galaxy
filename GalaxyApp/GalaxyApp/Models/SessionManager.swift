@@ -224,9 +224,9 @@ class SessionManager: ObservableObject {
     /// Most recently closed at index 0. Persisted to sessions.json.
     @Published var closedSessions: [PersistedClosedSession] = []
 
-    /// Tracks last auto-clear time per session to prevent re-triggering
-    /// before enrichment updates with fresh post-clear context percentage.
-    private var lastAutoClearTime: [UUID: Date] = [:]
+    /// Watches the auto-clear threshold, so moving the line re-arms the latch
+    /// that remembers crossing the old one.
+    private var autoClearThresholdCancellable: AnyCancellable?
 
     /// Pending idle notification timers per session. Scheduled when a session
     /// goes idle and passes the minimum busy duration filter. Canceled if the
@@ -238,9 +238,6 @@ class SessionManager: ObservableObject {
     /// transitions to non-nil (session start, resume). Torn down
     /// when the session is removed.
     private var backendSubs: [UUID: AnyCancellable] = [:]
-
-    /// Minimum seconds between auto-clears for the same session.
-    private static let autoClearCooldown: TimeInterval = 30
 
     /// Maximum number of closed sessions to retain in the archive.
     private static let closedSessionRetentionLimit = 500
@@ -313,6 +310,40 @@ class SessionManager: ObservableObject {
                 closedSessions.count
             )
         }
+
+        observeAutoClearThreshold()
+    }
+
+    /// Re-arm every session's auto-clear latch when the threshold moves.
+    ///
+    /// The latch records a crossing of a *particular* line. Move the line and
+    /// the crossing it remembers is about a line that no longer exists, so a
+    /// new threshold deserves a new crossing.
+    ///
+    /// This is felt on the way down. Raising the threshold above the current
+    /// reading already re-arms by the ordinary rule — the reading is under the
+    /// new line. Lowering it does not, so a reader who drops the threshold
+    /// because they want clearing to happen sooner would get nothing at all,
+    /// for as long as the reading stayed above a line it had already crossed.
+    ///
+    /// `dropFirst` because the first value is what the setting already was,
+    /// and `removeDuplicates` because every unrelated setting republishes the
+    /// whole struct.
+    private func observeAutoClearThreshold() {
+        autoClearThresholdCancellable = SettingsManager.shared.$settings
+            .map(\.autoClearThreshold)
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] threshold in
+                guard let self else { return }
+                for session in self.sessions {
+                    session.autoClearArmed = true
+                }
+                GalaxyLog.submit(
+                    "auto-clear threshold now \(threshold)"
+                        + " — re-armed \(self.sessions.count) session(s)"
+                )
+            }
     }
 
     /// Find a binary by checking common paths, then falling back to `which`.
@@ -1054,23 +1085,55 @@ class SessionManager: ObservableObject {
         }
 
         // Auto-clear
-        guard settings.autoClearEnabled else { return }
-
-        let threshold = Double(settings.autoClearThreshold)
-        guard let contextPct = session.ledgerContextPercentage,
-              contextPct > threshold else { return }
-
-        if let lastClear = lastAutoClearTime[session.id],
-           Date().timeIntervalSince(lastClear)
-               < Self.autoClearCooldown
-        {
+        //
+        // Deliberately no `guard settings.autoClearEnabled` ahead of the
+        // policy: the re-arm applies whether or not the feature is switched
+        // on, so short-circuiting here would leave a session that spent its
+        // crossing while enabled unable to earn another one.
+        //
+        // Yield to post-turn work that is still on its way out. An action
+        // that fired during this turn end waits three seconds before it
+        // sends, and a post-reset follow-up is still owed its command —
+        // a clear landing in either gap wipes the context the queued
+        // message was written about and it arrives meaning nothing.
+        //
+        // Nothing is lost by waiting: the threshold does not fall on its
+        // own, so the next turn end finds the same crossing and acts on
+        // it. A ceiling that fires one turn later is still a ceiling.
+        //
+        // Decided ahead of the policy because the decision carries the latch.
+        // A crossing that answers "clear" comes back disarmed, so consulting
+        // the policy and then declining to act would spend the one clear that
+        // crossing was owed and leave the next turn with nothing to do.
+        if session.didFirePostTurnActions || session.hasPendingReadyActions {
+            GalaxyLog.submit(
+                "auto-clear deferred \(session.sessionRef)"
+                    + " — post-turn work in flight"
+            )
             return
         }
 
-        NSLog(
-            "SessionManager: Auto-clearing %@"
-                + " — context at %.0f%%",
-            session.sessionRef, contextPct
+        let decision = AutoClearPolicy.decide(
+            contextPercentage: session.ledgerContextPercentage,
+            threshold: settings.autoClearThreshold,
+            enabled: settings.autoClearEnabled,
+            armed: session.autoClearArmed
+        )
+        session.autoClearArmed = decision.armed
+
+        guard decision.clear,
+              let contextPct = session.ledgerContextPercentage
+        else { return }
+
+        // On the submit channel, beside the /clear it is about to send, so an
+        // auto-clear and the command it issues read as one exchange. NSLog
+        // put this in the unified log, where this app's output does not
+        // surface at all — the one action with no acceptance report coming
+        // for it was also the one leaving no trace anyone could read.
+        GalaxyLog.submit(
+            String(
+                format: "auto-clearing %@ — context at %.0f%%",
+                session.sessionRef, contextPct)
         )
 
         if settings.notifyAutoClearOccurred
@@ -1084,7 +1147,6 @@ class SessionManager: ObservableObject {
                 )
         }
 
-        lastAutoClearTime[session.id] = Date()
         clearAndHandoff(session)
     }
 
@@ -1378,8 +1440,8 @@ class SessionManager: ObservableObject {
         // Notify observers before removal (e.g., EventCoordinator cache cleanup)
         onSessionClosed?(sessionId)
 
-        // Clean up auto-clear cooldown and pending notification timers
-        lastAutoClearTime.removeValue(forKey: sessionId)
+        // Clean up pending notification timers. The auto-clear latch needs no
+        // cleanup here — it lives on the session, and goes when it does.
         pendingIdleNotificationTimers[sessionId]?.invalidate()
         pendingIdleNotificationTimers.removeValue(forKey: sessionId)
         NotificationService.shared.sessionClosed(sessionId)

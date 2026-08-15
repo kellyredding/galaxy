@@ -405,6 +405,29 @@ class Session: Identifiable, ObservableObject {
     /// against the prior lifecycle).
     private var oneShotTurnEndActions: [() -> Void] = []
 
+    /// Whether the endTurn now running fired one-shot post-turn actions.
+    ///
+    /// True only for the span of `onTurnEnd`, which is where the auto-clear
+    /// decision is taken. An action that has fired may still have work in
+    /// flight — the review-message flows wait three seconds before they
+    /// send — and a clear landing in that gap wipes the context the message
+    /// was written about, leaving it to arrive at an agent that no longer
+    /// remembers what it is a review of.
+    private(set) var didFirePostTurnActions = false
+
+    /// Whether a context-threshold crossing is still owed an auto-clear.
+    ///
+    /// Per session, because each session crosses its own line. Starts armed so
+    /// a session resumed already over the threshold is cleared at the end of
+    /// its first turn rather than after a needless round trip below it, and is
+    /// re-armed on a fresh process for the same reason.
+    ///
+    /// See `AutoClearPolicy` for why this is a latch rather than an interval —
+    /// which matters more here than it looks, because Galaxy's reading is
+    /// polled by enrichment rather than handed over with the turn that ended,
+    /// so an interval can expire against a number nothing has refreshed.
+    var autoClearArmed = true
+
     /// Current terminal font size for this session (transient, not persisted)
     @Published var terminalFontSize: CGFloat {
         didSet {
@@ -458,6 +481,13 @@ class Session: Identifiable, ObservableObject {
     ///      that were waiting on the prior lifecycle's
     ///      `session:ready` event.
     private var pendingReadyActions = [UUID: AnyCancellable]()
+
+    /// Whether a post-reset follow-up is still waiting on `session:ready`.
+    ///
+    /// Read where a decision would put fresh input into the session: a
+    /// resume or a compact that has not yet reported ready still owes a
+    /// command, and anything sent ahead of it arrives out of order.
+    var hasPendingReadyActions: Bool { !pendingReadyActions.isEmpty }
 
     init(workingDirectory: String, sessionRef: String, personaName: String? = nil, isVibe: Bool = false, resumeSessionId: UUID? = nil) {
         // Use provided resume UUID if resuming a specific session, otherwise generate new
@@ -927,7 +957,8 @@ class Session: Identifiable, ObservableObject {
         // calling them so the source array is empty before
         // any action runs — protects against an action that
         // re-enters endTurn or re-registers a new one-shot.
-        if !oneShotTurnEndActions.isEmpty {
+        let firedPostTurnActions = !oneShotTurnEndActions.isEmpty
+        if firedPostTurnActions {
             let actions = oneShotTurnEndActions
             oneShotTurnEndActions.removeAll()
             for action in actions {
@@ -935,7 +966,11 @@ class Session: Identifiable, ObservableObject {
             }
         }
 
+        // Raised across onTurnEnd only, so the auto-clear decision taken
+        // inside it can see that work is still on its way out.
+        didFirePostTurnActions = firedPostTurnActions
         onTurnEnd?(self, duration)
+        didFirePostTurnActions = false
     }
 
     /// Register a closure to fire on the next endTurn(). Fires
@@ -1134,6 +1169,11 @@ class Session: Identifiable, ObservableObject {
         // completes, flipping this back to true via markReady().
         isReady = false
         isRunning = true
+
+        // A fresh process is a fresh crossing. A session resumed above the
+        // line should be cleared at the end of its first turn, not made to
+        // wait for a reading below a line it is nowhere near.
+        autoClearArmed = true
 
         // Build args and determine executable.
         var args: [String] = []
