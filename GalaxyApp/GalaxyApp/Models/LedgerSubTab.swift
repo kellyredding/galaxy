@@ -4,7 +4,7 @@ import Foundation
 /// State is global on SessionManager (not per-session), not persisted.
 enum LedgerSubTab: String, CaseIterable {
     case identifiers = "Identifiers"
-    case files = "Files"
+    case fileAccess = "File access"
     case entries = "Entries"
     case lastActivity = "Last activity"
     case suggestedName = "Suggested name"
@@ -12,7 +12,7 @@ enum LedgerSubTab: String, CaseIterable {
     var icon: String {
         switch self {
         case .identifiers: return "number"
-        case .files: return "doc.text"
+        case .fileAccess: return "doc.badge.clock"
         case .entries: return "list.bullet"
         case .lastActivity: return "clock"
         case .suggestedName: return "sparkles"

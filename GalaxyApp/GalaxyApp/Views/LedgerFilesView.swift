@@ -73,7 +73,7 @@ struct LedgerFilesView: View {
             from: sessionManager,
             isActive: {
                 sessionManager.activeTab == .ledger
-                    && sessionManager.activeLedgerSubTab == .files
+                    && sessionManager.activeLedgerSubTab == .fileAccess
             },
             onAction: { action in
                 switch action {
@@ -93,7 +93,7 @@ struct LedgerFilesView: View {
 
     private var emptyState: some View {
         VStack(spacing: 12) {
-            Image(systemName: "doc.text")
+            Image(systemName: LedgerSubTab.fileAccess.icon)
                 .chromeFont(size: fontSize.iconLarge)
                 .foregroundColor(.secondary)
             Text("No files")

@@ -291,8 +291,8 @@ struct LedgerView: View {
                 files: files,
                 isLoading: isLoading
             )
-            .opacity(active == .files ? 1 : 0)
-            .allowsHitTesting(active == .files)
+            .opacity(active == .fileAccess ? 1 : 0)
+            .allowsHitTesting(active == .fileAccess)
 
             LedgerEntriesView(
                 sessionId: session.id,
@@ -343,7 +343,7 @@ struct LedgerView: View {
         // Entries data is preserved when a search is active so the
         // user returns to their filtered results on switch-back.
         let active = sessionManager.activeLedgerSubTab
-        if active != .files { files = nil }
+        if active != .fileAccess { files = nil }
         if active != .entries { entries = nil }
         if active != .identifiers { sessionDetail = nil }
         if active != .lastActivity { turnEvents = nil }
@@ -360,7 +360,7 @@ struct LedgerView: View {
             fetchTurnEventsData()
         case .suggestedName:
             break  // Driven by Session @Published properties
-        case .files:
+        case .fileAccess:
             fetchFilesData()
         case .entries:
             if session.ledgerEntriesSearchQuery.isEmpty {
@@ -381,7 +381,7 @@ struct LedgerView: View {
             if turnEvents == nil { fetchTurnEventsData() }
         case .suggestedName:
             break
-        case .files:
+        case .fileAccess:
             if files == nil { fetchFilesData() }
         case .entries:
             if entries == nil {

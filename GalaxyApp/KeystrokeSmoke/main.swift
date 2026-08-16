@@ -389,7 +389,7 @@ check("availability: list nav is live on exactly six of ten surfaces") {
         case .snapshots, .artifacts, .agents:
             expected = true
         case .ledger:
-            expected = sub == .files || sub == .entries
+            expected = sub == .fileAccess || sub == .entries
         case .terminal, .timeline:
             expected = false
         }

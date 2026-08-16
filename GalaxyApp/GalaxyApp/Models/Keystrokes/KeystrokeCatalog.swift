@@ -28,7 +28,7 @@ enum KeystrokeCatalog {
     /// The Ledger sub-tabs that host a focusable list. Named once here
     /// because three switches ask the question — this one, `MainMenu`'s
     /// `hasListFocus`, and `openFocusedItemDescriptor`.
-    static let ledgerListSubTabs: Set<LedgerSubTab> = [.files, .entries]
+    static let ledgerListSubTabs: Set<LedgerSubTab> = [.fileAccess, .entries]
 
     /// Both readers, for the rows whose keys mean the same thing in
     /// either one.
@@ -363,10 +363,13 @@ enum KeystrokeCatalog {
                   + "agent detail, subagent detail"),
         .init(binding: .literal("↩"), label: "Reveal file in Finder",
               section: .lists,
-              availability: .ledgerSubTabs([.files]),
-              aliases: "show the file in Finder, find the file on disk, "
-                  + "locate the file the session touched, "
-                  + "open the enclosing folder"),
+              availability: .ledgerSubTabs([.fileAccess]),
+              // Deliberately narrow. These compete in search with every row
+              // a file-browsing surface would add, so each phrase names the
+              // ledger's access log rather than files in general.
+              aliases: "reveal a file the session touched, "
+                  + "show a logged file access in Finder, "
+                  + "open the folder of a file the session read or wrote"),
         .init(binding: .literal("↩"), label: "Open entry",
               section: .lists,
               availability: .ledgerSubTabs([.entries]),
