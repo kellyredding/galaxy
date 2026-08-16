@@ -1189,6 +1189,11 @@ class Session: Identifiable, ObservableObject {
     // MARK: - Persistence
 
     /// Snapshot this session's persistable state.
+    ///
+    /// Twenty-three fields, mirrored by `init(restoring:)` below. This
+    /// direction is compiler-checked: `PersistedSession` has no hand-written
+    /// initialiser, so a field added to it makes this call a missing-argument
+    /// error. The other direction is not.
     func toPersistedState() -> PersistedSession {
         PersistedSession(
             id: id,
@@ -1220,6 +1225,12 @@ class Session: Identifiable, ObservableObject {
     /// Restore a session from persisted state. Creates in stopped
     /// state with no backend and no running process. The backend
     /// is lazily created by ensureBackend() on resume.
+    /// Rebuild from the persisted shape.
+    ///
+    /// The silent half of the pair. A field added to `PersistedSession` and to
+    /// `toPersistedState()` but not read here compiles, writes correctly, and
+    /// then quietly fails to come back — there is no test for this, so confirm
+    /// a new field by quitting and relaunching rather than by reading.
     init(restoring state: PersistedSession) {
         self.id = state.id
         self.sessionRef = state.sessionRef
