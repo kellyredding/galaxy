@@ -33,7 +33,13 @@ enum SessionTab: String, CaseIterable {
         }
     }
 
-    /// Whether this view has inner tabs that can be cycled with ⌘⇧H/L.
+    /// Whether this view has inner tabs, cycled with **⌘H/L** — the unshifted
+    /// pair acts on the innermost thing you are in. ⇧⌘H/L is one level out and
+    /// switches the view itself, whatever this answers.
+    ///
+    /// Claiming this is not enough on its own. It enables the menu item and
+    /// lights up the cheat-sheet row, but the cycling itself is a switch in
+    /// `SessionManager` that has to name the view too.
     var hasInnerTabs: Bool {
         switch self {
         case .terminal: return false

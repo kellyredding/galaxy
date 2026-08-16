@@ -180,7 +180,11 @@ class SessionManager: ObservableObject {
             // bind the find-bar panel to the wrong WebView and
             // make the user think highlights are broken.
             findActivationCounter &+= 1
-        default:
+        // Exhaustive rather than defaulted, because the gate that enables the
+        // menu item — `MainMenu.canActivateFind` — already is. The two
+        // disagreeing is the failure: a view added to the gate and not here
+        // lights up ⌘F and answers it with nothing.
+        case .timeline, .agents, .ledger:
             break
         }
     }
@@ -1611,7 +1615,11 @@ class SessionManager: ObservableObject {
             guard let currentIndex = allTabs.firstIndex(of: activeLedgerSubTab),
                   currentIndex > allTabs.startIndex else { return }
             activeLedgerSubTab = allTabs[allTabs.index(before: currentIndex)]
-        default:
+        // Exhaustive rather than defaulted. Both the menu item and the cheat
+        // sheet enable ⌘H/⌘L off `SessionTab.hasInnerTabs`, so a view that
+        // claims inner tabs and is not answered here gets an enabled menu
+        // item, a documented keystroke, and nothing happening.
+        case .terminal, .timeline, .agents, .artifacts, .snapshots:
             break
         }
     }
@@ -1625,7 +1633,7 @@ class SessionManager: ObservableObject {
             let nextIndex = allTabs.index(after: currentIndex)
             guard nextIndex < allTabs.endIndex else { return }
             activeLedgerSubTab = allTabs[nextIndex]
-        default:
+        case .terminal, .timeline, .agents, .artifacts, .snapshots:
             break
         }
     }
