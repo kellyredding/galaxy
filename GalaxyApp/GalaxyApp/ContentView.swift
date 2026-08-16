@@ -319,34 +319,27 @@ struct ContentView: View {
         } else {
             ZStack {
                 TerminalContainerView()
-                    .opacity(sessionManager.activeTab == .terminal ? 1 : 0)
-                    .allowsHitTesting(sessionManager.activeTab == .terminal)
-                    .zIndex(sessionManager.activeTab == .terminal ? 1 : 0)
+                    .tabPane(.terminal, selected: sessionManager.activeTab)
 
                 LedgerContainerView()
-                    .opacity(sessionManager.activeTab == .ledger ? 1 : 0)
-                    .allowsHitTesting(sessionManager.activeTab == .ledger)
-                    .zIndex(sessionManager.activeTab == .ledger ? 1 : 0)
+                    .tabPane(.ledger, selected: sessionManager.activeTab)
 
                 AgentsContainerView()
-                    .opacity(sessionManager.activeTab == .agents ? 1 : 0)
-                    .allowsHitTesting(sessionManager.activeTab == .agents)
-                    .zIndex(sessionManager.activeTab == .agents ? 1 : 0)
+                    .tabPane(.agents, selected: sessionManager.activeTab)
 
                 ArtifactsContainerView()
-                    .opacity(sessionManager.activeTab == .artifacts ? 1 : 0)
-                    .allowsHitTesting(sessionManager.activeTab == .artifacts)
-                    .zIndex(sessionManager.activeTab == .artifacts ? 1 : 0)
+                    .tabPane(.artifacts, selected: sessionManager.activeTab)
 
                 SnapshotsContainerView()
-                    .opacity(sessionManager.activeTab == .snapshots ? 1 : 0)
-                    .allowsHitTesting(sessionManager.activeTab == .snapshots)
-                    .zIndex(sessionManager.activeTab == .snapshots ? 1 : 0)
+                    .tabPane(.snapshots, selected: sessionManager.activeTab)
 
                 TimelineContainerView()
-                    .opacity(sessionManager.activeTab == .timeline ? 1 : 0)
-                    .allowsHitTesting(sessionManager.activeTab == .timeline)
-                    .zIndex(sessionManager.activeTab == .timeline ? 1 : 0)
+                    .tabPane(.timeline, selected: sessionManager.activeTab)
+            }
+            .onAppear {
+                #if DEBUG
+                    TabPaneRegistry.reportMissingPanes()
+                #endif
             }
         }
     }
