@@ -8,8 +8,8 @@ import Foundation
 /// `PreferencesWindowController`, and Galactic's `ReaderWebView`,
 /// `ScrollbackHTMLRenderer`, `SendBarJS`, `FindBarView` and
 /// `TerminalHostView` — so it can drift from all of them. That is
-/// accepted knowingly. Two thirds of these bindings are not menu items
-/// at all: they live inside event monitors and JavaScript keydown
+/// accepted knowingly. Roughly two fifths of these bindings are not menu
+/// items at all: they live inside event monitors and JavaScript keydown
 /// switches and cannot be derived, and deriving only the menu half would
 /// automate the entries macOS already displays while leaving the
 /// valuable ones hand-written anyway.
