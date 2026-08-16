@@ -165,10 +165,20 @@ final class NavigationCoordinator {
         session.openSnapshotNumber = route.snapshotNumber
         session.selectedAgentId = route.agentId
 
-        if route.tab == .ledger,
-           let sub = route.ledgerSubTab
-        {
-            sessionManager.activeLedgerSubTab = sub
+        // Exhaustive rather than an `if` naming the one view that carries a
+        // sub-selection, because this is the one place a new view can be
+        // added and *compile*. `deriveCurrentRoute` and `titleFor` both fail
+        // the build without it; forgetting it here means back and forward
+        // reach the right tab and leave whatever was already open on screen,
+        // which reads as history losing its place rather than as a missing
+        // case.
+        switch route.tab {
+        case .ledger:
+            if let sub = route.ledgerSubTab {
+                sessionManager.activeLedgerSubTab = sub
+            }
+        case .terminal, .timeline, .agents, .artifacts, .snapshots:
+            break
         }
         sessionManager.activeTab = route.tab
 
