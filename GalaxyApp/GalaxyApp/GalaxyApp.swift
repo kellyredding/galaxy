@@ -345,8 +345,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         NSLog("AppDelegate: Application will terminate")
         NSApp.dockTile.badgeLabel = nil
+        // Every debounced store, or the ones left out lose up to their cap.
+        // Adding a store means adding it here too — the omission is silent,
+        // and the third of these was written with a doc comment saying it was
+        // called from this method while nothing called it at all.
         SessionPersistence.shared.flushSync()
         WindowStatePersistence.shared.flushSync()
+        ViewedFilesPersistence.shared.flushSync()
         eventCoordinator?.stop()
         GalaxyLog.flush()
     }
