@@ -4,6 +4,16 @@ import Foundation
 
 /// Codable representation of a session for disk persistence.
 /// Contains only the state that should survive app restart.
+///
+/// **Adding a field**: make it `Optional`. This decodes through the
+/// synthesised initialiser, which reads an optional as `decodeIfPresent` and a
+/// non-optional as required — so a required addition makes every
+/// `sessions.json` written before it fail to decode. `load()` answers a decode
+/// failure by returning nil for the *whole file*, so the cost is not the new
+/// field defaulting: it is every session and every marker gone, with one line
+/// in the log. The tolerant decoder on `PersistedSidebarState` below and the
+/// `decodeIfPresent` note on `PersistedSessionMarker` above are the same rule
+/// arrived at twice.
 struct PersistedSession: Codable {
     // Identity (unrecoverable without persistence)
     let id: UUID
@@ -275,6 +285,13 @@ final class SessionPersistence {
 
     /// Load persisted state from disk. Returns nil on first
     /// launch, missing file, or corrupt data.
+    ///
+    /// A decode failure costs everything — every session and every marker —
+    /// because there is one file and one decode. Nil then reads to the caller
+    /// as "first launch", the sidebar comes up empty, and the next write
+    /// replaces the file that could have been read by hand. So an unreadable
+    /// file is moved aside rather than left in place to be overwritten: the
+    /// launch is no better, but the loss stops being permanent.
     func load() -> PersistedSidebarState? {
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
             return nil
@@ -292,7 +309,32 @@ final class SessionPersistence {
             GalaxyLog.events(
                 "Failed to load persisted sessions: \(error)"
             )
+            quarantineUnreadableFile()
             return nil
+        }
+    }
+
+    /// Move an unreadable state file out of the way, keeping its contents.
+    ///
+    /// Best-effort by design: if this cannot rename the file, the launch
+    /// proceeds exactly as it did before, which is the behaviour being
+    /// improved on rather than one being relied upon.
+    private func quarantineUnreadableFile() {
+        let stamp = ISO8601DateFormatter().string(from: Date())
+            .replacingOccurrences(of: ":", with: "-")
+        let saved = fileURL.deletingLastPathComponent()
+            .appendingPathComponent(
+                "\(fileURL.lastPathComponent).corrupt-\(stamp)"
+            )
+        do {
+            try FileManager.default.moveItem(at: fileURL, to: saved)
+            GalaxyLog.events(
+                "Kept the unreadable session file at \(saved.lastPathComponent)"
+            )
+        } catch {
+            GalaxyLog.events(
+                "Could not set aside the unreadable session file: \(error)"
+            )
         }
     }
 
