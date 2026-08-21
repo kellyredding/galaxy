@@ -114,6 +114,10 @@ module GalaxyLedger
         handle_update_session_metrics_command(rest)
       when "publish"
         handle_publish_command(rest)
+      when "doctor"
+        handle_doctor_command(rest)
+      when "mark-ready"
+        handle_mark_ready_command(rest)
       when "sessions"
         handle_sessions_command(rest)
       when "resolve-session"
@@ -183,6 +187,8 @@ module GalaxyLedger
 
       Event Publishing:
         publish                 Publish an event to Galaxy.app
+        doctor                  Report sessions whose inbox cannot drain
+        mark-ready              Release a session whose readiness never arrived
 
       Session Data:
         sessions                Query session state as JSON
@@ -2851,6 +2857,217 @@ module GalaxyLedger
         event: event,
         ref: ref,
       )
+    end
+
+    # Report sessions holding messages they cannot send.
+    private def self.handle_doctor_command(args : Array(String))
+      if args.first? == "-h" || args.first? == "--help"
+        show_doctor_help
+        return
+      end
+      as_json = args.includes?("--json")
+
+      reading = AppState.read
+      unless reading
+        STDERR.puts "Error: no readable Galaxy state at #{AppState::STATE_PATH}"
+        exit(1)
+      end
+
+      stranded = reading.stranded
+
+      if as_json
+        puts({
+          "app_running" => reading.app_running,
+          "stale"       => reading.stale?,
+          "age_seconds" => reading.age.total_seconds.to_i,
+          "stranded"    => stranded.map do |s|
+            {
+              "ledger_session_id" => s.ledger_session_id,
+              "session_ref"       => s.session_ref,
+              "claude_session_id" => s.claude_session_id,
+              "inbox_depth"       => s.inbox_depth,
+              "block_reason"      => s.block_reason,
+              "recoverable"       => s.recoverable?,
+            }
+          end,
+        }.to_json)
+        exit(stranded.empty? ? 0 : 1)
+      end
+
+      # Both of these change what the rest of the output means, so they lead
+      # rather than trail it. A closed app and a stranded queue write the same
+      # file, and a reading nothing has refreshed is not a reading of now.
+      unless reading.app_running
+        puts "Galaxy.app is not running — this is its last written state."
+      end
+      if reading.stale?
+        puts "Warning: state is #{reading.age.total_seconds.to_i}s old."
+      end
+
+      if stranded.empty?
+        puts "No stranded queues."
+        exit(0)
+      end
+
+      stranded.each do |s|
+        plural = s.inbox_depth == 1 ? "message" : "messages"
+        puts "#{s.label}  #{s.inbox_depth} #{plural} stranded " \
+             "— #{s.block_reason}"
+        if s.recoverable?
+          if id = s.claude_session_id
+            puts "    release with: galaxy-ledger mark-ready --session #{id}"
+          end
+        end
+      end
+      exit(1)
+    end
+
+    private def self.show_doctor_help
+      puts <<-HELP
+      galaxy-ledger doctor - Report sessions whose inbox cannot drain
+
+      USAGE:
+        galaxy-ledger doctor [--json]
+
+      DESCRIPTION:
+        Reads the state Galaxy.app writes about its own sessions and reports
+        any that hold queued messages they cannot send, with the reason.
+
+        The inbox lives in the app's memory and a refused send reaches no
+        terminal, so this is the only view of it from outside. Reports the
+        reading's age when it is stale, and says so when the app is not
+        running — those two cases produce the same file as a healthy one.
+
+        Exits non-zero when anything is stranded, so it composes into a
+        prompt or a periodic check.
+      HELP
+    end
+
+    # Release a session whose readiness signal never arrived.
+    private def self.handle_mark_ready_command(args : Array(String))
+      if args.first? == "-h" || args.first? == "--help"
+        show_mark_ready_help
+        return
+      end
+
+      session_id : String? = nil
+      pid_str : String? = nil
+      i = 0
+      while i < args.size
+        arg = args[i]
+        if arg == "--session" && i + 1 < args.size
+          session_id = args[i + 1]
+          i += 2
+        elsif arg == "--pid" && i + 1 < args.size
+          pid_str = args[i + 1]
+          i += 2
+        else
+          i += 1
+        end
+      end
+
+      ledger_session_id : Int64? = nil
+      if ps = pid_str
+        ledger_session_id = resolve_pid_to_ledger_session_id(ps)
+      elsif sid = session_id
+        ledger_session_id = resolve_session_to_ledger_session_id(sid)
+      end
+
+      unless ledger_session_id
+        STDERR.puts "Error: --session or --pid is required"
+        STDERR.puts "Run 'galaxy-ledger mark-ready --help' for usage"
+        exit(1)
+      end
+
+      reading = AppState.read
+      unless reading
+        STDERR.puts "Error: no readable Galaxy state at #{AppState::STATE_PATH}"
+        exit(1)
+      end
+
+      unless reading.app_running
+        STDERR.puts "Error: Galaxy.app is not running — nothing to tell."
+        exit(1)
+      end
+
+      # A warning and not a refusal, because staleness here runs the safe
+      # way. The app persists on activity, so a reading goes old precisely
+      # when a session is sitting idle — which is the state this releases.
+      # The transition that would make a release wrong, a reset starting
+      # underneath it, is busy enough to refresh the file. The check that
+      # actually decides is the app's, on state that cannot be stale.
+      if reading.stale?
+        STDERR.puts "Note: Galaxy state is " \
+                    "#{reading.age.total_seconds.to_i}s old; the app will " \
+                    "re-check before acting."
+      end
+
+      session = AppState.find(
+        reading,
+        ledger_session_id: ledger_session_id,
+        claude_session_id: session_id,
+      )
+      unless session
+        STDERR.puts "Error: Galaxy has no live session #{ledger_session_id}"
+        exit(1)
+      end
+
+      # The interlock. Only a session that has never been at a prompt and owes
+      # nothing reports the recoverable reason, so this is the one case where
+      # saying "ready" states a fact rather than forcing one. Anything else is
+      # transient, or owes a post-reset command that an early release overtakes.
+      reason = session.block_reason
+      if reason.nil?
+        puts "#{session.label} can already send — nothing to do."
+        exit(0)
+      end
+      unless session.recoverable?
+        STDERR.puts "Refusing: #{session.label} is blocked by '#{reason}', " \
+                    "which is not a state a manual release can fix."
+        exit(1)
+      end
+
+      # "manual" rather than a lifecycle ref: the app gates this one on its
+      # own current reading of the session, where a lifecycle ref is believed
+      # because a hook watched the thing happen. Sending "resume" here would
+      # bypass that check by impersonating an event nobody observed.
+      EventPublisher.publish(
+        ledger_session_id: ledger_session_id,
+        event: "session:ready",
+        ref: "manual",
+      )
+      depth = session.inbox_depth
+      plural = depth == 1 ? "message" : "messages"
+      puts "Asked Galaxy to release #{session.label} " \
+           "— #{depth} #{plural} should now send."
+      puts "Confirm with: grep 'manual ready' ~/.claude/galaxy/galaxy.log"
+    end
+
+    private def self.show_mark_ready_help
+      puts <<-HELP
+      galaxy-ledger mark-ready - Release a session whose readiness never arrived
+
+      USAGE:
+        galaxy-ledger mark-ready --pid PID
+        galaxy-ledger mark-ready --session SESSION_ID
+
+      REQUIRED (one of):
+        --pid PID               Session by Claude Code process PID
+        --session SESSION_ID    Session by Claude session identifier
+
+      DESCRIPTION:
+        Tells Galaxy.app that a session has reached its prompt, for the case
+        where the signal saying so never arrived. The app then releases
+        anything queued for that session.
+
+        This asserts a true fact rather than forcing one, and refuses when it
+        would not be true: it acts only on a session that has never been
+        marked ready and owes no post-reset command. A session that is merely
+        mid-turn, or waiting on a /clear or /compact to finish, is declined —
+        releasing one of those overtakes a command that must arrive in order.
+
+        Use 'galaxy-ledger doctor' to see which sessions qualify.
+      HELP
     end
 
     private def self.show_publish_help

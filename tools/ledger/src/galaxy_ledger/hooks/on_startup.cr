@@ -138,11 +138,11 @@ module GalaxyLedger
         puts Helpers.output_json(system_message, context)
 
         # Signal Galaxy.app that the startup hook has finished and the
-        # prompt is imminent. Galaxy currently only acts on the
-        # ref="resume" variant; ref="startup" is emitted for symmetry
-        # and future use. Errors are silently rescued by
-        # EventPublisher; the hook behaves identically whether or not
-        # Galaxy is listening.
+        # prompt is imminent. This is the only readiness signal a
+        # session that is never cleared, compacted, or resumed will
+        # ever emit. Errors are silently rescued by EventPublisher;
+        # the hook behaves identically whether or not Galaxy is
+        # listening.
         EventPublisher.publish(
           ledger_session_id: ledger_session_id.not_nil!,
           event: "session:ready",
