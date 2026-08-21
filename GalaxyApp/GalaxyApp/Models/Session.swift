@@ -143,6 +143,16 @@ class Session: Identifiable, ObservableObject {
     /// `processDidExit` so each new lifecycle starts unready.
     @Published private(set) var isReady: Bool = false
 
+    /// Whether `markReady` has ever fired for this process.
+    ///
+    /// `isReady` cannot answer this: a context reset clears it and the matching
+    /// `session:ready` restores it, so a session mid-reset and a session that
+    /// never got its startup signal look identical through that flag alone.
+    /// Only the second is safe to mark ready by hand, and this is what tells
+    /// them apart. Reset in `startProcess` — a new process is a new lifecycle —
+    /// and deliberately nowhere else.
+    @Published private(set) var hasEverBeenReady: Bool = false
+
     /// This session's terminal panes, as a unit — the focus memory, the
     /// cross-pane scrollback flag, and the unsaved-work checks.
     ///
@@ -543,7 +553,8 @@ class Session: Identifiable, ObservableObject {
         // the line that tells them apart.
         SessionSubmit.log(
             "inbox enqueued \(sourceLabel) — \(text.utf8.count) bytes,"
-                + " \(inbox.entries.count) waiting")
+                + " \(inbox.entries.count) waiting"
+                + (submitBlockReason.map { ", blocked: \($0.phrase)" } ?? ""))
 
         inboxConsumer.wake()
     }
@@ -1108,10 +1119,9 @@ class Session: Identifiable, ObservableObject {
             else { return }
             if !self.isReady {
                 self.isReady = true
-                NSLog(
-                    "Session[%@]: markReady fired",
-                    self.sessionRef
-                )
+                self.hasEverBeenReady = true
+                SessionSubmit.log(
+                    "markReady session=\(self.sessionRef)")
             }
             // The other moment worth waking for, and the one a turn end cannot
             // cover: `/clear` and `/compact` are intercepted before the prompt
@@ -1190,10 +1200,11 @@ class Session: Identifiable, ObservableObject {
 
     /// Snapshot this session's persistable state.
     ///
-    /// Twenty-three fields, mirrored by `init(restoring:)` below. This
-    /// direction is compiler-checked: `PersistedSession` has no hand-written
-    /// initialiser, so a field added to it makes this call a missing-argument
-    /// error. The other direction is not.
+    /// Twenty-five fields, mirrored by `init(restoring:)` below except for the
+    /// last two, which are observations of a running session rather than state
+    /// to restore. This direction is compiler-checked: `PersistedSession` has
+    /// no hand-written initialiser, so a field added to it makes this call a
+    /// missing-argument error. The other direction is not.
     func toPersistedState() -> PersistedSession {
         PersistedSession(
             id: id,
@@ -1218,7 +1229,9 @@ class Session: Identifiable, ObservableObject {
             ledgerLinesAdded: ledgerLinesAdded,
             ledgerLinesRemoved: ledgerLinesRemoved,
             ledgerStartedAt: ledgerStartedAt,
-            ledgerUpdatedAt: ledgerUpdatedAt
+            ledgerUpdatedAt: ledgerUpdatedAt,
+            inboxDepth: inbox.entries.count,
+            submitBlockReason: submitBlockReason?.rawValue
         )
     }
 
@@ -1297,6 +1310,7 @@ class Session: Identifiable, ObservableObject {
         // on_resume / on_startup hook emits `session:ready` once it
         // completes, flipping this back to true via markReady().
         isReady = false
+        hasEverBeenReady = false
         isRunning = true
 
         // A fresh process is a fresh crossing. A session resumed above the
@@ -1584,12 +1598,51 @@ extension Session: AgentInboxHost {
     /// `isReady` covers the same ground from the other side: a session that has
     /// spawned but not reported ready is one whose input layer may not exist
     /// yet.
-    var canSendNow: Bool {
-        isRunning
-            && !hasExited
-            && !isInTurn
-            && isReady
-            && !hasPendingReadyActions
+    var canSendNow: Bool { submitBlockReason == nil }
+
+    /// Why a queued message cannot go out, or nil when one could.
+    ///
+    /// The reason rather than a bare bool, because a refusal is otherwise
+    /// invisible: nothing reaches the terminal and the row does not move. Each
+    /// case is a different problem, and only `.neverReady` is recoverable.
+    ///
+    /// The order is load-bearing. `hasPendingReadyActions` is tested ahead of
+    /// `isReady`, and `.neverReady` is additionally gated on
+    /// `hasEverBeenReady`, so that one guarantee holds: `.neverReady` is
+    /// reported only by a session that has never been at a prompt and owes
+    /// nothing. `sendCommand` clears the pending actions and *then* registers
+    /// the post-reset wait, so a resetting session passes through a window with
+    /// an empty dictionary and a false `isReady` — ordering alone would call
+    /// that `.neverReady` and invite a hand-release that fires the queued
+    /// `/handoff` out of order.
+    enum SubmitBlock: String {
+        case notRunning = "not-running"
+        case exited = "exited"
+        case inTurn = "in-turn"
+        case awaitingReset = "awaiting-reset"
+        case neverReady = "never-reported-ready"
+
+        /// Human phrasing, for the log.
+        var phrase: String {
+            switch self {
+            case .notRunning: return "not running"
+            case .exited: return "exited"
+            case .inTurn: return "in a turn"
+            case .awaitingReset: return "waiting on a post-reset session:ready"
+            case .neverReady: return "never reported ready"
+            }
+        }
+    }
+
+    var submitBlockReason: SubmitBlock? {
+        if !isRunning { return .notRunning }
+        if hasExited { return .exited }
+        if isInTurn { return .inTurn }
+        if hasPendingReadyActions { return .awaitingReset }
+        if !isReady {
+            return hasEverBeenReady ? .awaitingReset : .neverReady
+        }
+        return nil
     }
 
     /// Put one unit in front of the agent and report what became of it.

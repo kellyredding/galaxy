@@ -427,6 +427,9 @@ final class EventCoordinator {
                     "[\(session.sessionRef)] routeEvent:"
                     + " agent reports idle —"
                     + " \(session.inbox.entries.count) in the inbox"
+                    + (session.submitBlockReason.map {
+                        ", blocked: \($0.phrase)"
+                    } ?? "")
                 )
                 session.inboxConsumer.wake()
             }
@@ -446,15 +449,54 @@ final class EventCoordinator {
 
         // Session ready: emitted by the on_resume / on_startup /
         // on_clear / on_compact hooks once they finish running.
-        // ref disambiguates the lifecycle path. We act on
-        // "resume", "clear", and "compact" — each gates a
-        // pending /handoff or /galaxy:resume sendCommand via
+        // ref disambiguates the lifecycle path; all four mean the
+        // agent has reached a prompt. The reset refs additionally
+        // release a pending /handoff or /galaxy:resume through
         // Session.markReady and the matching waitForReady call.
-        // "startup" is a no-op (on_startup fires before a fresh
-        // session would have any work queued for it).
+        //
+        // "startup" is not optional: a session that is never
+        // cleared, compacted, or resumed gets no other ready
+        // signal for its whole life, and the inbox cannot send
+        // until one arrives.
+        // A release asked for by hand, and the one ready signal that
+        // has to be checked before it is believed. The lifecycle refs
+        // come from a hook that watched the thing happen. This one
+        // comes from a person reading state that may already have
+        // moved on, so the interlock lives here — where the answer is
+        // current — rather than in the tool that sent it.
+        //
+        // `.neverReady` is the only blocked state a release can
+        // truthfully resolve: by construction it means the agent has
+        // been sitting at a prompt with nothing owed. Anything else is
+        // transient, or owes a post-reset command that an early
+        // release would overtake.
+        if envelope.event == "session:ready", envelope.ref == "manual" {
+            if let appSessionId =
+                ledgerSessionIdCache[envelope.ledgerSessionId],
+               let session = sessionManager?.sessions
+                   .first(where: { $0.id == appSessionId })
+            {
+                let why = session.submitBlockReason
+                guard why == .neverReady else {
+                    GalaxyLog.events(
+                        "[\(session.sessionRef)] routeEvent:"
+                        + " manual ready refused —"
+                        + " \(why?.rawValue ?? "already sendable")"
+                    )
+                    return
+                }
+                GalaxyLog.events(
+                    "[\(session.sessionRef)] routeEvent:"
+                    + " manual ready accepted"
+                )
+                session.markReady()
+            }
+            return
+        }
+
         if envelope.event == "session:ready" {
             let actionableRefs: Set<String> = [
-                "resume", "clear", "compact",
+                "resume", "clear", "compact", "startup",
             ]
             if let ref = envelope.ref,
                actionableRefs.contains(ref),
@@ -963,6 +1005,14 @@ final class EventCoordinator {
                     return "\(s.sessionRef)=BUSY(\(secs)s)"
                 }
                 return "\(s.sessionRef)=BUSY"
+            }
+            // An idle session holding messages it cannot send is the
+            // state that went unnoticed for thirty-eight hours. Said
+            // here so it recurs until someone acts on it, rather than
+            // only at the moment something was queued.
+            if !s.inbox.isEmpty, let why = s.submitBlockReason {
+                return "\(s.sessionRef)=idle"
+                    + "(\(s.inbox.entries.count) stranded: \(why.phrase))"
             }
             return "\(s.sessionRef)=idle"
         }

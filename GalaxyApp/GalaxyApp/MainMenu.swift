@@ -505,6 +505,18 @@ class MainMenu: NSObject, NSMenuDelegate {
         inboxItem.keyEquivalentModifierMask = [.command, .shift]
         inboxItem.target = MenuActions.shared
         menu.addItem(inboxItem)
+
+        // No key equivalent, deliberately. This answers one recoverable
+        // fault and is dimmed in every other state, so a binding would
+        // spend a chord on something almost never reachable — and would
+        // owe KeystrokeCatalog an availability case for it.
+        let markReadyItem = NSMenuItem(
+            title: "Mark Session Ready",
+            action: #selector(MenuActions.markSessionReady(_:)),
+            keyEquivalent: ""
+        )
+        markReadyItem.target = MenuActions.shared
+        menu.addItem(markReadyItem)
     }
 
     // MARK: - View Menu
@@ -1137,6 +1149,24 @@ class MenuActions: NSObject {
         MainActor.assumeIsolated { AgentInboxPresenter.shared.toggle() }
     }
 
+    /// Sessions ▸ Mark Session Ready. Releases a queue whose readiness signal
+    /// never arrived.
+    ///
+    /// Asserts a fact rather than forcing one: validation restricts this to
+    /// `.neverReady`, which by construction means the agent has been sitting at
+    /// a prompt while nothing told the app so. `markReady` wakes the consumer
+    /// itself, so anything waiting goes out from here.
+    @objc func markSessionReady(_ sender: Any?) {
+        MainActor.assumeIsolated {
+            guard let session = SessionManager.shared.activeSession,
+                  session.submitBlockReason == .neverReady
+            else { return }
+            SessionSubmit.log(
+                "mark-ready by hand session=\(session.sessionRef)")
+            session.markReady()
+        }
+    }
+
 }
 
 // MARK: - Menu Validation
@@ -1206,6 +1236,16 @@ extension MenuActions: NSMenuItemValidation {
         // when someone is looking for them.
         case #selector(showAgentInbox(_:)):
             return NSApp.modalWindow == nil
+
+        // The interlock, and the whole reason this is a menu item rather
+        // than a button on the refusal. `.neverReady` is the one blocked
+        // state a person can truthfully resolve; the others are either
+        // transient or owe an ordered command that releasing early would
+        // overtake. Dimmed everywhere else, so the menu answers "is this
+        // my problem" without anyone having to try it.
+        case #selector(markSessionReady(_:)):
+            return SessionManager.shared.activeSession?
+                .submitBlockReason == .neverReady
 
         // Chrome font items: bound-checked against the live
         // settings value, never gated on focus — the user

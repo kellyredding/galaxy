@@ -42,6 +42,20 @@ struct PersistedSession: Codable {
     let ledgerLinesRemoved: Int?
     let ledgerStartedAt: String?
     let ledgerUpdatedAt: String?
+
+    /// What the inbox holds and why it cannot drain, as of the last write.
+    ///
+    /// Written for readers outside the app, and not read back on restore — a
+    /// restored session is stopped, so both answers are recomputed the moment
+    /// it runs. The inbox is memory-only and a refusal reaches no terminal, so
+    /// without these two a stranded queue is invisible to everything but the
+    /// app's own log.
+    ///
+    /// `submitBlockReason` carries `Session.SubmitBlock.rawValue` rather than
+    /// its phrasing: the prose is for humans and will be reworded, the raw
+    /// value is what a check matches on.
+    let inboxDepth: Int?
+    let submitBlockReason: String?
 }
 
 /// A dismissed session preserved for potential restoration.
