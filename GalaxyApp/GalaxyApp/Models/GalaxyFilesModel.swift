@@ -142,6 +142,11 @@ final class GalaxyFilesModel: FilesHost {
     // Forwarded so the menu has one name to call rather than reaching past this
     // object into the package.
 
+    /// Reach a path from somewhere else in the app — the Ledger's file list is
+    /// the first caller. Shows the Files surface and selects the file if it is
+    /// already open.
+    func selectOrOpen(path: String) { surface.selectOrOpen(path: path) }
+
     func presentPicker() { surface.presentPicker() }
     func presentSearcher() { surface.presentSearcher() }
     func dismissPanelsIfPresented() { surface.dismissPanels() }

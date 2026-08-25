@@ -267,7 +267,26 @@ class MainMenu: NSObject, NSMenuDelegate {
             menu.addItem(refreshItem)
         }
 
-        if let session = activeSession {
+        // ⌘W on the Files tab closes a file, not a session.
+        //
+        // **Built instead of the session item, never beside it.** Two items
+        // sharing one key equivalent do not both stay bound, so this is the same
+        // conditional construction ⌘R above uses rather than an enable gate.
+        //
+        // It stays enabled on an empty strip on purpose, and the action beeps
+        // there. A disabled item drops its key equivalent on the floor, where
+        // ⌘W falls through and closes the window — three files open, four rapid
+        // presses, and the fourth taking the window with it is exactly the
+        // accident this is shaped to prevent.
+        if sessionManager.activeTab == .files {
+            let closeFileItem = NSMenuItem(
+                title: "Close File",
+                action: #selector(MenuActions.closeFileTab(_:)),
+                keyEquivalent: "w"
+            )
+            closeFileItem.target = MenuActions.shared
+            menu.addItem(closeFileItem)
+        } else if let session = activeSession {
             if !session.hasExited {
                 // Session is running: Stop session (⌘W)
                 let stopItem = NSMenuItem(
@@ -355,6 +374,18 @@ class MainMenu: NSObject, NSMenuDelegate {
         findItem.target = MenuActions.shared
         findItem.isEnabled = canActivateFind
         menu.addItem(findItem)
+
+        // ⌃G, beside Find because it answers the same question about the same
+        // document — where in this file. Control rather than Command: ⌘G is
+        // find-again, and the two would fight over the reader's hand.
+        let goToLineItem = NSMenuItem(
+            title: "Go to Line…",
+            action: #selector(MenuActions.goToLineInFile(_:)),
+            keyEquivalent: "g"
+        )
+        goToLineItem.keyEquivalentModifierMask = [.control]
+        goToLineItem.target = MenuActions.shared
+        menu.addItem(goToLineItem)
     }
 
     /// Whether the active tab + sub-state can host a find
@@ -929,6 +960,17 @@ class MenuActions: NSObject {
         MainActor.assumeIsolated { GalaxyFilesModel.shared.reopenLastClosed() }
     }
 
+    /// ⌘W's Files meaning. Beeps on an empty strip rather than doing nothing —
+    /// see `buildFileMenu` for why the item stays enabled there.
+    @objc func closeFileTab(_ sender: Any?) {
+        MainActor.assumeIsolated { GalaxyFilesModel.shared.closeSelected() }
+    }
+
+    /// ⌃G — jump to a line in the open file.
+    @objc func goToLineInFile(_ sender: Any?) {
+        MainActor.assumeIsolated { GalaxyFilesModel.shared.activateLineJump() }
+    }
+
     @objc func stopSession(_ sender: Any?) {
         guard let activeId = SessionManager.shared.activeSessionId else { return }
         SessionManager.shared.confirmAndStopSession(sessionId: activeId)
@@ -1031,6 +1073,10 @@ class MenuActions: NSObject {
         if sm.activeTab == .terminal {
             guard let id = sm.activeSessionId else { return }
             TerminalTabCommands.shared.focusSession.send(id)
+        } else if sm.activeTab == .files {
+            MainActor.assumeIsolated {
+                GalaxyFilesModel.shared.selectPreviousRow()
+            }
         } else {
             sm.listNavAction = .up
         }
@@ -1043,6 +1089,10 @@ class MenuActions: NSObject {
         if sm.activeTab == .terminal {
             guard let id = sm.activeSessionId else { return }
             TerminalTabCommands.shared.focusShell.send(id)
+        } else if sm.activeTab == .files {
+            MainActor.assumeIsolated {
+                GalaxyFilesModel.shared.selectNextRow()
+            }
         } else {
             sm.listNavAction = .down
         }
@@ -1372,6 +1422,15 @@ extension MenuActions: NSMenuItemValidation {
         case #selector(reopenClosedFile(_:)):
             return GalaxyFilesModel.shared.hasClosedFiles
 
+        // Always live where it exists, and it exists only on Files. Answering
+        // false would drop ⌘W on the floor, where the window takes it and a
+        // reader loses the window instead of a file they had already closed.
+        case #selector(closeFileTab(_:)):
+            return true
+
+        case #selector(goToLineInFile(_:)):
+            return GalaxyFilesModel.shared.hasFileOpen
+
         // View ▸ list navigation and inner tabs. Live for the
         // same reason the terminal font items above are: the View
         // menu rebuilds only on visual open, so a build-time
@@ -1446,6 +1505,18 @@ extension MenuActions: NSMenuItemValidation {
             return (
                 "Focus Session Pane", "Focus Shell Pane",
                 sm.activeSessionId != nil
+            )
+        }
+        // The file strip's rows, which are this surface's vertical axis the way
+        // a list is one elsewhere. Offered only once the strip has wrapped: a
+        // single row is not a thing to step between, and a disabled key
+        // equivalent beeps rather than doing nothing.
+        if sm.activeTab == .files {
+            return (
+                "Previous Row", "Next Row",
+                MainActor.assumeIsolated {
+                    GalaxyFilesModel.shared.hasMultipleRows
+                }
             )
         }
         return ("Previous item", "Next item", hasListFocus())

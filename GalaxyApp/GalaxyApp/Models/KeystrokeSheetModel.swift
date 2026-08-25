@@ -81,6 +81,8 @@ enum KeystrokeSheetModel {
             // the strip belongs to a session, so there is no app-wide flag that
             // could be stale for the tab you are on.
             fileOpen: session?.selectedFilePath != nil,
+            hasClosedFiles: GalaxyFilesModel.shared.hasClosedFiles,
+            hasMultipleFileRows: GalaxyFilesModel.shared.hasMultipleRows,
             // `AgentsView` keeps the selection in `@State` and mirrors it
             // onto the session, which is the only readable copy from out
             // here — and it is the same fact the view's own Escape

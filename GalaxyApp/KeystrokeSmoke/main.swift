@@ -69,6 +69,8 @@ func ctx(
     artifactReaderOpen: Bool = false,
     snapshotReaderOpen: Bool = false,
     fileOpen: Bool = false,
+    hasClosedFiles: Bool = false,
+    hasMultipleFileRows: Bool = false,
     agentRunOpen: Bool = false,
     sessionPaneFocused: Bool = false,
     shellPaneFocused: Bool = false,
@@ -86,6 +88,8 @@ func ctx(
         artifactReaderOpen: artifactReaderOpen,
         snapshotReaderOpen: snapshotReaderOpen,
         fileOpen: fileOpen,
+        hasClosedFiles: hasClosedFiles,
+        hasMultipleFileRows: hasMultipleFileRows,
         agentRunOpen: agentRunOpen,
         sessionPaneFocused: sessionPaneFocused,
         shellPaneFocused: shellPaneFocused,
@@ -383,6 +387,59 @@ let openRows = [
 // `let` with no name to call, so nothing makes the two agree. Written out
 // here independently — not through `KeystrokeCatalog.ledgerListSubTabs` —
 // so this is a second opinion rather than a tautology.
+// The Files tab gave ⌘W and ⇧⌘T a second meaning each, and the File menu
+// builds one item or the other because two items sharing a key equivalent
+// leave one silently unbound. The sheet has to say the same thing: a reader
+// looking at two live rows for one key learns nothing about which it does.
+//
+// The ⌘W truth table above never varies the tab, so it cannot see this pair —
+// which is exactly how a sixth meaning could arrive without failing anything.
+
+check("availability: ⌘W has at most one meaning on every surface") {
+    let rows = [
+        gate("⌘W", "Close File"),
+        gate("⌘W", "Stop session"),
+        gate("⌘W", "Dismiss session"),
+    ]
+    for tab in SessionTab.allCases {
+        for exited in [false, true] {
+            let c = ctx(
+                tab: tab,
+                hasSessions: true,
+                hasActiveSession: true,
+                activeSessionRunning: !exited,
+                activeSessionExited: exited
+            )
+            let live = rows.filter { $0.isActive(in: c) }.count
+            if live > 1 {
+                print("      \(tab) exited=\(exited): \(live) live ⌘W rows")
+                return false
+            }
+        }
+    }
+    return true
+}
+
+check("availability: ⇧⌘T restores a session or a file, never both") {
+    let restore = gate("⇧⌘T", "Restore Session...")
+    let reopen = gate("⇧⌘T", "Reopen Closed File")
+    for tab in SessionTab.allCases {
+        for closed in [false, true] {
+            let c = ctx(tab: tab, hasClosedFiles: closed)
+            if restore.isActive(in: c) && reopen.isActive(in: c) {
+                print("      \(tab) closed=\(closed): both live")
+                return false
+            }
+        }
+    }
+    // And the complement is genuine rather than merely non-overlapping: on
+    // Files with something to bring back, the file meaning is the live one.
+    let onFiles = ctx(tab: .files, hasClosedFiles: true)
+    let elsewhere = ctx(tab: .terminal, hasClosedFiles: true)
+    return reopen.isActive(in: onFiles) && !restore.isActive(in: onFiles)
+        && restore.isActive(in: elsewhere) && !reopen.isActive(in: elsewhere)
+}
+
 check("availability: list nav is live on exactly six of eleven surfaces") {
     let listNav = gate("⌘J", "Next item")
     for (tab, sub) in surfaces {

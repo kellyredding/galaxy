@@ -56,6 +56,25 @@ enum KeystrokeAvailability: Equatable {
     /// this row lying about it.
     case innerTabs
 
+    // MARK: - Where a key re-scopes on the Files tab
+    //
+    // ⌘W and ⇧⌘T each mean one thing there and another everywhere else, and
+    // the File menu builds one item or the other rather than both — two items
+    // sharing a key equivalent leave one silently unbound. These four cases
+    // are what keeps the sheet saying the same thing the menu does: without
+    // them both meanings of a key read as live at once, on a key that can only
+    // ever do one of them.
+
+    /// Live anywhere the Files tab is not showing.
+    case appOffFiles
+    /// A session requirement that also stands down on the Files tab.
+    case sessionOffFiles(SessionRequirement)
+    /// On the Files tab, with a closed file to bring back.
+    case filesWithClosed
+    /// On the Files tab, with more than one row to step between. One row is
+    /// not a thing to move between, and the menu item dims there.
+    case filesWithRows
+
     /// Where a list has focus, in the sense `buildViewMenu` means it.
     ///
     /// Restates a gate that is a local `let` inside that method rather
@@ -211,6 +230,14 @@ enum KeystrokeAvailability: Equatable {
         case .ledgerSubTabs(let subTabs):
             return ctx.tab == .ledger
                 && subTabs.contains(ctx.ledgerSubTab)
+        case .appOffFiles:
+            return ctx.tab != .files
+        case .sessionOffFiles(let requirement):
+            return ctx.tab != .files && requirement.isMet(in: ctx)
+        case .filesWithClosed:
+            return ctx.tab == .files && ctx.hasClosedFiles
+        case .filesWithRows:
+            return ctx.tab == .files && ctx.hasMultipleFileRows
         case .innerTabs:
             return ctx.tab.hasInnerTabs
         case .listFocus:
@@ -244,6 +271,14 @@ enum KeystrokeAvailability: Equatable {
             return "in \(Self.name(tabs)), with no \(Self.item(tabs)) open"
         case .ledgerSubTabs(let subTabs):
             return "in Ledger ▸ \(Self.name(subTabs))"
+        case .appOffFiles:
+            return "outside the Files tab"
+        case .sessionOffFiles(let requirement):
+            return "\(requirement.conditionText), outside the Files tab"
+        case .filesWithClosed:
+            return "on Files, with a closed file to bring back"
+        case .filesWithRows:
+            return "on Files, with more than one row"
         case .innerTabs:
             return "in a view with inner tabs"
         case .listFocus:
@@ -319,6 +354,7 @@ enum KeystrokeSection: String, CaseIterable {
     case sessions
     case windowAndViews
     case lists
+    case files
     case reader
     case terminal
     case scrollback
@@ -331,6 +367,7 @@ enum KeystrokeSection: String, CaseIterable {
         case .sessions:       return "Sessions"
         case .windowAndViews: return "Window & Views"
         case .lists:          return "Lists"
+        case .files:          return "Files"
         case .reader:         return "Reader"
         case .terminal:       return "Terminal & Agent"
         case .scrollback:     return "Scrollback"
@@ -361,11 +398,9 @@ enum KeystrokeSection: String, CaseIterable {
         case .timeline:
             return .windowAndViews
         // Only reached with nothing open — a file on screen is a reader, caught
-        // above. Window & Views until the Files section exists: its rows land
-        // with the menu items they describe, and a section is added when rows
-        // arrive to fill it rather than ahead of them.
+        // above. An empty strip's keys are the ones that put something in it.
         case .files:
-            return .windowAndViews
+            return .files
         }
     }
 }

@@ -53,6 +53,7 @@ enum KeystrokeCatalog {
         out += sessions
         out += windowAndViews
         out += lists
+        out += files
         out += reader
         out += terminal
         out += scrollback
@@ -61,6 +62,49 @@ enum KeystrokeCatalog {
         out += dialogs
         return out
     }()
+
+    // MARK: - Files
+
+    /// The Files tab's own keys.
+    ///
+    /// ⌘H / ⌘L are absent on purpose: they reach the file strip through
+    /// `.innerTabs`, alongside the Ledger's sub-tabs, and a second row for one
+    /// binding in one section is what the smoke calls a duplicate.
+    ///
+    /// Three of these re-scope a key that means something else elsewhere — ⌘W,
+    /// ⇧⌘T, and the ⌘K/⌘J pair — so each is paired with a narrowed row in the
+    /// section that owns the other meaning. Both halves have to move together
+    /// or the sheet shows two live rows for a key that does one thing.
+    private static let files: [KeystrokeEntry] = [
+        .init(binding: .literal("⌘T"), label: "Open File...",
+              section: .files, availability: .session(.active),
+              aliases: "open a file, file picker, go to file, quick open, "
+                  + "find a file by name, jump to a file, browse files"),
+        .init(binding: .literal("⇧⌘F"), label: "Find in Files...",
+              section: .files, availability: .session(.active),
+              aliases: "search across files, grep, search the project, "
+                  + "find text in files, search every file, look in files"),
+        .init(binding: .literal("⇧⌘T"), label: "Reopen Closed File",
+              section: .files, availability: .filesWithClosed,
+              aliases: "bring back a file, undo closing a file, "
+                  + "reopen the last file, the closed file history"),
+        .init(binding: .literal("⌘W"), label: "Close File",
+              section: .files, availability: .views([.files]),
+              aliases: "close this file, dismiss the file, close the tab, "
+                  + "get rid of this file, put the file away"),
+        .init(binding: .literal("⌘K"), label: "Previous Row",
+              section: .files, availability: .filesWithRows,
+              aliases: "row above, previous row of files, "
+                  + "move up the strip, the row over the tabs"),
+        .init(binding: .literal("⌘J"), label: "Next Row",
+              section: .files, availability: .filesWithRows,
+              aliases: "row below, next row of files, "
+                  + "move down the strip, the row under the tabs"),
+        .init(binding: .literal("⌃G"), label: "Go to Line...",
+              section: .files, availability: .viewsWithReader([.files]),
+              aliases: "jump to a line, line number, go to line number, "
+                  + "scroll to a line, find a line"),
+    ]
 
     // MARK: - Sessions
 
@@ -81,8 +125,10 @@ enum KeystrokeCatalog {
               section: .sessions, availability: .app,
               aliases: "add a marker, label the sidebar, divider, "
                   + "separator, group the sessions"),
+        // Narrowed off `.app` when the Files tab arrived: ⇧⌘T brings back a
+        // closed *file* there, and the File menu builds one item or the other.
         .init(binding: .literal("⇧⌘T"), label: "Restore Session...",
-              section: .sessions, availability: .app,
+              section: .sessions, availability: .appOffFiles,
               aliases: "reopen a closed session, bring back a session, "
                   + "open a past session, the closed session archive, "
                   + "undo closing a session"),
@@ -145,12 +191,12 @@ enum KeystrokeCatalog {
         // reaches a row that says those three words in that order — and
         // the label says two of them with nothing in between.
         .init(binding: .literal("⌘W"), label: "Stop session",
-              section: .sessions, availability: .session(.live),
+              section: .sessions, availability: .sessionOffFiles(.live),
               aliases: "stop the session, end the session, kill the "
                   + "agent, quit claude, halt the session, shut the "
                   + "session down"),
         .init(binding: .literal("⌘W"), label: "Dismiss session",
-              section: .sessions, availability: .session(.stopped),
+              section: .sessions, availability: .sessionOffFiles(.stopped),
               aliases: "remove a stopped session, clear it out of the "
                   + "sidebar, get rid of a finished session"),
         // The condition has to name the suppression, not just the state:
@@ -213,19 +259,23 @@ enum KeystrokeCatalog {
         .init(binding: .literal("⌘H"), label: "Previous tab",
               section: .windowAndViews, availability: .innerTabs,
               aliases: "previous inner tab, previous ledger tab, "
-                  + "move left inside the view"),
+                  + "previous file, previous file tab, "
+                  + "move left inside the view, move left along the strip"),
         .init(binding: .literal("⌘←"), label: "Previous tab",
               section: .windowAndViews, availability: .innerTabs,
               aliases: "previous inner tab, previous ledger tab, "
-                  + "move left inside the view"),
+                  + "previous file, previous file tab, "
+                  + "move left inside the view, move left along the strip"),
         .init(binding: .literal("⌘L"), label: "Next tab",
               section: .windowAndViews, availability: .innerTabs,
               aliases: "next inner tab, next ledger tab, "
-                  + "move right inside the view"),
+                  + "next file, next file tab, "
+                  + "move right inside the view, move right along the strip"),
         .init(binding: .literal("⌘→"), label: "Next tab",
               section: .windowAndViews, availability: .innerTabs,
               aliases: "next inner tab, next ledger tab, "
-                  + "move right inside the view"),
+                  + "next file, next file tab, "
+                  + "move right inside the view, move right along the strip"),
 
         // `.session(.active)` rather than a history-depth gate: the
         // navigation history belongs to the active session

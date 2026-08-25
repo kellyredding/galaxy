@@ -69,6 +69,12 @@ struct KeystrokeContext: Equatable {
     /// keys to act on.
     let fileOpen: Bool
 
+    /// The Files strip has something to bring back, and more than one row to
+    /// step between. Two facts rather than one because two keys read them
+    /// separately, and each dims on its own.
+    let hasClosedFiles: Bool
+    let hasMultipleFileRows: Bool
+
     // MARK: - Agents
 
     /// An agent run is selected, so the Agents tab has something open to
@@ -160,6 +166,8 @@ struct KeystrokeContext: Equatable {
         artifactReaderOpen: false,
         snapshotReaderOpen: false,
         fileOpen: false,
+        hasClosedFiles: false,
+        hasMultipleFileRows: false,
         agentRunOpen: false,
         sessionPaneFocused: false,
         shellPaneFocused: false,
