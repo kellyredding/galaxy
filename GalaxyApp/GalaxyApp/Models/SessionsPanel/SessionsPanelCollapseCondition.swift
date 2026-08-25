@@ -14,6 +14,12 @@ enum SessionsPanelCollapseCondition: Hashable, CaseIterable {
     /// cards lay two columns of code side by side, and at the panel's
     /// default 220pt the right column wraps.
     case diffReader
+    /// The Files tab is the surface on screen.
+    ///
+    /// Asserted for the whole tab rather than for an open document, unlike the
+    /// diff reader beside it: the strip wants the width before any file does,
+    /// because how many rows it wraps into is decided by how wide it is.
+    case filesTab
 
     /// Why the panel is held. Paired with the case rather than written
     /// at the site that reports it, so a condition cannot be described
@@ -22,6 +28,8 @@ enum SessionsPanelCollapseCondition: Hashable, CaseIterable {
         switch self {
         case .diffReader:
             return "a diff artifact is open"
+        case .filesTab:
+            return "the Files tab is open"
         }
     }
 }

@@ -36,8 +36,36 @@ struct FilesContainerView: View {
                 )
                 .opacity(active ? 1 : 0)
                 .allowsHitTesting(active)
-                .onAppear { model.restoreIfNeeded(for: session) }
+                .onAppear {
+                    model.restoreIfNeeded(for: session)
+                    syncSessionsPanelCondition(session)
+                }
+                .onChange(of: sessionManager.activeSessionId) { _, _ in
+                    syncSessionsPanelCondition(session)
+                }
+                .onChange(of: sessionManager.activeTab) { _, _ in
+                    syncSessionsPanelCondition(session)
+                }
             }
         }
+    }
+
+    /// Hold the sessions panel collapsed while Files is the surface on screen.
+    ///
+    /// **The active-session guard is doing something the visibility test is
+    /// not.** Every pane here stays mounted behind an opacity switch, so
+    /// without it each of the other sessions' panes would write its own `false`
+    /// over the condition the visible one is holding. Exactly one pane passes,
+    /// and that pane's state is the whole answer.
+    ///
+    /// Fired from the same three places `ArtifactsView` fires its own: appear,
+    /// the active session changing, and the tab changing. A surface that
+    /// asserts a global and observes fewer than those holds a stale claim
+    /// across a switch.
+    private func syncSessionsPanelCondition(_ session: Session) {
+        guard session.id == sessionManager.activeSessionId else { return }
+        SidebarPreferences.shared.setCondition(
+            sessionManager.activeTab == .files, .filesTab
+        )
     }
 }

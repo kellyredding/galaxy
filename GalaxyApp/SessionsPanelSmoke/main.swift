@@ -143,15 +143,40 @@ check("a fresh visit does take the panel again") {
 
 // MARK: - Mechanism
 //
-// There is one condition today. These are about the machinery, and the first is
-// the check that would have caught `NavigationCoordinator`'s Bool.
+// There are two conditions now, and these are the assertions that could not be
+// written while there was one. Both were unreachable rather than untested: the
+// branches they exercise exist in `SessionsPanelModel` and no arrangement of a
+// single case could reach them, so the file claimed coverage in its header that
+// it did not have.
+
+check("two distinct holders do not cancel one another") {
+    var m = panel(showing: true)
+    m.set(true, condition: .diffReader)
+    m.set(true, condition: .filesTab)
+    // One lets go. The panel is still held, because the other has not.
+    m.set(false, condition: .diffReader)
+    return !m.isVisible && m.conditions == [.filesTab]
+}
+
+check("a second condition arriving while one is held still accounts") {
+    var m = panel(showing: true)
+    m.set(true, condition: .diffReader)
+    // Arrives with the set already non-empty, which is the branch a single
+    // case can never reach: it joins rather than overruling, so its own
+    // retraction is still owed.
+    m.set(true, condition: .filesTab)
+    m.set(false, condition: .filesTab)
+    let heldByTheFirst = !m.isVisible && m.conditions == [.diffReader]
+    m.set(false, condition: .diffReader)
+    return heldByTheFirst && m.isVisible && m.conditions.isEmpty
+}
 
 check("a retraction only releases when the last condition goes") {
     var m = panel(showing: true)
     m.set(true, condition: .diffReader)
-    // With one case in the enum this is the same condition twice, which is
-    // exactly the idempotence the set is for: two asserts and one retract must
-    // still leave the panel free, not held by a phantom second holder.
+    // The same condition twice, which is the idempotence the set is for: two
+    // asserts and one retract must still leave the panel free, not held by a
+    // phantom second holder.
     m.set(true, condition: .diffReader)
     m.set(false, condition: .diffReader)
     return m.isVisible && m.conditions.isEmpty
