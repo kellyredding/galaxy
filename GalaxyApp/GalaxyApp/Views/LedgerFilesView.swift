@@ -218,12 +218,28 @@ struct LedgerFilesView: View {
                 .truncationMode(.tail)
                 .frame(width: Self.colType, alignment: .leading)
 
+            // The path is a link into the Files tab.
+            //
+            // Coloured only while the file is still on disk: a ledger row
+            // outlives the file it names, and offering to open something that
+            // has been deleted is worse than saying nothing about it.
             Text(abbreviatePath(file.filePath))
                 .chromeFontMono(size: fontSize.caption2)
                 .lineLimit(1)
                 .truncationMode(.middle)
+                .foregroundColor(exists(file) ? .accentColor : .primary)
                 .help(file.filePath)
                 .frame(width: flexWidth, alignment: .leading)
+                .contentShape(Rectangle())
+                .onTapGesture { openInFiles(file) }
+                .onHover { inside in
+                    guard exists(file) else { return }
+                    if inside {
+                        NSCursor.pointingHand.push()
+                    } else {
+                        NSCursor.pop()
+                    }
+                }
 
             Text(file.searchPattern.isEmpty ? "" : file.searchPattern)
                 .chromeFontMono(size: fontSize.caption2)
@@ -254,6 +270,25 @@ struct LedgerFilesView: View {
         // until now there was no way to select a row with the pointer at all.
         .contentShape(Rectangle())
         .onTapGesture { model.focusedId = file.id }
+    }
+
+    private func exists(_ file: LedgerFile) -> Bool {
+        FileManager.default.fileExists(atPath: file.filePath)
+    }
+
+    /// Open this path in the Files tab, selecting it if it is already open.
+    ///
+    /// **Whether it is already open is the set's question, not this view's.** A
+    /// second place deciding that is a second answer waiting to disagree with
+    /// the first, so this asks rather than tracking openness of its own.
+    ///
+    /// The tab change and the selection land inside one debounce window, so the
+    /// pair records as a single history entry — which is what makes Back come
+    /// straight back here rather than needing two presses. The same idiom the
+    /// Agents tab uses to reach an artifact.
+    private func openInFiles(_ file: LedgerFile) {
+        guard exists(file) else { return }
+        GalaxyFilesModel.shared.selectOrOpen(path: file.filePath)
     }
 
     /// Show the selected file where it lives.
