@@ -8,6 +8,7 @@ enum SettingsTab: String, CaseIterable {
     case general
     case sessions
     case terminal
+    case files
     case statusline
     case notifications
 
@@ -16,6 +17,7 @@ enum SettingsTab: String, CaseIterable {
         case .general: return "General"
         case .sessions: return "Sessions"
         case .terminal: return "Terminal"
+        case .files: return "Files"
         case .statusline: return "Statusline"
         case .notifications: return "Notifications"
         }
@@ -26,6 +28,7 @@ enum SettingsTab: String, CaseIterable {
         case .general: return "gear"
         case .sessions: return "text.bubble"
         case .terminal: return "apple.terminal"
+        case .files: return "folder"
         case .statusline: return "dock.rectangle"
         case .notifications: return "bell"
         }
@@ -88,6 +91,8 @@ struct SettingsView: View {
                         shellHeightPercentText:
                             $shellHeightPercentText
                     )
+                case .files:
+                    FilesSettingsTab(settingsManager: settingsManager)
                 case .notifications:
                     NotificationsSettingsTab(settingsManager: settingsManager)
                 case .statusline:
