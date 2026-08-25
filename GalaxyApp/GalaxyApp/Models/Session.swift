@@ -246,6 +246,15 @@ class Session: Identifiable, ObservableObject {
     /// view. nil when viewing the index.
     @Published var selectedAgentId: String? = nil
 
+    /// Absolute path of the file selected in the Files strip. nil when
+    /// nothing is open.
+    ///
+    /// The strip itself lives on the session's `FileSet`, which is where
+    /// the tabs, their order and their reader state are. What is here is
+    /// only the identifier, for the same reason the three above are: the
+    /// coordinator has to be able to observe it and write it back.
+    @Published var selectedFilePath: String? = nil
+
     // MARK: - History title caches
     //
     // Populated by views as they load summaries. Used by
@@ -288,6 +297,26 @@ class Session: Identifiable, ObservableObject {
 
     func agentTitle(for id: String) -> String? {
         agentTitles[id]
+    }
+
+    fileprivate var fileTitles: [String: String] = [:]
+
+    /// Name the file, and the folder holding it.
+    ///
+    /// The folder is not decoration. A strip fills up with `main.swift`,
+    /// `index.ts` and `README.md`, and a history menu listing three of the
+    /// same name is a menu that cannot be used.
+    func recordFileInfo(path: String) {
+        let url = URL(fileURLWithPath: path)
+        let parent = url.deletingLastPathComponent().lastPathComponent
+        fileTitles[path] =
+            parent.isEmpty
+            ? url.lastPathComponent
+            : "\(url.lastPathComponent) (\(parent))"
+    }
+
+    func fileTitle(for path: String) -> String? {
+        fileTitles[path]
     }
 
     // MARK: - Navigation coordinator

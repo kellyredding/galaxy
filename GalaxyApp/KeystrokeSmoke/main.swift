@@ -68,6 +68,7 @@ func ctx(
     sessionsPanelVisible: Bool = true,
     artifactReaderOpen: Bool = false,
     snapshotReaderOpen: Bool = false,
+    fileOpen: Bool = false,
     agentRunOpen: Bool = false,
     sessionPaneFocused: Bool = false,
     shellPaneFocused: Bool = false,
@@ -84,6 +85,7 @@ func ctx(
         sessionsPanelVisible: sessionsPanelVisible,
         artifactReaderOpen: artifactReaderOpen,
         snapshotReaderOpen: snapshotReaderOpen,
+        fileOpen: fileOpen,
         agentRunOpen: agentRunOpen,
         sessionPaneFocused: sessionPaneFocused,
         shellPaneFocused: shellPaneFocused,
@@ -362,8 +364,8 @@ check("availability: ⌘W closes the window only with no sessions") {
 
 // MARK: - Tier 2: list focus, and Open
 
-/// Every surface Galaxy has: six views, and the Ledger's five sub-tabs
-/// within one of them. Ten distinct surfaces, and every one answers ↩
+/// Every surface Galaxy has: seven views, and the Ledger's five sub-tabs
+/// within one of them. Eleven distinct surfaces, and every one answers ↩
 /// differently.
 let surfaces: [(SessionTab, LedgerSubTab)] = SessionTab.allCases
     .flatMap { tab in LedgerSubTab.allCases.map { (tab, $0) } }
@@ -381,7 +383,7 @@ let openRows = [
 // `let` with no name to call, so nothing makes the two agree. Written out
 // here independently — not through `KeystrokeCatalog.ledgerListSubTabs` —
 // so this is a second opinion rather than a tautology.
-check("availability: list nav is live on exactly six of ten surfaces") {
+check("availability: list nav is live on exactly six of eleven surfaces") {
     let listNav = gate("⌘J", "Next item")
     for (tab, sub) in surfaces {
         let expected: Bool
@@ -390,7 +392,9 @@ check("availability: list nav is live on exactly six of ten surfaces") {
             expected = true
         case .ledger:
             expected = sub == .fileAccess || sub == .entries
-        case .terminal, .timeline:
+        // Files has a strip, not a list: ⌘J/K step rows within the strip as an
+        // inner-tab axis, which is a different pair of keys from list nav.
+        case .terminal, .timeline, .files:
             expected = false
         }
         let live = listNav.isActive(in: ctx(tab: tab, ledgerSubTab: sub))

@@ -16,19 +16,23 @@ struct NavigationRoute: Equatable, Hashable {
     let artifactNumber: Int32?
     let snapshotNumber: Int32?
     let agentId: String?
+    /// Absolute path of the file selected in the Files strip.
+    let filePath: String?
 
     private init(
         tab: SessionTab,
         ledgerSubTab: LedgerSubTab? = nil,
         artifactNumber: Int32? = nil,
         snapshotNumber: Int32? = nil,
-        agentId: String? = nil
+        agentId: String? = nil,
+        filePath: String? = nil
     ) {
         self.tab = tab
         self.ledgerSubTab = ledgerSubTab
         self.artifactNumber = artifactNumber
         self.snapshotNumber = snapshotNumber
         self.agentId = agentId
+        self.filePath = filePath
     }
 
     static func terminal() -> Self {
@@ -53,5 +57,9 @@ struct NavigationRoute: Equatable, Hashable {
 
     static func agents(id: String? = nil) -> Self {
         .init(tab: .agents, agentId: id)
+    }
+
+    static func files(path: String? = nil) -> Self {
+        .init(tab: .files, filePath: path)
     }
 }

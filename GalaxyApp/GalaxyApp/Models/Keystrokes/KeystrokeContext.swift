@@ -58,6 +58,17 @@ struct KeystrokeContext: Equatable {
     let artifactReaderOpen: Bool
     let snapshotReaderOpen: Bool
 
+    /// A file is open on the Files tab.
+    ///
+    /// The odd one of the three, and worth saying why it is still here. The
+    /// other two describe something opened *over* a list, which can be closed
+    /// to get the list back. Files has no list underneath — the strip and the
+    /// reader are the surface — so this is really "the strip has a selection".
+    /// Every keystroke that consults it wants the same question the other two
+    /// answer, though: is there a document on screen for ⌘F, ⌃G and the zoom
+    /// keys to act on.
+    let fileOpen: Bool
+
     // MARK: - Agents
 
     /// An agent run is selected, so the Agents tab has something open to
@@ -106,6 +117,7 @@ struct KeystrokeContext: Equatable {
         case .artifacts: return artifactReaderOpen
         case .snapshots: return snapshotReaderOpen
         case .agents: return agentRunOpen
+        case .files: return fileOpen
         case .terminal, .timeline, .ledger: return false
         }
     }
@@ -124,7 +136,10 @@ struct KeystrokeContext: Equatable {
             return true
         case .ledger:
             return KeystrokeCatalog.ledgerListSubTabs.contains(ledgerSubTab)
-        case .terminal, .timeline:
+        // Files has a strip, not a list. It is stepped through with ⌘H/L as an
+        // inner-tab axis, and ↑/↓/↩ never act on it — the one list this surface
+        // has is inside the picker, which is a modal that holds the keyboard.
+        case .terminal, .timeline, .files:
             return false
         }
     }
@@ -144,6 +159,7 @@ struct KeystrokeContext: Equatable {
         sessionsPanelVisible: true,
         artifactReaderOpen: false,
         snapshotReaderOpen: false,
+        fileOpen: false,
         agentRunOpen: false,
         sessionPaneFocused: false,
         shellPaneFocused: false,

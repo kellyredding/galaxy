@@ -43,6 +43,7 @@ enum SessionTab: String, CaseIterable {
     case artifacts
     case snapshots
     case ledger
+    case files
 
     var title: String {
         switch self {
@@ -52,6 +53,7 @@ enum SessionTab: String, CaseIterable {
         case .artifacts: return "Artifacts"
         case .snapshots: return "Snapshots"
         case .timeline: return "Timeline"
+        case .files: return "Files"
         }
     }
 
@@ -63,6 +65,7 @@ enum SessionTab: String, CaseIterable {
         case .artifacts: return "doc.text"
         case .snapshots: return "camera.viewfinder"
         case .timeline: return "clock.arrow.circlepath"
+        case .files: return "folder"
         }
     }
 
@@ -81,6 +84,9 @@ enum SessionTab: String, CaseIterable {
         case .artifacts: return false
         case .snapshots: return false
         case .timeline: return false
+        // The file strip, which is a second inner-tab axis and the only dynamic
+        // one: Ledger's sub-tabs are a fixed enum, these are whatever is open.
+        case .files: return true
         }
     }
 }

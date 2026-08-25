@@ -335,6 +335,9 @@ struct ContentView: View {
 
                 TimelineContainerView()
                     .tabPane(.timeline, selected: sessionManager.activeTab)
+
+                FilesContainerView()
+                    .tabPane(.files, selected: sessionManager.activeTab)
             }
             .onAppear {
                 #if DEBUG

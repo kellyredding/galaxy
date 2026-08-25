@@ -170,6 +170,12 @@ class SessionManager: ObservableObject {
             artifactsFindHandler?()
         case .snapshots:
             snapshotsFindHandler?()
+        // A publisher rather than a slot, because the Files pane is mounted once
+        // per session and a single slot would be held by whichever mounted last.
+        case .files:
+            MainActor.assumeIsolated {
+                GalaxyFilesModel.shared.activateFind()
+            }
         case .terminal:
             // The terminal-tab Cmd+F path goes through Combine in
             // TerminalHostView for historical reasons (it's the
@@ -188,6 +194,7 @@ class SessionManager: ObservableObject {
             break
         }
     }
+
 
     /// Artifact number to auto-open/show when switching to artifacts tab.
     /// Set by EventCoordinator on artifact.show, cleared by ArtifactsView after opening.
@@ -1607,6 +1614,17 @@ class SessionManager: ObservableObject {
         activeTab = allTabs[nextIndex]
     }
 
+    /// The session a `FileSet` owner id names.
+    ///
+    /// The id is `Session.id.uuidString`. Spelled once here because the string
+    /// form has two spellings in this app — `claudeSessionId` is the lowercased
+    /// one — and two of them reaching `FileSets.set(forOwner:)` would give one
+    /// session two sets.
+    func session(forOwnerID ownerID: String) -> Session? {
+        guard let uuid = UUID(uuidString: ownerID) else { return nil }
+        return sessions.first(where: { $0.id == uuid })
+    }
+
     /// Switch to the previous inner tab within the active view (stops at first boundary)
     func switchToPreviousInnerTab() {
         switch activeTab {
@@ -1615,6 +1633,16 @@ class SessionManager: ObservableObject {
             guard let currentIndex = allTabs.firstIndex(of: activeLedgerSubTab),
                   currentIndex > allTabs.startIndex else { return }
             activeLedgerSubTab = allTabs[allTabs.index(before: currentIndex)]
+        // The file strip is the second inner-tab axis, and the only one that is
+        // not a fixed enum — so it steps through the set rather than through
+        // `allCases`, and the boundary it stops at is whatever is open.
+        // `assumeIsolated` rather than a hop: both cyclers are menu actions and
+        // this type is main-actor by discipline without saying so, which is why
+        // the assumption has to be spelled here rather than inherited.
+        case .files:
+            MainActor.assumeIsolated {
+                GalaxyFilesModel.shared.selectPreviousInnerTab()
+            }
         // Exhaustive rather than defaulted. Both the menu item and the cheat
         // sheet enable ⌘H/⌘L off `SessionTab.hasInnerTabs`, so a view that
         // claims inner tabs and is not answered here gets an enabled menu
@@ -1633,6 +1661,10 @@ class SessionManager: ObservableObject {
             let nextIndex = allTabs.index(after: currentIndex)
             guard nextIndex < allTabs.endIndex else { return }
             activeLedgerSubTab = allTabs[nextIndex]
+        case .files:
+            MainActor.assumeIsolated {
+                GalaxyFilesModel.shared.selectNextInnerTab()
+            }
         case .terminal, .timeline, .agents, .artifacts, .snapshots:
             break
         }

@@ -185,20 +185,65 @@ class MainMenu: NSObject, NSMenuDelegate {
         newMarkerItem.target = MenuActions.shared
         menu.addItem(newMarkerItem)
 
-        // Restore Session (⇧⌘T) - always available.
+        // ⇧⌘T means two things, and exactly one is built per rebuild.
         //
-        // The browser gesture, and sessions are this app's tabs: ⌘W
-        // dismisses one, ⇧⌘T brings the last one back. It moved off ⌘O
-        // so the Terminal tab could give that to Open Shell Pane, which
-        // is a many-times-a-day action where this is not.
-        let restoreItem = NSMenuItem(
-            title: "Restore Session...",
-            action: #selector(MenuActions.restoreSession(_:)),
+        // Two items carrying one key equivalent do not both stay bound: AppKit
+        // resolves the duplicate by silently unbinding one, so `isEnabled` and
+        // `validateMenuItem` cannot disambiguate this. Conditional construction
+        // is the only mechanism, and it is the one ⌘R already uses below.
+        //
+        // The gesture is the same at two scopes — bring back the thing I just
+        // closed — and it re-scopes on the Files tab because ⌘W does. A surface
+        // where ⌘W closes a file while ⇧⌘T restores a session would have the two
+        // halves of one browser gesture disagreeing on the same screen.
+        let filesActive = sessionManager.activeTab == .files
+        if filesActive {
+            let reopenFileItem = NSMenuItem(
+                title: "Reopen Closed File",
+                action: #selector(MenuActions.reopenClosedFile(_:)),
+                keyEquivalent: "t"
+            )
+            reopenFileItem.target = MenuActions.shared
+            reopenFileItem.keyEquivalentModifierMask = [.command, .shift]
+            menu.addItem(reopenFileItem)
+        } else {
+            // The browser gesture, and sessions are this app's tabs: ⌘W
+            // dismisses one, ⇧⌘T brings the last one back. It moved off ⌘O
+            // so the Terminal tab could give that to Open Shell Pane, which
+            // is a many-times-a-day action where this is not.
+            let restoreItem = NSMenuItem(
+                title: "Restore Session...",
+                action: #selector(MenuActions.restoreSession(_:)),
+                keyEquivalent: "t"
+            )
+            restoreItem.target = MenuActions.shared
+            restoreItem.keyEquivalentModifierMask = [.command, .shift]
+            menu.addItem(restoreItem)
+        }
+
+        menu.addItem(.separator())
+
+        // Open File (⌘T) and Find in Files (⇧⌘F), both reachable from any tab —
+        // each shows the Files surface before offering its panel, so the card
+        // opens over the place the file will appear.
+        let openFileItem = NSMenuItem(
+            title: "Open File...",
+            action: #selector(MenuActions.openFilePicker(_:)),
             keyEquivalent: "t"
         )
-        restoreItem.target = MenuActions.shared
-        restoreItem.keyEquivalentModifierMask = [.command, .shift]
-        menu.addItem(restoreItem)
+        openFileItem.target = MenuActions.shared
+        menu.addItem(openFileItem)
+
+        // ⇧⌘F is free: the only `f` bindings in this app are bare ⌘F for Find
+        // and ⌃⌘F for full screen.
+        let findInFilesItem = NSMenuItem(
+            title: "Find in Files...",
+            action: #selector(MenuActions.findInFiles(_:)),
+            keyEquivalent: "f"
+        )
+        findInFilesItem.keyEquivalentModifierMask = [.command, .shift]
+        findInFilesItem.target = MenuActions.shared
+        menu.addItem(findInFilesItem)
 
         menu.addItem(.separator())
 
@@ -325,6 +370,10 @@ class MainMenu: NSObject, NSMenuDelegate {
             return sessionManager.isArtifactReaderOpen
         case .snapshots:
             return sessionManager.isSnapshotReaderOpen
+        // Per-session, so it is asked of the session rather than of a global
+        // the way the two readers above are.
+        case .files:
+            return sessionManager.activeSession?.selectedFilePath != nil
         case .agents, .ledger, .timeline:
             return false
         }
@@ -860,6 +909,26 @@ class MenuActions: NSObject {
         NotificationCenter.default.post(name: .showRestoreSession, object: nil)
     }
 
+    // MARK: - Files
+
+    // `assumeIsolated` rather than a hop: a menu action is always delivered on
+    // the main thread, and this type is main-actor by discipline without saying
+    // so — the same reason `SessionManager`'s inner-tab cyclers spell it out.
+    @objc func openFilePicker(_ sender: Any?) {
+        MainActor.assumeIsolated { GalaxyFilesModel.shared.presentPicker() }
+    }
+
+    @objc func findInFiles(_ sender: Any?) {
+        MainActor.assumeIsolated { GalaxyFilesModel.shared.presentSearcher() }
+    }
+
+    /// ⇧⌘T's Files meaning. Only ever built while the Files tab is active — see
+    /// `buildFileMenu`, where the two meanings are made mutually exclusive at
+    /// construction time rather than by enable state.
+    @objc func reopenClosedFile(_ sender: Any?) {
+        MainActor.assumeIsolated { GalaxyFilesModel.shared.reopenLastClosed() }
+    }
+
     @objc func stopSession(_ sender: Any?) {
         guard let activeId = SessionManager.shared.activeSessionId else { return }
         SessionManager.shared.confirmAndStopSession(sessionId: activeId)
@@ -1292,6 +1361,17 @@ extension MenuActions: NSMenuItemValidation {
             return SessionManager.shared.activeTab == .terminal
                 && SessionManager.shared.activeSessionId != nil
 
+        // Both reachable from any tab — they show the Files surface themselves —
+        // so the only gate is having a session to show it in.
+        case #selector(openFilePicker(_:)), #selector(findInFiles(_:)):
+            return SessionManager.shared.activeSessionId != nil
+
+        // Validated rather than left build-time enabled, because the File menu
+        // rebuilds only when it is opened: a reader who closes the last file and
+        // presses ⇧⌘T would otherwise reach a stale-enabled item.
+        case #selector(reopenClosedFile(_:)):
+            return GalaxyFilesModel.shared.hasClosedFiles
+
         // View ▸ list navigation and inner tabs. Live for the
         // same reason the terminal font items above are: the View
         // menu rebuilds only on visual open, so a build-time
@@ -1387,7 +1467,10 @@ extension MenuActions: NSMenuItemValidation {
         case .ledger:
             return KeystrokeCatalog.ledgerListSubTabs
                 .contains(sm.activeLedgerSubTab)
-        case .terminal, .timeline:
+        // The file strip is stepped with ⌘H/L as an inner-tab axis, not with
+        // the list keys. See `KeystrokeContext.hasListFocus`, which has to give
+        // the same answer.
+        case .terminal, .timeline, .files:
             return false
         }
     }
@@ -1415,7 +1498,7 @@ extension MenuActions: NSMenuItemValidation {
                  .suggestedName:
                 return ("Open", false)
             }
-        case .terminal, .timeline:
+        case .terminal, .timeline, .files:
             return ("Open", false)
         }
     }

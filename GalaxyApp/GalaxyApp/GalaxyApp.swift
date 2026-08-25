@@ -352,6 +352,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         SessionPersistence.shared.flushSync()
         WindowStatePersistence.shared.flushSync()
         ViewedFilesPersistence.shared.flushSync()
+        FilesStatePersistence.shared.flushSync()
         eventCoordinator?.stop()
         GalaxyLog.flush()
     }

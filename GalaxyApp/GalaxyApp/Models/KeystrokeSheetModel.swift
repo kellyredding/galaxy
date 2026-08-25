@@ -76,6 +76,11 @@ enum KeystrokeSheetModel {
             // one pairs it with its own tab.
             artifactReaderOpen: sm.isArtifactReaderOpen,
             snapshotReaderOpen: sm.isSnapshotReaderOpen,
+            // Per-session and read from the session rather than from a global,
+            // like the agent selection below and unlike the two readers above:
+            // the strip belongs to a session, so there is no app-wide flag that
+            // could be stale for the tab you are on.
+            fileOpen: session?.selectedFilePath != nil,
             // `AgentsView` keeps the selection in `@State` and mirrors it
             // onto the session, which is the only readable copy from out
             // here — and it is the same fact the view's own Escape

@@ -67,10 +67,18 @@ final class NavigationCoordinator {
             session.$selectedAgentId
             .map { _ in () }
             .eraseToAnyPublisher()
+        let fileSignal: AnyPublisher<Void, Never> =
+            session.$selectedFilePath
+            .map { _ in () }
+            .eraseToAnyPublisher()
 
+        // Nothing checks this list. A hoisted identifier that never reaches it
+        // is recorded by no signal, so its tab's history has a hole in it and
+        // the build is green — the same silence `apply`'s identifier block has,
+        // one step earlier.
         let signals: [AnyPublisher<Void, Never>] = [
             tabSignal, subTabSignal,
-            artifactSignal, snapshotSignal, agentSignal,
+            artifactSignal, snapshotSignal, agentSignal, fileSignal,
         ]
 
         Publishers.MergeMany(signals)
@@ -127,6 +135,8 @@ final class NavigationCoordinator {
             )
         case .agents:
             return .agents(id: session.selectedAgentId)
+        case .files:
+            return .files(path: session.selectedFilePath)
         }
     }
 
@@ -164,6 +174,15 @@ final class NavigationCoordinator {
         session.openArtifactNumber = route.artifactNumber
         session.openSnapshotNumber = route.snapshotNumber
         session.selectedAgentId = route.agentId
+        session.selectedFilePath = route.filePath
+        // The other three identifiers are read by a view that is already
+        // observing them. The strip is not: it holds the selection itself, and
+        // the path above is a copy of it — so without this, back and forward
+        // reach the Files tab and leave whatever was open on screen, which is
+        // exactly what the comment below warns about one level up.
+        MainActor.assumeIsolated {
+            GalaxyFilesModel.shared.applySelection(route.filePath, to: session)
+        }
 
         // Exhaustive rather than an `if` naming the one view that carries a
         // sub-selection, because this is the one place a new view can be
@@ -177,7 +196,7 @@ final class NavigationCoordinator {
             if let sub = route.ledgerSubTab {
                 sessionManager.activeLedgerSubTab = sub
             }
-        case .terminal, .timeline, .agents, .artifacts, .snapshots:
+        case .terminal, .timeline, .agents, .artifacts, .snapshots, .files:
             break
         }
         sessionManager.activeTab = route.tab
@@ -251,6 +270,12 @@ final class NavigationCoordinator {
             }
             return session.agentTitle(for: id)
                 ?? "Agent \(id.prefix(8))"
+        case .files:
+            guard let path = route.filePath else {
+                return "Files"
+            }
+            return session.fileTitle(for: path)
+                ?? URL(fileURLWithPath: path).lastPathComponent
         }
     }
 }

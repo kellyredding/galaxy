@@ -360,6 +360,12 @@ enum KeystrokeSection: String, CaseIterable {
             return ctx.hasListFocus ? .lists : .windowAndViews
         case .timeline:
             return .windowAndViews
+        // Only reached with nothing open — a file on screen is a reader, caught
+        // above. Window & Views until the Files section exists: its rows land
+        // with the menu items they describe, and a section is added when rows
+        // arrive to fill it rather than ahead of them.
+        case .files:
+            return .windowAndViews
         }
     }
 }
