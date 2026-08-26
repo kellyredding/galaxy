@@ -227,13 +227,13 @@ struct LedgerFilesView: View {
                 .chromeFontMono(size: fontSize.caption2)
                 .lineLimit(1)
                 .truncationMode(.middle)
-                .foregroundColor(exists(file) ? .accentColor : .primary)
+                .foregroundColor(openable(file) ? .accentColor : .primary)
                 .help(file.filePath)
                 .frame(width: flexWidth, alignment: .leading)
                 .contentShape(Rectangle())
                 .onTapGesture { openInFiles(file) }
                 .onHover { inside in
-                    guard exists(file) else { return }
+                    guard openable(file) else { return }
                     if inside {
                         NSCursor.pointingHand.push()
                     } else {
@@ -272,8 +272,19 @@ struct LedgerFilesView: View {
         .onTapGesture { model.focusedId = file.id }
     }
 
-    private func exists(_ file: LedgerFile) -> Bool {
-        FileManager.default.fileExists(atPath: file.filePath)
+    /// Whether this row names something the Files surface can actually open.
+    ///
+    /// **A directory is not**, and the ledger records plenty of them — a glob,
+    /// a listing, a search rooted somewhere. Linking one took a reader to the
+    /// Files tab where nothing appeared, which reads as a broken link rather
+    /// than as a row that was never a link. Still a real row; just not one to
+    /// offer.
+    private func openable(_ file: LedgerFile) -> Bool {
+        var isDirectory: ObjCBool = false
+        let exists = FileManager.default.fileExists(
+            atPath: file.filePath, isDirectory: &isDirectory
+        )
+        return exists && !isDirectory.boolValue
     }
 
     /// Open this path in the Files tab, selecting it if it is already open.
@@ -287,7 +298,7 @@ struct LedgerFilesView: View {
     /// straight back here rather than needing two presses. The same idiom the
     /// Agents tab uses to reach an artifact.
     private func openInFiles(_ file: LedgerFile) {
-        guard exists(file) else { return }
+        guard openable(file) else { return }
         GalaxyFilesModel.shared.selectOrOpen(path: file.filePath)
     }
 
