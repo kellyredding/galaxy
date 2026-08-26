@@ -1515,7 +1515,8 @@ struct SnapshotsView: View {
         snapshotNumber: Int32,
         comment: String
     ) -> String {
-        let lead = comment.isEmpty ? "" : comment + "\n\n"
+        // Shared lead, own body — see the artifact builder for why.
+        let lead = AgentReviewComposer.leading(comment)
         let sid = ledgerSessionId
         let sn = snapshotNumber
         return lead

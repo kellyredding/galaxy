@@ -2602,7 +2602,13 @@ struct ArtifactsView: View {
         artifactNumber: Int32,
         comment: String
     ) -> String {
-        let lead = comment.isEmpty ? "" : comment + "\n\n"
+        // The lead is the shared one. This message's body is entirely its own —
+        // it points at stored annotations rather than quoting them — but the
+        // summary above it is the same convention every other review uses, and
+        // spelling it here is what let it drift: a comment of nothing but
+        // spaces used to ship as a blank line, and the gap beneath it was
+        // narrower than the gaps a file review puts between its blocks.
+        let lead = AgentReviewComposer.leading(comment)
         let sid = ledgerSessionId
         let an = artifactNumber
         return lead
