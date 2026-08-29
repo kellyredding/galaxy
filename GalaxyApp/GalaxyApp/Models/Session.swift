@@ -188,8 +188,15 @@ class Session: Identifiable, ObservableObject {
     @Published private(set) var runningAgentCount: Int = 0
 
     /// Replace the count with what the database just reported.
+    ///
+    /// Guarded, because `@Published` fires on every write and not only on a
+    /// change. The agents fetch calls this on every tab switch and every agent
+    /// lifecycle event, and an unchanged count then invalidated every view
+    /// observing this session — each of which re-ordered its own list.
     func setRunningAgentCount(_ count: Int) {
-        runningAgentCount = max(0, count)
+        let next = max(0, count)
+        guard next != runningAgentCount else { return }
+        runningAgentCount = next
     }
 
     /// When the current turn started (startTurn called).

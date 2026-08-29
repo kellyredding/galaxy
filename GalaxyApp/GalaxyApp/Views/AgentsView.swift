@@ -72,10 +72,13 @@ struct AgentsView: View {
 
     /// Order and selection. The selection is an identity rather than a row
     /// number, so re-sorting cannot slide the highlight onto another run.
+    /// Opens descending, so the newest run is the first row. See
+    /// `ArtifactsView`'s twin for why the scroll-to-bottom it replaces could
+    /// not stay — and here it also fired on every agent lifecycle event.
     @State private var model = ListSortModel<AgentRun, SortColumn>(
         columns: AgentsView.columns,
         sortColumn: .started,
-        sortAscending: true)
+        sortAscending: false)
 
     enum SortColumn {
         case type, status, duration, started
@@ -98,8 +101,6 @@ struct AgentsView: View {
         },
     ]
 
-    private var sortedAgents: [AgentRun] { model.sorted(agents) }
-
     var body: some View {
         Group {
             if selectedAgent != nil {
@@ -113,10 +114,24 @@ struct AgentsView: View {
             maxHeight: .infinity
         )
         .background(Color(.textBackgroundColor))
-        .onAppear { fetchAgents() }
-        .onChange(of: session.ledgerSessionId) {
-            fetchAgents()
+        // Both guarded on the session, not the tab: six containers mount one
+        // view per session, and an unguarded fetch here spawned one CLI
+        // process per session at mount.
+        .onAppear {
+            if session.id == sessionManager.activeSessionId {
+                fetchAgents()
+            }
         }
+        .onChange(of: session.ledgerSessionId) {
+            if session.id == sessionManager.activeSessionId {
+                fetchAgents()
+            }
+        }
+        // Deliberately not gated on the tab. This fetch is also what makes the
+        // sidebar's running-agent badge immediate: `reconcileAndResync` owns
+        // that number and would get there anyway, but only on the next 60s
+        // heartbeat. A landing is cheap now that the list orders once and does
+        // not scroll to its own end.
         .onReceive(
             sessionManager.$agentRefreshTrigger
         ) { trigger in
@@ -136,12 +151,11 @@ struct AgentsView: View {
             onAction: { action in
                 switch action {
                 case .up:
-                    model.move(.up, in: sortedAgents)
+                    model.move(.up)
                 case .down:
-                    model.move(.down, in: sortedAgents)
+                    model.move(.down)
                 case .activate:
-                    selectedAgent = model.focusedElement(
-                        in: sortedAgents)
+                    selectedAgent = model.focusedElement()
                 }
             })
         .onChange(of: selectedAgent != nil) {
@@ -289,27 +303,19 @@ struct AgentsView: View {
                 ScrollViewReader { scrollProxy in
                     ScrollView {
                         LazyVStack(spacing: 0) {
-                            ForEach(
-                                Array(
-                                    sortedAgents
-                                        .enumerated()
-                                ),
-                                id: \.element.id
-                            ) { index, agent in
+                            ForEach(model.rows) { row in
                                 agentRow(
-                                    agent,
-                                    index: index
+                                    row.element,
+                                    index: row.offset
                                 )
-                                .id(agent.id)
+                                .id(row.id)
                             }
                         }
                     }
-                    .onAppear {
-                        scrollToBottom(scrollProxy)
-                    }
-                    .onChange(of: agents?.count) {
-                        scrollToBottom(scrollProxy)
-                    }
+                    // No scroll to the end, on appear or on a count change.
+                    // The count observer was the worse of the two: an agent
+                    // starting or finishing rebuilt every row in the list, on
+                    // every socket event. The newest run is the first row now.
                     .onChange(of: model.focusedId) {
                         if let id = model.focusedId {
                             scrollProxy.scrollTo(id)
@@ -757,16 +763,6 @@ struct AgentsView: View {
         return path
     }
 
-    // MARK: - Scroll
-
-    private func scrollToBottom(
-        _ proxy: ScrollViewProxy
-    ) {
-        if let lastId = sortedAgents.last?.id {
-            proxy.scrollTo(lastId, anchor: .bottom)
-        }
-    }
-
     // MARK: - Escape Key (AppKit monitor)
 
     private func updateEscapeMonitor() {
@@ -828,6 +824,9 @@ struct AgentsView: View {
         guard let lsid = session.ledgerSessionId
         else { return }
 
+        // Read on the main actor and carried in — see `ArtifactsView`'s twin.
+        let order = model.order
+        let columns = Self.columns
         fetchTask?.cancel()
         fetchTask = Task {
             isLoading = true
@@ -840,6 +839,14 @@ struct AgentsView: View {
                     .fetchAgents(
                         ledgerSessionId: lsid
                     )
+                guard !Task.isCancelled else {
+                    return
+                }
+                // Ordered before the hop back, above the assignment: this is
+                // the second-largest of these lists and the sort is the one
+                // piece of the landing worth moving off the main actor.
+                let sorted = ListSortModel<AgentRun, SortColumn>
+                    .sort(result, by: order, columns: columns)
                 guard !Task.isCancelled else {
                     return
                 }
@@ -856,10 +863,11 @@ struct AgentsView: View {
                     result.filter(\.isRunning).count
                 )
 
-                // Seeded at the newest run, which is the end this list
-                // scrolls to.
-                model.reconcileFocus(
-                    in: sortedAgents, seed: .last)
+                model.adopt(
+                    result, sorted: sorted, presortedFor: order)
+                // Seeded at the first row, which is the newest run now that
+                // this list opens descending.
+                model.reconcileFocus(seed: .first)
 
             } catch {
                 guard !Task.isCancelled else {
@@ -932,6 +940,9 @@ struct AgentsView: View {
                 .shared
                 .fetchAgents(ledgerSessionId: lsid)
             agents = all
+            // Ordered here too, or the index behind the detail view keeps the
+            // rows from before the abandon.
+            model.setElements(all)
             if selectedAgent?.agentId == agentId,
                let fresh = all.first(where: {
                    $0.agentId == agentId

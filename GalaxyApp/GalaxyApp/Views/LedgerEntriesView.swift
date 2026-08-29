@@ -71,7 +71,18 @@ struct LedgerEntriesView: View {
         },
     ]
 
-    private var sortedEntries: [LedgerEntry] { model.sorted(entries) }
+    /// Whether `s` runs past `n` characters, without walking the rest of it.
+    ///
+    /// The row asked `content.count > 80`, and `String.count` walks every
+    /// grapheme in the value — a full pass over a multi-kilobyte entry body,
+    /// per row, per body evaluation, to decide whether to draw a button.
+    private static func exceeds(_ s: String, _ n: Int) -> Bool {
+        guard
+            let limit = s.index(
+                s.startIndex, offsetBy: n, limitedBy: s.endIndex)
+        else { return false }
+        return limit < s.endIndex
+    }
 
     var body: some View {
         mainContent
@@ -93,17 +104,22 @@ struct LedgerEntriesView: View {
                     switch action {
                     case .up:
                         searchBlurTrigger += 1
-                        model.move(.up, in: sortedEntries)
+                        model.move(.up)
                     case .down:
                         searchBlurTrigger += 1
-                        model.move(.down, in: sortedEntries)
+                        model.move(.down)
                     case .activate: toggleFocusedEntry()
                     }
                 })
             // Keyed on the rows themselves, not how many there are: a search
             // returning as many entries as it replaced never fired at all.
-            .onChange(of: entries.map { $0.map(\.id) }) {
-                model.reconcileFocus(in: sortedEntries, seed: .first)
+            //
+            // This is also where the rows reach the order model, so the key has
+            // to stay exact: a cheaper one that missed a change would leave the
+            // list showing the entries before it.
+            .onChange(of: entries.map { $0.map(\.id) }, initial: true) {
+                model.setElements(entries)
+                model.reconcileFocus(seed: .first)
             }
             .onChange(of: sessionManager.activeTab) {
                 focusSearchIfActive()
@@ -276,19 +292,13 @@ struct LedgerEntriesView: View {
                                 flexWidth: flexWidth
                             )
 
-                            ForEach(
-                                Array(
-                                    sortedEntries
-                                        .enumerated()
-                                ),
-                                id: \.element.id
-                            ) { index, entry in
+                            ForEach(model.rows) { row in
                                 entryRow(
-                                    entry,
-                                    index: index,
+                                    row.element,
+                                    index: row.offset,
                                     flexWidth: flexWidth
                                 )
-                                .id(entry.id)
+                                .id(row.id)
                             }
                         }
                         .frame(width: tableWidth)
@@ -361,7 +371,7 @@ struct LedgerEntriesView: View {
                     .chromeFontMono(size: fontSize.caption2)
                     .lineLimit(isExpanded ? nil : 1)
                     .truncationMode(.tail)
-                if entry.content.count > 80 {
+                if Self.exceeds(entry.content, 80) {
                     Button(isExpanded ? "Show less" : "Show more") {
                         if isExpanded {
                             expandedEntryIds.remove(entry.id)
@@ -409,7 +419,7 @@ struct LedgerEntriesView: View {
     /// is clamped to one line until a reader asks for the rest, and that ask is
     /// the only thing an entry has to open.
     private func toggleFocusedEntry() {
-        guard let entry = model.focusedElement(in: sortedEntries)
+        guard let entry = model.focusedElement()
         else { return }
         if expandedEntryIds.contains(entry.id) {
             expandedEntryIds.remove(entry.id)
@@ -449,7 +459,7 @@ struct LedgerEntriesView: View {
                 return event
             }
 
-            if let entry = model.focusedElement(in: sortedEntries),
+            if let entry = model.focusedElement(),
                expandedEntryIds.contains(entry.id) {
                 expandedEntryIds.remove(entry.id)
                 return nil

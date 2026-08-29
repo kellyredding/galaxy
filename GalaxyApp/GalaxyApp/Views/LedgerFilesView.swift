@@ -48,8 +48,6 @@ struct LedgerFilesView: View {
         },
     ]
 
-    private var sortedFiles: [LedgerFile] { model.sorted(files) }
-
     var body: some View {
         Group {
             if isLoading && files == nil {
@@ -77,15 +75,20 @@ struct LedgerFilesView: View {
             },
             onAction: { action in
                 switch action {
-                case .up: model.move(.up, in: sortedFiles)
-                case .down: model.move(.down, in: sortedFiles)
+                case .up: model.move(.up)
+                case .down: model.move(.down)
                 case .activate: revealFocusedFile()
                 }
             })
         // Keyed on the rows themselves, not how many there are: a refresh
         // returning as many files as it replaced never fired at all.
-        .onChange(of: files.map { $0.map(\.id) }) {
-            model.reconcileFocus(in: sortedFiles, seed: .first)
+        //
+        // This is also where the rows reach the order model, so the key has to
+        // stay exact: a cheaper one that missed a change would leave the list
+        // showing the files before it.
+        .onChange(of: files.map { $0.map(\.id) }, initial: true) {
+            model.setElements(files)
+            model.reconcileFocus(seed: .first)
         }
     }
 
@@ -146,19 +149,13 @@ struct LedgerFilesView: View {
                                 flexWidth: flexWidth
                             )
 
-                            ForEach(
-                                Array(
-                                    sortedFiles
-                                        .enumerated()
-                                ),
-                                id: \.element.id
-                            ) { index, file in
+                            ForEach(model.rows) { row in
                                 fileRow(
-                                    file,
-                                    index: index,
+                                    row.element,
+                                    index: row.offset,
                                     flexWidth: flexWidth
                                 )
-                                .id(file.id)
+                                .id(row.id)
                             }
                         }
                         .frame(width: tableWidth)
@@ -310,7 +307,7 @@ struct LedgerFilesView: View {
     /// property of the surface, and whether one particular row still exists on
     /// disk is not something the menu bar can see.
     private func revealFocusedFile() {
-        guard let file = model.focusedElement(in: sortedFiles),
+        guard let file = model.focusedElement(),
             FileManager.default.fileExists(atPath: file.filePath)
         else { return }
         NSWorkspace.shared.selectFile(

@@ -155,6 +155,16 @@ check("timestamp: a tier prints only what it needs to") {
     return !today.contains("2025") && older.contains("2024")
 }
 
+// The convenience overload caches its calendar rather than reading
+// `Calendar.current` once per row. That makes it fast; this is what keeps it
+// also being right.
+check("timestamp: the convenience overload agrees with a fresh calendar") {
+    let stamp = "2025-03-30 16:03:12"
+    return ListTimestamp.format(stamp)
+        == ListTimestamp.format(
+            stamp, now: Date(), calendar: Calendar.current)
+}
+
 // MARK: - Order and selection
 
 private struct Row: Identifiable {
@@ -173,11 +183,14 @@ private let rowColumns: [ListColumn<Row, String>] = [
 ]
 
 private func rowModel(
-    sortColumn: String = "name", ascending: Bool = true
+    sortColumn: String = "name", ascending: Bool = true,
+    elements: [Row] = []
 ) -> ListSortModel<Row, String> {
-    ListSortModel(
+    var m = ListSortModel<Row, String>(
         columns: rowColumns, sortColumn: sortColumn,
         sortAscending: ascending)
+    m.setElements(elements)
+    return m
 }
 
 private let twoRows = [
@@ -189,12 +202,11 @@ private let twoRows = [
 // stored the number and none of them repaired it when the order changed, so a
 // header tap slid the highlight onto whatever had moved into that slot.
 check("model: the selection follows its row through a re-sort") {
-    var m = rowModel()
+    var m = rowModel(elements: twoRows)
     m.focusedId = 1
-    let before = m.ordinal(in: m.sorted(twoRows))
+    let before = m.ordinal()
     m.select("count")
-    let after = m.ordinal(in: m.sorted(twoRows))
-    return before == 1 && after == 0 && m.focusedId == 1
+    return before == 1 && m.ordinal() == 0 && m.focusedId == 1
 }
 
 check("model: a new column opens in the direction it declared") {
@@ -210,53 +222,123 @@ check("model: picking the same column again reverses it") {
 }
 
 check("model: tied rows hold their arrival order in both directions") {
-    var m = rowModel(sortColumn: "count", ascending: true)
     let tied = [
         Row(id: 1, name: "a", count: 7),
         Row(id: 2, name: "b", count: 7),
         Row(id: 3, name: "c", count: 7),
     ]
-    let ascending = m.sorted(tied).map(\.id)
-    m.sortAscending = false
-    return ascending == [1, 2, 3] && m.sorted(tied).map(\.id) == [1, 2, 3]
+    var m = rowModel(sortColumn: "count", ascending: true, elements: tied)
+    let ascending = m.rows.map(\.id)
+    m.reverse()
+    return ascending == [1, 2, 3] && m.rows.map(\.id) == [1, 2, 3]
+}
+
+// The tie-break reads arrival position, and re-sorting has to keep reading it
+// from there rather than from the order last displayed. Sorting the previous
+// *display* order instead would make the second column picked break its ties by
+// the first, which looks stable and is not.
+check("model: a second header tap still breaks ties by arrival order") {
+    let tied = [
+        Row(id: 1, name: "c", count: 7),
+        Row(id: 2, name: "a", count: 7),
+        Row(id: 3, name: "b", count: 7),
+    ]
+    var m = rowModel(sortColumn: "name", ascending: true, elements: tied)
+    let byName = m.rows.map(\.id)
+    m.select("count")
+    return byName == [2, 3, 1] && m.rows.map(\.id) == [1, 2, 3]
 }
 
 check("model: a refresh that keeps the row keeps the selection") {
-    var m = rowModel()
+    var m = rowModel(elements: twoRows)
     m.focusedId = 2
-    m.reconcileFocus(in: twoRows, seed: .first)
+    m.reconcileFocus(seed: .first)
     return m.focusedId == 2
 }
 
+// A seed means an end of the list **as displayed**, and this check is where
+// that became true. It used to hand `reconcileFocus` the arrival array while
+// the view rendered a sorted one, so "first" and "last" named the ends of an
+// order nobody was looking at — the hazard that taking no array argument
+// removes. Ordered by name here: "a" (id 2), then "b" (id 1).
 check("model: a selection whose row is gone falls back to the seed") {
-    var m = rowModel()
+    var m = rowModel(elements: twoRows)
     m.focusedId = 99
-    m.reconcileFocus(in: twoRows, seed: .last)
+    m.reconcileFocus(seed: .last)
     let seededLast = m.focusedId
     m.focusedId = 99
-    m.reconcileFocus(in: twoRows, seed: .first)
-    return seededLast == 2 && m.focusedId == 1
+    m.reconcileFocus(seed: .first)
+    return seededLast == 1 && m.focusedId == 2
 }
 
 check("model: an empty refresh clears the selection") {
-    var m = rowModel()
+    var m = rowModel(elements: twoRows)
     m.focusedId = 1
-    m.reconcileFocus(in: [], seed: .first)
+    m.setElements([])
+    m.reconcileFocus(seed: .first)
     return m.focusedId == nil
 }
 
 check("model: moving stops at the ends, and starts from the far one") {
-    var m = rowModel(sortColumn: "count", ascending: true)
-    let rows = m.sorted(twoRows)  // id 2 then id 1
-    m.move(.up, in: rows)
+    // Ordered id 2 then id 1.
+    var m = rowModel(sortColumn: "count", ascending: true, elements: twoRows)
+    m.move(.up)
     let fromNothing = m.focusedId
-    m.move(.down, in: rows)
+    m.move(.down)
     let heldAtBottom = m.focusedId
-    m.move(.up, in: rows)
+    m.move(.up)
     let movedUp = m.focusedId
-    m.move(.up, in: rows)
+    m.move(.up)
     return fromNothing == 1 && heldAtBottom == 1 && movedUp == 2
         && m.focusedId == 2
+}
+
+// MARK: - The order is computed once, and by whoever holds it
+
+// Zebra striping was the only thing that wanted a row's position, and it got it
+// from `Array(rows.enumerated())` — one tuple allocation per row, on every body
+// pass, in five views.
+check("model: rows carry their display offset, so nothing re-enumerates") {
+    let m = rowModel(sortColumn: "count", ascending: true, elements: twoRows)
+    return m.rows.map(\.offset) == [0, 1]
+        && m.rows.map(\.element.id) == [2, 1]
+}
+
+check("model: a presorted adopt for the order in effect is taken as given") {
+    var m = rowModel(sortColumn: "count", ascending: true)
+    let sorted = ListSortModel<Row, String>.sort(
+        twoRows, by: m.order, columns: rowColumns)
+    m.adopt(twoRows, sorted: sorted, presortedFor: m.order)
+    return m.rows.map(\.id) == [2, 1]
+}
+
+// The mid-flight header tap. A fetch that sorted off the main actor for the
+// order in effect when it started must not be allowed to put the list back into
+// it after the reader has moved on.
+check("model: a presorted adopt for a stale order is re-sorted") {
+    var m = rowModel(sortColumn: "count", ascending: true)
+    let staleOrder = m.order
+    let staleSorted = ListSortModel<Row, String>.sort(
+        twoRows, by: staleOrder, columns: rowColumns)
+    m.select("name")
+    m.adopt(twoRows, sorted: staleSorted, presortedFor: staleOrder)
+    // By name ascending: "a" (id 2) then "b" (id 1).
+    return m.rows.map(\.id) == [2, 1] && m.sortColumn == "name"
+}
+
+check("model: adopting with no stated order sorts for the one in effect") {
+    var m = rowModel(sortColumn: "count", ascending: true)
+    m.adopt(twoRows, sorted: twoRows, presortedFor: nil)
+    return m.rows.map(\.id) == [2, 1]
+}
+
+// The static sort is what the fetches call off the main actor, so it has to
+// agree with what the model would have produced on it.
+check("model: the off-actor sort agrees with the model's own") {
+    let m = rowModel(sortColumn: "count", ascending: false, elements: twoRows)
+    let standalone = ListSortModel<Row, String>.sort(
+        twoRows, by: m.order, columns: rowColumns)
+    return m.rows.map(\.element.id) == standalone.map(\.id)
 }
 
 check("model: a column title comes from the one place it is declared") {

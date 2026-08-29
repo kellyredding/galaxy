@@ -79,6 +79,31 @@ enum ListTimestamp {
         return built
     }()
 
+    /// The calendar the tiers are measured against, read once.
+    ///
+    /// `Calendar.current` builds a fresh value on every access, and the tiering
+    /// below asks it four questions per row. Every row in a list measures
+    /// against the same calendar, so reading it per row bought nothing and cost
+    /// an ICU round trip each time.
+    ///
+    /// Refreshed on the two notifications that can change the answer, because a
+    /// cached calendar would otherwise hold a stale time zone for the life of
+    /// the process — a window left open across a flight is the case that
+    /// matters, and it would misfile every row as the wrong tier.
+    private static var cachedCalendar = Calendar.current
+
+    /// Registered on first use, once, by `format(_:)`.
+    private static let calendarObservers: Void = {
+        for name in [
+            NSNotification.Name.NSSystemTimeZoneDidChange,
+            NSLocale.currentLocaleDidChangeNotification,
+        ] {
+            NotificationCenter.default.addObserver(
+                forName: name, object: nil, queue: .main
+            ) { _ in cachedCalendar = Calendar.current }
+        }
+    }()
+
     static func parse(_ timestamp: String) -> Date? {
         if let date = sqlite.date(from: timestamp) { return date }
         if let date = rfc3339.date(from: timestamp) { return date }
@@ -115,7 +140,11 @@ enum ListTimestamp {
     /// A relative reading goes stale in a window left open across midnight.
     /// These lists re-render on every fetch, tab switch and sort, so the
     /// window is short enough not to be worth a timer.
+    ///
+    /// `now` stays per call — it is cheap, and it is the value the tier
+    /// boundary is actually asking about. The calendar does not.
     static func format(_ timestamp: String) -> String {
-        format(timestamp, now: Date(), calendar: .current)
+        _ = calendarObservers
+        return format(timestamp, now: Date(), calendar: cachedCalendar)
     }
 }

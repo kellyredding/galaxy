@@ -70,10 +70,13 @@ struct SnapshotsView: View {
 
     /// Order and selection. The selection is an identity rather than a row
     /// number, so re-sorting cannot slide the highlight onto another snapshot.
+    /// Opens descending, so the newest snapshot is the first row. See
+    /// `ArtifactsView`'s twin for why the scroll-to-bottom it replaces could
+    /// not stay.
     @State private var model = ListSortModel<SnapshotSummary, SortColumn>(
         columns: SnapshotsView.columns,
         sortColumn: .number,
-        sortAscending: true)
+        sortAscending: false)
 
     enum SortColumn {
         case number, title, exchanges, size, reviews, created
@@ -83,7 +86,7 @@ struct SnapshotsView: View {
     /// timestamp opens at its largest, which is what a reader picking that
     /// column is after; text opens at A.
     private static let columns: [ListColumn<SnapshotSummary, SortColumn>] = [
-        .init(.number, title: "#") {
+        .init(.number, title: "#", prefersAscending: false) {
             ListSorting.compare($0.number, $1.number)
         },
         .init(.title, title: "Title") {
@@ -102,8 +105,6 @@ struct SnapshotsView: View {
             ListSorting.compare($0.createdAt, $1.createdAt)
         },
     ]
-
-    private var sortedSnapshots: [SnapshotSummary] { model.sorted(snapshots) }
 
     var body: some View {
         Group {
@@ -142,12 +143,10 @@ struct SnapshotsView: View {
             // surfaces fire their onChange in either order.
             syncFindBarPanel()
 
-            // Nil index data for inactive sessions — always safe
-            // since the reader replaces the index view entirely,
-            // and the index re-fetches when the reader closes.
-            if session.id != sessionManager.activeSessionId {
-                snapshots = nil
-            }
+            // Index rows are kept when this session goes to the back: the
+            // fetch is a few milliseconds and the rows are what makes coming
+            // back instant. Discarding them meant every return re-ran the CLI
+            // and rebuilt every row.
             // Re-fetch when switching back to this
             // session while already on the snapshots tab
             if session.id == sessionManager.activeSessionId,
@@ -170,19 +169,16 @@ struct SnapshotsView: View {
                openSnapshot == nil {
                 fetchSnapshotList()
             }
-            // Nil index data when switching away from Snapshots tab
-            // (only if reader is closed — preserve reader state)
-            if sessionManager.activeTab != .snapshots,
-               session.id == sessionManager.activeSessionId,
-               openSnapshot == nil {
-                snapshots = nil
-            }
+            // Nothing discarded on the way out — see the note in the
+            // activeSessionId handler above.
         }
         .onAppear {
             if sessionManager.pendingSnapshotNumber != nil,
                session.id == sessionManager.activeSessionId {
                 handlePendingSnapshot()
-            } else {
+            } else if session.id == sessionManager.activeSessionId {
+                // Guarded on the session, not the tab — see the matching note
+                // in `ArtifactsView`, including why the tab is left out of it.
                 fetchSnapshotList()
             }
             syncFindHandler()
@@ -225,10 +221,10 @@ struct SnapshotsView: View {
             },
             onAction: { action in
                 switch action {
-                case .up: model.move(.up, in: sortedSnapshots)
-                case .down: model.move(.down, in: sortedSnapshots)
+                case .up: model.move(.up)
+                case .down: model.move(.down)
                 case .activate:
-                    if let snap = model.focusedElement(in: sortedSnapshots) {
+                    if let snap = model.focusedElement() {
                         openSnapshotReader(number: snap.number)
                     }
                 }
@@ -266,7 +262,10 @@ struct SnapshotsView: View {
             fetchTask?.cancel()
             fetchTask = nil
             SnapshotQueryService.shared.cancelAll()
+            // The one place discarding is still right: the session is being
+            // removed and this view torn down with it.
             snapshots = nil
+            model.setElements(nil)
         }
     }
 
@@ -319,9 +318,9 @@ struct SnapshotsView: View {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 0) {
                             headerRow
-                            ForEach(Array(sortedSnapshots.enumerated()), id: \.element.id) { index, snap in
-                                snapshotRow(snap, index: index)
-                                    .id(snap.id)
+                            ForEach(model.rows) { row in
+                                snapshotRow(row.element, index: row.offset)
+                                    .id(row.id)
                             }
                         }
                         .frame(width: geo.size.width - 40, alignment: .leading)
@@ -329,11 +328,8 @@ struct SnapshotsView: View {
                         .padding(.top, 12)
                         .padding(.bottom, 20)
                     }
-                    .onAppear {
-                        if let lastId = sortedSnapshots.last?.id {
-                            scrollProxy.scrollTo(lastId, anchor: .bottom)
-                        }
-                    }
+                    // No scroll on appear — see `ArtifactsView`'s twin. The
+                    // newest row is the first one now.
                     .onChange(of: model.focusedId) {
                         if let id = model.focusedId {
                             scrollProxy.scrollTo(id)
@@ -615,27 +611,36 @@ struct SnapshotsView: View {
     private func fetchSnapshotList() {
         guard let lsid = session.ledgerSessionId else { return }
         isLoading = true
+        // Read on the main actor and carried in — see `ArtifactsView`'s twin.
+        let order = model.order
+        let columns = Self.columns
         fetchTask = Task {
             do {
                 let result = try await SnapshotQueryService.shared
                     .fetchSnapshots(ledgerSessionId: lsid)
                 guard !Task.isCancelled else { return }
+                let sorted = ListSortModel<SnapshotSummary, SortColumn>
+                    .sort(result, by: order, columns: columns)
+                guard !Task.isCancelled else { return }
                 await MainActor.run {
                     snapshots = result
                     seedSnapshotTitles(result)
                     isLoading = false
-                    // Seeded at the last row, which is the end this list
-                    // scrolls to when it appears.
-                    model.reconcileFocus(
-                        in: model.sorted(result), seed: .last)
+                    model.adopt(
+                        result, sorted: sorted, presortedFor: order)
+                    // Seeded at the first row, which is the newest now that
+                    // this list opens descending.
+                    model.reconcileFocus(seed: .first)
                 }
             } catch {
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
                     snapshots = []
                     isLoading = false
+                    model.setElements([])
                 }
-                NSLog("SnapshotsView: fetchSnapshots error: %@", error.localizedDescription)
+                GalaxyLog.events(
+                    "SnapshotsView fetchSnapshots failed: \(error)")
             }
         }
     }
@@ -1071,8 +1076,7 @@ struct SnapshotsView: View {
                 }
 
                 await MainActor.run {
-                    snapshots = list
-                    seedSnapshotTitles(list)
+                    applySnapshots(list)
                     isLoading = false
                     openSnapshot = detail
                     openAnnotations = annotations
@@ -1106,6 +1110,18 @@ struct SnapshotsView: View {
                 }
             }
         }
+    }
+
+    /// Adopt a fetched list into both the tri-state cache and the order model.
+    ///
+    /// The two have to move together: `snapshots` carries the distinction the
+    /// model cannot — nil for never loaded, empty for loaded and empty, which
+    /// picks between the spinner and the empty state — while the model carries
+    /// the order on screen. See `ArtifactsView`'s twin.
+    private func applySnapshots(_ list: [SnapshotSummary]) {
+        snapshots = list
+        model.setElements(list)
+        seedSnapshotTitles(list)
     }
 
     /// Seed the session's snapshot title cache so

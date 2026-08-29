@@ -126,10 +126,15 @@ struct ArtifactsView: View {
 
     /// Order and selection. The selection is an identity rather than a row
     /// number, so re-sorting cannot slide the highlight onto another artifact.
+    /// Opens descending, so the newest artifact is the first row.
+    ///
+    /// It used to open ascending and then scroll to the bottom, which is the
+    /// same intent — show me the newest — expressed in the one way a lazy list
+    /// cannot serve: reaching the last row means building every row above it.
     @State private var model = ListSortModel<ArtifactSummary, SortColumn>(
         columns: ArtifactsView.columns,
         sortColumn: .number,
-        sortAscending: true)
+        sortAscending: false)
 
     enum SortColumn {
         case number, title, type, filename, size, created
@@ -139,7 +144,7 @@ struct ArtifactsView: View {
     /// timestamp opens at its largest, which is what a reader picking that
     /// column is after; text opens at A.
     private static let columns: [ListColumn<ArtifactSummary, SortColumn>] = [
-        .init(.number, title: "#") {
+        .init(.number, title: "#", prefersAscending: false) {
             ListSorting.compare($0.number, $1.number)
         },
         .init(.title, title: "Title") {
@@ -159,10 +164,6 @@ struct ArtifactsView: View {
             ListSorting.compare($0.createdAt, $1.createdAt)
         },
     ]
-
-    private var sortedArtifacts: [ArtifactSummary] {
-        model.sorted(artifacts)
-    }
 
     var body: some View {
         Group {
@@ -204,11 +205,10 @@ struct ArtifactsView: View {
             // active surface).
             syncFindBarPanel()
 
-            if session.id
-                != sessionManager.activeSessionId
-            {
-                artifacts = nil
-            }
+            // Index rows are kept when this session goes to the back. They are
+            // a few milliseconds to fetch and they are what makes coming back
+            // instant; discarding them meant every return re-ran the CLI and
+            // rebuilt every row.
             // Re-fetch when switching back to this
             // session while already on the artifacts tab
             if session.id
@@ -236,16 +236,23 @@ struct ArtifactsView: View {
             {
                 fetchArtifactList()
             }
-            if sessionManager.activeTab != .artifacts,
-               session.id
-                   == sessionManager.activeSessionId,
-               openArtifact == nil
-            {
-                artifacts = nil
-            }
+            // Nothing discarded on the way out — see the note in the
+            // activeSessionId handler above.
         }
         .onAppear {
-            fetchArtifactList()
+            // Guarded on the session, not on the tab. Six containers mount one
+            // view per session, so an unguarded fetch here spawned one CLI
+            // process per session through a single-flight runner — and every
+            // loser of that race landed in the error path and wrote an empty
+            // list into a hidden view.
+            //
+            // Deliberately not also guarded on the tab: this fetch seeds the
+            // artifact title cache that navigation history resolves its labels
+            // from, and a tab gate would leave those unresolved until the tab
+            // had been opened once.
+            if session.id == sessionManager.activeSessionId {
+                fetchArtifactList()
+            }
             syncFindHandler()
         }
         .listNavigation(
@@ -260,14 +267,11 @@ struct ArtifactsView: View {
             onAction: { action in
                 switch action {
                 case .up:
-                    model.move(.up, in: sortedArtifacts)
+                    model.move(.up)
                 case .down:
-                    model.move(
-                        .down, in: sortedArtifacts)
+                    model.move(.down)
                 case .activate:
-                    if let artifact = model.focusedElement(
-                        in: sortedArtifacts)
-                    {
+                    if let artifact = model.focusedElement() {
                         openArtifactReader(
                             artifact: artifact)
                     }
@@ -359,7 +363,10 @@ struct ArtifactsView: View {
             fetchTask?.cancel()
             fetchTask = nil
             ArtifactQueryService.shared.cancelAll()
+            // The one place discarding is still right: this fires when the
+            // session is removed and the view is being torn down.
             artifacts = nil
+            model.setElements(nil)
         }
     }
 
@@ -422,18 +429,12 @@ struct ArtifactsView: View {
                             spacing: 0
                         ) {
                             headerRow
-                            ForEach(
-                                Array(
-                                    sortedArtifacts
-                                        .enumerated()
-                                ),
-                                id: \.element.id
-                            ) { index, artifact in
+                            ForEach(model.rows) { row in
                                 artifactRow(
-                                    artifact,
-                                    index: index
+                                    row.element,
+                                    index: row.offset
                                 )
-                                .id(artifact.id)
+                                .id(row.id)
                             }
                         }
                         .frame(
@@ -444,16 +445,12 @@ struct ArtifactsView: View {
                         .padding(.top, 12)
                         .padding(.bottom, 20)
                     }
-                    .onAppear {
-                        if let lastId =
-                            sortedArtifacts.last?.id
-                        {
-                            scrollProxy.scrollTo(
-                                lastId,
-                                anchor: .bottom
-                            )
-                        }
-                    }
+                    // No scroll on appear, deliberately. Asking a `LazyVStack`
+                    // for its last row is asking it to build every row above
+                    // that one, synchronously, on the main thread — which is
+                    // what a fifteen-hundred-artifact session felt as a hang
+                    // on every visit to this tab. The newest row is the first
+                    // one now, so there is nowhere to scroll to.
                     .onChange(of: model.focusedId) {
                         if let id = model.focusedId {
                             scrollProxy.scrollTo(id)
@@ -1102,6 +1099,10 @@ struct ArtifactsView: View {
         guard let lsid = session.ledgerSessionId
         else { return }
         isLoading = true
+        // Read here, on the main actor, and carried into the task: it is the
+        // order to sort for, and the model cannot be reached from off here.
+        let order = model.order
+        let columns = Self.columns
         fetchTask = Task {
             do {
                 let result = try await
@@ -1110,26 +1111,35 @@ struct ArtifactsView: View {
                         ledgerSessionId: lsid
                     )
                 guard !Task.isCancelled else { return }
+                // The one sort in these views big enough to be worth moving:
+                // upwards of fifteen hundred multi-string structs, and through
+                // an ICU collation whenever the reader has picked a text
+                // column.
+                let sorted = ListSortModel<
+                    ArtifactSummary, SortColumn
+                >.sort(result, by: order, columns: columns)
+                guard !Task.isCancelled else { return }
                 await MainActor.run {
                     artifacts = result
                     seedArtifactTitles(result)
                     isLoading = false
-                    // Seeded at the last row, which is the end this
-                    // list scrolls to when it appears.
-                    model.reconcileFocus(
-                        in: model.sorted(result),
-                        seed: .last)
+                    model.adopt(
+                        result, sorted: sorted,
+                        presortedFor: order)
+                    // Seeded at the first row, which is the newest now that
+                    // this list opens descending.
+                    model.reconcileFocus(seed: .first)
                 }
             } catch {
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
                     artifacts = []
                     isLoading = false
+                    model.setElements([])
                 }
-                NSLog(
-                    "ArtifactsView: fetchArtifacts "
-                    + "error: %@",
-                    error.localizedDescription
+                GalaxyLog.events(
+                    "ArtifactsView fetchArtifacts failed: "
+                    + "\(error)"
                 )
             }
         }
@@ -1357,16 +1367,14 @@ struct ArtifactsView: View {
                     where: { $0.number == number }
                 ) else {
                     await MainActor.run {
-                        artifacts = list
-                        seedArtifactTitles(list)
+                        applyArtifacts(list)
                         isLoading = false
                     }
                     return
                 }
 
                 await MainActor.run {
-                    artifacts = list
-                    seedArtifactTitles(list)
+                    applyArtifacts(list)
                     isLoading = false
                     openArtifactReader(
                         artifact: artifact
@@ -1378,6 +1386,19 @@ struct ArtifactsView: View {
                 }
             }
         }
+    }
+
+    /// Adopt a fetched list into both the tri-state cache and the order model.
+    ///
+    /// The two have to move together: `artifacts` carries the distinction the
+    /// model cannot — nil for never loaded, empty for loaded and empty, which
+    /// is what picks between the spinner and the empty state — while the model
+    /// carries the order on screen. Four call sites assigned one of them, and
+    /// two of them forgot the other.
+    private func applyArtifacts(_ list: [ArtifactSummary]) {
+        artifacts = list
+        model.setElements(list)
+        seedArtifactTitles(list)
     }
 
     /// Seed the session's artifact title cache so
