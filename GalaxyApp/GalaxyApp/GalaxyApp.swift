@@ -152,7 +152,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // so an app could run for days with neither happening. One gap ran
         // two days, and settling it meant accounting for 2.9M paths at the
         // moment someone finally typed a query.
-        Task { await FileCorpusStore.shared.resumeKnownRoots() }
+        FileCorpusStore.shared.resumeKnownRoots()
 
         // Create and show the main window
         mainWindowController = MainWindowController()
