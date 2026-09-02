@@ -146,6 +146,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // possibly press Cmd+W in a focused shell pane.
         _ = ShellCloseKeyMonitor.shared
 
+        // Resume the file index without waiting to be asked for a root.
+        // Indexing used to start only when a picker or a search opened one,
+        // and the file-system cursor advances only while the watcher runs —
+        // so an app could run for days with neither happening. One gap ran
+        // two days, and settling it meant accounting for 2.9M paths at the
+        // moment someone finally typed a query.
+        FileCorpusStore.shared.resumeKnownRoots()
+
         // Create and show the main window
         mainWindowController = MainWindowController()
         mainWindowController?.showWindow(nil)
