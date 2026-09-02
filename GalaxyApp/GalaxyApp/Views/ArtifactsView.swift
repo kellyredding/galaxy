@@ -196,6 +196,7 @@ struct ArtifactsView: View {
             updateEscapeMonitor()
             restoreWebViewFocus()
             syncFindHandler()
+            dismissReaderHoverUI()
             // Re-evaluate find-panel ownership: if we just
             // became the active surface and our controller was
             // visible, re-present; if we're no longer active,
@@ -225,6 +226,7 @@ struct ArtifactsView: View {
             updateEscapeMonitor()
             restoreWebViewFocus()
             syncFindHandler()
+            dismissReaderHoverUI()
             // Re-evaluate find-panel ownership on tab change.
             // See note in the activeSessionId onChange.
             syncFindBarPanel()
@@ -2734,6 +2736,27 @@ struct ArtifactsView: View {
         SidebarPreferences.shared.setCondition(
             isVisibleSurface && openArtifactIsDiffReader,
             .diffReader
+        )
+    }
+
+    /// Dismiss page-drawn hover UI once this reader is no longer the surface in
+    /// front of the user.
+    ///
+    /// The diff reader draws its own tooltip pill in the page, and the page
+    /// cannot tell that it has been switched away from: every pane stays
+    /// mounted and switching changes only opacity, so the document is not
+    /// unloaded, hidden or backgrounded, and a keyboard switch moves no pointer
+    /// to produce a `mouseout`. The pill therefore stayed up, and a pane at
+    /// zero alpha still composites it — over the terminal, which is where it
+    /// was seen.
+    ///
+    /// One more entry on the list `TabPane` keeps: what a hidden pane must not
+    /// do, threaded down rather than enforced by the modifier.
+    private func dismissReaderHoverUI() {
+        guard !isVisibleSurface else { return }
+        webViewRef?.evaluateJavaScript(
+            "window.GalaxyDiffTooltip"
+            + " && window.GalaxyDiffTooltip.hide()"
         )
     }
 

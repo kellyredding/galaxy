@@ -722,11 +722,24 @@ private func buildDiffHTML(
             font-weight: 500;
             white-space: nowrap;
             pointer-events: none;
+            /* Hidden by `visibility`, not by alpha alone. An
+               opacity-0 element with an opacity transition
+               still gets a compositing layer, and this pane
+               is one a tabbed host keeps mounted at zero
+               alpha — where a composited layer is drawn over
+               whatever the reader switched to. `visibility`
+               takes it out of compositing outright, and
+               flips instantly, so the fade-out cannot leak
+               either. The fade-in is unaffected. */
+            visibility: hidden;
             opacity: 0;
             transition: opacity 0.1s ease-in-out;
             z-index: 1000;
         }
-        .file-tooltip.visible { opacity: 1; }
+        .file-tooltip.visible {
+            visibility: visible;
+            opacity: 1;
+        }
         /* Collapse the card body — hides code-line rows
            and gap-spacer rows in one selector. Gap-expand
            DOM state is preserved under display:none, so
@@ -3344,6 +3357,25 @@ private let fileCollapseJS: String = """
     // pill is position:fixed so it would otherwise
     // detach from the button.
     window.addEventListener('scroll', hideTooltip, true);
+
+    // Dismiss when the pointer leaves the document, which
+    // `mouseout` on the button does not cover: a pointer
+    // that leaves the web view in one jump can be reported
+    // against the document rather than against the button,
+    // and the handler above bails when the two disagree.
+    document.addEventListener('mouseleave', hideTooltip);
+
+    // Exposed so the host can dismiss it when this reader stops
+    // being the surface in front of the user.
+    //
+    // Nothing in the page can observe that. A tabbed host keeps
+    // every pane mounted and switches with opacity, so on a
+    // switch this document is neither unloaded nor hidden nor
+    // backgrounded — `visibilitychange` and `blur` never fire.
+    // Worse, a keyboard switch moves no pointer, so no
+    // `mouseout` arrives either and the pill stays up over
+    // whatever the reader switched to.
+    window.GalaxyDiffTooltip = { hide: hideTooltip };
 
     // Shared helper used by both the chevron click
     // path and the Viewed checkbox change path. Sets
