@@ -890,7 +890,72 @@ class Session: Identifiable, ObservableObject {
             outcome?(.abandoned)
             return
         }
+        commandBacklog.append(
+            PendingCommand(
+                command: command, verifyAccepted: verifyAccepted,
+                retry: retry, outcome: outcome))
+        pumpCommands()
+    }
 
+    /// A command waiting for the one in flight.
+    private struct PendingCommand {
+        let command: String
+        let verifyAccepted: Bool
+        let retry: SubmitRetryPolicy
+        let outcome: ((SubmitOutcome) -> Void)?
+    }
+
+    /// Commands waiting their turn, oldest first.
+    ///
+    /// One gesture at a time. A send is not one write but a sequence — wait
+    /// for readiness, write the text, then press Return — and two running at
+    /// once interleave into a composer that ends up holding both commands and
+    /// then receiving two Returns. Nothing downstream can put that right,
+    /// because by then both are one line of input.
+    private var commandBacklog: [PendingCommand] = []
+    private var commandInFlight = false
+
+    /// Start the next command, if nothing is going out already.
+    ///
+    /// Everything the send decides is decided in `deliverCommand`, at the
+    /// moment of writing, rather than when the command was handed over. That
+    /// is the rule the context-reset steps below already state for the inbox
+    /// route: a queue puts an unknown amount of time between deciding and
+    /// writing, and anything settled up front is settled in the wrong context
+    /// by the time the command lands. This queue is another such delay, so the
+    /// same rule covers it.
+    private func pumpCommands() {
+        guard !commandInFlight, !commandBacklog.isEmpty else { return }
+        guard isRunning && !hasExited else {
+            // The session went away with commands still waiting. Each gets the
+            // answer its caller is owed rather than silence, which would leave
+            // one holding a message it cannot recompose waiting forever.
+            let dropped = commandBacklog
+            commandBacklog.removeAll()
+            SessionSubmit.log(
+                "sendCommand dropped \(dropped.count) — session not running")
+            for pending in dropped { pending.outcome?(.abandoned) }
+            return
+        }
+        commandInFlight = true
+        let next = commandBacklog.removeFirst()
+        deliverCommand(
+            next.command, verifyAccepted: next.verifyAccepted,
+            retry: next.retry, outcome: next.outcome)
+    }
+
+    /// Release the lane and start whatever is behind.
+    private func finishCommand() {
+        commandInFlight = false
+        pumpCommands()
+    }
+
+    private func deliverCommand(
+        _ command: String,
+        verifyAccepted: Bool,
+        retry: SubmitRetryPolicy,
+        outcome: ((SubmitOutcome) -> Void)?
+    ) {
         // Capture pre-send turn state. If we're already in a turn,
         // the on_user_prompt_submit hook's turn:initiated event
         // can't serve as a submit-acceptance signal (isInTurn is
@@ -995,6 +1060,7 @@ class Session: Identifiable, ObservableObject {
         guard let backend = backend else {
             SessionSubmit.log("  no backend — nothing sent")
             outcome?(.abandoned)
+            finishCommand()
             return
         }
 
@@ -1014,6 +1080,11 @@ class Session: Identifiable, ObservableObject {
             },
             verification: verifiable ? submitVerification : nil,
             retry: retry,
+            // Releases the lane on every path this seam can end on, including
+            // the ones that never wrote — a gesture abandoned before its write
+            // would otherwise hold everything behind it for the life of the
+            // session.
+            then: { [weak self] in self?.finishCommand() },
             outcome: outcome
         )
     }
