@@ -215,28 +215,41 @@ struct LedgerFilesView: View {
                 .truncationMode(.tail)
                 .frame(width: Self.colType, alignment: .leading)
 
-            // The path is a link into the Files tab.
+            // The path is a link into the Files tab, with its full form a
+            // click away.
             //
             // Coloured only while the file is still on disk: a ledger row
             // outlives the file it names, and offering to open something that
             // has been deleted is worse than saying nothing about it.
-            Text(abbreviatePath(file.filePath))
-                .chromeFontMono(size: fontSize.caption2)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .foregroundColor(openable(file) ? .accentColor : .primary)
-                .help(file.filePath)
-                .frame(width: flexWidth, alignment: .leading)
-                .contentShape(Rectangle())
-                .onTapGesture { openInFiles(file) }
-                .onHover { inside in
-                    guard openable(file) else { return }
-                    if inside {
-                        NSCursor.pointingHand.push()
-                    } else {
-                        NSCursor.pop()
+            // **Copying is offered either way** — a path that no longer
+            // resolves is still a path worth pasting, and text cannot fail to
+            // reach the clipboard the way an open can fail.
+            HStack(spacing: 6) {
+                CopyButton(
+                    text: file.filePath,
+                    iconSize: fontSize.iconSmall
+                )
+                .pointingHandCursor()
+
+                Text(abbreviatePath(file.filePath))
+                    .chromeFontMono(size: fontSize.caption2)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .foregroundColor(openable(file) ? .accentColor : .primary)
+                    .help(file.filePath)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture { openInFiles(file) }
+                    .onHover { inside in
+                        guard openable(file) else { return }
+                        if inside {
+                            NSCursor.pointingHand.push()
+                        } else {
+                            NSCursor.pop()
+                        }
                     }
-                }
+            }
+            .frame(width: flexWidth, alignment: .leading)
 
             Text(file.searchPattern.isEmpty ? "" : file.searchPattern)
                 .chromeFontMono(size: fontSize.caption2)

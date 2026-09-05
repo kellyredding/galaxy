@@ -148,20 +148,3 @@ struct ClaudeKeybindingsSyncRow: View {
         items.isEmpty ? "nothing" : items.joined(separator: ", ")
     }
 }
-
-extension View {
-    /// Hand cursor while the pointer is over a clickable control.
-    ///
-    /// Deliberately not applied to the disabled Adopt button. The cursor is
-    /// part of the affordance, so offering it on a control that will not
-    /// respond promises something the click cannot deliver.
-    func pointingHandCursor() -> some View {
-        onHover { inside in
-            if inside {
-                NSCursor.pointingHand.set()
-            } else {
-                NSCursor.arrow.set()
-            }
-        }
-    }
-}

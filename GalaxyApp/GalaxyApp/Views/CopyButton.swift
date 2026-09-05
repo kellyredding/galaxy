@@ -9,6 +9,14 @@ struct CopyButton: View {
 
     @State private var showCopied = false
 
+    /// Which press the pending reset belongs to.
+    ///
+    /// Pressing again inside the two seconds used to leave two resets in
+    /// flight, and the first of them cleared the check the second press had
+    /// just put up — so the confirmation vanished early on exactly the press
+    /// that repeated because the first one was not believed.
+    @State private var confirmToken = 0
+
     var body: some View {
         Button(action: copyText) {
             Image(systemName: showCopied ? "checkmark" : "doc.on.doc")
@@ -24,11 +32,14 @@ struct CopyButton: View {
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
 
+        confirmToken += 1
+        let token = confirmToken
         withAnimation {
             showCopied = true
         }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            guard token == confirmToken else { return }
             withAnimation {
                 showCopied = false
             }
