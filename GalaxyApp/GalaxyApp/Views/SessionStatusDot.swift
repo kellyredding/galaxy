@@ -83,6 +83,18 @@ struct AgentCountSuperscript: View {
                     )
                 )
                 .foregroundColor(.green)
+                // Sized to the number, not to what the dot offers.
+                //
+                // Both sidebars hang this off an 8-point status dot as an
+                // overlay, and an overlay is proposed its host's size — eight
+                // points, which one bold monospaced digit fits and two do not.
+                // So the count read correctly until a tenth agent started and
+                // then became an ellipsis, which is the only thing that fits.
+                //
+                // The offset is what hides it: it draws the badge clear of the
+                // dot, so nothing looks constrained, but an offset is applied
+                // after layout and never widens what the text was offered.
+                .fixedSize()
                 .offset(x: 6, y: -12)
         }
     }
