@@ -38,34 +38,34 @@ import Foundation
 /// explicitly.
 enum SessionTab: String, CaseIterable {
     case terminal
-    case timeline
-    case agents
+    case files
     case artifacts
     case snapshots
+    case agents
+    case timeline
     case ledger
-    case files
 
     var title: String {
         switch self {
         case .terminal: return "Terminal"
-        case .ledger: return "Ledger"
-        case .agents: return "Agents"
+        case .files: return "Files"
         case .artifacts: return "Artifacts"
         case .snapshots: return "Snapshots"
+        case .agents: return "Agents"
         case .timeline: return "Timeline"
-        case .files: return "Files"
+        case .ledger: return "Ledger"
         }
     }
 
     var icon: String {
         switch self {
         case .terminal: return "terminal"
-        case .ledger: return "book.closed"
-        case .agents: return "person.3"
+        case .files: return "folder"
         case .artifacts: return "doc.text"
         case .snapshots: return "camera.viewfinder"
+        case .agents: return "person.3"
         case .timeline: return "clock.arrow.circlepath"
-        case .files: return "folder"
+        case .ledger: return "book.closed"
         }
     }
 
@@ -79,14 +79,14 @@ enum SessionTab: String, CaseIterable {
     var hasInnerTabs: Bool {
         switch self {
         case .terminal: return false
-        case .ledger: return true
-        case .agents: return false
-        case .artifacts: return false
-        case .snapshots: return false
-        case .timeline: return false
         // The file strip, which is a second inner-tab axis and the only dynamic
         // one: Ledger's sub-tabs are a fixed enum, these are whatever is open.
         case .files: return true
+        case .artifacts: return false
+        case .snapshots: return false
+        case .agents: return false
+        case .timeline: return false
+        case .ledger: return true
         }
     }
 }
