@@ -48,29 +48,40 @@ final class GalaxyFilesModel: FilesHost {
 
     // MARK: - Following the agent
 
-    /// Ask on arrival at Files, never on the agent's event.
+    /// Tell the surface when Files comes into view and when it goes out of it.
     ///
-    /// A reader working in the Files tab while the agent moves around keeps the
-    /// tree they are working in; the question is put again the next time they
-    /// come back to the surface.
+    /// Arriving resets the root to wherever the agent is; leaving takes the
+    /// panels down. A reader working inside the Files tab keeps whatever root
+    /// they browsed to for as long as they stay — the question is only put
+    /// again on the way back in.
     ///
     /// **`removeDuplicates` is what makes this a transition rather than an
     /// assignment.** `showFilesSurface()` sets `activeTab` to `.files` whether
     /// or not it is already there, so opening the picker from inside the Files
     /// tab would otherwise re-root under a reader who never went anywhere.
+    ///
+    /// The previous tab is tracked here rather than derived from `activeTab`,
+    /// which a `@Published` publisher has not assigned yet when this runs.
     private func observeFilesTabEntry() {
         SessionManager.shared.$activeTab
             .removeDuplicates()
             .sink { [weak self] tab in
-                guard tab == .files,
-                    !SessionManager.shared.isRestoringTab
-                else { return }
-                self?.followAgentRootIfMoved()
+                guard let self else { return }
+                let wasOnFiles = self.isOnFilesTab
+                self.isOnFilesTab = tab == .files
+                guard !SessionManager.shared.isRestoringTab else { return }
+                if tab == .files {
+                    self.surface.enterFilesSurface(agentRoot: self.agentRoot())
+                } else if wasOnFiles {
+                    self.surface.leaveFilesSurface()
+                }
             }
             .store(in: &cancellables)
     }
 
-    /// Re-root the visible set to the agent's directory, if it has moved.
+    private var isOnFilesTab = false
+
+    /// Where the active session's agent is, if that is somewhere we can follow.
     ///
     /// `ledgerCwd` directly rather than `ShellLauncher.resolveCwd`, and that is
     /// the difference between following an agent and guessing. `resolveCwd`
@@ -78,12 +89,12 @@ final class GalaxyFilesModel: FilesHost {
     /// shell always has somewhere to open; here a missing directory means the
     /// agent is not somewhere we can follow, and the honest answer is to leave
     /// the reader's root alone rather than re-root them to `$HOME`.
-    private func followAgentRootIfMoved() {
+    private func agentRoot() -> URL? {
         guard let session = SessionManager.shared.activeSession,
             let cwd = session.ledgerCwd, !cwd.isEmpty,
             FileManager.default.fileExists(atPath: cwd)
-        else { return }
-        surface.followAgentRoot(to: URL(fileURLWithPath: cwd))
+        else { return nil }
+        return URL(fileURLWithPath: cwd)
     }
 
     // MARK: - FilesHost
@@ -194,7 +205,6 @@ final class GalaxyFilesModel: FilesHost {
 
     func presentPicker() { surface.presentPicker() }
     func presentSearcher() { surface.presentSearcher() }
-    func dismissPanelsIfPresented() { surface.dismissPanels() }
     func closeSelected() { surface.closeSelected() }
     func reopenLastClosed() { surface.reopenLastClosed() }
     func selectPreviousFile() { surface.selectPreviousFile() }
