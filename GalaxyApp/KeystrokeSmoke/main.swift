@@ -440,6 +440,24 @@ check("availability: ⇧⌘T restores a session or a file, never both") {
         && restore.isActive(in: elsewhere) && !reopen.isActive(in: elsewhere)
 }
 
+// The gate is both halves, and the second is why this is worth a table: the
+// model's `hasFileOpen` asks the owner's file set rather than the surface, so
+// it stays true on every other tab and a row keyed on it alone would light up
+// there.
+check("availability: reveal is live only on Files, with a file open") {
+    let reveal = gate("⌃⌘R", "Reveal in Browser")
+    for tab in SessionTab.allCases {
+        for fileOpen in [false, true] {
+            let live = reveal.isActive(in: ctx(tab: tab, fileOpen: fileOpen))
+            guard live == (tab == .files && fileOpen) else {
+                print("      \(tab) fileOpen=\(fileOpen): live=\(live)")
+                return false
+            }
+        }
+    }
+    return true
+}
+
 check("availability: list nav is live on exactly six of eleven surfaces") {
     let listNav = gate("⌘J", "Next item")
     for (tab, sub) in surfaces {

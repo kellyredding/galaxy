@@ -190,6 +190,8 @@ final class GalaxyFilesModel: FilesHost {
     /// already open.
     func selectOrOpen(path: String) { surface.selectOrOpen(path: path) }
 
+    func revealSelectedFile() { surface.revealSelectedFile() }
+
     func presentPicker() { surface.presentPicker() }
     func presentSearcher() { surface.presentSearcher() }
     func dismissPanelsIfPresented() { surface.dismissPanels() }

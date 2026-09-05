@@ -318,9 +318,14 @@ enum KeystrokeAvailability: Equatable {
     }
 
     /// What the reader on these views has open, named as a reader would
-    /// say it. Two views, two nouns, and no third case worth guessing at
-    /// — a view with no reader never reaches here.
+    /// say it. A view with no reader never reaches here.
+    ///
+    /// Files is the odd one and needs saying: its "reader" is a selected file
+    /// rather than something opened over a list — see `KeystrokeContext`. Left
+    /// out, its rows fell to the default and told the reader they needed an
+    /// artifact or a snapshot open on the Files tab.
     private static func item(_ tabs: Set<SessionTab>) -> String {
+        if tabs == [.files] { return "a file" }
         if tabs == [.artifacts] { return "an artifact" }
         if tabs == [.snapshots] { return "a snapshot" }
         if tabs == [.agents] { return "an agent run" }

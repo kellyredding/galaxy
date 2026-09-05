@@ -104,6 +104,12 @@ enum KeystrokeCatalog {
               section: .files, availability: .viewsWithReader([.files]),
               aliases: "jump to a line, line number, go to line number, "
                   + "scroll to a line, find a line"),
+        .init(binding: .literal("⌃⌘R"), label: "Reveal in Browser",
+              section: .files, availability: .viewsWithReader([.files]),
+              aliases: "show me where this file is, find this file in the "
+                  + "tree, locate the current file, jump the browser to this "
+                  + "file, see the folder this file is in, what is next to "
+                  + "this file"),
     ]
 
     // MARK: - Sessions

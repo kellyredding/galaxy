@@ -386,6 +386,19 @@ class MainMenu: NSObject, NSMenuDelegate {
         goToLineItem.keyEquivalentModifierMask = [.control]
         goToLineItem.target = MenuActions.shared
         menu.addItem(goToLineItem)
+
+        // ⌃⌘R, beside Go to Line for the same reason that sits beside Find: all
+        // three ask where something is in what is already open. Command is
+        // named explicitly because assigning a mask replaces the implicit one
+        // rather than adding to it.
+        let revealItem = NSMenuItem(
+            title: "Reveal in Browser",
+            action: #selector(MenuActions.revealFileInBrowser(_:)),
+            keyEquivalent: "r"
+        )
+        revealItem.keyEquivalentModifierMask = [.control, .command]
+        revealItem.target = MenuActions.shared
+        menu.addItem(revealItem)
     }
 
     /// Whether the active tab + sub-state can host a find
@@ -971,6 +984,11 @@ class MenuActions: NSObject {
         MainActor.assumeIsolated { GalaxyFilesModel.shared.activateLineJump() }
     }
 
+    /// ⌃⌘R — show the open file where it sits in the Browse tree.
+    @objc func revealFileInBrowser(_ sender: Any?) {
+        MainActor.assumeIsolated { GalaxyFilesModel.shared.revealSelectedFile() }
+    }
+
     @objc func stopSession(_ sender: Any?) {
         guard let activeId = SessionManager.shared.activeSessionId else { return }
         SessionManager.shared.confirmAndStopSession(sessionId: activeId)
@@ -1430,6 +1448,13 @@ extension MenuActions: NSMenuItemValidation {
 
         case #selector(goToLineInFile(_:)):
             return GalaxyFilesModel.shared.hasFileOpen
+
+        // Both halves, unlike ⌃G above: `hasFileOpen` alone is true on every
+        // tab, because it asks the owner's file set rather than the surface.
+        // The shape is `openShell`'s — a tab check ANDed with a state check.
+        case #selector(revealFileInBrowser(_:)):
+            return SessionManager.shared.activeTab == .files
+                && GalaxyFilesModel.shared.hasFileOpen
 
         // View ▸ list navigation and inner tabs. Live for the
         // same reason the terminal font items above are: the View
