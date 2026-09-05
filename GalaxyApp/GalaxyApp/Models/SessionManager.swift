@@ -1328,9 +1328,25 @@ class SessionManager: ObservableObject {
         session.lastActiveLedgerSubTab = activeLedgerSubTab
     }
 
+    /// True while `activeTab` is being set from a session's own remembered tab
+    /// rather than by a reader choosing a tab.
+    ///
+    /// `activeTab` is one global value and a session switch assigns it from the
+    /// incoming session's `lastActiveTab`, so switching from a session on
+    /// Terminal to one on Files moves the global from `.terminal` to `.files`
+    /// while neither session's own tab changed at all. Anything keyed on
+    /// entering a tab has to tell those apart, and the assignment below is the
+    /// one place a restore happens.
+    ///
+    /// Read synchronously from a `$activeTab` subscriber, which is safe because
+    /// `@Published` fires during the assignment rather than after it.
+    private(set) var isRestoringTab = false
+
     /// Restore tab/subtab state from the incoming session.
     private func restoreViewState(for session: Session) {
+        isRestoringTab = true
         activeTab = session.lastActiveTab
+        isRestoringTab = false
         activeLedgerSubTab = session.lastActiveLedgerSubTab
         drainPendingShows(for: session)
     }

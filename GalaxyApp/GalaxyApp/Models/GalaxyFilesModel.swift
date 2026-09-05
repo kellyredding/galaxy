@@ -29,6 +29,8 @@ final class GalaxyFilesModel: FilesHost {
     func activateFind() { findActivations.send() }
     func activateLineJump() { lineJumpActivations.send() }
 
+    private var cancellables = Set<AnyCancellable>()
+
     private init() {
         surface = FilesSurface(
             host: self, store: FilesStatePersistence.shared
@@ -41,6 +43,47 @@ final class GalaxyFilesModel: FilesHost {
         surface.onSelectionChanged = { [weak self] path in
             self?.mirrorSelection(path)
         }
+        observeFilesTabEntry()
+    }
+
+    // MARK: - Following the agent
+
+    /// Ask on arrival at Files, never on the agent's event.
+    ///
+    /// A reader working in the Files tab while the agent moves around keeps the
+    /// tree they are working in; the question is put again the next time they
+    /// come back to the surface.
+    ///
+    /// **`removeDuplicates` is what makes this a transition rather than an
+    /// assignment.** `showFilesSurface()` sets `activeTab` to `.files` whether
+    /// or not it is already there, so opening the picker from inside the Files
+    /// tab would otherwise re-root under a reader who never went anywhere.
+    private func observeFilesTabEntry() {
+        SessionManager.shared.$activeTab
+            .removeDuplicates()
+            .sink { [weak self] tab in
+                guard tab == .files,
+                    !SessionManager.shared.isRestoringTab
+                else { return }
+                self?.followAgentRootIfMoved()
+            }
+            .store(in: &cancellables)
+    }
+
+    /// Re-root the visible set to the agent's directory, if it has moved.
+    ///
+    /// `ledgerCwd` directly rather than `ShellLauncher.resolveCwd`, and that is
+    /// the difference between following an agent and guessing. `resolveCwd`
+    /// falls back through the project directory to the home directory so a
+    /// shell always has somewhere to open; here a missing directory means the
+    /// agent is not somewhere we can follow, and the honest answer is to leave
+    /// the reader's root alone rather than re-root them to `$HOME`.
+    private func followAgentRootIfMoved() {
+        guard let session = SessionManager.shared.activeSession,
+            let cwd = session.ledgerCwd, !cwd.isEmpty,
+            FileManager.default.fileExists(atPath: cwd)
+        else { return }
+        surface.followAgentRoot(to: URL(fileURLWithPath: cwd))
     }
 
     // MARK: - FilesHost
