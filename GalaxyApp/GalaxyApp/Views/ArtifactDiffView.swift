@@ -1068,7 +1068,12 @@ private func renderFileCard(
         for: file
     )
     let (adds, dels) = countChanges(in: file.hunks)
-    let lang = file.language ?? "plaintext"
+    // Resolved from the path rather than read from the document's own
+    // `language`, so the reader and the file reader answer from one table.
+    // The capturing CLI carries a map of its own and the two had drifted —
+    // `.haml` and `.erb` still disagree — with nothing failing when they did.
+    let lang = FileKind.highlightLanguage(forFilename: file.path)
+        ?? "plaintext"
 
     // Header row — annotatable, maps to headerLine
     let fp = htmlEscape(file.path)

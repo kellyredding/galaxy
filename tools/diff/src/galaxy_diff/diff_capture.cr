@@ -9,9 +9,12 @@ module GalaxyDiff
   module DiffCapture
     extend self
 
-    # Map file extensions to highlight.js language names.
-    # Mirrors `languageForExtension` in Galaxy.app so the
-    # renderer picks the same grammar for highlighting.
+    # Map file extensions to highlight.js language names,
+    # recorded in the document as a hint for whoever reads
+    # it. Galaxy's diff reader does not use it: it resolves
+    # the language from the path through Galactic's
+    # `FileKind`, which is the one table highlighting
+    # answers from. This one is free to be narrower.
     LANGUAGE_MAP = {
       ".rb" => "ruby", ".cr" => "crystal",
       ".py" => "python", ".js" => "javascript",
