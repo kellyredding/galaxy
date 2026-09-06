@@ -60,6 +60,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             SessionManager.shared.activeSession?.inboxConsumer
         }
 
+        // Where this app's source reader takes its colours from. Asked per
+        // document rather than read once, so a stylesheet edited while the app
+        // runs shows on the next file opened. Answering nil is the ordinary
+        // case and leaves the stock GitHub themes in place.
+        let sourceThemes = SourceThemeLoader(
+            directory: GalaxyPaths.sourceThemeDir
+        )
+        SourceTheme.provider = { isDark in
+            sourceThemes.theme(isDark: isDark)
+                ?? SourceTheme.stock(isDark: isDark)
+        }
+
         // Disable macOS press-and-hold accent popover app-wide so held keys
         // produce normal key repeats. Without this, holding j/k in less (or
         // any pager/vim-style UI inside the shell pane) registers once and
