@@ -312,9 +312,21 @@ private func buildDiffHTML(
     // order — reusing it here avoids a duplicate
     // tree-build pass.
     let sidebarHTML = renderFileTree(treeRoots)
+    // Only where there is a sidebar to resize. An
+    // empty-state diff renders none, and a handle
+    // dividing one column from nothing would still take
+    // the cursor and still drag.
+    let resizerHTML =
+        sidebarHTML.isEmpty
+        ? ""
+        : "<div class=\"toc-resizer\" role=\"separator\""
+            + " aria-orientation=\"vertical\""
+            + " title=\"Drag to resize · double-click to"
+            + " reset\"></div>"
     let bodyLayoutHTML =
         "<div class=\"diff-body\">"
         + sidebarHTML
+        + resizerHTML
         + "<main class=\"main-column\">"
         + cardsHTML
         + "</main>"
@@ -402,16 +414,65 @@ private func buildDiffHTML(
         .diff-summary-sep {
             opacity: 0.5;
         }
+        /* The sidebar's width, named once. Three rules
+           below need it — the sidebar's own basis and
+           width, and the annotation gutter that has to
+           clear it — and a drag changes all three by
+           changing this. Restating the number in each
+           was survivable while it never moved. */
+        body {
+            --toc-width: 260px;
+        }
         /* Two-column layout: TOC sidebar on the left,
            file cards in the main column. align-items
            flex-start so the sidebar doesn't stretch to
            the full content height — the sidebar is its
            own scroll container via max-height +
-           overflow-y below. */
+           overflow-y below.
+           No `gap`: the resize handle sits between the
+           two columns and is itself the 16px gutter, so
+           the spacing is unchanged and there is exactly
+           one thing to measure rather than a gap plus a
+           handle plus another gap. */
         .diff-body {
             display: flex;
             align-items: flex-start;
-            gap: 16px;
+            gap: 0;
+        }
+        /* The drag handle, occupying the gutter. Full
+           height so it can be grabbed anywhere down the
+           divider rather than only beside the tree. */
+        .toc-resizer {
+            flex: 0 0 16px;
+            align-self: stretch;
+            position: relative;
+            cursor: col-resize;
+        }
+        /* A hairline that only shows on approach: the
+           divider is discoverable when reached for and
+           invisible otherwise. */
+        .toc-resizer::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 7px;
+            width: 2px;
+            border-radius: 1px;
+            background: transparent;
+        }
+        .toc-resizer:hover::before,
+        body.toc-resizing .toc-resizer::before {
+            background: \(borderColor);
+        }
+        /* While dragging, the pointer is regularly
+           outside the handle, so the cursor and the
+           refusal to select text both have to belong to
+           the document rather than to the strip. */
+        body.toc-resizing {
+            cursor: col-resize;
+            user-select: none;
+            -webkit-user-select: none;
         }
         .main-column {
             flex: 1 1 auto;
@@ -427,8 +488,8 @@ private func buildDiffHTML(
            so a long tree doesn't push everything below
            the viewport. */
         .toc-sidebar {
-            flex: 0 0 260px;
-            width: 260px;
+            flex: 0 0 var(--toc-width);
+            width: var(--toc-width);
             position: sticky;
             top: 12px;
             max-height: calc(100vh - 24px);
@@ -528,17 +589,20 @@ private func buildDiffHTML(
         }
         /* Annotation cards are absolute-positioned
            against the page edges by annotationCSS. Here
-           the main content sits in a 276px-indented
-           column (sidebar 260 + gap 16), so a card at
+           the main content sits indented past the
+           sidebar and the handle beside it, so a card at
            the default gutter would run under the
            sidebar. Move the gutter rather than restating
            the card and form rules — those live in the
            engine and would have to be kept in step by
-           hand. `:has(.toc-sidebar)` scopes this to
-           diffs that rendered one; empty-state diffs
-           skip the sidebar and keep the default. */
+           hand. Derived from the same variable the
+           sidebar is sized from, so a drag moves the
+           cards with it. `:has(.toc-sidebar)` scopes
+           this to diffs that rendered one; empty-state
+           diffs skip the sidebar and keep the default. */
         body:has(.toc-sidebar) {
-            --annotation-gutter-left: calc(24px + 276px);
+            --annotation-gutter-left:
+                calc(24px + var(--toc-width) + 16px);
         }
         .empty-state {
             padding: 40px 20px;
@@ -1038,6 +1102,7 @@ private func buildDiffHTML(
         \(gapExpansionJS)
         \(fileCollapseJS)
         \(tocNavJS)
+        \(tocResizeJS)
 
         """
     )
@@ -3586,6 +3651,89 @@ private let fileCollapseJS: String = """
         window.GalaxyClipboard.copy(path).then(function(ok) {
             if (ok) showCopiedFeedback(btn);
         });
+    });
+})();
+"""
+
+/// JS for the TOC sidebar's drag handle: pointer drag
+/// to resize, double-click to restore the default.
+///
+/// The width is one custom property that the sidebar
+/// and the annotation gutter are both sized from, so
+/// this sets a single value and the layout follows.
+/// Nothing is reported back to Swift and nothing is
+/// stored: the width belongs to the open reader, and
+/// a diff opens at the default every time.
+///
+/// Cards are re-anchored when the drag settles rather
+/// than per pointer move. Repositioning is a forced
+/// layout whose cost scales with the artifact and its
+/// annotation count — the same reason the card
+/// autosize debounces instead of running per
+/// keystroke — and a drag would otherwise pay it on
+/// every frame. Re-anchoring is needed at all because
+/// a narrower main column rewraps the diff rows the
+/// cards are anchored to.
+// js-validate
+private let tocResizeJS: String = """
+(function() {
+    var resizer = document.querySelector('.toc-resizer');
+    if (!resizer) return;
+
+    var MIN = 160;
+    var MAX = 560;
+    var DEFAULT_WIDTH = 260;
+    var dragging = false;
+    var startX = 0;
+    var startWidth = DEFAULT_WIDTH;
+
+    function currentWidth() {
+        var raw = getComputedStyle(document.body)
+            .getPropertyValue('--toc-width');
+        var parsed = parseFloat(raw);
+        return isNaN(parsed) ? DEFAULT_WIDTH : parsed;
+    }
+
+    function applyWidth(px) {
+        var clamped = Math.max(
+            MIN, Math.min(MAX, Math.round(px)));
+        document.body.style.setProperty(
+            '--toc-width', clamped + 'px');
+    }
+
+    // Defined by the annotation engine, which is absent
+    // on a diff carrying no cards. It guards its own
+    // manager; this guards the function itself.
+    function settle() {
+        if (typeof syncPositionsAfterGrow === 'function') {
+            syncPositionsAfterGrow();
+        }
+    }
+
+    resizer.addEventListener('mousedown', function(e) {
+        dragging = true;
+        startX = e.clientX;
+        startWidth = currentWidth();
+        document.body.classList.add('toc-resizing');
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', function(e) {
+        if (!dragging) return;
+        applyWidth(startWidth + (e.clientX - startX));
+        e.preventDefault();
+    });
+
+    document.addEventListener('mouseup', function() {
+        if (!dragging) return;
+        dragging = false;
+        document.body.classList.remove('toc-resizing');
+        settle();
+    });
+
+    resizer.addEventListener('dblclick', function() {
+        applyWidth(DEFAULT_WIDTH);
+        settle();
     });
 })();
 """
