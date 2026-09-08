@@ -89,6 +89,46 @@ describe GalaxyLedger::Extraction::ClaudeCLI do
       end
     end
 
+    describe "MCP servers" do
+      # Both halves or neither. Strict mode confines MCP servers to the
+      # ones --mcp-config names, so it loads nothing only while no
+      # --mcp-config is passed beside it. Asserting the flag alone would
+      # still pass on the day something started supplying a config, with
+      # every server in it loading again.
+      it "loads no MCP servers" do
+        args = GalaxyLedger::Extraction::ClaudeCLI.build_args(
+          content: "some content",
+          prompt: "some prompt",
+        )
+
+        args.should contain("--strict-mcp-config")
+        args.should_not contain("--mcp-config")
+      end
+
+      it "loads none whatever else the caller asks for" do
+        args = GalaxyLedger::Extraction::ClaudeCLI.build_args(
+          content: "some content",
+          prompt: "some prompt",
+          model: "sonnet",
+          json_schema: %({"type":"object"}),
+        )
+
+        args.should contain("--strict-mcp-config")
+        args.should_not contain("--mcp-config")
+      end
+
+      it "keeps the prompt last so the flag cannot consume it" do
+        args = GalaxyLedger::Extraction::ClaudeCLI.build_args(
+          content: "some content",
+          prompt: "some prompt",
+        )
+
+        args.index("--strict-mcp-config").not_nil!
+          .should be < (args.size - 1)
+        args.last.should contain("some prompt")
+      end
+    end
+
     describe "flags the CLI is not given" do
       # A flag the CLI accepts and silently ignores looks exactly like one
       # that works. --prefill was passed for months, did nothing, and the

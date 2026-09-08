@@ -59,7 +59,10 @@ module GalaxyLedger
         model : String? = nil,
         json_schema : String? = nil,
       ) : Array(String)
-        args = ["-p", "--output-format", "json"]
+        # Strict mode limits MCP servers to --mcp-config's, so passing it
+        # without one loads none — which is what these one-shots want,
+        # since schema-constrained extraction never calls a tool.
+        args = ["-p", "--output-format", "json", "--strict-mcp-config"]
         args.concat(["--model", model]) if model
         args.concat(["--json-schema", json_schema]) if json_schema
         args << "#{prompt}\n\nContent to analyze:\n#{content}"
