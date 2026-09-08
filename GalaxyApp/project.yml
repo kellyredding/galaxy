@@ -111,6 +111,27 @@ targets:
       base:
         SWIFT_VERSION: "5.10"
 
+  # Turn pairing, on the same bargain as ListSmoke: sources one by one, so
+  # `Models/TurnHistory/` staying `import Foundation` only is a fact this list
+  # enforces rather than a habit. `TimelineEvent` was split out of
+  # `TimelineModels.swift` to make that possible — the layout types there need
+  # SwiftUI and the decoded event does not.
+  #
+  # Two surfaces render these pairs and neither could assert the rules: which
+  # half of a pair supplies the prompt when the other is missing, what a
+  # payload the recorder truncated becomes, and which end of the list is
+  # newest.
+  TurnHistorySmoke:
+    type: tool
+    platform: macOS
+    sources:
+      - GalaxyApp/Models/TurnHistory/TimelineEvent.swift
+      - GalaxyApp/Models/TurnHistory/TurnPairing.swift
+      - TurnHistorySmoke
+    settings:
+      base:
+        SWIFT_VERSION: "5.10"
+
   # The sessions panel's visibility rule, on the same bargain as ListSmoke:
   # sources one by one, so `Models/SessionsPanel/` staying `import Foundation`
   # only is a fact this list enforces rather than a habit. The rule must stay

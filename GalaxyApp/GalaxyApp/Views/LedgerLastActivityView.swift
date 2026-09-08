@@ -2,8 +2,11 @@ import SwiftUI
 
 /// Displays recent conversation turns in reverse
 /// chronological order, sourced from timeline turn events.
-/// Each turn shows the user message (from turn:initiated)
-/// and assistant response (from the turn-end event).
+///
+/// The pairing itself lives in `TurnPairing`, shared with the
+/// stopped session's history panel so the two surfaces cannot
+/// disagree about which half of a turn supplies the prompt or
+/// what a truncated record means.
 struct LedgerLastActivityView: View {
     @ObservedObject var session: Session
     let turnEvents: [TimelineEvent]?
@@ -16,51 +19,15 @@ struct LedgerLastActivityView: View {
 
     @State private var expandedFields: Set<String> = []
 
-    /// Paired turns built from raw timeline events.
-    /// Groups initiated + end events by durationIdentifier,
-    /// returns up to 5 pairs, most recent first.
+    /// Paired turns built from raw timeline events, most
+    /// recent first.
     private var turns: [TurnPair] {
         guard let events = turnEvents else { return [] }
-
-        // Index initiated events by durationIdentifier
-        var initiatedByDuration: [String: TimelineEvent] =
-            [:]
-        // Collect end events in order (already reversed
-        // from CLI)
-        var endEvents: [TimelineEvent] = []
-
-        for event in events {
-            if event.eventType == "turn:initiated" {
-                if let did = event.durationIdentifier {
-                    initiatedByDuration[did] = event
-                }
-            } else {
-                endEvents.append(event)
-            }
-        }
-
-        var pairs: [TurnPair] = []
-        for endEvent in endEvents {
-            let initiated = endEvent
-                .durationIdentifier
-                .flatMap { initiatedByDuration[$0] }
-            let userMessage = initiated
-                .flatMap { parseDetailField($0, "user_message") }
-            let assistantResponse =
-                parseDetailField(
-                    endEvent, "assistant_response"
-                )
-            pairs.append(
-                TurnPair(
-                    initiatedEvent: initiated,
-                    endEvent: endEvent,
-                    userMessage: userMessage,
-                    assistantResponse: assistantResponse
-                )
-            )
-            if pairs.count >= 5 { break }
-        }
-        return pairs
+        return TurnPairing.pairs(
+            from: events,
+            limit: 5,
+            order: .reverseChronological
+        )
     }
 
     var body: some View {
@@ -85,7 +52,7 @@ struct LedgerLastActivityView: View {
                 ) {
                     ForEach(
                         Array(turns.enumerated()),
-                        id: \.offset
+                        id: \.element.id
                     ) { index, turn in
                         turnBlock(
                             turn,
@@ -126,39 +93,54 @@ struct LedgerLastActivityView: View {
             }
 
             // User message
-            if let msg = turn.userMessage,
-               !msg.isEmpty
-            {
+            switch turn.userMessage {
+            case .text(let msg):
                 sectionBlock("User") {
                     truncatableText(
                         msg,
                         key: "turn_\(index)_user"
                     )
                 }
+            case .unreadable:
+                sectionBlock("User") { unavailableText }
+            case .absent:
+                EmptyView()
             }
 
             // Assistant response
-            if let resp = turn.assistantResponse,
-               !resp.isEmpty
-            {
+            switch turn.assistantResponse {
+            case .text(let resp):
                 sectionBlock("Assistant") {
                     truncatableText(
                         resp,
                         key: "turn_\(index)_asst"
                     )
                 }
-            } else if turn.endEvent.eventType
-                != "turn:completed"
-            {
-                sectionBlock("Assistant") {
-                    Text("(no response)")
-                        .chromeFont(
-                            size: fontSize.caption2
-                        )
-                        .foregroundColor(.secondary)
+            case .unreadable:
+                sectionBlock("Assistant") { unavailableText }
+            case .absent:
+                if turn.endEvent.eventType
+                    != "turn:completed"
+                {
+                    sectionBlock("Assistant") {
+                        Text("(no response)")
+                            .chromeFont(
+                                size: fontSize.caption2
+                            )
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
         }
+    }
+
+    /// A payload the recorder truncated past the pipe buffer.
+    /// Distinct from "(no response)": something was said, and
+    /// the record of it did not survive being written.
+    private var unavailableText: some View {
+        Text("(content unavailable — record truncated)")
+            .chromeFont(size: fontSize.caption2)
+            .foregroundColor(.secondary)
     }
 
     // MARK: - Status Badge
@@ -246,23 +228,6 @@ struct LedgerLastActivityView: View {
         }
     }
 
-    // MARK: - Detail Data Parsing
-
-    /// Extract a string field from an event's
-    /// detail_data JSON.
-    private func parseDetailField(
-        _ event: TimelineEvent,
-        _ field: String
-    ) -> String? {
-        guard let json = event.detailData,
-              let data = json.data(using: .utf8),
-              let dict = try? JSONSerialization
-                  .jsonObject(with: data)
-                  as? [String: Any]
-        else { return nil }
-        return dict[field] as? String
-    }
-
     // MARK: - Formatting
 
     private static let displayDateFormatter:
@@ -276,13 +241,4 @@ struct LedgerLastActivityView: View {
     private func formatDate(_ date: Date) -> String {
         Self.displayDateFormatter.string(from: date)
     }
-}
-
-// MARK: - Turn Pair Model
-
-struct TurnPair {
-    let initiatedEvent: TimelineEvent?
-    let endEvent: TimelineEvent
-    let userMessage: String?
-    let assistantResponse: String?
 }

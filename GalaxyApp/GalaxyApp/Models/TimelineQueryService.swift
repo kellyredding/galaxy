@@ -15,6 +15,17 @@ class TimelineQueryService {
         defaultTimeout: 10
     )
 
+    /// A second cancellation domain, for the stopped sessions' history
+    /// panel. The runner above is single-flight — every query cancels
+    /// the last — and the Timeline tab polls it every 5s, so a panel
+    /// sharing it would trade kills with that poll and neither would
+    /// reliably land. Same split, and the same reason, as
+    /// ArtifactQueryService's independent runner.
+    private let independentRunner = ProcessRunner(
+        binaryPath: "\(NSHomeDirectory())/.claude/galaxy/bin/galaxy-timeline",
+        defaultTimeout: 10
+    )
+
     /// Custom date formatter for CLI output format "yyyy-MM-dd HH:mm:ss" in UTC.
     static let dateFormatter: DateFormatter = {
         let fmt = DateFormatter()
@@ -39,11 +50,7 @@ class TimelineQueryService {
             args: ["list", "--json",
                    "--ledger-session-id", String(ledgerSessionId)]
         )
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        decoder.dateDecodingStrategy = .formatted(Self.dateFormatter)
-        let response = try decoder.decode(TimelineEventsResponse.self, from: data)
-        return response.events
+        return try Self.decodeEvents(data)
     }
 
     /// Fetch the most recent turn event for a session.
@@ -53,33 +60,12 @@ class TimelineQueryService {
     func fetchMostRecentTurnEvent(
         ledgerSessionId: Int64
     ) async throws -> TimelineEvent? {
-        let eventTypes = [
-            "turn:completed",
-            "turn:failed",
-            "turn:interrupted",
-            "turn:abandoned",
-            "turn:initiated",
-        ].joined(separator: ",")
-
         let data = try await runCLI(
-            args: [
-                "list", "--json",
-                "--ledger-session-id",
-                String(ledgerSessionId),
-                "--event-type", eventTypes,
-                "--reverse",
-                "--limit", "1",
-            ]
+            args: Self.turnEventArgs(
+                ledgerSessionId: ledgerSessionId, limit: 1
+            )
         )
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        decoder.dateDecodingStrategy = .formatted(
-            Self.dateFormatter
-        )
-        let response = try decoder.decode(
-            TimelineEventsResponse.self, from: data
-        )
-        return response.events.first
+        return try Self.decodeEvents(data).first
     }
 
     /// Fetch recent turn events for display in the Ledger's
@@ -94,36 +80,83 @@ class TimelineQueryService {
         ledgerSessionId: Int64,
         pairCount: Int = 5
     ) async throws -> [TimelineEvent] {
-        // Fetch end events (completed, failed, interrupted,
-        // abandoned) plus initiated, reversed, with enough
-        // headroom to cover pairCount complete pairs.
-        let eventTypes = [
-            "turn:completed",
-            "turn:failed",
-            "turn:interrupted",
-            "turn:abandoned",
-            "turn:initiated",
-        ].joined(separator: ",")
-
         let data = try await runCLI(
-            args: [
-                "list", "--json",
-                "--ledger-session-id",
-                String(ledgerSessionId),
-                "--event-type", eventTypes,
-                "--reverse",
-                "--limit", String(pairCount * 3),
-            ]
+            args: Self.turnEventArgs(
+                ledgerSessionId: ledgerSessionId,
+                limit: pairCount * 3
+            )
         )
+        return try Self.decodeEvents(data)
+    }
+
+    /// Turn events for a stopped session's history panel — the same
+    /// query as `fetchRecentTurnEvents`, on the independent runner so
+    /// it neither cancels nor is cancelled by the Timeline tab's poll.
+    ///
+    /// Kept as its own method rather than a flag on the one above: the
+    /// callers differ in cancellation semantics, not in query shape,
+    /// and a Bool parameter would make every existing call site read as
+    /// a choice it never makes.
+    func fetchStoppedSessionTurnEvents(
+        ledgerSessionId: Int64,
+        pairCount: Int = 10
+    ) async throws -> [TimelineEvent] {
+        let data = try await runIndependentCLI(
+            args: Self.turnEventArgs(
+                ledgerSessionId: ledgerSessionId,
+                limit: pairCount * 3
+            )
+        )
+        return try Self.decodeEvents(data)
+    }
+
+    /// The newest turn event for a stopped session's collapsed summary
+    /// row. One row, on the independent runner.
+    func fetchStoppedSessionLatestTurn(
+        ledgerSessionId: Int64
+    ) async throws -> TimelineEvent? {
+        let data = try await runIndependentCLI(
+            args: Self.turnEventArgs(
+                ledgerSessionId: ledgerSessionId, limit: 1
+            )
+        )
+        return try Self.decodeEvents(data).first
+    }
+
+    // MARK: - Shared Query Shape
+
+    /// Turn-ending events plus `turn:initiated`, newest first. The
+    /// caller's limit needs headroom over the pair count it wants,
+    /// since a pair costs two rows.
+    private static func turnEventArgs(
+        ledgerSessionId: Int64, limit: Int
+    ) -> [String] {
+        [
+            "list", "--json",
+            "--ledger-session-id", String(ledgerSessionId),
+            "--event-type", turnEventTypes,
+            "--reverse",
+            "--limit", String(limit),
+        ]
+    }
+
+    private static let turnEventTypes = [
+        "turn:completed",
+        "turn:failed",
+        "turn:interrupted",
+        "turn:abandoned",
+        "turn:initiated",
+    ].joined(separator: ",")
+
+    private static func decodeEvents(
+        _ data: Data
+    ) throws -> [TimelineEvent] {
         let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy =
-            .convertFromSnakeCase
-        decoder.dateDecodingStrategy =
-            .formatted(Self.dateFormatter)
-        let response = try decoder.decode(
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        decoder.dateDecodingStrategy = .formatted(dateFormatter)
+        return try decoder.decode(
             TimelineEventsResponse.self, from: data
-        )
-        return response.events
+        ).events
     }
 
     // MARK: - CLI Subprocess
@@ -136,6 +169,17 @@ class TimelineQueryService {
         runner.cancelAll()
         do {
             return try await runner.run(args: args)
+        } catch {
+            throw Self.mapError(error)
+        }
+    }
+
+    /// Spawn on the independent runner, with no pre-emptive cancel:
+    /// concurrent callers here are expected and safe, and the point of
+    /// the second domain is that nothing else gets to kill them.
+    private func runIndependentCLI(args: [String]) async throws -> Data {
+        do {
+            return try await independentRunner.run(args: args)
         } catch {
             throw Self.mapError(error)
         }

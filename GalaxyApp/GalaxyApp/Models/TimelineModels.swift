@@ -1,22 +1,9 @@
 import SwiftUI
 
-// MARK: - CLI JSON Response
-
-struct TimelineEventsResponse: Codable {
-    let events: [TimelineEvent]
-}
-
-/// A single timeline event decoded from CLI JSON output.
-struct TimelineEvent: Codable, Identifiable {
-    let id: Int64
-    let eventType: String
-    let occurredAt: Date
-    let source: String
-    let durationIdentifier: String?
-    let detailData: String?
-    let createdAt: String
-    let updatedAt: String
-}
+// `TimelineEvent` and `TimelineEventsResponse` live in
+// `TurnHistory/TimelineEvent.swift`, which is Foundation-only so the
+// turn-pairing rules can be smoke-tested without SwiftUI. This file
+// holds the layout types, which cannot be.
 
 // MARK: - Resource Classification
 

@@ -1,4 +1,4 @@
-.PHONY: generate build release clean validate-js smoke smoke-keystrokes smoke-lists smoke-sessions-panel check
+.PHONY: generate build release clean validate-js smoke smoke-keystrokes smoke-lists smoke-sessions-panel smoke-turn-history check
 
 # Always use -derivedDataPath to avoid polluting ~/Library/Developer/Xcode/DerivedData
 DERIVED_DATA = build
@@ -27,7 +27,7 @@ release: generate validate-js
 
 # Sandboxed smoke checks: build the standalone tools and run them. No app
 # launch — each runs as its own process.
-smoke: smoke-keystrokes smoke-lists smoke-sessions-panel
+smoke: smoke-keystrokes smoke-lists smoke-sessions-panel smoke-turn-history
 
 # The ⌘/ catalog and its availability gates. Links Galactic so the concept
 # searches run through the real matcher and the real glyph table, which is why
@@ -50,6 +50,13 @@ smoke-lists: generate
 smoke-sessions-panel: generate
 	xcodebuild -scheme SessionsPanelSmoke -configuration Debug -derivedDataPath $(DERIVED_DATA) -destination 'platform=macOS' build
 	./$(DERIVED_DATA)/Build/Products/Debug/SessionsPanelSmoke
+
+# How a turn's two events become one pair, and what a truncated record
+# becomes. Foundation only, so like the lists this links nothing and needs no
+# framework path to run.
+smoke-turn-history: generate
+	xcodebuild -scheme TurnHistorySmoke -configuration Debug -derivedDataPath $(DERIVED_DATA) -destination 'platform=macOS' build
+	./$(DERIVED_DATA)/Build/Products/Debug/TurnHistorySmoke
 
 # The pre-commit gate: everything that can fail without launching the app.
 #

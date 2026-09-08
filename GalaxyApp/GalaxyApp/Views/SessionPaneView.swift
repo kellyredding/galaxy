@@ -57,7 +57,11 @@ struct SessionPaneView: View {
         Group {
             if session.hasExited {
                 // Show stopped session UI
-                StoppedSessionView(session: session, onResume: onResume)
+                StoppedSessionView(
+                    session: session,
+                    isVisibleSurface: isVisibleSurface,
+                    onResume: onResume
+                )
             } else if let backend = session.backend {
                 // Show terminal via TerminalPane abstraction.
                 // `.equatable()` opts into our Equatable
