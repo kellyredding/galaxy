@@ -234,6 +234,17 @@ final class SplitState: ObservableObject {
         DispatchQueue.main.asyncAfter(
             deadline: .now() + 0.05
         ) {
+            // This pane may have stopped being the surface in front of the
+            // user while the deferral was outstanding. Focus here reaches the
+            // backend directly, and AppKit grants a raw makeFirstResponder
+            // even on a hidden view — so a session switch inside the window
+            // put the caret in a pane nobody could see, and dimmed the
+            // session the user had switched to with nothing left to restore
+            // it. Every other focus path declines that; this one could not.
+            let manager = SessionManager.shared
+            guard manager.activeSessionId == session.id,
+                  manager.activeTab == .terminal
+            else { return }
             pane.focus()
         }
     }
