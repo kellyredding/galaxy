@@ -9,12 +9,18 @@ enum TimelineService {
 
     /// Record a timeline event with detail data passed as a
     /// CLI argument. Use for small payloads only.
+    ///
+    /// `onRecorded` runs once the event is written, off the caller's
+    /// thread. It exists for the caller that has a second event to
+    /// record and needs the two to reach Galaxy in order — recording
+    /// is a subprocess, and two of them race.
     static func record(
         ledgerSessionId: Int64,
         eventType: String,
         source: String,
         durationIdentifier: String? = nil,
-        detailData: [String: Any]? = nil
+        detailData: [String: Any]? = nil,
+        onRecorded: (() -> Void)? = nil
     ) {
         var args = [
             "record",
@@ -39,7 +45,7 @@ enum TimelineService {
             args.append(jsonString)
         }
 
-        launchFireAndForget(args: args)
+        launchFireAndForget(args: args, onExit: onRecorded)
     }
 
     /// Record a timeline event with detail data piped via
@@ -83,7 +89,8 @@ enum TimelineService {
 
     private static func launchFireAndForget(
         args: [String],
-        stdinData: Data? = nil
+        stdinData: Data? = nil,
+        onExit: (() -> Void)? = nil
     ) {
         let process = Process()
         process.executableURL = URL(
@@ -92,6 +99,10 @@ enum TimelineService {
         process.arguments = args
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
+
+        if let onExit = onExit {
+            process.terminationHandler = { _ in onExit() }
+        }
 
         if let stdinData = stdinData {
             let pipe = Pipe()
@@ -109,6 +120,9 @@ enum TimelineService {
                     "TimelineService: launch failed: %@",
                     error.localizedDescription
                 )
+                // Nothing was recorded, so there is nothing left for
+                // the follow-up to arrive ahead of.
+                onExit?()
             }
         } else {
             process.standardInput = FileHandle.nullDevice
@@ -119,6 +133,7 @@ enum TimelineService {
                     "TimelineService: launch failed: %@",
                     error.localizedDescription
                 )
+                onExit?()
             }
         }
     }

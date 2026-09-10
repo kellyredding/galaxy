@@ -982,19 +982,37 @@ class SessionManager: ObservableObject {
     /// `TerminalHostView.setupKeyEventMonitor`. The
     /// keystroke is the trigger — no buffer scan, no
     /// polling, no debounce timer. Idempotency comes for
-    /// free: we delete the TurnState file after recording,
-    /// so subsequent rapid Esc presses against the same
-    /// turn read TurnState as nil and bail.
+    /// free: the TurnState file is deleted here, so
+    /// subsequent rapid Esc presses against the same turn
+    /// read TurnState as nil and bail.
     ///
     /// The recorded event flows back through the socket as
     /// `timeline.turn:interrupted`, which EventCoordinator
     /// translates into `session.endTurn()` — that's what
     /// stops the dot and closes the timeline bar.
+    ///
+    /// An interrupt is also where a message queued mid-turn
+    /// gets picked up, and this is the earliest anything
+    /// knows that: no Stop hook fires on this path, leaving
+    /// the agent's first line of text as the only other
+    /// signal — 17 seconds later when measured. So the
+    /// ledger is asked to open that turn as soon as the
+    /// interrupt itself is recorded.
     func recordEscapeInterrupt(for session: Session) {
         guard let ledgerSessionId = session.ledgerSessionId
         else { return }
         guard let captured = readTurnState(for: session)
         else { return }
+
+        // Cleared before the event is recorded rather than
+        // after, so the opener below cannot find the turn it
+        // replaces still looking live and decline to open.
+        try? FileManager.default.removeItem(
+            atPath: turnStateFilePath(for: session)
+        )
+
+        let claudeSessionId = session.claudeSessionId
+        let transcript = transcriptPath(for: session)
 
         TimelineService.record(
             ledgerSessionId: ledgerSessionId,
@@ -1005,15 +1023,16 @@ class SessionManager: ObservableObject {
             detailData: [
                 "user_message": captured.userMessage,
             ]
-        )
-
-        // Delete only if UUID still matches (we own it).
-        let current = readTurnState(for: session)
-        if current?.uuid == captured.uuid {
-            try? FileManager.default.removeItem(
-                atPath: turnStateFilePath(
-                    for: session
-                )
+        ) {
+            // Ordered, not merely queued. Both events reach
+            // Galaxy through the socket, and a start that
+            // overtook this end would be read as the end of
+            // the turn it just opened — a dot dark for the
+            // whole turn, which is the bug this fixes.
+            LedgerCommandService.openQueuedTurn(
+                claudeSessionId: claudeSessionId,
+                transcriptPath: transcript,
+                source: "galaxy-app/interrupt"
             )
         }
     }
