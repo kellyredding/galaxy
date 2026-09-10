@@ -53,6 +53,25 @@ module GalaxyLedger
           ],
         },
       ],
+      # No matcher, because the event supports none — it fires several
+      # times per assistant message and the handler's own fast path
+      # (a file check, then exit) is what keeps that affordable.
+      #
+      # Async because nothing downstream waits on it, and the timeout
+      # is short: a slow one is better abandoned than left queued
+      # behind the next delta.
+      "MessageDisplay" => [
+        {
+          "hooks" => [
+            {
+              "type"    => "command",
+              "command" => "~/.claude/galaxy/bin/galaxy-ledger on-message-display",
+              "async"   => true,
+              "timeout" => 5,
+            },
+          ],
+        },
+      ],
       # Matched to `idle_prompt` alone, and the matcher is load-bearing:
       # unmatched, Notification also fires for permission prompts, which is
       # the opposite of the idleness this reports.

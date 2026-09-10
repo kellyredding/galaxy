@@ -94,6 +94,8 @@ module GalaxyLedger
         handle_on_idle_command(rest)
       when "on-user-prompt-submit"
         handle_on_user_prompt_submit_command(rest)
+      when "on-message-display"
+        handle_on_message_display_command(rest)
       when "on-subagent-start"
         handle_on_subagent_start_command(rest)
       when "on-subagent-stop"
@@ -1194,6 +1196,17 @@ module GalaxyLedger
       handler.run
     end
 
+    private def self.handle_on_message_display_command(
+      args : Array(String),
+    )
+      if args.first? == "-h" || args.first? == "--help"
+        show_on_message_display_help
+        return
+      end
+      handler = Hooks::OnMessageDisplay.new
+      handler.run
+    end
+
     private def self.handle_on_idle_command(
       args : Array(String),
     )
@@ -1203,6 +1216,31 @@ module GalaxyLedger
       end
       handler = Hooks::OnIdle.new
       handler.run
+    end
+
+    private def self.show_on_message_display_help
+      puts <<-HELP
+      galaxy-ledger on-message-display - Open a turn nobody else will
+
+      USAGE:
+        galaxy-ledger on-message-display
+
+      DESCRIPTION:
+        Called by Claude Code's MessageDisplay hook, which fires
+        while assistant text is displayed. Records turn:initiated
+        with source `galaxy-ledger/message-display`, but only when
+        no turn is already tracked for the session.
+
+        It exists because a message submitted mid-turn is queued,
+        has its UserPromptSubmit swallowed, and never sees that
+        hook again when it is dequeued — and Stop does not fire on
+        an interrupt, so nothing later reclaims it. Without this
+        the agent works while Galaxy shows it idle.
+
+        Reads session_id and nothing else. The event fires several
+        times per message with no matcher available, so the common
+        path is a file check and an exit.
+      HELP
     end
 
     private def self.show_on_idle_help

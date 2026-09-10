@@ -47,6 +47,9 @@ module GalaxyLedger
           if TurnState.exists?(sid)
             TurnState.close_orphan(sid, ledger_session_id)
           end
+          # The session is going away, so a prompt set aside mid-turn
+          # has nothing left to dequeue it.
+          TurnState.delete_pending(sid)
         end
 
         # Abandon any still-running agents (best-effort)

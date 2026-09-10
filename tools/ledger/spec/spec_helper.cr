@@ -260,6 +260,41 @@ def flush_wal_for(session_id : String, retries = 5)
   end
 end
 
+# A live process that `ps` reports as `claude`, yielded by pid and
+# torn down afterwards.
+#
+# A symlink to /bin/sleep rather than a copy: `ps -o comm=` reports the
+# path the process was executed by, so the symlink's name is what shows
+# up, while the bytes being run are still the signed system binary. A
+# *copy* named claude loses its code signature and is killed the
+# instant it execs; a shell script named claude reports its interpreter
+# (`/bin/sh`) instead of itself. Both were tried.
+def with_fake_claude(&)
+  dir = Path.new(Dir.tempdir) / "galaxy-ledger-spec-claude-#{Random.rand(100000)}"
+  Dir.mkdir_p(dir)
+  link = dir / "claude"
+  File.symlink("/bin/sleep", link.to_s)
+
+  process = Process.new(link.to_s, args: ["30"],
+    output: Process::Redirect::Close,
+    error: Process::Redirect::Close)
+
+  # `ps` cannot see it until it has execed.
+  20.times do
+    break if GalaxyLedger::Hooks::TurnState
+               .claude_process?(process.pid.to_i64)
+    sleep 25.milliseconds
+  end
+
+  begin
+    yield process.pid.to_i64
+  ensure
+    process.signal(Signal::KILL) rescue nil
+    process.wait rescue nil
+    FileUtils.rm_rf(dir.to_s)
+  end
+end
+
 # Clean up entire test directory after all specs (includes sessions, config, data, etc.)
 Spec.after_suite do
   FileUtils.rm_rf(SPEC_CLAUDE_CONFIG_DIR.to_s) if Dir.exists?(SPEC_CLAUDE_CONFIG_DIR)

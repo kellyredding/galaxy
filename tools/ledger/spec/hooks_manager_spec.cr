@@ -194,6 +194,23 @@ describe GalaxyLedger::HooksManager do
       status.hook_events.size.should eq(GalaxyLedger::HooksManager::LEDGER_HOOKS.keys.size)
     end
 
+    # Asserted by name rather than left to the count above: a hook
+    # registered under the wrong event, or with a matcher the event
+    # does not support, installs cleanly and simply never fires.
+    it "registers MessageDisplay with no matcher" do
+      entries = GalaxyLedger::HooksManager::LEDGER_HOOKS["MessageDisplay"]
+      entries.size.should eq(1)
+
+      entry = entries.first
+      # MessageDisplay supports no matcher — supplying one would stop
+      # it matching anything at all.
+      entry.has_key?("matcher").should be_false
+
+      hooks = entry["hooks"].as(Array)
+      command = hooks.first.as(Hash)["command"].to_s
+      command.should contain("on-message-display")
+    end
+
     it "reports partial installation" do
       # Install just one hook manually
       partial_settings = {

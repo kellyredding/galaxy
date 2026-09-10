@@ -23,6 +23,10 @@ module GalaxyLedger
             lsid = resolve_session_for_timeline
             TurnState.close_orphan(sid, lsid) if lsid > 0
           end
+          # A prompt set aside mid-turn is waiting to be dequeued.
+          # Clearing the context means it never will be, and a stale
+          # one would label some later turn with it.
+          TurnState.delete_pending(sid)
         end
 
         # Record timeline event synchronously (basic data).

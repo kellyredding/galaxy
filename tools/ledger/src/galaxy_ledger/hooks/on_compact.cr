@@ -25,6 +25,9 @@ module GalaxyLedger
             lsid = resolve_session_for_timeline
             TurnState.close_orphan(sid, lsid) if lsid > 0
           end
+          # Same reason as on_clear: nothing will dequeue a prompt
+          # set aside before a compaction.
+          TurnState.delete_pending(sid)
         end
 
         # Record timeline event synchronously (basic data).

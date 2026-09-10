@@ -140,11 +140,21 @@ class TimelineQueryService {
         ]
     }
 
+    /// Every event that ends a turn, plus the one that starts it.
+    ///
+    /// `turn:continued` earns its place despite being a point event
+    /// with no start to pair with: it is what the Stop hook records
+    /// when the agent has been working with no turn open, so omitting
+    /// it made exactly the turns worth explaining the ones these
+    /// surfaces could not show. It pairs with nothing and renders as a
+    /// response without a prompt, which is an honest account of what
+    /// was recorded.
     private static let turnEventTypes = [
         "turn:completed",
         "turn:failed",
         "turn:interrupted",
         "turn:abandoned",
+        "turn:continued",
         "turn:initiated",
     ].joined(separator: ",")
 

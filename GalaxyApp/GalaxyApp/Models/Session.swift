@@ -1163,11 +1163,19 @@ class Session: Identifiable, ObservableObject {
             // surfaced now so a stale-idle session that
             // swallows turn:completed events leaves an
             // obvious fingerprint.
-            GalaxyLog.events(
-                "[\(sessionRef)] TurnState:"
-                + " endTurn IGNORED (not in turn)"
-                + "\(refTag) source=\(source)"
-            )
+            //
+            // Except for turn:continued, which is a point event the
+            // Stop hook records when the agent worked with no turn
+            // open. Arriving on an idle session is what it is *for*,
+            // so logging it as ignored describes the normal case as a
+            // defect and buries the ones that are.
+            if !source.hasSuffix("turn:continued") {
+                GalaxyLog.events(
+                    "[\(sessionRef)] TurnState:"
+                    + " endTurn IGNORED (not in turn)"
+                    + "\(refTag) source=\(source)"
+                )
+            }
             return
         }
         GalaxyLog.events(

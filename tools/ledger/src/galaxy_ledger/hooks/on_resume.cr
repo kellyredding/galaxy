@@ -134,6 +134,13 @@ module GalaxyLedger
           event: "session:ready",
           ref: "resume",
         )
+
+        # Housekeeping, last so nothing above waits on it. A resume is
+        # the clearest case of the leak this clears: the previous
+        # incarnation's turn state is stranded under an identifier the
+        # session has just moved on from, and nothing else will ever
+        # come looking for it.
+        TurnState.sweep_orphans
       end
 
       private def parse_hook_input

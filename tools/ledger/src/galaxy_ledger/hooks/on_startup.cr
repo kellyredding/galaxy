@@ -148,6 +148,15 @@ module GalaxyLedger
           event: "session:ready",
           ref: "startup",
         )
+
+        # Housekeeping, last so nothing above waits on it. Turn state
+        # is only cleaned up by the hooks that end a turn, and a
+        # session that dies without one leaks a file forever — which
+        # then suppresses turn tracking for whatever session picks up
+        # that identifier. Session start is the moment nothing is
+        # mid-turn, and it happens often enough that a leak lives
+        # hours rather than months.
+        TurnState.sweep_orphans
       end
 
       private def parse_hook_input

@@ -122,13 +122,22 @@ module GalaxyLedger
         # sub-sessions)
         return unless stdin_sid == current_sid
 
-        # Skip if a turn is already in progress.
-        # Follow-up messages typed while Claude is
-        # working are part of the existing turn — they
-        # should not create new turn:initiated events
-        # or overwrite the TurnState file (which would
-        # orphan the original turn:initiated).
-        return if TurnState.exists?(stdin_sid)
+        # Set aside rather than dropped when a turn is
+        # already in progress.
+        #
+        # A follow-up typed while Claude works usually
+        # belongs to the running turn, which is why no
+        # event is recorded here — opening one would
+        # orphan the original turn:initiated. But Claude
+        # Code queues the message and never fires this
+        # hook again when it dequeues, so discarding the
+        # prompt is what leaves the turn it becomes with
+        # no beginning and no text. Whichever path opens
+        # the next turn claims it.
+        if TurnState.exists?(stdin_sid)
+          TurnState.write_pending(stdin_sid, prompt)
+          return
+        end
 
         # Generate UUID for duration pairing
         uuid = UUID.random.to_s
@@ -162,6 +171,13 @@ module GalaxyLedger
 
         # Write turn state file for Stop hook to consume
         TurnState.write(stdin_sid, uuid, prompt)
+
+        # Any prompt still set aside is superseded: this one
+        # opened the turn, so a queued message either was
+        # already claimed or was never dequeued. Leaving it
+        # would let a later turn be labelled with a message
+        # the user sent long before it.
+        TurnState.delete_pending(stdin_sid)
       rescue
         # Best-effort — turn tracking failure is not
         # fatal

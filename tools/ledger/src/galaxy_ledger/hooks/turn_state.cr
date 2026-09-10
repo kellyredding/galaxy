@@ -36,8 +36,14 @@ module GalaxyLedger
       end
 
       # Write a turn state file for the given Claude session.
-      # Overwrites any existing state (handles queued messages
-      # and hung resubmissions).
+      #
+      # Callers are expected to have checked `exists?` first —
+      # UserPromptSubmit skips recording entirely when a turn is
+      # already open, so this is only reached for a turn that is
+      # genuinely starting. An earlier version of this comment
+      # claimed the overwrite here handled queued messages; the
+      # guard that came later made that unreachable, and the
+      # queued message is set aside by `write_pending` instead.
       def self.write(
         claude_session_id : String,
         uuid : String,
@@ -88,6 +94,58 @@ module GalaxyLedger
         File.exists?(state_path(claude_session_id))
       end
 
+      # MARK: - Pending prompts
+
+      # Set aside a prompt that arrived while a turn was already
+      # running.
+      #
+      # Claude Code queues such a message and fires UserPromptSubmit
+      # at once, then never fires it again when it dequeues. Opening a
+      # turn at submit time would overwrite the running one, so the
+      # prompt waits here and whichever path opens the next turn
+      # claims it. Discarding it is what used to leave the resulting
+      # turn with no beginning and no text.
+      def self.write_pending(
+        claude_session_id : String,
+        prompt : String,
+      )
+        Dir.mkdir_p(pending_dir) unless Dir.exists?(pending_dir)
+        data = {
+          "user_message" => prompt,
+          "queued_at"    => Time.utc.to_rfc3339,
+        }
+        File.write(pending_path(claude_session_id), data.to_json)
+      rescue
+        # Best-effort — a turn without its prompt text is still a turn
+      end
+
+      # Take the stashed prompt and clear it.
+      #
+      # Read and delete together: two openers can race on the same
+      # session, and a prompt claimed twice would label two turns with
+      # one message.
+      def self.take_pending(
+        claude_session_id : String,
+      ) : String?
+        path = pending_path(claude_session_id)
+        return nil unless File.exists?(path)
+
+        prompt = JSON.parse(File.read(path))["user_message"]?
+          .try(&.as_s?)
+        File.delete(path)
+        prompt
+      rescue
+        nil
+      end
+
+      # Discard any stashed prompt without claiming it.
+      def self.delete_pending(claude_session_id : String)
+        path = pending_path(claude_session_id)
+        File.delete(path) if File.exists?(path)
+      rescue
+        # Best-effort — stale files are harmless
+      end
+
       # Close an orphaned turn by recording turn:abandoned
       # and deleting the state file. Synchronous — the
       # timeline event must be recorded before the caller's
@@ -126,11 +184,146 @@ module GalaxyLedger
         # Best-effort — orphan cleanup is not fatal
       end
 
+      # MARK: - Sweeping
+
+      # Remove turn state left behind by sessions that are gone.
+      #
+      # A file survives only when its identifier is still the one its
+      # ledger session is using AND that session's process is alive.
+      # Both halves are needed, and the first is the one that is easy
+      # to miss: a resume mints a new identifier, so a long-lived
+      # session accumulates files under identifiers it has moved on
+      # from. Liveness alone keeps those forever — two such files were
+      # 29 and 14 days old against a session still running.
+      #
+      # No age threshold, deliberately. A turn can stay legitimately
+      # open for days while the agent waits on a permission prompt,
+      # and any timer generous enough for a fortnight's holiday is
+      # also generous enough to let a leak suppress turn tracking for
+      # a fortnight. Liveness answers the real question directly.
+      #
+      # An identifier that resolves to nothing cannot be current, so
+      # it sweeps — which is what stops an unknown file living
+      # forever.
+      def self.sweep_orphans
+        return unless Dir.exists?(dir)
+
+        Dir.each_child(dir.to_s) do |name|
+          next unless name.ends_with?(".json")
+          claude_session_id = name[0...-5]
+          next if session_live?(claude_session_id)
+
+          if state = read(claude_session_id)
+            close_swept(claude_session_id, state)
+          end
+          delete(claude_session_id)
+          delete_pending(claude_session_id)
+        end
+      rescue
+        # Best-effort — housekeeping is never worth failing a hook
+      end
+
+      # Whether this identifier still names a running session.
+      def self.session_live?(claude_session_id : String) : Bool
+        ledger_session_id =
+          Database.resolve_session_identifier(claude_session_id)
+        return false unless ledger_session_id
+        return false unless ledger_session_id > 0
+
+        record = Database.get_session_by_id(ledger_session_id)
+        return false unless record
+
+        # A session that has moved to a newer identifier has left this
+        # file behind, however alive the session itself is.
+        return false unless record.current_session_identifier ==
+                              claude_session_id
+
+        pid = record.current_claude_pid
+        return false unless pid
+        claude_process?(pid)
+      rescue
+        false
+      end
+
+      # Whether this pid is a live `claude`.
+      #
+      # The command name is checked rather than mere existence: the OS
+      # recycles pids, and a dead session whose number was reused
+      # would otherwise read as alive and keep its file forever.
+      def self.claude_process?(pid : Int64) : Bool
+        output = IO::Memory.new
+        status = Process.run(
+          "ps",
+          args: ["-p", pid.to_s, "-o", "comm="],
+          output: output,
+          error: Process::Redirect::Close,
+        )
+        return false unless status.success?
+        output.to_s.includes?("claude")
+      rescue
+        false
+      end
+
+      # Close a swept turn on the timeline at the time it began.
+      #
+      # Dated to `initiated_at` rather than now, so a turn abandoned
+      # months ago does not appear as today's activity. The bar has no
+      # length, which is the honest rendering: when it started is
+      # known and when it stopped is not, and inventing an end would
+      # be worse than showing none.
+      def self.close_swept(
+        claude_session_id : String,
+        state : State,
+      )
+        ledger_session_id =
+          Database.resolve_session_identifier(claude_session_id)
+        return unless ledger_session_id
+        return unless ledger_session_id > 0
+
+        detail_data = {
+          "user_message" => state.user_message,
+        }.to_json
+
+        Process.run(
+          TIMELINE_BIN.to_s,
+          args: [
+            "record",
+            "--ledger-session-id",
+            ledger_session_id.to_s,
+            "--event-type", "turn:abandoned",
+            "--source", "galaxy-ledger/sweep",
+            "--duration-identifier",
+            "turn--#{state.uuid}",
+            "--occurred-at", state.initiated_at,
+            "--detail-data-stdin",
+          ],
+          input: IO::Memory.new(detail_data),
+          output: Process::Redirect::Close,
+          error: Process::Redirect::Close,
+        )
+      rescue
+        # Best-effort — the file still goes
+      end
+
       # Full path to the state file for a Claude session.
       def self.state_path(
         claude_session_id : String,
       ) : Path
         dir / "#{claude_session_id}.json"
+      end
+
+      # Directory holding prompts set aside mid-turn. A sibling of the
+      # state directory so the sweeper can treat the two alike.
+      def self.pending_dir : Path
+        Path.new(
+          ENV["GALAXY_DIR"]? || Path.home / ".claude" / "galaxy",
+        ) / "ledger" / "turn-pending"
+      end
+
+      def self.pending_path(
+        claude_session_id : String,
+      ) : Path
+        pending_dir / "#{claude_session_id}.json"
       end
     end
   end
