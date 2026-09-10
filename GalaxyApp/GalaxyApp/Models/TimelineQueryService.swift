@@ -35,6 +35,20 @@ class TimelineQueryService {
         return fmt
     }()
 
+    /// RFC3339, accepted on read only.
+    ///
+    /// `galaxy-timeline` converts what it is handed before storing it,
+    /// so nothing should arrive in this shape — but sixteen rows once
+    /// did, and because a response decodes as one batch, each of them
+    /// blanked an entire session's Timeline rather than costing a
+    /// single event. A second format to try is cheaper than that
+    /// outcome recurring.
+    private static let iso8601Formatter: ISO8601DateFormatter = {
+        let fmt = ISO8601DateFormatter()
+        fmt.formatOptions = [.withInternetDateTime]
+        return fmt
+    }()
+
     private init() {}
 
     // MARK: - Public API
@@ -163,7 +177,23 @@ class TimelineQueryService {
     ) throws -> [TimelineEvent] {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        decoder.dateDecodingStrategy = .formatted(dateFormatter)
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let raw = try decoder.singleValueContainer()
+                .decode(String.self)
+            if let date = dateFormatter.date(from: raw) {
+                return date
+            }
+            if let date = iso8601Formatter.date(from: raw) {
+                return date
+            }
+            throw DecodingError.dataCorrupted(
+                .init(
+                    codingPath: decoder.codingPath,
+                    debugDescription:
+                        "unrecognized timestamp \"\(raw)\""
+                )
+            )
+        }
         return try decoder.decode(
             TimelineEventsResponse.self, from: data
         ).events
