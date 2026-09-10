@@ -1,4 +1,5 @@
 require "json"
+require "uuid"
 
 module GalaxyLedger
   module Hooks
@@ -138,12 +139,105 @@ module GalaxyLedger
         nil
       end
 
+      # Read the stashed prompt without claiming it.
+      def self.peek_pending(
+        claude_session_id : String,
+      ) : String?
+        path = pending_path(claude_session_id)
+        return nil unless File.exists?(path)
+
+        JSON.parse(File.read(path))["user_message"]?.try(&.as_s?)
+      rescue
+        nil
+      end
+
       # Discard any stashed prompt without claiming it.
       def self.delete_pending(claude_session_id : String)
         path = pending_path(claude_session_id)
         File.delete(path) if File.exists?(path)
       rescue
         # Best-effort — stale files are harmless
+      end
+
+      # Whether a prompt is waiting to become a turn.
+      def self.pending?(claude_session_id : String) : Bool
+        File.exists?(pending_path(claude_session_id))
+      end
+
+      # Open the turn a queued prompt is about to become. Returns
+      # whether it opened one.
+      #
+      # Two things must both hold. A prompt is set aside — the only
+      # evidence a message is waiting at all — and Claude Code's own
+      # queue record still says that message is waiting. The stash
+      # alone is not enough: it is written at submit time, before the
+      # queue has decided whether the message becomes a turn or is
+      # folded into the one already running, and the second outcome is
+      # the more common. Opening on the stash alone means a turn for a
+      # message that was already answered, with nothing coming to close
+      # it — and the next real prompt is then set aside behind it,
+      # mislabelling every turn that follows.
+      #
+      # A stash the transcript positively disowns is discarded here
+      # rather than left to be claimed later by a turn it has nothing
+      # to do with. A stash it merely cannot speak for is left alone —
+      # the prompt text is the only copy of what was asked, and a turn
+      # opened late carrying it beats one opened on time without it.
+      #
+      # Synchronous, where the writes around it are fire-and-forget.
+      # Both callers have just ended a turn, and Galaxy starts and stops
+      # the dot from these events in the order they arrive — a start
+      # that overtook the end before it would leave the dot dark for the
+      # whole turn it was meant to light.
+      def self.open_pending(
+        claude_session_id : String,
+        ledger_session_id : Int64,
+        source : String,
+        transcript_path : String?,
+      ) : Bool
+        return false if exists?(claude_session_id)
+
+        prompt = peek_pending(claude_session_id)
+        return false unless prompt
+
+        case TranscriptScanner.queue_state(transcript_path, prompt)
+        when .gone?
+          delete_pending(claude_session_id)
+          return false
+        when .unknown?
+          return false
+        end
+
+        return false unless take_pending(claude_session_id)
+
+        uuid = UUID.random.to_s
+        detail_data = {
+          "user_message" => prompt,
+        }.to_json
+
+        Process.run(
+          TIMELINE_BIN.to_s,
+          args: [
+            "record",
+            "--ledger-session-id",
+            ledger_session_id.to_s,
+            "--event-type", "turn:initiated",
+            "--source", source,
+            "--duration-identifier",
+            "turn--#{uuid}",
+            "--detail-data-stdin",
+          ],
+          input: IO::Memory.new(detail_data),
+          output: Process::Redirect::Close,
+          error: Process::Redirect::Close,
+        )
+
+        write(claude_session_id, uuid, prompt)
+        true
+      rescue
+        # Best-effort — without the state file the agent's first line of
+        # text still opens a turn, which is where this started
+        false
       end
 
       # Close an orphaned turn by recording turn:abandoned

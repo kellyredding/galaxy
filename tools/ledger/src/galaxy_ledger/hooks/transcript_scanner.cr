@@ -103,6 +103,79 @@ module GalaxyLedger
       rescue
         [] of FollowUpMessage
       end
+
+      # What became of a message Claude Code queued.
+      #
+      # `Gone` is a fact from the transcript, `Unknown` the absence of
+      # one, and they are worth separating: a caller may discard a
+      # prompt it knows will never be a turn, but discarding one it
+      # merely cannot vouch for throws away the only copy of what the
+      # user asked.
+      enum QueueState
+        Queued
+        Gone
+        Unknown
+      end
+
+      # Where a queued prompt stands, per Claude Code's own record.
+      #
+      # Four operations appear, and only two of them leave a turn to
+      # open:
+      #
+      #   enqueue  set aside; a turn is still possible
+      #   dequeue  the queue drained into a new turn (content is empty,
+      #            so the enqueue above remains the last word on it)
+      #   remove   folded into the turn already running, reason
+      #            `absorbed_mid_turn` — answered, and never its own turn
+      #   popAll   the queue was discarded entirely
+      #
+      # UserPromptSubmit cannot tell these apart, firing at submit time
+      # when the outcome has not happened yet. Measured across one
+      # session's transcript, absorbed and cleared messages outnumbered
+      # real dequeues 13 to 7 — so this is not an edge case being
+      # guarded, it is the majority.
+      def self.queue_state(
+        transcript_path : String?,
+        prompt : String,
+      ) : QueueState
+        return QueueState::Unknown unless transcript_path
+        return QueueState::Unknown unless File.exists?(
+                                            transcript_path,
+                                          )
+
+        state = QueueState::Unknown
+
+        File.each_line(transcript_path) do |line|
+          next unless line.includes?("queue-operation")
+
+          begin
+            json = JSON.parse(line)
+          rescue
+            next
+          end
+
+          next unless json["type"]?.try(&.as_s?) ==
+                        "queue-operation"
+
+          operation = json["operation"]?.try(&.as_s?)
+          content = json["content"]?.try(&.as_s?)
+
+          case operation
+          when "enqueue"
+            state = QueueState::Queued if content == prompt
+          when "remove"
+            state = QueueState::Gone if content == prompt
+          when "popAll"
+            # Takes the whole queue with it, whatever one message it
+            # happens to name — but it can only take what was in it.
+            state = QueueState::Gone if state.queued?
+          end
+        end
+
+        state
+      rescue
+        QueueState::Unknown
+      end
     end
   end
 end

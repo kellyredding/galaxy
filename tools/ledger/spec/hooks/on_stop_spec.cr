@@ -772,11 +772,13 @@ describe "OnStop turn state consumption" do
       test_session_id,
     )
     GalaxyLedger::Hooks::TurnState.delete(test_session_id)
+    GalaxyLedger::Hooks::TurnState.delete_pending(test_session_id)
   end
 
   after_each do
     GalaxyLedger::Database.delete_session(test_session_id)
     GalaxyLedger::Hooks::TurnState.delete(test_session_id)
+    GalaxyLedger::Hooks::TurnState.delete_pending(test_session_id)
   end
 
   it "deletes turn state file when it exists" do
@@ -837,6 +839,143 @@ describe "OnStop turn state consumption" do
     json["decision"].as_s.should eq("approve")
 
     File.delete(transcript_file.path)
+  end
+
+  # Claude Code dequeues a message queued mid-turn as soon as this turn
+  # ends, so the turn it becomes starts here — not when the agent first
+  # speaks, which in one measurement was 17 seconds later.
+  it "opens the queued message's turn as this one ends" do
+    with_queue_transcript([{"enqueue", "the queued prompt"}]) do |t|
+      GalaxyLedger::Hooks::TurnState.write(
+        test_session_id,
+        "stop-uuid-ending",
+        "the prompt that is ending",
+      )
+      GalaxyLedger::Hooks::TurnState.write_pending(
+        test_session_id,
+        "the queued prompt",
+      )
+      flush_wal
+
+      hook_input = {
+        "session_id"             => test_session_id,
+        "transcript_path"        => t,
+        "stop_hook_active"       => false,
+        "last_assistant_message" => "Done with the first one.",
+      }.to_json
+
+      result = run_binary(["on-stop"], stdin: hook_input)
+      result[:status].should eq(0)
+
+      state = GalaxyLedger::Hooks::TurnState.read(
+        test_session_id,
+      ).not_nil!
+      state.user_message.should eq("the queued prompt")
+      state.uuid.should_not eq("stop-uuid-ending")
+      GalaxyLedger::Hooks::TurnState
+        .take_pending(test_session_id).should be_nil
+    end
+  end
+
+  # The regression this cost a live session to find: Claude Code folds
+  # a mid-turn message into the running turn as readily as it queues
+  # one for the next, and UserPromptSubmit sets both aside identically.
+  # Opening a turn for the folded one leaves the dot pulsing over no
+  # work, and its state file then swallows the next real prompt.
+  it "opens no turn for a message this turn absorbed" do
+    with_queue_transcript([
+      {"enqueue", "the absorbed prompt"},
+      {"remove", "the absorbed prompt"},
+    ]) do |t|
+      GalaxyLedger::Hooks::TurnState.write(
+        test_session_id,
+        "stop-uuid-absorbed",
+        "the prompt that is ending",
+      )
+      GalaxyLedger::Hooks::TurnState.write_pending(
+        test_session_id,
+        "the absorbed prompt",
+      )
+      flush_wal
+
+      hook_input = {
+        "session_id"             => test_session_id,
+        "transcript_path"        => t,
+        "stop_hook_active"       => false,
+        "last_assistant_message" => "Answered both.",
+      }.to_json
+
+      run_binary(["on-stop"], stdin: hook_input)
+
+      GalaxyLedger::Hooks::TurnState.exists?(
+        test_session_id,
+      ).should be_false
+      GalaxyLedger::Hooks::TurnState
+        .take_pending(test_session_id).should be_nil
+    end
+  end
+
+  # Galaxy drives the activity dot off these events in the order they
+  # arrive. A start that overtook the end before it would be read as
+  # the turn ending, leaving the dot dark for the whole queued turn.
+  it "records the end before the start it leads to" do
+    with_queue_transcript([{"enqueue", "the queued prompt"}]) do |t|
+      with_recorded_timeline do |log|
+        GalaxyLedger::Hooks::TurnState.write(
+          test_session_id,
+          "stop-uuid-order",
+          "the prompt that is ending",
+        )
+        GalaxyLedger::Hooks::TurnState.write_pending(
+          test_session_id,
+          "the queued prompt",
+        )
+        flush_wal
+
+        hook_input = {
+          "session_id"             => test_session_id,
+          "transcript_path"        => t,
+          "stop_hook_active"       => false,
+          "last_assistant_message" => "Done with the first one.",
+        }.to_json
+
+        run_binary(["on-stop"], stdin: hook_input)
+
+        recorded = File.read(log)
+        completed = recorded.index("turn:completed")
+        initiated = recorded.index("turn:initiated")
+        completed.should_not be_nil
+        initiated.should_not be_nil
+        completed.not_nil!.should be < initiated.not_nil!
+        recorded.should contain("--source galaxy-ledger/stop")
+      end
+    end
+  end
+
+  # Nothing set aside means nothing is waiting to be picked up, and the
+  # session goes idle. Opening a turn here would pulse the dot forever.
+  it "opens no turn when nothing is set aside" do
+    with_queue_transcript([] of Tuple(String, String)) do |t|
+      GalaxyLedger::Hooks::TurnState.write(
+        test_session_id,
+        "stop-uuid-plain",
+        "an ordinary prompt",
+      )
+      flush_wal
+
+      hook_input = {
+        "session_id"             => test_session_id,
+        "transcript_path"        => t,
+        "stop_hook_active"       => false,
+        "last_assistant_message" => "All done.",
+      }.to_json
+
+      run_binary(["on-stop"], stdin: hook_input)
+
+      GalaxyLedger::Hooks::TurnState.exists?(
+        test_session_id,
+      ).should be_false
+    end
   end
 
   it "skips turn recording for mismatched session_id" do

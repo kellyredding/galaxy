@@ -274,4 +274,112 @@ describe GalaxyLedger::Hooks::TranscriptScanner do
       File.delete(transcript.path)
     end
   end
+
+  # What separates a queued message that becomes its own turn from one
+  # that never will. Nothing at submit time can tell them apart — only
+  # these records, written afterwards, can.
+  describe ".queue_state" do
+    it "is queued for a message still waiting" do
+      with_queue_transcript([{"enqueue", "still waiting"}]) do |t|
+        GalaxyLedger::Hooks::TranscriptScanner
+          .queue_state(t, "still waiting")
+          .should eq(
+            GalaxyLedger::Hooks::TranscriptScanner::QueueState::Queued
+          )
+      end
+    end
+
+    # A dequeue names no content, so the enqueue stands as the last
+    # word — which is what makes the queued case survive the drain.
+    it "is queued after the queue drains into a turn" do
+      with_queue_transcript([
+        {"enqueue", "picked up"},
+        {"dequeue", ""},
+      ]) do |t|
+        GalaxyLedger::Hooks::TranscriptScanner
+          .queue_state(t, "picked up")
+          .should eq(
+            GalaxyLedger::Hooks::TranscriptScanner::QueueState::Queued
+          )
+      end
+    end
+
+    it "is gone for a message folded into the running turn" do
+      with_queue_transcript([
+        {"enqueue", "absorbed"},
+        {"remove", "absorbed"},
+      ]) do |t|
+        GalaxyLedger::Hooks::TranscriptScanner
+          .queue_state(t, "absorbed")
+          .should eq(
+            GalaxyLedger::Hooks::TranscriptScanner::QueueState::Gone
+          )
+      end
+    end
+
+    it "is gone when the whole queue was discarded" do
+      with_queue_transcript([
+        {"enqueue", "cleared"},
+        {"popAll", "cleared"},
+      ]) do |t|
+        GalaxyLedger::Hooks::TranscriptScanner
+          .queue_state(t, "cleared")
+          .should eq(
+            GalaxyLedger::Hooks::TranscriptScanner::QueueState::Gone
+          )
+      end
+    end
+
+    # popAll empties the queue, and a message that was never in it is
+    # not something this transcript can speak to either way.
+    it "stays unknown when popAll clears a queue it was not in" do
+      with_queue_transcript([{"popAll", "someone else's"}]) do |t|
+        GalaxyLedger::Hooks::TranscriptScanner
+          .queue_state(t, "never queued here")
+          .should eq(
+            GalaxyLedger::Hooks::TranscriptScanner::QueueState::Unknown
+          )
+      end
+    end
+
+    it "is unknown for a transcript that never mentions it" do
+      with_queue_transcript([{"enqueue", "another message"}]) do |t|
+        GalaxyLedger::Hooks::TranscriptScanner
+          .queue_state(t, "not in here")
+          .should eq(
+            GalaxyLedger::Hooks::TranscriptScanner::QueueState::Unknown
+          )
+      end
+    end
+
+    it "is unknown with no transcript to read" do
+      GalaxyLedger::Hooks::TranscriptScanner
+        .queue_state(nil, "anything")
+        .should eq(
+          GalaxyLedger::Hooks::TranscriptScanner::QueueState::Unknown
+        )
+
+      GalaxyLedger::Hooks::TranscriptScanner
+        .queue_state("/nonexistent/transcript.jsonl", "anything")
+        .should eq(
+          GalaxyLedger::Hooks::TranscriptScanner::QueueState::Unknown
+        )
+    end
+
+    # Re-queued after being absorbed once: the later enqueue is what
+    # counts, or a message sent twice could never open a turn again.
+    it "follows the last word on a message queued twice" do
+      with_queue_transcript([
+        {"enqueue", "same text"},
+        {"remove", "same text"},
+        {"enqueue", "same text"},
+      ]) do |t|
+        GalaxyLedger::Hooks::TranscriptScanner
+          .queue_state(t, "same text")
+          .should eq(
+            GalaxyLedger::Hooks::TranscriptScanner::QueueState::Queued
+          )
+      end
+    end
+  end
 end

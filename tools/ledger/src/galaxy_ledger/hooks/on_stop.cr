@@ -119,88 +119,118 @@ module GalaxyLedger
         # session identifier (skip extraction sub-sessions)
         return unless stdin_sid == current_sid
 
-        state = TurnState.read(stdin_sid)
-
-        if state
-          # State file exists — user initiated this turn.
-          # Record turn:completed with the paired UUID.
-          # Scan transcript for mid-turn follow-up messages.
-          follow_ups = [] of TranscriptScanner::FollowUpMessage
-          if tp = @transcript_path
-            follow_ups = TranscriptScanner.follow_up_messages(
-              tp,
-              state.initiated_at,
-              stdin_sid,
+        ended =
+          if state = TurnState.read(stdin_sid)
+            # State file exists — user initiated this turn.
+            process = record_turn_completed(
+              ledger_session_id, stdin_sid, state,
             )
+            TurnState.delete(stdin_sid)
+            process
+          else
+            record_turn_continued(ledger_session_id)
           end
 
-          detail_data = JSON.build do |json|
-            json.object do
-              json.field "user_message", state.user_message
-              json.field "follow_up_messages" do
-                json.array do
-                  follow_ups.each(&.to_json(json))
-                end
-              end
-              json.field "assistant_response",
-                @last_assistant_message
-            end
-          end
+        return unless TurnState.pending?(stdin_sid)
 
-          begin
-            Process.new(
-              TIMELINE_BIN.to_s,
-              args: [
-                "record",
-                "--ledger-session-id",
-                ledger_session_id.to_s,
-                "--event-type", "turn:completed",
-                "--source", "galaxy-ledger",
-                "--duration-identifier",
-                "turn--#{state.uuid}",
-                "--detail-data-stdin",
-              ],
-              input: IO::Memory.new(detail_data),
-              output: Process::Redirect::Close,
-              error: Process::Redirect::Close,
-            )
-          rescue
-            # Best-effort
-          end
+        # A message queued mid-turn is picked up the moment this turn
+        # ends, so its turn starts here rather than when the agent
+        # first speaks — 17 seconds later in the measurement that
+        # prompted this. Waiting keeps the two events in the order
+        # Galaxy reads them in.
+        ended.try(&.wait)
 
-          TurnState.delete(stdin_sid)
-        else
-          # No state file — agent responded without a user
-          # prompt (e.g., task-notification follow-up).
-          # Record turn:continued as a point event.
-          assistant_msg = @last_assistant_message
-          return unless assistant_msg
-
-          detail_data = {
-            "assistant_response" => assistant_msg,
-          }.to_json
-
-          begin
-            Process.new(
-              TIMELINE_BIN.to_s,
-              args: [
-                "record",
-                "--ledger-session-id",
-                ledger_session_id.to_s,
-                "--event-type", "turn:continued",
-                "--source", "galaxy-ledger",
-                "--detail-data-stdin",
-              ],
-              input: IO::Memory.new(detail_data),
-              output: Process::Redirect::Close,
-              error: Process::Redirect::Close,
-            )
-          rescue
-            # Best-effort
-          end
-        end
+        TurnState.open_pending(
+          stdin_sid,
+          ledger_session_id,
+          source: "galaxy-ledger/stop",
+          transcript_path: @transcript_path,
+        )
       rescue
         # Turn tracking failure is not fatal
+      end
+
+      # Close the turn the state file opened, pairing on its UUID.
+      # Returns the recording process, so a caller can order what
+      # follows it.
+      private def record_turn_completed(
+        ledger_session_id : Int64,
+        stdin_sid : String,
+        state : TurnState::State,
+      ) : Process?
+        follow_ups = [] of TranscriptScanner::FollowUpMessage
+        if tp = @transcript_path
+          follow_ups = TranscriptScanner.follow_up_messages(
+            tp,
+            state.initiated_at,
+            stdin_sid,
+          )
+        end
+
+        detail_data = JSON.build do |json|
+          json.object do
+            json.field "user_message", state.user_message
+            json.field "follow_up_messages" do
+              json.array do
+                follow_ups.each(&.to_json(json))
+              end
+            end
+            json.field "assistant_response",
+              @last_assistant_message
+          end
+        end
+
+        Process.new(
+          TIMELINE_BIN.to_s,
+          args: [
+            "record",
+            "--ledger-session-id",
+            ledger_session_id.to_s,
+            "--event-type", "turn:completed",
+            "--source", "galaxy-ledger",
+            "--duration-identifier",
+            "turn--#{state.uuid}",
+            "--detail-data-stdin",
+          ],
+          input: IO::Memory.new(detail_data),
+          output: Process::Redirect::Close,
+          error: Process::Redirect::Close,
+        )
+      rescue
+        # Best-effort
+        nil
+      end
+
+      # No state file — the agent responded without a user prompt
+      # (e.g., task-notification follow-up). A point event, since
+      # there is no start to pair with.
+      private def record_turn_continued(
+        ledger_session_id : Int64,
+      ) : Process?
+        assistant_msg = @last_assistant_message
+        return nil unless assistant_msg
+
+        detail_data = {
+          "assistant_response" => assistant_msg,
+        }.to_json
+
+        Process.new(
+          TIMELINE_BIN.to_s,
+          args: [
+            "record",
+            "--ledger-session-id",
+            ledger_session_id.to_s,
+            "--event-type", "turn:continued",
+            "--source", "galaxy-ledger",
+            "--detail-data-stdin",
+          ],
+          input: IO::Memory.new(detail_data),
+          output: Process::Redirect::Close,
+          error: Process::Redirect::Close,
+        )
+      rescue
+        # Best-effort
+        nil
       end
 
       # Build the context indicator when above warning thresholds.

@@ -120,6 +120,8 @@ module GalaxyLedger
         handle_doctor_command(rest)
       when "mark-ready"
         handle_mark_ready_command(rest)
+      when "open-queued-turn"
+        handle_open_queued_turn_command(rest)
       when "sessions"
         handle_sessions_command(rest)
       when "resolve-session"
@@ -191,6 +193,7 @@ module GalaxyLedger
         publish                 Publish an event to Galaxy.app
         doctor                  Report sessions whose inbox cannot drain
         mark-ready              Release a session whose readiness never arrived
+        open-queued-turn        Start the turn a queued message becomes
 
       Session Data:
         sessions                Query session state as JSON
@@ -3105,6 +3108,95 @@ module GalaxyLedger
         releasing one of those overtakes a command that must arrive in order.
 
         Use 'galaxy-ledger doctor' to see which sessions qualify.
+      HELP
+    end
+
+    private def self.handle_open_queued_turn_command(args : Array(String))
+      if args.first? == "-h" || args.first? == "--help"
+        show_open_queued_turn_help
+        return
+      end
+
+      session_id : String? = nil
+      transcript_path : String? = nil
+      source = "galaxy-ledger/queued"
+      i = 0
+      while i < args.size
+        arg = args[i]
+        if arg == "--session" && i + 1 < args.size
+          session_id = args[i + 1]
+          i += 2
+        elsif arg == "--transcript-path" && i + 1 < args.size
+          transcript_path = args[i + 1]
+          i += 2
+        elsif arg == "--source" && i + 1 < args.size
+          source = args[i + 1]
+          i += 2
+        else
+          i += 1
+        end
+      end
+
+      sid = session_id
+      unless sid
+        STDERR.puts "Error: --session is required"
+        STDERR.puts "Run 'galaxy-ledger open-queued-turn --help' for usage"
+        exit(1)
+      end
+
+      ledger_session_id = resolve_session_to_ledger_session_id(sid)
+
+      Hooks::TurnState.open_pending(
+        sid,
+        ledger_session_id,
+        source: source,
+        transcript_path: transcript_path,
+      )
+    end
+
+    private def self.show_open_queued_turn_help
+      puts <<-HELP
+      galaxy-ledger open-queued-turn - Start the turn a queued message becomes
+
+      USAGE:
+        galaxy-ledger open-queued-turn --session SESSION_ID \\
+          --transcript-path PATH [--source SOURCE]
+
+      REQUIRED:
+        --session SESSION_ID     Claude session identifier
+
+      OPTIONAL:
+        --transcript-path PATH   Session transcript JSONL. Without it
+                                 nothing is opened — the transcript is
+                                 what proves the message is still queued
+        --source SOURCE          Source recorded on the event
+                                 (default: galaxy-ledger/queued)
+
+      DESCRIPTION:
+        Records turn:initiated for a message Claude Code queued mid-turn,
+        using the prompt text the UserPromptSubmit hook set aside.
+
+        Claude Code fires UserPromptSubmit for a queued message at once
+        and never again when it dequeues, so the turn it becomes has no
+        start of its own. Callers invoke this at the moment the dequeue
+        is imminent — Galaxy.app on an interrupt, where no Stop hook
+        fires at all.
+
+        A queued message does not always become a turn: Claude Code
+        also folds one into the turn already running, or discards the
+        queue outright. The transcript records which happened, and only
+        a message still queued there opens anything here.
+
+        Does nothing when a turn is already being tracked. Silent on
+        success (exit 0) whether or not a turn was opened. Non-zero exit
+        only if the session cannot be resolved.
+
+      EXAMPLES:
+        galaxy-ledger open-queued-turn --session abc-123-def \\
+          --transcript-path ~/.claude/projects/-Users-me/abc-123-def.jsonl
+        galaxy-ledger open-queued-turn --session abc-123-def \\
+          --transcript-path /path/to/abc-123-def.jsonl \\
+          --source galaxy-app/interrupt
       HELP
     end
 

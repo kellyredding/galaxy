@@ -260,6 +260,65 @@ def flush_wal_for(session_id : String, retries = 5)
   end
 end
 
+# A transcript JSONL holding the queue-operation records Claude Code
+# writes for messages typed while a turn is running, yielded by path.
+#
+# Each entry is an operation and the content it names — `["remove",
+# "hello"]` for a message folded into the running turn, `["dequeue",
+# ""]` for the queue draining into a new one, which is why content is
+# given rather than assumed.
+def with_queue_transcript(
+  entries : Array(Tuple(String, String)),
+  &
+)
+  file = File.tempfile("queue-transcript", ".jsonl") do |io|
+    entries.each do |(operation, content)|
+      io.puts({
+        "type"      => "queue-operation",
+        "operation" => operation,
+        "timestamp" => Time.utc.to_rfc3339,
+        "sessionId" => "spec-session",
+        "content"   => content,
+      }.to_json)
+    end
+  end
+
+  begin
+    yield file.path
+  ensure
+    file.delete rescue nil
+  end
+end
+
+# Swap the no-op timeline binary for one that logs what it was asked to
+# record, and yield the log path.
+#
+# The binary's location is fixed at load time by TIMELINE_BIN, so the
+# script is rewritten in place rather than pointed elsewhere — which is
+# also what lets it cover both in-process calls and run_binary
+# subprocesses. Restored afterwards, since every other spec depends on
+# the no-op staying silent.
+def with_recorded_timeline(&)
+  log = Path.new(Dir.tempdir) /
+        "galaxy-ledger-timeline-#{Random.rand(100000)}.log"
+  File.write(log, "")
+
+  File.write(SPEC_TIMELINE_NOOP, <<-SH)
+  #!/bin/sh
+  { printf '%s\\n' "$*"; cat; printf '\\n'; } >> "#{log}"
+  exit 0
+  SH
+  File.chmod(SPEC_TIMELINE_NOOP, 0o755)
+
+  begin
+    yield log
+  ensure
+    File.write(SPEC_TIMELINE_NOOP, "#!/bin/sh\nexit 0\n")
+    File.chmod(SPEC_TIMELINE_NOOP, 0o755)
+    File.delete(log) if File.exists?(log)
+  end
+end
+
 # A live process that `ps` reports as `claude`, yielded by pid and
 # torn down afterwards.
 #

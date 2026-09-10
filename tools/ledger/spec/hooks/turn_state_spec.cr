@@ -259,6 +259,186 @@ describe GalaxyLedger::Hooks::TurnState do
     end
   end
 
+  describe ".open_pending" do
+    open_sid = "open-pending-#{Random.rand(100000)}"
+
+    after_each do
+      GalaxyLedger::Hooks::TurnState.delete(open_sid)
+      GalaxyLedger::Hooks::TurnState.delete_pending(open_sid)
+    end
+
+    # The guard that keeps a prediction honest: with nothing set aside
+    # there is no evidence a message is waiting, and a turn opened on a
+    # guess has nothing coming to close it.
+    it "opens nothing when no prompt is set aside" do
+      with_queue_transcript([{"enqueue", "queued prompt"}]) do |t|
+        GalaxyLedger::Hooks::TurnState.open_pending(
+          open_sid, 999_i64, source: "spec",
+          transcript_path: t).should be_false
+
+        GalaxyLedger::Hooks::TurnState
+          .exists?(open_sid).should be_false
+      end
+    end
+
+    # Overwriting here would strand the running turn's turn:initiated
+    # and hand its close to the wrong UUID.
+    it "leaves a tracked turn alone, stash included" do
+      with_queue_transcript([{"enqueue", "still waiting"}]) do |t|
+        GalaxyLedger::Hooks::TurnState.write(
+          open_sid, "running-uuid", "running",
+        )
+        GalaxyLedger::Hooks::TurnState.write_pending(
+          open_sid, "still waiting",
+        )
+
+        GalaxyLedger::Hooks::TurnState.open_pending(
+          open_sid, 999_i64, source: "spec",
+          transcript_path: t).should be_false
+
+        GalaxyLedger::Hooks::TurnState.read(open_sid).not_nil!
+          .uuid.should eq("running-uuid")
+        GalaxyLedger::Hooks::TurnState
+          .take_pending(open_sid).should eq("still waiting")
+      end
+    end
+
+    it "opens a turn carrying the stashed prompt" do
+      with_queue_transcript([{"enqueue", "queued prompt"}]) do |t|
+        GalaxyLedger::Hooks::TurnState.write_pending(
+          open_sid, "queued prompt",
+        )
+
+        GalaxyLedger::Hooks::TurnState.open_pending(
+          open_sid, 999_i64, source: "spec",
+          transcript_path: t).should be_true
+
+        GalaxyLedger::Hooks::TurnState.read(open_sid).not_nil!
+          .user_message.should eq("queued prompt")
+        # Claimed, so no later opener can label a second turn with it.
+        GalaxyLedger::Hooks::TurnState
+          .take_pending(open_sid).should be_nil
+      end
+    end
+
+    # The message this whole path exists for: queued, then picked up as
+    # its own turn. The dequeue record names no content, so the enqueue
+    # remains the last word on it.
+    it "opens a turn for a message the queue has drained" do
+      with_queue_transcript([
+        {"enqueue", "queued prompt"},
+        {"dequeue", ""},
+      ]) do |t|
+        GalaxyLedger::Hooks::TurnState.write_pending(
+          open_sid, "queued prompt",
+        )
+
+        GalaxyLedger::Hooks::TurnState.open_pending(
+          open_sid, 999_i64, source: "spec",
+          transcript_path: t).should be_true
+      end
+    end
+
+    # The case that makes the stash alone an unsafe trigger, and the
+    # majority case for a message typed mid-turn: Claude Code folds it
+    # into the turn already running, which answers it. A turn opened
+    # for it would have no work behind it and nothing to close it, and
+    # would swallow the next real prompt into its own stash.
+    it "opens nothing for a message the running turn absorbed" do
+      with_queue_transcript([
+        {"enqueue", "absorbed prompt"},
+        {"remove", "absorbed prompt"},
+      ]) do |t|
+        GalaxyLedger::Hooks::TurnState.write_pending(
+          open_sid, "absorbed prompt",
+        )
+
+        GalaxyLedger::Hooks::TurnState.open_pending(
+          open_sid, 999_i64, source: "spec",
+          transcript_path: t).should be_false
+
+        GalaxyLedger::Hooks::TurnState
+          .exists?(open_sid).should be_false
+        # Discarded, not left to label some later turn.
+        GalaxyLedger::Hooks::TurnState
+          .take_pending(open_sid).should be_nil
+      end
+    end
+
+    it "opens nothing when the queue was cleared" do
+      with_queue_transcript([
+        {"enqueue", "cleared prompt"},
+        {"popAll", "cleared prompt"},
+      ]) do |t|
+        GalaxyLedger::Hooks::TurnState.write_pending(
+          open_sid, "cleared prompt",
+        )
+
+        GalaxyLedger::Hooks::TurnState.open_pending(
+          open_sid, 999_i64, source: "spec",
+          transcript_path: t).should be_false
+
+        GalaxyLedger::Hooks::TurnState
+          .take_pending(open_sid).should be_nil
+      end
+    end
+
+    # Silence is not the same as a no. Without the transcript nothing
+    # opens, but the prompt text survives for whatever opens the turn
+    # later — losing it would leave that turn anonymous.
+    it "keeps the stash when the transcript cannot vouch for it" do
+      GalaxyLedger::Hooks::TurnState.write_pending(
+        open_sid, "unverifiable prompt",
+      )
+
+      GalaxyLedger::Hooks::TurnState.open_pending(
+        open_sid, 999_i64, source: "spec",
+        transcript_path: nil).should be_false
+
+      GalaxyLedger::Hooks::TurnState
+        .exists?(open_sid).should be_false
+      GalaxyLedger::Hooks::TurnState
+        .take_pending(open_sid).should eq("unverifiable prompt")
+    end
+
+    it "records turn:initiated under the caller's source" do
+      with_queue_transcript([{"enqueue", "queued prompt"}]) do |t|
+        with_recorded_timeline do |log|
+          GalaxyLedger::Hooks::TurnState.write_pending(
+            open_sid, "queued prompt",
+          )
+          GalaxyLedger::Hooks::TurnState.open_pending(
+            open_sid, 42_i64, source: "galaxy-app/interrupt",
+            transcript_path: t)
+
+          recorded = File.read(log)
+          recorded.should contain("turn:initiated")
+          recorded.should contain("--source galaxy-app/interrupt")
+          recorded.should contain("--ledger-session-id 42")
+          recorded.should contain("queued prompt")
+        end
+      end
+    end
+
+    # The event and the file have to name the same turn, or the Stop
+    # that closes it pairs with nothing.
+    it "pairs the event with the state file it writes" do
+      with_queue_transcript([{"enqueue", "queued prompt"}]) do |t|
+        with_recorded_timeline do |log|
+          GalaxyLedger::Hooks::TurnState.write_pending(
+            open_sid, "queued prompt",
+          )
+          GalaxyLedger::Hooks::TurnState.open_pending(
+            open_sid, 42_i64, source: "spec", transcript_path: t)
+
+          uuid = GalaxyLedger::Hooks::TurnState
+            .read(open_sid).not_nil!.uuid
+          File.read(log).should contain("turn--#{uuid}")
+        end
+      end
+    end
+  end
+
   describe ".claude_process?" do
     it "is false for a pid that is gone" do
       # Reaped, so the number is free — the closest thing to a
