@@ -446,15 +446,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Window Focus
 
     @objc private func windowDidBecomeKey(_ notification: Notification) {
-        refreshWindowFocused(trigger: "becomeKey", notification: notification)
+        refreshWindowFocused()
     }
 
     @objc private func windowDidResignKey(_ notification: Notification) {
-        refreshWindowFocused(trigger: "resignKey", notification: notification)
+        refreshWindowFocused()
     }
 
     @objc private func appDidBecomeActive(_ notification: Notification) {
-        refreshWindowFocused(trigger: "appActive", notification: nil)
+        refreshWindowFocused()
     }
 
     /// Re-derive window focus from the actual key-window state instead of
@@ -465,23 +465,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// still key, stranding the unread-dot clear gate (which requires
     /// isWindowFocused). Asking the main window whether it is key is always
     /// correct regardless of notification order.
-    private func refreshWindowFocused(
-        trigger: String, notification: Notification?
-    ) {
+    private func refreshWindowFocused() {
         let mainWindow = mainWindowController?.window
-        let focused = mainWindow?.isKeyWindow ?? false
-        SessionManager.shared.isWindowFocused = focused
-        // DIAGNOSTIC (window-focus strand): name the transitioning window so a
-        // stuck-focus episode points at its culprit. Remove once resolved.
-        let w = notification?.object as? NSWindow
-        let title = w?.title ?? "—"
-        let cls = w.map { String(describing: type(of: $0)) } ?? "—"
-        GalaxyLog.dbg(
-            "focus",
-            "\(trigger) win=\"\(title)\" cls=\(cls)"
-                + " isMain=\(w === mainWindow)"
-                + " -> isWindowFocused=\(focused)"
-        )
+        SessionManager.shared.isWindowFocused =
+            mainWindow?.isKeyWindow ?? false
     }
 
     // MARK: - File Access
