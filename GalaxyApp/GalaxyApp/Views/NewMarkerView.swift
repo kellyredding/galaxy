@@ -57,6 +57,9 @@ struct NewMarkerView: View {
                     .focusable()
                     .focused($focusedField, equals: .create)
             }
+            .background(
+                DialogSubmitShortcuts(isDisabled: false, submit: submit)
+            )
         }
         .padding(20)
         .frame(width: 380)

@@ -817,17 +817,31 @@ enum KeystrokeCatalog {
     /// main window — so these rows always render dimmed, which is the
     /// honest reading.
     ///
-    /// Written as literal ↩ and esc, deliberately: these dialogs
-    /// hardcode `.keyboardShortcut(.defaultAction)` and `.cancelAction`
-    /// and so **ignore** the configured submit keystroke. Binding them
-    /// symbolically would make the sheet claim they follow Settings when
-    /// they do not. Fixing the dialogs is out of scope; describing them
-    /// truthfully is not.
+    /// Written as literals throughout, deliberately: every chord here is
+    /// hardcoded, so none of them **follows** the configured submit
+    /// keystroke. Binding them symbolically would make the sheet claim
+    /// they track Settings when they do not.
+    ///
+    /// That ⌘↩ and ⇧↩ happen to be what many users configure as submit
+    /// is the reason they were added — the habit the rest of the app
+    /// trains used to be met here with a beep — but they are fixed
+    /// chords, and a reader who rebinds submit will still find these
+    /// unchanged. Describing them as literal is what keeps that honest.
     private static let dialogs: [KeystrokeEntry] = [
         .init(binding: .literal("↩"), label: "Create the session",
               section: .dialogs,
               availability: .dialog("New Session dialog"),
               aliases: "confirm, start it, go, submit the form"),
+        .init(binding: .literal("⌘↩"), label: "Create the session",
+              section: .dialogs,
+              availability: .dialog("New Session dialog"),
+              aliases: "confirm, start it, go, submit the form, "
+                  + "command enter"),
+        .init(binding: .literal("⇧↩"), label: "Create the session",
+              section: .dialogs,
+              availability: .dialog("New Session dialog"),
+              aliases: "confirm, start it, go, submit the form, "
+                  + "shift enter"),
         .init(binding: .literal("esc"), label: "Cancel",
               section: .dialogs,
               availability: .dialog("New Session dialog"),
@@ -846,6 +860,14 @@ enum KeystrokeCatalog {
               section: .dialogs,
               availability: .dialog("New Marker dialog"),
               aliases: "confirm, add it, submit the form"),
+        .init(binding: .literal("⌘↩"), label: "Create the marker",
+              section: .dialogs,
+              availability: .dialog("New Marker dialog"),
+              aliases: "confirm, add it, submit the form, command enter"),
+        .init(binding: .literal("⇧↩"), label: "Create the marker",
+              section: .dialogs,
+              availability: .dialog("New Marker dialog"),
+              aliases: "confirm, add it, submit the form, shift enter"),
         .init(binding: .literal("esc"), label: "Cancel",
               section: .dialogs,
               availability: .dialog("New Marker dialog"),
@@ -881,6 +903,21 @@ enum KeystrokeCatalog {
               section: .dialogs,
               availability: .dialog("Restore Session dialog"),
               aliases: "reopen it, bring it back, confirm the restore"),
+        // Unlike the bare Return above, these two are the button's own
+        // and answer from the search field as well — nothing claims
+        // Return with a modifier on the way.
+        .init(binding: .literal("⌘↩"),
+              label: "Restore the selected session",
+              section: .dialogs,
+              availability: .dialog("Restore Session dialog"),
+              aliases: "reopen it, bring it back, confirm the restore, "
+                  + "command enter"),
+        .init(binding: .literal("⇧↩"),
+              label: "Restore the selected session",
+              section: .dialogs,
+              availability: .dialog("Restore Session dialog"),
+              aliases: "reopen it, bring it back, confirm the restore, "
+                  + "shift enter"),
         .init(binding: .literal("esc"), label: "Cancel",
               section: .dialogs,
               availability: .dialog("Restore Session dialog"),

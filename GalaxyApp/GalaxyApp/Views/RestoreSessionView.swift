@@ -397,6 +397,12 @@ struct RestoreSessionView: View {
             .keyboardShortcut(.defaultAction)
             .disabled(selectedId == nil || filteredSessions.isEmpty)
         }
+        .background(
+            DialogSubmitShortcuts(
+                isDisabled: selectedId == nil || filteredSessions.isEmpty,
+                submit: restoreSelected
+            )
+        )
     }
 
     // MARK: - Actions

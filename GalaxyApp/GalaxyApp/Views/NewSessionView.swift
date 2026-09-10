@@ -151,6 +151,13 @@ struct NewSessionView: View {
                         return .handled
                     }
             }
+            .background(
+                DialogSubmitShortcuts(
+                    isDisabled: startDir
+                        .trimmingCharacters(in: .whitespaces).isEmpty,
+                    submit: submit
+                )
+            )
         }
         .padding(20)
         .frame(width: 460)
