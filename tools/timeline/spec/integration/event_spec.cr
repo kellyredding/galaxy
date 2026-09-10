@@ -42,6 +42,93 @@ describe "CLI event commands", tags: "integration" do
       result[:output].should contain("recorded")
     end
 
+    # One stored format, because readers parse one format. Galaxy
+    # decodes a query's events as a batch against a fixed pattern, so a
+    # row in any other shape does not cost one event — it empties the
+    # view, under an empty state that reads as "nothing happened yet".
+    # Sixteen RFC3339 rows across eleven sessions got in before the
+    # store started converting what it was handed.
+    describe "occurred-at normalization" do
+      it "converts RFC3339 to the stored format" do
+        run_binary([
+          "record",
+          "--ledger-session-id", "9101",
+          "--event-type", "turn:abandoned",
+          "--source", "test",
+          "--occurred-at", "2026-01-15T10:30:00Z",
+        ])[:status].should eq(0)
+
+        result = run_binary([
+          "list", "--ledger-session-id", "9101", "--json",
+        ])
+        JSON.parse(result[:output])["events"][0]["occurred_at"]
+          .as_s.should eq("2026-01-15 10:30:00")
+      end
+
+      it "converts a zoned RFC3339 value to UTC" do
+        run_binary([
+          "record",
+          "--ledger-session-id", "9102",
+          "--event-type", "turn:abandoned",
+          "--source", "test",
+          "--occurred-at", "2026-01-15T10:30:00-07:00",
+        ])[:status].should eq(0)
+
+        result = run_binary([
+          "list", "--ledger-session-id", "9102", "--json",
+        ])
+        JSON.parse(result[:output])["events"][0]["occurred_at"]
+          .as_s.should eq("2026-01-15 17:30:00")
+      end
+
+      it "leaves a value already in the stored format alone" do
+        run_binary([
+          "record",
+          "--ledger-session-id", "9103",
+          "--event-type", "turn:abandoned",
+          "--source", "test",
+          "--occurred-at", "2026-01-15 10:30:00",
+        ])[:status].should eq(0)
+
+        result = run_binary([
+          "list", "--ledger-session-id", "9103", "--json",
+        ])
+        JSON.parse(result[:output])["events"][0]["occurred_at"]
+          .as_s.should eq("2026-01-15 10:30:00")
+      end
+
+      it "expands a date to the start of that day" do
+        run_binary([
+          "record",
+          "--ledger-session-id", "9104",
+          "--event-type", "turn:abandoned",
+          "--source", "test",
+          "--occurred-at", "2026-01-15",
+        ])[:status].should eq(0)
+
+        result = run_binary([
+          "list", "--ledger-session-id", "9104", "--json",
+        ])
+        JSON.parse(result[:output])["events"][0]["occurred_at"]
+          .as_s.should eq("2026-01-15 00:00:00")
+      end
+
+      # Refused rather than stored: an unreadable row is discovered by
+      # a blank view days later, a rejected argument by the caller now.
+      it "refuses a value it cannot parse" do
+        result = run_binary([
+          "record",
+          "--ledger-session-id", "9105",
+          "--event-type", "turn:abandoned",
+          "--source", "test",
+          "--occurred-at", "whenever",
+        ])
+
+        result[:status].should_not eq(0)
+        result[:error].should contain("--occurred-at")
+      end
+    end
+
     it "errors when no session identifier provided" do
       result = run_binary([
         "record",

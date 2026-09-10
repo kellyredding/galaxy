@@ -122,7 +122,7 @@ module GalaxyTimeline
           end
         when "--occurred-at"
           if i + 1 < args.size
-            occurred_at = args[i + 1]
+            occurred_at = normalize_occurred_at(args[i + 1])
             i += 2
           else
             STDERR.puts "Error: --occurred-at requires a value"
@@ -1024,6 +1024,29 @@ module GalaxyTimeline
       normalized
     end
 
+    # Bring a recorded instant onto the one format every reader parses:
+    # `YYYY-MM-DD HH:MM:SS`, UTC, which is what SQLite's own
+    # `datetime('now')` default writes.
+    #
+    # RFC3339 is accepted because that is the shape callers already
+    # hold — a turn state file's `initiated_at`, for one — and storing
+    # it verbatim produced a row no consumer could read. Galaxy decodes
+    # a query's events as one batch against a fixed format, so a single
+    # such row does not lose one event, it empties the whole view, and
+    # the view says "no events yet" rather than reporting a failure.
+    # Sixteen rows across eleven sessions got in this way before the
+    # store defended its own format.
+    private def self.normalize_occurred_at(value : String) : String
+      begin
+        return Time.parse_rfc3339(value)
+          .to_utc.to_s("%Y-%m-%d %H:%M:%S")
+      rescue
+        # Not RFC3339 — try the plain forms below.
+      end
+
+      normalize_timestamp(value, "--occurred-at", upper: false)
+    end
+
     private def self.print_timestamp_error(
       flag : String,
       value : String,
@@ -1110,7 +1133,11 @@ module GalaxyTimeline
 
       OPTIONS:
         --occurred-at DATETIME  When the event occurred
-                                (default: now, UTC)
+                                (default: now, UTC). Accepts
+                                YYYY-MM-DD, YYYY-MM-DD HH:MM,
+                                YYYY-MM-DD HH:MM:SS, or
+                                RFC3339; stored as UTC in
+                                YYYY-MM-DD HH:MM:SS
         --detail-data JSON      JSON blob of event details
         --detail-data-stdin     Read detail_data JSON from
                                 stdin (for large payloads)
