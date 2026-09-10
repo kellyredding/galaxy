@@ -536,10 +536,13 @@ struct LedgerView: View {
                     turnEvents = []
                     isLoading = false
                 }
-                NSLog(
-                    "LedgerView: fetchTurnEvents"
-                    + " error: %@",
-                    error.localizedDescription
+                // Not NSLog: this app's unified-log output cannot be
+                // read back, so reporting there is the same as not
+                // reporting. An empty turn list is what a failure and
+                // an idle session both look like.
+                GalaxyLog.events(
+                    "ledger turn events failed for session "
+                        + "\(lsid): \(error)"
                 )
             }
         }

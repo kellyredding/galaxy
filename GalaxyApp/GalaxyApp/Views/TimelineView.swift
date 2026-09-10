@@ -887,6 +887,15 @@ struct TimelineView: View {
     /// Measured height of the frozen chip bar area.
     @State private var chipBarHeight: CGFloat = 30.0
 
+    /// Whether the 5s refresh is currently failing.
+    ///
+    /// Edge-triggered logging, not per-tick: a poll that fails once is
+    /// noise, and one that keeps failing would bury the log it is
+    /// meant to serve. What matters is when it starts and when it
+    /// stops, which is also the difference this view cannot show —
+    /// stale contents and fresh ones look identical.
+    @State private var refreshFailing = false
+
     // MARK: - Data Fetching
 
     private func fetchTimelineEvents() {
@@ -939,6 +948,15 @@ struct TimelineView: View {
             } catch {
                 guard !Task.isCancelled
                 else { return }
+                // A failed load is indistinguishable on screen from a
+                // session that has no events, so the only place the
+                // difference can be seen is here. Sixteen rows with an
+                // unexpected timestamp format once emptied this view
+                // for eleven sessions, and the log said nothing.
+                GalaxyLog.events(
+                    "timeline load failed for session \(lsid): "
+                        + "\(error)"
+                )
                 await MainActor.run {
                     self.isLoading = false
                 }
@@ -993,10 +1011,26 @@ struct TimelineView: View {
                     // before AppKit lays out the new
                     // content and clamps to the stale
                     // bottom.
+                    if self.refreshFailing {
+                        GalaxyLog.events(
+                            "timeline refresh recovered for "
+                                + "session \(lsid)"
+                        )
+                        self.refreshFailing = false
+                    }
                 }
             } catch {
-                // Silently ignore refresh errors —
-                // next tick will retry
+                guard !Task.isCancelled else { return }
+                // The tick itself is still ignored — the next one
+                // retries. Only the transition is worth a line.
+                await MainActor.run {
+                    guard !self.refreshFailing else { return }
+                    self.refreshFailing = true
+                    GalaxyLog.events(
+                        "timeline refresh failing for session "
+                            + "\(lsid): \(error)"
+                    )
+                }
             }
         }
     }
