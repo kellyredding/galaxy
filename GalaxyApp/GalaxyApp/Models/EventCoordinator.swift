@@ -108,6 +108,10 @@ final class EventCoordinator {
         "timeline.context:compacted",
     ]
 
+    /// Claude Code's idle-notification threshold, at its default. The
+    /// ledger's own idle backstop uses the same figure.
+    private static let idleThreshold: TimeInterval = 60
+
     private(set) var phase: Phase = .idle
 
     private let socketListener: SocketListener
@@ -431,6 +435,18 @@ final class EventCoordinator {
                         ", blocked: \($0.phrase)"
                     } ?? "")
                 )
+                // An agent waiting for input is not in a turn. Seven
+                // completions this app never received left sessions stuck
+                // this way; ending here also sends the notice they missed.
+                //
+                // Not a turn younger than the idle period, though: that one
+                // began after the agent went idle, woken as this report was
+                // on its way, and is live.
+                let started = session.turnStartTime ?? .distantPast
+                if session.isInTurn,
+                   Date().timeIntervalSince(started) >= Self.idleThreshold {
+                    session.endTurn(source: "socket:session.idle")
+                }
                 session.inboxConsumer.wake()
             }
             return

@@ -201,7 +201,7 @@ class Session: Identifiable, ObservableObject {
 
     /// When the current turn started (startTurn called).
     /// Used to compute turn duration for notification/unread gates.
-    private var turnStartTime: Date?
+    private(set) var turnStartTime: Date?
 
     /// Read-only accessor for the current turn's start time.
     /// Returns nil when the session is not in a turn. Used by
