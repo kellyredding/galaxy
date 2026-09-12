@@ -84,6 +84,11 @@ enum KeystrokeCatalog {
               section: .files, availability: .session(.active),
               aliases: "search across files, grep, search the project, "
                   + "find text in files, search every file, look in files"),
+        .init(binding: .literal("⌘P"), label: "Switch File Set...",
+              section: .files, availability: .session(.active),
+              aliases: "file sets, change set, pick a set, choose a set, "
+                  + "new file set, rename a set, delete a set, "
+                  + "another train of thought, set switcher"),
         .init(binding: .literal("⇧⌘T"), label: "Reopen Closed File",
               section: .files, availability: .filesWithClosed,
               aliases: "bring back a file, undo closing a file, "

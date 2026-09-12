@@ -14,18 +14,20 @@ import Galactic
 /// enrichment and is nil until then, which would leave a window where a set
 /// could not be filed. The two stores disagreeing about their key is correct.
 ///
-/// The shape written here is Galactic's `PersistedFileSet` — this type owns the
-/// bytes and nothing about what is in them.
+/// The shape written here is Galactic's `PersistedFileSetGroup` — this type owns
+/// the bytes and nothing about what is in them.
 final class FilesStatePersistence: FileSetStore {
     static let shared = FilesStatePersistence()
 
     private struct Document: Codable {
         var version: Int
-        /// Keyed by `Session.id.uuidString`.
-        var sessions: [String: PersistedFileSet]
+        /// Keyed by `Session.id.uuidString`. A version-1 value is one set, which
+        /// the group type reads as a group of one — so an old file loads here
+        /// rather than tripping the empty-document fallback below.
+        var sessions: [String: PersistedFileSetGroup]
     }
 
-    private static let currentVersion = 1
+    private static let currentVersion = 2
     private static let debounceInterval: TimeInterval = 1.0
     private static let maxDelay: TimeInterval = 3.0
 
@@ -61,21 +63,24 @@ final class FilesStatePersistence: FileSetStore {
 
     // MARK: - FileSetStore
 
-    func save(_ state: PersistedFileSet, forOwner ownerID: String) {
+    func save(_ group: PersistedFileSetGroup, forOwner ownerID: String) {
         var doc = document()
-        // An empty set prunes rather than storing three empty fields, so a
+        doc.version = Self.currentVersion
+        // A lone empty default prunes rather than storing empty fields, so a
         // session that opened Files once and closed everything does not keep a
         // row for the life of the file.
-        if state.openPathRows.isEmpty && state.root.isEmpty {
+        if group.sets.count == 1, let only = group.sets.first,
+            only.openPathRows.isEmpty && only.root.isEmpty
+        {
             doc.sessions.removeValue(forKey: ownerID)
         } else {
-            doc.sessions[ownerID] = state
+            doc.sessions[ownerID] = group
         }
         cached = doc
         markDirty()
     }
 
-    func load(forOwner ownerID: String) -> PersistedFileSet? {
+    func load(forOwner ownerID: String) -> PersistedFileSetGroup? {
         document().sessions[ownerID]
     }
 

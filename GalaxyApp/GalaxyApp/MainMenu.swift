@@ -245,6 +245,15 @@ class MainMenu: NSObject, NSMenuDelegate {
         findInFilesItem.target = MenuActions.shared
         menu.addItem(findInFilesItem)
 
+        // ⌘P is free: nothing else in this app binds `p`.
+        let switchSetItem = NSMenuItem(
+            title: "Switch File Set...",
+            action: #selector(MenuActions.switchFileSet(_:)),
+            keyEquivalent: "p"
+        )
+        switchSetItem.target = MenuActions.shared
+        menu.addItem(switchSetItem)
+
         menu.addItem(.separator())
 
         let activeSession = sessionManager.activeSession
@@ -966,6 +975,10 @@ class MenuActions: NSObject {
         MainActor.assumeIsolated { GalaxyFilesModel.shared.presentSearcher() }
     }
 
+    @objc func switchFileSet(_ sender: Any?) {
+        MainActor.assumeIsolated { GalaxyFilesModel.shared.presentSwitcher() }
+    }
+
     /// ⇧⌘T's Files meaning. Only ever built while the Files tab is active — see
     /// `buildFileMenu`, where the two meanings are made mutually exclusive at
     /// construction time rather than by enable state.
@@ -1429,9 +1442,10 @@ extension MenuActions: NSMenuItemValidation {
             return SessionManager.shared.activeTab == .terminal
                 && SessionManager.shared.activeSessionId != nil
 
-        // Both reachable from any tab — they show the Files surface themselves —
+        // All reachable from any tab — they show the Files surface themselves —
         // so the only gate is having a session to show it in.
-        case #selector(openFilePicker(_:)), #selector(findInFiles(_:)):
+        case #selector(openFilePicker(_:)), #selector(findInFiles(_:)),
+            #selector(switchFileSet(_:)):
             return SessionManager.shared.activeSessionId != nil
 
         // Validated rather than left build-time enabled, because the File menu

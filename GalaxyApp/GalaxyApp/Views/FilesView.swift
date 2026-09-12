@@ -21,7 +21,7 @@ struct FilesContainerView: View {
                 let active = session.id == sessionManager.activeSessionId
                 FilesPaneView(
                     surface: model.surface,
-                    set: model.set(for: session),
+                    group: model.group(for: session),
                     // Both halves, composed once — the same predicate
                     // `ArtifactsView` spells for itself.
                     isVisibleSurface: active

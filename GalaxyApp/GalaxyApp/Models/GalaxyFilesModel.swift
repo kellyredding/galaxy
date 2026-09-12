@@ -40,8 +40,8 @@ final class GalaxyFilesModel: FilesHost {
         // navigation coordinator can record it and write it back on
         // back/forward. Assist Ant has no history to feed, which is why this is
         // a hook rather than a protocol member.
-        surface.onSelectionChanged = { [weak self] path in
-            self?.mirrorSelection(path)
+        surface.onSelectionChanged = { [weak self] set in
+            self?.mirrorSelection(set)
         }
         observeFilesTabEntry()
     }
@@ -143,8 +143,8 @@ final class GalaxyFilesModel: FilesHost {
 
     // MARK: - Per-session sets
 
-    func set(for session: Session) -> FileSet {
-        surface.set(forOwner: session.id.uuidString)
+    func group(for session: Session) -> FileSetGroup {
+        surface.group(forOwner: session.id.uuidString)
     }
 
     func restoreIfNeeded(for session: Session) {
@@ -159,30 +159,42 @@ final class GalaxyFilesModel: FilesHost {
 
     // MARK: - History
 
-    /// Copy the strip's selection onto the session that owns it.
+    /// Copy the set on screen, and its selected file, onto the session that
+    /// owns it.
     ///
-    /// Resolved from the current owner rather than from the active session, so a
+    /// Resolved from the set's owner rather than from the active session, so a
     /// change that lands while a switch is in flight is still filed against the
-    /// set it came from.
-    private func mirrorSelection(_ path: String?) {
+    /// session it came from.
+    private func mirrorSelection(_ set: FileSet) {
         guard
-            let session = SessionManager.shared.session(
-                forOwnerID: currentOwnerID
-            )
+            let session = SessionManager.shared.session(forOwnerID: set.ownerID)
         else { return }
+        let path = set.selectedPath
         if let path { session.recordFileInfo(path: path) }
-        guard session.selectedFilePath != path else { return }
-        session.selectedFilePath = path
+        session.recordFileSetInfo(
+            id: set.id, name: set.name, isDefault: set.isDefault
+        )
+        if session.selectedFileSetID != set.id {
+            session.selectedFileSetID = set.id
+        }
+        if session.selectedFilePath != path {
+            session.selectedFilePath = path
+        }
     }
 
-    /// Put the strip where the coordinator says it should be — the other
+    /// Put the Files tab where the coordinator says it should be — the other
     /// direction of the mirror, for back and forward.
     ///
-    /// A path that is not open is opened, because a history entry naming a file
-    /// the reader has since closed should still take them to it.
-    func applySelection(_ path: String?, to session: Session) {
+    /// A set deleted since leaves the one on screen showing. A path that is not
+    /// open is opened, because a history entry naming a file the reader has
+    /// since closed should still take them to it.
+    func applySelection(setID: String?, path: String?, to session: Session) {
+        let group = group(for: session)
+        if let setID, group.set(withID: setID) != nil {
+            surface.selectSet(id: setID, in: group)
+        }
         guard let path else { return }
-        let set = set(for: session)
+        let set = group.selected
         guard set.selectedPath != path else { return }
         if let existing = set.tabs.tab(forPath: path) {
             set.select(id: existing.id)
@@ -205,6 +217,7 @@ final class GalaxyFilesModel: FilesHost {
 
     func presentPicker() { surface.presentPicker() }
     func presentSearcher() { surface.presentSearcher() }
+    func presentSwitcher() { surface.presentSwitcher() }
     func closeSelected() { surface.closeSelected() }
     func reopenLastClosed() { surface.reopenLastClosed() }
     func selectPreviousFile() { surface.selectPreviousFile() }

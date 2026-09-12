@@ -262,6 +262,11 @@ class Session: Identifiable, ObservableObject {
     /// coordinator has to be able to observe it and write it back.
     @Published var selectedFilePath: String? = nil
 
+    /// Id of the file set the Files strip belongs to — the route's second
+    /// identifier, since a path alone is ambiguous once a session has several
+    /// sets.
+    @Published var selectedFileSetID: String? = nil
+
     // MARK: - History title caches
     //
     // Populated by views as they load summaries. Used by
@@ -324,6 +329,18 @@ class Session: Identifiable, ObservableObject {
 
     func fileTitle(for path: String) -> String? {
         fileTitles[path]
+    }
+
+    fileprivate var fileSetNames: [String: String] = [:]
+
+    /// A custom set's name, for history titles. The default set is left out,
+    /// so its entries read as they always have.
+    func recordFileSetInfo(id: String, name: String, isDefault: Bool) {
+        fileSetNames[id] = isDefault ? nil : name
+    }
+
+    func fileSetName(for id: String) -> String? {
+        fileSetNames[id]
     }
 
     // MARK: - Navigation coordinator

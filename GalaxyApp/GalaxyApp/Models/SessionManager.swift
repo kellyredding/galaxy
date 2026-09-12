@@ -1658,8 +1658,8 @@ class SessionManager: ObservableObject {
     ///
     /// The id is `Session.id.uuidString`. Spelled once here because the string
     /// form has two spellings in this app — `claudeSessionId` is the lowercased
-    /// one — and two of them reaching `FileSets.set(forOwner:)` would give one
-    /// session two sets.
+    /// one — and two of them reaching `FileSets.group(forOwner:)` would give one
+    /// session two groups of sets.
     func session(forOwnerID ownerID: String) -> Session? {
         guard let uuid = UUID(uuidString: ownerID) else { return nil }
         return sessions.first(where: { $0.id == uuid })

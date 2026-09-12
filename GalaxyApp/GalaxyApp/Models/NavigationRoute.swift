@@ -4,7 +4,9 @@ import Foundation
 ///
 /// Value type — full equality comparison is used for dedup and
 /// "current route" checks. Pattern: exactly one tab + at most
-/// one extra identifier appropriate to that tab.
+/// one extra identifier appropriate to that tab — except Files,
+/// which carries the set and the file in it, since a path alone
+/// is ambiguous once a session has several sets.
 ///
 /// Constructors enforce the validity pairing (e.g., only
 /// `.ledger` routes carry a subtab, only `.artifacts` routes
@@ -16,6 +18,8 @@ struct NavigationRoute: Equatable, Hashable {
     let artifactNumber: Int32?
     let snapshotNumber: Int32?
     let agentId: String?
+    /// Id of the file set on screen in the Files tab.
+    let fileSetID: String?
     /// Absolute path of the file selected in the Files strip.
     let filePath: String?
 
@@ -25,6 +29,7 @@ struct NavigationRoute: Equatable, Hashable {
         artifactNumber: Int32? = nil,
         snapshotNumber: Int32? = nil,
         agentId: String? = nil,
+        fileSetID: String? = nil,
         filePath: String? = nil
     ) {
         self.tab = tab
@@ -32,6 +37,7 @@ struct NavigationRoute: Equatable, Hashable {
         self.artifactNumber = artifactNumber
         self.snapshotNumber = snapshotNumber
         self.agentId = agentId
+        self.fileSetID = fileSetID
         self.filePath = filePath
     }
 
@@ -59,7 +65,7 @@ struct NavigationRoute: Equatable, Hashable {
         .init(tab: .agents, agentId: id)
     }
 
-    static func files(path: String? = nil) -> Self {
-        .init(tab: .files, filePath: path)
+    static func files(setID: String? = nil, path: String? = nil) -> Self {
+        .init(tab: .files, fileSetID: setID, filePath: path)
     }
 }
