@@ -59,7 +59,13 @@ This is a Galaxy-wide convention for any tool that spawns Claude CLI subprocesse
 make check    # lint + build + test
 make dev      # build dev binary
 make test     # run tests only
+make e2e      # turn tracking against a real Claude Code session (live calls, a few minutes)
 ```
+
+`make e2e` is the one check that exercises timing Claude Code owns: queued
+messages, interrupts, notifications delivered together, the idle
+notification. Run it after changing turn tracking or upgrading Claude Code.
+See [script/e2e/README.md](script/e2e/README.md).
 
 ## License
 

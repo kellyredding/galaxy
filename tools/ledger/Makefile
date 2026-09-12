@@ -1,4 +1,4 @@
-.PHONY: build install clean test test-eval test-all lint format check check-all dev deps sandbox
+.PHONY: build install clean test test-eval test-all lint format check check-all dev deps sandbox e2e
 
 PREFIX ?= $(HOME)/.claude/galaxy
 BINDIR ?= $(PREFIX)/bin
@@ -24,6 +24,12 @@ test-eval:
 sandbox:
 	./script/sandbox/accrual-scenarios.sh
 	./script/sandbox/resume-scenarios.sh
+
+# Turn tracking against a live Claude Code session, so on neither `check` nor
+# `check-all`. LEDGER=build/galaxy-ledger tests a dev build; CWD=DIR starts the
+# session outside the repo root. See script/e2e/README.md.
+e2e:
+	python3 script/e2e/turn-tracking.py $(if $(LEDGER),--ledger $(LEDGER)) $(if $(CWD),--cwd $(CWD))
 
 test-all:
 	crystal spec
