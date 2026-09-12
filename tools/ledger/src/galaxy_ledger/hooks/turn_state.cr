@@ -369,10 +369,11 @@ module GalaxyLedger
       # months ago does not appear as today's activity. The bar has no
       # length, which is the honest rendering: when it started is
       # known and when it stopped is not, and inventing an end would
-      # be worse than showing none.
+      # be worse than showing none. `source` names what judged it stale.
       def self.close_swept(
         claude_session_id : String,
         state : State,
+        source : String = "galaxy-ledger/sweep",
       )
         ledger_session_id =
           Database.resolve_session_identifier(claude_session_id)
@@ -390,7 +391,7 @@ module GalaxyLedger
             "--ledger-session-id",
             ledger_session_id.to_s,
             "--event-type", "turn:abandoned",
-            "--source", "galaxy-ledger/sweep",
+            "--source", source,
             "--duration-identifier",
             "turn--#{state.uuid}",
             "--occurred-at", state.initiated_at,

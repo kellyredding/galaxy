@@ -42,6 +42,9 @@ module GalaxyLedger
       # idleness, which is the opposite fact, and nothing would say so.
       IDLE_NOTIFICATION = "idle_prompt"
 
+      # Claude Code's idle-notification threshold, at its default.
+      IDLE_THRESHOLD = 60.seconds
+
       def run
         return if ENV["GALAXY_SKIP_HOOKS"]? == "1"
 
@@ -75,12 +78,40 @@ module GalaxyLedger
         # agent waiting for input.
         return unless stdin_sid == current_sid
 
+        # First, so Galaxy already sees the turn closed when this report
+        # lets its queue drain.
+        close_stale_turn(stdin_sid)
+
         EventPublisher.publish(
           ledger_session_id: ledger_session_id,
           event: "session.idle",
         )
       rescue
         # Silent: a hook must never disrupt the session.
+      end
+
+      # Close a turn still tracked while the agent reports it is idle.
+      #
+      # An idle agent is running no turn, so this one is stale: an abort
+      # Galaxy did not see, or a turn opened for a message already
+      # answered. Left open, it holds the indicator on and sets the next
+      # prompt aside instead of starting a turn with it.
+      #
+      # Only past the threshold. The report comes a threshold after the
+      # agent stops, so a younger turn began after that and is live.
+      private def close_stale_turn(claude_session_id : String)
+        state = TurnState.read(claude_session_id)
+        return unless state
+
+        age = Time.utc - Time.parse_rfc3339(state.initiated_at)
+        return if age < IDLE_THRESHOLD
+
+        TurnState.close_swept(
+          claude_session_id, state, source: "galaxy-ledger/idle")
+        TurnState.delete(claude_session_id)
+        TurnState.delete_pending(claude_session_id)
+      rescue
+        # Best-effort — the idle report still goes out
       end
 
       private def parse_hook_input
