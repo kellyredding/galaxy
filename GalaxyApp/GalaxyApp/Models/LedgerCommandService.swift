@@ -21,18 +21,32 @@ enum LedgerCommandService {
     /// queued message is as often folded into the running turn, and
     /// opening a turn for one of those is worse than opening none.
     /// Call it on every interrupt and let it decide.
+    ///
+    /// `endedAt` is the keystroke's instant. A dequeue before it delivered
+    /// the message into the interrupted turn; one after is the message
+    /// starting its own.
     static func openQueuedTurn(
         claudeSessionId: String,
         transcriptPath: String,
+        endedAt: Date,
         source: String
     ) {
         run(args: [
             "open-queued-turn",
             "--session", claudeSessionId,
             "--transcript-path", transcriptPath,
+            "--ended-at", timestampFormatter.string(from: endedAt),
             "--source", source,
         ])
     }
+
+    /// Milliseconds are the point: most dequeues land within a second of
+    /// the turn they follow.
+    private static let timestampFormatter: ISO8601DateFormatter = {
+        let fmt = ISO8601DateFormatter()
+        fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return fmt
+    }()
 
     private static func run(args: [String]) {
         let process = Process()

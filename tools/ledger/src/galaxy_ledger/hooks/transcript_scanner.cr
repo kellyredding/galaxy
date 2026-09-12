@@ -117,33 +117,31 @@ module GalaxyLedger
         Unknown
       end
 
-      # Where a queued prompt stands, per Claude Code's own record.
+      # Where a queued prompt stood at the instant a turn ended.
       #
-      # Four operations appear, and only two of them leave a turn to
-      # open:
+      #   enqueue  set aside
+      #   dequeue  delivered to the model; names no content
+      #   remove   folded into the running turn (`absorbed_mid_turn`)
+      #   popAll   the whole queue discarded
       #
-      #   enqueue  set aside; a turn is still possible
-      #   dequeue  the queue drained into a new turn (content is empty,
-      #            so the enqueue above remains the last word on it)
-      #   remove   folded into the turn already running, reason
-      #            `absorbed_mid_turn` — answered, and never its own turn
-      #   popAll   the queue was discarded entirely
+      # Only the prompt's latest enqueue and what follows it are read:
+      # replaying the whole file drifts, since some items leave the
+      # queue with no record naming them. After that enqueue, a dequeue,
+      # popAll, or remove naming the prompt before `ended_at` means the
+      # ended turn took it — Gone. A dequeue after `ended_at` is the
+      # prompt starting its own turn, so it does not count.
       #
-      # UserPromptSubmit cannot tell these apart, firing at submit time
-      # when the outcome has not happened yet. Measured across one
-      # session's transcript, absorbed and cleared messages outnumbered
-      # real dequeues 13 to 7 — so this is not an edge case being
-      # guarded, it is the majority.
+      # Exact to the millisecond: twelve of fifteen measured dequeues
+      # landed within the second their turn ended.
       def self.queue_state(
         transcript_path : String?,
         prompt : String,
+        ended_at : Time = Time.utc,
       ) : QueueState
         return QueueState::Unknown unless transcript_path
-        return QueueState::Unknown unless File.exists?(
-                                            transcript_path,
-                                          )
+        return QueueState::Unknown unless File.exists?(transcript_path)
 
-        state = QueueState::Unknown
+        ops = [] of Tuple(Time, String, String?)
 
         File.each_line(transcript_path) do |line|
           next unless line.includes?("queue-operation")
@@ -154,25 +152,33 @@ module GalaxyLedger
             next
           end
 
-          next unless json["type"]?.try(&.as_s?) ==
-                        "queue-operation"
-
+          next unless json["type"]?.try(&.as_s?) == "queue-operation"
+          stamp = json["timestamp"]?.try(&.as_s?)
           operation = json["operation"]?.try(&.as_s?)
-          content = json["content"]?.try(&.as_s?)
+          next unless stamp && operation
 
-          case operation
-          when "enqueue"
-            state = QueueState::Queued if content == prompt
-          when "remove"
-            state = QueueState::Gone if content == prompt
-          when "popAll"
-            # Takes the whole queue with it, whatever one message it
-            # happens to name — but it can only take what was in it.
-            state = QueueState::Gone if state.queued?
+          begin
+            at = Time.parse_rfc3339(stamp)
+          rescue
+            next
           end
+          next unless at < ended_at
+
+          ops << {at, operation, json["content"]?.try(&.as_s?)}
         end
 
-        state
+        enqueued_at = ops
+          .select { |(_, op, content)| op == "enqueue" && content == prompt }
+          .max_of? { |(at, _, _)| at }
+        return QueueState::Unknown unless enqueued_at
+
+        taken = ops.any? do |(at, op, content)|
+          at >= enqueued_at &&
+            (op == "dequeue" || op == "popAll" ||
+              (op == "remove" && content == prompt))
+        end
+
+        taken ? QueueState::Gone : QueueState::Queued
       rescue
         QueueState::Unknown
       end

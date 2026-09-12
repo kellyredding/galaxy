@@ -999,6 +999,10 @@ class SessionManager: ObservableObject {
     /// ledger is asked to open that turn as soon as the
     /// interrupt itself is recorded.
     func recordEscapeInterrupt(for session: Session) {
+        // Taken first: this runs in the key monitor before Escape reaches
+        // the terminal, so it precedes the dequeue the interrupt causes.
+        let endedAt = Date()
+
         guard let ledgerSessionId = session.ledgerSessionId
         else { return }
         guard let captured = readTurnState(for: session)
@@ -1032,6 +1036,7 @@ class SessionManager: ObservableObject {
             LedgerCommandService.openQueuedTurn(
                 claudeSessionId: claudeSessionId,
                 transcriptPath: transcript,
+                endedAt: endedAt,
                 source: "galaxy-app/interrupt"
             )
         }

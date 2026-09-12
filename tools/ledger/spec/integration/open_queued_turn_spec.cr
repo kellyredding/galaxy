@@ -97,6 +97,76 @@ describe "CLI Integration: open-queued-turn" do
       end
     end
 
+    # The interrupt path's timing: the app passes the keystroke's instant,
+    # and the dequeue that keystroke causes comes after it.
+    it "opens when the dequeue comes after --ended-at" do
+      sid = "oqt-after-#{Random.rand(100000)}"
+      GalaxyLedger::Database.create_session(sid)
+      GalaxyLedger::Hooks::TurnState.write_pending(sid, "Yep.")
+      flush_wal_for(sid)
+
+      t0 = Time.utc - 1.minute
+      with_queue_transcript([
+        {"enqueue", "Yep.", t0},
+        {"dequeue", "", t0 + 2.seconds},
+      ]) do |t|
+        run_binary([
+          "open-queued-turn", "--session", sid,
+          "--transcript-path", t,
+          "--ended-at", (t0 + 1.second).to_s("%Y-%m-%dT%H:%M:%S.%LZ"),
+        ])[:status].should eq(0)
+      end
+
+      GalaxyLedger::Hooks::TurnState.read(sid).not_nil!
+        .user_message.should eq("Yep.")
+    ensure
+      if s = sid
+        GalaxyLedger::Hooks::TurnState.delete(s)
+        GalaxyLedger::Hooks::TurnState.delete_pending(s)
+      end
+    end
+
+    # A message delivered into the turn being interrupted was answered
+    # there; the turn it would open has nothing behind it.
+    it "opens nothing when the dequeue came before --ended-at" do
+      sid = "oqt-before-#{Random.rand(100000)}"
+      GalaxyLedger::Database.create_session(sid)
+      GalaxyLedger::Hooks::TurnState.write_pending(sid, "already seen")
+      flush_wal_for(sid)
+
+      t0 = Time.utc - 1.minute
+      with_queue_transcript([
+        {"enqueue", "already seen", t0},
+        {"dequeue", "", t0 + 1.second},
+      ]) do |t|
+        run_binary([
+          "open-queued-turn", "--session", sid,
+          "--transcript-path", t,
+          "--ended-at", (t0 + 2.seconds).to_s("%Y-%m-%dT%H:%M:%S.%LZ"),
+        ])[:status].should eq(0)
+      end
+
+      GalaxyLedger::Hooks::TurnState.exists?(sid).should be_false
+      GalaxyLedger::Hooks::TurnState.take_pending(sid).should be_nil
+    ensure
+      if s = sid
+        GalaxyLedger::Hooks::TurnState.delete(s)
+        GalaxyLedger::Hooks::TurnState.delete_pending(s)
+      end
+    end
+
+    it "refuses an --ended-at it cannot parse" do
+      sid = "oqt-badtime-#{Random.rand(100000)}"
+      GalaxyLedger::Database.create_session(sid)
+      flush_wal_for(sid)
+
+      result = run_binary([
+        "open-queued-turn", "--session", sid, "--ended-at", "whenever",
+      ])
+      result[:status].should_not eq(0)
+      result[:error].should contain("--ended-at")
+    end
+
     # Esc with nothing queued is the ordinary case, and the app calls
     # this on every interrupt rather than deciding for itself.
     it "opens nothing when no prompt is set aside" do

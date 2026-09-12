@@ -3119,6 +3119,7 @@ module GalaxyLedger
 
       session_id : String? = nil
       transcript_path : String? = nil
+      ended_at = Time.utc
       source = "galaxy-ledger/queued"
       i = 0
       while i < args.size
@@ -3128,6 +3129,15 @@ module GalaxyLedger
           i += 2
         elsif arg == "--transcript-path" && i + 1 < args.size
           transcript_path = args[i + 1]
+          i += 2
+        elsif arg == "--ended-at" && i + 1 < args.size
+          begin
+            ended_at = Time.parse_rfc3339(args[i + 1])
+          rescue
+            STDERR.puts "Error: invalid --ended-at value " \
+                        "'#{args[i + 1]}' (expected RFC3339)"
+            exit(1)
+          end
           i += 2
         elsif arg == "--source" && i + 1 < args.size
           source = args[i + 1]
@@ -3151,6 +3161,7 @@ module GalaxyLedger
         ledger_session_id,
         source: source,
         transcript_path: transcript_path,
+        ended_at: ended_at,
       )
     end
 
@@ -3160,7 +3171,7 @@ module GalaxyLedger
 
       USAGE:
         galaxy-ledger open-queued-turn --session SESSION_ID \\
-          --transcript-path PATH [--source SOURCE]
+          --transcript-path PATH [--ended-at TIME] [--source SOURCE]
 
       REQUIRED:
         --session SESSION_ID     Claude session identifier
@@ -3169,6 +3180,11 @@ module GalaxyLedger
         --transcript-path PATH   Session transcript JSONL. Without it
                                  nothing is opened — the transcript is
                                  what proves the message is still queued
+        --ended-at TIME          RFC3339 instant the previous turn ended
+                                 (default: now). A dequeue before it put
+                                 the message into that turn; one after it
+                                 is the message starting its own. Give
+                                 milliseconds: most land within a second
         --source SOURCE          Source recorded on the event
                                  (default: galaxy-ledger/queued)
 

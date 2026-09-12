@@ -289,15 +289,78 @@ describe GalaxyLedger::Hooks::TranscriptScanner do
       end
     end
 
-    # A dequeue names no content, so the enqueue stands as the last
-    # word — which is what makes the queued case survive the drain.
-    it "is queued after the queue drains into a turn" do
+    # Two notifications delivered together: the second was set aside
+    # behind the first one's fresh turn, then dequeued into that same
+    # turn — answered, and never a turn of its own.
+    it "is gone once a dequeue took it before the turn ended" do
       with_queue_transcript([
-        {"enqueue", "picked up"},
+        {"enqueue", "first notification"},
+        {"enqueue", "second notification"},
+        {"dequeue", ""},
         {"dequeue", ""},
       ]) do |t|
         GalaxyLedger::Hooks::TranscriptScanner
-          .queue_state(t, "picked up")
+          .queue_state(t, "second notification")
+          .should eq(
+            GalaxyLedger::Hooks::TranscriptScanner::QueueState::Gone
+          )
+      end
+    end
+
+    # A dequeue after the turn ended is the message starting its own
+    # turn, which is exactly what an opener is for.
+    it "is queued when the dequeue comes after the turn ended" do
+      t0 = Time.utc - 1.minute
+      with_queue_transcript([
+        {"enqueue", "picked up", t0},
+        {"dequeue", "", t0 + 2.seconds},
+      ]) do |t|
+        GalaxyLedger::Hooks::TranscriptScanner
+          .queue_state(t, "picked up", t0 + 1.second)
+          .should eq(
+            GalaxyLedger::Hooks::TranscriptScanner::QueueState::Queued
+          )
+      end
+    end
+
+    # Milliseconds apart, because that is where real ones land: most
+    # dequeue within the second their turn ended.
+    it "tells a dequeue just before the end from one just after" do
+      t0 = Time.utc - 1.minute
+      ended = t0 + 500.milliseconds
+
+      with_queue_transcript([
+        {"enqueue", "early", t0},
+        {"dequeue", "", ended - 5.milliseconds},
+      ]) do |t|
+        GalaxyLedger::Hooks::TranscriptScanner
+          .queue_state(t, "early", ended)
+          .should eq(
+            GalaxyLedger::Hooks::TranscriptScanner::QueueState::Gone
+          )
+      end
+
+      with_queue_transcript([
+        {"enqueue", "late", t0},
+        {"dequeue", "", ended + 5.milliseconds},
+      ]) do |t|
+        GalaxyLedger::Hooks::TranscriptScanner
+          .queue_state(t, "late", ended)
+          .should eq(
+            GalaxyLedger::Hooks::TranscriptScanner::QueueState::Queued
+          )
+      end
+    end
+
+    # A dequeue from before the prompt was queued drained something
+    # else; it says nothing about this one.
+    it "ignores a dequeue that came before it was queued" do
+      with_queue_transcript([
+        {"dequeue", ""},
+        {"enqueue", "queued after"},
+      ]) do |t|
+        GalaxyLedger::Hooks::TranscriptScanner
+          .queue_state(t, "queued after")
           .should eq(
             GalaxyLedger::Hooks::TranscriptScanner::QueueState::Queued
           )

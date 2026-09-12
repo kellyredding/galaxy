@@ -20,6 +20,11 @@ module GalaxyLedger
       @last_assistant_message : String?
 
       def run
+        # The instant the turn ended, as far as the queue is concerned:
+        # Claude Code records the next dequeue only after this hook
+        # finishes — measured in six of six turns.
+        started_at = Time.utc
+
         # Skip if GALAXY_SKIP_HOOKS is set (prevents recursion from extraction subprocesses)
         return if ENV["GALAXY_SKIP_HOOKS"]? == "1"
 
@@ -60,7 +65,7 @@ module GalaxyLedger
 
         # Record turn event: turn:completed (state file exists)
         # or turn:continued (no state file, agent-initiated).
-        record_turn_event(ledger_session_id, current_sid)
+        record_turn_event(ledger_session_id, current_sid, started_at)
 
         # Spawn async extraction process for exchange capture + learnings/decisions/summary.
         # Exchange capture is done in the subprocess with exponential backoff because
@@ -111,6 +116,7 @@ module GalaxyLedger
       private def record_turn_event(
         ledger_session_id : Int64,
         current_sid : String,
+        ended_at : Time,
       )
         stdin_sid = @stdin_session_identifier
         return unless stdin_sid
@@ -145,6 +151,7 @@ module GalaxyLedger
           ledger_session_id,
           source: "galaxy-ledger/stop",
           transcript_path: @transcript_path,
+          ended_at: ended_at,
         )
       rescue
         # Turn tracking failure is not fatal

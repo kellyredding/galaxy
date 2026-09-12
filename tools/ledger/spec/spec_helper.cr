@@ -265,18 +265,31 @@ end
 #
 # Each entry is an operation and the content it names — `["remove",
 # "hello"]` for a message folded into the running turn, `["dequeue",
-# ""]` for the queue draining into a new one, which is why content is
-# given rather than assumed.
+# ""]` for the queue draining. Stamped a millisecond apart and a minute
+# back, so all of them precede a cutoff left at its default.
 def with_queue_transcript(
   entries : Array(Tuple(String, String)),
   &
 )
+  base = Time.utc - 1.minute
+  timed = entries.map_with_index do |(operation, content), i|
+    {operation, content, base + i.milliseconds}
+  end
+  with_queue_transcript(timed) { |path| yield path }
+end
+
+# The same, with each entry placed at an explicit instant — for specs
+# that put a record on one side of a cutoff or the other.
+def with_queue_transcript(
+  entries : Array(Tuple(String, String, Time)),
+  &
+)
   file = File.tempfile("queue-transcript", ".jsonl") do |io|
-    entries.each do |(operation, content)|
+    entries.each do |(operation, content, at)|
       io.puts({
         "type"      => "queue-operation",
         "operation" => operation,
-        "timestamp" => Time.utc.to_rfc3339,
+        "timestamp" => at.to_utc.to_s("%Y-%m-%dT%H:%M:%S.%LZ"),
         "sessionId" => "spec-session",
         "content"   => content,
       }.to_json)

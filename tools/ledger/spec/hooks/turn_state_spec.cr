@@ -322,12 +322,12 @@ describe GalaxyLedger::Hooks::TurnState do
     end
 
     # The message this whole path exists for: queued, then picked up as
-    # its own turn. The dequeue record names no content, so the enqueue
-    # remains the last word on it.
-    it "opens a turn for a message the queue has drained" do
+    # its own turn once the previous one ended.
+    it "opens a turn when the queue drains after the turn ended" do
+      t0 = Time.utc - 1.minute
       with_queue_transcript([
-        {"enqueue", "queued prompt"},
-        {"dequeue", ""},
+        {"enqueue", "queued prompt", t0},
+        {"dequeue", "", t0 + 2.seconds},
       ]) do |t|
         GalaxyLedger::Hooks::TurnState.write_pending(
           open_sid, "queued prompt",
@@ -335,7 +335,32 @@ describe GalaxyLedger::Hooks::TurnState do
 
         GalaxyLedger::Hooks::TurnState.open_pending(
           open_sid, 999_i64, source: "spec",
-          transcript_path: t).should be_true
+          transcript_path: t, ended_at: t0 + 1.second).should be_true
+      end
+    end
+
+    # Two notifications delivered as one turn. The second was set aside
+    # behind the first one's fresh turn and answered inside it, so a
+    # turn opened for it would have nothing behind it.
+    it "opens nothing for a prompt delivered into the turn that ended" do
+      with_queue_transcript([
+        {"enqueue", "first notification"},
+        {"enqueue", "second notification"},
+        {"dequeue", ""},
+        {"dequeue", ""},
+      ]) do |t|
+        GalaxyLedger::Hooks::TurnState.write_pending(
+          open_sid, "second notification",
+        )
+
+        GalaxyLedger::Hooks::TurnState.open_pending(
+          open_sid, 999_i64, source: "spec",
+          transcript_path: t).should be_false
+
+        GalaxyLedger::Hooks::TurnState
+          .exists?(open_sid).should be_false
+        GalaxyLedger::Hooks::TurnState
+          .take_pending(open_sid).should be_nil
       end
     end
 

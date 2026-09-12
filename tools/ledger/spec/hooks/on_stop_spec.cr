@@ -978,6 +978,44 @@ describe "OnStop turn state consumption" do
     end
   end
 
+  # Two Monitor notifications arrived together and became one turn. The
+  # second was set aside as if queued behind the first, and a Stop that
+  # opened a turn for it left the dot pulsing over an idle agent.
+  it "opens no turn for a notification delivered with the one that ended" do
+    with_queue_transcript([
+      {"enqueue", "first notification"},
+      {"enqueue", "second notification"},
+      {"dequeue", ""},
+      {"dequeue", ""},
+    ]) do |t|
+      GalaxyLedger::Hooks::TurnState.write(
+        test_session_id,
+        "stop-uuid-batch",
+        "first notification",
+      )
+      GalaxyLedger::Hooks::TurnState.write_pending(
+        test_session_id,
+        "second notification",
+      )
+      flush_wal
+
+      hook_input = {
+        "session_id"             => test_session_id,
+        "transcript_path"        => t,
+        "stop_hook_active"       => false,
+        "last_assistant_message" => "Handled both.",
+      }.to_json
+
+      run_binary(["on-stop"], stdin: hook_input)
+
+      GalaxyLedger::Hooks::TurnState.exists?(
+        test_session_id,
+      ).should be_false
+      GalaxyLedger::Hooks::TurnState
+        .take_pending(test_session_id).should be_nil
+    end
+  end
+
   it "skips turn recording for mismatched session_id" do
     # Write a state file for a different session
     GalaxyLedger::Hooks::TurnState.write(

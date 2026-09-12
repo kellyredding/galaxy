@@ -189,18 +189,23 @@ module GalaxyLedger
       # the dot from these events in the order they arrive — a start
       # that overtook the end before it would leave the dot dark for the
       # whole turn it was meant to light.
+      #
+      # `ended_at` is when the previous turn ended — the Stop hook's
+      # start, or the interrupting keystroke — and it separates a dequeue
+      # that delivered this prompt into that turn from one starting its own.
       def self.open_pending(
         claude_session_id : String,
         ledger_session_id : Int64,
         source : String,
         transcript_path : String?,
+        ended_at : Time = Time.utc,
       ) : Bool
         return false if exists?(claude_session_id)
 
         prompt = peek_pending(claude_session_id)
         return false unless prompt
 
-        case TranscriptScanner.queue_state(transcript_path, prompt)
+        case TranscriptScanner.queue_state(transcript_path, prompt, ended_at)
         when .gone?
           delete_pending(claude_session_id)
           return false
