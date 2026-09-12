@@ -299,17 +299,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         _ sender: NSApplication
     ) -> NSApplication.TerminateReply {
         let sm = SessionManager.shared
+        // Every set of every session, closed ones included: a closed session
+        // keeps its sets, and their notes, until the app quits.
+        let notes = MainActor.assumeIsolated {
+            GalaxyFilesModel.shared.pendingNoteTally
+        }
+        let filesReason = FileConfirmations.quitReason(
+            count: notes.notes, fileCount: notes.files
+        )
 
         sm.quitWarnings { warnings in
-            guard !warnings.isEmpty else {
+            guard !warnings.isEmpty || filesReason != nil else {
                 sender.reply(
                     toApplicationShouldTerminate: true
                 )
                 return
             }
 
-            let message = "Quit with active sessions?"
-            let details = warnings.map {
+            let message = warnings.isEmpty
+                ? "Quit and discard unsent notes?"
+                : "Quit with active sessions?"
+            var lines = warnings.map {
                 session, reason in
                 let reasonText: String
                 switch reason {
@@ -328,7 +338,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 return "• \(session.displayName): "
                     + reasonText
-            }.joined(separator: "\n")
+            }
+            if let filesReason { lines.append("• " + filesReason) }
+            let details = lines.joined(separator: "\n")
 
             guard let window =
                 NSApp.keyWindow ?? NSApp.mainWindow
