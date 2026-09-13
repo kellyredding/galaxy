@@ -121,6 +121,20 @@ final class GalaxyFilesModel: FilesHost {
         SessionManager.shared.activeTab = .terminal
     }
 
+    /// The session in front comes forward at once. Any other opens on Files at
+    /// its next visit, as `queueArtifactShow` does for Artifacts; the surface
+    /// has already selected the set there.
+    func showFilesSurface(forAgentOwner ownerID: String) -> Bool {
+        guard let session = SessionManager.shared.session(forOwnerID: ownerID)
+        else { return false }
+        guard session.id == SessionManager.shared.activeSessionId else {
+            session.lastActiveTab = .files
+            return false
+        }
+        showFilesSurface()
+        return true
+    }
+
     /// Queued on the owning session's inbox rather than the active one's.
     ///
     /// They are the same session in every path that reaches here today, but the
@@ -140,6 +154,38 @@ final class GalaxyFilesModel: FilesHost {
     var searchContextLines: Int {
         SettingsManager.shared.settings.fileSearchContextLines
     }
+
+    // MARK: - The agent
+
+    /// Asked off the main queue, before anything hops to it.
+    nonisolated static func isAgentRequest(_ event: String) -> Bool {
+        event.hasPrefix(FileSetAgentRequest.eventPrefix)
+    }
+
+    /// Answer a `galaxy-files` request for the session it came from. One no
+    /// session claims is refused rather than aimed at the session on screen.
+    func agentReply(
+        event: String, detail: [String: Any]?, ownerID: String?
+    ) -> Data {
+        guard let ownerID else {
+            return FileSetAgentReply.failure(Self.noSession).jsonData()
+        }
+        switch FileSetAgentRequest.parse(event: event, detail: detail) {
+        case .success(let request)?:
+            return surface.perform(request, forOwner: ownerID).jsonData()
+        case .failure(let failure)?:
+            return FileSetAgentReply.failure(failure).jsonData()
+        case nil:
+            return FileSetAgentReply.failure(
+                FileSetAgentFailure("That is not a file-set request.")
+            ).jsonData()
+        }
+    }
+
+    private static let noSession = FileSetAgentFailure(
+        "No Galaxy session is running this agent, so it has no Files tab to "
+            + "open files in."
+    )
 
     // MARK: - Per-session sets
 

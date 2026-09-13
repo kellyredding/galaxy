@@ -164,6 +164,9 @@ final class EventCoordinator {
         socketListener.onEvent = { [weak self] envelope in
             self?.handleEvent(envelope)
         }
+        socketListener.onRequest = { [weak self] envelope in
+            self?.handleRequest(envelope)
+        }
 
         // Debouncer → enrichment
         debouncer.onFire = { [weak self] envelope in
@@ -741,6 +744,35 @@ final class EventCoordinator {
         }
 
         return false
+    }
+
+    /// The app session a request came from, placed the way events are.
+    private func appSessionId(for envelope: EventEnvelope) -> UUID? {
+        guard matchesAppSession(envelope) else { return nil }
+        return ledgerSessionIdCache[envelope.ledgerSessionId]
+    }
+
+    // MARK: - Requests
+
+    /// Answer an agent's file-set request, or nil for anything else. Asked on
+    /// the listener's queue; matching and the Files surface are main-queue
+    /// state, and the main queue never waits on the listener.
+    private func handleRequest(_ envelope: EventEnvelope) -> Data? {
+        guard GalaxyFilesModel.isAgentRequest(envelope.event) else {
+            return nil
+        }
+        let answer = { () -> Data in
+            let owner = self.appSessionId(for: envelope)?.uuidString
+            return MainActor.assumeIsolated {
+                GalaxyFilesModel.shared.agentReply(
+                    event: envelope.event,
+                    detail: envelope.detailData?.mapValues(\.value),
+                    ownerID: owner
+                )
+            }
+        }
+        return Thread.isMainThread
+            ? answer() : DispatchQueue.main.sync(execute: answer)
     }
 
     // MARK: - Enrichment

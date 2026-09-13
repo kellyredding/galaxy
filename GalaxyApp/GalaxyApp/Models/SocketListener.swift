@@ -31,6 +31,10 @@ final class SocketListener {
     /// Callback invoked on the main queue for each decoded event envelope
     var onEvent: ((EventEnvelope) -> Void)?
 
+    /// Answers an envelope that expects a reply, on this listener's queue so
+    /// the reply goes back on the same connection. Nil passes it to `onEvent`.
+    var onRequest: ((EventEnvelope) -> Data?)?
+
     /// Track active connections for cleanup
     private var activeConnections: [NWConnection] = []
 
@@ -329,8 +333,12 @@ final class SocketListener {
                         + " chunks=\(chunks)"
                     )
                 }
-                DispatchQueue.main.async { [weak self] in
-                    self?.onEvent?(envelope)
+                if let reply = onRequest?(envelope) {
+                    sendReply(reply, on: connection)
+                } else {
+                    DispatchQueue.main.async { [weak self] in
+                        self?.onEvent?(envelope)
+                    }
                 }
             } catch {
                 GalaxyLog.socket(
@@ -356,6 +364,14 @@ final class SocketListener {
         } else {
             connectionBuffers[key] = Data()
         }
+    }
+
+    /// Newline-framed so the CLI's line reader gets a whole record; the
+    /// connection closes when the client does.
+    private func sendReply(_ data: Data, on connection: NWConnection) {
+        var framed = data
+        framed.append(0x0A)
+        connection.send(content: framed, completion: .contentProcessed { _ in })
     }
 
     // MARK: - Error Recovery
