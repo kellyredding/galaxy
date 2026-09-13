@@ -1,6 +1,6 @@
-.PHONY: all clean audit check statusline-build statusline-dev statusline-test statusline-check statusline-install statusline-clean ledger-build ledger-dev ledger-test ledger-check ledger-install ledger-clean snapshots-build snapshots-dev snapshots-test snapshots-check snapshots-install snapshots-clean artifacts-build artifacts-dev artifacts-test artifacts-check artifacts-install artifacts-clean timeline-build timeline-dev timeline-test timeline-check timeline-install timeline-clean agents-build agents-dev agents-test agents-check agents-install agents-clean diff-build diff-dev diff-test diff-check diff-install diff-clean galaxy-build galaxy-dev galaxy-test galaxy-check galaxy-install galaxy-clean app-build app-smoke app-check app-release app-clean
+.PHONY: all clean audit check statusline-build statusline-dev statusline-test statusline-check statusline-install statusline-clean ledger-build ledger-dev ledger-test ledger-check ledger-install ledger-clean snapshots-build snapshots-dev snapshots-test snapshots-check snapshots-install snapshots-clean artifacts-build artifacts-dev artifacts-test artifacts-check artifacts-install artifacts-clean timeline-build timeline-dev timeline-test timeline-check timeline-install timeline-clean agents-build agents-dev agents-test agents-check agents-install agents-clean diff-build diff-dev diff-test diff-check diff-install diff-clean files-build files-dev files-test files-check files-install files-clean galaxy-build galaxy-dev galaxy-test galaxy-check galaxy-install galaxy-clean app-build app-smoke app-check app-release app-clean
 
-all: statusline-build ledger-build snapshots-build artifacts-build timeline-build agents-build diff-build galaxy-build
+all: statusline-build ledger-build snapshots-build artifacts-build timeline-build agents-build diff-build files-build galaxy-build
 
 # Statusline tool
 statusline-build:
@@ -135,6 +135,25 @@ diff-install:
 diff-clean:
 	$(MAKE) -C tools/diff clean
 
+# Files tool
+files-build:
+	$(MAKE) -C tools/files build
+
+files-dev:
+	$(MAKE) -C tools/files dev
+
+files-test:
+	$(MAKE) -C tools/files test
+
+files-check:
+	$(MAKE) -C tools/files check
+
+files-install:
+	$(MAKE) -C tools/files install
+
+files-clean:
+	$(MAKE) -C tools/files clean
+
 # Galaxy orchestrator CLI
 galaxy-build:
 	$(MAKE) -C tools/galaxy build
@@ -177,7 +196,7 @@ app-release:
 app-clean:
 	$(MAKE) -C GalaxyApp clean
 
-clean: statusline-clean ledger-clean snapshots-clean artifacts-clean timeline-clean agents-clean diff-clean galaxy-clean app-clean
+clean: statusline-clean ledger-clean snapshots-clean artifacts-clean timeline-clean agents-clean diff-clean files-clean galaxy-clean app-clean
 
 # --- Disclosure audit ---
 
@@ -196,4 +215,4 @@ audit:
 # Deliberately not wired into `all`, which is a build target — but the audit is
 # worth running on its own far more often than this, since `check` takes a few
 # minutes with the ledger suite in it.
-check: audit statusline-check ledger-check snapshots-check artifacts-check timeline-check agents-check diff-check galaxy-check
+check: audit statusline-check ledger-check snapshots-check artifacts-check timeline-check agents-check diff-check files-check galaxy-check

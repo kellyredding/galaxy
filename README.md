@@ -13,6 +13,7 @@
 | [timeline](tools/timeline/) | Session timeline event recording for Claude Code | Active |
 | [agents](tools/agents/) | Subagent lifecycle tracking for Claude Code | Active |
 | [diff](tools/diff/) | Structured diff capture for code review in Galaxy.app | Active |
+| [files](tools/files/) | Lets an agent open files for the user in Galaxy.app's Files tab | Active |
 | [galaxy](tools/galaxy/) | Terminal CLI launcher for Galaxy.app sessions (directory-aware, URL-scheme integration, self-updating) | Active |
 
 ## Installation
@@ -67,6 +68,12 @@ Structured diff capture for code review in Galaxy.app. Parses `git diff` output,
 
 See [tools/diff/](tools/diff/) for detailed documentation.
 
+### files
+
+Lets an agent open files for the user in Galaxy.app's Files tab. `galaxy-files open` puts them in a file set of the agent's own and brings it on screen; `list`, `view`, `show`, `rename` and `delete` cover the rest. The rules live in the app — an agent reads every set but never changes the user's Default set, and deletes only sets it made that hold no unsent notes — and the tool installs the `galaxy:files` skill that teaches an agent to use it.
+
+Run `galaxy-files --help` for the commands.
+
 ## Development
 
 Each tool is self-contained in its own directory under `tools/`. Tools may be written in different languages, but currently all are written in [Crystal](https://crystal-lang.org/).
@@ -103,6 +110,7 @@ galaxy/
     ├── timeline/             # Session timeline events
     ├── agents/               # Subagent lifecycle tracking
     ├── diff/                 # Structured diff capture
+    ├── files/                # Opening files in the Files tab for an agent
     └── galaxy/               # Terminal CLI launcher for Galaxy.app
 ```
 

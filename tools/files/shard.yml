@@ -1,0 +1,14 @@
+name: galaxy-files
+version: 0.1.0
+description: Open files for the user in Galaxy.app's Files tab
+
+authors:
+  - Kelly Redding <kelly@kellyredding.com>
+
+targets:
+  galaxy-files:
+    main: src/galaxy_files.cr
+
+license: MIT
+
+crystal: ">= 1.0.0"
