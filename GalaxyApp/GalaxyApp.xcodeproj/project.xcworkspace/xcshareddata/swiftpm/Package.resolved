@@ -1,6 +1,15 @@
 {
-  "originHash" : "d15b13d28afa321e9def74e93117f1ad02fdd3f7f336b79e21136550e81ff929",
+  "originHash" : "8fc1b35bebdd41bdc60828f0c717eb35252f90365bd952c841a0487e85688b1e",
   "pins" : [
+    {
+      "identity" : "galactic",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/kellyredding/Galactic.git",
+      "state" : {
+        "revision" : "99b463964648511c08169f0a835c78da130d0cd7",
+        "version" : "0.10.0"
+      }
+    },
     {
       "identity" : "swift-argument-parser",
       "kind" : "remoteSourceControl",
