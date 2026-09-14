@@ -142,19 +142,16 @@ struct AppSettings: Codable, Equatable {
     // Terminal scrollback settings
     var terminalScrollbackLines: Int = 10_000  // Scrollback buffer size in lines
 
-    /// Lines shown either side of a hit in cross-file search results.
+    /// Lines shown either side of a hit in cross-file search results, within
+    /// `FileSearchQuery.contextLinesRange`.
     ///
-    /// **The same key, default and range as Assist Ant's**, deliberately: this
+    /// **The same key and default as Assist Ant's**, deliberately: this
     /// file is shared between the two applications, so two spellings of one
     /// setting would have each app overwrite the other's. It is a host setting
     /// rather than an index one — it decides how much of a file a reader is
     /// shown, not what the corpus holds, which is why the two apps are allowed
     /// to hold different values of it at all.
     var fileSearchContextLines: Int = 2
-
-    /// What a settings stepper allows. Zero is meaningful — matching lines
-    /// only, which is what grep gives you.
-    static let fileSearchContextRange: ClosedRange<Int> = 0...10
 
     /// Active terminal engine. Global default; each pane
     /// pins to whichever engine was active at its construction
@@ -360,9 +357,9 @@ struct AppSettings: Codable, Equatable {
         // another app, and a negative or absurd value would reach a renderer
         // that would honour it.
         fileSearchContextLines = min(
-            AppSettings.fileSearchContextRange.upperBound,
+            FileSearchQuery.contextLinesRange.upperBound,
             max(
-                AppSettings.fileSearchContextRange.lowerBound,
+                FileSearchQuery.contextLinesRange.lowerBound,
                 try container.decodeIfPresent(
                     Int.self, forKey: .fileSearchContextLines
                 ) ?? 2
