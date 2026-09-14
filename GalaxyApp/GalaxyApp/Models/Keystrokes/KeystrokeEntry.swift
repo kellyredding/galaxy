@@ -325,11 +325,19 @@ enum KeystrokeAvailability: Equatable {
     /// out, its rows fell to the default and told the reader they needed an
     /// artifact or a snapshot open on the Files tab.
     private static func item(_ tabs: Set<SessionTab>) -> String {
-        if tabs == [.files] { return "a file" }
-        if tabs == [.artifacts] { return "an artifact" }
-        if tabs == [.snapshots] { return "a snapshot" }
-        if tabs == [.agents] { return "an agent run" }
-        return "an artifact or snapshot"
+        let nouns: [String] = SessionTab.allCases.filter(tabs.contains)
+            .compactMap { tab in
+                switch tab {
+                case .artifacts: return "an artifact"
+                case .snapshots: return "a snapshot"
+                case .files: return "a file"
+                case .agents: return "an agent run"
+                case .terminal, .timeline, .ledger: return nil
+                }
+            }
+        guard let last = nouns.last else { return "a document" }
+        return nouns.count == 1
+            ? last : nouns.dropLast().joined(separator: ", ") + " or " + last
     }
 }
 

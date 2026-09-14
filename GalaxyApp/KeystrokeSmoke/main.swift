@@ -602,6 +602,45 @@ check("availability: reader zoom and terminal font never both light") {
         && !documentZoom.isActive(in: onTerminalWithFind)
 }
 
+// The Files tab's open file is a reader too — a `ReaderWebView` claiming the
+// same keys — so the document rows reach it, and only with a file open: an
+// empty strip has nothing for them to act on.
+check("availability: the document keys reach an open file on Files") {
+    let rows = [
+        gate("⌘=", "Zoom the document in"),
+        gate("⌘-", "Zoom the document out"),
+        gate("⌘0", "Default document zoom"),
+        gate("⇧⌘↩", "Comment on the set, then send it"),
+        gate("esc", "Dismiss the note form"),
+        gate("⌘F", "Find in the open file"),
+    ]
+    let open = ctx(tab: .files, hasSessions: true, hasActiveSession: true,
+                   fileOpen: true)
+    let empty = ctx(tab: .files, hasSessions: true, hasActiveSession: true)
+    return rows.allSatisfy { $0.isActive(in: open) && !$0.isActive(in: empty) }
+        && !gate("⌘=", "Bigger terminal font size").isActive(in: open)
+        && !gate("esc", "Close the reader (the open form first)")
+            .isActive(in: open)
+}
+
+// ⌘F answers one consumer at a time, whatever is left open elsewhere.
+check("availability: ⌘F has at most one meaning on every view") {
+    let rows = KeystrokeCatalog.all.filter {
+        $0.binding == .literal("⌘F") && $0.section == .find
+    }
+    for tab in SessionTab.allCases {
+        let c = ctx(tab: tab, hasSessions: true, hasActiveSession: true,
+                    artifactReaderOpen: true, snapshotReaderOpen: true,
+                    fileOpen: true)
+        let live = rows.filter { $0.availability.isActive(in: c) }.count
+        if live > 1 {
+            print("      \(tab): \(live) live ⌘F rows")
+            return false
+        }
+    }
+    return true
+}
+
 // MARK: - Tier 2: the sessions-panel pair
 
 // 19. Both rows exist and neither spells its keystroke out. The letters

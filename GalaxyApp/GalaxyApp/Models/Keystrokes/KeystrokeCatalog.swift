@@ -30,9 +30,11 @@ enum KeystrokeCatalog {
     /// `hasListFocus`, and `openFocusedItemDescriptor`.
     static let ledgerListSubTabs: Set<LedgerSubTab> = [.fileAccess, .entries]
 
-    /// Both readers, for the rows whose keys mean the same thing in
-    /// either one.
-    private static let readerViews: Set<SessionTab> = [.artifacts, .snapshots]
+    /// Every view with a document open, for the rows whose keys mean the
+    /// same thing on each: the two readers, and the Files tab's open file.
+    private static let readerViews: Set<SessionTab> = [
+        .artifacts, .snapshots, .files,
+    ]
 
     /// Built by appending rather than one `+` chain: nine concatenated
     /// array literals push the type-checker past its budget and fail to
@@ -527,9 +529,17 @@ enum KeystrokeCatalog {
         .init(binding: .literal("esc"),
               label: "Close the reader (the open form first)",
               section: .reader,
-              availability: .viewsWithReader(readerViews),
+              availability: .viewsWithReader([.artifacts, .snapshots]),
               aliases: "leave the document, back to the list, dismiss "
                   + "the reader, discard the annotation form"),
+        // Files has no reader behind the page to close, so Escape stops once
+        // the form is gone.
+        .init(binding: .literal("esc"),
+              label: "Dismiss the note form",
+              section: .reader,
+              availability: .viewsWithReader([.files]),
+              aliases: "cancel a note, discard what i typed, back out of "
+                  + "the note, close the composer, collapse a card"),
     ]
 
     // MARK: - Terminal & agent
@@ -739,11 +749,11 @@ enum KeystrokeCatalog {
 
     // MARK: - Find
 
-    /// ⌘F three times, because it has three consumers with three
-    /// results. `MainMenu.canActivateFind` is the menu's visible gate
-    /// and these are its three true branches, in its order; its fourth
-    /// branch — Agents, Ledger, Timeline — needs no row, because
-    /// `activateFind()` does nothing there.
+    /// ⌘F four times, because it has four consumers with four results.
+    /// `MainMenu.canActivateFind` is the menu's visible gate and these are
+    /// its four true branches, in its order; its last branch — Agents,
+    /// Ledger, Timeline — needs no row, because `activateFind()` does
+    /// nothing there.
     ///
     /// The terminal row's gate is the pane-focus memory rather than the
     /// menu's "a session exists", because that is what actually decides:
@@ -765,6 +775,12 @@ enum KeystrokeCatalog {
               section: .find,
               availability: .viewsWithReader([.snapshots]),
               aliases: "search the snapshot, look through the snapshot"),
+        .init(binding: .literal("⌘F"),
+              label: "Find in the open file",
+              section: .find,
+              availability: .viewsWithReader([.files]),
+              aliases: "search this file, look through the file, find "
+                  + "text in the document"),
         .init(binding: .literal("↩"), label: "Next match",
               section: .find, availability: .findBar,
               aliases: "find the next one, forward through the "
