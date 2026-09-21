@@ -28,6 +28,11 @@ struct ContentView: View {
     @ObservedObject private var inboxModal
         = AgentInboxPresenter.shared
 
+    /// Traffic-light width the strip reserves, which changes when the
+    /// window enters or leaves full screen.
+    @ObservedObject private var windowChrome
+        = WindowChromeMetrics.shared
+
     // Track width during drag (nil when not dragging, uses settings value)
     @State private var draggingWidth: CGFloat? = nil
 
@@ -48,7 +53,10 @@ struct ContentView: View {
     /// Both end clusters are locked to this width, so the tab row's
     /// centroid is the window centre in either sidebar position.
     private var edgeClusterWidth: CGFloat {
-        sidebarToggleWidth + clusterItemSpacing + historyNavButtonsWidth
+        windowChrome.trafficLightInset
+            + sidebarToggleWidth
+            + clusterItemSpacing
+            + historyNavButtonsWidth
     }
 
     private var isSidebarVisible: Bool {
@@ -143,9 +151,16 @@ struct ContentView: View {
         HStack(spacing: 0) {
             leadingCluster
                 .frame(width: edgeClusterWidth, alignment: .leading)
-            Spacer(minLength: 0)
+            // Two flexible siblings split the slack exactly as two
+            // Spacers did, so the centring is unchanged — but a Color
+            // can carry the drag area a Spacer has nowhere to put.
+            Color.clear
+                .frame(maxWidth: .infinity)
+                .overlay { WindowDragArea() }
             tabPicker
-            Spacer(minLength: 0)
+            Color.clear
+                .frame(maxWidth: .infinity)
+                .overlay { WindowDragArea() }
             trailingCluster
                 .frame(width: edgeClusterWidth, alignment: .trailing)
         }
@@ -179,6 +194,7 @@ struct ContentView: View {
             }
             historyNavButtons
         }
+        .padding(.leading, windowChrome.trafficLightInset)
     }
 
     @ViewBuilder

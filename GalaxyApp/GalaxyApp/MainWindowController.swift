@@ -31,8 +31,14 @@ class MainWindowController: NSWindowController {
             defer: false
         )
 
+        // The title still names the window in the Window menu and in
+        // Mission Control; `titleVisibility` only drops the drawn string,
+        // so the control strip can occupy the titlebar's row.
         window.title = "Galaxy"
         window.minSize = NSSize(width: 800, height: 500)
+        window.styleMask.insert(.fullSizeContentView)
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
 
         // Default position for first launch (no saved state)
         window.center()
@@ -57,10 +63,30 @@ class MainWindowController: NSWindowController {
 
         // Restore saved window frame + screen position
         restoreWindowState()
+
+        // The standard buttons have no laid-out frame until the theme
+        // frame runs, which has not happened yet at init — reading one
+        // here returns a zero origin.
+        DispatchQueue.main.async { [weak self] in
+            self?.measureTrafficLightInset()
+        }
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    /// Trailing edge of the zoom button in window coordinates, plus a
+    /// gap. Leaves the standing value in place if the buttons are absent
+    /// or not yet laid out, rather than collapsing the reserve to zero.
+    private func measureTrafficLightInset() {
+        guard let zoom = window?.standardWindowButton(.zoomButton)
+        else { return }
+        let maxX = zoom.convert(zoom.bounds, to: nil).maxX
+        guard maxX > 0 else { return }
+        WindowChromeMetrics.shared.setMeasuredInset(
+            maxX + WindowChromeMetrics.buttonGap
+        )
     }
 
     /// Apply theme by setting window.appearance — propagates to SwiftUI's
@@ -226,6 +252,27 @@ extension MainWindowController: NSWindowDelegate {
         // to avoid saving on every intermediate frame.
         guard let window = window, !window.inLiveResize else { return }
         WindowStatePersistence.shared.saveWindowState(for: window)
+    }
+
+    // MARK: - Full Screen
+
+    // The `will` callbacks rather than the `did` ones: they fire before
+    // the zoom animation, so the reserve is already gone as the window
+    // grows and already back before the buttons reappear. Using `did`
+    // would leave a hole, or an overlap, for the animation's length.
+
+    func windowWillEnterFullScreen(_ notification: Notification) {
+        WindowChromeMetrics.shared.setFullScreen(true)
+    }
+
+    func windowWillExitFullScreen(_ notification: Notification) {
+        WindowChromeMetrics.shared.setFullScreen(false)
+    }
+
+    func windowDidExitFullScreen(_ notification: Notification) {
+        DispatchQueue.main.async { [weak self] in
+            self?.measureTrafficLightInset()
+        }
     }
 
     // MARK: - Screen State Tracking
