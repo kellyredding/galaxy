@@ -106,6 +106,14 @@ enum KeystrokeAvailability: Equatable {
     /// row's condition text.
     case dialog(String)
 
+    /// While an inline name editor is open in the sessions panel.
+    ///
+    /// Answers false the way `.dialog` does. The edit state is per-row
+    /// `@State` in `SessionRow` and `SessionMarkerRow`, so a snapshot
+    /// cannot see it; a true answer would mean hoisting that state into
+    /// a model to drive one dim bit.
+    case inlineRename
+
     // MARK: - Requirements
 
     /// How much of a session a row needs.
@@ -254,6 +262,8 @@ enum KeystrokeAvailability: Equatable {
             return ctx.sessionsPanelVisible == visible
         case .dialog:
             return false
+        case .inlineRename:
+            return false
         }
     }
 
@@ -297,6 +307,8 @@ enum KeystrokeAvailability: Equatable {
                 : "with the sessions panel hidden"
         case .dialog(let name):
             return "in the \(name)"
+        case .inlineRename:
+            return "while renaming a session or marker"
         }
     }
 

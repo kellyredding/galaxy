@@ -13,6 +13,22 @@ import Galactic
 class InlineEditField: NSTextField {
     override var previousValidKeyView: NSView? { nil }
     override var nextValidKeyView: NSView? { nil }
+
+    var onCommandReturn: (() -> Void)?
+
+    /// AppKit never routes ⌘↩ through `doCommandBy:` — a single-line
+    /// NSTextField swallows the chord and beeps — so it is claimed here.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let flags = event.modifierFlags
+        guard event.charactersIgnoringModifiers == "\r",
+              flags.contains(.command),
+              flags.intersection([.shift, .option, .control]).isEmpty,
+              let editor = currentEditor(),
+              window?.firstResponder === editor
+        else { return super.performKeyEquivalent(with: event) }
+        onCommandReturn?()
+        return true
+    }
 }
 
 /// NSViewRepresentable wrapping InlineEditField for inline session renaming.
@@ -21,6 +37,7 @@ class InlineEditField: NSTextField {
 ///
 /// Three lifecycle callbacks signal end-of-editing:
 ///   - `onCommit`: user pressed Enter (NSResponder.insertNewline:)
+///                 or ⌘↩ (InlineEditField.performKeyEquivalent)
 ///   - `onCancel`: user pressed Esc (NSResponder.cancelOperation:)
 ///   - `onBlur`:   field lost first responder for ANY other reason —
 ///                 click outside, app deactivation, programmatic focus
@@ -71,6 +88,9 @@ struct InlineNameEditor: NSViewRepresentable {
         field.usesSingleLineMode = true
         field.cell?.isScrollable = true
         field.delegate = context.coordinator
+        field.onCommandReturn = { [weak coordinator = context.coordinator] in
+            coordinator?.commitFromKeyEquivalent()
+        }
         // Focus via AppKit once SwiftUI has placed the view in the
         // window, then install a window-local mouse-down monitor so
         // clicks on non-focusable SwiftUI views (sibling session
@@ -101,6 +121,11 @@ struct InlineNameEditor: NSViewRepresentable {
         var parent: InlineNameEditor
         weak var field: InlineEditField?
         private var mouseMonitor: Any?
+        /// A ⌘↩ commit tears the field down, and the resulting
+        /// resignation arrives as movement `.other` — indistinguishable
+        /// from a click outside. Without this the name commits twice
+        /// and terminal focus is restored twice.
+        private var didCommitViaKeyEquivalent = false
 
         init(_ parent: InlineNameEditor) {
             self.parent = parent
@@ -178,6 +203,11 @@ struct InlineNameEditor: NSViewRepresentable {
             parent.text = field.stringValue
         }
 
+        func commitFromKeyEquivalent() {
+            didCommitViaKeyEquivalent = true
+            parent.onCommit()
+        }
+
         func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
             if commandSelector == #selector(NSResponder.insertNewline(_:)) {
                 parent.onCommit()
@@ -205,9 +235,11 @@ struct InlineNameEditor: NSViewRepresentable {
             let movement = (obj.userInfo?["NSTextMovement"] as? Int) ?? 0
             let returnRaw = NSTextMovement.return.rawValue
             let cancelRaw = NSTextMovement.cancel.rawValue
-            if movement != returnRaw && movement != cancelRaw {
+            if !didCommitViaKeyEquivalent
+                && movement != returnRaw && movement != cancelRaw {
                 parent.onBlur()
             }
+            didCommitViaKeyEquivalent = false
             // Editing has ended — the next edit cycle's makeNSView
             // re-installs the monitor. Cleaning up here avoids
             // dangling monitors after the field is removed from the

@@ -229,6 +229,25 @@ enum KeystrokeCatalog {
               aliases: "summarise the context, condense the transcript, "
                   + "shrink the context, free up context"),
 
+        // Renaming opens by double-clicking a session or marker name, so
+        // no keystroke reaches these rows — they document what answers
+        // once the editor is up. Literals, like the dialog rows: ⌘↩ is a
+        // fixed chord here and does not follow the configured submit key.
+        // ⇧↩ is deliberately absent, since the find bar claims it
+        // window-wide for find-previous whenever it is open.
+        .init(binding: .literal("↩"), label: "Save the name",
+              section: .sessions, availability: .inlineRename,
+              aliases: "commit a rename, finish renaming a session, "
+                  + "accept the new name, keep the name I typed"),
+        .init(binding: .literal("⌘↩"), label: "Save the name",
+              section: .sessions, availability: .inlineRename,
+              aliases: "command enter, commit a rename, finish renaming "
+                  + "a session, accept the new name"),
+        .init(binding: .literal("esc"), label: "Discard the name",
+              section: .sessions, availability: .inlineRename,
+              aliases: "abandon a rename, stop renaming a session, "
+                  + "leave the old name alone, throw away what I typed"),
+
         // Symbolic, not literal. The bracket flips with
         // `sidebarPosition` — ⇧⌘[ means "toward the panel" — so a
         // spelled-out key would be wrong for every user who moved the
