@@ -41,6 +41,15 @@ struct ContentView: View {
     private let toolbarHeight: CGFloat = 28
     private let collapsedSidebarWidth: CGFloat = 32
     private let historyNavButtonsWidth: CGFloat = 54
+    private let sidebarToggleWidth: CGFloat = 20
+    private let clusterItemSpacing: CGFloat = 8
+    private let stripEdgePadding: CGFloat = 8
+
+    /// Both end clusters are locked to this width, so the tab row's
+    /// centroid is the window centre in either sidebar position.
+    private var edgeClusterWidth: CGFloat {
+        sidebarToggleWidth + clusterItemSpacing + historyNavButtonsWidth
+    }
 
     private var isSidebarVisible: Bool {
         sidebarPrefs.isVisible
@@ -73,15 +82,18 @@ struct ContentView: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            if sidebarOnLeft {
-                sidebarColumn
-                resizeHandle
-                viewsColumn
-            } else {
-                viewsColumn
-                resizeHandle
-                sidebarColumn
+        VStack(spacing: 0) {
+            controlStrip
+            HStack(spacing: 0) {
+                if sidebarOnLeft {
+                    sidebarColumn
+                    resizeHandle
+                    viewsColumn
+                } else {
+                    viewsColumn
+                    resizeHandle
+                    sidebarColumn
+                }
             }
         }
         .frame(minWidth: 800, minHeight: 500)
@@ -90,7 +102,7 @@ struct ContentView: View {
         // outside the inactive dimming the views column applies, because
         // a reference should stay legible.
         //
-        // The HStack rather than either column: `viewsColumn` and
+        // The root rather than either column: `viewsColumn` and
         // `sidebarColumn` are order-swapped by `sidebarOnLeft`, so a
         // sheet anchored to a column would slide across the window when
         // the user moved the sessions panel. After `.frame` so the scrim
@@ -121,25 +133,59 @@ struct ContentView: View {
         .environment(\.chromeFontSize, settingsManager.settings.chromeFontSize)
     }
 
-    // MARK: - Sidebar Column
+    // MARK: - Control Strip
 
-    private var sidebarControlBar: some View {
+    /// One strip across the whole window, a sibling of the split rather
+    /// than a bar inside either column. Both end clusters are locked to
+    /// `edgeClusterWidth`, so the two spacers always receive equal slack
+    /// and the tab row cannot move when the sessions panel does.
+    private var controlStrip: some View {
         HStack(spacing: 0) {
-            if sidebarOnLeft {
-                sidebarToggleButton
-                Spacer(minLength: 0)
-            } else {
-                Spacer(minLength: 0)
-                sidebarToggleButton
-            }
+            leadingCluster
+                .frame(width: edgeClusterWidth, alignment: .leading)
+            Spacer(minLength: 0)
+            tabPicker
+            Spacer(minLength: 0)
+            trailingCluster
+                .frame(width: edgeClusterWidth, alignment: .trailing)
         }
-        .padding(sidebarOnLeft ? .leading : .trailing, 5)
+        .padding(.horizontal, stripEdgePadding)
         .frame(height: toolbarHeight)
         .background(Color(NSColor.windowBackgroundColor))
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(Color.primary.opacity(0.15))
                 .frame(height: 1)
+        }
+        .onAppear {
+            historyObserver.rebind(
+                to: activeSession?.navigationCoordinator
+                    .history
+            )
+        }
+        .onChange(of: sessionManager.activeSessionId) {
+            historyObserver.rebind(
+                to: activeSession?.navigationCoordinator
+                    .history
+            )
+        }
+    }
+
+    private var leadingCluster: some View {
+        HStack(spacing: clusterItemSpacing) {
+            if sidebarOnLeft {
+                sidebarToggleButton
+                    .frame(width: sidebarToggleWidth)
+            }
+            historyNavButtons
+        }
+    }
+
+    @ViewBuilder
+    private var trailingCluster: some View {
+        if !sidebarOnLeft {
+            sidebarToggleButton
+                .frame(width: sidebarToggleWidth)
         }
     }
 
@@ -155,9 +201,10 @@ struct ContentView: View {
         .help(isSidebarVisible ? "Hide Sessions" : "Show Sessions")
     }
 
+    // MARK: - Sidebar Column
+
     private var sidebarColumn: some View {
         VStack(spacing: 0) {
-            sidebarControlBar
             // Both sidebar views stay in the tree at all
             // times; visibility is gated by opacity rather
             // than a conditional swap. The previous
@@ -182,8 +229,8 @@ struct ContentView: View {
             // hooks.
             ZStack {
                 ExpandedSessionSidebar()
-                .opacity(isSidebarVisible ? 1 : 0)
-                .allowsHitTesting(isSidebarVisible)
+                    .opacity(isSidebarVisible ? 1 : 0)
+                    .allowsHitTesting(isSidebarVisible)
 
                 CollapsedSessionSidebar()
                     .opacity(isSidebarVisible ? 0 : 1)
@@ -200,39 +247,7 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Views Column
-
-    private var viewsControlBar: some View {
-        HStack(spacing: 8) {
-            historyNavButtons
-            Spacer()
-            tabPicker
-            Spacer()
-            // Balancing spacer so tabPicker stays centered
-            // relative to the full control bar width.
-            Color.clear.frame(width: historyNavButtonsWidth)
-        }
-        .padding(.horizontal, 8)
-        .frame(height: toolbarHeight)
-        .background(Color(NSColor.windowBackgroundColor))
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(Color.primary.opacity(0.15))
-                .frame(height: 1)
-        }
-        .onAppear {
-            historyObserver.rebind(
-                to: activeSession?.navigationCoordinator
-                    .history
-            )
-        }
-        .onChange(of: sessionManager.activeSessionId) {
-            historyObserver.rebind(
-                to: activeSession?.navigationCoordinator
-                    .history
-            )
-        }
-    }
+    // MARK: - History Navigation
 
     @ViewBuilder
     private var historyNavButtons: some View {
@@ -304,9 +319,10 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - Views Column
+
     private var viewsColumn: some View {
         VStack(spacing: 0) {
-            viewsControlBar
             activeViewContent
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
