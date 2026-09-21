@@ -151,13 +151,14 @@ struct ContentView: View {
         HStack(spacing: 0) {
             leadingCluster
                 .frame(width: edgeClusterWidth, alignment: .leading)
-            // Two flexible siblings split the slack exactly as two
-            // Spacers did, so the centring is unchanged — but a Color
-            // can carry the drag area a Spacer has nowhere to put.
+            // Colors, not Spacers, so the gaps can carry drag areas. Unlike
+            // a Spacer a Color competes with the tabs for width, so the tab
+            // row's layout priority is what keeps it whole until it can't be.
             Color.clear
                 .frame(maxWidth: .infinity)
                 .overlay { WindowDragArea() }
             tabPicker
+                .layoutPriority(1)
             Color.clear
                 .frame(maxWidth: .infinity)
                 .overlay { WindowDragArea() }

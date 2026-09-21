@@ -13,6 +13,13 @@ class GalaxyWindow: NSWindow {
     }
 }
 
+/// In the titlebar's row AppKit turns a mouse-down into a window drag
+/// whenever the view beneath allows it, as a non-opaque view does by
+/// default — so without this the control strip never receives a click.
+final class GalaxyHostingView<Content: View>: NSHostingView<Content> {
+    override var mouseDownCanMoveWindow: Bool { false }
+}
+
 /// NSWindowController that hosts the main ContentView via NSHostingView.
 /// This provides full control over window lifecycle, avoiding SwiftUI's Window scene limitations.
 class MainWindowController: NSWindowController {
@@ -51,7 +58,11 @@ class MainWindowController: NSWindowController {
             .environmentObject(settingsManager)
 
         // Wrap in NSHostingView
-        let hostingView = NSHostingView(rootView: contentView)
+        let hostingView = GalaxyHostingView(rootView: contentView)
+        // Otherwise the titlebar's row reaches SwiftUI as a safe area: the
+        // strip lands a row too low, and views flush against it extend
+        // their backgrounds up over the strip, taking its clicks.
+        hostingView.safeAreaRegions = []
         window.contentView = hostingView
 
         // Apply initial theme appearance — window.appearance drives
