@@ -51,6 +51,12 @@ upgrading Claude Code.
   turn of its own
 - `idle-backstop` — a stale turn planted in the sandbox must be closed as
   `turn:abandoned` when the idle notification's hook runs
+- `nested-oneshot` — the session runs `claude -p` through its Bash tool, the
+  shape a plugin hook's one-shot has. Nothing of the child may reach the
+  session: no `session:started` or `session:ended`, no `turn:abandoned` of the
+  turn that ran it, and no identifier or pid joining it. The command passes the
+  session's own `CLAUDE_CLI_SESSION_ID` explicitly, since the harness strips it
+  and a real session's children inherit it — without it the case never arises
 
 ## Isolation
 

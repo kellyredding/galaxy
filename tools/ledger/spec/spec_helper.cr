@@ -126,7 +126,33 @@ def run_binary(
     input_io = IO::Memory.new(stdin)
   end
 
-  base_env = {
+  process = Process.new(
+    BINARY_PATH.to_s,
+    args: args,
+    input: input_io,
+    output: Process::Redirect::Pipe,
+    error: Process::Redirect::Pipe,
+    env: binary_env.merge(extra_env),
+  )
+
+  # Read output streams
+  output_content = process.output.gets_to_end
+  error_content = process.error.gets_to_end
+
+  status = process.wait
+
+  {
+    output: output_content,
+    error:  error_content,
+    status: status.exit_code,
+  }
+end
+
+# The environment the binary runs under in specs: every path pointed into
+# the test sandbox, and anything inherited from a surrounding session
+# cleared.
+def binary_env : Hash(String, String)
+  {
     "GALAXY_CLAUDE_CONFIG_DIR"    => SPEC_CLAUDE_CONFIG_DIR.to_s,
     "GALAXY_LEDGER_CONFIG_DIR"    => SPEC_CONFIG_DIR.to_s,
     "GALAXY_DIR"                  => SPEC_GALAXY_DIR.to_s,
@@ -150,28 +176,6 @@ def run_binary(
     # Tests that need these set should pass them via extra_env.
     "VISUAL" => "",
     "EDITOR" => "",
-  }
-  merged_env = base_env.merge(extra_env)
-
-  process = Process.new(
-    BINARY_PATH.to_s,
-    args: args,
-    input: input_io,
-    output: Process::Redirect::Pipe,
-    error: Process::Redirect::Pipe,
-    env: merged_env,
-  )
-
-  # Read output streams
-  output_content = process.output.gets_to_end
-  error_content = process.error.gets_to_end
-
-  status = process.wait
-
-  {
-    output: output_content,
-    error:  error_content,
-    status: status.exit_code,
   }
 end
 

@@ -9,6 +9,7 @@ their timing belongs to Claude Code:
   queued-interrupt  the same across an interrupt, via Galaxy's own sequence
   batched           two notifications delivered as one turn leave no phantom
   idle-backstop     a stale turn is closed when the agent reports idle
+  nested-oneshot    a `claude -p` run inside the session stays out of it
 
 Each prints PASS, FAIL or INCONCLUSIVE. Claude Code decides some of the
 timing -- whether a queued message is folded into the running turn, whether
@@ -49,6 +50,7 @@ import os
 import pty
 import re
 import select
+import shlex
 import shutil
 import signal
 import sqlite3
@@ -426,6 +428,35 @@ class Session:
     def leftovers(self):
         return [p.name.split(".")[0] for p in (self.state_path, self.pending_path) if p.exists()]
 
+    def tool_results(self):
+        """Every tool result's text, in transcript order."""
+        out = []
+        for r in self.records():
+            msg = r.get("message") if r.get("type") == "user" else None
+            content = msg.get("content") if isinstance(msg, dict) else None
+            for block in content if isinstance(content, list) else []:
+                if not isinstance(block, dict) or block.get("type") != "tool_result":
+                    continue
+                inner = block.get("content")
+                out.append(inner if isinstance(inner, str) else " ".join(
+                    b.get("text", "") for b in inner or [] if isinstance(b, dict)))
+        return out
+
+    def oneshot_command(self, word):
+        """A `claude -p` for the session to run, placed as a plugin hook's is.
+
+        CLAUDE_CLI_SESSION_ID is passed on purpose. This harness strips it from
+        the session, but a Claude Persona or Galaxy session carries it and every
+        child inherits it -- which is what lets a nested one-shot pass itself
+        off as a resume of the session running it.
+        """
+        argv = ["claude", "-p", "--model", self.model]
+        if self.ledger != INSTALLED_LEDGER:
+            argv += ["--settings", str(self.sandbox / "settings.json"),
+                     "--setting-sources", "project,local"]
+        argv.append(f"Reply with only the word {word}.")
+        return f"CLAUDE_CLI_SESSION_ID={self.sid} " + " ".join(shlex.quote(a) for a in argv)
+
 
 # --- scenarios -------------------------------------------------------------
 
@@ -562,11 +593,44 @@ def idle_backstop(s):
     return Result(name, "PASS", f"stale turn closed {closed_after:.0f}s after it was planted")
 
 
+def nested_oneshot(s):
+    name = "nested-oneshot"
+    word = "PELICAN"
+    wait_for(lambda: not s.state_path.exists(), 60)
+    first, stops = s.timeline_max(), len(s.stops())
+    count = "select count(*) from {}"
+    ids_before = s.q(s.db_ledger, count.format("ledger_session_identifiers"))
+    pids_before = s.q(s.db_ledger, count.format("ledger_session_pids"))
+    s.type_line("Run this exact command with the Bash tool, then reply with only the "
+                f"word it printed: {s.oneshot_command(word)}")
+    if not wait_for(lambda: len(s.stops()) >= stops + 1, 120):
+        return Result(name, "FAIL", "the turn running the one-shot never finished")
+    wait_for(lambda: not s.state_path.exists(), 15)
+    time.sleep(2)
+    if not any(word in r for r in s.tool_results()):
+        return Result(name, "INCONCLUSIVE", "the nested claude never answered, so the case did not occur")
+    events = s.q(s.db_timeline, "select event_type, source from events "
+                 "where id > ? order by id", (first,))
+    strays = [e for e, _ in events if e in ("session:started", "session:ended", "turn:abandoned")]
+    if strays:
+        return Result(name, "FAIL", f"the one-shot reached the session: {', '.join(strays)}")
+    turns = [e for e, _ in events if e.startswith("turn:")]
+    if turns != ["turn:initiated", "turn:completed"]:
+        return Result(name, "FAIL", f"expected the one turn to open and close, found {turns}")
+    if s.q(s.db_ledger, count.format("ledger_session_identifiers")) != ids_before \
+            or s.q(s.db_ledger, count.format("ledger_session_pids")) != pids_before:
+        return Result(name, "FAIL", "the one-shot's identifier or pid joined the session")
+    if s.leftovers():
+        return Result(name, "FAIL", f"left behind: {', '.join(s.leftovers())}")
+    return Result(name, "PASS", "a claude -p run inside the session left it untouched")
+
+
 SCENARIOS = {
     "queued-at-stop": queued_at_stop,
     "queued-interrupt": queued_interrupt,
     "batched": batched,
     "idle-backstop": idle_backstop,
+    "nested-oneshot": nested_oneshot,
 }
 
 
