@@ -576,6 +576,40 @@ enum TimelineLayoutEngine {
             let starts = startGroups[key] ?? []
             let ends = endGroups[key] ?? []
 
+            // A turn's identifier names exactly one turn, so it decides the
+            // pairing, not the order the two events were stamped in. Every
+            // other resource reuses its identifier across cycles, and there
+            // time order is what tells one cycle from the next.
+            if key.resource == .turn, key.durationId != nil {
+                let registration = Dictionary(
+                    (starts + ends).map { ($0.0.id, $0.1) },
+                    uniquingKeysWith: { first, _ in first }
+                )
+                let turn = TurnSpanMatching.match(
+                    starts: starts.map(\.0),
+                    ends: ends.map(\.0)
+                )
+                for (start, end) in turn.matched {
+                    results.append(makePair(
+                        start: start,
+                        end: end,
+                        resource: .turn,
+                        origin: origin
+                    ))
+                }
+                for start in turn.unmatchedStarts {
+                    if let reg = registration[start.id] {
+                        orphanedStarts[.turn, default: []].append((start, reg))
+                    }
+                }
+                for end in turn.unmatchedEnds {
+                    if let reg = registration[end.id] {
+                        orphanedEnds[.turn, default: []].append((end, reg))
+                    }
+                }
+                continue
+            }
+
             // Merge into chronological stream
             let tagged: [(event: TimelineEvent,
                           reg: EventRegistration,

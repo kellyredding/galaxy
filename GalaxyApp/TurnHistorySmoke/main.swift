@@ -268,6 +268,79 @@ check("truncated: a payload that is not an object is unreadable") {
     return pairs.first?.userMessage == .unreadable
 }
 
+// MARK: - Span matching
+
+// The timeline's bars pair a turn's two halves by identifier. Time order
+// is what it used before, and a turn the ledger closed as stale — stamped
+// with its start time, from a different clock than the start event's own —
+// then sorted ahead of its start and was drawn as ongoing for good.
+
+func span(_ at: Date, _ type: String = "turn:completed") -> TimelineEvent {
+    event(type, turn: "t", detail: nil, at: at)
+}
+
+check("spans: an end stamped after its start closes it at its own time") {
+    let start = span(at(2026, 9, 23, 14, 56, 25), "turn:initiated")
+    let end = span(at(2026, 9, 23, 14, 56, 55))
+    let result = TurnSpanMatching.match(starts: [start], ends: [end])
+    guard result.matched.count == 1 else { return false }
+    return result.matched[0].end.occurredAt == end.occurredAt
+}
+
+// The row that prompted this, to the second.
+check("spans: an end stamped before its start closes it at the start") {
+    let start = span(at(2026, 9, 23, 14, 56, 25), "turn:initiated")
+    let end = span(at(2026, 9, 23, 14, 56, 24), "turn:abandoned")
+    let result = TurnSpanMatching.match(starts: [start], ends: [end])
+    guard result.matched.count == 1 else { return false }
+    let closed = result.matched[0].end
+    return closed.occurredAt == start.occurredAt
+        && closed.id == end.id
+        && closed.eventType == "turn:abandoned"
+}
+
+// No tolerance: the identifier decides, so the size of the gap cannot.
+check("spans: an end stamped an hour before its start still closes it") {
+    let start = span(at(2026, 9, 23, 15), "turn:initiated")
+    let end = span(at(2026, 9, 23, 14), "turn:abandoned")
+    let result = TurnSpanMatching.match(starts: [start], ends: [end])
+    return result.matched.count == 1
+        && result.matched[0].end.occurredAt == start.occurredAt
+}
+
+check("spans: the earliest end closes the turn and a later one is dropped") {
+    let start = span(at(2026, 9, 23, 14), "turn:initiated")
+    let first = span(at(2026, 9, 23, 14, 0, 10))
+    let second = span(at(2026, 9, 23, 14, 1, 10), "turn:abandoned")
+    let result = TurnSpanMatching.match(starts: [start], ends: [second, first])
+    guard result.matched.count == 1 else { return false }
+    // Dropped, not handed back: returned, it could close another turn.
+    return result.matched[0].end.id == first.id
+        && result.unmatchedEnds.isEmpty
+}
+
+check("spans: a start with no end stays open") {
+    let start = span(at(2026, 9, 23, 14), "turn:initiated")
+    let result = TurnSpanMatching.match(starts: [start], ends: [])
+    return result.matched.isEmpty && result.unmatchedStarts.map(\.id) == [start.id]
+}
+
+check("spans: an end whose start is out of view is handed back unmatched") {
+    let end = span(at(2026, 9, 23, 14))
+    let result = TurnSpanMatching.match(starts: [], ends: [end])
+    return result.matched.isEmpty && result.unmatchedEnds.map(\.id) == [end.id]
+}
+
+check("spans: the result does not depend on the order events arrive in") {
+    let start = span(at(2026, 9, 23, 14), "turn:initiated")
+    let first = span(at(2026, 9, 23, 14, 0, 10))
+    let second = span(at(2026, 9, 23, 14, 0, 10), "turn:abandoned")
+    let a = TurnSpanMatching.match(starts: [start], ends: [first, second])
+    let b = TurnSpanMatching.match(starts: [start], ends: [second, first])
+    return a.matched.map(\.end.id) == b.matched.map(\.end.id)
+        && a.matched.first?.end.id == first.id
+}
+
 print(
     failures == 0
         ? "\n✅ all turn history checks passed"
