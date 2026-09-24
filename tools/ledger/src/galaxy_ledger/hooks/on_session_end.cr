@@ -50,6 +50,7 @@ module GalaxyLedger
           # The session is going away, so a prompt set aside mid-turn
           # has nothing left to dequeue it.
           TurnState.delete_pending(sid)
+          TurnState.clear_closed_by_stop(sid)
         end
 
         # Abandon any still-running agents (best-effort)

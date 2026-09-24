@@ -53,6 +53,27 @@ describe "OnStopFailure turn state consumption" do
     GalaxyLedger::Hooks::TurnState.delete(
       test_session_id,
     )
+    GalaxyLedger::Hooks::TurnState.clear_closed_by_stop(test_session_id)
+  end
+
+  # The failure is displayed like any Stop hook's output, and that display
+  # fires MessageDisplay with no turn open.
+  it "marks the session closed by Stop, whether or not a turn was open" do
+    GalaxyLedger::Database.create_session(test_session_id)
+    flush_wal
+    input = {"session_id"      => test_session_id,
+             "hook_event_name" => "StopFailure"}.to_json
+
+    run_binary(["on-stop-failure"], stdin: input)
+    GalaxyLedger::Hooks::TurnState.closed_by_stop?(test_session_id)
+      .should be_true
+
+    GalaxyLedger::Hooks::TurnState.clear_closed_by_stop(test_session_id)
+    GalaxyLedger::Hooks::TurnState.write(test_session_id, "u", "failing")
+    run_binary(["on-stop-failure"], stdin: input)
+    GalaxyLedger::Hooks::TurnState.exists?(test_session_id).should be_false
+    GalaxyLedger::Hooks::TurnState.closed_by_stop?(test_session_id)
+      .should be_true
   end
 
   it "deletes turn state file when it exists" do

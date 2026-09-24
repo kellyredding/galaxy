@@ -50,6 +50,9 @@ module GalaxyLedger
         # session identifier (skip extraction sub-sessions)
         return unless stdin_sid == current_sid
 
+        # Whether or not a turn was open: the failure is displayed either way.
+        TurnState.mark_closed_by_stop(stdin_sid)
+
         state = TurnState.read(stdin_sid)
         return unless state
 

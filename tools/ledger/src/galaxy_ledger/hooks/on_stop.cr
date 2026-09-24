@@ -125,6 +125,9 @@ module GalaxyLedger
         # session identifier (skip extraction sub-sessions)
         return unless stdin_sid == current_sid
 
+        # Before the state file goes, so a display event never finds neither.
+        TurnState.mark_closed_by_stop(stdin_sid)
+
         ended =
           if state = TurnState.read(stdin_sid)
             # State file exists — user initiated this turn.

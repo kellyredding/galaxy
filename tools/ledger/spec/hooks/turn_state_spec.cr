@@ -259,6 +259,41 @@ describe GalaxyLedger::Hooks::TurnState do
     end
   end
 
+  describe "the closed-by-Stop marker" do
+    closed_sid = "closed-test-#{Random.rand(100000)}"
+
+    after_each do
+      GalaxyLedger::Hooks::TurnState.delete(closed_sid)
+      GalaxyLedger::Hooks::TurnState.clear_closed_by_stop(closed_sid)
+    end
+
+    it "is absent until marked, and gone once cleared" do
+      state = GalaxyLedger::Hooks::TurnState
+      state.closed_by_stop?(closed_sid).should be_false
+      state.mark_closed_by_stop(closed_sid)
+      state.closed_by_stop?(closed_sid).should be_true
+      state.clear_closed_by_stop(closed_sid)
+      state.closed_by_stop?(closed_sid).should be_false
+    end
+
+    # Every path that opens a turn writes state, so this is what makes
+    # the marker mean "nothing has opened since".
+    it "is cleared by the next turn opening" do
+      GalaxyLedger::Hooks::TurnState.mark_closed_by_stop(closed_sid)
+      GalaxyLedger::Hooks::TurnState.write(closed_sid, "u", "next turn")
+
+      GalaxyLedger::Hooks::TurnState.closed_by_stop?(closed_sid)
+        .should be_false
+    end
+
+    # The marker says a turn ended, so it must never read as one open.
+    it "keeps the marker apart from turn state" do
+      GalaxyLedger::Hooks::TurnState.mark_closed_by_stop(closed_sid)
+
+      GalaxyLedger::Hooks::TurnState.exists?(closed_sid).should be_false
+    end
+  end
+
   describe ".open_pending" do
     open_sid = "open-pending-#{Random.rand(100000)}"
 
@@ -555,6 +590,31 @@ describe GalaxyLedger::Hooks::TurnState do
 
       GalaxyLedger::Hooks::TurnState.exists?(sid).should be_false
       GalaxyLedger::Hooks::TurnState.take_pending(sid).should be_nil
+    end
+
+    it "keeps the closed-by-Stop marker of a live session" do
+      with_fake_claude do |pid|
+        sid = "sweep-livemark-#{Random.rand(100000)}"
+        GalaxyLedger::Database.create_session(sid, claude_pid: pid)
+        GalaxyLedger::Hooks::TurnState.mark_closed_by_stop(sid)
+
+        GalaxyLedger::Hooks::TurnState.sweep_orphans
+
+        GalaxyLedger::Hooks::TurnState.closed_by_stop?(sid).should be_true
+        GalaxyLedger::Hooks::TurnState.clear_closed_by_stop(sid)
+      end
+    end
+
+    # A session that ended after its last Stop leaves only the marker, with
+    # no state file for the pass above to find it by.
+    it "sweeps the closed-by-Stop marker of a session that is gone" do
+      sid = "sweep-deadmark-#{Random.rand(100000)}"
+      GalaxyLedger::Database.create_session(sid, claude_pid: 1_i64)
+      GalaxyLedger::Hooks::TurnState.mark_closed_by_stop(sid)
+
+      GalaxyLedger::Hooks::TurnState.sweep_orphans
+
+      GalaxyLedger::Hooks::TurnState.closed_by_stop?(sid).should be_false
     end
   end
 

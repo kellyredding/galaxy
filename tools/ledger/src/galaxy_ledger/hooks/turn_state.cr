@@ -56,6 +56,8 @@ module GalaxyLedger
           "initiated_at" => Time.utc.to_rfc3339,
         }
         File.write(state_path(claude_session_id), data.to_json)
+        # After the write, so a display event in between still finds a turn.
+        clear_closed_by_stop(claude_session_id)
       end
 
       # Read and parse the turn state file for a Claude session.
@@ -93,6 +95,34 @@ module GalaxyLedger
       # Check if a turn state file exists without reading it.
       def self.exists?(claude_session_id : String) : Bool
         File.exists?(state_path(claude_session_id))
+      end
+
+      # MARK: - Turns closed by Stop
+
+      # Record that Stop or StopFailure has ended this session's turn and
+      # nothing has opened since.
+      #
+      # Claude Code displays whatever a Stop hook returns, and displaying
+      # anything fires MessageDisplay — which then finds no turn open and
+      # would start one for the hook's own message. OnMessageDisplay reads
+      # this to tell the two apart. `write` clears it, and every path that
+      # opens a turn goes through `write`.
+      def self.mark_closed_by_stop(claude_session_id : String)
+        Dir.mkdir_p(closed_dir) unless Dir.exists?(closed_dir)
+        File.write(closed_path(claude_session_id), Time.utc.to_rfc3339)
+      rescue
+        # Best-effort — the idle backstop still closes a turn opened anyway
+      end
+
+      def self.closed_by_stop?(claude_session_id : String) : Bool
+        File.exists?(closed_path(claude_session_id))
+      end
+
+      def self.clear_closed_by_stop(claude_session_id : String)
+        path = closed_path(claude_session_id)
+        File.delete(path) if File.exists?(path)
+      rescue
+        # Best-effort — the next opener clears it again
       end
 
       # MARK: - Pending prompts
@@ -318,6 +348,13 @@ module GalaxyLedger
           delete(claude_session_id)
           delete_pending(claude_session_id)
         end
+
+        if Dir.exists?(closed_dir)
+          Dir.each_child(closed_dir.to_s) do |claude_session_id|
+            next if session_live?(claude_session_id)
+            clear_closed_by_stop(claude_session_id)
+          end
+        end
       rescue
         # Best-effort — housekeeping is never worth failing a hook
       end
@@ -424,6 +461,21 @@ module GalaxyLedger
         claude_session_id : String,
       ) : Path
         pending_dir / "#{claude_session_id}.json"
+      end
+
+      # Directory holding the closed-by-Stop markers, beside the state and
+      # pending directories. Swept by its own pass in `sweep_orphans`, since a
+      # marker usually outlives the state file that pass looks for.
+      def self.closed_dir : Path
+        Path.new(
+          ENV["GALAXY_DIR"]? || Path.home / ".claude" / "galaxy",
+        ) / "ledger" / "turn-closed"
+      end
+
+      def self.closed_path(
+        claude_session_id : String,
+      ) : Path
+        closed_dir / claude_session_id
       end
     end
   end

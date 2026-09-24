@@ -205,6 +205,22 @@ describe "OnSessionEnd orphan turn cleanup" do
     ).should be_false
   end
 
+  # A session ending right after a Stop leaves only the marker.
+  it "clears the closed-by-Stop marker" do
+    test_session_id = "end-marker-#{Random.rand(10000)}"
+    GalaxyLedger::Database.create_session(
+      test_session_id, claude_pid: Process.pid.to_i64)
+    GalaxyLedger::Hooks::TurnState.mark_closed_by_stop(test_session_id)
+
+    run_binary(["on-session-end"], stdin: {
+      "session_id" => test_session_id,
+      "cwd"        => "/tmp",
+    }.to_json)
+
+    GalaxyLedger::Hooks::TurnState.closed_by_stop?(test_session_id)
+      .should be_false
+  end
+
   it "succeeds when no orphaned turn state exists" do
     test_session_id = "end-no-orphan-#{Random.rand(10000)}"
     GalaxyLedger::Database.create_session(

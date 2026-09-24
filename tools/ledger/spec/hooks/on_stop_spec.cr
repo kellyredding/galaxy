@@ -773,12 +773,64 @@ describe "OnStop turn state consumption" do
     )
     GalaxyLedger::Hooks::TurnState.delete(test_session_id)
     GalaxyLedger::Hooks::TurnState.delete_pending(test_session_id)
+    GalaxyLedger::Hooks::TurnState.clear_closed_by_stop(test_session_id)
   end
 
   after_each do
     GalaxyLedger::Database.delete_session(test_session_id)
     GalaxyLedger::Hooks::TurnState.delete(test_session_id)
     GalaxyLedger::Hooks::TurnState.delete_pending(test_session_id)
+    GalaxyLedger::Hooks::TurnState.clear_closed_by_stop(test_session_id)
+  end
+
+  # What this hook returns is displayed, which fires MessageDisplay with
+  # the turn just closed; the marker is how that hook tells its own
+  # sign-off from the agent starting again.
+  it "marks the session closed by Stop when it ends a turn" do
+    GalaxyLedger::Hooks::TurnState.write(test_session_id, "u", "ending")
+    flush_wal
+
+    run_binary(["on-stop"], stdin: {
+      "session_id"       => test_session_id,
+      "stop_hook_active" => false,
+    }.to_json)
+
+    GalaxyLedger::Hooks::TurnState.exists?(test_session_id).should be_false
+    GalaxyLedger::Hooks::TurnState.closed_by_stop?(test_session_id)
+      .should be_true
+  end
+
+  it "marks the session closed by Stop when no turn was open" do
+    flush_wal
+
+    run_binary(["on-stop"], stdin: {
+      "session_id"       => test_session_id,
+      "stop_hook_active" => false,
+    }.to_json)
+
+    GalaxyLedger::Hooks::TurnState.closed_by_stop?(test_session_id)
+      .should be_true
+  end
+
+  # The queued turn it opens is a turn, so nothing is left to suppress.
+  it "leaves no marker once it has opened the queued message's turn" do
+    with_queue_transcript([{"enqueue", "the queued prompt"}]) do |t|
+      GalaxyLedger::Hooks::TurnState.write(test_session_id, "u", "ending")
+      GalaxyLedger::Hooks::TurnState.write_pending(
+        test_session_id, "the queued prompt")
+      flush_wal
+
+      run_binary(["on-stop"], stdin: {
+        "session_id"       => test_session_id,
+        "transcript_path"  => t,
+        "stop_hook_active" => false,
+      }.to_json)
+
+      GalaxyLedger::Hooks::TurnState.exists?(test_session_id)
+        .should be_true
+      GalaxyLedger::Hooks::TurnState.closed_by_stop?(test_session_id)
+        .should be_false
+    end
   end
 
   it "deletes turn state file when it exists" do

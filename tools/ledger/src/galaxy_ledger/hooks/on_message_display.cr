@@ -48,6 +48,13 @@ module GalaxyLedger
         # open the database.
         return if TurnState.exists?(stdin_sid)
 
+        # Stop has just ended the turn and left nothing waiting, so what is
+        # being displayed is the hook's own message, not the agent starting
+        # another. A prompt Stop set aside but could not open is different:
+        # its turn is what comes next, and this is what opens it.
+        return if TurnState.closed_by_stop?(stdin_sid) &&
+                  !TurnState.pending?(stdin_sid)
+
         claude_pid = Process.ppid.to_i64
         env_session_id = ENV[Resolver::ENV_SESSION_ID_KEY]?
 

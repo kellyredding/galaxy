@@ -122,6 +122,49 @@ describe GalaxyLedger::Hooks::OnMessageDisplay do
     end
   end
 
+  # Claude Code displays whatever a Stop hook returns, and displaying it
+  # fires this hook with the turn just closed — measured: four empty turns
+  # opened this way, each on the Stop hook's own status message.
+  describe "right after Stop has ended the turn" do
+    it "does not open a turn for the hook's own message" do
+      sid = "md-stopped-#{Random.rand(100000)}"
+      GalaxyLedger::Database.create_session(sid)
+      GalaxyLedger::Hooks::TurnState.mark_closed_by_stop(sid)
+
+      run_binary(
+        ["on-message-display"],
+        stdin: {"session_id" => sid}.to_json,
+      )
+
+      GalaxyLedger::Hooks::TurnState.exists?(sid).should be_false
+    ensure
+      GalaxyLedger::Hooks::TurnState.clear_closed_by_stop(sid.not_nil!) if sid
+    end
+
+    # A prompt Stop set aside but could not open is the next turn, and
+    # this hook is the fallback that opens it late rather than never.
+    it "still opens the turn a waiting prompt becomes" do
+      sid = "md-stoppedpending-#{Random.rand(100000)}"
+      GalaxyLedger::Database.create_session(sid)
+      GalaxyLedger::Hooks::TurnState.mark_closed_by_stop(sid)
+      GalaxyLedger::Hooks::TurnState.write_pending(sid, "queued prompt")
+
+      run_binary(
+        ["on-message-display"],
+        stdin: {"session_id" => sid}.to_json,
+      )
+
+      GalaxyLedger::Hooks::TurnState.read(sid).not_nil!
+        .user_message.should eq("queued prompt")
+      GalaxyLedger::Hooks::TurnState.closed_by_stop?(sid).should be_false
+    ensure
+      if s = sid
+        GalaxyLedger::Hooks::TurnState.delete(s)
+        GalaxyLedger::Hooks::TurnState.delete_pending(s)
+      end
+    end
+  end
+
   describe "when the session cannot be resolved" do
     # No session means no ledger_session_id to record against. Writing
     # state anyway would leave a file that suppresses the real turn
