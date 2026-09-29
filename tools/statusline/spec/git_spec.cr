@@ -162,5 +162,71 @@ describe GalaxyStatusline::Git do
         cleanup_temp_dir(dir)
       end
     end
+
+    it "reads a staged file edited again as both staged and dirty" do
+      dir = create_temp_git_repo
+      begin
+        File.write(Path[dir] / "README.md", "# Staged")
+        Process.run("git", ["add", "README.md"], chdir: dir, output: Process::Redirect::Close, error: Process::Redirect::Close)
+        File.write(Path[dir] / "README.md", "# Staged, then edited")
+
+        git = GalaxyStatusline::Git.new(dir)
+        git.staged.should eq(true)
+        git.dirty.should eq(true)
+      ensure
+        cleanup_temp_dir(dir)
+      end
+    end
+
+    it "reads a staged file with a clean worktree as staged only" do
+      dir = create_temp_git_repo
+      begin
+        File.write(Path[dir] / "README.md", "# Staged")
+        Process.run("git", ["add", "README.md"], chdir: dir, output: Process::Redirect::Close, error: Process::Redirect::Close)
+
+        git = GalaxyStatusline::Git.new(dir)
+        git.staged.should eq(true)
+        git.dirty.should eq(false)
+      ensure
+        cleanup_temp_dir(dir)
+      end
+    end
+  end
+
+  describe "reading without writing" do
+    # The statusline renders on every turn in the repo an agent is committing
+    # in, so a read that takes index.lock fails the agent's write.
+    it "never rewrites the index, even for a file whose stat changed" do
+      dir = create_temp_git_repo
+      begin
+        File.touch(Path[dir] / "README.md", Time.utc + 5.seconds)
+        index = Path[dir] / ".git" / "index"
+        before = File.read(index)
+
+        git = GalaxyStatusline::Git.new(dir)
+        git.dirty.should eq(false)
+        File.read(index).should eq(before)
+      ensure
+        cleanup_temp_dir(dir)
+      end
+    end
+  end
+
+  describe ".parse_status" do
+    it "reads untracked as dirty" do
+      GalaxyStatusline::Git.parse_status("?? new.txt\n").should eq({true, false})
+    end
+
+    it "reads the index column as staged and the worktree column as dirty" do
+      GalaxyStatusline::Git.parse_status("M  a.txt\n").should eq({false, true})
+      GalaxyStatusline::Git.parse_status(" M a.txt\n").should eq({true, false})
+      GalaxyStatusline::Git.parse_status("MM a.txt\n").should eq({true, true})
+      GalaxyStatusline::Git.parse_status(" D gone.txt\n").should eq({true, false})
+      GalaxyStatusline::Git.parse_status("R  old -> new\n").should eq({false, true})
+    end
+
+    it "reads nothing as clean" do
+      GalaxyStatusline::Git.parse_status("").should eq({false, false})
+    end
   end
 end

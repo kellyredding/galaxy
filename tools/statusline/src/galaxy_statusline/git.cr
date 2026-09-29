@@ -25,8 +25,7 @@ module GalaxyStatusline
       @in_git_repo = true
       @branch = get_branch(directory)
       @ahead, @behind = get_ahead_behind(directory)
-      @dirty = has_dirty?(directory)
-      @staged = has_staged?(directory)
+      @dirty, @staged = get_dirty_staged(directory)
       @stashed = has_stash?(directory)
     end
 
@@ -72,21 +71,31 @@ module GalaxyStatusline
       {ahead, behind}
     end
 
-    private def has_dirty?(dir : String) : Bool
-      # Check for modified tracked files
-      diff_result = run_git(dir, ["diff", "--quiet"])
-      return true unless diff_result[:success]
-
-      # Check for untracked files
-      untracked_result = run_git(dir, ["ls-files", "--others", "--exclude-standard"])
-      return true unless untracked_result[:output].strip.empty?
-
-      false
+    # One `status --porcelain`, never `diff --quiet`: MEASURED on git 2.54.0,
+    # `diff --quiet` rewrites .git/index for a file whose stat changed,
+    # taking index.lock despite --no-optional-locks.
+    private def get_dirty_staged(dir : String) : Tuple(Bool, Bool)
+      result = run_git(dir, ["status", "--porcelain=v1", "--ignore-submodules=dirty"])
+      return {false, false} unless result[:success]
+      self.class.parse_status(result[:output])
     end
 
-    private def has_staged?(dir : String) : Bool
-      result = run_git(dir, ["diff", "--cached", "--quiet"])
-      !result[:success]
+    # {dirty, staged} from porcelain v1's two columns: X is the index against
+    # HEAD, Y the worktree against the index, and `??` an untracked path.
+    def self.parse_status(output : String) : Tuple(Bool, Bool)
+      dirty = false
+      staged = false
+      output.each_line do |line|
+        next if line.size < 2
+        x, y = line[0], line[1]
+        if x == '?'
+          dirty = true
+        else
+          staged ||= x != ' '
+          dirty ||= y != ' '
+        end
+      end
+      {dirty, staged}
     end
 
     private def has_stash?(dir : String) : Bool
@@ -98,11 +107,10 @@ module GalaxyStatusline
       io = IO::Memory.new
       err = IO::Memory.new
 
-      # --no-optional-locks makes diff/status/rev-parse skip the
-      # opportunistic index.lock they take to refresh the stat cache.
-      # The statusline renders on every turn against the repo the agent
-      # is working in; without the flag a refresh can race the agent's
-      # own git write and fail with "another git process is running".
+      # --no-optional-locks makes status skip the opportunistic index.lock
+      # it takes to refresh the stat cache (a worktree `diff` refreshes
+      # regardless). The statusline renders on every turn against the repo
+      # the agent is working in; a refresh races the agent's own git write.
       status = Process.run(
         "git",
         args: ["--no-optional-locks"] + args,
