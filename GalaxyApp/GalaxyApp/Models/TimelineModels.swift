@@ -63,6 +63,7 @@ let timelineEventRegistry: [String: EventRegistration] = [
     "session:resumed":     EventRegistration(resource: .session, mode: .durationStart),
     "context:cleared":     EventRegistration(resource: .context, mode: .point),
     "context:compacted":   EventRegistration(resource: .context, mode: .point),
+    "session:forked":      EventRegistration(resource: .context, mode: .point),
     "scrollback:entered":  EventRegistration(resource: .scrollback, mode: .durationStart),
     "scrollback:exited":   EventRegistration(resource: .scrollback, mode: .durationEnd),
     "scrollback:reviewed": EventRegistration(resource: .scrollback, mode: .point),
@@ -534,6 +535,7 @@ enum TimelineTooltipFormatter {
         case "session:resumed": return "Session Resumed"
         case "session:ended": return "Session Ended"
         case "context:cleared": return "Context Cleared"
+        case "session:forked": return "Session Forked"
         case "context:compacted":
             return "Context Compacted"
         case "scrollback:entered":
@@ -623,6 +625,8 @@ enum TimelineTooltipFormatter {
             return sessionEndedLines(dict)
         case "context:cleared", "context:compacted":
             return contextLines(dict)
+        case "session:forked":
+            return sessionForkedLines(dict)
         case "snapshot:created":
             return snapshotCreatedLines(dict)
         case "snapshot:reviewed":
@@ -735,6 +739,19 @@ enum TimelineTooltipFormatter {
             fc > 0
         {
             lines.append("files: \(fc)")
+        }
+        return lines
+    }
+
+    private static func sessionForkedLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        if let from = d["from"] as? String {
+            lines.append("from: \(from.prefix(8))")
+        }
+        if let to = d["to"] as? String {
+            lines.append("to: \(to.prefix(8))")
         }
         return lines
     }
