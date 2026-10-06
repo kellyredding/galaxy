@@ -445,4 +445,82 @@ describe GalaxyLedger::Hooks::TranscriptScanner do
       end
     end
   end
+
+  describe ".forked_from" do
+    it "names the parent's launch id from the first copied record" do
+      with_jsonl([
+        %|{"type":"mode","sessionId":"fork-1"}|,
+        %|{"type":"attachment","sessionId":"fork-1","session_id":"launch-1"}|,
+        %|{"type":"user","sessionId":"fork-1","session_id":"fork-1"}|,
+      ]) do |t|
+        GalaxyLedger::Hooks::TranscriptScanner
+          .forked_from(t, "fork-1").should eq("launch-1")
+      end
+    end
+
+    it "is nil when every record is the fork's own" do
+      with_jsonl([
+        %|{"type":"user","sessionId":"fork-1","session_id":"fork-1"}|,
+      ]) do |t|
+        GalaxyLedger::Hooks::TranscriptScanner
+          .forked_from(t, "fork-1").should be_nil
+      end
+    end
+
+    it "is nil for a missing transcript" do
+      GalaxyLedger::Hooks::TranscriptScanner
+        .forked_from("/nonexistent/fork.jsonl", "fork-1").should be_nil
+    end
+  end
+
+  describe ".continued_in" do
+    it "names the session a trailing continued-in record hands off to" do
+      with_jsonl([
+        %|{"type":"assistant","sessionId":"parent-1"}|,
+        %|{"type":"system","subtype":"turn_duration"}|,
+        %|{"type":"continued-in","sessionId":"parent-1","continuedInSessionId":"fork-1"}|,
+      ]) do |t|
+        GalaxyLedger::Hooks::TranscriptScanner
+          .continued_in(t).should eq("fork-1")
+      end
+    end
+
+    it "ignores a hand-off the conversation came back from" do
+      with_jsonl([
+        %|{"type":"continued-in","sessionId":"parent-1","continuedInSessionId":"fork-1"}|,
+        %|{"type":"user","sessionId":"parent-1"}|,
+      ]) do |t|
+        GalaxyLedger::Hooks::TranscriptScanner
+          .continued_in(t).should be_nil
+      end
+    end
+
+    it "is nil when nothing was handed off" do
+      with_jsonl([%|{"type":"assistant","sessionId":"parent-1"}|]) do |t|
+        GalaxyLedger::Hooks::TranscriptScanner
+          .continued_in(t).should be_nil
+      end
+    end
+
+    it "reads only the tail of a long transcript" do
+      filler = %|{"type":"assistant","sessionId":"parent-1","pad":"#{"x" * 1000}"}|
+      lines = Array.new(200, filler)
+      lines << %|{"type":"continued-in","sessionId":"parent-1","continuedInSessionId":"fork-1"}|
+      with_jsonl(lines) do |t|
+        GalaxyLedger::Hooks::TranscriptScanner
+          .continued_in(t).should eq("fork-1")
+      end
+    end
+  end
+end
+
+private def with_jsonl(lines : Array(String), &)
+  file = File.tempfile("transcript", ".jsonl")
+  lines.each { |line| file.puts(line) }
+  file.close
+  begin
+    yield file.path
+  ensure
+    File.delete(file.path)
+  end
 end

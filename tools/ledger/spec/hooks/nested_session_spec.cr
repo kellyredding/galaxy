@@ -34,6 +34,20 @@ private SESSION_ANCESTRY = {
    98_i64 => {1_i64, "/Applications/Galaxy.app/Contents/MacOS/Galaxy"},
 }
 
+# A session moved to a background worker, under a daemon that hangs off the
+# session that started it.
+private DAEMON_ANCESTRY = SESSION_ANCESTRY.merge({
+  700_i64 => {600_i64, "claude bg-spare"},
+  600_i64 => {500_i64, "claude bg-pty-host"},
+  500_i64 => {100_i64, "/Users/someone/.local/bin/claude"},
+})
+
+# A claude run by a hook inside that worker.
+private WORKER_CHILD_ANCESTRY = DAEMON_ANCESTRY.merge({
+  900_i64 => {800_i64, "claude"},
+  800_i64 => {700_i64, "/bin/bash"},
+})
+
 describe GalaxyLedger::Hooks::NestedSession do
   describe ".nested?" do
     it "answers false for a claude the ledger already tracks, without walking" do
@@ -85,6 +99,35 @@ describe GalaxyLedger::Hooks::NestedSession do
       end
     end
 
+    it "answers false for a background worker under a tracked session's daemon" do
+      with_tree(DAEMON_ANCESTRY, Set{100_i64}) do
+        GalaxyLedger::Hooks::NestedSession.nested?(700_i64).should be_false
+      end
+    end
+
+    it "recognises the worker host by a path ending in its name" do
+      tree = DAEMON_ANCESTRY.merge({
+        600_i64 => {500_i64, "/opt/claude/claude bg-pty-host"},
+      })
+      with_tree(tree, Set{100_i64}) do
+        GalaxyLedger::Hooks::NestedSession.nested?(700_i64).should be_false
+      end
+    end
+
+    it "answers true for a claude run inside a tracked background worker" do
+      with_tree(WORKER_CHILD_ANCESTRY, Set{100_i64, 700_i64}) do
+        GalaxyLedger::Hooks::NestedSession.nested?(900_i64).should be_true
+      end
+    end
+
+    it "answers false for a claude inside an untracked worker" do
+      # The host stops the walk before the session that started the daemon,
+      # which the claude has nothing to do with.
+      with_tree(WORKER_CHILD_ANCESTRY, Set{100_i64}) do
+        GalaxyLedger::Hooks::NestedSession.nested?(900_i64).should be_false
+      end
+    end
+
     it "answers false when a process vanishes mid-walk" do
       tree = {300_i64 => {200_i64, "claude"}}
       with_tree(tree, Set{100_i64}) do
@@ -113,6 +156,9 @@ describe GalaxyLedger::Hooks::NestedSession do
       nested.claude?("claude-persona").should be_false
       nested.claude?("/usr/local/bin/claude-persona").should be_false
       nested.claude?("node").should be_false
+      nested.claude?("claude bg-spare").should be_true
+      nested.claude?("claude bg-pty-host").should be_true
+      nested.claude?("claude-bg").should be_false
     end
   end
 

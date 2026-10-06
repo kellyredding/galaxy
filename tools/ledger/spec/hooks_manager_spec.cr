@@ -24,6 +24,19 @@ describe GalaxyLedger::HooksManager do
       hooks.has_key?("PreCompact").should be_false
     end
 
+    it "routes each SessionStart source to its own hook, fork included" do
+      File.write(GalaxyLedger::SETTINGS_FILE, "{}")
+      GalaxyLedger::HooksManager.install.should be_true
+
+      settings = JSON.parse(File.read(GalaxyLedger::SETTINGS_FILE))
+      routes = settings["hooks"]["SessionStart"].as_a.to_h do |group|
+        {group["matcher"].as_s, group["hooks"].as_a.first["command"].as_s}
+      end
+
+      routes.keys.sort.should eq(%w[clear compact fork resume startup])
+      routes["fork"].should end_with("galaxy-ledger on-fork")
+    end
+
     it "preserves existing non-ledger hooks" do
       existing_settings = {
         "hooks" => {

@@ -11,6 +11,11 @@ module GalaxyLedger
     module NestedSession
       MAX_DEPTH = 32
 
+      # The process Claude Code's daemon hosts each background session under
+      # (2.1.292). The daemon is a child of whichever session first started
+      # it, so a session it hosts is not nested in that one.
+      WORKER_HOST = "claude bg-pty-host"
+
       record ProcessInfo, ppid : Int64, comm : String
 
       # Swappable so specs can describe a process tree without building one.
@@ -32,6 +37,7 @@ module GalaxyLedger
           info = lookup.call(pid)
           return false unless info
           return true if claude?(info.comm) && tracked.call(pid)
+          return false if File.basename(info.comm) == WORKER_HOST
         end
 
         false
@@ -39,9 +45,11 @@ module GalaxyLedger
 
       # Exact, not a substring: every Claude Persona session runs under a
       # `claude-persona` parent, which a substring match would count as an
-      # outer session and stop tracking.
+      # outer session and stop tracking. Processes under the daemon are
+      # titled `claude bg-…`.
       def self.claude?(comm : String) : Bool
-        File.basename(comm) == "claude"
+        name = File.basename(comm)
+        name == "claude" || name.starts_with?("claude bg-")
       end
 
       # `comm` is whatever path the process was executed by, so it can be a

@@ -82,6 +82,27 @@ describe "OnSessionEnd session resolution" do
     result[:status].should eq(0)
   end
 
+  # A conversation forked to a background worker leaves its first process
+  # behind under the old id; that process exiting does not end the session.
+  it "leaves the session alone when the ending id is not its current one" do
+    left_behind = "end-left-behind-#{Random.rand(10000)}"
+    ledger_id = GalaxyLedger::Database.create_session(left_behind)
+    GalaxyLedger::Database.update_session(
+      ledger_id, session_identifier: "end-forked-#{Random.rand(10000)}")
+    GalaxyLedger::Hooks::TurnState.write(left_behind, "uuid-left", "message")
+
+    result = run_binary(["on-session-end"], stdin: {
+      "session_id" => left_behind,
+      "cwd"        => "/tmp",
+    }.to_json)
+    result[:status].should eq(0)
+
+    # Returned before closing anything out.
+    GalaxyLedger::Hooks::TurnState.exists?(left_behind).should be_true
+  ensure
+    GalaxyLedger::Hooks::TurnState.delete(left_behind) if left_behind
+  end
+
   it "exits cleanly when session cannot be resolved" do
     hook_input = {
       "session_id" => "nonexistent-#{Random.rand(10000)}",

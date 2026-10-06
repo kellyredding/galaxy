@@ -175,6 +175,16 @@ module GalaxyLedger
             },
           ],
         },
+        {
+          "matcher" => "fork",
+          "hooks"   => [
+            {
+              "type"    => "command",
+              "command" => "~/.claude/galaxy/bin/galaxy-ledger on-fork",
+              "timeout" => 30,
+            },
+          ],
+        },
       ],
     }
 

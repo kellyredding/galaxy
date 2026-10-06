@@ -24,6 +24,7 @@ test-eval:
 sandbox:
 	./script/sandbox/accrual-scenarios.sh
 	./script/sandbox/resume-scenarios.sh
+	./script/sandbox/fork-scenarios.sh
 
 # Turn tracking against a live Claude Code session, so on neither `check` nor
 # `check-all`. LEDGER=build/galaxy-ledger tests a dev build; CWD=DIR starts the

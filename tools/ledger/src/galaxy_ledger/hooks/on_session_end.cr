@@ -42,6 +42,14 @@ module GalaxyLedger
         )
         return unless ledger_session_id
 
+        # A session that has moved to a newer id, as a forked one does, has
+        # left this process behind; its exit is not the session's.
+        if sid = @stdin_session_identifier
+          current = Database.get_session_by_id(ledger_session_id)
+            .try(&.current_session_identifier)
+          return if current && !sid.empty? && current != sid
+        end
+
         # Close any orphaned turn before recording session end
         if sid = @stdin_session_identifier
           if TurnState.exists?(sid)

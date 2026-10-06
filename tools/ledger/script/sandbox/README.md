@@ -13,13 +13,17 @@ live database despite a green spec suite and were only caught here.
 ## Running
 
 ```bash
-make sandbox                        # both harnesses
+make sandbox                        # every harness
 ./script/sandbox/accrual-scenarios.sh
 ./script/sandbox/resume-scenarios.sh
+./script/sandbox/fork-scenarios.sh
+./script/sandbox/fork-scenarios.sh ~/.claude/galaxy/bin/galaxy-ledger
 ```
 
 Each script builds nothing — it uses `build/galaxy-ledger`, so run
 `make dev` (or `make build`) first if the source has changed.
+`fork-scenarios.sh` takes another binary as its argument; pointing it at
+the installed one shows what a build without fork support gets wrong.
 
 ## Isolation
 
@@ -47,6 +51,11 @@ short prefix, so a failure names the case:
   attributed to `legacy` by the process-partition migration
 - `resume-scenarios.sh` — resuming a session after an idle gap, before
   and after local midnight, and resume followed by immediate compaction
+- `fork-scenarios.sh` — a conversation moved to a background worker under
+  Claude Code's daemon, through a real process tree: the hand-off, a fork
+  that leaves its parent running, a `claude -p` inside the worker, and the
+  left-behind client exiting. It asserts on hooks and turn events, not
+  money, and also isolates the turn-state directory and the app socket
 
 ## Interpreting a failure
 

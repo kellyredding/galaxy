@@ -182,6 +182,73 @@ module GalaxyLedger
       rescue
         QueueState::Unknown
       end
+
+      # The launch identifier of the process a fork was taken from.
+      #
+      # A fork's transcript opens with records copied from its parent, which
+      # keep the parent's `session_id` — the identifier its process was
+      # launched with, stable across /clear. The fork's own records carry its
+      # new id, so the first that differs names the parent.
+      def self.forked_from(
+        transcript_path : String,
+        own_session_id : String,
+      ) : String?
+        return nil unless File.exists?(transcript_path)
+
+        File.each_line(transcript_path) do |line|
+          next unless line.includes?(%("session_id"))
+
+          sid = begin
+            JSON.parse(line)["session_id"]?.try(&.as_s?)
+          rescue
+            nil
+          end
+          return sid if sid && !sid.empty? && sid != own_session_id
+        end
+
+        nil
+      rescue
+        nil
+      end
+
+      TAIL_BYTES = 65_536
+
+      # The session a transcript's conversation was handed to, if any.
+      #
+      # Mirrors Claude Code's own reader: walking back from the end, a
+      # `continued-in` record counts only if no user or assistant record
+      # follows it — one after it means the conversation came back.
+      def self.continued_in(transcript_path : String) : String?
+        return nil unless File.exists?(transcript_path)
+
+        tail = File.open(transcript_path) do |file|
+          file.seek({file.size - TAIL_BYTES, 0}.max)
+          file.gets_to_end
+        end
+
+        tail.lines.reverse_each do |line|
+          next unless line.includes?(%("type":"continued-in")) ||
+                      line.includes?(%("type":"user")) ||
+                      line.includes?(%("type":"assistant"))
+
+          json = begin
+            JSON.parse(line)
+          rescue
+            next
+          end
+
+          case json["type"]?.try(&.as_s?)
+          when "continued-in"
+            return json["continuedInSessionId"]?.try(&.as_s?)
+          when "user", "assistant"
+            return nil
+          end
+        end
+
+        nil
+      rescue
+        nil
+      end
     end
   end
 end

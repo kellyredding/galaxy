@@ -89,6 +89,8 @@ module GalaxyLedger
         handle_on_compact_command(rest)
       when "on-resume"
         handle_on_resume_command(rest)
+      when "on-fork"
+        handle_on_fork_command(rest)
       when "on-post-tool-use"
         handle_on_post_tool_use_command(rest)
       when "on-stop-failure"
@@ -177,6 +179,8 @@ module GalaxyLedger
       Hook Commands (called by Claude Code hooks):
         on-startup          Fresh session startup (ledger awareness)
         on-resume           Restore context for resumed session
+        on-fork             Follow a conversation moved to a background
+                            worker
         on-clear            Restore context after /clear
         on-compact          Restore context after auto/manual compact
         on-stop             Capture last exchange, check thresholds
@@ -1501,6 +1505,45 @@ module GalaxyLedger
       end
       handler = Hooks::OnResume.new
       handler.run
+    end
+
+    private def self.handle_on_fork_command(args : Array(String))
+      if args.first? == "-h" || args.first? == "--help"
+        show_on_fork_help
+        return
+      end
+      Hooks::OnFork.new.run
+    end
+
+    private def self.show_on_fork_help
+      puts <<-HELP
+      galaxy-ledger on-fork - Handle SessionStart(fork) hook
+
+      USAGE:
+        galaxy-ledger on-fork
+
+      DESCRIPTION:
+        Called by Claude Code's SessionStart hook when a conversation is
+        forked into a new session, as it is when moved to a background
+        worker. This hook:
+        - Resolves the parent session via env var, else the fork
+          transcript's copied records
+        - Adopts the fork's session id and pid as current only when the
+          parent transcript records that it handed the conversation over
+        - Leaves the parent session alone for a fork that did not replace it
+
+      INPUT (stdin):
+        JSON object with hook data:
+        {
+          "session_id": "abc123",
+          "transcript_path": "/path/to/transcript.jsonl",
+          "hook_event_name": "SessionStart",
+          "source": "fork"
+        }
+
+      OUTPUT (stdout):
+        JSON object with a systemMessage and empty additionalContext.
+      HELP
     end
 
     private def self.show_on_resume_help
