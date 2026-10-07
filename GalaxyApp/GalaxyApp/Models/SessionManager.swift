@@ -259,6 +259,12 @@ class SessionManager: ObservableObject {
     // Path to claude-persona binary - detected at init, nil if not installed
     let claudePersonaPath: String?
 
+    private lazy var backgroundSessions = BackgroundSessionService(claudePath: claudePath)
+
+    /// Sessions between a Resume and their process starting, while a
+    /// background worker holding the conversation is looked for and stopped.
+    private var resumingSessionIds: Set<UUID> = []
+
     var activeSession: Session? {
         sessions.first { $0.id == activeSessionId }
     }
@@ -808,6 +814,20 @@ class SessionManager: ObservableObject {
             return
         }
 
+        guard !resumingSessionIds.contains(sessionId) else { return }
+        resumingSessionIds.insert(sessionId)
+
+        Task { @MainActor in
+            defer { self.resumingSessionIds.remove(sessionId) }
+            guard await self.releaseBackgroundWorker(for: session) else { return }
+            guard self.sessions.contains(where: { $0.id == sessionId }),
+                  session.hasExited
+            else { return }
+            self.performResume(session)
+        }
+    }
+
+    private func performResume(_ session: Session) {
         // Check if Claude has this session saved on disk
         let canResume = claudeSessionExists(sessionId: session.claudeSessionId, workingDirectory: session.workingDirectory)
 
@@ -923,6 +943,63 @@ class SessionManager: ObservableObject {
 
         // Update menu state (session is now running, not resumable)
         updateActiveSessionCanResume()
+    }
+
+    /// Stop a background worker still holding this session's conversation,
+    /// which Claude Code will not resume while it runs. Returns false when
+    /// the resume should not go ahead.
+    @MainActor
+    private func releaseBackgroundWorker(for session: Session) async -> Bool {
+        guard let worker = await backgroundSessions.running(
+            claudeSessionId: session.claudeSessionId
+        ) else { return true }
+
+        let workerId = worker.id ?? worker.sessionId
+        if worker.isBusy && !confirmStopBusyWorker(session, workerId: workerId) {
+            return false
+        }
+
+        do {
+            try await backgroundSessions.stop(worker)
+            GalaxyLog.events(
+                "Stopped background worker \(workerId) (pid \(worker.pid ?? 0)) "
+                + "to resume \(session.sessionRef)"
+            )
+            return true
+        } catch {
+            GalaxyLog.events(
+                "Could not stop background worker \(workerId) for "
+                + "\(session.sessionRef): \(error.localizedDescription)"
+            )
+            let alert = NSAlert()
+            alert.messageText = "Cannot Resume Session"
+            alert.informativeText = """
+                This session's conversation is still running in a Claude \
+                Code background session, which could not be stopped:
+
+                \(error.localizedDescription)
+
+                Run `claude attach \(workerId)` in a terminal to open it.
+                """
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+            return false
+        }
+    }
+
+    private func confirmStopBusyWorker(_ session: Session, workerId: String) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Session Is Working in the Background"
+        alert.informativeText = """
+            \(session.displayName) is mid-turn in a Claude Code background \
+            session (\(workerId)). Resuming it here stops that session and \
+            interrupts its turn.
+            """
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Stop and Resume")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     /// Clear the active session and auto-handoff when Claude settles.
