@@ -494,7 +494,7 @@ struct AgentsView: View {
 
             statusPill(agent)
 
-            if agent.isRunning {
+            if agent.isLive {
                 abandonButton
             }
         }
@@ -519,7 +519,7 @@ struct AgentsView: View {
     /// Cleanup affordance for stuck-running rows (e.g. the
     /// parent session crashed and never fired its
     /// end-of-session abandon sweep). The detail header
-    /// only renders this when `agent.isRunning`, so it
+    /// only renders this when `agent.isLive`, so it
     /// disappears once the status flips.
     ///
     /// Styling deliberately mirrors `statusPill` so the
@@ -860,7 +860,7 @@ struct AgentsView: View {
                 // which is what makes the count immediate
                 // without any polling.
                 session.setRunningAgentCount(
-                    result.filter(\.isRunning).count
+                    result.filter(\.isLive).count
                 )
 
                 model.adopt(

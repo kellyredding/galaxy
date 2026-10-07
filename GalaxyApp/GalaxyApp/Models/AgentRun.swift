@@ -17,9 +17,14 @@ struct AgentRun: Codable, Identifiable {
 
     var isRunning: Bool { status == "running" }
 
+    /// Running, or between turns waiting on background work it launched.
+    /// Both are alive, so both count and both can be marked abandoned.
+    var isLive: Bool { isRunning || status == "waiting" }
+
     var statusColor: Color {
         switch status {
         case "running": return .green
+        case "waiting": return .yellow
         case "stopped": return .secondary
         case "failed": return .red
         // Orange with abandoned, because both mean the agent
@@ -33,6 +38,7 @@ struct AgentRun: Codable, Identifiable {
     var statusLabel: String {
         switch status {
         case "running": return "Running"
+        case "waiting": return "Waiting"
         case "stopped": return "Stopped"
         case "failed": return "Failed"
         case "abandoned": return "Abandoned"
