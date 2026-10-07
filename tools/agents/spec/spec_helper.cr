@@ -289,6 +289,32 @@ def write_parent_transcript(lines : Array(String))
   File.write("#{session}.jsonl", lines.join("\n") + "\n")
 end
 
+# The tool result a background launch leaves: Bash run in the background,
+# an Agent run asynchronously, or a task id.
+def launch_record(id : String, kind : Symbol = :bash) : String
+  result = case kind
+           when :agent then {"isAsync" => JSON::Any.new(true), "agentId" => JSON::Any.new(id)}
+           when :task  then {"taskId" => JSON::Any.new(id)}
+           else             {"backgroundTaskId" => JSON::Any.new(id)}
+           end
+  {
+    "type"          => JSON::Any.new("user"),
+    "toolUseResult" => JSON::Any.new(result),
+  }.to_json
+end
+
+# The record Claude Code writes when background work reports back.
+def notification_record(id : String, status : String = "completed") : String
+  {
+    "type"    => "user",
+    "message" => {
+      "content" => "[SYSTEM NOTIFICATION - NOT USER INPUT]\n\n" \
+                   "<task-notification>\n<task-id>#{id}</task-id>\n" \
+                   "<status>#{status}</status>\n</task-notification>",
+    },
+  }.to_json
+end
+
 # The line a cancellation leaves in the parent transcript: a tool_result
 # carrying the TaskStop payload, which names the agent it stopped.
 def cancel_record(

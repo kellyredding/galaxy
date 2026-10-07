@@ -186,6 +186,53 @@ module GalaxyAgents
       "stopped", "failed", "abandoned",
     ]
 
+    # An agent still alive: working, or between turns waiting on background
+    # work it launched. Both count, close and sweep alike.
+    LIVE_STATUSES = ["running", "waiting"]
+    LIVE_SQL      = "('running', 'waiting')"
+
+    # Record a turn that ended with the agent's background work outstanding.
+    #
+    # The timestamps are of this pause, so a row the sweep later finishes —
+    # its work done, the agent never woken — keeps when it actually stopped
+    # working rather than when the sweep noticed.
+    def self.wait_agent(
+      ledger_session_id : Int64,
+      agent_id : String,
+      prompt : String? = nil,
+      last_message : String? = nil,
+      transcript_path : String? = nil,
+      duration_ms : Int64? = nil,
+    ) : Bool
+      return false if ledger_session_id <= 0
+
+      open do |db|
+        db.exec(
+          <<-SQL,
+            UPDATE agents
+            SET status = 'waiting',
+                completed_at = datetime('now'),
+                duration_ms = ?,
+                prompt = COALESCE(?, prompt),
+                last_message = COALESCE(?, last_message),
+                transcript_path = COALESCE(?, transcript_path),
+                updated_at = datetime('now')
+            WHERE ledger_session_id = ?
+              AND agent_id = ?
+              AND status IN #{LIVE_SQL}
+          SQL
+          duration_ms,
+          prompt,
+          last_message,
+          transcript_path,
+          ledger_session_id,
+          agent_id,
+        ).rows_affected > 0
+      end
+    rescue
+      false
+    end
+
     # A dropped completion write strands its row permanently and
     # reports nothing, so a lock held by a concurrent writer is
     # worth waiting out rather than swallowing. Retries sit on
@@ -252,7 +299,7 @@ module GalaxyAgents
       completed_at : String? = nil,
     ) : Bool
       open do |db|
-        # Primary path: transition running -> terminal
+        # Primary path: transition live -> terminal
         result = db.exec(
           <<-SQL,
               UPDATE agents
@@ -266,9 +313,10 @@ module GalaxyAgents
                   updated_at = datetime('now')
               WHERE ledger_session_id = ?
                 AND agent_id = ?
-                AND status = 'running'
+                AND status IN #{LIVE_SQL}
             SQL
           status,
+          completed_at,
           duration_ms,
           prompt,
           last_message,
@@ -297,7 +345,7 @@ module GalaxyAgents
         orphan_matches = db.scalar(
           <<-SQL,
               SELECT COUNT(*) FROM agents
-              WHERE agent_id = ? AND status = 'running'
+              WHERE agent_id = ? AND status IN #{LIVE_SQL}
             SQL
           agent_id,
         ).as(Int64)
@@ -315,7 +363,7 @@ module GalaxyAgents
                     transcript_path = ?,
                     updated_at = datetime('now')
                 WHERE agent_id = ?
-                  AND status = 'running'
+                  AND status IN #{LIVE_SQL}
               SQL
             status,
             completed_at,
@@ -401,7 +449,7 @@ module GalaxyAgents
                      updated_at
               FROM agents
               WHERE ledger_session_id = ?
-                AND status = 'running'
+                AND status IN #{LIVE_SQL}
             SQL
             ledger_session_id,
           ) do |rs|
@@ -418,7 +466,7 @@ module GalaxyAgents
                   completed_at = datetime('now'),
                   updated_at = datetime('now')
               WHERE ledger_session_id = ?
-                AND status = 'running'
+                AND status IN #{LIVE_SQL}
             SQL
             ledger_session_id,
           )
@@ -458,7 +506,7 @@ module GalaxyAgents
               FROM agents
               WHERE ledger_session_id = ?
                 AND agent_id = ?
-                AND status = 'running'
+                AND status IN #{LIVE_SQL}
             SQL
             ledger_session_id,
             agent_id,
@@ -488,7 +536,7 @@ module GalaxyAgents
                   updated_at = datetime('now')
               WHERE ledger_session_id = ?
                 AND agent_id = ?
-                AND status = 'running'
+                AND status IN #{LIVE_SQL}
             SQL
             duration_ms,
             ledger_session_id,
@@ -511,11 +559,21 @@ module GalaxyAgents
       # Carried so a declared death can be timed from when the
       # agent began rather than from when a sweep noticed.
       getter started_at : String
+      getter status : String = "running"
+      getter transcript_path : String? = nil
+      getter completed_at : String? = nil
+      getter duration_ms : Int64? = nil
 
       def initialize(
         @agent_id, @agent_type,
         @ledger_session_id, @owner_pid, @started_at,
+        @status = "running", @transcript_path = nil,
+        @completed_at = nil, @duration_ms = nil,
       )
+      end
+
+      def waiting? : Bool
+        status == "waiting"
       end
     end
 
@@ -579,9 +637,10 @@ module GalaxyAgents
                      (SELECT s.current_claude_pid
                         FROM ledgerdb.ledger_sessions s
                        WHERE s.id = a.ledger_session_id),
-                     a.started_at
+                     a.started_at, a.status, a.transcript_path,
+                     a.completed_at, a.duration_ms
               FROM agents a
-              WHERE a.status = 'running'
+              WHERE a.status IN #{LIVE_SQL}
               ORDER BY a.id
             SQL
               rs.each do
@@ -591,6 +650,10 @@ module GalaxyAgents
                   rs.read(Int64),
                   rs.read(Int64?),
                   rs.read(String),
+                  rs.read(String),
+                  rs.read(String?),
+                  rs.read(String?),
+                  rs.read(Int64?),
                 )
               end
             end
@@ -619,7 +682,7 @@ module GalaxyAgents
           db.query(<<-SQL) do |rs|
             SELECT ledger_session_id, COUNT(*)
             FROM agents
-            WHERE status = 'running'
+            WHERE status IN #{LIVE_SQL}
             GROUP BY ledger_session_id
           SQL
             rs.each do
@@ -723,7 +786,7 @@ module GalaxyAgents
       end
     end
 
-    # Count of running agents for a session.
+    # Count of live agents for a session — running or waiting.
     def self.running_count(
       ledger_session_id : Int64,
     ) : Int32
@@ -734,7 +797,7 @@ module GalaxyAgents
           db.query_one?(
             "SELECT COUNT(*) FROM agents " \
             "WHERE ledger_session_id = ? " \
-            "AND status = 'running'",
+            "AND status IN #{LIVE_SQL}",
             ledger_session_id,
             as: Int64,
           ).try(&.to_i) || 0
@@ -750,6 +813,7 @@ module GalaxyAgents
     ) : Hash(String, Int32)
       counts = {
         "running"   => 0,
+        "waiting"   => 0,
         "stopped"   => 0,
         "failed"    => 0,
         "abandoned" => 0,

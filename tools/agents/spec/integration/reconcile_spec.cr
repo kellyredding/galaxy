@@ -1,5 +1,41 @@
 require "../spec_helper"
 
+private def agent_transcript(agent_id : String) : String
+  (SPEC_CLAUDE_CONFIG_DIR / "projects" / "-Users-someone-projects" /
+    "11111111-2222-3333-4444-555555555555" / "subagents" /
+    "agent-#{agent_id}.jsonl").to_s
+end
+
+# An agent whose turn ended with background work "ci" outstanding.
+private def put_waiting(agent_id : String, lsid : Int64)
+  run_binary([
+    "start", "--ledger-session-id", lsid.to_s,
+    "--agent-id", agent_id, "--agent-type", "fork",
+  ])
+  write_transcript(agent_id, [launch_record("ci")])
+  run_binary([
+    "stop", "--ledger-session-id", lsid.to_s, "--agent-id", agent_id,
+    "--agent-transcript-path", agent_transcript(agent_id),
+    "--last-message-stdin",
+  ], stdin: "CI is still running")
+end
+
+private def reconcile_live(grace : String) : JSON::Any
+  JSON.parse(run_binary(
+    ["reconcile"],
+    extra_env: {
+      "GALAXY_AGENTS_CLAUDE_COMMAND"        => SPEC_LIVE_PROCESS_COMMAND,
+      "GALAXY_AGENTS_WAITING_GRACE_SECONDS" => grace,
+    },
+  )[:output])
+end
+
+private def show_agent(agent_id : String, lsid : String) : JSON::Any
+  JSON.parse(run_binary([
+    "show", "--ledger-session-id", lsid, "--agent-id", agent_id, "--json",
+  ])[:output])
+end
+
 describe "CLI reconcile command", tags: "integration" do
   before_each do
     ledger = SPEC_LEDGER_DATABASE_PATH.to_s
@@ -372,6 +408,87 @@ describe "CLI reconcile command", tags: "integration" do
       parsed["failed"].as_a.should be_empty
       parsed["swept"].as_a.should be_empty
       parsed["running"]["9"].as_i.should eq(1)
+    end
+  end
+
+  describe "an agent waiting on its background work" do
+    before_each do
+      FileUtils.rm_rf((SPEC_CLAUDE_CONFIG_DIR / "projects").to_s)
+    end
+
+    it "is finished once the work reported back and the agent stayed quiet" do
+      with_live_process do |owner|
+        put_waiting("wf1", 30_i64)
+        build_ledger_db([{30_i64, owner}])
+        write_parent_transcript([notification_record("ci")])
+        flush_wal
+        paused_at = show_agent("wf1", "30")["completed_at"].as_s
+        sleep 1.1.seconds
+
+        parsed = reconcile_live(grace: "0")
+        parsed["finished"].as_a.map(&.["agent_id"].as_s).should eq(["wf1"])
+        parsed["running"].as_h.has_key?("30").should be_false
+
+        detail = show_agent("wf1", "30")
+        detail["status"].as_s.should eq("stopped")
+        # Timed from the pause, not from the sweep a second later.
+        detail["completed_at"].as_s.should eq(paused_at)
+      end
+    end
+
+    it "keeps waiting while the work is outstanding" do
+      with_live_process do |owner|
+        put_waiting("wf2", 31_i64)
+        build_ledger_db([{31_i64, owner}])
+        flush_wal
+
+        parsed = reconcile_live(grace: "0")
+        parsed["finished"].as_a.should be_empty
+        parsed["running"]["31"].as_i.should eq(1)
+        show_agent("wf2", "31")["status"].as_s.should eq("waiting")
+      end
+    end
+
+    it "keeps waiting while a just-woken agent may still be starting" do
+      with_live_process do |owner|
+        put_waiting("wf3", 32_i64)
+        build_ledger_db([{32_i64, owner}])
+        File.write(agent_transcript("wf3"), notification_record("ci") + "\n", mode: "a")
+        flush_wal
+
+        parsed = reconcile_live(grace: "30")
+        parsed["finished"].as_a.should be_empty
+        show_agent("wf3", "32")["status"].as_s.should eq("waiting")
+      end
+    end
+
+    it "is finished once it has waited longer than anything should" do
+      with_live_process do |owner|
+        put_waiting("wf5", 34_i64)
+        build_ledger_db([{34_i64, owner}])
+        flush_wal
+        sleep 1.1.seconds
+
+        parsed = JSON.parse(run_binary(
+          ["reconcile"],
+          extra_env: {
+            "GALAXY_AGENTS_CLAUDE_COMMAND"   => SPEC_LIVE_PROCESS_COMMAND,
+            "GALAXY_AGENTS_MAX_WAIT_SECONDS" => "1",
+          },
+        )[:output])
+        parsed["finished"].as_a.map(&.["agent_id"].as_s).should eq(["wf5"])
+        show_agent("wf5", "34")["status"].as_s.should eq("stopped")
+      end
+    end
+
+    it "is swept when its owner is gone" do
+      put_waiting("wf4", 33_i64)
+      build_ledger_db([{33_i64, dead_pid}])
+      flush_wal
+
+      parsed = JSON.parse(run_binary(["reconcile"])[:output])
+      parsed["swept"].as_a.map(&.["agent_id"].as_s).should eq(["wf4"])
+      show_agent("wf4", "33")["status"].as_s.should eq("abandoned")
     end
   end
 

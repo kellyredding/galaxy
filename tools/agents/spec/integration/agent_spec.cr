@@ -98,6 +98,20 @@ private def count_calls(
   end
 end
 
+# Where `write_transcript` puts an agent's transcript.
+private def waiting_agent_path(agent_id : String) : String
+  (SPEC_CLAUDE_CONFIG_DIR / "projects" / "-Users-someone-projects" /
+    "11111111-2222-3333-4444-555555555555" / "subagents" /
+    "agent-#{agent_id}.jsonl").to_s
+end
+
+private def agent_status(agent_id : String, lsid : String = "1") : String
+  detail = run_binary([
+    "show", "--ledger-session-id", lsid, "--agent-id", agent_id, "--json",
+  ])
+  JSON.parse(detail[:output])["status"].as_s
+end
+
 # Restore the no-op timeline stub installed by
 # spec_helper.cr so later tests aren't affected.
 private def restore_timeline_noop
@@ -960,6 +974,100 @@ describe "CLI agent commands", tags: "integration" do
       File.delete(log_path) if log_path &&
                                File.exists?(log_path)
       restore_timeline_noop
+    end
+
+    # A turn that ends to wait on the agent's own background work, then the
+    # wake its notification brings — the shape measured on a real helper.
+    describe "with background work outstanding" do
+      before_each do
+        FileUtils.rm_rf((SPEC_CLAUDE_CONFIG_DIR / "projects").to_s)
+      end
+
+      it "waits, resumes, and finishes as one life" do
+        log_path = build_timeline_logging_stub
+        start_args = [
+          "start", "--ledger-session-id", "1",
+          "--agent-id", "w1", "--agent-type", "fork",
+        ]
+        stop_args = [
+          "stop", "--ledger-session-id", "1", "--agent-id", "w1",
+          "--agent-transcript-path", waiting_agent_path("w1"),
+          "--last-message-stdin",
+        ]
+
+        run_binary(start_args)
+        write_transcript("w1", [launch_record("ci")])
+        paused = run_binary(stop_args, stdin: "CI is still running")
+        paused[:output].should contain("waiting on 1 background task")
+        agent_status("w1").should eq("waiting")
+        run_binary(["running", "--ledger-session-id", "1"])[:output]
+          .should contain(%("count":1))
+
+        File.write(waiting_agent_path("w1"), notification_record("ci") + "\n", mode: "a")
+        run_binary(start_args)
+        agent_status("w1").should eq("running")
+
+        done = run_binary(stop_args, stdin: "All 19 PRs green")
+        done[:output].should contain("Agent w1 stopped")
+        agent_status("w1").should eq("stopped")
+
+        calls = wait_for_timeline_calls(log_path, 2)
+        count_calls(calls, "w1", "agent:started").should eq(1)
+        count_calls(calls, "w1", "agent:stopped").should eq(1)
+      ensure
+        File.delete(log_path) if log_path && File.exists?(log_path)
+        restore_timeline_noop
+      end
+
+      it "stops normally when the parent already heard back" do
+        run_binary([
+          "start", "--ledger-session-id", "1",
+          "--agent-id", "w2", "--agent-type", "Explore",
+        ])
+        write_transcript("w2", [launch_record("ci")])
+        write_parent_transcript([notification_record("ci")])
+
+        result = run_binary([
+          "stop", "--ledger-session-id", "1", "--agent-id", "w2",
+          "--agent-transcript-path", waiting_agent_path("w2"),
+          "--last-message-stdin",
+        ], stdin: "done")
+        result[:output].should contain("Agent w2 stopped")
+      end
+
+      it "is abandoned with its session" do
+        run_binary([
+          "start", "--ledger-session-id", "1",
+          "--agent-id", "w3", "--agent-type", "Explore",
+        ])
+        write_transcript("w3", [launch_record("ci")])
+        run_binary([
+          "stop", "--ledger-session-id", "1", "--agent-id", "w3",
+          "--agent-transcript-path", waiting_agent_path("w3"),
+          "--last-message-stdin",
+        ], stdin: "waiting")
+
+        run_binary(["abandon", "--ledger-session-id", "1"])[:output]
+          .should contain("Abandoned 1 agents")
+        agent_status("w3").should eq("abandoned")
+      end
+    end
+
+    it "closes the row in its own session when the id also runs elsewhere" do
+      ["1", "2"].each do |lsid|
+        run_binary([
+          "start", "--ledger-session-id", lsid,
+          "--agent-id", "dup", "--agent-type", "Explore",
+        ])
+      end
+
+      run_binary([
+        "stop", "--ledger-session-id", "2", "--agent-id", "dup",
+        "--last-message-stdin",
+      ], stdin: "done")
+
+      agent_status("dup", "2").should eq("stopped")
+      agent_status("dup", "1").should eq("running")
     end
   end
 

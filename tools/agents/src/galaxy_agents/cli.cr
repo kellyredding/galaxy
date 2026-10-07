@@ -194,8 +194,11 @@ module GalaxyAgents
       existing = Database.get_agent(
         ledger_session_id, agent_id,
       )
-      already_running =
-        existing.try(&.status) == "running"
+      # A waiting agent woken by its background work is the same life
+      # resuming, so it publishes no second start either.
+      already_running = Database::LIVE_STATUSES.includes?(
+        existing.try(&.status),
+      )
 
       Database.start_agent(
         ledger_session_id,
@@ -346,6 +349,33 @@ module GalaxyAgents
 
       # Determine status: stopped or failed
       status = determine_stop_status(last_message)
+
+      # A turn that ended with the agent's own background work outstanding
+      # is a pause: Claude Code wakes the agent when the work reports back.
+      if status == "stopped" && !already_terminal
+        if atp = agent_transcript_path
+          pending = BackgroundWork.outstanding(
+            atp,
+            BackgroundWork.session_transcripts(atp, ledger_session_id),
+          )
+          unless pending.empty?
+            if Database.wait_agent(
+                 ledger_session_id, agent_id,
+                 prompt: prompt,
+                 last_message: last_message,
+                 transcript_path: atp,
+                 duration_ms: duration_ms,
+               )
+              puts(
+                "Agent #{agent_id} waiting on " \
+                "#{pending.size} background task" \
+                "#{pending.size == 1 ? "" : "s"}",
+              )
+              return
+            end
+          end
+        end
+      end
 
       result = Database.stop_agent(
         ledger_session_id,
@@ -568,6 +598,7 @@ module GalaxyAgents
       died = [] of {Database::RunningOwner, AgentOutcome::ErrorDeath}
       cancelled = [] of {Database::RunningOwner, AgentOutcome::Cancellation}
       orphaned = [] of Database::RunningOwner
+      finished = [] of Database::RunningOwner
 
       Database.running_with_owner_pids.each do |row|
         if death = AgentOutcome.error_death(row.agent_id)
@@ -579,6 +610,8 @@ module GalaxyAgents
           cancelled << {row, cancel}
         elsif !ProcessLiveness.claude_alive?(row.owner_pid)
           orphaned << row
+        elsif row.waiting? && waiting_done?(row)
+          finished << row
         end
       end
 
@@ -660,6 +693,27 @@ module GalaxyAgents
             agent_type: agent.agent_type,
           )
         end
+
+        finished.each do |row|
+          # Timed from the pause, which is when the agent last worked.
+          recorded = Database.stop_agent(
+            row.ledger_session_id,
+            row.agent_id,
+            "stopped",
+            duration_ms: row.duration_ms,
+            completed_at: row.completed_at,
+          )
+          next unless recorded
+
+          TimelinePublisher.agent_stopped(
+            row.ledger_session_id,
+            agent_id: row.agent_id,
+            agent_type: row.agent_type,
+            duration_ms: row.duration_ms || 0_i64,
+            prompt: nil,
+            last_message: nil,
+          )
+        end
       end
 
       swept = orphaned
@@ -700,6 +754,20 @@ module GalaxyAgents
                       row.ledger_session_id,
                     )
                     json.field "died_at", cancel.died_at
+                  end
+                end
+              end
+            end
+            json.field "finished" do
+              json.array do
+                finished.each do |row|
+                  json.object do
+                    json.field "agent_id", row.agent_id
+                    json.field "agent_type", row.agent_type
+                    json.field(
+                      "ledger_session_id",
+                      row.ledger_session_id,
+                    )
                   end
                 end
               end
@@ -1004,6 +1072,8 @@ module GalaxyAgents
           json.field "total", total
           json.field "running",
             counts["running"]
+          json.field "waiting",
+            counts["waiting"]
           json.field "stopped",
             counts["stopped"]
           json.field "failed",
@@ -1258,6 +1328,45 @@ module GalaxyAgents
     # ==========================================================
     # Helpers
     # ==========================================================
+
+    # How long a waiting agent's transcript must sit still, once its work
+    # has all reported back, before the sweep finishes it. A notification
+    # that lands in the agent's own transcript wakes it within seconds, and
+    # finishing it first would publish a stop the wake then contradicts.
+    WAITING_GRACE = 30.seconds
+
+    private def self.waiting_grace : Time::Span
+      ENV["GALAXY_AGENTS_WAITING_GRACE_SECONDS"]?.try(&.to_i?)
+        .try(&.seconds) || WAITING_GRACE
+    end
+
+    # The longest an agent counts as waiting. Two of 49 measured subagents
+    # had work that never reported back anywhere — one polled its own output
+    # file instead — and without a ceiling they would count for as long as
+    # their session ran. One woken after this simply runs again.
+    MAX_WAIT = 2.hours
+
+    private def self.max_wait : Time::Span
+      ENV["GALAXY_AGENTS_MAX_WAIT_SECONDS"]?.try(&.to_i?)
+        .try(&.seconds) || MAX_WAIT
+    end
+
+    # Whether a waiting agent is done: its background work has all reported
+    # back without waking it, or it has waited longer than anything should.
+    private def self.waiting_done?(row : Database::RunningOwner) : Bool
+      if paused = row.completed_at.try { |at| Time.parse_utc(at, "%Y-%m-%d %H:%M:%S") rescue nil }
+        return true if Time.utc - paused >= max_wait
+      end
+
+      path = row.transcript_path || AgentOutcome.transcript_path(row.agent_id)
+      return false unless path && File.exists?(path)
+
+      pending = BackgroundWork.outstanding(
+        path,
+        BackgroundWork.session_transcripts(path, row.ledger_session_id),
+      )
+      pending.empty? && BackgroundWork.quiet?(path, waiting_grace)
+    end
 
     # Determine if a stopped agent succeeded or failed.
     # Start simple: has last_message = stopped (success);
@@ -1644,6 +1753,12 @@ module GalaxyAgents
         failure (failed) based on last_message presence. Extracts
         the prompt from the transcript, computes duration, saves
         transcript as artifact, and publishes timeline/socket events.
+
+        A clean stop with background work the agent launched still
+        outstanding records the agent as waiting instead, and
+        publishes nothing: Claude Code wakes it when the work
+        reports back. Reconcile finishes a waiting agent whose work
+        has all reported back without waking it.
       HELP
     end
 
@@ -1734,11 +1849,18 @@ module GalaxyAgents
         Publishes agent:abandoned per swept row, exactly as a
         manual abandon does.
 
+        Finishes, as stopped, a waiting agent whose background work
+        has all reported back without waking it, once its transcript
+        has been quiet for 30 seconds, or that has waited two hours.
+        Publishes agent:stopped.
+
         Set GALAXY_AGENTS_SKIP_RECONCILE=1 to disable sweeping;
         the output then reports "skipped": true.
 
         Output:
           {"skipped":false,"dry_run":false,
+           "finished":[{"agent_id":"…","agent_type":"…",
+                        "ledger_session_id":1}],
            "swept":[{"agent_id":"…","agent_type":"…",
                      "ledger_session_id":1,"owner_pid":123}],
            "running":{"2":1}}
@@ -1807,8 +1929,8 @@ module GalaxyAgents
       DESCRIPTION:
         Returns JSON with agent counts broken down by status.
 
-        Output: {"total":N,"running":N,"stopped":N,
-                 "failed":N,"abandoned":N}
+        Output: {"total":N,"running":N,"waiting":N,
+                 "stopped":N,"failed":N,"abandoned":N}
       HELP
     end
 
