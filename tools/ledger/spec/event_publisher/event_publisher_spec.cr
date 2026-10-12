@@ -103,6 +103,114 @@ describe GalaxyLedger::EventPublisher do
     end
   end
 
+  describe ".publish_reliably" do
+    it "returns at once, recording nothing, when no app has a socket" do
+      ledger_session_id = GalaxyLedger::Database.create_session("reliable-1")
+      log_path = "/tmp/galaxy-test-failures-#{Random.rand(100000)}.log"
+
+      elapsed = Time.measure do
+        GalaxyLedger::EventPublisher.publish_reliably(
+          ledger_session_id: ledger_session_id,
+          event: "session:ready",
+          ref: "clear",
+          socket_path: "/tmp/galaxy-test-absent-#{Random.rand(100000)}.sock",
+          failure_log_path: log_path,
+        ).should be_false
+      end
+
+      elapsed.should be < 50.milliseconds
+      File.exists?(log_path).should be_false
+    end
+
+    it "retries a socket that refuses, then records the failure" do
+      ledger_session_id = GalaxyLedger::Database.create_session("reliable-2")
+      socket_path = "/tmp/galaxy-test-stale-#{Random.rand(100000)}.sock"
+      log_path = "/tmp/galaxy-test-failures-#{Random.rand(100000)}.log"
+      UNIXServer.new(socket_path).close(delete: false)
+
+      begin
+        GalaxyLedger::EventPublisher.publish_reliably(
+          ledger_session_id: ledger_session_id,
+          event: "session:ready",
+          ref: "clear",
+          socket_path: socket_path,
+          backoff: [1.millisecond, 1.millisecond],
+          failure_log_path: log_path,
+        ).should be_false
+
+        line = File.read(log_path)
+        line.should contain("session:ready ref=clear")
+        line.should contain("ledger_session_id=#{ledger_session_id}")
+        line.should contain("after 3 attempts")
+      ensure
+        File.delete?(socket_path)
+        File.delete?(log_path)
+      end
+    end
+
+    it "delivers on a retry once the app is listening again" do
+      ledger_session_id = GalaxyLedger::Database.create_session("reliable-3")
+      socket_path = "/tmp/galaxy-test-late-#{Random.rand(100000)}.sock"
+      log_path = "/tmp/galaxy-test-failures-#{Random.rand(100000)}.log"
+      UNIXServer.new(socket_path).close(delete: false)
+      received = Channel(String).new(1)
+
+      spawn do
+        sleep 10.milliseconds
+        File.delete(socket_path)
+        server = UNIXServer.new(socket_path)
+        client = server.accept
+        received.send(client.gets || "")
+        client.close
+        server.close
+      end
+
+      begin
+        GalaxyLedger::EventPublisher.publish_reliably(
+          ledger_session_id: ledger_session_id,
+          event: "session:ready",
+          ref: "clear",
+          socket_path: socket_path,
+          backoff: [50.milliseconds],
+          failure_log_path: log_path,
+        ).should be_true
+
+        parsed = JSON.parse(received.receive)
+        parsed["event"].as_s.should eq("session:ready")
+        parsed["ref"].as_s.should eq("clear")
+        File.exists?(log_path).should be_false
+      ensure
+        File.delete?(socket_path)
+      end
+    end
+
+    it "starts the failure log over once it outgrows its cap" do
+      ledger_session_id = GalaxyLedger::Database.create_session("reliable-4")
+      socket_path = "/tmp/galaxy-test-stale-#{Random.rand(100000)}.sock"
+      log_path = "/tmp/galaxy-test-failures-#{Random.rand(100000)}.log"
+      UNIXServer.new(socket_path).close(delete: false)
+      File.write(
+        log_path,
+        "x" * (GalaxyLedger::EventPublisher::FAILURE_LOG_MAX_BYTES + 1),
+      )
+
+      begin
+        GalaxyLedger::EventPublisher.publish_reliably(
+          ledger_session_id: ledger_session_id,
+          event: "session:ready",
+          socket_path: socket_path,
+          backoff: [] of Time::Span,
+          failure_log_path: log_path,
+        )
+
+        File.read(log_path).lines.size.should eq(1)
+      ensure
+        File.delete?(socket_path)
+        File.delete?(log_path)
+      end
+    end
+  end
+
   describe ".send_to_socket" do
     it "returns false for nonexistent socket path (ENOENT)" do
       result = GalaxyLedger::EventPublisher.send_to_socket(

@@ -51,7 +51,7 @@ module GalaxyLedger
         # EventPublisher; the hook behaves identically whether
         # or not Galaxy is listening.
         if lsid = ledger_session_id
-          EventPublisher.publish(
+          EventPublisher.publish_reliably(
             ledger_session_id: lsid,
             event: "session:ready",
             ref: "compact",

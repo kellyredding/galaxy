@@ -143,7 +143,7 @@ module GalaxyLedger
         # ever emit. Errors are silently rescued by EventPublisher;
         # the hook behaves identically whether or not Galaxy is
         # listening.
-        EventPublisher.publish(
+        EventPublisher.publish_reliably(
           ledger_session_id: ledger_session_id.not_nil!,
           event: "session:ready",
           ref: "startup",

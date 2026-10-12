@@ -129,7 +129,7 @@ module GalaxyLedger
         # event in EventCoordinator and fires /galaxy:resume directly.
         # Errors are silently rescued by EventPublisher; the hook
         # behaves identically whether or not Galaxy is listening.
-        EventPublisher.publish(
+        EventPublisher.publish_reliably(
           ledger_session_id: ledger_session_id,
           event: "session:ready",
           ref: "resume",

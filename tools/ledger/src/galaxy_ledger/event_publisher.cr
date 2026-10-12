@@ -21,6 +21,18 @@ module GalaxyLedger
     # Write timeout (100ms)
     WRITE_TIMEOUT = 100.milliseconds
 
+    # Pauses between attempts in `publish_reliably`. Kept well under a second:
+    # the callers are hooks the agent waits on, and the case that exhausts it,
+    # a socket file left by an app that died, is one no wait would fix.
+    RETRY_BACKOFF = [50.milliseconds, 150.milliseconds, 400.milliseconds]
+
+    # Where an undelivered `publish_reliably` event is recorded. Its own file
+    # rather than the app's log, which the app holds open and rotates.
+    FAILURE_LOG_PATH = GalaxyLedger::GALAXY_DIR / "publish-failures.log"
+
+    # Past this the failure log starts over rather than growing without bound.
+    FAILURE_LOG_MAX_BYTES = 256 * 1024
+
     # Build a JSON envelope string for the given event.
     # Returns the JSON line (without trailing newline).
     def self.build_envelope(
@@ -77,6 +89,57 @@ module GalaxyLedger
       send_to_socket(envelope)
     rescue
       false
+    end
+
+    # Publish a signal whose loss strands a session: retried, and recorded
+    # when every attempt fails.
+    #
+    # For `session:ready`, which Galaxy waits on before sending anything into
+    # a session after a context reset. Never raises.
+    def self.publish_reliably(
+      ledger_session_id : Int64,
+      event : String,
+      ref : String? = nil,
+      socket_path : String = SOCKET_PATH.to_s,
+      backoff : Array(Time::Span) = RETRY_BACKOFF,
+      failure_log_path : String = FAILURE_LOG_PATH.to_s,
+    ) : Bool
+      envelope = build_envelope(
+        event: event,
+        ledger_session_id: ledger_session_id,
+        session_identifiers: Database.session_identifiers(ledger_session_id),
+        ref: ref,
+      )
+
+      # No socket file means no app, which is the normal state outside
+      # Galaxy and not a failure worth retrying or recording.
+      return false unless File.exists?(socket_path)
+
+      attempts = 1
+      return true if send_to_socket(envelope, socket_path)
+      backoff.each do |pause|
+        sleep pause
+        attempts += 1
+        return true if send_to_socket(envelope, socket_path)
+      end
+
+      record_failure(
+        failure_log_path,
+        "#{event}#{ref ? " ref=#{ref}" : ""} " \
+        "ledger_session_id=#{ledger_session_id} " \
+        "not delivered after #{attempts} attempts",
+      )
+      false
+    rescue
+      false
+    end
+
+    private def self.record_failure(path : String, message : String) : Nil
+      mode = File.exists?(path) && File.size(path) > FAILURE_LOG_MAX_BYTES ? "w" : "a"
+      stamp = Time.local.to_s("%Y-%m-%d %H:%M:%S")
+      File.open(path, mode) { |f| f.puts("[#{stamp}] #{message}") }
+    rescue
+      # Recording the failure must not become a second one.
     end
 
     # Low-level socket write. Connects, writes the JSON line, closes.

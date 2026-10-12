@@ -3118,7 +3118,7 @@ module GalaxyLedger
       # own current reading of the session, where a lifecycle ref is believed
       # because a hook watched the thing happen. Sending "resume" here would
       # bypass that check by impersonating an event nobody observed.
-      EventPublisher.publish(
+      EventPublisher.publish_reliably(
         ledger_session_id: ledger_session_id,
         event: "session:ready",
         ref: "manual",
