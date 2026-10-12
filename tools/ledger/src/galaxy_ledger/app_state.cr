@@ -26,20 +26,32 @@ module GalaxyLedger
     # by hand overtakes it.
     RECOVERABLE_REASON = "never-reported-ready"
 
+    # Mirrors `Session.SubmitBlock.awaitingReset.rawValue`: resolvable by hand
+    # only where the app says the reset's readiness can be looked for, and then
+    # only once the app finds the reset in the timeline.
+    AWAITING_RESET_REASON = "awaiting-reset"
+
     # One session, as the app last described it.
     record Session,
       ledger_session_id : Int64?,
       session_ref : String?,
       claude_session_id : String?,
       inbox_depth : Int32,
-      block_reason : String? do
+      block_reason : String?,
+      lost_ready_recoverable : Bool = false do
       # Holding messages it cannot send.
       def stranded? : Bool
         inbox_depth > 0 && !block_reason.nil?
       end
 
       def recoverable? : Bool
-        block_reason == RECOVERABLE_REASON
+        block_reason == RECOVERABLE_REASON || awaiting_lost_ready?
+      end
+
+      # Blocked on a reset whose readiness signal may have been lost, which the
+      # app releases only after checking the timeline.
+      def awaiting_lost_ready? : Bool
+        block_reason == AWAITING_RESET_REASON && lost_ready_recoverable
       end
 
       def label : String
@@ -73,8 +85,7 @@ module GalaxyLedger
     end
 
     # Read the app's state, or nil when there is nothing readable there.
-    def self.read : Reading?
-      path = STATE_PATH.to_s
+    def self.read(path : String = STATE_PATH.to_s) : Reading?
       return nil unless File.exists?(path)
 
       raw = File.read(path)
@@ -91,6 +102,7 @@ module GalaxyLedger
           claude_session_id: node["claudeSessionId"]?.try &.as_s?,
           inbox_depth: node["inboxDepth"]?.try(&.as_i?) || 0,
           block_reason: node["submitBlockReason"]?.try &.as_s?,
+          lost_ready_recoverable: node["lostReadyRecoverable"]?.try(&.as_bool?) || false,
         )
       end
 

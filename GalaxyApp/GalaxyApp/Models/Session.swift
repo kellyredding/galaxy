@@ -1272,6 +1272,85 @@ class Session: Identifiable, ObservableObject {
         }
     }
 
+    /// Whether a lost post-reset readiness signal can be looked for: a reset
+    /// went out from here and nothing has reported it ready since.
+    var canRecoverLostReady: Bool {
+        submitBlockReason == .awaitingReset && resetSentAt != nil
+    }
+
+    /// Set while a lost-readiness check runs, so a burst of idle reports
+    /// spawns one timeline query rather than one each.
+    private var isCheckingLostReady = false
+
+    /// Mark ready a session whose post-reset `session:ready` was lost, once the
+    /// timeline records the reset. Without it, nothing reopened the queue
+    /// until the next reset; `outcome` reports whether this one did.
+    func recoverLostReady(
+        trigger: String,
+        outcome: ((Bool) -> Void)? = nil
+    ) {
+        guard canRecoverLostReady,
+              let sentAt = resetSentAt,
+              let lsid = ledgerSessionId,
+              !isCheckingLostReady
+        else {
+            outcome?(false)
+            return
+        }
+        isCheckingLostReady = true
+
+        Task { [weak self] in
+            let reset: TimelineEvent?
+            let failure: Error?
+            do {
+                reset = try await TimelineQueryService.shared
+                    .fetchContextReset(ledgerSessionId: lsid, since: sentAt)
+                failure = nil
+            } catch {
+                reset = nil
+                failure = error
+            }
+
+            await MainActor.run {
+                guard let self else { return }
+                self.isCheckingLostReady = false
+
+                // Re-read: the real signal may have landed, or another reset
+                // gone out, while the query ran.
+                guard self.resetSentAt == sentAt,
+                      self.submitBlockReason == .awaitingReset
+                else {
+                    outcome?(self.resetSentAt == nil)
+                    return
+                }
+
+                if let failure {
+                    GalaxyLog.events(
+                        "[\(self.sessionRef)] \(trigger): lost-ready check"
+                        + " failed: \(failure)"
+                    )
+                    outcome?(false)
+                    return
+                }
+                guard let reset else {
+                    GalaxyLog.events(
+                        "[\(self.sessionRef)] \(trigger): still awaiting reset"
+                        + " — none recorded since \(sentAt)"
+                    )
+                    outcome?(false)
+                    return
+                }
+                GalaxyLog.events(
+                    "[\(self.sessionRef)] \(trigger): session:ready never"
+                    + " arrived; timeline has \(reset.eventType)"
+                    + " ref=\(reset.id) — marking ready"
+                )
+                self.markReady()
+                outcome?(true)
+            }
+        }
+    }
+
     /// Run `action` once the session is ready. Fires
     /// immediately if already ready; otherwise subscribes
     /// to `$isReady` and fires on the first true value.
@@ -1370,7 +1449,8 @@ class Session: Identifiable, ObservableObject {
             ledgerStartedAt: ledgerStartedAt,
             ledgerUpdatedAt: ledgerUpdatedAt,
             inboxDepth: inbox.entries.count,
-            submitBlockReason: submitBlockReason?.rawValue
+            submitBlockReason: submitBlockReason?.rawValue,
+            lostReadyRecoverable: canRecoverLostReady
         )
     }
 
@@ -1745,7 +1825,8 @@ extension Session: AgentInboxHost {
     ///
     /// The reason rather than a bare bool, because a refusal is otherwise
     /// invisible: nothing reaches the terminal and the row does not move. Each
-    /// case is a different problem, and only `.neverReady` is recoverable.
+    /// case is a different problem. `.neverReady` can be released by hand, and
+    /// `.awaitingReset` too once the timeline shows the reset happened.
     ///
     /// The order is load-bearing. `hasPendingReadyActions` is tested ahead of
     /// `isReady`, and `.neverReady` is additionally gated on

@@ -132,10 +132,6 @@ final class EventCoordinator {
     /// so most events are for sessions it does not own.
     private var loggedUnmatchedSessions: Set<Int64> = []
 
-    /// Sessions with a lost-readiness check in flight, so a burst of idle
-    /// reports spawns one timeline query rather than one each.
-    private var lostReadyChecks: Set<UUID> = []
-
     // MARK: - Diagnostic monitoring
     //
     // A periodic heartbeat that produces a diagnostic-only log.
@@ -454,7 +450,7 @@ final class EventCoordinator {
                    Date().timeIntervalSince(started) >= Self.idleThreshold {
                     session.endTurn(source: "socket:session.idle")
                 }
-                recoverLostReady(for: session, trigger: "idle")
+                session.recoverLostReady(trigger: "idle")
                 session.inboxConsumer.wake()
             }
             return
@@ -489,11 +485,11 @@ final class EventCoordinator {
         // moved on, so the interlock lives here — where the answer is
         // current — rather than in the tool that sent it.
         //
-        // `.neverReady` is the only blocked state a release can
-        // truthfully resolve: by construction it means the agent has
-        // been sitting at a prompt with nothing owed. Anything else is
-        // transient, or owes a post-reset command that an early
-        // release would overtake.
+        // `.neverReady` is released as asked: by construction it means
+        // the agent has been sitting at a prompt with nothing owed.
+        // `.awaitingReset` is released only once the timeline records
+        // the reset, and then through `markReady`, so the command it
+        // owes still goes first. Anything else is transient.
         if envelope.event == "session:ready", envelope.ref == "manual" {
             if let appSessionId =
                 ledgerSessionIdCache[envelope.ledgerSessionId],
@@ -501,6 +497,10 @@ final class EventCoordinator {
                    .first(where: { $0.id == appSessionId })
             {
                 let why = session.submitBlockReason
+                if session.canRecoverLostReady {
+                    session.recoverLostReady(trigger: "manual ready")
+                    return
+                }
                 guard why == .neverReady else {
                     GalaxyLog.events(
                         "[\(session.sessionRef)] routeEvent:"
@@ -1135,67 +1135,6 @@ final class EventCoordinator {
                 GalaxyLog.events(
                     "reconcile failed: \(error)"
                 )
-            }
-        }
-    }
-
-    // MARK: - Lost Readiness
-
-    /// Mark ready a session whose post-reset `session:ready` was lost, once the
-    /// timeline records the reset and the agent has gone idle since. Without
-    /// it, nothing reopened the session's queue until its next reset.
-    private func recoverLostReady(for session: Session, trigger: String) {
-        guard session.submitBlockReason == .awaitingReset,
-              let sentAt = session.resetSentAt,
-              let lsid = session.ledgerSessionId,
-              lostReadyChecks.insert(session.id).inserted
-        else { return }
-
-        let sessionId = session.id
-        Task {
-            let reset: TimelineEvent?
-            let failure: Error?
-            do {
-                reset = try await TimelineQueryService.shared
-                    .fetchContextReset(ledgerSessionId: lsid, since: sentAt)
-                failure = nil
-            } catch {
-                reset = nil
-                failure = error
-            }
-
-            await MainActor.run { [weak self] in
-                guard let self else { return }
-                self.lostReadyChecks.remove(sessionId)
-
-                // Re-read: the real signal may have landed, or another reset
-                // gone out, while the query ran.
-                guard let session = self.sessionManager?.sessions
-                        .first(where: { $0.id == sessionId }),
-                      session.resetSentAt == sentAt,
-                      session.submitBlockReason == .awaitingReset
-                else { return }
-
-                if let failure {
-                    GalaxyLog.events(
-                        "[\(session.sessionRef)] \(trigger): lost-ready"
-                        + " check failed: \(failure)"
-                    )
-                    return
-                }
-                guard let reset else {
-                    GalaxyLog.events(
-                        "[\(session.sessionRef)] \(trigger): still awaiting"
-                        + " reset — none recorded since \(sentAt)"
-                    )
-                    return
-                }
-                GalaxyLog.events(
-                    "[\(session.sessionRef)] \(trigger): session:ready never"
-                    + " arrived; timeline has \(reset.eventType)"
-                    + " ref=\(reset.id) — marking ready"
-                )
-                session.markReady()
             }
         }
     }

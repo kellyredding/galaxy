@@ -3003,6 +3003,9 @@ module GalaxyLedger
         if s.recoverable?
           if id = s.claude_session_id
             puts "    release with: galaxy-ledger mark-ready --session #{id}"
+            if s.awaiting_lost_ready?
+              puts "    (released only if the timeline shows the reset finished)"
+            end
           end
         end
       end
@@ -3099,10 +3102,8 @@ module GalaxyLedger
         exit(1)
       end
 
-      # The interlock. Only a session that has never been at a prompt and owes
-      # nothing reports the recoverable reason, so this is the one case where
-      # saying "ready" states a fact rather than forcing one. Anything else is
-      # transient, or owes a post-reset command that an early release overtakes.
+      # A first pass only; the app re-checks on current state, and for a reset
+      # it also wants the reset in the timeline before it releases anything.
       reason = session.block_reason
       if reason.nil?
         puts "#{session.label} can already send — nothing to do."
@@ -3125,8 +3126,14 @@ module GalaxyLedger
       )
       depth = session.inbox_depth
       plural = depth == 1 ? "message" : "messages"
-      puts "Asked Galaxy to release #{session.label} " \
-           "— #{depth} #{plural} should now send."
+      if session.awaiting_lost_ready?
+        puts "Asked Galaxy to release #{session.label} once its timeline " \
+             "shows the reset finished — #{depth} #{plural} would then " \
+             "send, after the handoff the reset owes."
+      else
+        puts "Asked Galaxy to release #{session.label} " \
+             "— #{depth} #{plural} should now send."
+      end
       puts "Confirm with: grep 'manual ready' ~/.claude/galaxy/galaxy.log"
     end
 
@@ -3148,10 +3155,11 @@ module GalaxyLedger
         anything queued for that session.
 
         This asserts a true fact rather than forcing one, and refuses when it
-        would not be true: it acts only on a session that has never been
-        marked ready and owes no post-reset command. A session that is merely
-        mid-turn, or waiting on a /clear or /compact to finish, is declined —
-        releasing one of those overtakes a command that must arrive in order.
+        would not be true. A session that has never been marked ready and
+        owes nothing is released at once. One waiting on a /clear or /compact
+        Galaxy sent is released only if the session's timeline shows that
+        reset happened, and the command the reset owes still goes first. A
+        session that is merely mid-turn is declined.
 
         Use 'galaxy-ledger doctor' to see which sessions qualify.
       HELP

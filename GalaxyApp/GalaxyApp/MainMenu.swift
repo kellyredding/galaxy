@@ -608,8 +608,8 @@ class MainMenu: NSObject, NSMenuDelegate {
         inboxItem.target = MenuActions.shared
         menu.addItem(inboxItem)
 
-        // No key equivalent, deliberately. This answers one recoverable
-        // fault and is dimmed in every other state, so a binding would
+        // No key equivalent, deliberately. This answers two recoverable
+        // faults and is dimmed in every other state, so a binding would
         // spend a chord on something almost never reachable — and would
         // owe KeystrokeCatalog an availability case for it.
         let markReadyItem = NSMenuItem(
@@ -1300,17 +1300,30 @@ class MenuActions: NSObject {
     }
 
     /// Sessions ▸ Mark Session Ready. Releases a queue whose readiness signal
-    /// never arrived.
-    ///
-    /// Asserts a fact rather than forcing one: validation restricts this to
-    /// `.neverReady`, which by construction means the agent has been sitting at
-    /// a prompt while nothing told the app so. `markReady` wakes the consumer
-    /// itself, so anything waiting goes out from here.
+    /// never arrived: at once for `.neverReady`, and after a reset only once
+    /// the timeline confirms it, saying so when it cannot.
     @objc func markSessionReady(_ sender: Any?) {
         MainActor.assumeIsolated {
-            guard let session = SessionManager.shared.activeSession,
-                  session.submitBlockReason == .neverReady
+            guard let session = SessionManager.shared.activeSession
             else { return }
+            if session.canRecoverLostReady {
+                session.recoverLostReady(trigger: "manual ready") { released in
+                    guard !released else { return }
+                    let alert = NSAlert()
+                    alert.messageText = "Session Not Released"
+                    alert.informativeText = """
+                        Galaxy sent \(session.displayName) a context reset \
+                        and the session's timeline has no record of it \
+                        finishing, so anything queued behind it is held. \
+                        If the reset never ran, type it in the terminal.
+                        """
+                    alert.alertStyle = .informational
+                    alert.addButton(withTitle: "OK")
+                    alert.runModal()
+                }
+                return
+            }
+            guard session.submitBlockReason == .neverReady else { return }
             SessionSubmit.log(
                 "mark-ready by hand session=\(session.sessionRef)")
             session.markReady()
@@ -1388,14 +1401,14 @@ extension MenuActions: NSMenuItemValidation {
             return NSApp.modalWindow == nil
 
         // The interlock, and the whole reason this is a menu item rather
-        // than a button on the refusal. `.neverReady` is the one blocked
-        // state a person can truthfully resolve; the others are either
-        // transient or owe an ordered command that releasing early would
-        // overtake. Dimmed everywhere else, so the menu answers "is this
-        // my problem" without anyone having to try it.
+        // than a button on the refusal. Live only for the two blocks a
+        // person can resolve, and dimmed everywhere else, so the menu
+        // answers "is this my problem" without anyone having to try it.
         case #selector(markSessionReady(_:)):
-            return SessionManager.shared.activeSession?
-                .submitBlockReason == .neverReady
+            guard let session = SessionManager.shared.activeSession
+            else { return false }
+            return session.submitBlockReason == .neverReady
+                || session.canRecoverLostReady
 
         // Chrome font items: bound-checked against the live
         // settings value, never gated on focus — the user

@@ -56,6 +56,10 @@ struct PersistedSession: Codable {
     /// value is what a check matches on.
     let inboxDepth: Int?
     let submitBlockReason: String?
+
+    /// Whether an `awaiting-reset` block is one a manual release may clear,
+    /// which the reason alone cannot say: a resume owes a command the same way.
+    let lostReadyRecoverable: Bool?
 }
 
 /// A dismissed session preserved for potential restoration.
