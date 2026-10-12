@@ -153,6 +153,11 @@ class Session: Identifiable, ObservableObject {
     /// and deliberately nowhere else.
     @Published private(set) var hasEverBeenReady: Bool = false
 
+    /// When the reset still owed a `session:ready` was sent: the lower bound
+    /// for asking the timeline whether it happened, which is what tells a lost
+    /// readiness signal from a slow one.
+    private(set) var resetSentAt: Date?
+
     /// This session's terminal panes, as a unit — the focus memory, the
     /// cross-pane scrollback flag, and the unsaved-work checks.
     ///
@@ -1012,6 +1017,7 @@ class Session: Identifiable, ObservableObject {
         if bypassesAcceptance {
             startTurn(source: "sendCommand:\(command)")
             isReady = false
+            resetSentAt = Date()
             pendingReadyActions.removeAll()
             oneShotTurnEndActions.removeAll()
 
@@ -1252,6 +1258,7 @@ class Session: Identifiable, ObservableObject {
             if !self.isReady {
                 self.isReady = true
                 self.hasEverBeenReady = true
+                self.resetSentAt = nil
                 SessionSubmit.log(
                     "markReady session=\(self.sessionRef)")
             }
@@ -1443,6 +1450,7 @@ class Session: Identifiable, ObservableObject {
         // completes, flipping this back to true via markReady().
         isReady = false
         hasEverBeenReady = false
+        resetSentAt = nil
         isRunning = true
 
         // A fresh process is a fresh crossing. A session resumed above the
@@ -1674,6 +1682,7 @@ class Session: Identifiable, ObservableObject {
             // upstream can fire them now and they'd be invalid
             // for any future resumed lifecycle anyway.
             self.pendingReadyActions.removeAll()
+            self.resetSentAt = nil
 
             // The inbox is deliberately NOT cleared here, unlike the two
             // stores above, and the difference is what each of them holds.

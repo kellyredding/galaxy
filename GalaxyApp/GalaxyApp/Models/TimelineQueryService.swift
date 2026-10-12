@@ -137,6 +137,23 @@ class TimelineQueryService {
         return try Self.decodeEvents(data).first
     }
 
+    /// The first clear or compact recorded for a session since `since`. On
+    /// the independent runner so the Timeline tab's poll cannot cancel it.
+    func fetchContextReset(
+        ledgerSessionId: Int64, since: Date
+    ) async throws -> TimelineEvent? {
+        let data = try await runIndependentCLI(
+            args: [
+                "list", "--json",
+                "--ledger-session-id", String(ledgerSessionId),
+                "--event-type", "context:cleared,context:compacted",
+                "--since", Self.dateFormatter.string(from: since),
+                "--limit", "1",
+            ]
+        )
+        return try Self.decodeEvents(data).first
+    }
+
     // MARK: - Shared Query Shape
 
     /// Turn-ending events plus `turn:initiated`, newest first. The
