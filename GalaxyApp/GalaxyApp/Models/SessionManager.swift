@@ -910,14 +910,10 @@ class SessionManager: ObservableObject {
         // readiness hook itself were each measured and each
         // reported ready against a prompt that did not exist.
         //
-        // So verify rather than predict: on_user_prompt_submit
-        // flips isInTurn only when Claude actually took the
-        // prompt, which no amount of replay latency can fake.
-        // The reason this was previously off — a bare retry
-        // submit landing on an empty prompt, which Claude Code
-        // reads as "repeat last command" — is answered in
-        // `TerminalBackend.verifySubmission`, which retypes before
-        // it submits so Enter never arrives against an empty box.
+        // So verify rather than predict: the prompt reaching
+        // Claude's transcript, or on_user_prompt_submit flipping
+        // isInTurn, happens only when Claude actually took it,
+        // which no amount of replay latency can fake.
         if canResume {
             session.waitForReady { [weak session] in
                 session?.sendSkill("galaxy:resume")
@@ -1256,24 +1252,15 @@ class SessionManager: ObservableObject {
                 )
         }
 
-        // Queued rather than sent, and it is the first entry to need both of
-        // the defaults overridden.
-        //
-        // `.standalone` is the load-bearing one: an agent reads one command per
-        // prompt, so a `/clear` merged behind prose under a `---` separator is
-        // read as argument text and silently does nothing — the context stays
-        // full, the crossing has been spent, and nothing reports a failure.
-        //
-        // `.retype` is the honest answer for a payload of six bytes going to an
-        // agent that has just ended a turn. The prose defaults to `.reportOnly`
-        // because a second copy of an unbounded message is worse than a missing
-        // one; here the reverse holds, and a reset that quietly did not happen
-        // is the more expensive outcome.
+        // Queued rather than sent, and `.standalone` is load-bearing: an agent
+        // reads one command per prompt, so a `/clear` merged behind prose under
+        // a `---` separator is read as argument text and silently does nothing
+        // — the context stays full, the crossing has been spent, and nothing
+        // reports a failure.
         session.enqueueMessage(
             "/clear",
             sourceLabel: "Auto-clear",
-            delivery: .standalone,
-            retry: .retype
+            delivery: .standalone
         )
     }
 

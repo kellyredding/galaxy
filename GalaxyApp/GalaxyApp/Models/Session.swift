@@ -10,17 +10,21 @@ class Session: Identifiable, ObservableObject {
     /// rather than being assumed of whatever is on the other end of the PTY.
     private let harness: AgentHarness = ClaudeCodeHarness()
 
-    /// What "the prompt was taken" means for a Galaxy session.
+    /// What "the prompt was taken" means for a Galaxy session, for one send.
     ///
-    /// The only half of verification that is Galaxy's to answer. `isInTurn` is
-    /// flipped by Claude Code's UserPromptSubmit hook arriving over the socket,
-    /// so it is a report from the agent rather than an observation of the
-    /// terminal — and nothing observable from the terminal answers this at all.
-    /// The bounded poll, the retype, and the retry ceiling all live in Galactic;
-    /// this is the value they consume.
-    private var submitVerification: SubmitVerification {
-        SubmitVerification(
-            isAccepted: { [weak self] in self?.isInTurn ?? false },
+    /// Either of two reports from the agent: the prompt appearing in its
+    /// transcript, or `isInTurn` flipping when its UserPromptSubmit hook
+    /// reaches the socket. The transcript is the one that stays prompt under
+    /// load — the hook once ran ten seconds late and a delivered resume was
+    /// retried. Built per send because the receipt counts only what is written
+    /// after it is taken.
+    private func submitVerification(for command: String) -> SubmitVerification {
+        let receipt = ClaudeTranscriptReceipt(
+            sessionId: claudeSessionId, prompt: command)
+        return SubmitVerification(
+            isAccepted: { [weak self] in
+                (self?.isInTurn ?? false) || receipt.hasArrived()
+            },
             isAlive: { [weak self] in
                 guard let self else { return false }
                 return self.isRunning && !self.hasExited
@@ -585,15 +589,11 @@ class Session: Identifiable, ObservableObject {
     /// so refusing it because no agent is up would destroy exactly what the
     /// queue exists to keep. It waits for the session to come back.
     ///
-    /// `retry` defaults to `.reportOnly` because these payloads are unbounded
-    /// composed prose — a retype doubles a message in the case where the text
-    /// landed and only the submit was lost, which nothing can tell from a
-    /// total loss.
     func enqueueMessage(
         _ text: String,
         sourceLabel: String,
         delivery: AgentInboxEntry.Delivery = .coalescable,
-        retry: SubmitRetryPolicy = .reportOnly
+        retry: SubmitRetryPolicy = .resubmit
     ) {
         inbox.enqueue(
             AgentInboxEntry(
@@ -823,9 +823,9 @@ class Session: Identifiable, ObservableObject {
     /// Send a slash command to the terminal (e.g., "/clear", "/compact").
     /// Only works when session is running.
     ///
-    /// By default the send is verified: Galactic watches for the
-    /// `isInTurn` flip that Claude Code's UserPromptSubmit hook drives,
-    /// and retypes the prompt if it never arrives. Readiness itself is
+    /// By default the send is verified: Galactic watches for the prompt to
+    /// reach Claude Code's transcript or its UserPromptSubmit hook, and
+    /// presses submit again if neither reports it. Readiness itself is
     /// not observable from here — five signals were measured and every
     /// one reported ready against a prompt that did not exist — so this
     /// path is correct because it is confirmed, not because it is timed.
@@ -835,18 +835,12 @@ class Session: Identifiable, ObservableObject {
     /// reason — `session:ready` was the belief that made resume unreliable
     /// for a week, and it fires before the input layer paints. Nor is "a
     /// person is watching this one": that reasoning kept the acceptance
-    /// signal off the sends carrying the most text, and the thing it was
-    /// really avoiding was the retype, not the detection.
+    /// signal off the sends carrying the most text.
     ///
     /// The commands that genuinely cannot be confirmed are detected rather
     /// than declared — see `isContextResetCommand` — so a caller does not
     /// have to remember which they are.
     ///
-    /// `retry` is the separate question: whether a prompt found missing
-    /// should be retyped. Bounded payloads say yes. An unbounded one says
-    /// `.reportOnly`, because retyping doubles a prompt in the case where
-    /// the text landed and only the submit was lost, and nothing here can
-    /// distinguish that from a total loss.
     /// Detect the commands that bypass the agent's prompt-submit pipeline, so
     /// no acceptance report will ever arrive for them.
     ///
@@ -904,7 +898,7 @@ class Session: Identifiable, ObservableObject {
     func sendCommand(
         _ command: String,
         verifyAccepted: Bool = true,
-        retry: SubmitRetryPolicy = .retype,
+        retry: SubmitRetryPolicy = .resubmit,
         outcome: ((SubmitOutcome) -> Void)? = nil
     ) {
         guard isRunning && !hasExited else {
@@ -987,7 +981,8 @@ class Session: Identifiable, ObservableObject {
 
         // Whether an acceptance report can arrive at all. Detected from the
         // harness rather than left to the caller — a caller that forgot would
-        // wait out the full window on every context reset and then retype one.
+        // wait out the full window on every context reset and then press
+        // submit again into the fresh session.
         let bypassesAcceptance = isContextResetCommand(command)
 
         // Galaxy-initiated context-reset commands (/clear,
@@ -1067,8 +1062,7 @@ class Session: Identifiable, ObservableObject {
         // slash commands take arguments, so an empty one parses as none.
         //
         // Composed inside the delivery seam rather than here, so what closes a
-        // completion popup is the agent's answer, and so a retype re-sends
-        // exactly what the first attempt sent.
+        // completion popup is the agent's answer.
 
         // Anchors the submit diagnostics: everything that follows is relative
         // to this line, and it is the only one naming the session and the
@@ -1101,7 +1095,7 @@ class Session: Identifiable, ObservableObject {
                 guard let self else { return false }
                 return self.isRunning && !self.hasExited
             },
-            verification: verifiable ? submitVerification : nil,
+            verification: verifiable ? submitVerification(for: command) : nil,
             retry: retry,
             // Releases the lane on every path this seam can end on, including
             // the ones that never wrote — a gesture abandoned before its write
@@ -1820,6 +1814,26 @@ extension Session: AgentInboxHost {
     /// spawned but not reported ready is one whose input layer may not exist
     /// yet.
     var canSendNow: Bool { submitBlockReason == nil }
+
+    /// The block, worded for someone looking at the inbox. Names the menu item
+    /// only where it would be enabled.
+    var sendBlockReason: String? {
+        switch submitBlockReason {
+        case nil: return nil
+        case .notRunning: return "the session isn't running"
+        case .exited: return "the session has exited"
+        case .inTurn: return "the agent is mid-turn, and it will send when that ends"
+        case .awaitingReset:
+            return canRecoverLostReady
+                ? "the session hasn't reported ready since Galaxy reset its "
+                    + "context; Sessions ▸ Mark Session Ready can check and "
+                    + "release it"
+                : "the session hasn't reported ready since its reset or resume"
+        case .neverReady:
+            return "the session never reported ready; Sessions ▸ Mark Session "
+                + "Ready releases it"
+        }
+    }
 
     /// Why a queued message cannot go out, or nil when one could.
     ///

@@ -151,12 +151,6 @@ final class SessionTerminalPane: TerminalPane {
             // nowhere else. Written straight out it would land in whatever the
             // agent has on screen, and a form discards what it does not
             // understand. The queue holds it until the session can read.
-            //
-            // The retry policy the entry carries is still `.reportOnly`, and
-            // for the same reason as before: this is whatever the user
-            // selected, unbounded and measured in tens of thousands of bytes,
-            // so a retype would put a second copy of all of it in the composer
-            // in the case where the text landed and only the submit was lost.
             send: { [weak s] text in
                 s?.enqueueMessage(text, sourceLabel: "Session scrollback")
             },
