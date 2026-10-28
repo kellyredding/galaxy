@@ -67,6 +67,7 @@ let timelineEventRegistry: [String: EventRegistration] = [
     "scrollback:entered":  EventRegistration(resource: .scrollback, mode: .durationStart),
     "scrollback:exited":   EventRegistration(resource: .scrollback, mode: .durationEnd),
     "scrollback:reviewed": EventRegistration(resource: .scrollback, mode: .point),
+    "prompt:truncated":    EventRegistration(resource: .turn, mode: .point),
     "scrollback.note:created":
         EventRegistration(
             resource: .scrollback, mode: .point
@@ -544,6 +545,8 @@ enum TimelineTooltipFormatter {
             return "Scrollback Exited"
         case "scrollback:reviewed":
             return "Scrollback Reviewed"
+        case "prompt:truncated":
+            return "Prompt Cut Off"
         case "scrollback.note:created":
             return "Note Created"
         case "scrollback.note:updated":
@@ -645,6 +648,8 @@ enum TimelineTooltipFormatter {
             return snapshotClosedLines(dict)
         case "scrollback:reviewed":
             return scrollbackReviewedLines(dict)
+        case "prompt:truncated":
+            return promptTruncatedLines(dict)
         case "scrollback:exited":
             return scrollbackExitedLines(dict)
         case "scrollback.note:created":
@@ -1010,6 +1015,15 @@ enum TimelineTooltipFormatter {
             )
         }
         return lines
+    }
+
+    private static func promptTruncatedLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        guard let sent = d["sent_characters"] as? Int,
+            let received = d["received_characters"] as? Int
+        else { return [] }
+        return ["\(received) of \(sent) characters arrived"]
     }
 
     private static func scrollbackExitedLines(

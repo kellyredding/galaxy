@@ -18,10 +18,10 @@ class Session: Identifiable, ObservableObject {
     /// load — the hook once ran ten seconds late and a delivered resume was
     /// retried. Built per send because the receipt counts only what is written
     /// after it is taken.
-    private func submitVerification(for command: String) -> SubmitVerification {
-        let receipt = ClaudeTranscriptReceipt(
-            sessionId: claudeSessionId, prompt: command)
-        return SubmitVerification(
+    private func submitVerification(
+        _ receipt: ClaudeTranscriptReceipt
+    ) -> SubmitVerification {
+        SubmitVerification(
             isAccepted: { [weak self] in
                 (self?.isInTurn ?? false) || receipt.hasArrived()
             },
@@ -1087,6 +1087,9 @@ class Session: Identifiable, ObservableObject {
         // confirmation, the command bypasses the agent's prompt pipeline, or a
         // turn is already running so there is no turn-start left to wait for.
         let verifiable = verifyAccepted && !wasInTurn && !bypassesAcceptance
+        let receipt = verifiable
+            ? ClaudeTranscriptReceipt(sessionId: claudeSessionId, prompt: command)
+            : nil
 
         backend.deliverPrompt(
             command,
@@ -1095,15 +1098,80 @@ class Session: Identifiable, ObservableObject {
                 guard let self else { return false }
                 return self.isRunning && !self.hasExited
             },
-            verification: verifiable ? submitVerification(for: command) : nil,
+            verification: receipt.map(submitVerification),
             retry: retry,
             // Releases the lane on every path this seam can end on, including
             // the ones that never wrote — a gesture abandoned before its write
             // would otherwise hold everything behind it for the life of the
             // session.
             then: { [weak self] in self?.finishCommand() },
-            outcome: outcome
+            outcome: { [weak self] result in
+                if result == .accepted, let receipt {
+                    self?.watchForCutOff(command, receipt: receipt)
+                }
+                outcome?(result)
+            }
         )
+    }
+
+    /// Accepted is not the same as whole: Claude Code drops text from the
+    /// middle of long typed input and reports nothing. Waits for the
+    /// transcript, since acceptance can come first from the prompt hook.
+    private func watchForCutOff(
+        _ sent: String,
+        receipt: ClaudeTranscriptReceipt,
+        deadline: Date = Date() + 5
+    ) {
+        guard !sent.hasPrefix("/") else { return }
+        if receipt.hasArrived() {
+            if let shortfall = receipt.shortfall(of: sent) {
+                recoverCutOff(sent, shortfall: shortfall)
+            }
+            return
+        }
+        guard Date() < deadline else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            self?.watchForCutOff(sent, receipt: receipt, deadline: deadline)
+        }
+    }
+
+    /// Keeps the whole text on the timeline and queues a pointer to it.
+    /// Resending it typed would only risk the same loss.
+    private func recoverCutOff(_ sent: String, shortfall: PromptShortfall) {
+        SessionSubmit.log(
+            "  CUT OFF — \(shortfall.receivedCharacters) of "
+                + "\(shortfall.sentCharacters) characters reached the transcript")
+
+        guard let ledgerSessionId else {
+            SessionSubmit.log("  not recovered — no ledger session to keep it on")
+            return
+        }
+
+        TimelineService.recordReturningID(
+            ledgerSessionId: ledgerSessionId,
+            eventType: "prompt:truncated",
+            source: "galaxy-app/inbox",
+            detailData: [
+                "message": sent,
+                "sent_characters": shortfall.sentCharacters,
+                "received_characters": shortfall.receivedCharacters,
+            ]
+        ) { [weak self] id in
+            guard let self else { return }
+            guard let id else {
+                SessionSubmit.log("  not recovered — the full text was not recorded")
+                return
+            }
+            self.enqueueMessage(
+                ReviewDelivery.cutOffPointer(
+                    receivedCharacters: shortfall.receivedCharacters,
+                    sentCharacters: shortfall.sentCharacters,
+                    readCommand: ReviewStore.galaxyTimeline.readCommand(id)
+                ),
+                sourceLabel: "Cut-off recovery",
+                delivery: .standalone
+            )
+        }
     }
 
     // MARK: - Turn State (socket-driven)
