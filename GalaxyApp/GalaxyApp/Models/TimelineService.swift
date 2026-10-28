@@ -1,8 +1,8 @@
 import Foundation
+import Galactic
 
-/// Fire-and-forget timeline event recorder.
-/// Spawns galaxy-timeline as a detached subprocess — no stdout
-/// capture, no process tracking, no error propagation.
+/// Records timeline events by running galaxy-timeline. Fire-and-forget,
+/// except `recordReturningID`, which answers the new event's id.
 enum TimelineService {
     private static let binaryPath =
         "\(NSHomeDirectory())/.claude/galaxy/bin/galaxy-timeline"
@@ -85,6 +85,55 @@ enum TimelineService {
         launchFireAndForget(
             args: args, stdinData: jsonData
         )
+    }
+
+    /// Record an event and answer its id on the main queue, or nil when it was
+    /// not recorded. For a caller that has to point something at the event.
+    static func recordReturningID(
+        ledgerSessionId: Int64,
+        eventType: String,
+        source: String,
+        detailData: [String: Any],
+        completion: @escaping (Int64?) -> Void
+    ) {
+        let args = [
+            "record",
+            "--ledger-session-id", String(ledgerSessionId),
+            "--event-type", eventType,
+            "--source", source,
+            "--detail-data-stdin",
+            "--json",
+        ]
+
+        guard let jsonData = try? JSONSerialization.data(
+            withJSONObject: detailData
+        ) else {
+            SessionSubmit.log("timeline record failed: \(eventType) detail not serializable")
+            DispatchQueue.main.async { completion(nil) }
+            return
+        }
+
+        ProcessRunner.run(
+            executableURL: URL(fileURLWithPath: binaryPath),
+            arguments: args,
+            stdin: jsonData,
+            timeout: 5
+        ) { result in
+            var id: Int64?
+            switch result {
+            case .success(let output):
+                id = (try? JSONSerialization.jsonObject(with: output))
+                    .flatMap { $0 as? [String: Any] }
+                    .flatMap { ($0["id"] as? NSNumber)?.int64Value }
+                if id == nil {
+                    SessionSubmit.log("timeline record \(eventType): no id in output")
+                }
+            case .failure(let error):
+                SessionSubmit.log(
+                    "timeline record \(eventType) failed: \(error.localizedDescription)")
+            }
+            DispatchQueue.main.async { completion(id) }
+        }
     }
 
     private static func launchFireAndForget(

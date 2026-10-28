@@ -26,7 +26,8 @@ extension TerminalTimelineRecorder {
     /// between modules without rewriting history's idea of where it was.
     static let galaxyLedger = TerminalTimelineRecorder(
         terminalSource: "galaxy-app/views/terminal",
-        scrollbackSource: "galaxy-app/views/scrollback"
+        scrollbackSource: "galaxy-app/views/scrollback",
+        reviewStore: .galaxyTimeline
     ) { event in
         if event.detailMayBeLarge {
             TimelineService.recordViaStdin(
@@ -46,4 +47,22 @@ extension TerminalTimelineRecorder {
             )
         }
     }
+}
+
+extension ReviewStore {
+
+    /// Keeps reviews on the session's timeline; `galaxy-timeline message`
+    /// prints one back.
+    static let galaxyTimeline = ReviewStore(
+        store: { review, completion in
+            TimelineService.recordReturningID(
+                ledgerSessionId: review.sessionID,
+                eventType: review.eventType,
+                source: review.source,
+                detailData: review.detail,
+                completion: completion
+            )
+        },
+        readCommand: { "galaxy-timeline message \($0)" }
+    )
 }

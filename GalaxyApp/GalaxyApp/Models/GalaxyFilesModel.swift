@@ -147,6 +147,17 @@ final class GalaxyFilesModel: FilesHost {
         session.enqueueMessage(review, sourceLabel: "File review")
     }
 
+    func reviewDestination(forOwner ownerID: String) -> ReviewDestination? {
+        guard let session = SessionManager.shared.session(forOwnerID: ownerID),
+            let ledgerSessionId = session.ledgerSessionId
+        else { return nil }
+        return ReviewDestination(
+            store: .galaxyTimeline,
+            sessionID: ledgerSessionId,
+            source: "galaxy-app/views/files"
+        )
+    }
+
     var textEntryPayload: [String: [[String: Any]]]? {
         SettingsManager.shared.settings.textEntry.jsPayload
     }
