@@ -6,8 +6,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/kellyredding/Galactic.git",
       "state" : {
-        "revision" : "4a3734722708a4490d1ae28c982b6273ff66113b",
-        "version" : "0.11.0"
+        "revision" : "7b55e59c17734afd29c47915ac917316a76c584f",
+        "version" : "0.11.1"
       }
     },
     {
