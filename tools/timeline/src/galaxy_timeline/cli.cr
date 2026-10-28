@@ -36,6 +36,12 @@ module GalaxyTimeline
         else
           handle_show(rest)
         end
+      when "message"
+        if rest.includes?("-h") || rest.includes?("--help")
+          show_message_help
+        else
+          handle_message(rest)
+        end
       when "update"
         if rest.includes?("-h") || rest.includes?("--help")
           show_update_help
@@ -608,6 +614,56 @@ module GalaxyTimeline
     end
 
     # ========================================================
+    # message
+    # ========================================================
+
+    private def self.handle_message(args : Array(String))
+      event_id : Int64? = nil
+
+      args.each do |arg|
+        if n = arg.to_i64?
+          event_id = n
+        else
+          STDERR.puts "Error: Unknown option '#{arg}'"
+          STDERR.puts "Run 'galaxy-timeline message --help' for usage"
+          exit(1)
+        end
+      end
+
+      unless event_id
+        STDERR.puts "Error: event ID is required"
+        exit(1)
+      end
+
+      event = Database.get_event(event_id)
+
+      unless event
+        STDERR.puts "Error: event ##{event_id} not found"
+        exit(1)
+      end
+
+      message = stored_message(event.detail_data)
+
+      unless message
+        STDERR.puts(
+          "Error: event ##{event_id} (#{event.event_type}) " \
+          "has no message",
+        )
+        exit(1)
+      end
+
+      puts message.rstrip('\n')
+    end
+
+    # The `message` field of an event's detail, when it is a string.
+    private def self.stored_message(detail_data : String?) : String?
+      return nil unless detail_data
+      JSON.parse(detail_data)["message"]?.try(&.as_s?)
+    rescue JSON::ParseException
+      nil
+    end
+
+    # ========================================================
     # update
     # ========================================================
 
@@ -1104,6 +1160,7 @@ module GalaxyTimeline
         marker    Add a timeline marker
         list      List events for a session
         show      Show event details by ID
+        message   Print an event's stored message
         update    Update detail_data on an event
         delete    Delete an event
         stats     Get event count (JSON)
@@ -1222,6 +1279,24 @@ module GalaxyTimeline
 
       OPTIONS:
         --json                 Output as JSON
+      HELP
+    end
+
+    private def self.show_message_help
+      puts <<-HELP
+      galaxy-timeline message - Print an event's stored message
+
+      USAGE:
+        galaxy-timeline message ID
+
+      REQUIRED:
+        ID                     Event ID (positional)
+
+      Prints the "message" field of the event's detail_data
+      as plain text: the full text of a review or of a
+      prompt that was cut off on its way to the agent.
+      Exits non-zero when the event does not exist or
+      carries no message.
       HELP
     end
 

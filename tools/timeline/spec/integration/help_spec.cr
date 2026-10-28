@@ -10,6 +10,7 @@ describe "CLI help and version", tags: "integration" do
     result[:output].should contain("record")
     result[:output].should contain("list")
     result[:output].should contain("show")
+    result[:output].should contain("message")
     result[:output].should contain("update")
     result[:output].should contain("delete")
     result[:output].should contain("stats")
@@ -34,25 +35,25 @@ describe "CLI help and version", tags: "integration" do
     result = run_binary(["version"])
 
     result[:status].should eq(0)
-    result[:output].should contain("galaxy-timeline 0.1.2")
+    result[:output].should contain("galaxy-timeline 0.1.3")
   end
 
   it "shows version with --version" do
     result = run_binary(["--version"])
 
     result[:status].should eq(0)
-    result[:output].should contain("galaxy-timeline 0.1.2")
+    result[:output].should contain("galaxy-timeline 0.1.3")
   end
 
   it "shows version with -v" do
     result = run_binary(["-v"])
 
     result[:status].should eq(0)
-    result[:output].should contain("galaxy-timeline 0.1.2")
+    result[:output].should contain("galaxy-timeline 0.1.3")
   end
 
   it "shows subcommand help with --help flag" do
-    ["record", "list", "show", "update", "delete", "stats", "backup"].each do |cmd|
+    ["record", "list", "show", "message", "update", "delete", "stats", "backup"].each do |cmd|
       result = run_binary([cmd, "--help"])
 
       result[:status].should eq(0)
