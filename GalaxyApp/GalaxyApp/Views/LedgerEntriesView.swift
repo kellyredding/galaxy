@@ -134,7 +134,10 @@ struct LedgerEntriesView: View {
                 updateEscapeMonitor()
             }
             .onAppear { updateEscapeMonitor() }
-            .onDisappear { removeEscapeMonitor() }
+            .onDisappear {
+                removeEscapeMonitor()
+                teardownSearchDebounce()
+            }
     }
 
     /// Focus the search field when navigating to the Entries subtab.
@@ -506,6 +509,13 @@ struct LedgerEntriesView: View {
                     onSearch(query)
                 }
             }
+    }
+
+    /// The sink captures this view's state, which holds the sink, so the
+    /// pipeline is never freed unless it is cancelled.
+    private func teardownSearchDebounce() {
+        searchCancellable?.cancel()
+        searchCancellable = nil
     }
 
     // MARK: - Helpers

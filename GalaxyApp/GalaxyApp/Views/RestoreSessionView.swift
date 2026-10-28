@@ -90,6 +90,12 @@ struct RestoreSessionView: View {
                     }
                 }
         }
+        .onDisappear {
+            // The sink captures this view's state, which holds the sink, so
+            // the pipeline is never freed unless it is cancelled.
+            debounceCancel?.cancel()
+            debounceCancel = nil
+        }
         .onReceive(NotificationCenter.default.publisher(for: .restoreSessionNavigateUp)) { _ in
             moveSelection(by: -1)
         }
