@@ -19,9 +19,12 @@ import Foundation
 /// Search:    grep "Galaxy/socket" ~/.claude/galaxy/galaxy.log
 enum GalaxyLog {
     private static let logPath = NSHomeDirectory() + "/.claude/galaxy/galaxy.log"
+    /// Dated, because one file spans days before it rotates, and a bare time
+    /// of day reads lines from different days as simultaneous.
     private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
-        f.dateFormat = "HH:mm:ss.SSS"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
         return f
     }()
 
@@ -117,25 +120,21 @@ enum GalaxyLog {
         if bytesWritten >= maxBytes { rotate() }
     }
 
-    /// The active handle, opened (and the file created) once and left
-    /// positioned at end of file. MUST run on `queue`.
+    /// The active handle, opened (and the file created) once. MUST run on
+    /// `queue`.
     private static func openedHandle() -> FileHandle? {
         if let handle { return handle }
 
-        let fm = FileManager.default
         let dir = (logPath as NSString).deletingLastPathComponent
-        try? fm.createDirectory(
+        try? FileManager.default.createDirectory(
             atPath: dir, withIntermediateDirectories: true
         )
-        if !fm.fileExists(atPath: logPath) {
-            fm.createFile(atPath: logPath, contents: nil)
-        }
 
-        guard let fh = try? FileHandle(
-            forWritingTo: URL(fileURLWithPath: logPath)
-        ) else {
-            return nil
-        }
+        // Append mode, so the old and new app writing during a restart
+        // cannot write over each other's lines.
+        let fd = open(logPath, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0o644)
+        guard fd >= 0 else { return nil }
+        let fh = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
         bytesWritten = Int((try? fh.seekToEnd()) ?? 0)
         handle = fh
         return fh
