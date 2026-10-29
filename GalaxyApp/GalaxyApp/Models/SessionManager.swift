@@ -915,7 +915,7 @@ class SessionManager: ObservableObject {
         // isInTurn, happens only when Claude actually took it,
         // which no amount of replay latency can fake.
         if canResume {
-            session.waitForReady { [weak session] in
+            session.awaitResumeReady { [weak session] in
                 session?.sendSkill("galaxy:resume")
                 // The restored screen can come back garbled (a
                 // resize artifact on the freshly recreated backend),

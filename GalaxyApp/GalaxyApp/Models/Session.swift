@@ -157,9 +157,9 @@ class Session: Identifiable, ObservableObject {
     /// and deliberately nowhere else.
     @Published private(set) var hasEverBeenReady: Bool = false
 
-    /// When the reset still owed a `session:ready` was sent: the lower bound
-    /// for asking the timeline whether it happened, which is what tells a lost
-    /// readiness signal from a slow one.
+    /// When the reset or resume still owed a `session:ready` began: the lower
+    /// bound for asking the timeline whether it happened, which is what tells
+    /// a lost readiness signal from a slow one.
     private(set) var resetSentAt: Date?
 
     /// This session's terminal panes, as a unit — the focus memory, the
@@ -1334,7 +1334,15 @@ class Session: Identifiable, ObservableObject {
         }
     }
 
-    /// Whether a lost post-reset readiness signal can be looked for: a reset
+    /// Run `action` once a resume's `session:ready` arrives, and start the
+    /// clock that lets a lost one be recovered the way a reset's is. Without
+    /// the clock, a lost resume signal held the queue until another resume.
+    func awaitResumeReady(then action: @escaping () -> Void) {
+        resetSentAt = Date()
+        waitForReady(then: action)
+    }
+
+    /// Whether a lost readiness signal can be looked for: a reset or resume
     /// went out from here and nothing has reported it ready since.
     var canRecoverLostReady: Bool {
         submitBlockReason == .awaitingReset && resetSentAt != nil
@@ -1893,8 +1901,8 @@ extension Session: AgentInboxHost {
         case .inTurn: return "the agent is mid-turn, and it will send when that ends"
         case .awaitingReset:
             return canRecoverLostReady
-                ? "the session hasn't reported ready since Galaxy reset its "
-                    + "context; Sessions ▸ Mark Session Ready can check and "
+                ? "the session hasn't reported ready since its reset or "
+                    + "resume; Sessions ▸ Mark Session Ready can check and "
                     + "release it"
                 : "the session hasn't reported ready since its reset or resume"
         case .neverReady:
@@ -1936,6 +1944,37 @@ extension Session: AgentInboxHost {
             case .neverReady: return "never reported ready"
             }
         }
+    }
+
+    /// The two blocks a readiness signal ends, and so the two a lost one
+    /// leaves standing. Mid-turn, stopped and exited end without the reader.
+    var canReleaseBlock: Bool {
+        submitBlockReason == .awaitingReset || submitBlockReason == .neverReady
+    }
+
+    /// Through `markReady`, so a `/galaxy:resume` or `/handoff` the session
+    /// owes still goes ahead of the queue. Unforced, a reset or resume is
+    /// released only once the timeline records it.
+    func releaseBlock(force: Bool, completion: @escaping (Bool) -> Void) {
+        guard canReleaseBlock else {
+            completion(false)
+            return
+        }
+        if !force {
+            if canRecoverLostReady {
+                recoverLostReady(trigger: "inbox ready", outcome: completion)
+                return
+            }
+            guard submitBlockReason == .neverReady else {
+                completion(false)
+                return
+            }
+        }
+        SessionSubmit.log(
+            "mark-ready by hand (inbox\(force ? ", forced" : ""))"
+                + " session=\(sessionRef)")
+        markReady()
+        completion(true)
     }
 
     var submitBlockReason: SubmitBlock? {

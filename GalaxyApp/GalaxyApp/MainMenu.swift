@@ -1300,8 +1300,8 @@ class MenuActions: NSObject {
     }
 
     /// Sessions ▸ Mark Session Ready. Releases a queue whose readiness signal
-    /// never arrived: at once for `.neverReady`, and after a reset only once
-    /// the timeline confirms it, saying so when it cannot.
+    /// never arrived: at once for `.neverReady`, and after a reset or resume
+    /// only once the timeline confirms it, saying so when it cannot.
     @objc func markSessionReady(_ sender: Any?) {
         MainActor.assumeIsolated {
             guard let session = SessionManager.shared.activeSession
@@ -1312,8 +1312,8 @@ class MenuActions: NSObject {
                     let alert = NSAlert()
                     alert.messageText = "Session Not Released"
                     alert.informativeText = """
-                        Galaxy sent \(session.displayName) a context reset \
-                        and the session's timeline has no record of it \
+                        Galaxy reset or resumed \(session.displayName) and \
+                        the session's timeline has no record of it \
                         finishing, so anything queued behind it is held. \
                         If the reset never ran, type it in the terminal.
                         """
@@ -1400,10 +1400,9 @@ extension MenuActions: NSMenuItemValidation {
         case #selector(showAgentInbox(_:)):
             return NSApp.modalWindow == nil
 
-        // The interlock, and the whole reason this is a menu item rather
-        // than a button on the refusal. Live only for the two blocks a
-        // person can resolve, and dimmed everywhere else, so the menu
-        // answers "is this my problem" without anyone having to try it.
+        // The interlock. Live only for the two blocks a person can resolve,
+        // and dimmed everywhere else, so the menu answers "is this my
+        // problem" without anyone having to try it.
         case #selector(markSessionReady(_:)):
             guard let session = SessionManager.shared.activeSession
             else { return false }

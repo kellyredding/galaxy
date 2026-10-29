@@ -514,6 +514,12 @@ final class EventCoordinator {
                     + " manual ready accepted"
                 )
                 session.markReady()
+            } else {
+                GalaxyLog.events(
+                    "routeEvent: manual ready NOT ROUTED for"
+                    + " ledger_session_id=\(envelope.ledgerSessionId) —"
+                    + " no open app session"
+                )
             }
             return
         }
@@ -522,21 +528,30 @@ final class EventCoordinator {
             let actionableRefs: Set<String> = [
                 "resume", "clear", "compact", "startup",
             ]
-            if let ref = envelope.ref,
-               actionableRefs.contains(ref),
-               let appSessionId =
-                   ledgerSessionIdCache[
-                       envelope.ledgerSessionId
-                   ],
-               let session = sessionManager?.sessions
-                   .first(where: { $0.id == appSessionId })
-            {
-                GalaxyLog.events(
-                    "[\(session.sessionRef)] routeEvent:"
-                    + " session:ready ref=\(ref)"
-                )
-                session.markReady()
+            let ref = envelope.ref ?? "none"
+            let appSessionId = ledgerSessionIdCache[envelope.ledgerSessionId]
+            let session = appSessionId.flatMap { id in
+                sessionManager?.sessions.first(where: { $0.id == id })
             }
+            guard actionableRefs.contains(ref), let session else {
+                // A readiness signal that goes nowhere holds the session's
+                // queue with nothing in the log to say why.
+                GalaxyLog.events(
+                    "routeEvent: session:ready ref=\(ref) NOT ROUTED for"
+                    + " ledger_session_id=\(envelope.ledgerSessionId) —"
+                    + (actionableRefs.contains(ref)
+                        ? " cached app session"
+                            + " \(appSessionId?.uuidString ?? "none")"
+                            + " is not open"
+                        : " ref is not one that marks ready")
+                )
+                return
+            }
+            GalaxyLog.events(
+                "[\(session.sessionRef)] routeEvent:"
+                + " session:ready ref=\(ref)"
+            )
+            session.markReady()
             return
         }
 
