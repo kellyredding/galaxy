@@ -39,7 +39,6 @@ SPEC_DEFAULT_CONFIG = {
   "_schema_version" => "0.0.0",
   "inline_char_cap" => 15000,
   "max_per_session" => 10,
-  "editor"          => "",
 }.to_json
 File.write(SPEC_CONFIG_DIR / "config.json", SPEC_DEFAULT_CONFIG)
 

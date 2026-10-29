@@ -35,84 +35,58 @@ describe GalaxySnapshots::CLI do
       end
     {% end %}
 
-    it "returns config editor when set" do
-      config = GalaxySnapshots::Config.load
-      config.editor = "subl"
-      config.save
-
-      result = GalaxySnapshots::CLI.resolve_editor
-      result.should eq("subl")
-
-      # Reset config
-      config.editor = ""
-      config.save
-    end
-
-    it "falls back to VISUAL when config editor is empty" do
-      # Ensure config editor is empty
-      config = GalaxySnapshots::Config.load
-      config.editor = ""
-      config.save
-
+    it "uses VISUAL" do
       ENV["VISUAL"] = "code"
       result = GalaxySnapshots::CLI.resolve_editor
       result.should eq("code")
     end
 
-    it "falls back to EDITOR when config and VISUAL are empty" do
-      config = GalaxySnapshots::Config.load
-      config.editor = ""
-      config.save
-
+    it "falls back to EDITOR when VISUAL is unset" do
       ENV["EDITOR"] = "vim"
       result = GalaxySnapshots::CLI.resolve_editor
       result.should eq("vim")
     end
 
     it "prefers VISUAL over EDITOR" do
-      config = GalaxySnapshots::Config.load
-      config.editor = ""
-      config.save
-
       ENV["VISUAL"] = "code"
       ENV["EDITOR"] = "vim"
       result = GalaxySnapshots::CLI.resolve_editor
       result.should eq("code")
     end
 
-    it "prefers config over VISUAL and EDITOR" do
-      config = GalaxySnapshots::Config.load
-      config.editor = "cursor"
-      config.save
-
-      ENV["VISUAL"] = "code"
-      ENV["EDITOR"] = "vim"
-      result = GalaxySnapshots::CLI.resolve_editor
-      result.should eq("cursor")
-
-      # Reset config
-      config.editor = ""
-      config.save
-    end
-
     it "falls back to 'open' when nothing is set" do
-      config = GalaxySnapshots::Config.load
-      config.editor = ""
-      config.save
-
       result = GalaxySnapshots::CLI.resolve_editor
       result.should eq("open")
     end
 
     it "skips empty VISUAL and falls to EDITOR" do
-      config = GalaxySnapshots::Config.load
-      config.editor = ""
-      config.save
-
       ENV["VISUAL"] = ""
       ENV["EDITOR"] = "nano"
       result = GalaxySnapshots::CLI.resolve_editor
       result.should eq("nano")
     end
+  end
+
+  # A config that fails to parse silently loads defaults, so neither an old
+  # file that still carries the removed editor key nor one without it may
+  # cost the settings beside it.
+  describe "loading a config around the removed editor setting" do
+    {% for label, editor in {"with" => true, "without" => false} %}
+      it "keeps the other settings in a file {{ label.id }} an editor key" do
+        settings = {
+          "_schema_version" => "0.1.0",
+          "inline_char_cap" => 4321,
+          "max_per_session" => 7,
+        } of String => String | Int32
+        settings["editor"] = "subl" if {{ editor }}
+        File.write(GalaxySnapshots::CONFIG_FILE, settings.to_json)
+
+        config = GalaxySnapshots::Config.load
+        config.inline_char_cap.should eq(4321)
+        config.max_per_session.should eq(7)
+      ensure
+        File.write(GalaxySnapshots::CONFIG_FILE, SPEC_DEFAULT_CONFIG)
+      end
+    {% end %}
   end
 end

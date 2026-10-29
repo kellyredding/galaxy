@@ -602,11 +602,6 @@ module GalaxySnapshots
       Dir.mkdir_p(Path.new(temp_path).parent)
       File.write(temp_path, snapshot.content)
 
-      # Resolve the editor command via cascade:
-      # 1. config editor (explicit)
-      # 2. $VISUAL env var
-      # 3. $EDITOR env var
-      # 4. "open" (macOS default)
       editor = resolve_editor
 
       # Open the file
@@ -622,7 +617,7 @@ module GalaxySnapshots
         process.wait
       rescue ex
         STDERR.puts "Error: failed to open with '#{editor}': #{ex.message}"
-        STDERR.puts "Set an editor via: galaxy-snapshots config set editor <command>"
+        STDERR.puts "Set $VISUAL or $EDITOR to choose the editor."
         exit(1)
       end
 
@@ -2133,25 +2128,14 @@ module GalaxySnapshots
       File.join(Dir.tempdir, "galaxy-snapshots-snapshot-#{ledger_session_id}-#{number}.md")
     end
 
-    # Resolve which editor command to use via cascade:
-    # 1. config editor (if non-empty)
-    # 2. $VISUAL
-    # 3. $EDITOR
-    # 4. "open" (macOS default)
+    # $VISUAL, then $EDITOR, then macOS's default application.
     def self.resolve_editor : String
-      # 1. Config
-      config_editor = Config.load.editor
-      return config_editor unless config_editor.empty?
-
-      # 2. $VISUAL
       visual = ENV["VISUAL"]?
       return visual if visual && !visual.empty?
 
-      # 3. $EDITOR
       editor = ENV["EDITOR"]?
       return editor if editor && !editor.empty?
 
-      # 4. macOS default
       "open"
     end
 
@@ -2318,14 +2302,13 @@ module GalaxySnapshots
 
       DESCRIPTION:
         Writes the snapshot content to a stable temp file and opens it
-        with the configured editor. The temp file path is deterministic
-        so reopening the same snapshot reuses the file (and editor tab).
+        in an editor. The temp file path is deterministic so reopening
+        the same snapshot reuses the file (and editor tab).
 
       EDITOR RESOLUTION (first match wins):
-        1. editor config setting
-        2. $VISUAL environment variable
-        3. $EDITOR environment variable
-        4. 'open' (macOS default application)
+        1. $VISUAL environment variable
+        2. $EDITOR environment variable
+        3. 'open' (macOS default application)
 
       EXAMPLES:
         galaxy-snapshots open --pid 12345 1

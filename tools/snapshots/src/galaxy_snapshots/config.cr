@@ -9,13 +9,11 @@ module GalaxySnapshots
 
     property inline_char_cap : Int32
     property max_per_session : Int32
-    property editor : String
 
     def initialize(
       @schema_version = GalaxySnapshots::VERSION,
       @inline_char_cap = 15000,
       @max_per_session = 10,
-      @editor = "",
     )
     end
 
