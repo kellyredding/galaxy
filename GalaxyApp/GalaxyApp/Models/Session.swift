@@ -247,16 +247,12 @@ class Session: Identifiable, ObservableObject {
     // Hoisted from view-local @State so NavigationCoordinator can
     // observe changes (for recording) and mutate directly (for
     // restoration on back/forward). The views themselves still own
-    // the resolved full objects (ArtifactSummary, SnapshotDetail,
-    // AgentRun); only the identifier lives here.
+    // the resolved full objects (ArtifactSummary, AgentRun); only
+    // the identifier lives here.
 
     /// Number of the artifact currently open in ArtifactsView's
     /// reader. nil when the reader is closed (viewing the index).
     @Published var openArtifactNumber: Int32? = nil
-
-    /// Number of the snapshot currently open in SnapshotsView's
-    /// reader. nil when viewing the index.
-    @Published var openSnapshotNumber: Int32? = nil
 
     /// agentId of the agent currently open in AgentsView's detail
     /// view. nil when viewing the index.
@@ -267,7 +263,7 @@ class Session: Identifiable, ObservableObject {
     ///
     /// The strip itself lives on the session's `FileSet`, which is where
     /// the tabs, their order and their reader state are. What is here is
-    /// only the identifier, for the same reason the three above are: the
+    /// only the identifier, for the same reason the two above are: the
     /// coordinator has to be able to observe it and write it back.
     @Published var selectedFilePath: String? = nil
 
@@ -284,7 +280,6 @@ class Session: Identifiable, ObservableObject {
 
     fileprivate var artifactTitles: [Int32: String] = [:]
     fileprivate var artifactTypes: [Int32: String] = [:]
-    fileprivate var snapshotTitles: [Int32: String] = [:]
     fileprivate var agentTitles: [String: String] = [:]
 
     func recordArtifactInfo(
@@ -298,15 +293,6 @@ class Session: Identifiable, ObservableObject {
         guard let title = artifactTitles[number] else { return nil }
         let type = artifactTypes[number] ?? "artifact"
         return "(\(type)) — \(title) (Artifact #\(number))"
-    }
-
-    func recordSnapshotInfo(number: Int32, title: String) {
-        snapshotTitles[number] = title
-    }
-
-    func snapshotTitle(for number: Int32) -> String? {
-        guard let title = snapshotTitles[number] else { return nil }
-        return "\(title) (Snapshot #\(number))"
     }
 
     func recordAgentInfo(

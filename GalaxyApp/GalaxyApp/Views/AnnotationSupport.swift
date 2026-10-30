@@ -11,14 +11,7 @@ let emojiAutocompleteJS: String = EmojiJS.autocomplete
 
 // MARK: - Reader annotation conformances
 
-/// Both stores read through the engine's one annotation shape.
-///
-/// Artifacts and snapshots describe the same idea differently: one keeps the
-/// range inside an anchor payload and records the source text captured when
-/// the annotation was written, the other keeps the range in dedicated columns
-/// and captures nothing. Conforming both lets any reader serve either without
-/// one being flattened into the other first, which is how captured text used
-/// to get discarded on the way in.
+/// Artifact annotations read through the engine's one annotation shape.
 extension ArtifactAnnotation: ReaderAnnotation {
     var isStale: Bool { stale }
     var anchorType: ReaderAnchorType { anchorData.type }
@@ -43,19 +36,6 @@ extension ArtifactAnnotation: ReaderAnnotation {
     var anchorFileLineSide: String? { anchorData.fileLineSide }
 
     var anchorDocumentPath: String? { anchorData.artifactPath }
-}
-
-extension SnapshotAnnotation: ReaderAnnotation {
-    /// Snapshots only ever anchor by line.
-    var anchorType: ReaderAnchorType { .lineRange }
-
-    var anchorStartLine: Int32? { startLine }
-    var anchorEndLine: Int32? { endLine }
-    /// Snapshots have no column for captured text, so the reader slices the
-    /// source instead. Safe there, because snapshot content cannot change
-    /// under an annotation — which is also why `isStale` keeps its default of
-    /// false rather than being answered from a column that does not exist.
-    var anchorLineContent: String? { nil }
 }
 
 // MARK: - Init JS

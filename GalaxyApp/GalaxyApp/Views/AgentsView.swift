@@ -274,7 +274,7 @@ struct AgentsView: View {
             } else if agents == nil {
                 // Same empty state for the post-load /
                 // never-populated case — mirrors the
-                // Snapshots and Artifacts indexes so the
+                // Artifacts index so the
                 // user never sees a blank pane while a
                 // ledger session ID is still resolving or
                 // a fetch hasn't returned its first batch.

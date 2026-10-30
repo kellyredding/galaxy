@@ -451,7 +451,6 @@ enum HoveredTimelineItem {
 /// agents). Deletion events are intentionally excluded —
 /// navigating to a deleted record is confusing.
 enum TimelineClickTarget: Equatable {
-    case snapshot(Int32)
     case artifact(Int32)
     case agent(String)
 }
@@ -474,17 +473,6 @@ extension TimelineEvent {
         else { return nil }
 
         switch eventType {
-        case "snapshot:created",
-             "snapshot:reviewed",
-             "snapshot:opened",
-             "snapshot:closed",
-             "snapshot.annotation:created",
-             "snapshot.annotation:updated",
-             "snapshot.review:created":
-            guard let n = d["snapshot_number"] as? Int
-            else { return nil }
-            return .snapshot(Int32(n))
-
         case "artifact:created",
              "artifact:updated",
              "artifact:reviewed",

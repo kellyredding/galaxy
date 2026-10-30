@@ -3,10 +3,10 @@ import SwiftUI
 /// A column header for the ledger tables.
 ///
 /// Shared by the two ledger sub-tabs, which had this written out twice,
-/// identically, down to the byte. Deliberately not shared with the artifacts,
-/// snapshots or agents tables: those three decide column widths in three
-/// mutually incompatible ways, and one header spanning all five would have to
-/// pick one of them and change how the other two look.
+/// identically, down to the byte. Deliberately not shared with the artifacts
+/// or agents tables: those decide column widths in mutually incompatible ways,
+/// and one header spanning them all would have to pick one and change how the
+/// others look.
 struct LedgerTableHeader: View {
     let title: String
     let width: CGFloat

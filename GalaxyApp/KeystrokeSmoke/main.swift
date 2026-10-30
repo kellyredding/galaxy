@@ -67,7 +67,6 @@ func ctx(
     activeSessionExited: Bool = false,
     sessionsPanelVisible: Bool = true,
     artifactReaderOpen: Bool = false,
-    snapshotReaderOpen: Bool = false,
     fileOpen: Bool = false,
     hasClosedFiles: Bool = false,
     hasMultipleFileRows: Bool = false,
@@ -86,7 +85,6 @@ func ctx(
         activeSessionExited: activeSessionExited,
         sessionsPanelVisible: sessionsPanelVisible,
         artifactReaderOpen: artifactReaderOpen,
-        snapshotReaderOpen: snapshotReaderOpen,
         fileOpen: fileOpen,
         hasClosedFiles: hasClosedFiles,
         hasMultipleFileRows: hasMultipleFileRows,
@@ -368,15 +366,14 @@ check("availability: ⌘W closes the window only with no sessions") {
 
 // MARK: - Tier 2: list focus, and Open
 
-/// Every surface Galaxy has: seven views, and the Ledger's five sub-tabs
-/// within one of them. Eleven distinct surfaces, and every one answers ↩
+/// Every surface Galaxy has: six views, and the Ledger's five sub-tabs
+/// within one of them. Ten distinct surfaces, and every one answers ↩
 /// differently.
 let surfaces: [(SessionTab, LedgerSubTab)] = SessionTab.allCases
     .flatMap { tab in LedgerSubTab.allCases.map { (tab, $0) } }
 
-/// The five rows ↩ can be, one per surface that opens something.
+/// The four rows ↩ can be, one per surface that opens something.
 let openRows = [
-    ("Open snapshot", gate("↩", "Open snapshot")),
     ("Open artifact", gate("↩", "Open artifact")),
     ("Open agent run", gate("↩", "Open agent run")),
     ("Reveal file in Finder", gate("↩", "Reveal file in Finder")),
@@ -458,12 +455,12 @@ check("availability: reveal is live only on Files, with a file open") {
     return true
 }
 
-check("availability: list nav is live on exactly six of eleven surfaces") {
+check("availability: list nav is live on exactly four of ten surfaces") {
     let listNav = gate("⌘J", "Next item")
     for (tab, sub) in surfaces {
         let expected: Bool
         switch tab {
-        case .snapshots, .artifacts, .agents:
+        case .artifacts, .agents:
             expected = true
         case .ledger:
             expected = sub == .fileAccess || sub == .entries
@@ -509,7 +506,6 @@ check("availability: an open reader keeps list nav, drops Open") {
     let listNav = gate("⌘J", "Next item")
     let states = [
         ctx(tab: .artifacts, artifactReaderOpen: true),
-        ctx(tab: .snapshots, snapshotReaderOpen: true),
     ]
     return states.allSatisfy { c in
         listNav.isActive(in: c)
@@ -528,17 +524,13 @@ check("availability: the reader pair is a complement within its tab") {
                  KeystrokeAvailability)] = [
         ("artifacts", .artifacts,
          gate("⌘R", "Refresh artifact"), gate("↩", "Open artifact")),
-        ("snapshots", .snapshots,
-         gate("⌘F", "Find in the open snapshot"),
-         gate("↩", "Open snapshot")),
     ]
     for (name, own, withReader, withoutReader) in pairs {
         for tab in SessionTab.allCases {
             for open in [false, true] {
                 let c = ctx(
                     tab: tab,
-                    artifactReaderOpen: own == .artifacts && open,
-                    snapshotReaderOpen: own == .snapshots && open)
+                    artifactReaderOpen: own == .artifacts && open)
                 let w = withReader.isActive(in: c)
                 let wo = withoutReader.isActive(in: c)
                 let onOwnTab = tab == own
@@ -553,19 +545,16 @@ check("availability: the reader pair is a complement within its tab") {
     return true
 }
 
-// 17. Cross-tab staleness. Both reader flags are global on SessionManager
-// while being set by per-session views, so either can still be true for a
-// tab the user has left — and a gate that read the flag without pairing
-// it to its own tab would light up on the wrong surface. This is the one
-// the manual QA script's step 4 checks by hand.
+// 17. Cross-tab staleness. The artifact reader flag is global on
+// SessionManager while being set by per-session views, so it can still be
+// true for a tab the user has left — and a gate that read the flag without
+// pairing it to its own tab would light up on the wrong surface. This is the
+// one the manual QA script's step 4 checks by hand.
 check("availability: a reader left open elsewhere lights nothing here") {
-    let artifactZoom = gate("⌘R", "Refresh artifact")
-    let snapshotFind = gate("⌘F", "Find in the open snapshot")
+    let artifactRefresh = gate("⌘R", "Refresh artifact")
     let agentEscape = gate("esc", "Close the agent run")
-    return !artifactZoom.isActive(
-        in: ctx(tab: .snapshots, artifactReaderOpen: true))
-        && !snapshotFind.isActive(
-            in: ctx(tab: .artifacts, snapshotReaderOpen: true))
+    return !artifactRefresh.isActive(
+        in: ctx(tab: .files, artifactReaderOpen: true))
         // The Agents tab's detail is not a web view, but it answers the
         // same question a reader does — and `AgentsView` installs its
         // Escape monitor only while a run is selected, so without the
@@ -574,8 +563,7 @@ check("availability: a reader left open elsewhere lights nothing here") {
         && agentEscape.isActive(in: ctx(tab: .agents, agentRunOpen: true))
         && !agentEscape.isActive(in: ctx(tab: .agents))
         && !agentEscape.isActive(
-            in: ctx(tab: .agents, artifactReaderOpen: true,
-                    snapshotReaderOpen: true))
+            in: ctx(tab: .agents, artifactReaderOpen: true))
 }
 
 // 18. The two ⌘= rows never read live together. A reader web view in the
@@ -630,8 +618,7 @@ check("availability: ⌘F has at most one meaning on every view") {
     }
     for tab in SessionTab.allCases {
         let c = ctx(tab: tab, hasSessions: true, hasActiveSession: true,
-                    artifactReaderOpen: true, snapshotReaderOpen: true,
-                    fileOpen: true)
+                    artifactReaderOpen: true, fileOpen: true)
         let live = rows.filter { $0.availability.isActive(in: c) }.count
         if live > 1 {
             print("      \(tab): \(live) live ⌘F rows")

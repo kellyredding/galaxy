@@ -16,7 +16,6 @@ struct NavigationRoute: Equatable, Hashable {
     let tab: SessionTab
     let ledgerSubTab: LedgerSubTab?
     let artifactNumber: Int32?
-    let snapshotNumber: Int32?
     let agentId: String?
     /// Id of the file set on screen in the Files tab.
     let fileSetID: String?
@@ -27,7 +26,6 @@ struct NavigationRoute: Equatable, Hashable {
         tab: SessionTab,
         ledgerSubTab: LedgerSubTab? = nil,
         artifactNumber: Int32? = nil,
-        snapshotNumber: Int32? = nil,
         agentId: String? = nil,
         fileSetID: String? = nil,
         filePath: String? = nil
@@ -35,7 +33,6 @@ struct NavigationRoute: Equatable, Hashable {
         self.tab = tab
         self.ledgerSubTab = ledgerSubTab
         self.artifactNumber = artifactNumber
-        self.snapshotNumber = snapshotNumber
         self.agentId = agentId
         self.fileSetID = fileSetID
         self.filePath = filePath
@@ -55,10 +52,6 @@ struct NavigationRoute: Equatable, Hashable {
 
     static func artifacts(number: Int32? = nil) -> Self {
         .init(tab: .artifacts, artifactNumber: number)
-    }
-
-    static func snapshots(number: Int32? = nil) -> Self {
-        .init(tab: .snapshots, snapshotNumber: number)
     }
 
     static func agents(id: String? = nil) -> Self {

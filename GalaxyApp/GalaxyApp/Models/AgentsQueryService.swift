@@ -2,8 +2,8 @@ import Foundation
 import Galactic
 
 /// Fetches agent data on demand by spawning galaxy-agents CLI.
-/// Follows the same pattern as SnapshotQueryService — independent
-/// cancellation domain, process management, and JSON decoding.
+/// Independent cancellation domain, process management, and JSON
+/// decoding.
 class AgentsQueryService {
     static let shared = AgentsQueryService()
 

@@ -1,8 +1,8 @@
 import Galactic
 import SwiftUI
 
-/// Keeps a Files pane alive per session, the way the artifacts and snapshots
-/// containers do.
+/// Keeps a Files pane alive per session, the way the artifacts container
+/// does.
 ///
 /// **A `ZStack` with opacity, not a conditional.** The pane holds a web view and
 /// a scroll position, so tearing it down on every session switch would rebuild

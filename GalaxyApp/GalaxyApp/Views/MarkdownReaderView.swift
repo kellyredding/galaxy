@@ -29,10 +29,10 @@ struct MarkdownReaderView: View {
     var onAnnotationMessage: ((AnnotationMessage) -> Void)?
     var annotationsEnabled: Bool = true
     /// Display label for annotation form headers
-    /// (e.g. "Snapshot #3", "Artifact #19").
+    /// (e.g. "Artifact #19").
     let itemLabel: String
     /// Base URL name for internal routing
-    /// (e.g. "snapshot-reader", "artifact-reader").
+    /// (e.g. "artifact-reader").
     var baseUrlName: String = "reader"
     // Absolute path of the file this artifact was created
     // from, when there was one. Used only to build a

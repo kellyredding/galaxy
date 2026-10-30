@@ -35,16 +35,11 @@ final class EventCoordinator {
         "session.idle",
         "ledger.entry",
         "artifact.show",
-        "snapshot.show",
         // Lifecycle events (timeline → DB → socket)
         "timeline.session:started",
         "timeline.session:resumed",
         "timeline.context:cleared",
         "timeline.context:compacted",
-        "timeline.snapshot.annotation:created",
-        "timeline.snapshot.annotation:updated",
-        "timeline.snapshot.annotation:deleted",
-        "timeline.snapshot.review:created",
         "timeline.scrollback.note:created",
         "timeline.scrollback.note:updated",
         "timeline.scrollback.note:deleted",
@@ -603,45 +598,11 @@ final class EventCoordinator {
         // Check if we handle this event type
         guard Self.knownEvents.contains(envelope.event) else { return }
 
-        // Snapshot show: switch tab + open the snapshot
-        // in the reader. If the event's session is
-        // active, apply immediately. Otherwise queue
-        // via SessionManager — when the user later
-        // switches to that session, the tab + reader
-        // come up "ready."
-        if envelope.event == "snapshot.show",
-           let number = envelope.detailValue(
-               "snapshot_number", as: Int64.self
-           )
-        {
-            let snapNumber = Int32(number)
-            DispatchQueue.main.async { [weak self] in
-                guard let sm = self?.sessionManager
-                else { return }
-                let appSessionId =
-                    self?.ledgerSessionIdCache[
-                        envelope.ledgerSessionId
-                    ]
-                guard let appSessionId else { return }
-
-                if appSessionId == sm.activeSessionId {
-                    sm.activeTab = .snapshots
-                    sm.pendingSnapshotNumber = snapNumber
-                } else {
-                    sm.queueSnapshotShow(
-                        sessionId: appSessionId,
-                        number: snapNumber
-                    )
-                }
-            }
-            return
-        }
-
         // Artifact show: switch tab + open the artifact
-        // in the reader. Parallel to snapshot.show above
-        // — active-session path applies immediately,
-        // non-active-session path queues via
-        // SessionManager for delivery on next switch.
+        // in the reader. If the event's session is active,
+        // apply immediately. Otherwise queue via
+        // SessionManager — when the user later switches to
+        // that session, the tab + reader come up "ready."
         if envelope.event == "artifact.show",
            let number = envelope.detailValue(
                "artifact_number", as: Int64.self
@@ -670,35 +631,7 @@ final class EventCoordinator {
             return
         }
 
-        // Annotation/review events: notify SessionManager
-        // for button refresh. The snapshot_id comes from the
-        // timeline event's detail_data.
-        if [
-            "timeline.snapshot.annotation:created",
-            "timeline.snapshot.annotation:updated",
-            "timeline.snapshot.annotation:deleted",
-            "timeline.snapshot.review:created",
-        ].contains(envelope.event),
-           let snapshotId = envelope.detailValue(
-               "snapshot_id", as: Int64.self
-           )
-        {
-            DispatchQueue.main.async { [weak self] in
-                guard let sm = self?.sessionManager
-                else { return }
-                if let appSessionId =
-                    self?.ledgerSessionIdCache[
-                        envelope.ledgerSessionId
-                    ],
-                   appSessionId
-                       == sm.activeSessionId
-                {
-                    sm.pendingReviewCheck = snapshotId
-                }
-            }
-        }
-
-        // Artifact annotation/review events: the same review-button
+        // Artifact annotation/review events: a review-button
         // refresh, keyed by artifact number. The events also carry a
         // row id, but the reader identifies its open artifact by
         // number and the has-pending query takes a number, so the id

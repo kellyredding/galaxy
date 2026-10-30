@@ -6,8 +6,8 @@ import Foundation
 /// sheet's own search field takes first responder as it appears, so a
 /// live reading of pane focus would be false the whole time the sheet is
 /// up and every ⌘S, ⌃←, and interrupt row would dim — the exact inverse
-/// of the truth. Worse for the readers: the escape monitors in
-/// `ArtifactsView` and `SnapshotsView` are app-wide and gate on
+/// of the truth. Worse for the reader: the escape monitor in
+/// `ArtifactsView` is app-wide and gates on
 /// `activeTab`, so live state cannot tell "the reader is behind the
 /// sheet" from "the reader has focus". Snapshotting before the overlay
 /// mounts keeps the rows describing the surface *behind* the sheet,
@@ -52,21 +52,17 @@ struct KeystrokeContext: Equatable {
 
     // MARK: - Readers
 
-    /// Two flags rather than one, because `SessionManager` publishes two
-    /// and they move independently — an artifact reader left open on one
-    /// tab says nothing about the snapshot reader on another.
     let artifactReaderOpen: Bool
-    let snapshotReaderOpen: Bool
 
     /// A file is open on the Files tab.
     ///
-    /// The odd one of the three, and worth saying why it is still here. The
-    /// other two describe something opened *over* a list, which can be closed
+    /// The odd one, and worth saying why it is still here. The artifact
+    /// reader describes something opened *over* a list, which can be closed
     /// to get the list back. Files has no list underneath — the strip and the
     /// reader are the surface — so this is really "the strip has a selection".
-    /// Every keystroke that consults it wants the same question the other two
-    /// answer, though: is there a document on screen for ⌘F, ⌃G and the zoom
-    /// keys to act on.
+    /// Every keystroke that consults it wants the same question the artifact
+    /// reader answers, though: is there a document on screen for ⌘F, ⌃G and
+    /// the zoom keys to act on.
     let fileOpen: Bool
 
     /// The Files strip has something to bring back, and more than one row to
@@ -121,7 +117,6 @@ struct KeystrokeContext: Equatable {
     func readerOpen(on tab: SessionTab) -> Bool {
         switch tab {
         case .artifacts: return artifactReaderOpen
-        case .snapshots: return snapshotReaderOpen
         case .agents: return agentRunOpen
         case .files: return fileOpen
         case .terminal, .timeline, .ledger: return false
@@ -138,7 +133,7 @@ struct KeystrokeContext: Equatable {
     /// the fix and is deliberately a later step.
     var hasListFocus: Bool {
         switch tab {
-        case .snapshots, .artifacts, .agents:
+        case .artifacts, .agents:
             return true
         case .ledger:
             return KeystrokeCatalog.ledgerListSubTabs.contains(ledgerSubTab)
@@ -164,7 +159,6 @@ struct KeystrokeContext: Equatable {
         activeSessionExited: false,
         sessionsPanelVisible: true,
         artifactReaderOpen: false,
-        snapshotReaderOpen: false,
         fileOpen: false,
         hasClosedFiles: false,
         hasMultipleFileRows: false,

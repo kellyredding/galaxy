@@ -513,9 +513,6 @@ struct TimelineView: View {
     ) {
         guard let target = item.clickTarget else { return }
         switch target {
-        case .snapshot(let n):
-            session.openSnapshotNumber = n
-            sessionManager.activeTab = .snapshots
         case .artifact(let n):
             session.openArtifactNumber = n
             sessionManager.activeTab = .artifacts

@@ -370,8 +370,8 @@ class MainMenu: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
 
         // Find (⌘F) — enabled when the active tab can host a
-        // find bar (terminal with a session, or a snapshot/
-        // artifact reader open). The action increments
+        // find bar (terminal with a session, or an artifact
+        // reader open). The action increments
         // SessionManager.findActivationCounter; surface-side
         // observers do the actual work based on their own
         // gates.
@@ -421,10 +421,8 @@ class MainMenu: NSObject, NSMenuDelegate {
             return sessionManager.activeSession != nil
         case .artifacts:
             return sessionManager.isArtifactReaderOpen
-        case .snapshots:
-            return sessionManager.isSnapshotReaderOpen
         // Per-session, so it is asked of the session rather than of a global
-        // the way the two readers above are.
+        // the way the artifact reader above is.
         case .files:
             return sessionManager.activeSession?.selectedFilePath != nil
         case .agents, .ledger, .timeline:
@@ -777,7 +775,7 @@ class MainMenu: NSObject, NSMenuDelegate {
         menu.addItem(focusNextArrowItem)
 
         // Activate focused item: Enter. The action is consumed
-        // by Snapshots / Artifacts / Agents / Ledger surfaces
+        // by Artifacts / Agents / Ledger surfaces
         // via `SessionManager.listNavAction = .activate`, so
         // the menu title flips to whatever the focused list
         // would open. `MenuActions.validateMenuItem` provides
@@ -1192,7 +1190,7 @@ class MenuActions: NSObject {
     /// back into it is the defect this closes.
     ///
     /// Gated on the Terminal tab because this app hosts the find bar in its
-    /// artifact and snapshot readers too — so the bar holding key does not mean
+    /// artifact reader too — so the bar holding key does not mean
     /// a terminal is on screen, and a zoom must not resize a pane the user
     /// cannot see.
     static func targetTerminalPane() -> TerminalPane? {
@@ -1271,8 +1269,8 @@ class MenuActions: NSObject {
     // MARK: - Edit Menu Actions
 
     /// Bumps SessionManager's find-activation counter; the
-    /// active surface (terminal host, artifact reader frame,
-    /// snapshot reader frame) observes the bump and brings up
+    /// active surface (terminal host, artifact reader frame)
+    /// observes the bump and brings up
     /// its find bar based on its own gates.
     @objc func find(_ sender: Any?) {
         SessionManager.shared.activateFind()
@@ -1531,7 +1529,7 @@ extension MenuActions: NSMenuItemValidation {
     /// Ledger) sub-tab. Single source of truth: buildViewMenu
     /// reads `.title` for the visible label, validateMenuItem
     /// reads `.enabled` for the dispatch gate. The active
-    /// surfaces — Snapshots, Artifacts, Agents, Ledger Files
+    /// surfaces — Artifacts, Agents, Ledger Files
     /// / Entries — are the ones whose `.onChange` handlers
     /// consume `SessionManager.listNavAction = .activate`.
     /// All other tabs (Terminal, Timeline, the read-only
@@ -1584,7 +1582,7 @@ extension MenuActions: NSMenuItemValidation {
     static func hasListFocus() -> Bool {
         let sm = SessionManager.shared
         switch sm.activeTab {
-        case .snapshots, .artifacts, .agents:
+        case .artifacts, .agents:
             return true
         case .ledger:
             return KeystrokeCatalog.ledgerListSubTabs
@@ -1602,10 +1600,6 @@ extension MenuActions: NSMenuItemValidation {
     ) {
         let sm = SessionManager.shared
         switch sm.activeTab {
-        case .snapshots:
-            return (
-                "Open snapshot", !sm.isSnapshotReaderOpen
-            )
         case .artifacts:
             return (
                 "Open artifact", !sm.isArtifactReaderOpen

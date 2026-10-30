@@ -71,13 +71,12 @@ enum KeystrokeSheetModel {
             // says what the key will do, which is a fact about the panel
             // on screen and not about the choice behind it.
             sessionsPanelVisible: SidebarPreferences.shared.isVisible,
-            // Global flags set by per-session views, so either can be
-            // true for a tab you are no longer on. Every gate that reads
-            // one pairs it with its own tab.
+            // A global flag set by per-session views, so it can be true for
+            // a tab you are no longer on. Every gate that reads it pairs it
+            // with its own tab.
             artifactReaderOpen: sm.isArtifactReaderOpen,
-            snapshotReaderOpen: sm.isSnapshotReaderOpen,
             // Per-session and read from the session rather than from a global,
-            // like the agent selection below and unlike the two readers above:
+            // like the agent selection below and unlike the artifact reader above:
             // the strip belongs to a session, so there is no app-wide flag that
             // could be stale for the tab you are on.
             fileOpen: session?.selectedFilePath != nil,

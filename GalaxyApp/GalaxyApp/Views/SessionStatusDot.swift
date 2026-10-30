@@ -47,9 +47,9 @@ struct SessionStatusDot: View {
     /// the app stayed up. Scoped here, the curve reaches nothing but
     /// this circle's opacity.
     ///
-    /// The same shape the refresh spinners in `ArtifactsView` and
-    /// `SnapshotsView` already use, which repeat forever without
-    /// leaking for exactly this reason.
+    /// The same shape the refresh spinner in `ArtifactsView` already
+    /// uses, which repeats forever without leaking for exactly this
+    /// reason.
     private var pulseAnimation: Animation {
         session.isInTurn
             ? .easeInOut(duration: 0.6)

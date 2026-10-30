@@ -22,10 +22,8 @@ import Foundation
 ///   standalone tools and never launches the app.
 /// - `KeystrokeCatalog.readerViews`, if the tab hosts a reader — eight rows
 ///   read it, and a tab absent from it silently has no reader keystrokes.
-/// - `KeystrokeAvailability.item(_:)`, whose fallback prints "an artifact or
-///   snapshot" for any tab it does not name.
-/// - `NotificationService`'s decode of the `tab` string in `userInfo`, which
-///   falls back to Terminal for a value it does not recognise.
+/// - `KeystrokeAvailability.item(_:)`, whose fallback prints "an artifact"
+///   for any tab it does not name.
 /// - `isVisibleSurface`, spelled out by hand in three containers and threaded
 ///   through twenty-odd initialisers. A tab hosting a reader or a web view
 ///   needs its own, or it answers ⌘=/⌘-/⌘0 while hidden.
@@ -40,7 +38,6 @@ enum SessionTab: String, CaseIterable {
     case terminal
     case files
     case artifacts
-    case snapshots
     case agents
     case timeline
     case ledger
@@ -50,7 +47,6 @@ enum SessionTab: String, CaseIterable {
         case .terminal: return "Terminal"
         case .files: return "Files"
         case .artifacts: return "Artifacts"
-        case .snapshots: return "Snapshots"
         case .agents: return "Agents"
         case .timeline: return "Timeline"
         case .ledger: return "Ledger"
@@ -62,7 +58,6 @@ enum SessionTab: String, CaseIterable {
         case .terminal: return "terminal"
         case .files: return "folder"
         case .artifacts: return "doc.text"
-        case .snapshots: return "camera.viewfinder"
         case .agents: return "person.3"
         case .timeline: return "clock.arrow.circlepath"
         case .ledger: return "book.closed"
@@ -83,7 +78,6 @@ enum SessionTab: String, CaseIterable {
         // one: Ledger's sub-tabs are a fixed enum, these are whatever is open.
         case .files: return true
         case .artifacts: return false
-        case .snapshots: return false
         case .agents: return false
         case .timeline: return false
         case .ledger: return true

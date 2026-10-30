@@ -231,18 +231,7 @@ final class NotificationService: NSObject,
 
                 sm.switchTo(sessionId: sessionId)
 
-                // Navigate to the target tab
-                let tab = userInfo["tab"] as? String ?? "terminal"
-                switch tab {
-                case "snapshots":
-                    sm.activeTab = .snapshots
-                    // Open the snapshot reader if number was provided
-                    if let number = userInfo["snapshotNumber"] as? Int {
-                        sm.pendingSnapshotNumber = Int32(number)
-                    }
-                default:
-                    sm.activeTab = .terminal
-                }
+                sm.activeTab = .terminal
             }
         }
 

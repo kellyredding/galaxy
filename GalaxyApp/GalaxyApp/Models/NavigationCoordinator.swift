@@ -59,10 +59,6 @@ final class NavigationCoordinator {
             session.$openArtifactNumber
             .map { _ in () }
             .eraseToAnyPublisher()
-        let snapshotSignal: AnyPublisher<Void, Never> =
-            session.$openSnapshotNumber
-            .map { _ in () }
-            .eraseToAnyPublisher()
         let agentSignal: AnyPublisher<Void, Never> =
             session.$selectedAgentId
             .map { _ in () }
@@ -82,7 +78,7 @@ final class NavigationCoordinator {
         // one step earlier.
         let signals: [AnyPublisher<Void, Never>] = [
             tabSignal, subTabSignal,
-            artifactSignal, snapshotSignal, agentSignal, fileSignal,
+            artifactSignal, agentSignal, fileSignal,
             fileSetSignal,
         ]
 
@@ -134,10 +130,6 @@ final class NavigationCoordinator {
             return .artifacts(
                 number: session.openArtifactNumber
             )
-        case .snapshots:
-            return .snapshots(
-                number: session.openSnapshotNumber
-            )
         case .agents:
             return .agents(id: session.selectedAgentId)
         case .files:
@@ -180,11 +172,10 @@ final class NavigationCoordinator {
         // view that's already showing the right item (avoids a
         // flash of the index before the reader opens).
         session.openArtifactNumber = route.artifactNumber
-        session.openSnapshotNumber = route.snapshotNumber
         session.selectedAgentId = route.agentId
         session.selectedFileSetID = route.fileSetID
         session.selectedFilePath = route.filePath
-        // The other three identifiers are read by a view that is already
+        // The other two identifiers are read by a view that is already
         // observing them. The strip is not: it holds the selection itself, and
         // the two above are a copy of it — so without this, back and forward
         // reach the Files tab and leave whatever was open on screen, which is
@@ -207,7 +198,7 @@ final class NavigationCoordinator {
             if let sub = route.ledgerSubTab {
                 sessionManager.activeLedgerSubTab = sub
             }
-        case .terminal, .timeline, .agents, .artifacts, .snapshots, .files:
+        case .terminal, .timeline, .agents, .artifacts, .files:
             break
         }
         sessionManager.activeTab = route.tab
@@ -269,12 +260,6 @@ final class NavigationCoordinator {
             }
             return session.artifactTitle(for: number)
                 ?? "Artifact #\(number)"
-        case .snapshots:
-            guard let number = route.snapshotNumber else {
-                return "Snapshots"
-            }
-            return session.snapshotTitle(for: number)
-                ?? "Snapshot #\(number)"
         case .agents:
             guard let id = route.agentId else {
                 return "Agents"

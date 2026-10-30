@@ -90,14 +90,6 @@ class SessionManager: ObservableObject {
     // Not persisted — always starts on Last Activity at launch.
     @Published var activeLedgerSubTab: LedgerSubTab = .identifiers
 
-    /// Snapshot number to auto-open when switching to snapshots tab.
-    /// Set by EventCoordinator on snapshot.created, cleared by SnapshotsView after opening.
-    @Published var pendingSnapshotNumber: Int32? = nil
-
-    /// Set by EventCoordinator when annotation/review events arrive.
-    /// SnapshotsView observes this to refresh review button visibility.
-    @Published var pendingReviewCheck: Int64? = nil
-
     /// Set by EventCoordinator when artifact annotation/review events
     /// arrive. ArtifactsView observes this to refresh review button
     /// visibility. Carries the artifact number rather than a row id,
@@ -115,9 +107,6 @@ class SessionManager: ObservableObject {
     /// Set by MenuActions, consumed by the active list view's onChange handler.
     @Published var listNavAction: ListNavAction? = nil
 
-    /// Whether the snapshot reader is open (used by views that need to know).
-    @Published var isSnapshotReaderOpen: Bool = false
-
     /// Whether the artifact reader is open (used by views that need to know).
     @Published var isArtifactReaderOpen: Bool = false
 
@@ -126,13 +115,11 @@ class SessionManager: ObservableObject {
     /// in `TerminalHostView` observes this via `$findActivationCounter`
     /// — that host is per-active-pane (only one instance exists
     /// in the view tree at a time), so broadcast is fine there.
-    /// SwiftUI surfaces (artifact reader, snapshot reader) used
-    /// to observe the same counter via `.onChange`, but those
-    /// views are instantiated per-session — with N sessions, one
-    /// Cmd+F fanned out to 2×N observed events, of which all but
-    /// one were discarded by surface-side gates. Those surfaces
-    /// now register a slot on `SessionManager` and `activateFind()`
-    /// dispatches directly via the slot matching `activeTab`.
+    /// SwiftUI surfaces such as the artifact reader register a slot
+    /// on `SessionManager` instead, and `activateFind()` dispatches
+    /// directly via the slot matching `activeTab`: those views are
+    /// instantiated per-session, so observing the counter fans one
+    /// Cmd+F out to every session.
     @Published var findActivationCounter: Int = 0
 
     /// The counter above as terminal hosts consume it.
@@ -156,7 +143,6 @@ class SessionManager: ObservableObject {
     /// (non-`@Published`) properties — they're pure dispatch
     /// targets, not state observed by views.
     var artifactsFindHandler: (() -> Void)?
-    var snapshotsFindHandler: (() -> Void)?
 
     /// Fire the Cmd+F dispatcher. Bumps the Combine counter for
     /// the terminal scrollback path (single subscriber, no
@@ -168,8 +154,6 @@ class SessionManager: ObservableObject {
         switch activeTab {
         case .artifacts:
             artifactsFindHandler?()
-        case .snapshots:
-            snapshotsFindHandler?()
         // A publisher rather than a slot, because the Files pane is mounted once
         // per session and a single slot would be held by whichever mounted last.
         case .files:
@@ -182,7 +166,7 @@ class SessionManager: ObservableObject {
             // only AppKit-side surface). Bumping the counter only
             // when the terminal tab is actually active prevents
             // a stale scrollback overlay from grabbing Cmd+F when
-            // the user is on Artifacts/Snapshots — which would
+            // the user is on Artifacts — which would
             // bind the find-bar panel to the wrong WebView and
             // make the user think highlights are broken.
             findActivationCounter &+= 1
@@ -200,14 +184,14 @@ class SessionManager: ObservableObject {
     /// Set by EventCoordinator on artifact.show, cleared by ArtifactsView after opening.
     @Published var pendingArtifactShow: Int32? = nil
 
-    /// Per-session queued artifact/snapshot "show" intents for
+    /// Per-session queued artifact "show" intents for
     /// events that arrived while that session wasn't active.
     /// Drained by `switchTo(sessionId:)` after the view state
     /// is restored — the session's `lastActiveTab` is also
     /// overridden to the appropriate tab on queue so the
     /// existing tab-restore path lands the user on the right
     /// tab automatically. Kept private because callers go
-    /// through `queueArtifactShow` / `queueSnapshotShow`.
+    /// through `queueArtifactShow`.
     ///
     /// **In-memory only — not persisted.** If Galaxy.app
     /// restarts (or crashes) between the event arriving and
@@ -220,8 +204,6 @@ class SessionManager: ObservableObject {
     /// window between a CLI `show` firing and the user
     /// switching back.
     private var pendingArtifactBySession:
-        [UUID: Int32] = [:]
-    private var pendingSnapshotBySession:
         [UUID: Int32] = [:]
 
     /// Called when a session is removed from the session list.
@@ -1455,35 +1437,17 @@ class SessionManager: ObservableObject {
         pendingArtifactBySession[sessionId] = number
     }
 
-    /// Snapshot-side mirror of queueArtifactShow. Overrides
-    /// remembered tab to `.snapshots`, queues the snapshot
-    /// number for drain on next switch.
-    func queueSnapshotShow(
-        sessionId: UUID, number: Int32
-    ) {
-        guard let session = sessions.first(
-            where: { $0.id == sessionId }
-        ) else { return }
-        session.lastActiveTab = .snapshots
-        pendingSnapshotBySession[sessionId] = number
-    }
-
     /// Drain any queued show intents for the incoming
     /// session. Called after restoreViewState has set
     /// activeTab — the pending number fires the same
-    /// published-property that ArtifactsView /
-    /// SnapshotsView already watch, so the reader opens
-    /// without any additional plumbing.
+    /// published-property that ArtifactsView already
+    /// watches, so the reader opens without any additional
+    /// plumbing.
     private func drainPendingShows(for session: Session) {
         if let num = pendingArtifactBySession.removeValue(
             forKey: session.id
         ) {
             pendingArtifactShow = num
-        }
-        if let num = pendingSnapshotBySession.removeValue(
-            forKey: session.id
-        ) {
-            pendingSnapshotNumber = num
         }
     }
 
@@ -1512,7 +1476,7 @@ class SessionManager: ObservableObject {
         // Done here rather than solely in SessionRow's onChange(of: isSelected)
         // to avoid gesture disambiguation delays when double-click gestures
         // exist on child views. Only clears when on the terminal tab — viewing
-        // Ledger or Snapshots keeps the indicator visible.
+        // Ledger keeps the indicator visible.
         let hadUnread = session.hasUnreadResponse
         let clearAllowed = isWindowFocused && activeTab == .terminal
         if hadUnread && clearAllowed {
@@ -1751,7 +1715,7 @@ class SessionManager: ObservableObject {
         // sheet enable ⌘H/⌘L off `SessionTab.hasInnerTabs`, so a view that
         // claims inner tabs and is not answered here gets an enabled menu
         // item, a documented keystroke, and nothing happening.
-        case .terminal, .timeline, .agents, .artifacts, .snapshots:
+        case .terminal, .timeline, .agents, .artifacts:
             break
         }
     }
@@ -1769,7 +1733,7 @@ class SessionManager: ObservableObject {
             MainActor.assumeIsolated {
                 GalaxyFilesModel.shared.selectNextInnerTab()
             }
-        case .terminal, .timeline, .agents, .artifacts, .snapshots:
+        case .terminal, .timeline, .agents, .artifacts:
             break
         }
     }

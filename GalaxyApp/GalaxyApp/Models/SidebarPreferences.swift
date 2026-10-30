@@ -20,7 +20,7 @@ import Galactic
 /// only sidebar-aware views observe its `objectWillChange`.
 /// `ContentView`, the toolbar button icon, and the menu
 /// validator still react instantly; the terminal containers,
-/// ledger views, agents/artifacts/snapshots/timeline views,
+/// ledger views, agents/artifacts/timeline views,
 /// and the 20 session rows nested inside them never see the
 /// invalidation at all.
 ///

@@ -363,9 +363,6 @@ struct ContentView: View {
                 ArtifactsContainerView()
                     .tabPane(.artifacts, selected: sessionManager.activeTab)
 
-                SnapshotsContainerView()
-                    .tabPane(.snapshots, selected: sessionManager.activeTab)
-
                 TimelineContainerView()
                     .tabPane(.timeline, selected: sessionManager.activeTab)
 

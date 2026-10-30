@@ -335,13 +335,12 @@ enum KeystrokeAvailability: Equatable {
     /// Files is the odd one and needs saying: its "reader" is a selected file
     /// rather than something opened over a list — see `KeystrokeContext`. Left
     /// out, its rows fell to the default and told the reader they needed an
-    /// artifact or a snapshot open on the Files tab.
+    /// artifact open on the Files tab.
     private static func item(_ tabs: Set<SessionTab>) -> String {
         let nouns: [String] = SessionTab.allCases.filter(tabs.contains)
             .compactMap { tab in
                 switch tab {
                 case .artifacts: return "an artifact"
-                case .snapshots: return "a snapshot"
                 case .files: return "a file"
                 case .agents: return "an agent run"
                 case .terminal, .timeline, .ledger: return nil
@@ -416,7 +415,7 @@ enum KeystrokeSection: String, CaseIterable {
         switch ctx.tab {
         case .terminal:
             return .terminal
-        case .agents, .artifacts, .snapshots:
+        case .agents, .artifacts:
             return .lists
         case .ledger:
             return ctx.hasListFocus ? .lists : .windowAndViews

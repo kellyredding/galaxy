@@ -3,8 +3,8 @@ import Foundation
 /// Every keystroke Galaxy answers to, hand-authored.
 ///
 /// A second statement of facts that already live in `MainMenu`,
-/// `ShellCloseKeyMonitor`, the escape monitors in `ArtifactsView`,
-/// `SnapshotsView` and `AgentsView`, `RestoreSessionSheetController`,
+/// `ShellCloseKeyMonitor`, the escape monitors in `ArtifactsView`
+/// and `AgentsView`, `RestoreSessionSheetController`,
 /// `PreferencesWindowController`, and Galactic's `ReaderWebView`,
 /// `ScrollbackHTMLRenderer`, `SendBarJS`, `FindBarView` and
 /// `TerminalHostView` — so it can drift from all of them. That is
@@ -31,9 +31,9 @@ enum KeystrokeCatalog {
     static let ledgerListSubTabs: Set<LedgerSubTab> = [.fileAccess, .entries]
 
     /// Every view with a document open, for the rows whose keys mean the
-    /// same thing on each: the two readers, and the Files tab's open file.
+    /// same thing on each: the artifact reader, and the Files tab's open file.
     private static let readerViews: Set<SessionTab> = [
-        .artifacts, .snapshots, .files,
+        .artifacts, .files,
     ]
 
     /// Built by appending rather than one `+` chain: nine concatenated
@@ -429,11 +429,6 @@ enum KeystrokeCatalog {
 
         // Labels are the descriptor's titles verbatim — the View menu
         // prints these, so a second wording would be a second command.
-        .init(binding: .literal("↩"), label: "Open snapshot",
-              section: .lists,
-              availability: .viewsWithoutReader([.snapshots]),
-              aliases: "read a snapshot, open the snapshot reader, "
-                  + "expand the snapshot, view the snapshot"),
         .init(binding: .literal("↩"), label: "Open artifact",
               section: .lists,
               availability: .viewsWithoutReader([.artifacts]),
@@ -464,7 +459,7 @@ enum KeystrokeCatalog {
         // where the monitor is not installed at all.
         //
         // `viewsWithReader` rather than a case of its own, because the
-        // question is the same one the two readers ask: is the thing this
+        // question is the same one the artifact reader asks: is the thing this
         // tab opens over its list open right now? That the agent detail
         // is not a web view is a fact about how it draws, and no
         // keystroke here cares.
@@ -483,9 +478,7 @@ enum KeystrokeCatalog {
     /// while deliberately letting ⇧⌘ through — so the chrome-font rows
     /// keep working and the terminal-font rows silently do not.
     private static let reader: [KeystrokeEntry] = [
-        // The File menu's title verbatim, and artifacts only — there is
-        // no "Refresh snapshot", which is why this row names the
-        // artifact rather than the document.
+        // The File menu's title verbatim, and artifacts only.
         .init(binding: .literal("⌘R"), label: "Refresh artifact",
               section: .reader,
               availability: .viewsWithReader([.artifacts]),
@@ -548,7 +541,7 @@ enum KeystrokeCatalog {
         .init(binding: .literal("esc"),
               label: "Close the reader (the open form first)",
               section: .reader,
-              availability: .viewsWithReader([.artifacts, .snapshots]),
+              availability: .viewsWithReader([.artifacts]),
               aliases: "leave the document, back to the list, dismiss "
                   + "the reader, discard the annotation form"),
         // Files has no reader behind the page to close, so Escape stops once
@@ -789,11 +782,6 @@ enum KeystrokeCatalog {
               section: .find,
               availability: .viewsWithReader([.artifacts]),
               aliases: "search the artifact, look through the document"),
-        .init(binding: .literal("⌘F"),
-              label: "Find in the open snapshot",
-              section: .find,
-              availability: .viewsWithReader([.snapshots]),
-              aliases: "search the snapshot, look through the snapshot"),
         .init(binding: .literal("⌘F"),
               label: "Find in the open file",
               section: .find,
