@@ -4,8 +4,8 @@ module GalaxyLedger
   #
   # Uses local time so a day's spend lands on the calendar day the work was
   # actually done in the user's timezone, rather than the UTC day. This
-  # matches the rest of the galaxy toolkit (timeline, artifacts, snapshots
-  # all bucket by local day) and keeps the daily totals intuitive for
+  # matches the rest of the galaxy toolkit (timeline and artifacts both
+  # bucket by local day) and keeps the daily totals intuitive for
   # someone reviewing their own usage.
   #
   # The GALAXY_LEDGER_TODAY override (a YYYY-MM-DD string) pins the current

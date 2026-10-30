@@ -44,7 +44,6 @@ and copies the binary into `~/.claude/galaxy/bin/` along with a symlink at
 ```bash
 make statusline-install
 make ledger-install
-make snapshots-install
 make artifacts-install
 make timeline-install
 make agents-install

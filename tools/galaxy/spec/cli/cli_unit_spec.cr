@@ -158,17 +158,17 @@ describe Galaxy::CLI do
   end
 
   describe "BACKUP_TOOLS" do
-    it "contains all 5 sub-tool entries" do
-      Galaxy::BACKUP_TOOLS.size.should eq(5)
+    it "contains all 4 sub-tool entries" do
+      Galaxy::BACKUP_TOOLS.size.should eq(4)
     end
 
-    it "includes ledger, snapshots, artifacts, timeline, agents" do
+    it "includes ledger, artifacts, timeline, agents" do
       names = Galaxy::BACKUP_TOOLS.map(&.[0])
       names.should contain("ledger")
-      names.should contain("snapshots")
       names.should contain("artifacts")
       names.should contain("timeline")
       names.should contain("agents")
+      names.should_not contain("snapshots")
     end
 
     it "has bin paths under GALAXY_DIR" do

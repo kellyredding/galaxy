@@ -1,7 +1,7 @@
 require "./galaxy/*"
 
 module Galaxy
-  VERSION = "0.0.1"
+  VERSION = "0.0.2"
 
   # Galaxy-level directory (shared between tools)
   GALAXY_DIR = Path.new(
@@ -19,12 +19,6 @@ module Galaxy
     ENV.fetch(
       "GALAXY_LEDGER_BIN",
       (GALAXY_DIR / "bin" / "galaxy-ledger").to_s,
-    ),
-  )
-  SNAPSHOTS_BIN = Path.new(
-    ENV.fetch(
-      "GALAXY_SNAPSHOTS_BIN",
-      (GALAXY_DIR / "bin" / "galaxy-snapshots").to_s,
     ),
   )
   ARTIFACTS_BIN = Path.new(
@@ -49,7 +43,6 @@ module Galaxy
   # All sub-tool binaries that support backup commands
   BACKUP_TOOLS = {
     {"ledger", LEDGER_BIN},
-    {"snapshots", SNAPSHOTS_BIN},
     {"artifacts", ARTIFACTS_BIN},
     {"timeline", TIMELINE_BIN},
     {"agents", AGENTS_BIN},

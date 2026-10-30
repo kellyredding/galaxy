@@ -3097,7 +3097,7 @@ module GalaxyArtifacts
       end
     end
 
-    # Format size for backup display (matches snapshots)
+    # Format size for backup display
     private def self.format_size(bytes : Int64) : String
       if bytes < 1024
         "#{bytes} B"

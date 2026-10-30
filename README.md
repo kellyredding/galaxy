@@ -8,7 +8,6 @@
 |------|-------------|--------|
 | [statusline](tools/statusline/) | Customizable status line with context usage, git status, and more | Active |
 | [ledger](tools/ledger/) | Continuous context management for Claude Code | Active |
-| [snapshots](tools/snapshots/) | Session snapshot management for Claude Code | Active |
 | [artifacts](tools/artifacts/) | Session artifact management for Claude Code | Active |
 | [timeline](tools/timeline/) | Session timeline event recording for Claude Code | Active |
 | [agents](tools/agents/) | Subagent lifecycle tracking for Claude Code | Active |
@@ -38,12 +37,6 @@ A customizable status line for Claude Code sessions that displays:
 
 See [tools/statusline/README.md](tools/statusline/README.md) for detailed documentation.
 
-### snapshots
-
-Session snapshot management for Claude Code. Captures and restores session context snapshots, enabling persistent context across sessions.
-
-See [tools/snapshots/](tools/snapshots/) for detailed documentation.
-
 ### artifacts
 
 Session artifact management for Claude Code. Stores, retrieves, and manages documents, data exports, diagrams, and other files produced during a session.
@@ -52,7 +45,7 @@ See [tools/artifacts/](tools/artifacts/) for detailed documentation.
 
 ### timeline
 
-Session timeline event recording for Claude Code. Records timestamped events across the Galaxy ecosystem, providing a unified chronological log of session activity (starts, stops, clears, snapshots, etc.).
+Session timeline event recording for Claude Code. Records timestamped events across the Galaxy ecosystem, providing a unified chronological log of session activity (starts, stops, clears, turns, etc.).
 
 See [tools/timeline/](tools/timeline/) for detailed documentation.
 
@@ -105,7 +98,6 @@ galaxy/
 └── tools/
     ├── statusline/           # Status line tool
     ├── ledger/               # Continuous context management
-    ├── snapshots/            # Session snapshot management
     ├── artifacts/            # Session artifact management
     ├── timeline/             # Session timeline events
     ├── agents/               # Subagent lifecycle tracking

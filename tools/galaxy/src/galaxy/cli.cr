@@ -538,7 +538,7 @@ module Galaxy
 
       DESCRIPTION:
         Creates point-in-time backups of all Galaxy tool databases
-        (ledger, snapshots, artifacts, timeline, agents) and Galaxy.app
+        (ledger, artifacts, timeline, agents) and Galaxy.app
         data files (sessions, settings, window state).
 
         Tool databases are backed up via SQLite VACUUM INTO. App data

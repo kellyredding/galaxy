@@ -118,7 +118,7 @@ module BackupTestHelper
   def self.build_all_stubs : Hash(String, {Path, Path})
     result = {} of String => {Path, Path}
     %w[
-      galaxy-ledger galaxy-snapshots
+      galaxy-ledger
       galaxy-artifacts galaxy-timeline
       galaxy-agents
     ].each do |name|
@@ -127,13 +127,12 @@ module BackupTestHelper
     result
   end
 
-  # Env vars pointing to stub paths for all 5 tools.
+  # Env vars pointing to stub paths for all 4 tools.
   def self.stub_env(
     stubs : Hash(String, {Path, Path}),
   ) : Hash(String, String)
     {
       "GALAXY_LEDGER_BIN"    => stubs["galaxy-ledger"][0].to_s,
-      "GALAXY_SNAPSHOTS_BIN" => stubs["galaxy-snapshots"][0].to_s,
       "GALAXY_ARTIFACTS_BIN" => stubs["galaxy-artifacts"][0].to_s,
       "GALAXY_TIMELINE_BIN"  => stubs["galaxy-timeline"][0].to_s,
       "GALAXY_AGENTS_BIN"    => stubs["galaxy-agents"][0].to_s,
@@ -273,11 +272,10 @@ describe "galaxy backups" do
 
       # Stdout should show success for each tool
       stdout.should contain("✓ ledger")
-      stdout.should contain("✓ snapshots")
       stdout.should contain("✓ artifacts")
       stdout.should contain("✓ timeline")
       stdout.should contain("✓ agents")
-      stdout.should contain("5/5 tools")
+      stdout.should contain("4/4 tools")
     ensure
       if stubs
         BackupTestHelper.cleanup_logs(stubs)
@@ -475,13 +473,12 @@ describe "galaxy backups" do
       stderr.should contain("✗ ledger")
 
       # Other tools should still have run
-      stdout.should contain("✓ snapshots")
       stdout.should contain("✓ artifacts")
       stdout.should contain("✓ timeline")
       stdout.should contain("✓ agents")
 
       # Summary should show partial success
-      stdout.should contain("4/5 tools")
+      stdout.should contain("3/4 tools")
       stdout.should contain("Failures:")
     ensure
       if stubs
@@ -799,7 +796,7 @@ describe "galaxy backups" do
       end
 
       stdout.should contain("✓ ledger: pruned")
-      stdout.should contain("✓ snapshots: pruned")
+      stdout.should contain("✓ artifacts: pruned")
       stdout.should contain("Prune complete")
     ensure
       if stubs
