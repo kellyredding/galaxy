@@ -353,6 +353,35 @@ describe "OnClear additionalContext" do
     ctx.should contain("--source-path")
     ctx.should contain("Do this silently")
   end
+
+  # A galaxy-snapshots binary left installed, answering as if this session had
+  # saved one, must not bring the old section back.
+  it "never includes snapshots, even when a snapshots binary is installed" do
+    GalaxyLedger::Database.upsert_session_file(
+      ledger_session_id, "/tmp/test.cr", :read,
+    )
+    stub = SPEC_GALAXY_DIR / "bin" / "galaxy-snapshots"
+    File.write(
+      stub,
+      %(#!/bin/sh\necho '{"count":1,"total_chars":10,"snapshots":[]}'\n),
+    )
+    File.chmod(stub, 0o755)
+
+    begin
+      hook_input = {
+        "session_id" => test_session_id,
+        "source"     => "clear",
+      }.to_json
+
+      result = run_binary(["on-clear"], stdin: hook_input)
+      output = JSON.parse(result[:output])
+      ctx = output["hookSpecificOutput"]["additionalContext"].as_s
+      ctx.should_not contain("Snapshot")
+      output["systemMessage"].as_s.should_not contain("snapshot")
+    ensure
+      File.delete(stub) if File.exists?(stub)
+    end
+  end
 end
 
 describe "OnClear cwd and git_branch in additionalContext" do

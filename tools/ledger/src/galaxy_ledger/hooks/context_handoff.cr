@@ -56,9 +56,6 @@ module GalaxyLedger
         restoration = Database.query_for_restoration(ledger_session_id)
         files = Database.session_files(ledger_session_id)
 
-        # Query snapshot stats for budget-aware rendering
-        snapshot_stats = query_snapshot_stats(ledger_session_id)
-
         # Query artifact count via standalone artifacts CLI
         artifact_count = query_artifact_count(ledger_session_id)
 
@@ -68,7 +65,6 @@ module GalaxyLedger
           empty_message: "No previous context to hand off.",
           restoration: restoration,
           files: files,
-          snapshot_count: snapshot_stats[:count],
           artifact_count: artifact_count,
         )
 
@@ -79,7 +75,6 @@ module GalaxyLedger
           files: files,
           cwd: handoff_cwd(session_record),
           git_branch: session_record.try(&.git_branch),
-          snapshot_stats: snapshot_stats,
           artifact_count: artifact_count,
         )
 
@@ -90,7 +85,6 @@ module GalaxyLedger
             source: source,
             restoration: restoration,
             files: files,
-            snapshot_stats: snapshot_stats,
             artifact_count: artifact_count,
             cwd: handoff_cwd(session_record),
             git_branch: session_record.try(&.git_branch),
@@ -119,7 +113,6 @@ module GalaxyLedger
         files : Array(Database::SessionFile),
         cwd : String? = nil,
         git_branch : String? = nil,
-        snapshot_stats : NamedTuple(count: Int32, total_chars: Int64) = {count: 0, total_chars: 0_i64},
         artifact_count : Int32 = 0,
       ) : String
         lines = [] of String
@@ -134,7 +127,7 @@ module GalaxyLedger
         end
         lines << ""
 
-        has_any_data = restoration.total_count > 0 || files.size > 0 || snapshot_stats[:count] > 0 || artifact_count > 0
+        has_any_data = restoration.total_count > 0 || files.size > 0 || artifact_count > 0
 
         unless has_any_data
           lines << "No previous context available."
@@ -220,56 +213,6 @@ module GalaxyLedger
             lines << "#{idx + 1}. `#{Helpers.shorten_home_path(f.file_path)}`"
           end
           lines << ""
-        end
-
-        # Session snapshots section (budget-aware)
-        if snapshot_stats[:count] > 0
-          inline_char_cap = config_inline_char_cap
-
-          lines << "---"
-          lines << ""
-
-          if snapshot_stats[:total_chars] <= inline_char_cap
-            # Under budget — get full content via CLI
-            snapshots_json = query_snapshots_with_content(
-              ledger_session_id,
-            )
-            lines << "### Session Snapshots " \
-                     "(#{snapshots_json.size} saved)"
-            lines << ""
-            snapshots_json.each do |snap|
-              exchange_count = snap["exchange_count"].as_i
-              exchange_label = exchange_count == 1 ? "exchange" : "exchanges"
-              time_str = snap["created_at"].as_s
-              lines << "**##{snap["number"].as_i} \u2014 " \
-                       "\"#{snap["title"].as_s}\"** " \
-                       "(#{exchange_count} #{exchange_label}, #{time_str})"
-              lines << ""
-              lines << snap["content"].as_s
-              lines << ""
-            end
-          else
-            # Over budget — metadata only with CLI query commands
-            snapshots_json = query_snapshots_metadata(ledger_session_id)
-            lines << "### Session Snapshots " \
-                     "(#{snapshots_json.size} saved \u2014 " \
-                     "query for full content)"
-            lines << ""
-            lines << "Snapshots exceed inline budget. Load individually:"
-            snapshots_json.each do |snap|
-              exchange_count = snap["exchange_count"].as_i
-              exchange_label = exchange_count == 1 ? "exchange" : "exchanges"
-              char_count = snap["char_count"].as_i
-              chars_formatted = format_char_count(char_count)
-              number = snap["number"].as_i
-              lines << "- ##{number} \"#{snap["title"].as_s}\" " \
-                       "(#{exchange_count} #{exchange_label}, " \
-                       "#{chars_formatted} chars) \u2192"
-              lines << "  `galaxy-snapshots view --pid #{claude_pid} " \
-                       "#{number}`"
-            end
-            lines << ""
-          end
         end
 
         # Session artifacts section (metadata only — files can be large/binary)
@@ -386,114 +329,6 @@ module GalaxyLedger
         end
       end
 
-      # Format char count for display (e.g., 3241 -> "3.2k", 150 -> "150")
-      private def self.format_char_count(chars : Int32) : String
-        if chars >= 1000
-          "#{(chars / 1000.0).round(1)}k"
-        else
-          chars.to_s
-        end
-      end
-
-      private def self.query_snapshot_stats(
-        ledger_session_id : Int64,
-      ) : NamedTuple(count: Int32, total_chars: Int64)
-        snapshots_bin = (
-          GalaxyLedger::GALAXY_DIR / "bin" / "galaxy-snapshots"
-        ).to_s
-        return {count: 0, total_chars: 0_i64} unless File.exists?(
-                                                       snapshots_bin,
-                                                     )
-
-        output = IO::Memory.new
-        status = Process.run(
-          snapshots_bin,
-          args: [
-            "stats",
-            "--ledger-session-id", ledger_session_id.to_s,
-            "--json",
-          ],
-          output: output,
-          error: Process::Redirect::Close,
-        )
-        return {count: 0, total_chars: 0_i64} unless status.success?
-
-        json = JSON.parse(output.to_s)
-        {
-          count:       json["count"].as_i,
-          total_chars: json["total_chars"].as_i64,
-        }
-      rescue
-        {count: 0, total_chars: 0_i64}
-      end
-
-      private def self.query_snapshots_with_content(
-        ledger_session_id : Int64,
-      ) : Array(JSON::Any)
-        snapshots_bin = (
-          GalaxyLedger::GALAXY_DIR / "bin" / "galaxy-snapshots"
-        ).to_s
-
-        output = IO::Memory.new
-        status = Process.run(
-          snapshots_bin,
-          args: [
-            "list",
-            "--ledger-session-id", ledger_session_id.to_s,
-            "--json",
-            "--content",
-          ],
-          output: output,
-          error: Process::Redirect::Close,
-        )
-        return [] of JSON::Any unless status.success?
-
-        json = JSON.parse(output.to_s)
-        json["snapshots"].as_a
-      rescue
-        [] of JSON::Any
-      end
-
-      private def self.query_snapshots_metadata(
-        ledger_session_id : Int64,
-      ) : Array(JSON::Any)
-        snapshots_bin = (
-          GalaxyLedger::GALAXY_DIR / "bin" / "galaxy-snapshots"
-        ).to_s
-
-        output = IO::Memory.new
-        status = Process.run(
-          snapshots_bin,
-          args: [
-            "list",
-            "--ledger-session-id", ledger_session_id.to_s,
-            "--json",
-          ],
-          output: output,
-          error: Process::Redirect::Close,
-        )
-        return [] of JSON::Any unless status.success?
-
-        json = JSON.parse(output.to_s)
-        json["snapshots"].as_a
-      rescue
-        [] of JSON::Any
-      end
-
-      # Read inline_char_cap from snapshots tool's config
-      private def self.config_inline_char_cap : Int32
-        snapshots_config = GalaxyLedger::GALAXY_DIR / "snapshots" /
-                           "config.json"
-        if File.exists?(snapshots_config)
-          json = JSON.parse(File.read(snapshots_config))
-          json["inline_char_cap"]?.try(&.as_i?) || 15000
-        else
-          15000
-        end
-      rescue
-        15000
-      end
-
       private def self.query_artifact_count(
         ledger_session_id : Int64,
       ) : Int32
@@ -552,9 +387,6 @@ module GalaxyLedger
         source : String?,
         restoration : Database::RestorationResult,
         files : Array(Database::SessionFile),
-        snapshot_stats : NamedTuple(
-          count: Int32, total_chars: Int64,
-        ),
         artifact_count : Int32,
         cwd : String?,
         git_branch : String?,
@@ -581,8 +413,6 @@ module GalaxyLedger
           learnings_count:        learnings,
           files_edited_count:     edited,
           files_read_count:       read_only,
-          snapshot_count:         snapshot_stats[:count],
-          snapshot_total_chars:   snapshot_stats[:total_chars],
           artifact_count:         artifact_count,
           handoff_system_message: handoff_system_message,
           handoff_content:        handoff_content,

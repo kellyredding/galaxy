@@ -3279,14 +3279,14 @@ module GalaxyLedger
         galaxy-ledger publish --event EVENT --session SESSION_ID [--ref REF]
 
       REQUIRED:
-        --event EVENT           Event name (e.g., session.metrics, snapshot.created)
+        --event EVENT           Event name (e.g., session.metrics)
 
       REQUIRED (one of):
         --pid PID               Session by Claude Code process PID
         --session SESSION_ID    Session by identifier
 
       OPTIONAL:
-        --ref REF               Supplemental reference (snapshot number, entry ID, etc.)
+        --ref REF               Supplemental reference (artifact number, entry ID, etc.)
 
       DESCRIPTION:
         Publishes an event notification over the Galaxy Unix domain socket
@@ -3298,7 +3298,6 @@ module GalaxyLedger
 
       EXAMPLES:
         galaxy-ledger publish --event session.metrics --pid 12345
-        galaxy-ledger publish --event snapshot.created --pid 12345 --ref 3
         galaxy-ledger publish --event session.metrics --session abc-123-def
       HELP
     end

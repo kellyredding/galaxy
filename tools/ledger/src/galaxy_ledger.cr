@@ -56,12 +56,6 @@ module GalaxyLedger
       (GALAXY_DIR / "bin" / "galaxy-agents").to_s
     )
   )
-  SNAPSHOTS_BIN = Path.new(
-    ENV.fetch(
-      "GALAXY_SNAPSHOTS_BIN",
-      (GALAXY_DIR / "bin" / "galaxy-snapshots").to_s
-    )
-  )
   ARTIFACTS_BIN = Path.new(
     ENV.fetch(
       "GALAXY_ARTIFACTS_BIN",

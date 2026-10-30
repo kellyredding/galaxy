@@ -31,12 +31,6 @@ SPEC_AGENTS_NOOP = SPEC_GALAXY_DIR / "bin" /
                    "galaxy-agents"
 ENV["GALAXY_AGENTS_BIN"] = SPEC_AGENTS_NOOP.to_s
 
-# Point snapshots binary to a no-op so sibling backup calls
-# don't hit the real snapshots database during tests.
-SPEC_SNAPSHOTS_NOOP = SPEC_GALAXY_DIR / "bin" /
-                      "galaxy-snapshots"
-ENV["GALAXY_SNAPSHOTS_BIN"] = SPEC_SNAPSHOTS_NOOP.to_s
-
 # Point artifacts binary to a no-op so sibling backup calls
 # don't hit the real artifacts database during tests.
 SPEC_ARTIFACTS_NOOP = SPEC_GALAXY_DIR / "bin" /
@@ -58,8 +52,6 @@ File.write(SPEC_TIMELINE_NOOP, "#!/bin/sh\nexit 0\n")
 File.chmod(SPEC_TIMELINE_NOOP, 0o755)
 File.write(SPEC_AGENTS_NOOP, "#!/bin/sh\nexit 0\n")
 File.chmod(SPEC_AGENTS_NOOP, 0o755)
-File.write(SPEC_SNAPSHOTS_NOOP, "#!/bin/sh\nexit 0\n")
-File.chmod(SPEC_SNAPSHOTS_NOOP, 0o755)
 File.write(SPEC_ARTIFACTS_NOOP, "#!/bin/sh\nexit 0\n")
 File.chmod(SPEC_ARTIFACTS_NOOP, 0o755)
 File.write(SPEC_GALAXY_NOOP, "#!/bin/sh\nexit 0\n")
@@ -159,7 +151,6 @@ def binary_env : Hash(String, String)
     "GALAXY_LEDGER_DATABASE_PATH" => SPEC_DATABASE_PATH.to_s,
     "GALAXY_TIMELINE_BIN"         => SPEC_TIMELINE_NOOP.to_s,
     "GALAXY_AGENTS_BIN"           => SPEC_AGENTS_NOOP.to_s,
-    "GALAXY_SNAPSHOTS_BIN"        => SPEC_SNAPSHOTS_NOOP.to_s,
     "GALAXY_ARTIFACTS_BIN"        => SPEC_ARTIFACTS_NOOP.to_s,
     "GALAXY_BIN"                  => SPEC_GALAXY_NOOP.to_s,
     "HOME"                        => ENV["HOME"],

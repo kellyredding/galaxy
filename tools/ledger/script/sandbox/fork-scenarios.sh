@@ -28,7 +28,6 @@ export GALAXY_CLAUDE_CONFIG_DIR="$SB/claude"
 export GALAXY_DIR="$SB/galaxy"
 export GALAXY_TIMELINE_BIN="$SB/bin/timeline-stub"
 export GALAXY_AGENTS_BIN=/usr/bin/true
-export GALAXY_SNAPSHOTS_BIN=/usr/bin/true
 export GALAXY_ARTIFACTS_BIN=/usr/bin/true
 export GALAXY_BIN=/usr/bin/true
 export GALAXY_FORK_HANDOFF_WAIT_MS=1500
