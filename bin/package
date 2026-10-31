@@ -97,6 +97,10 @@ say "Building Galaxy.app (Release)"
 run_logged "build-app" make -C GalaxyApp release
 app_product="GalaxyApp/build/Build/Products/Release/Galaxy.app"
 [[ -d "$app_product" ]] || die "the app build produced nothing at $app_product"
+# Xcode registers what it builds with Launch Services. A second registered
+# Galaxy.app can receive galaxy:// links meant for the one that is running.
+/System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/lsregister \
+  -u "$ROOT/$app_product" 2>/dev/null || true
 
 # --- Stage -----------------------------------------------------------------
 
