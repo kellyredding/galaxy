@@ -1,7 +1,7 @@
 require "./galaxy/*"
 
 module Galaxy
-  VERSION = "0.0.2"
+  VERSION = "0.1.0"
 
   # Galaxy-level directory (shared between tools)
   GALAXY_DIR = Path.new(
@@ -64,6 +64,18 @@ module Galaxy
     "window-state.json",
     "viewed-artifact-files.json",
   }
+
+  # Where install.sh puts the suite, and the record it leaves of what it put
+  # there. Env overrides let specs point these at a sandbox.
+  BIN_DIR            = GALAXY_DIR / "bin"
+  INSTALLED_MANIFEST = GALAXY_DIR / "installed-manifest.json"
+  INSTALLED_APP      = Path.new(
+    ENV.fetch(
+      "GALAXY_INSTALLED_APP",
+      (Path.home / "Applications" / "Galaxy.app").to_s,
+    ),
+  )
+  INSTALL_SCRIPT_URL = "https://raw.githubusercontent.com/kellyredding/galaxy/main/install.sh"
 
   # URL scheme for communicating with Galaxy.app
   URL_SCHEME = "galaxy"

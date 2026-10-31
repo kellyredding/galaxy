@@ -5,9 +5,16 @@ require "uri"
 module Galaxy
   class CLI
     # Galaxy's own commands — checked before delegation
-    GALAXY_COMMANDS = %w[help version update config backups]
+    GALAXY_COMMANDS = %w[help version update doctor config backups]
 
     def self.run(args : Array(String))
+      # Ahead of the option parser, which would reject `--local` as an unknown
+      # flag and take `--version` as a request for this CLI's own version.
+      if args.first? == "update"
+        handle_update_command(args[1..])
+        return
+      end
+
       # Save original args before OptionParser modifies the array in-place.
       # Needed for delegation — claude-persona must receive the full args.
       original_args = args.dup
@@ -82,9 +89,8 @@ module Galaxy
       when "version"
         puts VERSION
         return
-      when "update"
-        handle_update_command(rest)
-        return
+      when "doctor"
+        exit(Doctor.run)
       when "config"
         handle_config_command(rest)
         return
@@ -288,7 +294,8 @@ module Galaxy
 
         galaxy config                   Manage Galaxy configuration
         galaxy backups                  Manage backups
-        galaxy update                   Update Galaxy
+        galaxy update                   Update Galaxy (--local: your checkout)
+        galaxy doctor                   Check the installed tools and app
         galaxy version                  Show version
         galaxy help                     Show this help
       BANNER
@@ -304,7 +311,8 @@ module Galaxy
 
         galaxy config                   Manage Galaxy configuration
         galaxy backups                  Manage backups
-        galaxy update                   Update Galaxy
+        galaxy update                   Update Galaxy (--local: your checkout)
+        galaxy doctor                   Check the installed tools and app
         galaxy version                  Show version
         galaxy help                     Show this help
 
@@ -314,40 +322,20 @@ module Galaxy
     end
 
     private def self.handle_update_command(args : Array(String))
-      # Check for help subcommand first
-      if args.includes?("help")
-        show_update_help
+      opts = begin
+        Updater.parse(args)
+      rescue ex : Updater::ArgumentError
+        STDERR.puts "Error: #{ex.message}"
+        STDERR.puts "Run 'galaxy update help' for usage"
+        exit(1)
+      end
+
+      if opts.help
+        puts Updater.help_text
         return
       end
 
-      # Validate prerequisites
-      unless command_exists?("curl")
-        STDERR.puts "Error: curl is required for updates"
-        STDERR.puts "Install curl and try again"
-        exit(1)
-      end
-
-      unless command_exists?("bash")
-        STDERR.puts "Error: bash is required for updates"
-        exit(1)
-      end
-
-      # Build script URL
-      script_url = "https://raw.githubusercontent.com/kellyredding/galaxy/main/tools/galaxy/scripts/update.sh"
-
-      # Pass subcommands to script
-      script_args = args.join(" ")
-
-      # Fetch and execute
-      status = Process.run(
-        "bash",
-        args: ["-c", "curl -fsSL '#{script_url}' | bash -s -- #{script_args}"],
-        input: Process::Redirect::Inherit,
-        output: Process::Redirect::Inherit,
-        error: Process::Redirect::Inherit
-      )
-
-      exit(status.exit_code)
+      exit(Updater.run(opts))
     end
 
     def self.command_exists?(cmd : String) : Bool
@@ -802,25 +790,6 @@ module Galaxy
       else
         "%.1f MB" % (bytes / (1024.0 * 1024.0))
       end
-    end
-
-    # --- Update command ---
-
-    private def self.show_update_help
-      puts <<-HELP
-      galaxy update - Update to the latest version
-
-      Usage:
-        galaxy update           Update to latest version
-        galaxy update preview   Preview update without making changes
-        galaxy update force     Reinstall latest (even if up-to-date)
-        galaxy update help      Show this help
-
-      The update downloads the latest release from GitHub, verifies the
-      checksum, and replaces the current binary.
-
-      Update script: https://raw.githubusercontent.com/kellyredding/galaxy/main/tools/galaxy/scripts/update.sh
-      HELP
     end
   end
 end

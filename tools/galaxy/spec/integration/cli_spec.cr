@@ -191,9 +191,19 @@ describe "galaxy CLI" do
 
       exit_code.should eq(0)
       stderr.should be_empty
-      stdout.should contain("galaxy update - Update to the latest version")
+      stdout.should contain("galaxy update - Install the latest Galaxy, or your local changes")
+      stdout.should contain("--local")
       stdout.should contain("preview")
       stdout.should contain("force")
+    end
+
+    it "accepts --local and --version, which the main option parser would reject" do
+      pending!("Binary not built. Run `make dev` first.") unless CLITestHelper.binary_exists?
+
+      exit_code, stdout, _ = CLITestHelper.run_cli_with_env(["update", "--local", "--version", "0.1.0"])
+
+      exit_code.should eq(1)
+      stdout.should_not contain(Galaxy::VERSION)
     end
   end
 

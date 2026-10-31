@@ -95,9 +95,7 @@ module GalaxyStatusline
         hook uninstall      Remove statusline hook
         hook status         Show hook installation status
         hook help           Hook command documentation
-        update              Update to latest version
-        update preview      Preview update without changes
-        update force        Reinstall latest version
+        update              Updates now come through `galaxy update`
         version             Show version
         help                Show this help
 
@@ -451,62 +449,16 @@ module GalaxyStatusline
       puts "  #{CONFIG_FILE}"
     end
 
+    # The statusline ships inside Galaxy's suite release, so it no longer
+    # updates on its own.
     private def self.handle_update_command(args : Array(String))
-      # Check for help subcommand first
+      message = "galaxy-statusline updates with the rest of Galaxy. Run: galaxy update"
       if args.includes?("help")
-        show_update_help
-        return
-      end
-
-      # Validate prerequisites
-      unless command_exists?("curl")
-        STDERR.puts "Error: curl is required for updates"
-        STDERR.puts "Install curl and try again"
+        puts message
+      else
+        STDERR.puts message
         exit(1)
       end
-
-      unless command_exists?("bash")
-        STDERR.puts "Error: bash is required for updates"
-        exit(1)
-      end
-
-      # Build script URL
-      script_url = "https://raw.githubusercontent.com/kellyredding/galaxy/main/tools/statusline/scripts/update.sh"
-
-      # Pass subcommands to script
-      script_args = args.join(" ")
-
-      # Fetch and execute
-      status = Process.run(
-        "bash",
-        args: ["-c", "curl -fsSL '#{script_url}' | bash -s -- #{script_args}"],
-        input: Process::Redirect::Inherit,
-        output: Process::Redirect::Inherit,
-        error: Process::Redirect::Inherit
-      )
-
-      exit(status.exit_code)
-    end
-
-    private def self.command_exists?(cmd : String) : Bool
-      Process.run("which", args: [cmd], output: Process::Redirect::Close, error: Process::Redirect::Close).success?
-    end
-
-    private def self.show_update_help
-      puts <<-HELP
-      galaxy-statusline update - Update to the latest version
-
-      Usage:
-        galaxy-statusline update           Update to latest version
-        galaxy-statusline update preview   Preview update without making changes
-        galaxy-statusline update force     Reinstall latest (even if up-to-date)
-        galaxy-statusline update help      Show this help
-
-      The update downloads the latest release from GitHub, verifies the
-      checksum, and replaces the current binary.
-
-      Update script: https://raw.githubusercontent.com/kellyredding/galaxy/main/tools/statusline/scripts/update.sh
-      HELP
     end
 
     private def self.handle_hook_command(args : Array(String), json_output : Bool)
