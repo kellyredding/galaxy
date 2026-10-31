@@ -771,19 +771,19 @@ describe GalaxyLedger::Database do
       ledger_session_id = GalaxyLedger::Database.create_session("s-excl")
       # Insert legacy internal entries directly via SQL (bypasses Entry validation)
       GalaxyLedger::Database.open do |db|
-        hash_gl = Digest::SHA256.hexdigest("guideline:Use double-quotes for strings")
+        hash_gl = GalaxyLedger::Database.content_hash("guideline", "Use double-quotes for strings")
         db.exec(
           "INSERT INTO ledger_entries (ledger_session_id, entry_type, content, importance, source_file, content_hash) VALUES (?, ?, ?, ?, ?, ?)",
           ledger_session_id, "guideline", "Use double-quotes for strings", "high",
           "/home/user/agent-guidelines/ruby-style.md", hash_gl,
         )
-        hash_ip = Digest::SHA256.hexdigest("implementation_plan:Plan context")
+        hash_ip = GalaxyLedger::Database.content_hash("implementation_plan", "Plan context")
         db.exec(
           "INSERT INTO ledger_entries (ledger_session_id, entry_type, content, importance, source_file, content_hash) VALUES (?, ?, ?, ?, ?, ?)",
           ledger_session_id, "implementation_plan", "Plan context", "high",
           "/home/user/implementation-plans/feature.md", hash_ip,
         )
-        hash_em = Digest::SHA256.hexdigest("extraction_marker:/home/user/agent-guidelines/ruby-style.md")
+        hash_em = GalaxyLedger::Database.content_hash("extraction_marker", "/home/user/agent-guidelines/ruby-style.md")
         db.exec(
           "INSERT INTO ledger_entries (ledger_session_id, entry_type, content, importance, source_file, content_hash) VALUES (?, ?, ?, ?, ?, ?)",
           ledger_session_id, "extraction_marker", "/home/user/agent-guidelines/ruby-style.md", "medium",

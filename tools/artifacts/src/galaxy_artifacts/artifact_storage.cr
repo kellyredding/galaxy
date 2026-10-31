@@ -1,4 +1,3 @@
-require "digest/sha256"
 require "file_utils"
 
 module GalaxyArtifacts
@@ -80,7 +79,7 @@ module GalaxyArtifacts
       stored_filename = "#{padded}_#{slug}"
       stored_path = (session_dir / stored_filename).to_s
 
-      digest = Digest::SHA256.new
+      digest = SHA256.new
       size = 0_i64
       buffer = Bytes.new(65_536)
 
@@ -98,21 +97,21 @@ module GalaxyArtifacts
         return nil
       end
 
-      {path: stored_path, hash: digest.hexfinal.to_s, size: size}
+      {path: stored_path, hash: digest.hexfinal, size: size}
     rescue
       nil
     end
 
     # Compute SHA256 hash of file content for deduplication.
     def file_hash(path : String) : String
-      Digest::SHA256.hexdigest(File.read(path))
+      SHA256.hexdigest(File.read(path))
     rescue
       ""
     end
 
     # Compute SHA256 hash of string content.
     def content_hash(content : String) : String
-      Digest::SHA256.hexdigest(content)
+      SHA256.hexdigest(content)
     end
 
     # Get file size in bytes.

@@ -1,5 +1,4 @@
 require "json"
-require "digest/sha256"
 
 module GalaxyLedger
   module Hooks
@@ -152,9 +151,9 @@ module GalaxyLedger
 
         # Compute hash from tool_input content if available, else from file
         content_hash = if content = @tool_input.try(&.["content"]?.try(&.as_s?))
-                         Digest::SHA256.hexdigest(content)
+                         SHA256.hexdigest(content)
                        else
-                         Digest::SHA256.hexdigest(File.read(file_path))
+                         SHA256.hexdigest(File.read(file_path))
                        end
 
         # Hook-classified writes are a side-effect of the

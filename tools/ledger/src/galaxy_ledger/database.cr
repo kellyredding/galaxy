@@ -1,6 +1,5 @@
 require "db"
 require "sqlite3"
-require "digest/sha256"
 require "file_utils"
 require "json"
 
@@ -46,7 +45,7 @@ module GalaxyLedger
 
     # Generate SHA256 content hash for deduplication
     def self.content_hash(entry_type : String, content : String) : String
-      Digest::SHA256.hexdigest("#{entry_type}:#{content}")
+      SHA256.hexdigest("#{entry_type}:#{content}")
     end
 
     # Open a database connection (creates database and schema if needed)
