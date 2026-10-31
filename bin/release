@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+# Releases the version in VERSION: checks, packages a signed archive, verifies
+# it, then tags vX.Y.Z and publishes a GitHub release with the archive.
+#
+# Usage: bin/release [--dry-run]
+#
+#   --dry-run   Do everything up to the tag, and stop. Nothing is pushed or
+#               published; the verified archive is left in dist/.
+#
+# Run it from a real terminal: signing reads the release identity from
+# 1Password, whose approval does not reach a shell without one.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+REPO="kellyredding/galaxy"
+ASSET="galaxy-darwin-arm64.tar.gz"
+IDENTITY="Galaxy Release Signing"
+
+dry_run=false
+case "${1:-}" in
+  --dry-run) dry_run=true ;;
+  "") ;;
+  -h|--help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  *) echo "bin/release: unknown option '$1'" >&2; exit 2 ;;
+esac
+
+say() { printf '==> %s\n' "$*"; }
+die() { printf 'bin/release: %s\n' "$*" >&2; exit 1; }
+
+cd "$ROOT"
+version="$(tr -d '[:space:]' < VERSION)"
+tag="v$version"
+
+# --- Everything that can refuse a release, before the slow parts -----------
+
+branch="$(git rev-parse --abbrev-ref HEAD)"
+[[ "$branch" == "main" ]] || die "releases are made from main (currently on $branch). Merge, then release."
+[[ -z "$(git status --porcelain)" ]] || die "the working tree has changes."
+git fetch -q origin main --tags
+[[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/main)" ]] \
+  || die "main is not origin/main. Pull, or push what is unpushed, and release again."
+! git rev-parse -q --verify "refs/tags/$tag" >/dev/null || die "$tag already exists. Bump VERSION first."
+gh auth status >/dev/null 2>&1 || die "gh is not signed in. Run: gh auth login"
+command -v op >/dev/null || die "the 1Password CLI (op) is not installed."
+
+say "Releasing Galaxy $version"
+
+# --- Check, package, verify ------------------------------------------------
+
+say "Running every check (make check, app-check)"
+make check >/dev/null
+make app-check >/dev/null
+
+say "Packaging"
+rm -rf "$ROOT/dist"
+"$ROOT/bin/package" --sign op --out "$ROOT/dist"
+
+say "Verifying the archive"
+verify="$(mktemp -d)"
+trap 'rm -rf "${verify:?}"' EXIT
+(cd "$ROOT/dist" && shasum -a 256 -c "$ASSET.sha256" >/dev/null) || die "checksum does not match"
+tar -xzf "$ROOT/dist/$ASSET" -C "$verify"
+pkg="$verify/galaxy"
+grep -q "\"version\": \"$version\"" "$pkg/manifest.json" || die "manifest is not version $version"
+grep -q '"dirty": false' "$pkg/manifest.json" || die "the archive was built from a dirty tree"
+for bin in "$pkg"/bin/*; do
+  name="$(basename "$bin")"
+  want="$(sed -n "s/^    \"$name\": \"\(.*\)\",\{0,1\}$/\1/p" "$pkg/manifest.json")"
+  have="$("$bin" --version | awk '{print $NF}')"
+  [[ -n "$want" && "$have" == "$want" ]] || die "$name reports $have, manifest says $want"
+done
+codesign --verify --strict "$pkg/Galaxy.app" || die "Galaxy.app does not verify"
+codesign -dv --verbose=2 "$pkg/Galaxy.app" 2>&1 | grep -qx "Authority=$IDENTITY" \
+  || die "Galaxy.app is not signed by $IDENTITY"
+echo "    archive verified: $(find "$pkg/bin" -type f | wc -l | tr -d ' ') tools, app signed by $IDENTITY"
+
+if $dry_run; then
+  say "Dry run: stopping before the tag. Archive: $ROOT/dist/$ASSET"
+  exit 0
+fi
+
+# --- Tag and publish -------------------------------------------------------
+
+notes="$verify/notes.md"
+previous="$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || true)"
+{
+  echo "Install or update:"
+  echo
+  echo '```bash'
+  echo "curl -fsSL https://raw.githubusercontent.com/$REPO/main/install.sh | bash"
+  echo '```'
+  echo
+  echo "Apple Silicon, macOS 26 or later. Download with the script, not a browser:"
+  echo "the app is self-signed, and macOS blocks a browser download of it."
+  echo
+  if [[ -n "$previous" ]]; then
+    echo "## Changes since $previous"
+    echo
+    git log --no-merges --format='- %s' "$previous..HEAD"
+  else
+    echo "First suite release."
+  fi
+} > "$notes"
+
+say "Tagging $tag"
+git tag -a "$tag" -m "Galaxy $version"
+git push -q origin "$tag"
+
+say "Publishing the GitHub release"
+gh release create "$tag" --repo "$REPO" --title "Galaxy $version" --notes-file "$notes" \
+  "$ROOT/dist/$ASSET" "$ROOT/dist/$ASSET.sha256"
+
+say "Released $tag: https://github.com/$REPO/releases/tag/$tag"
