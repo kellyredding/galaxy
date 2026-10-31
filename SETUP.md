@@ -1,115 +1,98 @@
-# Setup
+# Developing Galaxy
 
-This guide walks through building and installing the full Galaxy ecosystem
-on macOS — the 8 CLI tools plus the Galaxy.app SwiftUI desktop app.
+To use Galaxy, install it with the one-line script in the
+[README](README.md#installation). This guide is for building it from source,
+installing your changes, and making releases.
 
 ## Prerequisites
 
-- **macOS 14.0** (Sonoma) or later
-- **Xcode 16.2+** with Swift 6.0+ — required for building Galaxy.app.
-  Install via the App Store, or via
-  [developer.apple.com](https://developer.apple.com/download/applications/)
-  for older macOS versions. Then point developer tools at it:
+- **Apple Silicon, macOS 26** or later
+- **Xcode** with Swift 6, pointed at by the developer tools:
   ```bash
   sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
   sudo xcodebuild -license accept
   ```
-- **XcodeGen** — generates the Xcode project from `project.yml`:
+- **Xcode's Metal toolchain** — SwiftTerm compiles a Metal shader, and a build
+  without it fails with "missing Metal Toolchain". It is a separate download:
+  ```bash
+  xcodebuild -downloadComponent MetalToolchain
+  ```
+- **XcodeGen** — generates the Xcode project from `GalaxyApp/project.yml`:
   ```bash
   brew install xcodegen
   ```
-- **Crystal toolchain** (`crystal` + `shards`) — required for the CLI
-  tools. Recommended via [mise](https://mise.jdx.dev/):
+- **Crystal** (`crystal` and `shards`) for the CLI tools, via
+  [mise](https://mise.jdx.dev/):
   ```bash
   mise install crystal@latest
   ```
-- **Claude Code** installed and authenticated — the ledger CLI's install
-  step invokes `claude -p` for eval specs; an unauthenticated session
-  aborts the install.
+- **Node** — the app build syntax-checks the JavaScript it ships.
+- **Claude Code**, installed and signed in — the ledger's specs call
+  `claude -p`.
 
-## Clone
+For releases, also the 1Password CLI (`op`) and the GitHub CLI (`gh`), both
+signed in.
 
-```bash
-git clone git@github.com:kellyredding/galaxy.git
-cd galaxy
-```
+## Install your changes
 
-## 1. Build and install the CLI tools
-
-Each tool lives under `tools/<name>/` with its own Makefile. The per-tool
-`install` target builds the tool, runs its `check` target (lint + tests),
-and copies the binary into `~/.claude/galaxy/bin/` along with a symlink at
-`~/.bin/local/<name>`.
+From anywhere in your checkout:
 
 ```bash
-make statusline-install
-make ledger-install
-make artifacts-install
-make timeline-install
-make agents-install
-make diff-install
-make galaxy-install
+galaxy update --local
 ```
 
-Or build a single tool from its own directory:
+That builds every CLI tool and a Release Galaxy.app from your working tree,
+uncommitted changes included, and installs them the way a release is
+installed: the tools into `~/.claude/galaxy/bin` (linked into
+`~/.local/bin`), the app into `~/Applications/Galaxy.app`. A running Galaxy
+keeps running; restart it to switch. `galaxy update` puts you back on the
+latest release.
+
+The app is signed with the release identity when 1Password can provide it,
+and ad-hoc otherwise. macOS keys an app's privacy permissions to its
+signature, so an ad-hoc build asks for them again.
+
+Underneath, that is `bin/package --local`, which writes
+`dist/galaxy-darwin-arm64.tar.gz`, and `install.sh --from` that archive.
+
+## Build and check without installing
 
 ```bash
-cd tools/statusline
-make install
+make check                 # disclosure audit, then every tool's lint + specs
+make app-check             # the app's Debug build and its smoke checks
+make -C tools/ledger dev   # one tool's development binary
 ```
 
-**Where things land:**
+Run `make check` before committing. `make audit` on its own is quick: this
+repository is public, and it refuses employer- and deployment-specific details.
 
-- Binaries: `~/.claude/galaxy/bin/<name>`
-- PATH symlinks: `~/.bin/local/<name>`
+## Release
 
-Add `~/.bin/local/` to your `PATH` if it isn't already.
+Releases are made from `main` once a version bump has merged:
 
-## 2. Build the Mac app (Galaxy.app)
+1. Bump `VERSION` (the suite version) and any tool's `version.txt` that
+   changed, in a PR.
+2. After it merges, on an up-to-date `main`, from a real terminal (1Password's
+   approval does not reach a shell without one):
+   ```bash
+   bin/release --dry-run   # everything but the tag; leaves the archive in dist/
+   bin/release             # tag vX.Y.Z and publish the GitHub release
+   ```
+
+`bin/release` runs every check, packages, verifies the archive (versions, a
+clean tree, the signing authority), then tags and publishes. Users get it with
+`galaxy update`.
+
+### The signing identity
+
+Releases are signed with a self-signed identity, "Galaxy Release Signing",
+kept only in 1Password (Private vault, personal account). Packaging fetches it
+into a throwaway keychain and deletes that afterwards.
 
 ```bash
-cd GalaxyApp
-xcodegen generate
-xcodebuild \
-    -project GalaxyApp.xcodeproj \
-    -scheme GalaxyApp \
-    -configuration Debug \
-    build
+bin/signing-identity show     # its SHA-1
+bin/signing-identity create   # first time only; refuses if it exists
 ```
 
-The first build resolves SwiftPM dependencies (Galactic and Markdown);
-subsequent builds reuse the SwiftPM cache.
-
-For Mac-app-specific details (dependency pinning, SwiftPM cache recovery,
-project structure), see [`GalaxyApp/SETUP.md`](GalaxyApp/SETUP.md).
-
-The built app lands at:
-
-```
-GalaxyApp/build/Build/Products/Debug/Galaxy.app
-```
-
-Open it once to grant the usual macOS first-run permissions:
-
-```bash
-open GalaxyApp/build/Build/Products/Debug/Galaxy.app
-```
-
-Optionally symlink it into `~/Applications/` so Launch Services
-(Spotlight, Raycast, Cmd-Tab) can find it:
-
-```bash
-mkdir -p ~/Applications
-ln -sfn "$PWD/GalaxyApp/build/Build/Products/Debug/Galaxy.app" \
-    ~/Applications/Galaxy.app
-```
-
-## Verify
-
-```bash
-galaxy --version
-galaxy-statusline --version
-# ... and the rest of the CLIs
-
-open ~/Applications/Galaxy.app   # or the build path directly
-```
+Every release must be signed with the same identity: macOS keys privacy
+permissions to it, so a new one makes every user grant them again.

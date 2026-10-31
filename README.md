@@ -17,7 +17,27 @@
 
 ## Installation
 
-See [SETUP.md](SETUP.md) for the full setup guide — prerequisites, CLI tool installs, and Galaxy.app build.
+Galaxy runs on Apple Silicon Macs with macOS 26 or later, and needs
+[Claude Code](https://claude.com/claude-code).
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kellyredding/galaxy/main/install.sh | bash
+```
+
+That installs the CLI tools into `~/.claude/galaxy/bin` (linked into
+`~/.local/bin`) and Galaxy.app into `~/Applications`. After that:
+
+```bash
+galaxy update     # install the latest release
+galaxy doctor     # check what is installed
+```
+
+Install with the script, not a browser download. Galaxy.app is signed with
+its own certificate rather than an Apple developer ID, and macOS blocks an app
+like that when a browser downloaded it. A script's download is not flagged,
+so it opens normally.
+
+To build from source, or work on Galaxy, see [SETUP.md](SETUP.md).
 
 ## Tool Overview
 
