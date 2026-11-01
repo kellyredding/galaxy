@@ -8,8 +8,8 @@
 # Usage: bin/package [--local] [--sign op|adhoc] [--out DIR]
 #
 #   --local   Allow uncommitted changes (for `galaxy update --local`). Signs
-#             with the release identity when 1Password can provide it, and
-#             ad-hoc otherwise.
+#             with the release identity when op is installed, ad-hoc
+#             otherwise. Pass --sign adhoc to skip 1Password on purpose.
 #   --sign    Force a signing mode. A release (no --local) always uses op.
 #   --out     Where to write the archive (default: dist/).
 set -euo pipefail
@@ -67,10 +67,12 @@ if ! $local_build && $dirty; then
   die "the working tree has changes. Commit them, or use --local."
 fi
 
+# Local builds sign with the release identity whenever op is installed, and
+# fail rather than fall back: an ad-hoc build makes macOS ask for Galaxy's
+# permissions again, which is easy to miss in the output. `op whoami` cannot
+# decide this, since it reports "not signed in" without ever prompting.
 if [[ -z "$sign" ]]; then
-  if ! $local_build; then
-    sign=op
-  elif command -v op >/dev/null && timeout 15 op whoami --account my.1password.com >/dev/null 2>&1; then
+  if ! $local_build || command -v op >/dev/null; then
     sign=op
   else
     sign=adhoc
@@ -137,7 +139,10 @@ for tv in "${tool_versions[@]}"; do
 done
 
 say "Signing Galaxy.app ($sign)"
-run_logged "sign" "$ROOT/bin/lib/sign-app.sh" "$sign" "$stage/Galaxy.app"
+# Not logged: signing may need to tell the user to approve 1Password.
+"$ROOT/bin/lib/sign-app.sh" "$sign" "$stage/Galaxy.app" 2>&1 | grep -v "replacing existing signature" || true
+codesign -dv --verbose=2 "$stage/Galaxy.app" 2>&1 | grep -q "^Authority=" || [[ "$sign" == "adhoc" ]] \
+  || die "signing with the release identity failed"
 codesign --verify --strict "$stage/Galaxy.app" || die "the signed app does not verify"
 
 printf '%s\n' "$version" > "$stage/VERSION"

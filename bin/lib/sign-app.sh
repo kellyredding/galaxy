@@ -38,7 +38,21 @@ gx_cleanup() {
 }
 trap gx_cleanup EXIT
 
-op read --account "$OP_ACCOUNT" --out-file "$work/signing.p12" "$OP_ITEM/signing.p12" >/dev/null
+# op gives up on the desktop app within a few seconds, often while its
+# approval prompt is still on screen, so retry until the approval lands.
+for attempt in $(seq 1 40); do
+  if op read --account "$OP_ACCOUNT" --out-file "$work/signing.p12" --force "$OP_ITEM/signing.p12" >/dev/null 2>&1; then
+    break
+  fi
+  if (( attempt == 1 )); then
+    echo "Approve the 1Password prompt to sign Galaxy.app..." >&2
+  fi
+  if (( attempt == 40 )); then
+    echo "1Password never provided the signing identity. To build without it: bin/package --local --sign adhoc" >&2
+    exit 1
+  fi
+  sleep 3
+done
 p12pass="$(op read --account "$OP_ACCOUNT" "$OP_ITEM/password")"
 identity="$(op read --account "$OP_ACCOUNT" "$OP_ITEM/sha1")"
 
