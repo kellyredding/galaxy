@@ -94,6 +94,13 @@ it skips the checks and the build (several minutes), verifies the archive
 again, and publishes. Any new commit means a full run. `bin/release --fresh`
 forces one anyway, say after changing a toolchain.
 
+If a release fails partway, run `bin/release` again. It picks up where the
+earlier run stopped: a tag that was made but not pushed is pushed, and a
+GitHub release left incomplete gets its files and notes and is published.
+Once the release is complete it says so and exits, so running it twice is
+harmless. A tag for this version on a different commit is refused: bump
+`VERSION` instead.
+
 ### The signing identity
 
 Releases are signed with a self-signed identity, "Galaxy Release Signing",

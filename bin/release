@@ -13,6 +13,10 @@
 # A release right after a dry run of the same commit reuses that run's archive
 # instead of rerunning every check and rebuilding; it is verified again first.
 #
+# Safe to run again. After a failure it finishes what the earlier run left
+# undone (the tag, its push, the GitHub release); once the release is
+# complete it says so and exits.
+#
 # Run it from a real terminal: signing reads the release identity from
 # 1Password, whose approval does not reach a shell without one.
 set -euo pipefail
@@ -28,7 +32,7 @@ for arg in "$@"; do
   case "$arg" in
     --dry-run) dry_run=true ;;
     --fresh) fresh=true ;;
-    -h|--help) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "bin/release: unknown option '$arg'" >&2; exit 2 ;;
   esac
 done
@@ -49,20 +53,56 @@ branch="$(git rev-parse --abbrev-ref HEAD)"
 git fetch -q origin main --tags
 [[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/main)" ]] \
   || die "main is not origin/main. Pull, or push what is unpushed, and release again."
-! git rev-parse -q --verify "refs/tags/$tag" >/dev/null || die "$tag already exists. Bump VERSION first."
 [[ -s "$release_notes" ]] \
   || die "$release_notes is missing. Write the notes with the version bump, and release once they are merged."
 gh auth status >/dev/null 2>&1 || die "gh is not signed in. Run: gh auth login"
+
+# --- What an earlier run of this version already did ------------------------
+
+head="$(git rev-parse HEAD)"
+tag_commit="$(git rev-parse -q --verify "refs/tags/$tag^{commit}" || true)"
+if [[ -n "$tag_commit" && "$tag_commit" != "$head" ]]; then
+  die "$tag already exists at ${tag_commit:0:12}, not this commit (${head:0:12}). Bump VERSION first."
+fi
+tag_pushed=false
+if [[ -n "$tag_commit" ]] && git ls-remote --exit-code -q --tags origin "refs/tags/$tag" >/dev/null; then
+  tag_pushed=true
+fi
+
+# Complete means published with both files fully uploaded. Anything less, such
+# as the draft gh leaves when an upload fails, is finished rather than recreated.
+release_state=none
+if found="$(gh release view "$tag" --repo "$REPO" --json isDraft,assets \
+              --jq '"\(.isDraft) \([.assets[] | select(.state == "uploaded") | .name] | sort | join(" "))"' 2>&1)"; then
+  if [[ "$found" == "false $ASSET $ASSET.sha256" ]]; then
+    release_state=complete
+  else
+    release_state=partial
+  fi
+elif [[ "$found" != "release not found" ]]; then
+  die "could not look up the $tag release: $found"
+fi
+
+if [[ "$release_state" == complete && "$tag_commit" == "$head" ]]; then
+  say "Galaxy $version is already released from ${head:0:12}: https://github.com/$REPO/releases/tag/$tag"
+  exit 0
+fi
 command -v op >/dev/null || die "the 1Password CLI (op) is not installed."
 
 say "Releasing Galaxy $version"
+if [[ -n "$tag_commit" ]]; then
+  if $tag_pushed; then left="tagged and pushed"; else left="tagged, not pushed"; fi
+  if [[ "$release_state" != none ]]; then left="$left, with an incomplete GitHub release"; fi
+  say "Finishing an earlier run that left $tag $left"
+elif [[ "$release_state" != none ]]; then
+  say "Finishing an earlier run that left an incomplete $tag GitHub release"
+fi
 
 # --- Check and package, unless a dry run already did for this commit -------
 
 # Written only after a run's checks pass and its archive verifies, holding the
 # commit it was for. A new commit, a changed archive or --fresh means a full run.
 checked_stamp="$ROOT/dist/.checked-commit"
-head="$(git rev-parse HEAD)"
 reuse=false
 if ! $fresh && [[ -f "$checked_stamp" && -f "$ROOT/dist/$ASSET" && -f "$ROOT/dist/$ASSET.sha256" ]] \
    && [[ "$(cat "$checked_stamp")" == "$head" ]]; then
@@ -148,12 +188,23 @@ fi
 
 # --- Tag and publish -------------------------------------------------------
 
-say "Tagging $tag"
-git tag -a "$tag" -m "Galaxy $version"
-git push -q origin "$tag"
+if [[ -z "$tag_commit" ]]; then
+  say "Tagging $tag"
+  git tag -a "$tag" -m "Galaxy $version"
+fi
+if ! $tag_pushed; then
+  say "Pushing $tag"
+  git push -q origin "$tag"
+fi
 
-say "Publishing the GitHub release"
-gh release create "$tag" --repo "$REPO" --title "Galaxy $version" --notes-file "$notes" \
-  "$ROOT/dist/$ASSET" "$ROOT/dist/$ASSET.sha256"
+if [[ "$release_state" == none ]]; then
+  say "Publishing the GitHub release"
+  gh release create "$tag" --repo "$REPO" --title "Galaxy $version" --notes-file "$notes" \
+    "$ROOT/dist/$ASSET" "$ROOT/dist/$ASSET.sha256"
+else
+  say "Finishing the GitHub release"
+  gh release upload "$tag" --repo "$REPO" --clobber "$ROOT/dist/$ASSET" "$ROOT/dist/$ASSET.sha256"
+  gh release edit "$tag" --repo "$REPO" --title "Galaxy $version" --notes-file "$notes" --draft=false
+fi
 
 say "Released $tag: https://github.com/$REPO/releases/tag/$tag"
