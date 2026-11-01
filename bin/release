@@ -3,10 +3,15 @@
 # it, then tags vX.Y.Z and publishes a GitHub release with the archive and the
 # notes in release-notes/vX.Y.Z.md, which must already be committed.
 #
-# Usage: bin/release [--dry-run]
+# Usage: bin/release [--dry-run] [--fresh]
 #
 #   --dry-run   Do everything up to the tag, and stop. Nothing is pushed or
 #               published; the verified archive is left in dist/.
+#   --fresh     Rerun the checks and rebuild, even when dist/ already holds an
+#               archive checked and verified for this commit.
+#
+# A release right after a dry run of the same commit reuses that run's archive
+# instead of rerunning every check and rebuilding; it is verified again first.
 #
 # Run it from a real terminal: signing reads the release identity from
 # 1Password, whose approval does not reach a shell without one.
@@ -18,12 +23,15 @@ ASSET="galaxy-darwin-arm64.tar.gz"
 IDENTITY="Galaxy Release Signing"
 
 dry_run=false
-case "${1:-}" in
-  --dry-run) dry_run=true ;;
-  "") ;;
-  -h|--help) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-  *) echo "bin/release: unknown option '$1'" >&2; exit 2 ;;
-esac
+fresh=false
+for arg in "$@"; do
+  case "$arg" in
+    --dry-run) dry_run=true ;;
+    --fresh) fresh=true ;;
+    -h|--help) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "bin/release: unknown option '$arg'" >&2; exit 2 ;;
+  esac
+done
 
 say() { printf '==> %s\n' "$*"; }
 die() { printf 'bin/release: %s\n' "$*" >&2; exit 1; }
@@ -49,25 +57,41 @@ command -v op >/dev/null || die "the 1Password CLI (op) is not installed."
 
 say "Releasing Galaxy $version"
 
-# --- Check, package, verify ------------------------------------------------
+# --- Check and package, unless a dry run already did for this commit -------
 
-say "Running every check (make check, app-check)"
-# Passing checks print a great deal to stderr (expected spec errors, Xcode's
-# simulator warnings), so their output is kept in a log shown only on failure.
-check_log="$(mktemp -t galaxy-release-checks)"
-if ! { make check && make app-check; } > "$check_log" 2>&1; then
-  tail -40 "$check_log" >&2
-  die "a check failed; full log: $check_log"
+# Written only after a run's checks pass and its archive verifies, holding the
+# commit it was for. A new commit, a changed archive or --fresh means a full run.
+checked_stamp="$ROOT/dist/.checked-commit"
+head="$(git rev-parse HEAD)"
+reuse=false
+if ! $fresh && [[ -f "$checked_stamp" && -f "$ROOT/dist/$ASSET" && -f "$ROOT/dist/$ASSET.sha256" ]] \
+   && [[ "$(cat "$checked_stamp")" == "$head" ]]; then
+  reuse=true
 fi
-rm -f "$check_log"
-# A check that writes into the tree would make packaging refuse it, so name
-# the file here rather than leave that refusal to explain itself.
-[[ -z "$(git status --porcelain)" ]] \
-  || die "the checks modified the working tree:"$'\n'"$(git status --short)"
 
-say "Packaging"
-rm -rf "$ROOT/dist"
-"$ROOT/bin/package" --sign op --out "$ROOT/dist"
+if $reuse; then
+  say "Reusing the archive a dry run checked and built for ${head:0:12} (--fresh to redo)"
+else
+  say "Running every check (make check, app-check)"
+  # Passing checks print a great deal to stderr (expected spec errors, Xcode's
+  # simulator warnings), so their output is kept in a log shown only on failure.
+  check_log="$(mktemp -t galaxy-release-checks)"
+  if ! { make check && make app-check; } > "$check_log" 2>&1; then
+    tail -40 "$check_log" >&2
+    die "a check failed; full log: $check_log"
+  fi
+  rm -f "$check_log"
+  # A check that writes into the tree would make packaging refuse it, so name
+  # the file here rather than leave that refusal to explain itself.
+  [[ -z "$(git status --porcelain)" ]] \
+    || die "the checks modified the working tree:"$'\n'"$(git status --short)"
+
+  say "Packaging"
+  rm -rf "$ROOT/dist"
+  "$ROOT/bin/package" --sign op --out "$ROOT/dist"
+fi
+
+# --- Verify, always: a reused archive is checked as hard as a new one -------
 
 say "Verifying the archive"
 verify="$(mktemp -d)"
@@ -77,6 +101,8 @@ tar -xzf "$ROOT/dist/$ASSET" -C "$verify"
 pkg="$verify/galaxy"
 grep -q "\"version\": \"$version\"" "$pkg/manifest.json" || die "manifest is not version $version"
 grep -q '"dirty": false' "$pkg/manifest.json" || die "the archive was built from a dirty tree"
+grep -q "\"commit\": \"${head:0:12}\"" "$pkg/manifest.json" \
+  || die "the archive was not built from ${head:0:12}; run with --fresh"
 for bin in "$pkg"/bin/*; do
   name="$(basename "$bin")"
   want="$(sed -n "s/^    \"$name\": \"\(.*\)\",\{0,1\}$/\1/p" "$pkg/manifest.json")"
@@ -90,6 +116,7 @@ signature="$(codesign -dv --verbose=2 "$pkg/Galaxy.app" 2>&1)"
 [[ "$signature" == *$'\n'"Authority=$IDENTITY"$'\n'* ]] \
   || die "Galaxy.app is not signed by $IDENTITY"
 echo "    archive verified: $(find "$pkg/bin" -type f | wc -l | tr -d ' ') tools, app signed by $IDENTITY"
+printf '%s\n' "$head" > "$checked_stamp"
 
 # --- Release description ---------------------------------------------------
 

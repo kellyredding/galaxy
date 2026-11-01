@@ -85,9 +85,14 @@ Releases are made from `main` once a version bump has merged:
    ```
 
 `bin/release` refuses without the notes file. It runs every check, packages,
-verifies the archive (versions, a clean tree, the signing authority), then
-tags and publishes, with the notes under the install instructions as the
+verifies the archive (versions, commit, a clean tree, the signing authority),
+then tags and publishes, with the notes under the install instructions as the
 release description. Users get it with `galaxy update`.
+
+A release right after a dry run of the same commit reuses that run's archive:
+it skips the checks and the build (several minutes), verifies the archive
+again, and publishes. Any new commit means a full run. `bin/release --fresh`
+forces one anyway, say after changing a toolchain.
 
 ### The signing identity
 
