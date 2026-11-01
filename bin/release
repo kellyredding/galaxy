@@ -52,8 +52,18 @@ say "Releasing Galaxy $version"
 # --- Check, package, verify ------------------------------------------------
 
 say "Running every check (make check, app-check)"
-make check >/dev/null
-make app-check >/dev/null
+# Passing checks print a great deal to stderr (expected spec errors, Xcode's
+# simulator warnings), so their output is kept in a log shown only on failure.
+check_log="$(mktemp -t galaxy-release-checks)"
+if ! { make check && make app-check; } > "$check_log" 2>&1; then
+  tail -40 "$check_log" >&2
+  die "a check failed; full log: $check_log"
+fi
+rm -f "$check_log"
+# A check that writes into the tree would make packaging refuse it, so name
+# the file here rather than leave that refusal to explain itself.
+[[ -z "$(git status --porcelain)" ]] \
+  || die "the checks modified the working tree:"$'\n'"$(git status --short)"
 
 say "Packaging"
 rm -rf "$ROOT/dist"
