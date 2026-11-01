@@ -51,6 +51,9 @@ case "${1:-}" in
       -out "$work/signing.p12" -passout "pass:$p12pass" -name "$TITLE"
     sha1="$(/usr/bin/openssl x509 -in "$work/cert.pem" -noout -fingerprint -sha1 | cut -d= -f2 | tr -d ':')"
 
+    # In op's assignment syntax a dot separates section from field, so
+    # `signing.p12[file]` is field `p12` in section `signing`, read back as
+    # op://Private/Galaxy Release Signing/signing/p12 by bin/lib/sign-app.sh.
     op item create --account "$ACCOUNT" --vault "$VAULT" --category Password \
       --title "$TITLE" \
       "password=$p12pass" \

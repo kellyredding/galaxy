@@ -40,15 +40,18 @@ trap gx_cleanup EXIT
 
 # op gives up on the desktop app within a few seconds, often while its
 # approval prompt is still on screen, so retry until the approval lands.
-for attempt in $(seq 1 40); do
-  if op read --account "$OP_ACCOUNT" --out-file "$work/signing.p12" --force "$OP_ITEM/signing.p12" >/dev/null 2>&1; then
+last_error=""
+for attempt in $(seq 1 20); do
+  # bin/signing-identity stores the file as field `p12` in section `signing`.
+  if last_error="$(op read --account "$OP_ACCOUNT" --out-file "$work/signing.p12" --force "$OP_ITEM/signing/p12" 2>&1 >/dev/null)"; then
     break
   fi
   if (( attempt == 1 )); then
-    echo "Approve the 1Password prompt to sign Galaxy.app..." >&2
+    echo "Approve the 1Password prompt to sign Galaxy.app (op said: $last_error)" >&2
   fi
-  if (( attempt == 40 )); then
-    echo "1Password never provided the signing identity. To build without it: bin/package --local --sign adhoc" >&2
+  if (( attempt == 20 )); then
+    echo "1Password never provided the signing identity. Last error from op: $last_error" >&2
+    echo "To build without it: bin/package --local --sign adhoc" >&2
     exit 1
   fi
   sleep 3
@@ -66,4 +69,5 @@ security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kcpass" 
 # codesign --keychain only searches keychains already on the search list.
 security list-keychains -d user -s "${orig_list[@]}" "$kc"
 
-codesign --force --keychain "$kc" --sign "$identity" --timestamp=none "$bundle"
+codesign --force --keychain "$kc" --sign "$identity" --timestamp=none "$bundle" 2>&1 \
+  | { grep -v "replacing existing signature" || true; }

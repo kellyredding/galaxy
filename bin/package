@@ -139,8 +139,9 @@ for tv in "${tool_versions[@]}"; do
 done
 
 say "Signing Galaxy.app ($sign)"
-# Not logged: signing may need to tell the user to approve 1Password.
-"$ROOT/bin/lib/sign-app.sh" "$sign" "$stage/Galaxy.app" 2>&1 | grep -v "replacing existing signature" || true
+# Not logged and not piped: op talks to the 1Password app on the user's
+# behalf, and signing may need to ask the user to approve it.
+"$ROOT/bin/lib/sign-app.sh" "$sign" "$stage/Galaxy.app" || die "signing failed"
 codesign -dv --verbose=2 "$stage/Galaxy.app" 2>&1 | grep -q "^Authority=" || [[ "$sign" == "adhoc" ]] \
   || die "signing with the release identity failed"
 codesign --verify --strict "$stage/Galaxy.app" || die "the signed app does not verify"
