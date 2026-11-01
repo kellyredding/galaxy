@@ -57,7 +57,10 @@ macos="$(sw_vers -productVersion)"
 for cmd in git xcodebuild xcodegen crystal shards node tar shasum; do
   command -v "$cmd" >/dev/null || die "'$cmd' is not installed. See SETUP.md."
 done
-xcodebuild -showComponent MetalToolchain 2>/dev/null | grep -q 'Status: installed' \
+# Output is captured before matching throughout: under pipefail, `| grep -q`
+# exits on its match, the writer dies of SIGPIPE, and the pipeline fails.
+metal="$(xcodebuild -showComponent MetalToolchain 2>/dev/null || true)"
+[[ "$metal" == *"Status: installed"* ]] \
   || die "Xcode's Metal toolchain is missing (SwiftTerm has a shader). Run: xcodebuild -downloadComponent MetalToolchain"
 
 cd "$ROOT"
@@ -138,7 +141,8 @@ say "Signing Galaxy.app ($sign)"
 # Not logged and not piped: op talks to the 1Password app on the user's
 # behalf, and signing may need to ask the user to approve it.
 "$ROOT/bin/lib/sign-app.sh" "$sign" "$stage/Galaxy.app" || die "signing failed"
-codesign -dv --verbose=2 "$stage/Galaxy.app" 2>&1 | grep -q "^Authority=" || [[ "$sign" == "adhoc" ]] \
+signature="$(codesign -dv --verbose=2 "$stage/Galaxy.app" 2>&1)"
+[[ "$signature" == *$'\nAuthority='* || "$sign" == "adhoc" ]] \
   || die "signing with the release identity failed"
 codesign --verify --strict "$stage/Galaxy.app" || die "the signed app does not verify"
 

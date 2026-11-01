@@ -84,7 +84,10 @@ for bin in "$pkg"/bin/*; do
   [[ -n "$want" && "$have" == "$want" ]] || die "$name reports $have, manifest says $want"
 done
 codesign --verify --strict "$pkg/Galaxy.app" || die "Galaxy.app does not verify"
-codesign -dv --verbose=2 "$pkg/Galaxy.app" 2>&1 | grep -qx "Authority=$IDENTITY" \
+# Captured before matching: under pipefail, `| grep -q` exits on its match,
+# codesign dies of SIGPIPE writing the lines after it, and the check fails.
+signature="$(codesign -dv --verbose=2 "$pkg/Galaxy.app" 2>&1)"
+[[ "$signature" == *$'\n'"Authority=$IDENTITY"$'\n'* ]] \
   || die "Galaxy.app is not signed by $IDENTITY"
 echo "    archive verified: $(find "$pkg/bin" -type f | wc -l | tr -d ' ') tools, app signed by $IDENTITY"
 
