@@ -3,6 +3,11 @@
 # Always use -derivedDataPath to avoid polluting ~/Library/Developer/Xcode/DerivedData
 DERIVED_DATA = build
 
+# Xcode registers every app it builds with Launch Services. The installed copy
+# in ~/Applications is the one that should receive galaxy:// links, so each
+# build unregisters what it just made.
+LSREGISTER = /System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/lsregister
+
 # project.yml is the source of truth; the generated project file is
 # gitignored. Without this a fresh clone has no project to build at all, and
 # an edited project.yml is silently ignored in favour of whatever was last
@@ -21,9 +26,11 @@ validate-js:
 
 build: generate validate-js
 	xcodebuild -scheme GalaxyApp -configuration Debug -derivedDataPath $(DERIVED_DATA) -destination 'platform=macOS' build
+	@$(LSREGISTER) -u "$(CURDIR)/$(DERIVED_DATA)/Build/Products/Debug/Galaxy.app" 2>/dev/null || true
 
 release: generate validate-js
 	xcodebuild -scheme GalaxyApp -configuration Release -derivedDataPath $(DERIVED_DATA) -destination 'platform=macOS' build
+	@$(LSREGISTER) -u "$(CURDIR)/$(DERIVED_DATA)/Build/Products/Release/Galaxy.app" 2>/dev/null || true
 
 # Sandboxed smoke checks: build the standalone tools and run them. No app
 # launch — each runs as its own process.
