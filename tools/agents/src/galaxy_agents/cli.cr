@@ -884,7 +884,7 @@ module GalaxyAgents
             json.field "agents" do
               json.array do
                 agents.each do |a|
-                  agent_to_json(json, a)
+                  agent_to_json(json, a, with_text: false)
                 end
               end
             end
@@ -1565,8 +1565,11 @@ module GalaxyAgents
     end
 
     # JSON serialization for an agent
+    # `list` leaves out the prompt and last message, which run to kilobytes
+    # each and are read only when one agent is opened, through `show`.
     private def self.agent_to_json(
       json : JSON::Builder, a : Database::Agent,
+      with_text : Bool = true,
     )
       json.object do
         json.field "agent_id", a.agent_id
@@ -1576,8 +1579,10 @@ module GalaxyAgents
         json.field "started_at", a.started_at
         json.field "completed_at", a.completed_at
         json.field "duration_ms", a.duration_ms
-        json.field "prompt", a.prompt
-        json.field "last_message", a.last_message
+        if with_text
+          json.field "prompt", a.prompt
+          json.field "last_message", a.last_message
+        end
         json.field "transcript_path",
           a.transcript_path
       end
@@ -1887,7 +1892,8 @@ module GalaxyAgents
 
       DESCRIPTION:
         Lists all agents for the specified session with agent_id,
-        type, status, duration, and start time.
+        type, status, duration, and start time. Leaves out each
+        agent's prompt and last message; `show` returns those.
       HELP
     end
 

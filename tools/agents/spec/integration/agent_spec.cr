@@ -873,20 +873,17 @@ describe "CLI agent commands", tags: "integration" do
         "was already abandoned",
       )
 
-      list = run_binary([
-        "list",
+      show = run_binary([
+        "show",
         "--ledger-session-id", "1",
+        "--agent-id", "sa1",
         "--json",
       ])
-      parsed = JSON.parse(list[:output])
-      sa1 = parsed["agents"].as_a.find do |a|
-        a["agent_id"].as_s == "sa1"
-      end
-      sa1.should_not be_nil
-      sa1.not_nil!["status"].as_s.should eq("abandoned")
+      sa1 = JSON.parse(show[:output])
+      sa1["status"].as_s.should eq("abandoned")
       # The idempotent stop path still captures the
       # final response so the detail view can show it.
-      sa1.not_nil!["last_message"].as_s.should eq("Done!")
+      sa1["last_message"].as_s.should eq("Done!")
     end
 
     it(
@@ -1223,6 +1220,46 @@ describe "CLI agent commands", tags: "integration" do
       agents.size.should eq(1)
       agents[0]["agent_id"].as_s.should eq("j1")
       agents[0]["status"].as_s.should eq("running")
+    end
+
+    # Galaxy refreshes this list on every agent lifecycle event, and each
+    # decode kept every prompt and reply alive in the app. `show` carries
+    # them for the one agent being read.
+    it "leaves each agent's prompt and last message out of the JSON" do
+      run_binary([
+        "start",
+        "--ledger-session-id", "1",
+        "--agent-id", "t1",
+        "--agent-type", "Explore",
+      ])
+      run_binary(
+        [
+          "stop",
+          "--ledger-session-id", "1",
+          "--agent-id", "t1",
+          "--last-message-stdin",
+        ],
+        stdin: "A long final report.",
+      )
+
+      list = run_binary([
+        "list",
+        "--ledger-session-id", "1",
+        "--json",
+      ])
+      listed = JSON.parse(list[:output])["agents"].as_a[0].as_h
+      listed.has_key?("prompt").should be_false
+      listed.has_key?("last_message").should be_false
+      listed.has_key?("transcript_path").should be_true
+
+      show = run_binary([
+        "show",
+        "--ledger-session-id", "1",
+        "--agent-id", "t1",
+        "--json",
+      ])
+      JSON.parse(show[:output])["last_message"].as_s
+        .should eq("A long final report.")
     end
 
     it "shows empty message when no agents" do
