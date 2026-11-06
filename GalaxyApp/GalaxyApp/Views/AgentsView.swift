@@ -52,6 +52,9 @@ struct AgentsView: View {
 
     // Detail state
     @State private var selectedAgent: AgentRun? = nil
+    /// The opened agent's full record. List rows carry no prompt or last
+    /// message, so the detail view loads them by itself.
+    @State private var selectedDetail: AgentRun? = nil
     @State private var isBackHovered: Bool = false
     @State private var escapeMonitor: Any? = nil
 
@@ -194,7 +197,9 @@ struct AgentsView: View {
         // is opened. Keyed on agentId so switching between
         // agents cancels any in-flight lookup.
         .task(id: selectedAgent?.agentId) {
+            async let detail: Void = loadSelectedDetail()
             await resolveTranscriptArtifact()
+            await detail
         }
         .onDisappear {
             removeEscapeMonitor()
@@ -607,7 +612,7 @@ struct AgentsView: View {
             }
 
             // Prompt
-            if let prompt = agent.prompt,
+            if let prompt = detailText(agent, \.prompt),
                !prompt.isEmpty
             {
                 detailSection("Prompt") {
@@ -630,7 +635,7 @@ struct AgentsView: View {
             }
 
             // Last message
-            if let msg = agent.lastMessage,
+            if let msg = detailText(agent, \.lastMessage),
                !msg.isEmpty
             {
                 detailSection("Response") {
@@ -958,6 +963,39 @@ struct AgentsView: View {
                 + "failed: \(error)"
             )
         }
+    }
+
+    /// Load the opened agent's prompt and last message, which list rows leave
+    /// out. Keyed on the agent with the transcript lookup, so switching agents
+    /// cancels it.
+    @MainActor
+    private func loadSelectedDetail() async {
+        selectedDetail = nil
+        guard let agent = selectedAgent,
+              let lsid = session.ledgerSessionId
+        else { return }
+
+        do {
+            let full = try await AgentsQueryService.shared.fetchAgent(
+                ledgerSessionId: lsid, agentId: agent.agentId)
+            guard !Task.isCancelled,
+                  selectedAgent?.agentId == agent.agentId
+            else { return }
+            selectedDetail = full
+        } catch {
+            guard !Task.isCancelled else { return }
+            GalaxyLog.events(
+                "AgentsView agent detail fetch failed: \(error)")
+        }
+    }
+
+    /// A text field of the opened agent's full record, once it has loaded.
+    private func detailText(
+        _ agent: AgentRun, _ field: KeyPath<AgentRun, String?>
+    ) -> String? {
+        guard let detail = selectedDetail, detail.agentId == agent.agentId
+        else { return nil }
+        return detail[keyPath: field]
     }
 
     /// Look up the artifact whose source_path matches the

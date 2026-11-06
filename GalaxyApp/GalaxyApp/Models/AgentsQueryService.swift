@@ -34,6 +34,13 @@ class AgentsQueryService {
         defaultTimeout: 5
     )
 
+    /// One agent's full record. Its own lane, so opening an agent never
+    /// cancels a list refresh; opening another one supersedes it.
+    private let detailRunner = ProcessRunner(
+        binaryPath: AgentsQueryService.binaryPath,
+        defaultTimeout: 5
+    )
+
     private init() {}
 
     // MARK: - Public API
@@ -51,7 +58,28 @@ class AgentsQueryService {
         }
     }
 
-    /// Fetch all agents for a session.
+    /// One agent with its prompt and last message, which the list leaves out.
+    func fetchAgent(
+        ledgerSessionId: Int64,
+        agentId: String
+    ) async throws -> AgentRun {
+        detailRunner.cancelAll()
+        let data: Data
+        do {
+            data = try await detailRunner.run(args: [
+                "show", "--json",
+                "--ledger-session-id", String(ledgerSessionId),
+                "--agent-id", agentId,
+            ])
+        } catch {
+            throw Self.mapError(error)
+        }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try decoder.decode(AgentRun.self, from: data)
+    }
+
+    /// Fetch all agents for a session, without their text.
     func fetchAgents(
         ledgerSessionId: Int64
     ) async throws -> [AgentRun] {
