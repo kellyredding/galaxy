@@ -45,16 +45,56 @@ struct AgentsView: View {
         ChromeFontSize(chromeFontSize)
     }
 
-    // JIT data state
-    @State private var agents: [AgentRun]? = nil
-    @State private var isLoading: Bool = false
-    @State private var fetchTask: Task<Void, Never>?
+    /// The list, its order and the selection, held by reference: SwiftUI keeps
+    /// the tap actions of rows it has not redrawn, and as `@State` values each
+    /// kept action pinned a whole stale copy of the list.
+    private final class ListState: ObservableObject {
+        @Published var agents: [AgentRun]?
+        @Published var isLoading = false
+        var fetchTask: Task<Void, Never>?
+        @Published var selectedAgent: AgentRun?
+        /// The opened agent's full record. List rows carry no prompt or last
+        /// message, so the detail view loads them by itself.
+        @Published var selectedDetail: AgentRun?
+        /// Order and selection. The selection is an identity rather than a row
+        /// number, so re-sorting cannot slide the highlight onto another run.
+        /// Opens descending, so the newest run is the first row. See
+        /// `ArtifactsView`'s twin for why the scroll-to-bottom it replaces
+        /// could not stay — and here it also fired on every agent lifecycle
+        /// event.
+        @Published var model = ListSortModel<AgentRun, SortColumn>(
+            columns: AgentsView.columns,
+            sortColumn: .started,
+            sortAscending: false)
+    }
 
-    // Detail state
-    @State private var selectedAgent: AgentRun? = nil
-    /// The opened agent's full record. List rows carry no prompt or last
-    /// message, so the detail view loads them by itself.
-    @State private var selectedDetail: AgentRun? = nil
+    @StateObject private var list = ListState()
+
+    private var agents: [AgentRun]? {
+        get { list.agents }
+        nonmutating set { list.agents = newValue }
+    }
+    private var isLoading: Bool {
+        get { list.isLoading }
+        nonmutating set { list.isLoading = newValue }
+    }
+    private var fetchTask: Task<Void, Never>? {
+        get { list.fetchTask }
+        nonmutating set { list.fetchTask = newValue }
+    }
+    private var selectedAgent: AgentRun? {
+        get { list.selectedAgent }
+        nonmutating set { list.selectedAgent = newValue }
+    }
+    private var selectedDetail: AgentRun? {
+        get { list.selectedDetail }
+        nonmutating set { list.selectedDetail = newValue }
+    }
+    private var model: ListSortModel<AgentRun, SortColumn> {
+        get { list.model }
+        nonmutating set { list.model = newValue }
+    }
+
     @State private var isBackHovered: Bool = false
     @State private var escapeMonitor: Any? = nil
 
@@ -72,16 +112,6 @@ struct AgentsView: View {
     @State private var showAbandonConfirm: Bool = false
     @State private var isAbandoning: Bool = false
     @State private var abandonErrorMessage: String? = nil
-
-    /// Order and selection. The selection is an identity rather than a row
-    /// number, so re-sorting cannot slide the highlight onto another run.
-    /// Opens descending, so the newest run is the first row. See
-    /// `ArtifactsView`'s twin for why the scroll-to-bottom it replaces could
-    /// not stay — and here it also fired on every agent lifecycle event.
-    @State private var model = ListSortModel<AgentRun, SortColumn>(
-        columns: AgentsView.columns,
-        sortColumn: .started,
-        sortAscending: false)
 
     enum SortColumn {
         case type, status, duration, started
