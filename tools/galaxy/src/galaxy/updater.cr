@@ -86,7 +86,9 @@ module Galaxy
 
     private def run_release(opts : Options) : Int32
       script = "curl -fsSL #{Process.quote(INSTALL_SCRIPT_URL)} | bash -s -- #{Process.quote(install_args(opts))}"
-      Process.run("bash", ["-c", script], input: :inherit, output: :inherit, error: :inherit).exit_code
+      CLI.exit_code_for(
+        Process.run("bash", ["-c", script], input: :inherit, output: :inherit, error: :inherit)
+      )
     end
 
     private def run_local(opts : Options) : Int32
@@ -103,13 +105,15 @@ module Galaxy
           (repo / "bin" / "package").to_s, ["--local", "--out", out_dir.to_s],
           input: :inherit, output: :inherit, error: :inherit,
         )
-        return package.exit_code unless package.success?
+        return CLI.exit_code_for(package) unless package.success?
 
         archive = out_dir / "galaxy-darwin-arm64.tar.gz"
-        Process.run(
-          "bash", [(repo / "install.sh").to_s, "--from", archive.to_s] + install_args(opts),
-          input: :inherit, output: :inherit, error: :inherit,
-        ).exit_code
+        CLI.exit_code_for(
+          Process.run(
+            "bash", [(repo / "install.sh").to_s, "--from", archive.to_s] + install_args(opts),
+            input: :inherit, output: :inherit, error: :inherit,
+          )
+        )
       ensure
         FileUtils.rm_rf(out_dir.to_s)
       end

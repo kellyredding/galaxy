@@ -85,6 +85,19 @@ describe Galaxy::Updater do
       end
     end
   end
+
+  describe ".run" do
+    it "reports a packaging step killed by a signal as 128 + the signal" do
+      with_repo(galaxy: true) do |root|
+        package = root / "bin" / "package"
+        File.write(package, "#!/bin/sh\nkill -TERM $$\n")
+        File.chmod(package, 0o755)
+
+        opts = Galaxy::Updater.parse(["--local", root.to_s])
+        Galaxy::Updater.run(opts).should eq(128 + Signal::TERM.value)
+      end
+    end
+  end
 end
 
 def with_repo(galaxy : Bool, &)
