@@ -27,10 +27,10 @@ private def with_tree(
   end
 end
 
-# A Claude Persona session as Galaxy launches it.
+# A Claude Persona session as Galaxy launches it: claude-persona replaces
+# itself with claude, so claude is Galaxy's child.
 private SESSION_ANCESTRY = {
-  100_i64 => {99_i64, "claude"},
-   99_i64 => {98_i64, "claude-persona"},
+  100_i64 => {98_i64, "claude"},
    98_i64 => {1_i64, "/Applications/Galaxy.app/Contents/MacOS/Galaxy"},
 }
 
@@ -57,10 +57,14 @@ describe GalaxyLedger::Hooks::NestedSession do
       end
     end
 
-    it "answers false for a top-level session under claude-persona" do
+    it "answers false for a top-level session under a launcher that spawns it" do
       # 99 tracked as well, so only the exact-name rule stands between a
-      # persona parent and every session being taken for a nested one.
-      with_tree(SESSION_ANCESTRY, Set{99_i64}) do
+      # launcher parent and its session being taken for a nested one.
+      tree = SESSION_ANCESTRY.merge({
+        100_i64 => {99_i64, "claude"},
+         99_i64 => {98_i64, "claude-persona"},
+      })
+      with_tree(tree, Set{99_i64}) do
         GalaxyLedger::Hooks::NestedSession.nested?(100_i64).should be_false
       end
     end

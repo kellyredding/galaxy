@@ -43,10 +43,9 @@ module GalaxyLedger
         false
       end
 
-      # Exact, not a substring: every Claude Persona session runs under a
-      # `claude-persona` parent, which a substring match would count as an
-      # outer session and stop tracking. Processes under the daemon are
-      # titled `claude bg-…`.
+      # Exact, not a substring, so a launcher such as `claude-persona` in the
+      # ancestry is not taken for an outer session. Processes under the
+      # daemon are titled `claude bg-…`.
       def self.claude?(comm : String) : Bool
         name = File.basename(comm)
         name == "claude" || name.starts_with?("claude bg-")
