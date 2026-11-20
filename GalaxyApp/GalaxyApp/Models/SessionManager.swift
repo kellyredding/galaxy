@@ -241,10 +241,10 @@ class SessionManager: ObservableObject {
     // Path to claude-persona binary - detected at init, nil if not installed
     let claudePersonaPath: String?
 
-    private lazy var backgroundSessions = BackgroundSessionService(claudePath: claudePath)
+    private lazy var sessionGuard = ClaudeSessionGuard(claudePath: claudePath)
 
-    /// Sessions between a Resume and their process starting, while a
-    /// background worker holding the conversation is looked for and stopped.
+    /// Sessions between a Resume and their process starting, while a process
+    /// still holding the conversation is looked for and stopped.
     private var resumingSessionIds: Set<UUID> = []
 
     var activeSession: Session? {
@@ -801,7 +801,7 @@ class SessionManager: ObservableObject {
 
         Task { @MainActor in
             defer { self.resumingSessionIds.remove(sessionId) }
-            guard await self.releaseBackgroundWorker(for: session) else { return }
+            guard await self.releaseConversation(for: session) else { return }
             guard self.sessions.contains(where: { $0.id == sessionId }),
                   session.hasExited
             else { return }
@@ -923,61 +923,102 @@ class SessionManager: ObservableObject {
         updateActiveSessionCanResume()
     }
 
-    /// Stop a background worker still holding this session's conversation,
-    /// which Claude Code will not resume while it runs. Returns false when
-    /// the resume should not go ahead.
+    /// Move the session onto the newest transcript its conversation continued
+    /// into, and stop any Claude Code process still holding it: resumed while
+    /// held, Claude Code continues the conversation in yet another transcript.
+    /// Returns false when the resume should not go ahead.
     @MainActor
-    private func releaseBackgroundWorker(for session: Session) async -> Bool {
-        guard let worker = await backgroundSessions.running(
-            claudeSessionId: session.claudeSessionId
-        ) else { return true }
-
-        let workerId = worker.id ?? worker.sessionId
-        if worker.isBusy && !confirmStopBusyWorker(session, workerId: workerId) {
-            return false
+    private func releaseConversation(for session: Session) async -> Bool {
+        let sessionId = session.claudeSessionId
+        let directory = transcriptDirectory(for: session.workingDirectory)
+        let chain = await Task.detached {
+            ClaudeConversationChain.resolve(sessionId: sessionId, in: directory)
+        }.value
+        if let newest = chain.last, newest != session.claudeSessionId {
+            GalaxyLog.events(
+                "Following \(session.sessionRef)'s conversation: "
+                + "\(session.claudeSessionId) → \(newest)"
+            )
+            session.claudeSessionId = newest
+            SessionPersistence.shared.markDirty()
         }
 
-        do {
-            try await backgroundSessions.stop(worker)
+        let holders: [ClaudeSessionHolder]
+        switch await sessionGuard.holders(of: chain) {
+        case .none:
+            return true
+        case .unknown(let reason):
             GalaxyLog.events(
-                "Stopped background worker \(workerId) (pid \(worker.pid ?? 0)) "
-                + "to resume \(session.sessionRef)"
+                "Could not list Claude Code sessions before resuming "
+                + "\(session.sessionRef): \(reason)"
             )
             return true
-        } catch {
-            GalaxyLog.events(
-                "Could not stop background worker \(workerId) for "
-                + "\(session.sessionRef): \(error.localizedDescription)"
-            )
-            let alert = NSAlert()
-            alert.messageText = "Cannot Resume Session"
-            alert.informativeText = """
-                This session's conversation is still running in a Claude \
-                Code background session, which could not be stopped:
-
-                \(error.localizedDescription)
-
-                Run `claude attach \(workerId)` in a terminal to open it.
-                """
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
-            return false
+        case .found(let found):
+            holders = found
         }
+
+        guard confirmStopHolders(session, holders: holders) else { return false }
+
+        for holder in holders {
+            do {
+                try await sessionGuard.stop(holder)
+                GalaxyLog.events(
+                    "Stopped \(Self.describe(holder)) to resume \(session.sessionRef)"
+                )
+            } catch {
+                GalaxyLog.events(
+                    "Could not stop \(Self.describe(holder)) for "
+                    + "\(session.sessionRef): \(error.localizedDescription)"
+                )
+                let alert = NSAlert()
+                alert.messageText = "Cannot Resume Session"
+                alert.informativeText = """
+                    This session's conversation is still held by \
+                    \(Self.describe(holder)), which could not be stopped:
+
+                    \(error.localizedDescription)
+                    """
+                    + (holder.id.map {
+                        "\n\nRun `claude attach \($0)` in a terminal to open it."
+                    } ?? "")
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "OK")
+                alert.runModal()
+                return false
+            }
+        }
+        return true
     }
 
-    private func confirmStopBusyWorker(_ session: Session, workerId: String) -> Bool {
+    private func confirmStopHolders(_ session: Session, holders: [ClaudeSessionHolder]) -> Bool {
+        let busy = holders.contains(where: \.isBusy)
         let alert = NSAlert()
-        alert.messageText = "Session Is Working in the Background"
+        alert.messageText = busy
+            ? "Session Is Still Working Elsewhere"
+            : "Session Is Still Open Elsewhere"
+        let listed = holders.map { "• \(Self.describe($0))" }.joined(separator: "\n")
         alert.informativeText = """
-            \(session.displayName) is mid-turn in a Claude Code background \
-            session (\(workerId)). Resuming it here stops that session and \
-            interrupts its turn.
+            \(session.displayName)'s conversation is still held by:
+
+            \(listed)
+
+            Resuming it while held would continue it in a new transcript. \
+            Stop and Resume ends \(holders.count == 1 ? "that process" : "those processes")\
+            \(busy ? " and interrupts the turn in progress" : "").
             """
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Stop and Resume")
         alert.addButton(withTitle: "Cancel")
         return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    private static func describe(_ holder: ClaudeSessionHolder) -> String {
+        let state = holder.isBusy ? ", mid-turn" : ""
+        if holder.isBackground {
+            return "a Claude Code background session (\(holder.id ?? holder.sessionId), "
+                + "pid \(holder.pid)\(state))"
+        }
+        return "a Claude Code session (pid \(holder.pid)\(state))"
     }
 
     /// Clear the active session and auto-handoff when Claude settles.
@@ -1345,16 +1386,20 @@ class SessionManager: ObservableObject {
         return truncated + "…"
     }
 
-    /// Check if Claude has a session saved on disk for the given session ID and working directory
-    private func claudeSessionExists(sessionId: String, workingDirectory: String) -> Bool {
-        // Claude stores session data in ~/.claude/projects/<escaped-path>/<session-id>.jsonl
-        // Path escaping: /Users/foo.bar/baz becomes -Users-foo-bar-baz (slashes AND dots become dashes)
+    /// Claude stores session data in ~/.claude/projects/<escaped-path>/<session-id>.jsonl
+    /// Path escaping: /Users/foo.bar/baz becomes -Users-foo-bar-baz (slashes AND dots become dashes)
+    private func transcriptDirectory(for workingDirectory: String) -> URL {
         let escapedPath = workingDirectory
             .replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ".", with: "-")
-        let claudeDir = FileManager.default.homeDirectoryForCurrentUser
+        return FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/projects")
             .appendingPathComponent(escapedPath)
+    }
+
+    /// Check if Claude has a session saved on disk for the given session ID and working directory
+    private func claudeSessionExists(sessionId: String, workingDirectory: String) -> Bool {
+        let claudeDir = transcriptDirectory(for: workingDirectory)
 
         // Check for the actual session data file (not just the index)
         let sessionFile = claudeDir.appendingPathComponent("\(sessionId).jsonl")
