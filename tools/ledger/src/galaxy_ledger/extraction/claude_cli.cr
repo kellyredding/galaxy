@@ -153,12 +153,23 @@ module GalaxyLedger
             # Parse the outer JSON wrapper to get result and usage data
             extract_run_result_from_cli_output(output.strip)
           else
-            STDERR.puts "[galaxy-ledger] Claude CLI error (exit #{status.exit_code}): #{error}"
+            STDERR.puts "[galaxy-ledger] Claude CLI error (#{describe_exit(status)}): #{error}"
             ZERO_USAGE_RESULT
           end
         rescue ex
           STDERR.puts "[galaxy-ledger] Claude CLI exception: #{ex.message}"
           ZERO_USAGE_RESULT
+        end
+      end
+
+      # A child killed by a signal has no exit code, and asking for one raises.
+      def self.describe_exit(status : Process::Status) : String
+        if code = status.exit_code?
+          "exit #{code}"
+        elsif signal = status.exit_signal?
+          "signal #{signal}"
+        else
+          "abnormal exit"
         end
       end
 
