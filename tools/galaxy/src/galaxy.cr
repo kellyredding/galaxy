@@ -1,7 +1,7 @@
 require "./galaxy/*"
 
 module Galaxy
-  VERSION = "0.1.0"
+  VERSION = "0.1.1"
 
   # Galaxy-level directory (shared between tools)
   GALAXY_DIR = Path.new(
