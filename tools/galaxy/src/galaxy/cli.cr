@@ -146,6 +146,12 @@ module Galaxy
       url
     end
 
+    # A child killed by a signal has no exit code; report it the way a
+    # shell does, as 128 + the signal number.
+    def self.exit_code_for(status : Process::Status) : Int32
+      status.exit_code? || status.exit_signal?.try { |signal| 128 + signal.value } || 1
+    end
+
     # Locate the claude-persona binary. Returns path or nil if not found.
     def self.find_claude_persona_path : String?
       possible_paths = [
@@ -230,7 +236,7 @@ module Galaxy
         error: Process::Redirect::Inherit
       )
 
-      exit(status.exit_code)
+      exit(exit_code_for(status))
     end
 
     # Handle "galaxy generate" — delegate locally, then show post-banner
@@ -257,7 +263,7 @@ module Galaxy
         puts "  galaxy <persona-name>"
       end
 
-      exit(status.exit_code)
+      exit(exit_code_for(status))
     end
 
     private def self.show_claude_persona_install_hint

@@ -112,6 +112,23 @@ describe Galaxy::CLI do
     end
   end
 
+  describe ".exit_code_for" do
+    it "returns the exit code of a child that exited" do
+      status = Process.run("sh", args: ["-c", "exit 3"])
+      Galaxy::CLI.exit_code_for(status).should eq(3)
+    end
+
+    it "returns 0 for a child that succeeded" do
+      status = Process.run("sh", args: ["-c", "exit 0"])
+      Galaxy::CLI.exit_code_for(status).should eq(0)
+    end
+
+    it "returns 128 + the signal number for a child killed by a signal" do
+      status = Process.run("sh", args: ["-c", "kill -TERM $$"])
+      Galaxy::CLI.exit_code_for(status).should eq(128 + Signal::TERM.value)
+    end
+  end
+
   describe ".find_claude_persona_path" do
     it "returns a path when claude-persona is installed" do
       # This test depends on claude-persona actually being installed
