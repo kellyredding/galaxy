@@ -230,6 +230,12 @@ describe "galaxy session" do
       File.read(args_log).should contain("--ledger-session-id 830 --after-id 11")
     end
 
+    it "refuses a limit that is not a positive number" do
+      code, _, err = galaxy(["session", "read", "abc", "--limit", "0", "--ledger-session-id", "830"])
+      code.should eq(1)
+      err.should contain("--limit needs a positive number")
+    end
+
     it "asks Galaxy for the ledger session, and prints nothing before there is one" do
       fake = FakeGalaxy.new { |_e| %({"ok":true,"session":{"id":"abc","ledger_session_id":null}}) }
       code, stdout, _ = galaxy(["session", "read", "abc"], {"GALAXY_SOCKET_PATH" => fake.path})

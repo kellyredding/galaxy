@@ -131,7 +131,9 @@ module Galaxy
       in InputFile::Parsed
         detail = token_detail(id, token)
         detail["input"] = JSON::Any.new(parsed.to_detail)
-        print_reply(request("session.send", detail))
+        # Galaxy answers once the input is recorded, behind any deliveries
+        # already queued for the session.
+        print_reply(request("session.send", detail, read_timeout: 30.seconds))
       end
     end
 
@@ -162,7 +164,9 @@ module Galaxy
       parse(args, "read", positional) do |p|
         p.on("--after=EVENT_ID", "Only events after this id") { |v| after = event_id(v, "--after") }
         p.on("--limit=N", "Most events to return (default #{limit})") do |v|
-          limit = v.to_i? || fail("--limit needs a number")
+          n = v.to_i?
+          fail("--limit needs a positive number") if n.nil? || n <= 0
+          limit = n
         end
         p.on("--ledger-session-id=N", "Read without asking Galaxy (works while it is down)") do |v|
           ledger_id = v.to_i64? || fail("--ledger-session-id needs a number")
@@ -200,13 +204,24 @@ module Galaxy
       # The ledger session id is looked up lazily and kept: a brand-new
       # session has none until Claude Code starts.
       lsid : Int64? = nil
-      resolve = -> { lsid ||= ledger_session_id?(id) }
+      resolve = -> { lsid ||= session_status?(id).try(&.["ledger_session_id"]?).try(&.as_i64?) }
       backfill = ->(cursor : Int64) do
         if l = resolve.call
-          TimelineReader.events(l, cursor, 5000).try(&.compact_map { |e| WatchLine.from_timeline(e, id) })
+          TimelineReader.events(l, cursor, WatchClient::BACKFILL_PAGE).try(&.compact_map { |e| WatchLine.from_timeline(e, id) })
+        else
+          [] of WatchLine # no ledger session yet: nothing recorded to fill in
         end
       end
-      latest = -> { resolve.call.try { |l| TimelineReader.latest_id(l) } }
+      # 0 when Galaxy says nothing has been recorded yet, so a later
+      # reconnect fills in from the start rather than from whatever is
+      # newest by then; nil when that cannot be told.
+      latest = -> do
+        if l = resolve.call
+          TimelineReader.latest_id(l)
+        elsif status = session_status?(id)
+          status["ledger_session_id"]?.try(&.raw.nil?) ? 0_i64 : nil
+        end
+      end
 
       client = WatchClient.new(
         id, STDOUT, EventFilter.new(events), backfill, latest,
@@ -214,17 +229,26 @@ module Galaxy
         deadline: timeout.try { |t| Time.monotonic + t },
       )
       case client.run(after)
-      in WatchClient::Outcome::Matched  then exit(0)
-      in WatchClient::Outcome::TimedOut then exit(EXIT_TIMEOUT)
-      in WatchClient::Outcome::Failed   then exit(1)
+      in WatchClient::Outcome::Matched      then exit(0)
+      in WatchClient::Outcome::OutputClosed then exit(0)
+      in WatchClient::Outcome::TimedOut     then exit(EXIT_TIMEOUT)
+      in WatchClient::Outcome::Failed       then exit(1)
       end
     end
 
     # --- plumbing ---
 
     private def self.request(event : String, detail : Hash(String, JSON::Any), read_timeout : Time::Span = SocketClient::READ_TIMEOUT) : JSON::Any
-      reply = SocketClient.request(event, detail, read_timeout: read_timeout)
-      fail("Galaxy isn't running, or this Galaxy does not support driven sessions") unless reply
+      reply = begin
+        SocketClient.request(event, detail, read_timeout: read_timeout)
+      rescue SocketClient::NotRunning
+        fail("Galaxy isn't running (nothing is listening at #{SocketClient.socket_path})")
+      rescue SocketClient::TimedOut
+        fail("timed out after #{read_timeout.total_seconds.to_i}s waiting for Galaxy to answer #{event}; " \
+             "it may still have been carried out, so check `galaxy session status` or `read` before retrying")
+      rescue SocketClient::NoReply
+        fail("Galaxy did not answer #{event}: this Galaxy may not support driven sessions")
+      end
       unless reply["ok"]?.try(&.as_bool?)
         fail(reply["error"]?.try(&.as_s?) || "Galaxy refused #{event}")
       end
@@ -242,11 +266,12 @@ module Galaxy
         .try(&.["ledger_session_id"]?).try(&.as_i64?)
     end
 
-    # As above, but nil rather than failing when Galaxy cannot answer, for
-    # a watcher that keeps going through a Galaxy restart.
-    private def self.ledger_session_id?(id : String) : Int64?
-      SocketClient.request("session.status", {"id" => JSON::Any.new(id)})
-        .try(&.["session"]?).try(&.["ledger_session_id"]?).try(&.as_i64?)
+    # For a watcher that keeps going through a Galaxy restart: the session's
+    # status, or nil when Galaxy cannot answer.
+    private def self.session_status?(id : String) : JSON::Any?
+      reply = SocketClient.request?("session.status", {"id" => JSON::Any.new(id)})
+      return nil unless reply && reply["ok"]?.try(&.as_bool?)
+      reply["session"]?
     end
 
     private def self.token_detail(id : String, token : String) : Hash(String, JSON::Any)

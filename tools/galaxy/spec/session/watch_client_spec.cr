@@ -193,6 +193,67 @@ describe Galaxy::WatchClient do
     server.try(&.close)
   end
 
+  it "stops, rather than reconnecting, once its output's reader is gone" do
+    server = FakeWatchServer.new([
+      ->(c : UNIXSocket) { c.puts ack; c.puts line(1, "turn:completed"); sleep 1.second; nil },
+      ->(c : UNIXSocket) { c.puts ack; nil },
+    ])
+    reader, writer = IO.pipe
+    reader.close
+
+    outcome = client_for(server, writer, within: 2.seconds).run(0_i64)
+
+    outcome.should eq(Galaxy::WatchClient::Outcome::OutputClosed)
+    server.subscriptions.size.should eq(1)
+  ensure
+    server.try(&.close)
+    writer.try(&.close) rescue nil
+  end
+
+  it "retries when the connection closes before Galaxy answers the subscribe" do
+    server = FakeWatchServer.new([
+      ->(_c : UNIXSocket) { nil },
+      ->(c : UNIXSocket) { c.puts ack; c.puts line(3, "turn:completed"); nil },
+    ])
+    output = IO::Memory.new
+
+    outcome = client_for(server, output, filter: "turn:completed", stop_on_first: true, within: 2.seconds).run(0_i64)
+
+    outcome.should eq(Galaxy::WatchClient::Outcome::Matched)
+    server.subscriptions.size.should eq(2)
+  ensure
+    server.try(&.close)
+  end
+
+  it "says so when the backfill cannot be read" do
+    server = FakeWatchServer.new([->(c : UNIXSocket) { c.puts ack; nil }])
+    log = IO::Memory.new
+
+    client_for(server, IO::Memory.new, backfill: ->(_c : Int64) { nil.as(WatchLines) }, within: 150.milliseconds, log: log).run(7_i64)
+
+    log.to_s.should contain("could not read the timeline after event 7")
+  ensure
+    server.try(&.close)
+  end
+
+  it "pages through a backfill larger than one call returns" do
+    cursors = [] of Int64
+    server = FakeWatchServer.new([->(c : UNIXSocket) { c.puts ack; nil }])
+    backfill = ->(cursor : Int64) do
+      cursors << cursor
+      page = cursor == 0 ? (1_i64..Galaxy::WatchClient::BACKFILL_PAGE.to_i64).map { |i| watch_line(i) } : [watch_line(cursor + 1)]
+      page.as(WatchLines)
+    end
+    output = IO::Memory.new
+
+    client_for(server, output, backfill: backfill, within: 500.milliseconds).run(0_i64)
+
+    cursors.first(2).should eq([0, Galaxy::WatchClient::BACKFILL_PAGE])
+    lines_of(output).size.should eq(Galaxy::WatchClient::BACKFILL_PAGE + 1)
+  ensure
+    server.try(&.close)
+  end
+
   it "keeps retrying while Galaxy is unreachable, saying so once" do
     log = IO::Memory.new
     client = Galaxy::WatchClient.new(

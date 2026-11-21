@@ -15,13 +15,24 @@ module Galaxy
   # rows.
   class WatchClient
     enum Outcome
-      Matched  # `wait` saw its event
-      TimedOut # `wait --timeout` ran out
-      Failed   # Galaxy refused the subscription
+      Matched      # `wait` saw its event
+      TimedOut     # `wait --timeout` ran out
+      Failed       # Galaxy refused the subscription
+      OutputClosed # whoever read the output went away
     end
 
+    # Rows per backfill call; a full page means there may be more.
+    BACKFILL_PAGE = 5000
+
+    # Rows after the cursor, nil when they could not be read.
     alias Backfill = Int64 -> Array(WatchLine)?
+    # The newest row id, 0 when nothing is recorded yet, nil when unknown.
     alias Latest = -> Int64?
+
+    # Raised out of `emit` so a dead reader ends the run instead of reading
+    # as a dropped Galaxy connection and reconnecting forever.
+    private class OutputClosed < Exception
+    end
 
     def initialize(
       @session_id : String,
@@ -54,8 +65,9 @@ module Galaxy
           sock.sync = true
           sock.puts({"v" => 1, "subscribe" => @session_id}.to_json)
 
-          ack = read_line(sock)
-          return Outcome::Failed unless ack && subscribed?(ack)
+          # Closed before any reply: Galaxy quitting mid-handshake, so retry.
+          ack = read_line(sock) || raise IO::EOFError.new("closed before subscribing")
+          return Outcome::Failed unless subscribed?(ack)
           backoff = @initial_backoff
           @waiting_logged = false
 
@@ -63,17 +75,15 @@ module Galaxy
           # later knows where this run began.
           cursor ||= @latest.call
           if c = cursor
-            if lines = @backfill.call(c)
-              lines.each do |line|
-                return Outcome::Matched if emit(line)
-              end
-            end
+            return Outcome::Matched if backfill_from(c)
           end
 
           while raw = read_line(sock)
             next unless line = WatchLine.parse?(raw)
             return Outcome::Matched if emit(line)
           end
+        rescue OutputClosed
+          return Outcome::OutputClosed
         rescue IO::TimeoutError
           return Outcome::TimedOut
         rescue Socket::Error | IO::Error
@@ -92,14 +102,33 @@ module Galaxy
       end
     end
 
+    # Pages through every row after `cursor`. True when `wait` matched.
+    private def backfill_from(cursor : Int64) : Bool
+      c = cursor
+      loop do
+        lines = @backfill.call(c)
+        unless lines
+          @log.puts "galaxy session watch: could not read the timeline after event #{c}; events in that gap are missing"
+          return false
+        end
+        lines.each { |line| return true if emit(line) }
+        return false if lines.size < BACKFILL_PAGE
+        c = lines.compact_map(&.event_id).max? || return false
+      end
+    end
+
     private def emit(line : WatchLine) : Bool
       if id = line.event_id
         return false if @seen.includes?(id)
         @seen << id
       end
       return false unless @filter.match?(line.type)
-      @output.puts(line.to_json)
-      @output.flush
+      begin
+        @output.puts(line.to_json)
+        @output.flush
+      rescue IO::Error
+        raise OutputClosed.new
+      end
       @stop_on_first
     end
 
