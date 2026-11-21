@@ -97,22 +97,110 @@ describe Galaxy::WatchClient do
     server.try(&.close)
   end
 
-  it "reconnects after the connection drops and backfills from the highest id printed" do
+  it "recovers a row whose notification never came, after a later one was printed" do
     cursors = [] of Int64
     server = FakeWatchServer.new([
+      # Row 5 is written before row 7, but only 7's notification arrives.
       ->(c : UNIXSocket) { c.puts ack; c.puts line(7, "turn:completed"); nil },
       ->(c : UNIXSocket) { c.puts ack; c.puts line(9, "turn:completed"); nil },
     ])
     backfill = ->(cursor : Int64) do
       cursors << cursor
-      (cursor == 7 ? [watch_line(8)] : [] of Galaxy::WatchLine).as(WatchLines)
+      (cursors.size == 1 ? [] of Galaxy::WatchLine : [watch_line(5), watch_line(7, "turn:completed")]).as(WatchLines)
     end
     output = IO::Memory.new
 
     client_for(server, output, backfill: backfill, within: 400.milliseconds).run(3_i64)
 
-    cursors.first(2).should eq([3, 7])
-    lines_of(output).map(&.["event_id"].as_i64).should eq([7, 8, 9])
+    cursors.first(2).should eq([3, 3])
+    lines_of(output).map(&.["event_id"].as_i64).should eq([7, 5, 9])
+  ensure
+    server.try(&.close)
+  end
+
+  it "moves its resume point only by what a read returned, skipping late notifications a read covered" do
+    cursors = [] of Int64
+    server = FakeWatchServer.new([
+      ->(c : UNIXSocket) {
+        c.puts ack
+        c.puts line(2, "turn:initiated") # arrives after the read that covered it
+        c.puts line(6, "turn:completed")
+        nil
+      },
+      ->(c : UNIXSocket) { c.puts ack; nil },
+    ])
+    backfill = ->(cursor : Int64) do
+      cursors << cursor
+      page = case cursor
+             when 0 then [watch_line(2), watch_line(4)]
+             when 4 then [watch_line(6, "turn:completed"), watch_line(8)]
+             else        [] of Galaxy::WatchLine
+             end
+      page.as(WatchLines)
+    end
+    output = IO::Memory.new
+
+    client_for(server, output, backfill: backfill, within: 400.milliseconds).run(0_i64)
+
+    cursors.first(2).should eq([0, 4])
+    lines_of(output).map(&.["event_id"].as_i64).should eq([2, 4, 6, 8])
+  ensure
+    server.try(&.close)
+  end
+
+  it "reads from below the first live event when the newest row could not be told" do
+    cursors = [] of Int64
+    server = FakeWatchServer.new([
+      ->(c : UNIXSocket) { c.puts ack; c.puts line(10, "turn:completed"); nil },
+      ->(c : UNIXSocket) { c.puts ack; nil },
+    ])
+    backfill = ->(cursor : Int64) do
+      cursors << cursor
+      [watch_line(10, "turn:completed"), watch_line(11)].as(WatchLines)
+    end
+    output = IO::Memory.new
+
+    client_for(server, output, backfill: backfill, latest: -> { nil.as(Int64?) }, within: 300.milliseconds).run
+
+    cursors.first.should eq(9)
+    lines_of(output).map(&.["event_id"].as_i64).should eq([10, 11])
+  ensure
+    server.try(&.close)
+  end
+
+  it "waits on the same rule: a reconnect still finds the row whose notification was lost" do
+    server = FakeWatchServer.new([
+      ->(c : UNIXSocket) { c.puts ack; c.puts line(7, "turn:initiated"); nil },
+      ->(c : UNIXSocket) { c.puts ack; sleep 1.second; nil },
+    ])
+    reads = 0
+    backfill = ->(_cursor : Int64) do
+      reads += 1
+      (reads == 1 ? [] of Galaxy::WatchLine : [watch_line(5, "turn:completed"), watch_line(7)]).as(WatchLines)
+    end
+    output = IO::Memory.new
+
+    outcome = client_for(server, output, backfill: backfill, filter: "turn:completed", stop_on_first: true, within: 2.seconds).run(3_i64)
+
+    outcome.should eq(Galaxy::WatchClient::Outcome::Matched)
+    lines_of(output).map(&.["event_id"].as_i64).should eq([5])
+  ensure
+    server.try(&.close)
+  end
+
+  it "passes through the detail of an event with no row to read" do
+    server = FakeWatchServer.new([
+      ->(c : UNIXSocket) {
+        c.puts ack
+        c.puts %({"v":1,"event_id":null,"type":"session.input:failed","session_id":"abc","occurred_at":"x","detail":{"input_id":"lead-7"}})
+        nil
+      },
+    ])
+    output = IO::Memory.new
+
+    client_for(server, output, within: 200.milliseconds).run(0_i64)
+
+    lines_of(output).first["detail"]["input_id"].as_s.should eq("lead-7")
   ensure
     server.try(&.close)
   end

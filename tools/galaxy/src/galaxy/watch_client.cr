@@ -4,15 +4,13 @@ require "socket"
 
 module Galaxy
   # Follows one driven session's events: subscribe on galaxy-watch.sock, fill
-  # the gap from the timeline, then print each live notification. The stream
-  # only says that something happened, and the timeline holds what happened,
-  # so a dropped connection loses nothing: it reconnects and backfills from
-  # the highest event id it printed.
+  # the gap from the timeline, then print each live notification.
   #
-  # Known gap: a notification that never arrived, for an id lower than one
-  # already printed, is not recovered by the backfill. Ids are global across
-  # sessions, so there is no way to tell such a hole from another session's
-  # rows.
+  # Only a timeline read moves the resume point. Notifications can arrive out
+  # of row order, so the highest id printed says nothing about the rows below
+  # it; a read does, because the timeline numbers rows as they are written.
+  # After a reconnect the backfill starts from the last read and prints only
+  # what has not been printed.
   class WatchClient
     enum Outcome
       Matched      # `wait` saw its event
@@ -51,10 +49,11 @@ module Galaxy
     )
       @seen = Set(Int64).new
       @waiting_logged = false
+      @resume_point = nil.as(Int64?)
     end
 
     def run(after : Int64? = nil) : Outcome
-      cursor = after
+      @resume_point = after
       backoff = @initial_backoff
 
       loop do
@@ -71,15 +70,14 @@ module Galaxy
           backoff = @initial_backoff
           @waiting_logged = false
 
-          # Without a cursor, start from the newest row now, so a reconnect
-          # later knows where this run began.
-          cursor ||= @latest.call
-          if c = cursor
-            return Outcome::Matched if backfill_from(c)
+          @resume_point ||= starting_point
+          if from = @resume_point
+            return Outcome::Matched if backfill_from(from)
           end
 
           while raw = read_line(sock)
             next unless line = WatchLine.parse?(raw)
+            next if covered?(line)
             return Outcome::Matched if emit(line)
           end
         rescue OutputClosed
@@ -95,26 +93,56 @@ module Galaxy
           socket.try(&.close) rescue nil
         end
 
-        cursor = [cursor, @seen.max?].compact.max?
         return Outcome::TimedOut if expired?
         @sleeper.call(capped(backoff))
         backoff = {backoff * 2, @max_backoff}.min
       end
     end
 
-    # Pages through every row after `cursor`. True when `wait` matched.
-    private def backfill_from(cursor : Int64) : Bool
-      c = cursor
+    # Where a run with no resume point yet begins. Live events already printed
+    # mean the timeline could not be asked before: start below the first of
+    # them, so whatever came between is read rather than skipped. Otherwise,
+    # the newest row now.
+    private def starting_point : Int64?
+      if first = @seen.min?
+        first - 1
+      else
+        @latest.call
+      end
+    end
+
+    # Pages through every row after `from`, printing what has not been printed
+    # and moving the resume point to the newest row read. True when `wait`
+    # matched.
+    private def backfill_from(from : Int64) : Bool
+      c = from
       loop do
         lines = @backfill.call(c)
         unless lines
-          @log.puts "galaxy session watch: could not read the timeline after event #{c}; events in that gap are missing"
+          @log.puts "galaxy session watch: could not read the timeline after event #{c}; will read it again on the next reconnect"
           return false
         end
         lines.each { |line| return true if emit(line) }
-        return false if lines.size < BACKFILL_PAGE
-        c = lines.compact_map(&.event_id).max? || return false
+        newest = lines.compact_map(&.event_id).max?
+        advance(newest) if newest
+        return false if lines.size < BACKFILL_PAGE || newest.nil?
+        c = newest
       end
+    end
+
+    # Rows at or below the resume point have all been read and printed, so
+    # their ids no longer need remembering.
+    private def advance(to : Int64)
+      return if (rp = @resume_point) && rp >= to
+      @resume_point = to
+      @seen.reject! { |id| id <= to }
+    end
+
+    # A live notification for a row the last read already covered.
+    private def covered?(line : WatchLine) : Bool
+      id = line.event_id
+      rp = @resume_point
+      !id.nil? && !rp.nil? && id <= rp
     end
 
     private def emit(line : WatchLine) : Bool
