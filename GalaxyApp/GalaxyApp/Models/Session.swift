@@ -454,6 +454,25 @@ class Session: Identifiable, ObservableObject {
     /// Whether vibe mode was active at launch
     let isVibe: Bool
 
+    /// Set only on a session `galaxy session new` created, and never removed.
+    @Published var driven: DrivenState? {
+        didSet {
+            guard driven != oldValue else { return }
+            applyInputGates()
+            SessionPersistence.shared.markDirty()
+        }
+    }
+
+    var isDriven: Bool { driven != nil }
+
+    var isInputLocked: Bool { driven?.locked == true }
+
+    /// Why a person's input is refused, or nil while they may type.
+    var inputLockReason: String? {
+        guard let driven, driven.locked else { return nil }
+        return "Locked by \(driven.owner)"
+    }
+
     /// One-shot closures fired on the next endTurn() call, then
     /// cleared. Used by post-turn workflows (e.g. snapshot/artifact
     /// review-message send after a /galaxy:resume turn completes).
@@ -575,18 +594,23 @@ class Session: Identifiable, ObservableObject {
     /// so refusing it because no agent is up would destroy exactly what the
     /// queue exists to keep. It waits for the session to come back.
     ///
+    /// A person's message to a locked session is held paused rather than
+    /// refused, for the same reason: its composing surface is already gone.
     func enqueueMessage(
         _ text: String,
         sourceLabel: String,
+        origin: InboxOrigin,
         delivery: AgentInboxEntry.Delivery = .coalescable,
         retry: SubmitRetryPolicy = .resubmit
     ) {
+        let held = origin == .person && isInputLocked
         inbox.enqueue(
             AgentInboxEntry(
                 body: text,
-                sourceLabel: sourceLabel,
+                sourceLabel: held ? "\(sourceLabel) (held: session locked)" : sourceLabel,
                 delivery: delivery,
-                retry: retry))
+                retry: retry,
+                state: held ? .paused : .ready))
 
         // On the standing submit channel rather than a transient one, for
         // the same reason the rest of that channel exists: a queued message
@@ -598,17 +622,19 @@ class Session: Identifiable, ObservableObject {
         SessionSubmit.log(
             "inbox enqueued \(sourceLabel) — \(text.utf8.count) bytes,"
                 + " \(inbox.entries.count) waiting"
+                + (held ? ", held paused: \(inputLockReason ?? "locked")" : "")
                 + (submitBlockReason.map { ", blocked: \($0.phrase)" } ?? ""))
 
         inboxConsumer.wake()
     }
 
-    init(workingDirectory: String, sessionRef: String, personaName: String? = nil, isVibe: Bool = false, resumeSessionId: UUID? = nil) {
+    init(workingDirectory: String, sessionRef: String, personaName: String? = nil, isVibe: Bool = false, resumeSessionId: UUID? = nil, driven: DrivenState? = nil) {
         // Use provided resume UUID if resuming a specific session, otherwise generate new
         self.id = resumeSessionId ?? UUID()
         self.sessionRef = sessionRef
         self.personaName = personaName
         self.isVibe = isVibe
+        self.driven = driven
         self.claudeSessionId = self.id.uuidString.lowercased()
         self.createdAt = Date()
         self.workingDirectory = workingDirectory
@@ -661,6 +687,7 @@ class Session: Identifiable, ObservableObject {
             style: SettingsManager.shared.settings.terminalCursorStyle,
             blink: SettingsManager.shared.settings.terminalCursorBlink
         )
+        applyInputGates()
 
         // Re-apply on every settings change. Stored in
         // `terminalCancellables` so `releaseBackend()` can
@@ -679,8 +706,18 @@ class Session: Identifiable, ObservableObject {
                     style: settings.terminalCursorStyle,
                     blink: settings.terminalCursorBlink
                 )
+                self.applyInputGates()
             }
             .store(in: &terminalCancellables)
+    }
+
+    /// Called on every change and on every backend creation, since a fresh
+    /// backend starts unlocked. Driven sessions block rewind even when released.
+    func applyInputGates() {
+        guard let backend else { return }
+        backend.isUserInputLocked = isInputLocked
+        backend.blocksDoubleEscape =
+            isDriven || SettingsManager.shared.settings.blockRewind
     }
 
     /// Push this session's own size to the backend, for the
@@ -1155,6 +1192,7 @@ class Session: Identifiable, ObservableObject {
                     readCommand: ReviewStore.galaxyTimeline.readCommand(id)
                 ),
                 sourceLabel: "Cut-off recovery",
+                origin: .galaxy,
                 delivery: .standalone
             )
         }
@@ -1467,14 +1505,26 @@ class Session: Identifiable, ObservableObject {
                 cmd += " --dangerously-skip-permissions"
             }
         }
+        if isDriven {
+            let extra = DrivenLaunch.arguments(persona: personaName != nil)
+            cmd += " " + extra.map(Self.shellQuoted).joined(separator: " ")
+        }
         return cmd
+    }
+
+    private static func shellQuoted(_ argument: String) -> String {
+        let plain = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_./:~"))
+        guard argument.unicodeScalars.contains(where: { !plain.contains($0) }) else {
+            return argument
+        }
+        return "'" + argument.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
     // MARK: - Persistence
 
     /// Snapshot this session's persistable state.
     ///
-    /// Twenty-five fields, mirrored by `init(restoring:)` below except for the
+    /// Twenty-six fields, mirrored by `init(restoring:)` below except for the
     /// last two, which are observations of a running session rather than state
     /// to restore. This direction is compiler-checked: `PersistedSession` has
     /// no hand-written initialiser, so a field added to it makes this call a
@@ -1489,6 +1539,7 @@ class Session: Identifiable, ObservableObject {
             personaName: personaName,
             isVibe: isVibe,
             createdAt: createdAt,
+            driven: driven,
             ledgerSessionId: ledgerSessionId,
             ledgerSessionIdentifiers: ledgerSessionIdentifiers,
             ledgerSuggestedName: ledgerSuggestedName,
@@ -1527,6 +1578,7 @@ class Session: Identifiable, ObservableObject {
         self.workingDirectory = state.workingDirectory
         self.personaName = state.personaName
         self.isVibe = state.isVibe
+        self.driven = state.driven
         // Clamped for the same reason as the other initializer: a settings
         // value has never been bounded by a zoom gesture.
         self.terminalFontSize = TerminalFontSizeBounds.standard.clamped(
@@ -1633,6 +1685,10 @@ class Session: Identifiable, ObservableObject {
             if isVibe {
                 args.append("--dangerously-skip-permissions")
             }
+        }
+
+        if isDriven {
+            args.append(contentsOf: DrivenLaunch.arguments(persona: personaName != nil))
         }
 
         // Vanilla Claude sessions need CLAUDE_CLI_SESSION_ID in the env;
@@ -1876,6 +1932,10 @@ extension Session: AgentInboxHost {
     /// spawned but not reported ready is one whose input layer may not exist
     /// yet.
     var canSendNow: Bool { submitBlockReason == nil }
+
+    /// Send-now is a person pushing a message out, which a lock refuses; the
+    /// automatic drain the owner's messages ride is unaffected.
+    var manualSendRefusal: String? { inputLockReason }
 
     /// The block, worded for someone looking at the inbox. Names the menu item
     /// only where it would be enabled.

@@ -30,10 +30,10 @@ struct ShellPaneView: View {
     /// sends into that agent, so its own state is not the question.
     private var sendBlockerChanges: SendBlockerChanges {
         guard let session = pane.session else { return .never }
-        return Publishers.CombineLatest(
-            session.$isRunning, session.$hasExited
+        return Publishers.CombineLatest3(
+            session.$isRunning, session.$hasExited, session.$driven
         )
-        .map { _, _ in () }
+        .map { _, _, _ in () }
         .eraseToAnyPublisher()
     }
 

@@ -31,9 +31,11 @@ struct SessionPaneView: View {
 
     /// What can stop this session being written to.
     private var sendBlockerChanges: SendBlockerChanges {
-        Publishers.CombineLatest(session.$isRunning, session.$hasExited)
-            .map { _, _ in () }
-            .eraseToAnyPublisher()
+        Publishers.CombineLatest3(
+            session.$isRunning, session.$hasExited, session.$driven
+        )
+        .map { _, _, _ in () }
+        .eraseToAnyPublisher()
     }
 
     /// Recording an interrupted turn, for the surface a turn happens on.

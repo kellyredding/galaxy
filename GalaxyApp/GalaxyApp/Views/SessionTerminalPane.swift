@@ -127,8 +127,11 @@ final class SessionTerminalPane: TerminalPane {
 
     var acceptsFileDrops: Bool {
         guard let s = session else { return false }
-        return s.isRunning && !s.hasExited
+        return s.isRunning && !s.hasExited && !s.isInputLocked
     }
+
+    /// An adapter rather than a `BackendBackedPane`, so it forwards by hand.
+    var isUserInputLocked: Bool { backend.isUserInputLocked }
 
     /// Session pane's Send-to-Claude routes pastes to its
     /// own terminal. Disabled with a "Resume the session
@@ -152,9 +155,10 @@ final class SessionTerminalPane: TerminalPane {
             // agent has on screen, and a form discards what it does not
             // understand. The queue holds it until the session can read.
             send: { [weak s] text in
-                s?.enqueueMessage(text, sourceLabel: "Session scrollback")
+                s?.enqueueMessage(
+                    text, sourceLabel: "Session scrollback", origin: .person)
             },
-            disabledReason: { nil }
+            disabledReason: { [weak s] in s?.inputLockReason }
         )
     }
 }

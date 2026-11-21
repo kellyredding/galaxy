@@ -111,7 +111,8 @@ final class ShellTerminalPane: BackendBackedPane, ObservableObject {
             // this pane inherits the readiness wait and the pacing instead of
             // reimplementing them a second time.
             send: { [weak s] text in
-                s?.enqueueMessage(text, sourceLabel: "Shell scrollback")
+                s?.enqueueMessage(
+                    text, sourceLabel: "Shell scrollback", origin: .person)
             },
             disabledReason: { [weak s] in
                 guard let s = s else {
@@ -121,6 +122,9 @@ final class ShellTerminalPane: BackendBackedPane, ObservableObject {
                 // more fundamental block.
                 if !s.isRunning || s.hasExited {
                     return "Resume the session first"
+                }
+                if let locked = s.inputLockReason {
+                    return locked
                 }
                 if s.paneRegistry.sessionPaneScrollbackActive {
                     return "Close session scrollback first"

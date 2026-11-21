@@ -187,6 +187,10 @@ struct AppSettings: Codable, Equatable {
     /// defaults and avoids the engine's blinking-block default.
     var terminalCursorBlink: Bool = false
 
+    /// Whether a second Escape in quick succession is dropped, so Claude Code's
+    /// rewind picker cannot open. Driven sessions block it regardless.
+    var blockRewind: Bool = false
+
     /// Which keystrokes commit text and which insert a newline. Governs the
     /// note and annotation forms directly, and reaches the Claude session pane
     /// by being written into Claude Code's own keybindings file. The default
@@ -413,6 +417,7 @@ struct AppSettings: Codable, Equatable {
         terminalCursorBlink = try container.decodeIfPresent(
             Bool.self, forKey: .terminalCursorBlink
         ) ?? false
+        blockRewind = container.lenient(.blockRewind, default: false)
         textEntry = (try container.decodeIfPresent(
             TextEntryBindings.self, forKey: .textEntry
         ) ?? .default).coercingEmptyLists()

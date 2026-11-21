@@ -1,4 +1,4 @@
-.PHONY: generate build release clean validate-js smoke smoke-keystrokes smoke-lists smoke-sessions-panel smoke-turn-history check
+.PHONY: generate build release clean validate-js smoke smoke-keystrokes smoke-lists smoke-sessions-panel smoke-turn-history smoke-driven check
 
 # Always use -derivedDataPath to avoid polluting ~/Library/Developer/Xcode/DerivedData
 DERIVED_DATA = build
@@ -34,7 +34,7 @@ release: generate validate-js
 
 # Sandboxed smoke checks: build the standalone tools and run them. No app
 # launch — each runs as its own process.
-smoke: smoke-keystrokes smoke-lists smoke-sessions-panel smoke-turn-history
+smoke: smoke-keystrokes smoke-lists smoke-sessions-panel smoke-turn-history smoke-driven
 
 # The ⌘/ catalog and its availability gates. Links Galactic so the concept
 # searches run through the real matcher and the real glyph table, which is why
@@ -64,6 +64,12 @@ smoke-sessions-panel: generate
 smoke-turn-history: generate
 	xcodebuild -scheme TurnHistorySmoke -configuration Debug -derivedDataPath $(DERIVED_DATA) -destination 'platform=macOS' build
 	./$(DERIVED_DATA)/Build/Products/Debug/TurnHistorySmoke
+
+# Driven sessions' lock state, token and launch arguments. Foundation and
+# Security only, so like the lists this needs no framework path to run.
+smoke-driven: generate
+	xcodebuild -scheme LockSmoke -configuration Debug -derivedDataPath $(DERIVED_DATA) -destination 'platform=macOS' build
+	./$(DERIVED_DATA)/Build/Products/Debug/LockSmoke
 
 # The pre-commit gate: everything that can fail without launching the app.
 #

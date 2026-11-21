@@ -553,6 +553,25 @@ struct TerminalSettingsTab: View {
                 }
             }
 
+            SettingsCard(title: "Rewind") {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Toggle(
+                            "Block rewind (double Esc)",
+                            isOn: $settingsManager.settings.blockRewind
+                        )
+                        .toggleStyle(.checkbox)
+                        Spacer()
+                    }
+                    Text(
+                        "Ignore a second Esc so Claude Code's rewind picker "
+                            + "can't open. Always on for driven sessions."
+                    )
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                }
+            }
+
             // Shell pane settings
             SettingsCard(title: "Shell") {
                 VStack(alignment: .leading, spacing: 12) {

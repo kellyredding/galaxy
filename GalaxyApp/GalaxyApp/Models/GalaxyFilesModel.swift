@@ -144,7 +144,7 @@ final class GalaxyFilesModel: FilesHost {
     func deliverReview(_ review: String, forOwner ownerID: String) {
         guard let session = SessionManager.shared.session(forOwnerID: ownerID)
         else { return }
-        session.enqueueMessage(review, sourceLabel: "File review")
+        session.enqueueMessage(review, sourceLabel: "File review", origin: .person)
     }
 
     func reviewDestination(forOwner ownerID: String) -> ReviewDestination? {

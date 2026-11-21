@@ -25,6 +25,11 @@ struct PersistedSession: Codable {
     let isVibe: Bool
     let createdAt: Date
 
+    /// Present only on a session `galaxy session new` created. The token is
+    /// kept readable so the Ledger tab can hand it back to an owner that lost
+    /// it; this file is the user's own.
+    let driven: DrivenState?
+
     // Ledger enrichment (recoverable from ledger, but provides
     // immediate sidebar content on restore before sync completes)
     let ledgerSessionId: Int64?

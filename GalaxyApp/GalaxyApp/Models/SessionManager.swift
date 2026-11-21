@@ -396,7 +396,9 @@ class SessionManager: ObservableObject {
         personaName: String? = nil,
         givenName: String? = nil,
         isVibe: Bool = false,
-        resumeSessionId: String? = nil
+        resumeSessionId: String? = nil,
+        driven: DrivenState? = nil,
+        activate: Bool = true
     ) -> Session {
         let directory = workingDirectory ?? NSHomeDirectory()
         let sessionId = SessionIDGenerator.generate()
@@ -408,8 +410,9 @@ class SessionManager: ObservableObject {
             workingDirectory: directory,
             sessionRef: sessionId,
             personaName: personaName,
-            isVibe: isVibe,
-            resumeSessionId: resumeUUID
+            isVibe: isVibe || driven != nil,
+            resumeSessionId: resumeUUID,
+            driven: driven
         )
 
         // Set optional user-assigned name (Galaxy-only, not passed to Claude)
@@ -438,10 +441,12 @@ class SessionManager: ObservableObject {
         session.startProcess(executablePath: executablePath, resume: isResume)
 
         sidebarItems.append(.session(session))
-        saveViewState()
-        activeSessionId = session.id
-        activeTab = .terminal
-        activeLedgerSubTab = .identifiers
+        if activate {
+            saveViewState()
+            activeSessionId = session.id
+            activeTab = .terminal
+            activeLedgerSubTab = .identifiers
+        }
         SessionPersistence.shared.markDirty()
 
         return session
@@ -737,7 +742,9 @@ class SessionManager: ObservableObject {
         }
     }
 
-    func stopSession(sessionId: UUID) {
+    /// `initiatedBy` is `"user"` from the UI and `"driver"` from the session's
+    /// owner, recorded on a driven session so its driver can tell the two apart.
+    func stopSession(sessionId: UUID, initiatedBy: String = "user") {
         guard let session = sessions.first(where: { $0.id == sessionId }) else {
             NSLog("SessionManager: Cannot stop - session not found")
             return
@@ -749,6 +756,15 @@ class SessionManager: ObservableObject {
         }
 
         NSLog("SessionManager: Stopping session %@", session.sessionRef)
+
+        if session.isDriven, let ledgerSessionId = session.ledgerSessionId {
+            TimelineService.record(
+                ledgerSessionId: ledgerSessionId,
+                eventType: "session:stopped",
+                source: "galaxy-app/driven",
+                detailData: ["initiated_by": initiatedBy]
+            )
+        }
 
         // Mark as user-initiated so handleSessionExited doesn't fire
         // the "exited unexpectedly" notification for intentional stops.
@@ -1028,7 +1044,18 @@ class SessionManager: ObservableObject {
     /// there is nothing to order it behind.
     func clearActiveSession() {
         guard let session = activeSession, session.isRunning, !session.hasExited else { return }
+        guard !refuseWhileLocked(session, action: "clear") else { return }
         session.sendCommand("/clear")
+    }
+
+    /// A lock leaves a person Esc and Stop, and nothing else that writes into
+    /// the conversation. Beeps rather than staying silent, since the menu item
+    /// itself stays enabled.
+    private func refuseWhileLocked(_ session: Session, action: String) -> Bool {
+        guard let reason = session.inputLockReason else { return false }
+        GalaxyLog.submit("refused \(action) of \(session.sessionRef): \(reason)")
+        NSSound.beep()
+        return true
     }
 
     /// Compact the active session and auto-handoff when Claude settles.
@@ -1039,6 +1066,7 @@ class SessionManager: ObservableObject {
     /// get the same treatment without each restating it.
     func compactActiveSession() {
         guard let session = activeSession, session.isRunning, !session.hasExited else { return }
+        guard !refuseWhileLocked(session, action: "compact") else { return }
         session.sendCommand("/compact")
     }
 
@@ -1122,6 +1150,7 @@ class SessionManager: ObservableObject {
                 "turn--\(captured.uuid)",
             detailData: [
                 "user_message": captured.userMessage,
+                "initiated_by": "user",
             ]
         ) {
             // Ordered, not merely queued. Both events reach
@@ -1283,6 +1312,7 @@ class SessionManager: ObservableObject {
         session.enqueueMessage(
             "/clear",
             sourceLabel: "Auto-clear",
+            origin: .galaxy,
             delivery: .standalone
         )
     }

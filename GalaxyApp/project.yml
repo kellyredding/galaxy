@@ -154,3 +154,22 @@ targets:
     settings:
       base:
         SWIFT_VERSION: "5.10"
+
+  # Driven sessions' model, on the same bargain as ListSmoke: the lock state,
+  # the owner's token and the launch arguments stay Foundation-only (Security
+  # for the random bytes), which this list enforces. The lock's effect on the
+  # terminal is Galactic's to test; what is asserted here is what Galaxy
+  # decides — who may lock, what a release records, what every launch carries.
+  #
+  # Named to sort after GalaxyApp: xcodegen builds groups in target order, and a
+  # target that reaches GalaxyApp/Models first claims the folder for itself.
+  LockSmoke:
+    type: tool
+    platform: macOS
+    sources:
+      - GalaxyApp/Models/Driven/DrivenState.swift
+      - GalaxyApp/Models/Driven/DrivenLaunch.swift
+      - LockSmoke
+    settings:
+      base:
+        SWIFT_VERSION: "5.10"

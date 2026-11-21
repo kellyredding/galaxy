@@ -2496,7 +2496,8 @@ struct ArtifactsView: View {
                     sessionManager.activeTab = .terminal
                     session.enqueueMessage(
                         message,
-                        sourceLabel: "Artifact review"
+                        sourceLabel: "Artifact review",
+                        origin: .person
                     )
                     if needsResume {
                         sessionManager.resumeSession(
