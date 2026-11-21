@@ -234,6 +234,23 @@ check("malformed input is refused with where it went wrong") {
     }
 }
 
+check("input is as strict as the CLI: unknown keys and blank strings are refused") {
+    let cases: [(Any?, String)] = [
+        (["mesage": "typo", "message": "x"], "input.mesage: unknown key"),
+        (["notes": [["quote": "a", "note": "b", "extra": 1]]],
+         "input.notes[0].extra: unknown key"),
+        (["message": " \n\t"], "input.message must be a non-empty string"),
+        (["notes": [["quote": "  ", "note": "b"]]],
+         "input.notes[0] needs a non-empty quote and note"),
+        (["summary": "   ", "notes": [["quote": "a", "note": "b"]]],
+         "input.summary must be a non-empty string"),
+        (["notes": ["not an object"]], "input.notes[0] must be an object"),
+    ]
+    return cases.allSatisfy { raw, message in
+        DrivenInput.parse(raw) == .failure(.init(message: message))
+    } && DrivenInput.parse(["message": "  keep my spacing  "]) == .success(.message("  keep my spacing  "))
+}
+
 check("the recorded detail keeps what galaxy-timeline message prints") {
     let input = DrivenInput.notes(summary: "s", notes: [.init(quote: "q", note: "n")])
     let detail = input.detail(composed: "COMPOSED", owner: "Atlas lead")

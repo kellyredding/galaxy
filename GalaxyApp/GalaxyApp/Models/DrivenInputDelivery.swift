@@ -13,6 +13,7 @@ final class DrivenInputDelivery {
     static let shared = DrivenInputDelivery()
 
     private struct Item {
+        let id = UUID()
         let input: DrivenInput
         let owner: String
         let completion: (Int64?) -> Void
@@ -34,15 +35,36 @@ final class DrivenInputDelivery {
         pump(session)
     }
 
+    /// Abandons everything queued for a session that is going away, answering
+    /// each waiting request as not recorded.
+    func drop(sessionID: UUID) {
+        let abandoned = queues.removeValue(forKey: sessionID) ?? []
+        delivering.remove(sessionID)
+        if !abandoned.isEmpty {
+            GalaxyLog.events(
+                "driver input for closed session \(sessionID.uuidString):"
+                    + " \(abandoned.count) not delivered")
+        }
+        abandoned.forEach { $0.completion(nil) }
+    }
+
     private func pump(_ session: Session) {
         guard !delivering.contains(session.id),
             let item = queues[session.id]?.first
         else { return }
         delivering.insert(session.id)
 
+        let sessionID = session.id
         session.whenLedgerSessionKnown { [weak self, weak session] ledgerSessionId in
-            guard let self, let session else { return }
+            guard let self else { return }
+            guard let session else {
+                self.drop(sessionID: sessionID)
+                return
+            }
             self.record(item, ledgerSessionId: ledgerSessionId) { eventID in
+                // Dropped while recording: already answered, and the queue
+                // under this id may now belong to a restored session.
+                guard self.queues[sessionID]?.first?.id == item.id else { return }
                 if let eventID {
                     session.enqueueMessage(
                         item.input.pointer(

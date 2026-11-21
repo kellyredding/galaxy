@@ -47,8 +47,15 @@ final class WatchSocketListener {
         self.socketPath = socketPath
     }
 
+    /// How long a connection may sit without sending its subscribe line
+    /// before its slot is taken back.
+    static let handshakeDeadline: TimeInterval = 5
+
     deinit {
-        stop()
+        // No hop onto `queue`: nothing else can reach this object now, and a
+        // sync onto `queue` traps when the last release happens on it.
+        cancelSubscribers()
+        closeListener()
     }
 
     // MARK: - Lifecycle
@@ -94,10 +101,16 @@ final class WatchSocketListener {
     }
 
     func stop() {
-        queue.sync {
-            for subscriber in subscribers.values { subscriber.connection.cancel() }
-            subscribers.removeAll()
-        }
+        queue.sync { cancelSubscribers() }
+        closeListener()
+    }
+
+    private func cancelSubscribers() {
+        for subscriber in subscribers.values { subscriber.connection.cancel() }
+        subscribers.removeAll()
+    }
+
+    private func closeListener() {
         listener?.cancel()
         listener = nil
         try? FileManager.default.removeItem(atPath: socketPath)
@@ -145,6 +158,12 @@ final class WatchSocketListener {
         }
         connection.start(queue: queue)
         receive(on: subscriber)
+
+        queue.asyncAfter(deadline: .now() + Self.handshakeDeadline) {
+            [weak self, weak subscriber] in
+            guard let self, let subscriber, subscriber.requestedID == nil else { return }
+            self.refuse(subscriber, "no subscribe line within \(Int(Self.handshakeDeadline))s")
+        }
     }
 
     /// Reads the subscribe line, then keeps reading only to notice the

@@ -479,7 +479,47 @@ class Session: Identifiable, ObservableObject {
         didSet {
             guard driven != oldValue else { return }
             applyInputGates()
+            if driven?.locked != oldValue?.locked {
+                if isInputLocked { holdQueuedPersonEntries() }
+                Self.manualSendRefusalChanged()
+            }
             SessionPersistence.shared.markDirty()
+        }
+    }
+
+    /// Ids of queued entries a person composed. The inbox entry carries no
+    /// origin, so this is how a lock finds the ones it must hold.
+    private var personEntryIDs: Set<UUID> = []
+
+    private static let heldLabelSuffix = " (held: session locked)"
+
+    /// The inbox reads the refusal only when it redraws, so it is told when
+    /// a lock changes; otherwise Send now keeps the state it last drew.
+    static func manualSendRefusalChanged() {
+        MainActor.assumeIsolated {
+            AgentInboxPresenter.shared.manualSendRefusalChanged()
+        }
+    }
+
+    /// Pauses a person's messages already waiting when the lock is taken,
+    /// in place, so the automatic drain the owner's messages ride does not
+    /// carry them into the session.
+    private func holdQueuedPersonEntries() {
+        personEntryIDs.formIntersection(inbox.entries.map(\.id))
+        let snapshot = inbox.entries
+        for (index, entry) in snapshot.enumerated()
+        where personEntryIDs.contains(entry.id) && entry.state == .ready {
+            // The inbox offers no relabel, so the entry is replaced and moved
+            // back to where it stood.
+            var held = entry
+            held.state = .paused
+            held.sourceLabel += Self.heldLabelSuffix
+            inbox.remove(id: entry.id)
+            inbox.enqueue(held)
+            inbox.move(
+                fromOffsets: IndexSet(integer: inbox.entries.count - 1), toOffset: index)
+            SessionSubmit.log(
+                "inbox held \(entry.sourceLabel): \(inputLockReason ?? "locked")")
         }
     }
 
@@ -624,13 +664,14 @@ class Session: Identifiable, ObservableObject {
         retry: SubmitRetryPolicy = .resubmit
     ) {
         let held = origin == .person && isInputLocked
-        inbox.enqueue(
-            AgentInboxEntry(
-                body: text,
-                sourceLabel: held ? "\(sourceLabel) (held: session locked)" : sourceLabel,
-                delivery: delivery,
-                retry: retry,
-                state: held ? .paused : .ready))
+        let entry = AgentInboxEntry(
+            body: text,
+            sourceLabel: held ? sourceLabel + Self.heldLabelSuffix : sourceLabel,
+            delivery: delivery,
+            retry: retry,
+            state: held ? .paused : .ready)
+        inbox.enqueue(entry)
+        if origin == .person { personEntryIDs.insert(entry.id) }
 
         // On the standing submit channel rather than a transient one, for
         // the same reason the rest of that channel exists: a queued message

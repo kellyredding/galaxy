@@ -1217,16 +1217,18 @@ class SessionManager: ObservableObject {
         let claudeSessionId = session.claudeSessionId
         let transcript = transcriptPath(for: session)
 
+        // Who interrupted matters only where a driver could have; ordinary
+        // sessions record what they always did.
+        var detail: [String: Any] = ["user_message": captured.userMessage]
+        if session.isDriven { detail["initiated_by"] = "user" }
+
         TimelineService.record(
             ledgerSessionId: ledgerSessionId,
             eventType: "turn:interrupted",
             source: "galaxy-app",
             durationIdentifier:
                 "turn--\(captured.uuid)",
-            detailData: [
-                "user_message": captured.userMessage,
-                "initiated_by": "user",
-            ]
+            detailData: detail
         ) {
             // Ordered, not merely queued. Both events reach
             // Galaxy through the socket, and a start that
@@ -1684,6 +1686,10 @@ class SessionManager: ObservableObject {
         // Notify observers before removal (e.g., EventCoordinator cache cleanup)
         onSessionClosed?(sessionId)
 
+        // A restored session reuses this id, and would otherwise inherit a
+        // delivery waiting on the object being dropped here.
+        DrivenInputDelivery.shared.drop(sessionID: sessionId)
+
         // Clean up pending notification timers. The auto-clear latch needs no
         // cleanup here — it lives on the session, and goes when it does.
         pendingIdleNotificationTimers[sessionId]?.invalidate()
@@ -1761,6 +1767,7 @@ class SessionManager: ObservableObject {
         // Create stopped session from persisted state
         let session = Session(restoring: closedSession.session)
         sidebarItems.append(.session(session))
+        if session.isDriven { Session.manualSendRefusalChanged() }
         // Observe backend lifecycle so callbacks wire
         // automatically when the user later resumes this session.
         observeBackendLifecycle(for: session)

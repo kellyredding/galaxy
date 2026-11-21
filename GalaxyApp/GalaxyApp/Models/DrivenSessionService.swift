@@ -257,16 +257,18 @@ final class DrivenSessionService {
         return .success((session, driven))
     }
 
-    /// Skipped before the session's first ledger event, when there is no
-    /// timeline to record into; the creation lock always falls in that window.
+    /// Held until the session's first ledger event when there is no timeline
+    /// to record into yet, so a lock change in that window still reaches the
+    /// session's watchers. The lock taken at creation is not recorded.
     private func record(_ eventType: String, on session: Session, detail: [String: Any]) {
-        guard let ledgerSessionId = session.ledgerSessionId else { return }
-        TimelineService.record(
-            ledgerSessionId: ledgerSessionId,
-            eventType: eventType,
-            source: "galaxy-app/driven",
-            detailData: detail
-        )
+        session.whenLedgerSessionKnown { ledgerSessionId in
+            TimelineService.record(
+                ledgerSessionId: ledgerSessionId,
+                eventType: eventType,
+                source: "galaxy-app/driven",
+                detailData: detail
+            )
+        }
     }
 }
 

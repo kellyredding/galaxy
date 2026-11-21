@@ -12,15 +12,21 @@ enum DrivenInput: Equatable {
     case message(String)
     case notes(summary: String?, notes: [Note])
 
+    /// The same rules as the CLI's `InputFile`: unknown keys and blank
+    /// strings are refused, so a request that skipped the CLI cannot get
+    /// something past it.
     static func parse(_ value: Any?) -> Result<DrivenInput, DrivenFailure> {
         guard let object = value as? [String: Any] else {
             return .failure(.init(message: "input must be an object"))
+        }
+        if let unknown = Set(object.keys).subtracting(["message", "summary", "notes"]).sorted().first {
+            return .failure(.init(message: "input.\(unknown): unknown key"))
         }
         if let message = object["message"] {
             guard object["notes"] == nil, object["summary"] == nil else {
                 return .failure(.init(message: "input takes message or notes, not both"))
             }
-            guard let text = message as? String, !text.isEmpty else {
+            guard let text = nonBlank(message) else {
                 return .failure(.init(message: "input.message must be a non-empty string"))
             }
             return .success(.message(text))
@@ -30,22 +36,36 @@ enum DrivenInput: Equatable {
         }
         var notes: [Note] = []
         for (index, raw) in rawNotes.enumerated() {
-            guard let entry = raw as? [String: Any],
-                let quote = entry["quote"] as? String, !quote.isEmpty,
-                let note = entry["note"] as? String, !note.isEmpty
-            else {
+            guard let entry = raw as? [String: Any] else {
+                return .failure(.init(message: "input.notes[\(index)] must be an object"))
+            }
+            if let unknown = Set(entry.keys).subtracting(["quote", "note"]).sorted().first {
+                return .failure(.init(message: "input.notes[\(index)].\(unknown): unknown key"))
+            }
+            guard let quote = nonBlank(entry["quote"]), let note = nonBlank(entry["note"]) else {
                 return .failure(
                     .init(message: "input.notes[\(index)] needs a non-empty quote and note"))
             }
             notes.append(Note(quote: quote, note: note))
         }
         let summary: String?
-        switch object["summary"] {
-        case nil: summary = nil
-        case let text as String where !text.isEmpty: summary = text
-        default: return .failure(.init(message: "input.summary must be a non-empty string"))
+        if let raw = object["summary"] {
+            guard let text = nonBlank(raw) else {
+                return .failure(.init(message: "input.summary must be a non-empty string"))
+            }
+            summary = text
+        } else {
+            summary = nil
         }
         return .success(.notes(summary: summary, notes: notes))
+    }
+
+    /// The string itself, untrimmed, when it has any non-whitespace in it.
+    private static func nonBlank(_ value: Any?) -> String? {
+        guard let text = value as? String,
+            !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return nil }
+        return text
     }
 
     var noteCount: Int? {
