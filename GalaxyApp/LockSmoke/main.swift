@@ -281,12 +281,87 @@ check("pointers name the sender and the read command") {
                 + "then quote each note before you respond to it."
 }
 
+// MARK: - Send ids
+
+func parsedSend(_ raw: Any?) -> DrivenSend? {
+    if case .success(let send) = DrivenSend.parse(raw) { return send }
+    return nil
+}
+
+check("a send carries its id apart from its content") {
+    guard let send = parsedSend(["id": "lead-7", "message": "do it"]) else { return false }
+    return send.inputID == "lead-7" && send.input == .message("do it")
+}
+
+check("a send needs an id the CLI would accept") {
+    let bad = "input.id must be 1-128 characters of A-Z a-z 0-9 . _ : -"
+    let cases: [(Any?, String)] = [
+        (["message": "x"], "input.id: missing"),
+        (["id": 7, "message": "x"], bad),
+        (["id": "", "message": "x"], bad),
+        (["id": String(repeating: "a", count: 129), "message": "x"], bad),
+        (["id": "has space", "message": "x"], bad),
+        (["id": "é", "message": "x"], bad),
+    ]
+    return cases.allSatisfy { raw, message in
+        DrivenSend.parse(raw) == .failure(.init(message: message))
+    } && DrivenSend.isValidID("Atlas.lead_2026-11-21:0007")
+        && DrivenSend.isValidID(String(repeating: "a", count: 128))
+}
+
+check("the content is still checked once the id is taken out") {
+    DrivenSend.parse(["id": "x", "message": "  "])
+        == .failure(.init(message: "input.message must be a non-empty string"))
+        && DrivenSend.parse(["id": "x", "mesage": "typo"])
+            == .failure(.init(message: "input.mesage: unknown key"))
+}
+
+check("the content hash ignores key order and the id, and tells content apart") {
+    let a = parsedSend(["id": "one", "summary": "s", "notes": [["quote": "q", "note": "n"]]])
+    let b = parsedSend(["notes": [["note": "n", "quote": "q"]], "summary": "s", "id": "two"])
+    let c = parsedSend(["id": "one", "summary": "s", "notes": [["quote": "q", "note": "N"]]])
+    guard let a, let b, let c else { return false }
+    return a.contentHash == b.contentHash && a.contentHash != c.contentHash
+        && a.contentHash.count == 64
+}
+
+check("a new id is accepted, a resend is a duplicate, a reused id is a conflict") {
+    guard let send = parsedSend(["id": "lead-7", "message": "do it"]),
+        let changed = parsedSend(["id": "lead-7", "message": "do something else"])
+    else { return false }
+    let accepted = [send.inputID: send.contentHash]
+    return send.decision(given: [:]) == .accept
+        && send.decision(given: accepted) == .duplicate
+        && changed.decision(given: accepted) == .conflict
+        && send.decision(given: ["other": send.contentHash]) == .accept
+}
+
+check("the recorded detail carries the id and hash a resend is checked against") {
+    guard let send = parsedSend(["id": "lead-7", "message": "do it"]) else { return false }
+    let detail = send.detail(composed: "do it", owner: "Atlas lead")
+    let data = try JSONSerialization.data(withJSONObject: detail)
+    let recorded = DrivenSend.accepted(fromRecordedDetail: String(data: data, encoding: .utf8))
+    return detail["message"] as? String == "do it"
+        && recorded?.id == "lead-7" && recorded?.hash == send.contentHash
+        && DrivenSend.accepted(fromRecordedDetail: #"{"message":"old"}"#) == nil
+        && DrivenSend.accepted(fromRecordedDetail: nil) == nil
+}
+
 // MARK: - Watch lines
 
-func watchLine(_ event: String, ref: String?) throws -> [String: Any] {
-    let data = WatchLine.encode(event: event, ref: ref, ts: 1_800_000_000, sessionID: "abc-id")
+func watchLine(_ event: String, ref: String?, detail: [String: Any]? = nil) throws -> [String: Any] {
+    let data = WatchLine.encode(
+        event: event, ref: ref, ts: 1_800_000_000, sessionID: "abc-id", detail: detail)
     guard !data.contains(0x0A) else { throw CocoaError(.coderInvalidValue) }
     return try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+}
+
+check("an event with no row to read carries its detail, and others carry none") {
+    let failed = try watchLine("session.input:failed", ref: nil, detail: ["input_id": "lead-7"])
+    let plain = try watchLine("timeline.turn:completed", ref: "5")
+    return failed["event_id"] is NSNull
+        && (failed["detail"] as? [String: String]) == ["input_id": "lead-7"]
+        && plain["detail"] == nil
 }
 
 check("a timeline event's line carries its row id and an unprefixed type") {

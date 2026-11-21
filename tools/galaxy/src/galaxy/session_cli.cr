@@ -16,13 +16,19 @@ module Galaxy
   #                   -> {ok, id, token, name, owner}
   #   session.lock    {id, token}               -> {ok, id, locked:true}
   #   session.release {id, token}               -> {ok, id, locked:false}
-  #   session.send    {id, token, input}        -> {ok, id, event_id, pending}
-  #       input: {"message": s} | {"summary"?: s, "notes": [{"quote","note"}]}
-  #       event_id is the session.input:sent row, null while pending (no
-  #       ledger session yet); pending true means Galaxy delivers it later.
+  #   session.send    {id, token, input}        -> {ok, id, input_id, duplicate}
+  #       input: {"id": s, "message": s}
+  #            | {"id": s, "summary"?: s, "notes": [{"quote","note"}]}
+  #       Answered on acceptance (token, lock, input, id checked); recording
+  #       and delivery follow, reported on the watch stream as
+  #       session.input:sent (detail carries input_id) or
+  #       session.input:failed {input_id}. A resent id with the same content
+  #       is a duplicate (nothing happens); with different content, refused.
   #   session.clear   {id, token}               -> {ok, id}
-  #   session.resume  {id, token, stop_holder}  -> {ok, id}
+  #   session.resume  {id, token, stop_holder}  -> {ok, id, accepted:true}
   #       held elsewhere, no stop_holder -> {ok:false, error, holder_pid}
+  #       Answered once decided; the resume follows, reported as
+  #       session:resumed or session.resume:failed {error}.
   #   session.stop    {id, token}               -> {ok, id}
   #   session.status  {id}                      -> {ok, session}
   #   session.list    {owner?, include_closed}  -> {ok, sessions:[session]}
@@ -39,8 +45,9 @@ module Galaxy
   #    "session_id":"<id>","occurred_at":"2026-11-20T19:39:20Z"}
   #   type is the envelope event with any "timeline." prefix removed;
   #   event_id is that envelope's ref (the row id) for timeline.* events,
-  #   null otherwise. A slow subscriber may be disconnected; it reconnects
-  #   and backfills, so dropping is always safe.
+  #   null otherwise. Events with no row to read carry "detail":{...}.
+  #   A slow subscriber may be disconnected; it reconnects and backfills,
+  #   so dropping is always safe.
   module SessionCLI
     class Failure < Exception
     end
@@ -112,8 +119,7 @@ module Galaxy
       end
       detail = token_detail(id, token)
       detail["stop_holder"] = JSON::Any.new(stop_holder)
-      # Stopping a holder waits on its exit, which can take a few seconds.
-      print_reply(request("session.resume", detail, read_timeout: 30.seconds))
+      print_reply(request("session.resume", detail))
     end
 
     private def self.cmd_send(args : Array(String))
@@ -131,9 +137,7 @@ module Galaxy
       in InputFile::Parsed
         detail = token_detail(id, token)
         detail["input"] = JSON::Any.new(parsed.to_detail)
-        # Galaxy answers once the input is recorded, behind any deliveries
-        # already queued for the session.
-        print_reply(request("session.send", detail, read_timeout: 30.seconds))
+        print_reply(request("session.send", detail))
       end
     end
 
@@ -238,14 +242,14 @@ module Galaxy
 
     # --- plumbing ---
 
-    private def self.request(event : String, detail : Hash(String, JSON::Any), read_timeout : Time::Span = SocketClient::READ_TIMEOUT) : JSON::Any
+    private def self.request(event : String, detail : Hash(String, JSON::Any)) : JSON::Any
       reply = begin
-        SocketClient.request(event, detail, read_timeout: read_timeout)
+        SocketClient.request(event, detail)
       rescue SocketClient::NotRunning
         fail("Galaxy isn't running (nothing is listening at #{SocketClient.socket_path})")
       rescue SocketClient::TimedOut
-        fail("timed out after #{read_timeout.total_seconds.to_i}s waiting for Galaxy to answer #{event}; " \
-             "it may still have been carried out, so check `galaxy session status` or `read` before retrying")
+        fail("timed out after #{SocketClient::READ_TIMEOUT.total_seconds.to_i}s waiting for Galaxy to answer #{event}: " \
+             "Galaxy is running but not responding")
       rescue SocketClient::NoReply
         fail("Galaxy did not answer #{event}: this Galaxy may not support driven sessions")
       end
@@ -362,19 +366,39 @@ module Galaxy
       the same token afterwards. --token may come from GALAXY_SESSION_TOKEN.
 
       SEND FILE (JSON, validated; every problem is reported):
-        {"message": "Plain text, any length."}
-        {"summary": "Optional overall comment.",
+        {"id": "lead-0007", "message": "Plain text, any length."}
+        {"id": "lead-0008", "summary": "Optional overall comment.",
          "notes": [{"quote": "text being answered", "note": "the reply"}]}
+      id is yours to choose: 1-128 characters of A-Z a-z 0-9 . _ : -, unique
+      per session. send answers as soon as Galaxy accepts the input, before
+      it is recorded: {"id","input_id","duplicate"}. Retrying is always safe:
+      resend the same file, and a repeat of an id already accepted answers
+      "duplicate": true without sending anything again. Reusing an id for
+      different content is refused. The outcome arrives as an event:
+      session.input:sent (its detail carries input_id) once it is recorded
+      and handed to the session, or session.input:failed with
+      {"input_id"} if it could not be, after which the id may be sent again.
       The session reads it through a short pointer, never typed raw.
+
+      RESUME:
+        resume answers once it has decided: refused with holder_pid when
+        another process holds the conversation (unless --stop-holder), or
+        {"accepted": true}. The resume itself follows, reported as
+        session:resumed, or session.resume:failed with {"error"}.
 
       EVENTS:
         watch prints one JSON line per event and reconnects on its own; wait
         exits 0 after the first match, #{EXIT_TIMEOUT} on --timeout. Each line:
           {"v":1,"event_id":171809,"type":"turn:completed",
            "session_id":"<id>","occurred_at":"2026-11-20T19:39:20Z"}
-        event_id is null for events with no timeline row. Read details with
+        event_id is null for events with no timeline row; those Galaxy raises
+        itself carry a "detail" object instead. Read details with
         `galaxy session read <id> --after <event_id>`. --events takes exact
         types or prefixes ending in *, e.g. turn:completed,lock:*,session:*
+
+        Keep your own place in a session by what `read` returns, never by
+        notification ids: notifications can arrive out of order, and the
+        timeline cannot. Treat each notification as the signal to read.
 
       OUTPUT:
         Every command prints JSON. Errors go to stderr as "Error: ..." with

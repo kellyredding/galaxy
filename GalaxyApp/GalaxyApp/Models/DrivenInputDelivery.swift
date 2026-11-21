@@ -14,7 +14,7 @@ final class DrivenInputDelivery {
 
     private struct Item {
         let id = UUID()
-        let input: DrivenInput
+        let send: DrivenSend
         let owner: String
         let completion: (Int64?) -> Void
     }
@@ -25,13 +25,13 @@ final class DrivenInputDelivery {
     /// `completion` gets the recorded event's id, or nil when it could not be
     /// recorded. A session with no ledger session yet waits for one first.
     func deliver(
-        _ input: DrivenInput,
+        _ send: DrivenSend,
         to session: Session,
         owner: String,
         completion: @escaping (Int64?) -> Void
     ) {
         queues[session.id, default: []].append(
-            Item(input: input, owner: owner, completion: completion))
+            Item(send: send, owner: owner, completion: completion))
         pump(session)
     }
 
@@ -67,7 +67,7 @@ final class DrivenInputDelivery {
                 guard self.queues[sessionID]?.first?.id == item.id else { return }
                 if let eventID {
                     session.enqueueMessage(
-                        item.input.pointer(
+                        item.send.input.pointer(
                             owner: item.owner,
                             readCommand: ReviewStore.galaxyTimeline.readCommand(eventID)),
                         sourceLabel: "Sent by \(item.owner)",
@@ -89,7 +89,7 @@ final class DrivenInputDelivery {
         _ item: Item, ledgerSessionId: Int64, completion: @escaping (Int64?) -> Void
     ) {
         let composed: String
-        switch item.input {
+        switch item.send.input {
         case .message(let text):
             composed = text
         case .notes(let summary, let notes):
@@ -105,7 +105,7 @@ final class DrivenInputDelivery {
                 sessionID: ledgerSessionId,
                 eventType: "session.input:sent",
                 source: "galaxy-app/driven",
-                detail: item.input.detail(composed: composed, owner: item.owner)),
+                detail: item.send.detail(composed: composed, owner: item.owner)),
             completion)
     }
 }

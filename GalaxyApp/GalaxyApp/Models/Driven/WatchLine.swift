@@ -13,18 +13,23 @@ enum WatchLine {
     }()
 
     /// A timeline envelope's `ref` is the row it was written to; nothing else
-    /// carries a row, so its event id is null.
-    static func encode(event: String, ref: String?, ts: Int64, sessionID: String) -> Data {
+    /// carries a row, so its event id is null. `detail` is for the events
+    /// Galaxy raises with no row to read, so their facts travel on the line.
+    static func encode(
+        event: String, ref: String?, ts: Int64, sessionID: String, detail: [String: Any]? = nil
+    ) -> Data {
         let isTimeline = event.hasPrefix(timelinePrefix)
         let eventID: Any = isTimeline ? (ref.flatMap { Int64($0) } ?? NSNull()) : NSNull()
         let type = isTimeline ? String(event.dropFirst(timelinePrefix.count)) : event
-        let object: [String: Any] = [
+        var object: [String: Any] = [
             "v": 1,
             "event_id": eventID,
             "type": type,
             "session_id": sessionID,
             "occurred_at": iso8601.string(from: Date(timeIntervalSince1970: TimeInterval(ts))),
         ]
+        if let detail { object["detail"] = detail }
+        guard JSONSerialization.isValidJSONObject(object) else { return Data() }
         return (try? JSONSerialization.data(withJSONObject: object)) ?? Data()
     }
 

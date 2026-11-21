@@ -5,6 +5,8 @@ module Galaxy
   # prints it and as galaxy-watch.sock sends it. A signal, not a payload:
   # `event_id` is the timeline row to read details from, null for events that
   # are not timeline rows (session.idle, session.metrics, permission_request).
+  # The few events Galaxy raises with no row to read (session.input:failed,
+  # session.resume:failed) carry their facts in `detail`.
   struct WatchLine
     include JSON::Serializable
 
@@ -14,8 +16,9 @@ module Galaxy
     getter type : String
     getter session_id : String
     getter occurred_at : String
+    getter detail : JSON::Any?
 
-    def initialize(@event_id : Int64?, @type : String, @session_id : String, @occurred_at : String)
+    def initialize(@event_id : Int64?, @type : String, @session_id : String, @occurred_at : String, @detail : JSON::Any? = nil)
     end
 
     # A line read off the watch socket, or nil for anything that is not one.

@@ -1,6 +1,19 @@
 import Foundation
 import Network
 
+/// The events Galaxy raises with no timeline row behind them, such as a
+/// driver's input that could not be recorded. They reach a session's
+/// subscribers the same way recorded events do, carrying their facts as
+/// `detail` since there is nothing to read back.
+enum DrivenWatch {
+    /// Set by the event system once its watch socket exists.
+    static var publisher: ((_ event: String, _ sessionID: UUID, _ detail: [String: String]) -> Void)?
+
+    static func publish(_ event: String, sessionID: UUID, detail: [String: String]) {
+        publisher?(event, sessionID, detail)
+    }
+}
+
 /// Streams a session's events to whoever subscribes, on galaxy-watch.sock.
 ///
 /// A separate socket from galaxy.sock on purpose: that one carries every
@@ -120,13 +133,16 @@ final class WatchSocketListener {
     // MARK: - Publishing
 
     /// Hands one event to the subscribers of the session it belongs to.
-    func publish(event: String, ref: String?, ts: Int64, sessionID: UUID) {
+    func publish(
+        event: String, ref: String?, ts: Int64, sessionID: UUID, detail: [String: String]? = nil
+    ) {
         queue.async { [weak self] in
             guard let self else { return }
             for subscriber in self.subscribers.values where subscriber.sessionID == sessionID {
                 guard let requestedID = subscriber.requestedID else { continue }
                 self.send(
-                    WatchLine.encode(event: event, ref: ref, ts: ts, sessionID: requestedID),
+                    WatchLine.encode(
+                        event: event, ref: ref, ts: ts, sessionID: requestedID, detail: detail),
                     to: subscriber)
             }
         }

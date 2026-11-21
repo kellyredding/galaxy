@@ -102,36 +102,89 @@ final class DrivenSessionService {
 
     // MARK: - Driving
 
-    /// Answers once the input is recorded, with its event id. A session whose
-    /// Claude Code has not reported in yet has no timeline to record into, so
-    /// the input waits for it and the answer says it is pending.
+    /// Input ids each session has accepted, with their content hashes, so a
+    /// resend is recognised. Learned from the session's recorded inputs the
+    /// first time it is sent to after launch, and kept current from there.
+    private var acceptedInputs: [UUID: [String: String]] = [:]
+    private var learnedInputs: Set<UUID> = []
+    private var learningInputs: [UUID: Task<Void, Never>] = [:]
+
+    /// Answers as soon as the input is accepted, not once it is recorded:
+    /// recording and delivery follow, one at a time per session, and their
+    /// outcome reaches the session's watchers as `session.input:sent` or
+    /// `session.input:failed`.
     func send(id: String, token: String, input: Any?) async -> DrivenReply {
-        let authorized = authorize(id: id, token: token, requireLock: true)
-        guard case .success(let (session, driven)) = authorized else {
-            return authorized.map { _ in [:] }
-        }
-        let parsed: DrivenInput
-        switch DrivenInput.parse(input) {
-        case .success(let value): parsed = value
+        let first = authorize(id: id, token: token, requireLock: true)
+        guard case .success(let (session, _)) = first else { return first.map { _ in [:] } }
+        let send: DrivenSend
+        switch DrivenSend.parse(input) {
+        case .success(let value): send = value
         case .failure(let failure): return .failure(failure)
         }
 
-        let delivery = DrivenInputDelivery.shared
-        guard session.ledgerSessionId != nil else {
-            delivery.deliver(parsed, to: session, owner: driven.owner) { _ in }
-            return .success(["id": session.id.uuidString, "event_id": NSNull(), "pending": true])
+        await learnAcceptedInputs(of: session)
+
+        // Checked again: the lock or the session may have changed while the
+        // recorded inputs were read.
+        let authorized = authorize(id: id, token: token, requireLock: true)
+        guard case .success(let (current, driven)) = authorized, current === session else {
+            return authorized.map { _ in [:] }
         }
-        let eventID: Int64? = await withCheckedContinuation { continuation in
-            delivery.deliver(parsed, to: session, owner: driven.owner) {
-                continuation.resume(returning: $0)
+
+        let reply: [String: Any] = ["id": session.id.uuidString, "input_id": send.inputID]
+        switch send.decision(given: acceptedInputs[session.id] ?? [:]) {
+        case .duplicate:
+            return .success(reply.merging(["duplicate": true]) { $1 })
+        case .conflict:
+            return .failure(
+                .init(message: "input id \(send.inputID) was already used for different content"))
+        case .accept:
+            break
+        }
+
+        let sessionID = session.id
+        acceptedInputs[sessionID, default: [:]][send.inputID] = send.contentHash
+        DrivenInputDelivery.shared.deliver(send, to: session, owner: driven.owner) { [weak self] eventID in
+            guard eventID == nil else { return }
+            self?.acceptedInputs[sessionID]?[send.inputID] = nil
+            DrivenWatch.publish(
+                "session.input:failed", sessionID: sessionID, detail: ["input_id": send.inputID])
+        }
+        return .success(reply.merging(["duplicate": false]) { $1 })
+    }
+
+    /// Reads the ids a session already accepted from its timeline, once per
+    /// launch. A session with no ledger session yet has recorded nothing, so
+    /// there is nothing to read until it has one; a failed read is tried again
+    /// on the next send.
+    private func learnAcceptedInputs(of session: Session) async {
+        let sessionID = session.id
+        guard !learnedInputs.contains(sessionID), let ledgerSessionId = session.ledgerSessionId
+        else { return }
+        if let learning = learningInputs[sessionID] {
+            await learning.value
+            return
+        }
+        let learning = Task { @MainActor in
+            defer { self.learningInputs[sessionID] = nil }
+            guard
+                let events = try? await TimelineQueryService.shared.fetchDrivenInputs(
+                    ledgerSessionId: ledgerSessionId)
+            else {
+                GalaxyLog.events("could not read the recorded inputs of driven session \(sessionID)")
+                return
             }
+            for event in events {
+                guard let recorded = DrivenSend.accepted(fromRecordedDetail: event.detailData)
+                else { continue }
+                if self.acceptedInputs[sessionID]?[recorded.id] == nil {
+                    self.acceptedInputs[sessionID, default: [:]][recorded.id] = recorded.hash
+                }
+            }
+            self.learnedInputs.insert(sessionID)
         }
-        guard let eventID else {
-            return .failure(.init(message: "the input could not be recorded, so it was not sent"))
-        }
-        return .success([
-            "id": session.id.uuidString, "event_id": NSNumber(value: eventID), "pending": false,
-        ])
+        learningInputs[sessionID] = learning
+        await learning.value
     }
 
     /// The same reset the menu's Clear session issues, queued the way
@@ -148,6 +201,7 @@ final class DrivenSessionService {
         }
     }
 
+    /// Answers once decided; see `SessionManager.resumeDriven`.
     func resume(id: String, token: String, stopHolder: Bool) async -> DrivenReply {
         let authorized = authorize(id: id, token: token, requireLock: true)
         guard case .success(let (session, _)) = authorized else {

@@ -109,10 +109,12 @@ describe "galaxy session" do
       fake.try(&.close)
     end
 
-    it "sends stop_holder for resume" do
-      fake = FakeGalaxy.new { |_e| %({"ok":true,"id":"abc"}) }
-      galaxy(["session", "resume", "abc", "--token", "t", "--stop-holder"], {"GALAXY_SOCKET_PATH" => fake.path})
+    it "sends stop_holder for resume and prints the acceptance" do
+      fake = FakeGalaxy.new { |_e| %({"ok":true,"id":"abc","accepted":true}) }
+      code, stdout, _ = galaxy(["session", "resume", "abc", "--token", "t", "--stop-holder"], {"GALAXY_SOCKET_PATH" => fake.path})
       galaxy(["session", "resume", "abc", "--token", "t"], {"GALAXY_SOCKET_PATH" => fake.path})
+      code.should eq(0)
+      JSON.parse(stdout)["accepted"].as_bool.should be_true
       detail_of(fake, 0)["stop_holder"].as_bool.should be_true
       detail_of(fake, 1)["stop_holder"].as_bool.should be_false
     ensure
@@ -144,19 +146,45 @@ describe "galaxy session" do
   end
 
   describe "send" do
-    it "validates the file and sends the parsed input" do
-      fake = FakeGalaxy.new { |_e| %({"ok":true,"id":"abc","event_id":null,"pending":true}) }
+    it "validates the file and sends the parsed input with its id" do
+      fake = FakeGalaxy.new { |_e| %({"ok":true,"id":"abc","input_id":"lead-7","duplicate":false}) }
       file = File.tempfile("input", ".json") do |f|
-        f.print %({"summary":"Two","notes":[{"quote":"a line","note":"a reply"}]})
+        f.print %({"id":"lead-7","summary":"Two","notes":[{"quote":"a line","note":"a reply"}]})
       end
       code, stdout, err = galaxy(["session", "send", "abc", "--token", "t", file.path], {"GALAXY_SOCKET_PATH" => fake.path})
 
       err.should eq("")
       code.should eq(0)
-      JSON.parse(stdout)["pending"].as_bool.should be_true
+      JSON.parse(stdout).should eq(JSON.parse(%({"id":"abc","input_id":"lead-7","duplicate":false})))
       input = detail_of(fake)["input"]
+      input["id"].as_s.should eq("lead-7")
       input["summary"].as_s.should eq("Two")
       input["notes"][0]["quote"].as_s.should eq("a line")
+    ensure
+      fake.try(&.close)
+      file.try(&.delete)
+    end
+
+    it "treats a resend Galaxy already accepted as success" do
+      fake = FakeGalaxy.new { |_e| %({"ok":true,"id":"abc","input_id":"lead-7","duplicate":true}) }
+      file = File.tempfile("input", ".json") { |f| f.print %({"id":"lead-7","message":"again"}) }
+      code, stdout, _ = galaxy(["session", "send", "abc", "--token", "t", file.path], {"GALAXY_SOCKET_PATH" => fake.path})
+
+      code.should eq(0)
+      JSON.parse(stdout)["duplicate"].as_bool.should be_true
+    ensure
+      fake.try(&.close)
+      file.try(&.delete)
+    end
+
+    it "fails when the id was already used for different content" do
+      fake = FakeGalaxy.new { |_e| %({"ok":false,"error":"input id lead-7 was already used for different content"}) }
+      file = File.tempfile("input", ".json") { |f| f.print %({"id":"lead-7","message":"changed"}) }
+      code, stdout, err = galaxy(["session", "send", "abc", "--token", "t", file.path], {"GALAXY_SOCKET_PATH" => fake.path})
+
+      code.should eq(1)
+      stdout.should eq("")
+      err.should eq("Error: input id lead-7 was already used for different content\n")
     ensure
       fake.try(&.close)
       file.try(&.delete)
@@ -168,6 +196,7 @@ describe "galaxy session" do
       code, _, err = galaxy(["session", "send", "abc", "--token", "t", file.path], {"GALAXY_SOCKET_PATH" => fake.path})
 
       code.should eq(1)
+      err.should contain("id: missing")
       err.should contain("mesage: unknown key")
       err.should contain("notes[0].quote: missing")
       err.should contain("Valid shapes:")

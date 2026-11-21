@@ -177,6 +177,11 @@ final class EventCoordinator {
         watchListener.isKnownSession = { [weak self] id in
             self?.sessionManager?.sessions.contains(where: { $0.id == id }) ?? false
         }
+        DrivenWatch.publisher = { [weak self] event, sessionID, detail in
+            self?.watchListener.publish(
+                event: event, ref: nil, ts: Int64(Date().timeIntervalSince1970),
+                sessionID: sessionID, detail: detail)
+        }
 
         // Debouncer → enrichment
         debouncer.onFire = { [weak self] envelope in

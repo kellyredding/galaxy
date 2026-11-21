@@ -155,6 +155,20 @@ class TimelineQueryService {
         return try Self.decodeEvents(data).first
     }
 
+    /// Every driver input recorded for a session, for knowing which input ids
+    /// it has already accepted. On the independent runner so the Timeline
+    /// tab's poll cannot cancel it.
+    func fetchDrivenInputs(ledgerSessionId: Int64) async throws -> [TimelineEvent] {
+        let data = try await runIndependentCLI(
+            args: [
+                "list", "--json",
+                "--ledger-session-id", String(ledgerSessionId),
+                "--event-type", "session.input:sent",
+            ]
+        )
+        return try Self.decodeEvents(data)
+    }
+
     // MARK: - Shared Query Shape
 
     /// Turn-ending events plus `turn:initiated`, newest first. The
