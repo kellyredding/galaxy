@@ -5,13 +5,20 @@ require "uri"
 module Galaxy
   class CLI
     # Galaxy's own commands — checked before delegation
-    GALAXY_COMMANDS = %w[help version update doctor config backups]
+    GALAXY_COMMANDS = %w[help version update doctor config backups session]
 
     def self.run(args : Array(String))
       # Ahead of the option parser, which would reject `--local` as an unknown
       # flag and take `--version` as a request for this CLI's own version.
       if args.first? == "update"
         handle_update_command(args[1..])
+        return
+      end
+
+      # Same reason: its subcommands take flags (--token, --as) this parser
+      # does not know.
+      if args.first? == "session"
+        SessionCLI.run(args[1..])
         return
       end
 
@@ -298,6 +305,7 @@ module Galaxy
         ... and all other claude-persona commands.
         Run 'claude-persona help' for the full reference.
 
+        galaxy session                  Drive sessions from another program
         galaxy config                   Manage Galaxy configuration
         galaxy backups                  Manage backups
         galaxy update                   Update Galaxy (--local: your checkout)
@@ -315,6 +323,7 @@ module Galaxy
         galaxy                          Open Galaxy with a new Claude session
         galaxy --resume <id>            Resume a session
 
+        galaxy session                  Drive sessions from another program
         galaxy config                   Manage Galaxy configuration
         galaxy backups                  Manage backups
         galaxy update                   Update Galaxy (--local: your checkout)
