@@ -19,9 +19,17 @@ struct CopyButton: View {
 
     var body: some View {
         Button(action: copyText) {
-            Image(systemName: showCopied ? "checkmark" : "doc.on.doc")
-                .chromeFont(size: iconSize)
-                .foregroundColor(showCopied ? .green : .secondary)
+            // Both glyphs are always laid out, so the button keeps the larger
+            // one's size and the row around it never shifts as they swap.
+            ZStack {
+                Image(systemName: "doc.on.doc")
+                    .foregroundColor(.secondary)
+                    .opacity(showCopied ? 0 : 1)
+                Image(systemName: "checkmark")
+                    .foregroundColor(.green)
+                    .opacity(showCopied ? 1 : 0)
+            }
+            .chromeFont(size: iconSize)
         }
         .buttonStyle(.plain)
         .help("Copy to clipboard")
