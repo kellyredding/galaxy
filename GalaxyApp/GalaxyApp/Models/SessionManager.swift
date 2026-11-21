@@ -817,7 +817,8 @@ class SessionManager: ObservableObject {
 
         Task { @MainActor in
             defer { self.resumingSessionIds.remove(sessionId) }
-            guard await self.releaseConversation(for: session) else { return }
+            guard case .proceed = await self.releaseConversation(for: session, holders: .ask)
+            else { return }
             guard self.sessions.contains(where: { $0.id == sessionId }),
                   session.hasExited
             else { return }
@@ -825,7 +826,48 @@ class SessionManager: ObservableObject {
         }
     }
 
-    private func performResume(_ session: Session) {
+    /// A driven session's resume, asked for by its owner rather than by
+    /// someone at the window: it never shows a dialog and never takes focus.
+    /// A conversation still held elsewhere is refused with the holder's pid
+    /// unless `stopHolder` says to stop it.
+    @MainActor
+    func resumeDriven(_ session: Session, stopHolder: Bool) async -> DrivenReply {
+        guard session.hasExited else {
+            return .failure(.init(message: "session is already running"))
+        }
+        guard FileManager.default.fileExists(atPath: session.workingDirectory) else {
+            return .failure(
+                .init(message: "working directory no longer exists: \(session.workingDirectory)"))
+        }
+        guard !resumingSessionIds.contains(session.id) else {
+            return .failure(.init(message: "session is already resuming"))
+        }
+        resumingSessionIds.insert(session.id)
+        defer { resumingSessionIds.remove(session.id) }
+
+        switch await releaseConversation(for: session, holders: stopHolder ? .stop : .refuse) {
+        case .proceed:
+            break
+        case .held(let holder):
+            return .failure(
+                .init(
+                    message: "held by pid \(holder.pid)"
+                        + " (\(holder.isBackground ? "background" : "interactive"))",
+                    holderPid: holder.pid))
+        case .failed(let reason):
+            return .failure(.init(message: reason))
+        case .cancelled:
+            return .failure(.init(message: "resume was cancelled"))
+        }
+
+        guard sessions.contains(where: { $0.id == session.id }), session.hasExited else {
+            return .failure(.init(message: "session is no longer resumable"))
+        }
+        performResume(session, activate: false)
+        return .success(["id": session.id.uuidString])
+    }
+
+    private func performResume(_ session: Session, activate: Bool = true) {
         // Check if Claude has this session saved on disk
         let canResume = claudeSessionExists(sessionId: session.claudeSessionId, workingDirectory: session.workingDirectory)
 
@@ -838,9 +880,11 @@ class SessionManager: ObservableObject {
         // Save outgoing session's view state and switch to terminal
         // so the user sees the resumed session. Restore the incoming
         // session's ledger subtab so it's correct if they visit ledger.
-        saveViewState()
-        activeTab = .terminal
-        activeLedgerSubTab = session.lastActiveLedgerSubTab
+        if activate {
+            saveViewState()
+            activeTab = .terminal
+            activeLedgerSubTab = session.lastActiveLedgerSubTab
+        }
 
         // Create the terminal backend BEFORE resetting hasExited.
         // Setting hasExited = false triggers SwiftUI to swap
@@ -932,19 +976,39 @@ class SessionManager: ObservableObject {
         }
 
         // Make this the active session
-        activeSessionId = session.id
+        if activate {
+            activeSessionId = session.id
+        }
         SessionPersistence.shared.markDirty()
 
         // Update menu state (session is now running, not resumable)
         updateActiveSessionCanResume()
     }
 
+    /// What to do about a process still holding the conversation.
+    enum HolderPolicy {
+        /// Ask the person, and explain a failed stop in an alert.
+        case ask
+        /// Leave it running and say who holds it.
+        case refuse
+        /// Stop it without asking; a failure is reported, not shown.
+        case stop
+    }
+
+    enum ReleaseOutcome {
+        case proceed
+        case cancelled
+        case held(ClaudeSessionHolder)
+        case failed(String)
+    }
+
     /// Move the session onto the newest transcript its conversation continued
     /// into, and stop any Claude Code process still holding it: resumed while
     /// held, Claude Code continues the conversation in yet another transcript.
-    /// Returns false when the resume should not go ahead.
     @MainActor
-    private func releaseConversation(for session: Session) async -> Bool {
+    private func releaseConversation(
+        for session: Session, holders policy: HolderPolicy
+    ) async -> ReleaseOutcome {
         let sessionId = session.claudeSessionId
         let directory = transcriptDirectory(for: session.workingDirectory)
         let chain = await Task.detached {
@@ -962,18 +1026,25 @@ class SessionManager: ObservableObject {
         let holders: [ClaudeSessionHolder]
         switch await sessionGuard.holders(of: chain) {
         case .none:
-            return true
+            return .proceed
         case .unknown(let reason):
             GalaxyLog.events(
                 "Could not list Claude Code sessions before resuming "
                 + "\(session.sessionRef): \(reason)"
             )
-            return true
+            return .proceed
         case .found(let found):
             holders = found
         }
 
-        guard confirmStopHolders(session, holders: holders) else { return false }
+        switch policy {
+        case .ask:
+            guard confirmStopHolders(session, holders: holders) else { return .cancelled }
+        case .refuse:
+            if let holder = holders.first { return .held(holder) }
+        case .stop:
+            break
+        }
 
         for holder in holders {
             do {
@@ -986,6 +1057,10 @@ class SessionManager: ObservableObject {
                     "Could not stop \(Self.describe(holder)) for "
                     + "\(session.sessionRef): \(error.localizedDescription)"
                 )
+                guard policy == .ask else {
+                    return .failed(
+                        "could not stop \(Self.describe(holder)): \(error.localizedDescription)")
+                }
                 let alert = NSAlert()
                 alert.messageText = "Cannot Resume Session"
                 alert.informativeText = """
@@ -1000,10 +1075,10 @@ class SessionManager: ObservableObject {
                 alert.alertStyle = .warning
                 alert.addButton(withTitle: "OK")
                 alert.runModal()
-                return false
+                return .failed(error.localizedDescription)
             }
         }
-        return true
+        return .proceed
     }
 
     private func confirmStopHolders(_ session: Session, holders: [ClaudeSessionHolder]) -> Bool {

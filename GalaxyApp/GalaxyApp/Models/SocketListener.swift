@@ -35,6 +35,13 @@ final class SocketListener {
     /// the reply goes back on the same connection. Nil passes it to `onEvent`.
     var onRequest: ((EventEnvelope) -> Data?)?
 
+    /// Claims an envelope whose reply comes later, returning false for one it
+    /// does not answer. For requests that wait on something slow, such as a
+    /// process exiting: answered synchronously, they would hold this queue,
+    /// and with it every hook event behind them. The reply closure may be
+    /// called from any thread, once.
+    var onDeferredRequest: ((EventEnvelope, @escaping (Data) -> Void) -> Bool)?
+
     /// Track active connections for cleanup
     private var activeConnections: [NWConnection] = []
 
@@ -333,7 +340,12 @@ final class SocketListener {
                         + " chunks=\(chunks)"
                     )
                 }
-                if let reply = onRequest?(envelope) {
+                let deferred = onDeferredRequest?(envelope) { [weak self] reply in
+                    self?.queue.async { self?.sendReply(reply, on: connection) }
+                } ?? false
+                if deferred {
+                    // Answered later, on this connection.
+                } else if let reply = onRequest?(envelope) {
                     sendReply(reply, on: connection)
                 } else {
                     DispatchQueue.main.async { [weak self] in

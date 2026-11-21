@@ -110,6 +110,7 @@ final class EventCoordinator {
     private(set) var phase: Phase = .idle
 
     private let socketListener: SocketListener
+    private let watchListener: WatchSocketListener
     private let debouncer: EventDebouncer
     private let enrichmentService: EnrichmentService
     private weak var sessionManager: SessionManager?
@@ -146,6 +147,7 @@ final class EventCoordinator {
     init(sessionManager: SessionManager) {
         self.sessionManager = sessionManager
         self.socketListener = SocketListener()
+        self.watchListener = WatchSocketListener()
         self.debouncer = EventDebouncer()
         self.enrichmentService = EnrichmentService()
 
@@ -161,6 +163,19 @@ final class EventCoordinator {
         }
         socketListener.onRequest = { [weak self] envelope in
             self?.handleRequest(envelope)
+        }
+        socketListener.onDeferredRequest = { envelope, reply in
+            guard DrivenReplyCoding.requests.contains(envelope.event) else { return false }
+            let detail = envelope.detailData?.mapValues(\.value) ?? [:]
+            Task { @MainActor in
+                let answer = await DrivenSessionService.shared.answer(
+                    event: envelope.event, detail: detail)
+                reply(DrivenReplyCoding.encode(answer))
+            }
+            return true
+        }
+        watchListener.isKnownSession = { [weak self] id in
+            self?.sessionManager?.sessions.contains(where: { $0.id == id }) ?? false
         }
 
         // Debouncer → enrichment
@@ -197,6 +212,11 @@ final class EventCoordinator {
             return
         }
 
+        // Driven sessions' subscribers only; the event system runs without it.
+        if !watchListener.start() {
+            GalaxyLog.events("Watch listener failed to start — session watching disabled")
+        }
+
         // Step 2: Perform startup sync on background queue
         phase = .syncing
         GalaxyLog.events("Phase → syncing")
@@ -213,6 +233,7 @@ final class EventCoordinator {
         heartbeatTimer = nil
         debouncer.cancelAll()
         socketListener.stop()
+        watchListener.stop()
         eventBuffer.removeAll()
         ledgerSessionIdCache.removeAll()
         loggedUnmatchedSessions.removeAll()
@@ -259,6 +280,14 @@ final class EventCoordinator {
                 )
             }
             return
+        }
+
+        // Every event for an app session reaches its subscribers, whatever
+        // the routing below does with it.
+        if let appSessionId = ledgerSessionIdCache[envelope.ledgerSessionId] {
+            watchListener.publish(
+                event: envelope.event, ref: envelope.ref, ts: envelope.ts,
+                sessionID: appSessionId)
         }
 
         // Turn-start event: enter turn immediately

@@ -361,7 +361,27 @@ class Session: Identifiable, ObservableObject {
     /// system first matches this session via session_identifiers array.
     /// Optional because it's not known until the first event or
     /// enrichment call.
-    var ledgerSessionId: Int64?
+    var ledgerSessionId: Int64? {
+        didSet {
+            guard let ledgerSessionId, !ledgerSessionWaiters.isEmpty else { return }
+            let waiters = ledgerSessionWaiters
+            ledgerSessionWaiters.removeAll()
+            waiters.forEach { $0(ledgerSessionId) }
+        }
+    }
+
+    private var ledgerSessionWaiters: [(Int64) -> Void] = []
+
+    /// Runs `action` with the ledger session id as soon as there is one: at
+    /// once if it is known, otherwise when the first event or enrichment
+    /// assigns it. A session closed before that never runs it.
+    func whenLedgerSessionKnown(_ action: @escaping (Int64) -> Void) {
+        if let ledgerSessionId {
+            action(ledgerSessionId)
+        } else {
+            ledgerSessionWaiters.append(action)
+        }
+    }
 
     /// Compact identity tag for diagnostic logging. Re-evaluated on every
     /// access so the ledger session id is picked up as soon as enrichment

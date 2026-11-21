@@ -1,12 +1,5 @@
 import Foundation
 
-/// A refused driven-session operation, worded for the program that asked.
-struct DrivenFailure: Error, Equatable {
-    let message: String
-}
-
-typealias DrivenReply = Result<[String: Any], DrivenFailure>
-
 /// What a driven session's owner can do to it, plus the person's force release.
 ///
 /// Never shows UI: every outcome is a reply, because the caller is a program
@@ -109,10 +102,36 @@ final class DrivenSessionService {
 
     // MARK: - Driving
 
-    func send(id: String, token: String, input: [String: Any]) -> DrivenReply {
-        authorize(id: id, token: token, requireLock: true).flatMap { _, _ in
-            .failure(.init(message: "send is not available in this build"))
+    /// Answers once the input is recorded, with its event id. A session whose
+    /// Claude Code has not reported in yet has no timeline to record into, so
+    /// the input waits for it and the answer says it is pending.
+    func send(id: String, token: String, input: Any?) async -> DrivenReply {
+        let authorized = authorize(id: id, token: token, requireLock: true)
+        guard case .success(let (session, driven)) = authorized else {
+            return authorized.map { _ in [:] }
         }
+        let parsed: DrivenInput
+        switch DrivenInput.parse(input) {
+        case .success(let value): parsed = value
+        case .failure(let failure): return .failure(failure)
+        }
+
+        let delivery = DrivenInputDelivery.shared
+        guard session.ledgerSessionId != nil else {
+            delivery.deliver(parsed, to: session, owner: driven.owner) { _ in }
+            return .success(["id": session.id.uuidString, "event_id": NSNull(), "pending": true])
+        }
+        let eventID: Int64? = await withCheckedContinuation { continuation in
+            delivery.deliver(parsed, to: session, owner: driven.owner) {
+                continuation.resume(returning: $0)
+            }
+        }
+        guard let eventID else {
+            return .failure(.init(message: "the input could not be recorded, so it was not sent"))
+        }
+        return .success([
+            "id": session.id.uuidString, "event_id": NSNumber(value: eventID), "pending": false,
+        ])
     }
 
     /// The same reset the menu's Clear session issues, queued the way
@@ -129,10 +148,12 @@ final class DrivenSessionService {
         }
     }
 
-    func resume(id: String, token: String, stopHolder: Bool) -> DrivenReply {
-        authorize(id: id, token: token, requireLock: true).flatMap { _, _ in
-            .failure(.init(message: "resume is not available in this build"))
+    func resume(id: String, token: String, stopHolder: Bool) async -> DrivenReply {
+        let authorized = authorize(id: id, token: token, requireLock: true)
+        guard case .success(let (session, _)) = authorized else {
+            return authorized.map { _ in [:] }
         }
+        return await manager.resumeDriven(session, stopHolder: stopHolder)
     }
 
     func stop(id: String, token: String) -> DrivenReply {
@@ -172,6 +193,42 @@ final class DrivenSessionService {
                 .map { DrivenSessionReport.closed($0.session) }
         }
         return .success(["sessions": reports])
+    }
+
+    // MARK: - Requests
+
+    /// One `galaxy session` request, answered in the shape the CLI reads.
+    func answer(event: String, detail: [String: Any]) async -> DrivenReply {
+        let id = detail["id"] as? String ?? ""
+        let token = detail["token"] as? String ?? ""
+        switch event {
+        case "session.create":
+            guard let directory = detail["directory"] as? String,
+                let owner = detail["owner"] as? String
+            else {
+                return .failure(.init(message: "create needs a directory and an owner"))
+            }
+            return create(
+                directory: directory,
+                persona: detail["persona"] as? String,
+                name: detail["name"] as? String,
+                owner: owner)
+        case "session.lock": return lock(id: id, token: token)
+        case "session.release": return release(id: id, token: token)
+        case "session.send": return await send(id: id, token: token, input: detail["input"])
+        case "session.clear": return clear(id: id, token: token)
+        case "session.resume":
+            return await resume(
+                id: id, token: token, stopHolder: detail["stop_holder"] as? Bool ?? false)
+        case "session.stop": return stop(id: id, token: token)
+        case "session.status": return status(id: id)
+        case "session.list":
+            return list(
+                owner: detail["owner"] as? String,
+                includeClosed: detail["include_closed"] as? Bool ?? false)
+        default:
+            return .failure(.init(message: "unknown request: \(event)"))
+        }
     }
 
     // MARK: - Private
