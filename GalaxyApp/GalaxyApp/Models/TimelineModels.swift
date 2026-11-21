@@ -132,6 +132,11 @@ let timelineEventRegistry: [String: EventRegistration] = [
     "turn:interrupted":    EventRegistration(resource: .turn, mode: .durationEnd),
     "turn:abandoned":      EventRegistration(resource: .turn, mode: .durationEnd),
     "turn:continued":      EventRegistration(resource: .turn, mode: .point),
+    "session.input:sent":  EventRegistration(resource: .turn, mode: .point),
+    "lock:acquired":       EventRegistration(resource: .session, mode: .point),
+    "lock:released":       EventRegistration(resource: .session, mode: .point),
+    "lock:revoked":        EventRegistration(resource: .session, mode: .point),
+    "session:stopped":     EventRegistration(resource: .session, mode: .point),
     "timeline:marker":
         EventRegistration(
             resource: .session, mode: .marker
@@ -589,6 +594,16 @@ enum TimelineTooltipFormatter {
             return "Turn Abandoned"
         case "turn:continued":
             return "Turn Continued"
+        case "session.input:sent":
+            return "Input Sent"
+        case "lock:acquired":
+            return "Lock Acquired"
+        case "lock:released":
+            return "Lock Released"
+        case "lock:revoked":
+            return "Lock Force-Released"
+        case "session:stopped":
+            return "Session Stopped"
         case "timeline:marker":
             return "Marker"
         default: return eventType
@@ -684,6 +699,12 @@ enum TimelineTooltipFormatter {
             return turnAbandonedLines(dict)
         case "turn:continued":
             return turnContinuedLines(dict)
+        case "session.input:sent":
+            return inputSentLines(dict)
+        case "lock:acquired", "lock:released", "lock:revoked":
+            return lockLines(dict)
+        case "session:stopped":
+            return initiatedByLines(dict)
         case "timeline:marker":
             return markerLines(dict)
         default:
@@ -1152,7 +1173,43 @@ enum TimelineTooltipFormatter {
             lines.append(truncate(msg, to: 80))
         }
         lines.append("⚠ interrupted")
+        lines += initiatedByLines(d)
         return lines
+    }
+
+    private static func inputSentLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        if let owner = d["owner"] as? String {
+            lines.append("from: \(owner)")
+        }
+        if let nc = d["note_count"] as? Int {
+            lines.append("\(nc) note\(nc == 1 ? "" : "s")")
+        } else {
+            lines.append("message")
+        }
+        return lines
+    }
+
+    private static func lockLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        if let owner = d["owner"] as? String {
+            lines.append("owner: \(owner)")
+        }
+        if let by = d["released_by"] as? String {
+            lines.append("released by: \(by == "user" ? "you" : by)")
+        }
+        return lines
+    }
+
+    private static func initiatedByLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        guard let by = d["initiated_by"] as? String else { return [] }
+        return ["by: \(by == "user" ? "you" : by)"]
     }
 
     private static func turnAbandonedLines(

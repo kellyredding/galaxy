@@ -357,6 +357,10 @@ struct SessionRow: View {
                         // so anything after it disappears first on exactly the
                         // rows most likely to have a long name.
                         HStack(spacing: 4) {
+                            DrivenLockIcon(
+                                driven: session.driven,
+                                size: fontSize.caption1 - 1,
+                                color: isSelected ? .white : .secondary)
                             AgentInboxIndicator(
                                 inbox: session.inbox,
                                 size: fontSize.caption1 - 1)

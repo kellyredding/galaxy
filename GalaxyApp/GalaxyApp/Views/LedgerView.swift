@@ -153,6 +153,25 @@ struct LedgerView: View {
         }
     }
 
+    private var nameRow: some View {
+        HStack(alignment: .top) {
+            Text("Name")
+                .chromeFont(size: fontSize.caption2)
+                .foregroundColor(.secondary)
+                .frame(width: 90, alignment: .trailing)
+            HStack(spacing: 5) {
+                DrivenLockIcon(
+                    driven: session.driven, size: fontSize.caption2, color: .primary)
+                Text(session.displayName)
+                    .chromeFontMono(size: fontSize.caption2)
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .textSelection(.enabled)
+            }
+        }
+    }
+
     private var statusText: String {
         if session.hasExited {
             if let code = session.exitCode {
@@ -175,10 +194,11 @@ struct LedgerView: View {
             // Session column
             ledgerSection("Session") {
                 statusRow
-                ledgerRow("Name", value: session.displayName)
+                nameRow
                 ledgerRow("Suggested name", value: session.ledgerSuggestedName ?? "--")
                 ledgerRow("Ref", value: session.sessionRef)
                 ledgerRow("Persona", value: session.personaName ?? "--")
+                LedgerDrivenSessionRows(session: session, fontSize: fontSize)
             }
             .frame(width: columnWidth, alignment: .leading)
 
