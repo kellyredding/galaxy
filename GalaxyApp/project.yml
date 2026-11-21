@@ -169,6 +169,9 @@ targets:
     sources:
       - GalaxyApp/Models/Driven/DrivenState.swift
       - GalaxyApp/Models/Driven/DrivenLaunch.swift
+      - GalaxyApp/Models/Driven/DrivenReply.swift
+      - GalaxyApp/Models/Driven/DrivenInput.swift
+      - GalaxyApp/Models/Driven/WatchLine.swift
       - LockSmoke
     settings:
       base:

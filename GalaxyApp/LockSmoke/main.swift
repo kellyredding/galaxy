@@ -1,8 +1,9 @@
 import Foundation
 
 // Sandboxed smoke check for driven sessions' model: the lock state, the owner's
-// token, and the launch arguments that keep an unattended session from ever
-// stopping for input. Runs as its own process — no app, no Session, no
+// token, the launch arguments that keep an unattended session from ever
+// stopping for input, and the wire shapes `galaxy session` reads (replies,
+// input, watch lines). Runs as its own process — no app, no Session, no
 // SessionManager. Run via `make smoke`. Exits non-zero if any check fails.
 //
 // What this does NOT check: that a lock actually refuses keystrokes (Galactic's
@@ -160,6 +161,158 @@ check("the inline settings install the always-allow permission hook") {
     return entries?.first?["type"] as? String == "command"
         && entries?.first?["command"] as? String
             == "~/.claude/galaxy/bin/galaxy-ledger allow-permission"
+}
+
+// MARK: - Replies
+
+func decodedReply(_ reply: DrivenReply) throws -> [String: Any] {
+    let data = DrivenReplyCoding.encode(reply)
+    guard !data.contains(0x0A) else { throw CocoaError(.coderInvalidValue) }
+    return try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+}
+
+check("a success reply carries ok and its fields on one line") {
+    let object = try decodedReply(.success(["id": "abc", "locked": true]))
+    return object["ok"] as? Bool == true && object["id"] as? String == "abc"
+        && object["locked"] as? Bool == true
+}
+
+check("a refusal carries ok false and the error") {
+    let object = try decodedReply(.failure(.init(message: "token does not match")))
+    return object["ok"] as? Bool == false
+        && object["error"] as? String == "token does not match"
+        && object["holder_pid"] == nil
+}
+
+check("a refused resume names the holder's pid") {
+    let object = try decodedReply(.failure(.init(message: "held by pid 42", holderPid: 42)))
+    return object["holder_pid"] as? Int == 42
+}
+
+check("null fields survive as JSON null") {
+    let object = try decodedReply(.success(["event_id": NSNull(), "pending": true]))
+    return object["event_id"] is NSNull && object["pending"] as? Bool == true
+}
+
+check("a text field holding a newline still encodes on one line") {
+    let object = try decodedReply(.failure(.init(message: "line one\nline two")))
+    return object["error"] as? String == "line one\nline two"
+}
+
+check("only the CLI's requests are claimed, not session notifications") {
+    DrivenReplyCoding.requests.contains("session.send")
+        && !DrivenReplyCoding.requests.contains("session.metrics")
+        && !DrivenReplyCoding.requests.contains("session.idle")
+}
+
+// MARK: - Input
+
+check("a message parses") {
+    DrivenInput.parse(["message": "do the thing"]) == .success(.message("do the thing"))
+}
+
+check("notes parse with and without a summary") {
+    let raw: [String: Any] = ["summary": "overall", "notes": [["quote": "a", "note": "b"]]]
+    return DrivenInput.parse(raw)
+        == .success(.notes(summary: "overall", notes: [.init(quote: "a", note: "b")]))
+        && DrivenInput.parse(["notes": [["quote": "a", "note": "b"]]])
+            == .success(.notes(summary: nil, notes: [.init(quote: "a", note: "b")]))
+}
+
+check("malformed input is refused with where it went wrong") {
+    let cases: [(Any?, String)] = [
+        (nil, "input must be an object"),
+        (["message": ""], "input.message must be a non-empty string"),
+        (["message": "x", "notes": []], "input takes message or notes, not both"),
+        (["notes": []], "input needs a message or a non-empty notes array"),
+        (["notes": [["quote": "a"]]], "input.notes[0] needs a non-empty quote and note"),
+        (["summary": "", "notes": [["quote": "a", "note": "b"]]],
+         "input.summary must be a non-empty string"),
+    ]
+    return cases.allSatisfy { raw, message in
+        DrivenInput.parse(raw) == .failure(.init(message: message))
+    }
+}
+
+check("the recorded detail keeps what galaxy-timeline message prints") {
+    let input = DrivenInput.notes(summary: "s", notes: [.init(quote: "q", note: "n")])
+    let detail = input.detail(composed: "COMPOSED", owner: "Atlas lead")
+    let notes = detail["notes"] as? [[String: String]]
+    return detail["message"] as? String == "COMPOSED"
+        && detail["owner"] as? String == "Atlas lead"
+        && detail["note_count"] as? Int == 1 && detail["summary"] as? String == "s"
+        && notes == [["quote": "q", "note": "n"]]
+}
+
+check("a message's detail carries no note fields") {
+    let detail = DrivenInput.message("hi").detail(composed: "hi", owner: "o")
+    return detail["note_count"] == nil && detail["notes"] == nil && detail["summary"] == nil
+}
+
+check("pointers name the sender and the read command") {
+    let read = "galaxy-timeline message 7"
+    return DrivenInput.message("x").pointer(owner: "Atlas lead", readCommand: read)
+        == "Atlas lead sent you a message. Read it with `galaxy-timeline message 7`."
+        && DrivenInput.notes(summary: nil, notes: [.init(quote: "q", note: "n")])
+            .pointer(owner: "Atlas lead", readCommand: read)
+            == "Atlas lead sent you 1 note. Read it with `galaxy-timeline message 7`, "
+                + "then quote the note before you respond to it."
+        && DrivenInput.notes(
+            summary: nil, notes: [.init(quote: "q", note: "n"), .init(quote: "r", note: "m")]
+        ).pointer(owner: "Atlas lead", readCommand: read)
+            == "Atlas lead sent you 2 notes. Read them with `galaxy-timeline message 7`, "
+                + "then quote each note before you respond to it."
+}
+
+// MARK: - Watch lines
+
+func watchLine(_ event: String, ref: String?) throws -> [String: Any] {
+    let data = WatchLine.encode(event: event, ref: ref, ts: 1_800_000_000, sessionID: "abc-id")
+    guard !data.contains(0x0A) else { throw CocoaError(.coderInvalidValue) }
+    return try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+}
+
+check("a timeline event's line carries its row id and an unprefixed type") {
+    let line = try watchLine("timeline.turn:completed", ref: "171809")
+    return line["v"] as? Int == 1 && line["event_id"] as? Int == 171809
+        && line["type"] as? String == "turn:completed"
+        && line["session_id"] as? String == "abc-id"
+        && line["occurred_at"] as? String == "2027-01-15T08:00:00Z"
+}
+
+check("anything else has a null event id and keeps its name") {
+    let line = try watchLine("session.idle", ref: nil)
+    return line["event_id"] is NSNull && line["type"] as? String == "session.idle"
+}
+
+check("a non-timeline ref is not mistaken for a row id") {
+    let line = try watchLine("session:ready", ref: "startup")
+    return line["event_id"] is NSNull && line["type"] as? String == "session:ready"
+}
+
+check("a subscribe line gives back the id exactly as written") {
+    let id = "9b2d8c4e-1111-4a2b-8c3d-000000000001"
+    return WatchSubscribeRequest.sessionID(
+        from: Data(#"{"v":1,"subscribe":"\#(id)"}"#.utf8)) == id
+}
+
+check("anything that is not a subscribe line is refused") {
+    [#"{"v":1}"#, #"{"subscribe":"not-a-uuid"}"#, "nonsense"].allSatisfy {
+        WatchSubscribeRequest.sessionID(from: Data($0.utf8)) == nil
+    }
+}
+
+check("a subscriber may fall behind by the capacity and no more") {
+    var backpressure = WatchBackpressure()
+    let kept = (0..<WatchBackpressure.capacity).allSatisfy { _ in backpressure.sent() }
+    return kept && !backpressure.sent()
+}
+
+check("delivered lines make room again") {
+    var backpressure = WatchBackpressure()
+    for _ in 0..<WatchBackpressure.capacity { _ = backpressure.sent() }
+    backpressure.delivered()
+    return backpressure.sent()
 }
 
 // MARK: - Result
