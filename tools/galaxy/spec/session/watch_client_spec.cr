@@ -357,4 +357,84 @@ describe Galaxy::WatchClient do
     log.to_s.lines.size.should eq(1)
     log.to_s.should contain("not reachable")
   end
+
+  describe "a dismissed session" do
+    it "prints the live dismissal and ends without reconnecting" do
+      server = FakeWatchServer.new([
+        ->(c : UNIXSocket) {
+          c.puts ack
+          c.puts line(8, "turn:completed")
+          c.puts line(nil, "session:dismissed")
+          nil
+        },
+        ->(c : UNIXSocket) { c.puts ack; c.puts line(99, "turn:completed"); nil },
+      ])
+      output = IO::Memory.new
+
+      outcome = client_for(server, output, within: 2.seconds).run(7_i64)
+
+      outcome.should eq(Galaxy::WatchClient::Outcome::Dismissed)
+      lines_of(output).map(&.["type"].as_s).should eq(["turn:completed", "session:dismissed"])
+      server.subscriptions.size.should eq(1)
+    ensure
+      server.try(&.close)
+    end
+
+    it "ends even when the filter hides the dismissal" do
+      server = FakeWatchServer.new([
+        ->(c : UNIXSocket) { c.puts ack; c.puts line(nil, "session:dismissed"); nil },
+      ])
+      output = IO::Memory.new
+
+      outcome = client_for(server, output, filter: "turn:*", stop_on_first: true, within: 2.seconds).run(7_i64)
+
+      outcome.should eq(Galaxy::WatchClient::Outcome::Dismissed)
+      output.to_s.should eq("")
+    ensure
+      server.try(&.close)
+    end
+
+    it "matches the dismissal when wait asked for it" do
+      server = FakeWatchServer.new([
+        ->(c : UNIXSocket) { c.puts ack; c.puts line(nil, "session:dismissed"); nil },
+      ])
+      output = IO::Memory.new
+
+      outcome = client_for(server, output, filter: "session:dismissed", stop_on_first: true, within: 2.seconds).run(7_i64)
+
+      outcome.should eq(Galaxy::WatchClient::Outcome::Matched)
+      lines_of(output).first["type"].as_s.should eq("session:dismissed")
+    ensure
+      server.try(&.close)
+    end
+
+    it "keeps going past a dismissal it only read back from the timeline" do
+      server = FakeWatchServer.new([
+        ->(c : UNIXSocket) { c.puts ack; c.puts line(12, "turn:completed"); nil },
+      ])
+      backfill = ->(_c : Int64) { [watch_line(9, "session:dismissed"), watch_line(10, "session:restored")].as(WatchLines) }
+      output = IO::Memory.new
+
+      outcome = client_for(server, output, backfill: backfill, within: 300.milliseconds).run(8_i64)
+
+      outcome.should eq(Galaxy::WatchClient::Outcome::TimedOut)
+      lines_of(output).map(&.["event_id"].as_i64).should eq([9, 10, 12])
+    ensure
+      server.try(&.close)
+    end
+
+    it "ends when Galaxy refuses the subscription because it was dismissed" do
+      server = FakeWatchServer.new([
+        ->(c : UNIXSocket) { c.puts %({"v":1,"error":"session dismissed abc"}); nil },
+      ])
+      log = IO::Memory.new
+
+      outcome = client_for(server, IO::Memory.new, within: 2.seconds, log: log).run(7_i64)
+
+      outcome.should eq(Galaxy::WatchClient::Outcome::Dismissed)
+      log.to_s.should contain("session dismissed abc")
+    ensure
+      server.try(&.close)
+    end
+  end
 end

@@ -137,6 +137,8 @@ let timelineEventRegistry: [String: EventRegistration] = [
     "lock:released":       EventRegistration(resource: .session, mode: .point),
     "lock:revoked":        EventRegistration(resource: .session, mode: .point),
     "session:stopped":     EventRegistration(resource: .session, mode: .point),
+    "session:dismissed":   EventRegistration(resource: .session, mode: .point),
+    "session:restored":    EventRegistration(resource: .session, mode: .point),
     "timeline:marker":
         EventRegistration(
             resource: .session, mode: .marker
@@ -604,6 +606,10 @@ enum TimelineTooltipFormatter {
             return "Lock Force-Released"
         case "session:stopped":
             return "Session Stopped"
+        case "session:dismissed":
+            return "Session Dismissed"
+        case "session:restored":
+            return "Session Restored"
         case "timeline:marker":
             return "Marker"
         default: return eventType
@@ -703,7 +709,7 @@ enum TimelineTooltipFormatter {
             return inputSentLines(dict)
         case "lock:acquired", "lock:released", "lock:revoked":
             return lockLines(dict)
-        case "session:stopped":
+        case "session:stopped", "session:dismissed", "session:restored":
             return initiatedByLines(dict)
         case "timeline:marker":
             return markerLines(dict)

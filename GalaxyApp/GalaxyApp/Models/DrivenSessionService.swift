@@ -4,9 +4,9 @@ import Foundation
 ///
 /// Never shows UI: every outcome is a reply, because the caller is a program
 /// with nobody at Galaxy's window to answer a dialog. Every operation that
-/// writes to a session requires the owner's token, and all but `lock` and
-/// `release` also require the lock to be held, so an owner can never act on a
-/// session the person has taken over.
+/// writes to a session requires the owner's token, and all but `lock`,
+/// `release` and `restore` also require the lock to be held, so an owner can
+/// never act on a session the person has taken over.
 @MainActor
 final class DrivenSessionService {
     static let shared = DrivenSessionService()
@@ -226,17 +226,63 @@ final class DrivenSessionService {
         }
     }
 
+    // MARK: - Dismissing
+
+    /// What the menu's Dismiss session does, for a stopped session. Never
+    /// stops one: a driver says so with `stop` first. Already dismissed
+    /// answers the same, so a retry is harmless.
+    func dismiss(id: String, token: String) -> DrivenReply {
+        if openSession(id) == nil, let dismissed = dismissedSession(id) {
+            return authorizeDismissed(dismissed, token: token).map { _ in
+                ["id": dismissed.session.id.uuidString, "dismissed": true]
+            }
+        }
+        return authorize(id: id, token: token, requireLock: true).flatMap { session, _ in
+            guard !(session.isRunning && !session.hasExited) else {
+                return .failure(.init(message: "session is running; stop it first"))
+            }
+            manager.closeSession(sessionId: session.id, initiatedBy: "driver")
+            return .success(["id": session.id.uuidString, "dismissed": true])
+        }
+    }
+
+    /// What the Restore Session dialog does, without taking focus. The
+    /// session comes back stopped and still locked; already open answers the
+    /// same.
+    func restore(id: String, token: String) -> DrivenReply {
+        if openSession(id) != nil {
+            return authorize(id: id, token: token, requireLock: false).map { session, _ in
+                ["id": session.id.uuidString, "dismissed": false]
+            }
+        }
+        guard let dismissed = dismissedSession(id) else {
+            return .failure(.init(message: "no such session: \(id)"))
+        }
+        return authorizeDismissed(dismissed, token: token).map { _ in
+            manager.restoreSession(closedSession: dismissed, activate: false, initiatedBy: "driver")
+            return ["id": dismissed.session.id.uuidString, "dismissed": false]
+        }
+    }
+
     // MARK: - Reading
 
     func status(id: String) -> DrivenReply {
-        guard let session = openSession(id) else {
-            return .failure(.init(message: "no such session: \(id)"))
+        if let session = openSession(id) {
+            guard session.isDriven else {
+                return .failure(.init(message: "session is not drivable"))
+            }
+            return .success(["session": DrivenSessionReport.live(session)])
         }
-        guard session.isDriven else { return .failure(.init(message: "session is not drivable")) }
-        return .success(["session": DrivenSessionReport.live(session)])
+        if let dismissed = dismissedSession(id) {
+            guard dismissed.session.driven != nil else {
+                return .failure(.init(message: "session is not drivable"))
+            }
+            return .success(["session": DrivenSessionReport.dismissed(dismissed.session)])
+        }
+        return .failure(.init(message: "no such session: \(id)"))
     }
 
-    func list(owner: String?, includeClosed: Bool) -> DrivenReply {
+    func list(owner: String?, includeDismissed: Bool) -> DrivenReply {
         var reports = manager.sessions
             .filter { session in
                 guard let driven = session.driven else { return false }
@@ -244,13 +290,13 @@ final class DrivenSessionService {
             }
             .map(DrivenSessionReport.live)
 
-        if includeClosed {
+        if includeDismissed {
             reports += manager.closedSessions
                 .filter { closed in
                     guard let driven = closed.session.driven else { return false }
                     return owner.map { $0 == driven.owner } ?? true
                 }
-                .map { DrivenSessionReport.closed($0.session) }
+                .map { DrivenSessionReport.dismissed($0.session) }
         }
         return .success(["sessions": reports])
     }
@@ -281,11 +327,13 @@ final class DrivenSessionService {
             return await resume(
                 id: id, token: token, stopHolder: detail["stop_holder"] as? Bool ?? false)
         case "session.stop": return stop(id: id, token: token)
+        case "session.dismiss": return dismiss(id: id, token: token)
+        case "session.restore": return restore(id: id, token: token)
         case "session.status": return status(id: id)
         case "session.list":
             return list(
                 owner: detail["owner"] as? String,
-                includeClosed: detail["include_closed"] as? Bool ?? false)
+                includeDismissed: detail["include_dismissed"] as? Bool ?? false)
         default:
             return .failure(.init(message: "unknown request: \(event)"))
         }
@@ -297,6 +345,24 @@ final class DrivenSessionService {
         manager.sessions.first {
             $0.id.uuidString.caseInsensitiveCompare(id) == .orderedSame
         }
+    }
+
+    private func dismissedSession(_ id: String) -> PersistedClosedSession? {
+        manager.closedSessions.first {
+            $0.session.id.uuidString.caseInsensitiveCompare(id) == .orderedSame
+        }
+    }
+
+    private func authorizeDismissed(
+        _ dismissed: PersistedClosedSession, token: String
+    ) -> Result<DrivenState, DrivenFailure> {
+        guard let driven = dismissed.session.driven else {
+            return .failure(.init(message: "session is not drivable"))
+        }
+        guard driven.accepts(token: token) else {
+            return .failure(.init(message: "token does not match"))
+        }
+        return .success(driven)
     }
 
     private func authorize(
@@ -356,11 +422,11 @@ enum DrivenSessionReport {
         report["in_turn"] = session.isInTurn
         report["running_agents"] = session.runningAgentCount
         report["inbox_depth"] = session.inbox.entries.count
-        report["closed"] = false
+        report["dismissed"] = false
         return report
     }
 
-    static func closed(_ state: PersistedSession) -> [String: Any] {
+    static func dismissed(_ state: PersistedSession) -> [String: Any] {
         let name = (state.givenName?.isEmpty == false ? state.givenName : nil)
             ?? state.ledgerSuggestedName ?? state.sessionRef
         var report = common(
@@ -377,7 +443,7 @@ enum DrivenSessionReport {
         report["in_turn"] = false
         report["running_agents"] = 0
         report["inbox_depth"] = state.inboxDepth ?? 0
-        report["closed"] = true
+        report["dismissed"] = true
         return report
     }
 

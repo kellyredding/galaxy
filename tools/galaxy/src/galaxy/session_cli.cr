@@ -30,16 +30,25 @@ module Galaxy
   #       Answered once decided; the resume follows, reported as
   #       session:resumed or session.resume:failed {error}.
   #   session.stop    {id, token}               -> {ok, id}
+  #   session.dismiss {id, token}               -> {ok, id, dismissed:true}
+  #       Needs the lock and a stopped session; already dismissed answers
+  #       the same. Recorded as session:dismissed {initiated_by}; watchers
+  #       get that line, then Galaxy hangs up.
+  #   session.restore {id, token}               -> {ok, id, dismissed:false}
+  #       Back in the sidebar, stopped, still locked, without taking focus;
+  #       already open answers the same. Recorded as session:restored.
   #   session.status  {id}                      -> {ok, session}
-  #   session.list    {owner?, include_closed}  -> {ok, sessions:[session]}
+  #   session.list    {owner?, include_dismissed} -> {ok, sessions:[session]}
   #   session: {id, name, owner, locked, last_locked_at, last_released_at,
   #     last_released_by ("owner"|"user"|null), running, in_turn,
   #     running_agents, inbox_depth, context_percentage, directory, persona,
-  #     ledger_session_id, claude_session_id, closed}; times ISO 8601 UTC.
+  #     ledger_session_id, claude_session_id, dismissed}; times ISO 8601 UTC.
+  #   status answers for a dismissed session too, with dismissed:true.
   #
   # Watching: galaxy-watch.sock, one connection per subscriber.
   #   client -> {"v":1,"subscribe":"<galaxy session id>"}   (then only reads)
   #   server -> {"v":1,"subscribed":"<id>"}  or  {"v":1,"error":"…"}, close
+  #     ("session dismissed <id>" when the session has been dismissed)
   #   server -> one WatchLine per event for that session:
   #   {"v":1,"event_id":<row id|null>,"type":"turn:completed",
   #    "session_id":"<id>","occurred_at":"2026-11-20T19:39:20Z"}
@@ -52,7 +61,8 @@ module Galaxy
     class Failure < Exception
     end
 
-    EXIT_TIMEOUT = 2
+    EXIT_TIMEOUT   = 2
+    EXIT_DISMISSED = 3
 
     def self.run(args : Array(String))
       sub = args.first?
@@ -64,6 +74,8 @@ module Galaxy
       when "release"                   then cmd_token_op("release", rest)
       when "clear"                     then cmd_token_op("clear", rest)
       when "stop"                      then cmd_token_op("stop", rest)
+      when "dismiss"                   then cmd_token_op("dismiss", rest)
+      when "restore"                   then cmd_token_op("restore", rest)
       when "resume"                    then cmd_resume(rest)
       when "send"                      then cmd_send(rest)
       when "status"                    then cmd_status(rest)
@@ -149,12 +161,12 @@ module Galaxy
 
     private def self.cmd_list(args : Array(String))
       owner : String? = nil
-      include_closed = false
+      include_dismissed = false
       parse(args, "list") do |p|
         p.on("--owner=NAME", "Only sessions this owner created") { |v| owner = v }
-        p.on("--include-closed", "Include closed sessions") { include_closed = true }
+        p.on("--include-dismissed", "Include dismissed sessions") { include_dismissed = true }
       end
-      detail = {"include_closed" => JSON::Any.new(include_closed)}
+      detail = {"include_dismissed" => JSON::Any.new(include_dismissed)}
       owner.try { |v| detail["owner"] = JSON::Any.new(v) }
       reply = request("session.list", detail)
       puts({"sessions" => reply["sessions"]? || JSON::Any.new([] of JSON::Any)}.to_json)
@@ -237,6 +249,7 @@ module Galaxy
       in WatchClient::Outcome::OutputClosed then exit(0)
       in WatchClient::Outcome::TimedOut     then exit(EXIT_TIMEOUT)
       in WatchClient::Outcome::Failed       then exit(1)
+      in WatchClient::Outcome::Dismissed    then exit(stop_on_first ? EXIT_DISMISSED : 0)
       end
     end
 
@@ -351,8 +364,10 @@ module Galaxy
         galaxy session clear   <id> --token T
         galaxy session resume  <id> --token T [--stop-holder]
         galaxy session stop    <id> --token T
+        galaxy session dismiss <id> --token T
+        galaxy session restore <id> --token T
         galaxy session status  <id>
-        galaxy session list    [--owner NAME] [--include-closed]
+        galaxy session list    [--owner NAME] [--include-dismissed]
         galaxy session read    <id> [--after EVENT_ID] [--limit N]
         galaxy session wait    <id> [--after EVENT_ID] [--events TYPES] [--timeout SECONDS]
         galaxy session watch   <id> [--after EVENT_ID] [--events TYPES]
@@ -361,9 +376,10 @@ module Galaxy
       start, launches in vibe mode with no permission prompts, question UI or
       plan mode, and keeps that through /clear, handoff and resume. Only the
       owner, holding the token `new` printed, can lock, release, send, clear,
-      resume or stop it, and send, clear, resume and stop also need the lock.
-      --dir must be a folder Claude Code already trusts: nobody can answer
-      the trust dialog in a locked session, so `new` refuses any other.
+      resume, stop, dismiss or restore it, and send, clear, resume, stop and
+      dismiss also need the lock. --dir must be a folder Claude Code already
+      trusts: nobody can answer the trust dialog in a locked session, so
+      `new` refuses any other.
       Kelly can force the lock open from Galaxy's Ledger tab; lock again with
       the same token afterwards. --token may come from GALAXY_SESSION_TOKEN.
 
@@ -388,9 +404,20 @@ module Galaxy
         {"accepted": true}. The resume itself follows, reported as
         session:resumed, or session.resume:failed with {"error"}.
 
+      DISMISS AND RESTORE (the menu's Dismiss session / Restore Session...):
+        dismiss takes a stopped session out of the sidebar into the dismissed
+        archive, keeping its owner, lock and token; stop it first. restore
+        brings it back, stopped and still locked, without taking focus; then
+        resume it. Both answer {"id","dismissed"} and are safe to repeat.
+        A dismissal, yours or Kelly's from the menu, is reported as
+        session:dismissed with {"initiated_by"}: watch prints it and exits 0,
+        wait exits #{EXIT_DISMISSED} unless it was waiting for that event.
+        status and list --include-dismissed still report a dismissed session.
+
       EVENTS:
         watch prints one JSON line per event and reconnects on its own; wait
-        exits 0 after the first match, #{EXIT_TIMEOUT} on --timeout. Each line:
+        exits 0 after the first match, #{EXIT_TIMEOUT} on --timeout, #{EXIT_DISMISSED} if the
+        session is dismissed first. Each line:
           {"v":1,"event_id":171809,"type":"turn:completed",
            "session_id":"<id>","occurred_at":"2026-11-20T19:39:20Z"}
         event_id is null for events with no timeline row; those Galaxy raises

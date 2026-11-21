@@ -22,8 +22,8 @@ enum DrivenReplyCoding {
     /// notifications that expect no reply.
     static let requests: Set<String> = [
         "session.create", "session.lock", "session.release", "session.send",
-        "session.clear", "session.resume", "session.stop", "session.status",
-        "session.list",
+        "session.clear", "session.resume", "session.stop", "session.dismiss",
+        "session.restore", "session.status", "session.list",
     ]
 
     static func encode(_ reply: DrivenReply) -> Data {

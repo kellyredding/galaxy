@@ -1652,7 +1652,9 @@ class SessionManager: ObservableObject {
         updateActiveSessionCanResume()
     }
 
-    func closeSession(sessionId: UUID) {
+    /// `initiatedBy` is `"user"` from the UI and `"driver"` from the session's
+    /// owner, as on `stopSession`.
+    func closeSession(sessionId: UUID, initiatedBy: String = "user") {
         // Filter-list index for "next session to select" math
         // (skips markers, so closing a session next to a marker
         // hops to the next/prev session, not the marker).
@@ -1669,6 +1671,22 @@ class SessionManager: ObservableObject {
         }) else { return }
 
         NSLog("SessionManager: closeSession called for session %@", sessionId.uuidString)
+
+        // Straight to the watchers rather than back through the timeline: the
+        // recorded event returns after the session has left the sidebar, when
+        // nothing maps it to a session any more.
+        if sessionList[sessionIndex].isDriven {
+            if let ledgerSessionId = sessionList[sessionIndex].ledgerSessionId {
+                TimelineService.record(
+                    ledgerSessionId: ledgerSessionId,
+                    eventType: "session:dismissed",
+                    source: "galaxy-app/driven",
+                    detailData: ["initiated_by": initiatedBy]
+                )
+            }
+            DrivenWatch.finish(
+                "session:dismissed", sessionID: sessionId, detail: ["initiated_by": initiatedBy])
+        }
 
         // Archive the session before removal
         let archived = PersistedClosedSession(
@@ -1771,24 +1789,41 @@ class SessionManager: ObservableObject {
 
     /// Restore a previously closed session to the sidebar.
     /// Creates a new stopped Session from the archived state,
-    /// appends to the bottom of the sidebar, and makes it active.
-    func restoreSession(closedSession: PersistedClosedSession) {
+    /// appends to the bottom of the sidebar, and makes it active unless
+    /// `activate` is false, as for a driver restoring its own session.
+    func restoreSession(
+        closedSession: PersistedClosedSession,
+        activate: Bool = true,
+        initiatedBy: String = "user"
+    ) {
         // Remove from closed archive
         closedSessions.removeAll { $0.session.id == closedSession.session.id }
 
         // Create stopped session from persisted state
         let session = Session(restoring: closedSession.session)
         sidebarItems.append(.session(session))
-        if session.isDriven { Session.manualSendRefusalChanged() }
+        if session.isDriven {
+            Session.manualSendRefusalChanged()
+            session.whenLedgerSessionKnown { ledgerSessionId in
+                TimelineService.record(
+                    ledgerSessionId: ledgerSessionId,
+                    eventType: "session:restored",
+                    source: "galaxy-app/driven",
+                    detailData: ["initiated_by": initiatedBy]
+                )
+            }
+        }
         // Observe backend lifecycle so callbacks wire
         // automatically when the user later resumes this session.
         observeBackendLifecycle(for: session)
 
-        // Save outgoing session's view state, then activate restored session
-        saveViewState()
-        activeSessionId = session.id
-        activeTab = .terminal
-        activeLedgerSubTab = .identifiers
+        if activate {
+            // Save outgoing session's view state, then activate restored session
+            saveViewState()
+            activeSessionId = session.id
+            activeTab = .terminal
+            activeLedgerSubTab = .identifiers
+        }
 
         SessionPersistence.shared.markDirty()
 

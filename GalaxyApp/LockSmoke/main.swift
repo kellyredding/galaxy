@@ -201,6 +201,8 @@ check("a text field holding a newline still encodes on one line") {
 
 check("only the CLI's requests are claimed, not session notifications") {
     DrivenReplyCoding.requests.contains("session.send")
+        && DrivenReplyCoding.requests.contains("session.dismiss")
+        && DrivenReplyCoding.requests.contains("session.restore")
         && !DrivenReplyCoding.requests.contains("session.metrics")
         && !DrivenReplyCoding.requests.contains("session.idle")
 }

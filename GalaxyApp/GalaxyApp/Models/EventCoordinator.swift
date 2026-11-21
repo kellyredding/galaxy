@@ -177,9 +177,17 @@ final class EventCoordinator {
         watchListener.isKnownSession = { [weak self] id in
             self?.sessionManager?.sessions.contains(where: { $0.id == id }) ?? false
         }
+        watchListener.isDismissedSession = { [weak self] id in
+            self?.sessionManager?.closedSessions.contains(where: { $0.session.id == id }) ?? false
+        }
         DrivenWatch.publisher = { [weak self] event, sessionID, detail in
             self?.watchListener.publish(
                 event: event, ref: nil, ts: Int64(Date().timeIntervalSince1970),
+                sessionID: sessionID, detail: detail)
+        }
+        DrivenWatch.finisher = { [weak self] event, sessionID, detail in
+            self?.watchListener.finish(
+                event: event, ts: Int64(Date().timeIntervalSince1970),
                 sessionID: sessionID, detail: detail)
         }
 

@@ -12,6 +12,13 @@ enum DrivenWatch {
     static func publish(_ event: String, sessionID: UUID, detail: [String: String]) {
         publisher?(event, sessionID, detail)
     }
+
+    /// Set alongside `publisher`: sends a session's last line and hangs up.
+    static var finisher: ((_ event: String, _ sessionID: UUID, _ detail: [String: String]) -> Void)?
+
+    static func finish(_ event: String, sessionID: UUID, detail: [String: String]) {
+        finisher?(event, sessionID, detail)
+    }
 }
 
 /// Streams a session's events to whoever subscribes, on galaxy-watch.sock.
@@ -55,6 +62,10 @@ final class WatchSocketListener {
     /// Whether a subscribe request names a session this app has open. Asked
     /// on the main queue.
     var isKnownSession: ((UUID) -> Bool)?
+
+    /// Whether it names one the person or its owner dismissed, so the
+    /// refusal can say so and a watcher stops instead of retrying.
+    var isDismissedSession: ((UUID) -> Bool)?
 
     init(socketPath: String = WatchSocketListener.defaultSocketPath) {
         self.socketPath = socketPath
@@ -148,6 +159,25 @@ final class WatchSocketListener {
         }
     }
 
+    /// Sends a session's last event to its subscribers, then hangs up on
+    /// them: nothing more will come for a session that left the sidebar.
+    func finish(event: String, ts: Int64, sessionID: UUID, detail: [String: String]) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            for subscriber in self.subscribers.values where subscriber.sessionID == sessionID {
+                guard let requestedID = subscriber.requestedID else { continue }
+                subscriber.sessionID = nil
+                let connection = subscriber.connection
+                connection.send(
+                    content: self.framed(
+                        WatchLine.encode(
+                            event: event, ref: nil, ts: ts, sessionID: requestedID,
+                            detail: detail)),
+                    completion: .contentProcessed { _ in connection.cancel() })
+            }
+        }
+    }
+
     // MARK: - Connections
 
     private func accept(_ connection: NWConnection) {
@@ -218,10 +248,15 @@ final class WatchSocketListener {
 
         DispatchQueue.main.async { [weak self, weak subscriber] in
             let known = self?.isKnownSession?(sessionID) ?? false
+            let dismissed = !known && (self?.isDismissedSession?(sessionID) ?? false)
             self?.queue.async {
                 guard let self, let subscriber else { return }
                 guard known else {
-                    self.refuse(subscriber, "no open session \(requestedID)")
+                    self.refuse(
+                        subscriber,
+                        dismissed
+                            ? "session dismissed \(requestedID)"
+                            : "no open session \(requestedID)")
                     return
                 }
                 subscriber.sessionID = sessionID

@@ -17,7 +17,17 @@ module Galaxy
       TimedOut     # `wait --timeout` ran out
       Failed       # Galaxy refused the subscription
       OutputClosed # whoever read the output went away
+      Dismissed    # the session left the sidebar; nothing more will come
     end
+
+    # The live line Galaxy sends as it dismisses a session, just before it
+    # hangs up. Only a live one ends the run: a session dismissed and later
+    # restored keeps the old row in its timeline, and a backfill reads it.
+    DISMISSED_TYPE = "session:dismissed"
+
+    # How Galaxy refuses a subscription to a session already dismissed, so a
+    # watcher that was away for the dismissal ends rather than retrying.
+    DISMISSED_REFUSAL = "session dismissed"
 
     # Rows per backfill call; a full page means there may be more.
     BACKFILL_PAGE = 5000
@@ -66,7 +76,11 @@ module Galaxy
 
           # Closed before any reply: Galaxy quitting mid-handshake, so retry.
           ack = read_line(sock) || raise IO::EOFError.new("closed before subscribing")
-          return Outcome::Failed unless subscribed?(ack)
+          case subscription(ack)
+          in Subscription::Refused   then return Outcome::Failed
+          in Subscription::Dismissed then return Outcome::Dismissed
+          in Subscription::Accepted  then nil
+          end
           backoff = @initial_backoff
           @waiting_logged = false
 
@@ -79,6 +93,7 @@ module Galaxy
             next unless line = WatchLine.parse?(raw)
             next if covered?(line)
             return Outcome::Matched if emit(line)
+            return Outcome::Dismissed if line.type == DISMISSED_TYPE
           end
         rescue OutputClosed
           return Outcome::OutputClosed
@@ -160,18 +175,28 @@ module Galaxy
       @stop_on_first
     end
 
-    private def subscribed?(ack : String) : Bool
+    private enum Subscription
+      Accepted
+      Refused
+      Dismissed
+    end
+
+    private def subscription(ack : String) : Subscription
       reply = JSON.parse(ack)
       if error = reply["error"]?.try(&.as_s?)
+        if error.starts_with?(DISMISSED_REFUSAL)
+          @log.puts "galaxy session watch: #{error}"
+          return Subscription::Dismissed
+        end
         @log.puts "Error: #{error}"
-        return false
+        return Subscription::Refused
       end
-      return true if reply["subscribed"]?.try(&.as_s?) == @session_id
+      return Subscription::Accepted if reply["subscribed"]?.try(&.as_s?) == @session_id
       @log.puts "Error: unexpected reply from galaxy-watch.sock: #{ack}"
-      false
+      Subscription::Refused
     rescue JSON::ParseException
       @log.puts "Error: unexpected reply from galaxy-watch.sock: #{ack}"
-      false
+      Subscription::Refused
     end
 
     private def read_line(sock : UNIXSocket) : String?

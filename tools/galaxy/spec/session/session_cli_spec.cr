@@ -234,15 +234,57 @@ describe "galaxy session" do
       fake.try(&.close)
     end
 
-    it "lists with the owner filter" do
-      fake = FakeGalaxy.new { |_e| %({"ok":true,"sessions":[{"id":"abc"}]}) }
-      code, stdout, _ = galaxy(["session", "list", "--owner", "Atlas lead", "--include-closed"], {"GALAXY_SOCKET_PATH" => fake.path})
+    it "lists with the owner filter, dismissed sessions included on request" do
+      fake = FakeGalaxy.new { |_e| %({"ok":true,"sessions":[{"id":"abc","dismissed":true}]}) }
+      code, stdout, _ = galaxy(["session", "list", "--owner", "Atlas lead", "--include-dismissed"], {"GALAXY_SOCKET_PATH" => fake.path})
+      galaxy(["session", "list"], {"GALAXY_SOCKET_PATH" => fake.path})
       code.should eq(0)
-      JSON.parse(stdout)["sessions"].as_a.size.should eq(1)
+      JSON.parse(stdout)["sessions"][0]["dismissed"].as_bool.should be_true
       detail_of(fake)["owner"].as_s.should eq("Atlas lead")
-      detail_of(fake)["include_closed"].as_bool.should be_true
+      detail_of(fake)["include_dismissed"].as_bool.should be_true
+      detail_of(fake, 1)["include_dismissed"].as_bool.should be_false
     ensure
       fake.try(&.close)
+    end
+
+    it "no longer accepts --include-closed" do
+      code, _, err = galaxy(["session", "list", "--include-closed"])
+      code.should eq(1)
+      err.should contain("unknown flag '--include-closed'")
+    end
+  end
+
+  describe "dismiss and restore" do
+    it "sends the id and token and prints whether the session is dismissed" do
+      fake = FakeGalaxy.new do |e|
+        %({"ok":true,"id":"abc","dismissed":#{e["event"].as_s == "session.dismiss"}})
+      end
+      code, stdout, _ = galaxy(["session", "dismiss", "abc", "--token", "t"], {"GALAXY_SOCKET_PATH" => fake.path})
+      code.should eq(0)
+      JSON.parse(stdout).should eq(JSON.parse(%({"id":"abc","dismissed":true})))
+
+      code, stdout, _ = galaxy(["session", "restore", "abc", "--token", "t"], {"GALAXY_SOCKET_PATH" => fake.path})
+      code.should eq(0)
+      JSON.parse(stdout).should eq(JSON.parse(%({"id":"abc","dismissed":false})))
+
+      fake.requests.map(&.["event"].as_s).should eq(["session.dismiss", "session.restore"])
+      detail_of(fake, 0)["token"].as_s.should eq("t")
+      detail_of(fake, 1)["id"].as_s.should eq("abc")
+    ensure
+      fake.try(&.close)
+    end
+
+    it "reports a refusal to dismiss a running session" do
+      fake = FakeGalaxy.new { |_e| %({"ok":false,"error":"session is running; stop it first"}) }
+      code, _, err = galaxy(["session", "dismiss", "abc", "--token", "t"], {"GALAXY_SOCKET_PATH" => fake.path})
+      code.should eq(1)
+      err.should eq("Error: session is running; stop it first\n")
+    ensure
+      fake.try(&.close)
+    end
+
+    it "needs a token" do
+      galaxy(["session", "restore", "abc"])[2].should contain("restore needs --token")
     end
   end
 
@@ -305,6 +347,26 @@ describe "galaxy session" do
       code, _, _ = galaxy(["session", "wait", "abc", "--after", "0", "--timeout", "0.3"],
         {"GALAXY_WATCH_SOCKET_PATH" => watch, "GALAXY_SOCKET_PATH" => "/tmp/gxr-none-#{Random.rand(100000)}.sock"})
       code.should eq(2)
+    ensure
+      server.try(&.close)
+    end
+
+    it "exits 3 when the session is dismissed before its event" do
+      watch = "/tmp/gxw-cli-#{Random.rand(1_000_000)}.sock"
+      server = UNIXServer.new(watch)
+      spawn do
+        if client = server.accept?
+          client.gets
+          client.puts %({"v":1,"subscribed":"abc"})
+          client.puts %({"v":1,"event_id":null,"type":"session:dismissed","session_id":"abc","occurred_at":"x","detail":{"initiated_by":"user"}})
+          client.close rescue nil
+        end
+      end
+
+      code, stdout, _ = galaxy(["session", "wait", "abc", "--after", "0", "--events", "turn:*", "--timeout", "3"],
+        {"GALAXY_WATCH_SOCKET_PATH" => watch, "GALAXY_SOCKET_PATH" => "/tmp/gxr-none-#{Random.rand(100000)}.sock"})
+      code.should eq(3)
+      stdout.should eq("")
     ensure
       server.try(&.close)
     end
