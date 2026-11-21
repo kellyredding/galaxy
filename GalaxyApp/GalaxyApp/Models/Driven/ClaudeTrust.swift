@@ -35,11 +35,23 @@ enum ClaudeTrust {
         return .untrusted
     }
 
-    /// `/tmp` and `/private/tmp` name one folder, so both spellings count.
+    /// Claude Code keys trust by the folder's `realpath`, and Foundation's path
+    /// helpers drop a leading `/private`, so every spelling is tried.
     static func candidates(for directory: String) -> [String] {
-        let given = (directory as NSString).standardizingPath
-        let resolved = URL(fileURLWithPath: given).resolvingSymlinksInPath().path
-        return given == resolved ? [given] : [given, resolved]
+        var given = directory
+        while given.count > 1 && given.hasSuffix("/") { given.removeLast() }
+        let standardized = (given as NSString).standardizingPath
+        let resolved = URL(fileURLWithPath: standardized).resolvingSymlinksInPath().path
+        var spellings = [given, standardized, resolved]
+        if let real = realPath(given) { spellings.append(real) }
+        var seen = Set<String>()
+        return spellings.filter { seen.insert($0).inserted }
+    }
+
+    private static func realPath(_ path: String) -> String? {
+        guard let real = realpath(path, nil) else { return nil }
+        defer { free(real) }
+        return String(cString: real)
     }
 
     static func refusal(for directory: String, decision: Decision) -> String? {

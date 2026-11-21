@@ -436,7 +436,13 @@ check("a folder that is listed but not accepted, or not listed, is untrusted") {
         && ClaudeTrust.decide(directory: "/work/absent", config: config) == .untrusted
 }
 
-check("a folder trusted under its resolved path is trusted under a symlink to it") {
+func realPathOf(_ url: URL) -> String? {
+    guard let real = realpath(url.path, nil) else { return nil }
+    defer { free(real) }
+    return String(cString: real)
+}
+
+check("a folder trusted under its real path is trusted under a symlink to it") {
     let base = FileManager.default.temporaryDirectory
         .appendingPathComponent("lock-smoke-trust-\(UUID().uuidString)")
     let real = base.appendingPathComponent("real")
@@ -444,9 +450,20 @@ check("a folder trusted under its resolved path is trusted under a symlink to it
     try FileManager.default.createDirectory(at: real, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: base) }
     try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
-    let resolved = real.resolvingSymlinksInPath().path
-    let config = try trustConfig([resolved: ["hasTrustDialogAccepted": true]])
+    guard let key = realPathOf(real) else { return false }
+    let config = try trustConfig([key: ["hasTrustDialogAccepted": true]])
     return ClaudeTrust.decide(directory: link.path, config: config) == .trusted
+}
+
+check("a /private/tmp folder trusted by its real path is trusted however it is spelled") {
+    let short = URL(fileURLWithPath: "/tmp/lock-smoke-private-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: short, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: short) }
+    guard let key = realPathOf(short), key.hasPrefix("/private/") else { return false }
+    let config = try trustConfig([key: ["hasTrustDialogAccepted": true]])
+    return ClaudeTrust.decide(directory: short.path, config: config) == .trusted
+        && ClaudeTrust.decide(directory: key, config: config) == .trusted
+        && ClaudeTrust.decide(directory: key + "/", config: config) == .trusted
 }
 
 check("an unreadable config is neither trusted nor reported as untrusted") {
