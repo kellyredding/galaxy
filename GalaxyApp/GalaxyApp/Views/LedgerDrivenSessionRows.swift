@@ -44,11 +44,7 @@ struct LedgerDrivenSessionRows: View {
                     }
                     .buttonStyle(.plain)
                     .help(revealsToken ? "Hide the token" : "Show the token")
-                    Button(action: { copy(driven.token) }) {
-                        Image(systemName: "doc.on.doc")
-                    }
-                    .buttonStyle(.plain)
-                    .help("Copy the token")
+                    CopyButton(text: driven.token, iconSize: fontSize.caption2)
                 }
                 .font(.system(size: fontSize.caption2))
                 .foregroundColor(.secondary)
@@ -83,12 +79,6 @@ struct LedgerDrivenSessionRows: View {
                 .frame(width: 90, alignment: .trailing)
             value()
         }
-    }
-
-    private func copy(_ token: String) {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(token, forType: .string)
     }
 
     private func confirmForceRelease(owner: String) {
