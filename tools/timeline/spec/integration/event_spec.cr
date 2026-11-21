@@ -922,6 +922,80 @@ describe "CLI event commands", tags: "integration" do
       }.uniq.should eq(["turn--abc-1"])
     end
 
+    describe "--after-id" do
+      it "returns only events after the id, in id order" do
+        ids = ["2026-01-15 12:00:00", "2026-01-15 09:00:00", "2026-01-15 10:00:00"].map do |at|
+          result = run_binary([
+            "record", "--ledger-session-id", "1",
+            "--event-type", "turn:completed",
+            "--source", "test",
+            "--occurred-at", at, "--json",
+          ])
+          JSON.parse(result[:output])["id"].as_i64
+        end
+
+        result = run_binary([
+          "list", "--ledger-session-id", "1",
+          "--after-id", ids[0].to_s, "--json",
+        ])
+
+        result[:status].should eq(0)
+        events = JSON.parse(result[:output])["events"].as_a
+        # Id order, though the second event occurred before the third.
+        events.map(&.["id"].as_i64).should eq([ids[1], ids[2]])
+      end
+
+      it "returns nothing past the newest event" do
+        result = run_binary([
+          "record", "--ledger-session-id", "1",
+          "--event-type", "turn:completed",
+          "--source", "test", "--json",
+        ])
+        id = JSON.parse(result[:output])["id"].as_i64
+
+        result = run_binary([
+          "list", "--ledger-session-id", "1",
+          "--after-id", id.to_s, "--json",
+        ])
+        JSON.parse(result[:output])["events"].as_a.should be_empty
+      end
+
+      it "combines with --event-type" do
+        first = run_binary([
+          "record", "--ledger-session-id", "1",
+          "--event-type", "turn:initiated",
+          "--source", "test", "--json",
+        ])
+        cursor = JSON.parse(first[:output])["id"].as_i64
+        run_binary([
+          "record", "--ledger-session-id", "1",
+          "--event-type", "turn:initiated", "--source", "test",
+        ])
+        run_binary([
+          "record", "--ledger-session-id", "1",
+          "--event-type", "turn:completed", "--source", "test",
+        ])
+
+        result = run_binary([
+          "list", "--ledger-session-id", "1",
+          "--after-id", cursor.to_s,
+          "--event-type", "turn:completed", "--json",
+        ])
+        events = JSON.parse(result[:output])["events"].as_a
+        events.map(&.["event_type"].as_s).should eq(["turn:completed"])
+      end
+
+      it "errors on a value that is not an id" do
+        ["abc", "-3"].each do |value|
+          result = run_binary([
+            "list", "--ledger-session-id", "1", "--after-id", value,
+          ])
+          result[:status].should_not eq(0)
+          result[:error].should contain("--after-id requires a non-negative event id")
+        end
+      end
+    end
+
     it "filters by --since with full timestamp" do
       run_binary([
         "record", "--ledger-session-id", "1",

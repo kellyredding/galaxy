@@ -351,6 +351,7 @@ module GalaxyTimeline
       since_time : String? = nil
       until_time : String? = nil
       limit_str : String? = nil
+      after_id : Int64? = nil
       reverse = false
       json_mode = false
 
@@ -374,6 +375,14 @@ module GalaxyTimeline
             STDERR.puts "Error: --session requires a value"
             exit(1)
           end
+        when "--after-id"
+          value = args[i + 1]?.try(&.to_i64?)
+          if value.nil? || value < 0
+            STDERR.puts "Error: --after-id requires a non-negative event id"
+            exit(1)
+          end
+          after_id = value
+          i += 2
         when "--ledger-session-id"
           if i + 1 < args.size
             ledger_session_id_str = args[i + 1]
@@ -487,6 +496,7 @@ module GalaxyTimeline
                    until_time: until_time,
                    limit: limit,
                    reverse: reverse,
+                   after_id: after_id,
                  )
                else
                  Database.list_events(
@@ -497,6 +507,7 @@ module GalaxyTimeline
                    until_time: until_time,
                    limit: limit,
                    reverse: reverse,
+                   after_id: after_id,
                  )
                end
 
@@ -1260,6 +1271,9 @@ module GalaxyTimeline
                            occurred_at (same formats).
                            Prefix forms expand to the end
                            of that day/minute.
+        --after-id ID      Only events whose id is greater
+                           than ID, returned in id order:
+                           a cursor for reading what is new
         --limit N          Maximum events to return
                            (default: 5000)
         --reverse          Most recent first (DESC)

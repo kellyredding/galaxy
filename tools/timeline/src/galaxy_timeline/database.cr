@@ -196,9 +196,14 @@ module GalaxyTimeline
     # - since_time: inclusive lower bound on occurred_at
     #   (YYYY-MM-DD HH:MM:SS format, compared lexically)
     # - until_time: inclusive upper bound on occurred_at
+    # - after_id: exclusive lower bound on the row id
     #
     # Ordering:
     # - reverse: true returns most recent first (DESC)
+    # - with after_id, rows come in id order rather than occurred_at order.
+    #   A reader paging by id takes the highest id it saw as its next
+    #   cursor; occurred_at order under a limit could leave a lower id
+    #   unread behind that cursor for good.
     def self.list_events(
       ledger_session_id : Int64,
       event_type : String? = nil,
@@ -208,6 +213,7 @@ module GalaxyTimeline
       until_time : String? = nil,
       limit : Int32 = 5000,
       reverse : Bool = false,
+      after_id : Int64? = nil,
     ) : Array(Event)
       events = [] of Event
       return events if ledger_session_id <= 0
@@ -245,7 +251,11 @@ module GalaxyTimeline
               s << " AND occurred_at <= ?"
             end
 
-            s << " ORDER BY occurred_at " << order
+            if after_id
+              s << " AND id > ?"
+            end
+
+            s << " ORDER BY " << (after_id ? "id " : "occurred_at ") << order
             s << " LIMIT ?"
           end
 
@@ -271,6 +281,10 @@ module GalaxyTimeline
 
           if ut = until_time
             args << ut
+          end
+
+          if aid = after_id
+            args << aid
           end
 
           args << limit

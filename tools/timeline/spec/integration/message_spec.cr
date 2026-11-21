@@ -29,6 +29,23 @@ describe "CLI message command", tags: "integration" do
     result[:error].should be_empty
   end
 
+  it "prints the message of a driven session's input event" do
+    message = "Summary.\n\n\n[1]\n> the worker's line\nthe lead's note"
+    result = run_binary([
+      "record",
+      "--ledger-session-id", "4242",
+      "--event-type", "session.input:sent",
+      "--source", "galaxy-app/driven",
+      "--detail-data-stdin", "--json",
+    ], stdin: {message: message, owner: "Atlas lead", note_count: 1}.to_json)
+    id = JSON.parse(result[:output])["id"].as_i64
+
+    result = run_binary(["message", id.to_s])
+
+    result[:status].should eq(0)
+    result[:output].should eq(message + "\n")
+  end
+
   it "ends with exactly one newline" do
     id = record_with_detail({message: "ends with newlines\n\n"}.to_json)
 
