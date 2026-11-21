@@ -362,6 +362,8 @@ module Galaxy
       plan mode, and keeps that through /clear, handoff and resume. Only the
       owner, holding the token `new` printed, can lock, release, send, clear,
       resume or stop it, and send, clear, resume and stop also need the lock.
+      --dir must be a folder Claude Code already trusts: nobody can answer
+      the trust dialog in a locked session, so `new` refuses any other.
       Kelly can force the lock open from Galaxy's Ledger tab; lock again with
       the same token afterwards. --token may come from GALAXY_SESSION_TOKEN.
 

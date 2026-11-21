@@ -85,6 +85,19 @@ describe "galaxy session" do
       fake.try(&.close)
     end
 
+    it "reports Galaxy refusing a folder Claude Code has not trusted" do
+      fake = FakeGalaxy.new do |_e|
+        %({"ok":false,"error":"Claude Code has not trusted /tmp: trust it first (open claude there once and accept the dialog) or use a folder it already trusts"})
+      end
+      code, stdout, err = galaxy(["session", "new", "--as", "L", "--dir", "/tmp"], {"GALAXY_SOCKET_PATH" => fake.path})
+
+      code.should eq(1)
+      stdout.should eq("")
+      err.should contain("Claude Code has not trusted /tmp")
+    ensure
+      fake.try(&.close)
+    end
+
     it "refuses a missing owner, directory or persona before asking Galaxy" do
       galaxy(["session", "new", "--dir", "/tmp"])[2].should contain("--as OWNER is required")
       galaxy(["session", "new", "--as", "L", "--dir", "/nonexistent-#{Random.rand(1000)}"])[2].should contain("no such directory")

@@ -31,6 +31,12 @@ final class DrivenSessionService {
             return .failure(.init(message: "no such directory: \(directory)"))
         }
 
+        if let refusal = ClaudeTrust.refusal(
+            for: directory, decision: ClaudeTrust.decide(directory: directory))
+        {
+            return .failure(.init(message: refusal))
+        }
+
         if let persona {
             guard manager.claudePersonaPath != nil else {
                 return .failure(.init(message: "claude-persona is not installed"))

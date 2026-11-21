@@ -407,6 +407,59 @@ check("delivered lines make room again") {
     return backpressure.sent()
 }
 
+// MARK: - Trusted folders
+
+func trustConfig(_ projects: [String: Any]) throws -> Data {
+    try JSONSerialization.data(withJSONObject: ["projects": projects, "numStartups": 3])
+}
+
+check("a folder Claude Code trusts is trusted") {
+    let config = try trustConfig(["/work/repo": ["hasTrustDialogAccepted": true]])
+    return ClaudeTrust.decide(directory: "/work/repo", config: config) == .trusted
+        && ClaudeTrust.decide(directory: "/work/repo/", config: config) == .trusted
+}
+
+check("trust is per folder: a trusted parent does not cover its children") {
+    let config = try trustConfig(["/work": ["hasTrustDialogAccepted": true]])
+    return ClaudeTrust.decide(directory: "/work/repo", config: config) == .untrusted
+}
+
+check("a folder that is listed but not accepted, or not listed, is untrusted") {
+    let config = try trustConfig([
+        "/work/declined": ["hasTrustDialogAccepted": false],
+        "/work/unanswered": ["allowedTools": []],
+    ])
+    return ClaudeTrust.decide(directory: "/work/declined", config: config) == .untrusted
+        && ClaudeTrust.decide(directory: "/work/unanswered", config: config) == .untrusted
+        && ClaudeTrust.decide(directory: "/work/absent", config: config) == .untrusted
+}
+
+check("a folder trusted under its resolved path is trusted under a symlink to it") {
+    let base = FileManager.default.temporaryDirectory
+        .appendingPathComponent("lock-smoke-trust-\(UUID().uuidString)")
+    let real = base.appendingPathComponent("real")
+    let link = base.appendingPathComponent("link")
+    try FileManager.default.createDirectory(at: real, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: base) }
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
+    let resolved = real.resolvingSymlinksInPath().path
+    let config = try trustConfig([resolved: ["hasTrustDialogAccepted": true]])
+    return ClaudeTrust.decide(directory: link.path, config: config) == .trusted
+}
+
+check("an unreadable config is neither trusted nor reported as untrusted") {
+    guard case .unreadable = ClaudeTrust.decide(directory: "/work/repo", config: Data("{".utf8))
+    else { return false }
+    return ClaudeTrust.refusal(for: "/work/repo", decision: .unreadable("could not parse"))?
+        .contains("cannot tell whether Claude Code trusts /work/repo") == true
+}
+
+check("the refusal names the folder and what to do, and a trusted folder has none") {
+    let refusal = ClaudeTrust.refusal(for: "/work/repo", decision: .untrusted) ?? ""
+    return refusal.contains("/work/repo") && refusal.contains("trust it first")
+        && ClaudeTrust.refusal(for: "/work/repo", decision: .trusted) == nil
+}
+
 // MARK: - Result
 
 if failures == 0 {
