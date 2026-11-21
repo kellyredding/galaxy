@@ -21,6 +21,13 @@ describe GalaxyLedger::AppState do
       app_session("never-reported-ready").recoverable?.should be_true
     end
 
+    it "is true for a session still waiting on an opening turn" do
+      session = app_session("awaiting-opening")
+
+      session.recoverable?.should be_true
+      session.awaiting_lost_ready?.should be_false
+    end
+
     it "is true for a reset the app says may have lost its readiness" do
       session = app_session("awaiting-reset", lost_ready_recoverable: true)
 

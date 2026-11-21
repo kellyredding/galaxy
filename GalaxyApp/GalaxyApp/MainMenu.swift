@@ -1298,8 +1298,9 @@ class MenuActions: NSObject {
     }
 
     /// Sessions ▸ Mark Session Ready. Releases a queue whose readiness signal
-    /// never arrived: at once for `.neverReady`, and after a reset or resume
-    /// only once the timeline confirms it, saying so when it cannot.
+    /// never arrived: at once for `.neverReady` and for an opening turn that
+    /// never came, and after a reset or resume only once the timeline confirms
+    /// it, saying so when it cannot.
     @objc func markSessionReady(_ sender: Any?) {
         MainActor.assumeIsolated {
             guard let session = SessionManager.shared.activeSession
@@ -1319,6 +1320,10 @@ class MenuActions: NSObject {
                     alert.addButton(withTitle: "OK")
                     alert.runModal()
                 }
+                return
+            }
+            if session.submitBlockReason == .awaitingOpening {
+                session.releaseOpeningWait(trigger: "menu")
                 return
             }
             guard session.submitBlockReason == .neverReady else { return }
@@ -1398,13 +1403,14 @@ extension MenuActions: NSMenuItemValidation {
         case #selector(showAgentInbox(_:)):
             return NSApp.modalWindow == nil
 
-        // The interlock. Live only for the two blocks a person can resolve,
+        // The interlock. Live only for the blocks a person can resolve,
         // and dimmed everywhere else, so the menu answers "is this my
         // problem" without anyone having to try it.
         case #selector(markSessionReady(_:)):
             guard let session = SessionManager.shared.activeSession
             else { return false }
             return session.submitBlockReason == .neverReady
+                || session.submitBlockReason == .awaitingOpening
                 || session.canRecoverLostReady
 
         // Chrome font items: bound-checked against the live

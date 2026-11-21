@@ -524,6 +524,7 @@ final class EventCoordinator {
         //
         // `.neverReady` is released as asked: by construction it means
         // the agent has been sitting at a prompt with nothing owed.
+        // `.awaitingOpening` too: a person judged the opening isn't coming.
         // `.awaitingReset` is released only once the timeline records
         // the reset, and then through `markReady`, so the command it
         // owes still goes first. Anything else is transient.
@@ -536,6 +537,10 @@ final class EventCoordinator {
                 let why = session.submitBlockReason
                 if session.canRecoverLostReady {
                     session.recoverLostReady(trigger: "manual ready")
+                    return
+                }
+                if why == .awaitingOpening {
+                    session.releaseOpeningWait(trigger: "manual ready")
                     return
                 }
                 guard why == .neverReady else {

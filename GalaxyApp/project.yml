@@ -174,6 +174,7 @@ targets:
       - GalaxyApp/Models/Driven/WatchLine.swift
       - GalaxyApp/Models/Driven/ClaudeTrust.swift
       - GalaxyApp/Models/Driven/DrivenExit.swift
+      - GalaxyApp/Models/OpeningWait.swift
       - LockSmoke
     settings:
       base:

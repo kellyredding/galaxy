@@ -985,8 +985,14 @@ class SessionManager: ObservableObject {
         // isInTurn, happens only when Claude actually took it,
         // which no amount of replay latency can fake.
         if canResume {
+            session.expectResumeTurn()
             session.awaitResumeReady { [weak session] in
-                session?.sendSkill("galaxy:resume")
+                session?.sendCommand("/galaxy:resume") { outcome in
+                    // A /galaxy:resume that never landed opens no turn, and
+                    // the inbox would otherwise wait for one forever.
+                    if case .accepted = outcome { return }
+                    session?.releaseOpeningWait(trigger: "/galaxy:resume not accepted")
+                }
                 // The restored screen can come back garbled (a
                 // resize artifact on the freshly recreated backend),
                 // and only Claude repainting clears it. There's no

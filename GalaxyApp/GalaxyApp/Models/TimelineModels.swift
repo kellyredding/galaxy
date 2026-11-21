@@ -138,6 +138,7 @@ let timelineEventRegistry: [String: EventRegistration] = [
     "lock:revoked":        EventRegistration(resource: .session, mode: .point),
     "session:stopped":     EventRegistration(resource: .session, mode: .point),
     "session:exited":      EventRegistration(resource: .session, mode: .point),
+    "session:input-ready": EventRegistration(resource: .session, mode: .point),
     "session:dismissed":   EventRegistration(resource: .session, mode: .point),
     "session:restored":    EventRegistration(resource: .session, mode: .point),
     "timeline:marker":
@@ -609,6 +610,8 @@ enum TimelineTooltipFormatter {
             return "Session Stopped"
         case "session:exited":
             return "Session Exited"
+        case "session:input-ready":
+            return "Ready for Input"
         case "session:dismissed":
             return "Session Dismissed"
         case "session:restored":
@@ -716,6 +719,8 @@ enum TimelineTooltipFormatter {
             return initiatedByLines(dict)
         case "session:exited":
             return sessionExitedLines(dict)
+        case "session:input-ready":
+            return inputReadyLines(dict)
         case "timeline:marker":
             return markerLines(dict)
         default:
@@ -1229,6 +1234,21 @@ enum TimelineTooltipFormatter {
         var lines = initiatedByLines(d)
         if d["initiated_by"] == nil { lines.append("unrequested") }
         if let code = d["exit_code"] as? Int { lines.append("exit code: \(code)") }
+        return lines
+    }
+
+    private static func inputReadyLines(
+        _ d: [String: Any]
+    ) -> [String] {
+        var lines: [String] = []
+        if let id = d["opening_event_id"] as? Int {
+            lines.append("after opening turn #\(id)")
+        } else {
+            lines.append("no opening turn")
+        }
+        if d["released_by_hand"] as? Bool == true {
+            lines.append("released by hand")
+        }
         return lines
     }
 

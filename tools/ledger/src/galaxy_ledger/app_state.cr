@@ -31,6 +31,11 @@ module GalaxyLedger
     # only once the app finds the reset in the timeline.
     AWAITING_RESET_REASON = "awaiting-reset"
 
+    # Mirrors `Session.SubmitBlock.awaitingOpening.rawValue`: ready, but the
+    # launch's opening turn has not ended. Releasing it by hand is how a
+    # person says the opening is not coming.
+    AWAITING_OPENING_REASON = "awaiting-opening"
+
     # One session, as the app last described it.
     record Session,
       ledger_session_id : Int64?,
@@ -45,7 +50,8 @@ module GalaxyLedger
       end
 
       def recoverable? : Bool
-        block_reason == RECOVERABLE_REASON || awaiting_lost_ready?
+        block_reason == RECOVERABLE_REASON || block_reason == AWAITING_OPENING_REASON ||
+          awaiting_lost_ready?
       end
 
       # Blocked on a reset whose readiness signal may have been lost, which the

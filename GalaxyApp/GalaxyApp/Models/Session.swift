@@ -160,6 +160,17 @@ class Session: Identifiable, ObservableObject {
     /// and deliberately nowhere else.
     @Published private(set) var hasEverBeenReady: Bool = false
 
+    /// Whether this launch opens with a turn the inbox must wait out. Set in
+    /// `startProcess`, and by a resume that sends `/galaxy:resume`.
+    @Published private(set) var openingWait: OpeningWait = .quiet
+
+    /// Which launch a persona lookup answers for, so a slow answer from an
+    /// earlier launch cannot settle a later one.
+    private var launchGeneration = 0
+
+    /// Whether this launch has already recorded `session:input-ready`.
+    private var inputReadyRecorded = false
+
     /// When the reset or resume still owed a `session:ready` began: the lower
     /// bound for asking the timeline whether it happened, which is what tells
     /// a lost readiness signal from a slow one.
@@ -1357,6 +1368,8 @@ class Session: Identifiable, ObservableObject {
             + " isInTurn: true→false"
         )
         isInTurn = false
+        openingWait.turnEnded(eventID: ref.flatMap { Int64($0) })
+        defer { noteInputReadyIfFirst() }
 
         let duration = turnStartTime.map {
             Date().timeIntervalSince($0)
@@ -1412,6 +1425,7 @@ class Session: Identifiable, ObservableObject {
                 SessionSubmit.log(
                     "markReady session=\(self.sessionRef)")
             }
+            self.noteInputReadyIfFirst()
             // The other moment worth waking for, and the one a turn end cannot
             // cover: `/clear` and `/compact` are intercepted before the prompt
             // pipeline, so they produce no Stop and end no turn. A queue that
@@ -1419,6 +1433,97 @@ class Session: Identifiable, ObservableObject {
             // for a boundary that never comes. This also catches a session
             // coming back with messages queued while it was down.
             self.inboxConsumer.wake()
+        }
+    }
+
+    // MARK: - Opening turn
+
+    /// Ask claude-persona whether this launch submits an opening message.
+    /// Off the main thread; until it answers, the inbox treats the opening as
+    /// coming, which costs at most the lookup's few milliseconds.
+    private func lookUpOpening(persona: String, launcher: String, generation: Int) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let started = Date()
+            let answer = Self.runPersonaLookup(persona: persona, launcher: launcher)
+            let elapsed = Int(Date().timeIntervalSince(started) * 1000)
+            DispatchQueue.main.async {
+                guard let self, self.launchGeneration == generation else { return }
+                let expects: Bool
+                switch answer {
+                case .some(let value):
+                    expects = value
+                    SessionSubmit.log(
+                        "opening lookup session=\(self.sessionRef) persona=\(persona)"
+                            + " opening=\(value) (\(elapsed)ms)")
+                case .none:
+                    // No way to tell, and blocking on a turn that may never
+                    // come would strand the inbox, so a quiet start is assumed.
+                    expects = false
+                    GalaxyLog.submit(
+                        "opening lookup FAILED session=\(self.sessionRef) persona=\(persona)"
+                            + " (\(elapsed)ms) — assuming no opening; needs"
+                            + " claude-persona 1.6.0's show --json")
+                }
+                self.openingWait.resolve(expectsOpening: expects)
+                self.noteInputReadyIfFirst()
+                self.inboxConsumer.wake()
+            }
+        }
+    }
+
+    /// `claude-persona show <persona> --json`, read for its opening message.
+    private static func runPersonaLookup(persona: String, launcher: String) -> Bool? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: launcher)
+        process.arguments = ["show", persona, "--json"]
+        let stdout = Pipe()
+        process.standardOutput = stdout
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+        } catch {
+            return nil
+        }
+        let data = stdout.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else { return nil }
+        return OpeningWait.expectsOpening(personaJSON: data)
+    }
+
+    /// A resume that sends `/galaxy:resume` opens with that turn, so the inbox
+    /// and `session:input-ready` wait for it to end.
+    func expectResumeTurn() {
+        openingWait.expectTurn()
+    }
+
+    /// The opening a launch expected never came, as a person judged it, or a
+    /// `/galaxy:resume` that could not be sent.
+    func releaseOpeningWait(trigger: String) {
+        guard openingWait.isAwaiting else { return }
+        SessionSubmit.log(
+            "opening wait released (\(trigger)) session=\(sessionRef)")
+        openingWait.release()
+        noteInputReadyIfFirst()
+        inboxConsumer.wake()
+    }
+
+    /// Record `session:input-ready` the first time this launch can take a
+    /// prompt. Driven sessions only, like their other lifecycle events, and a
+    /// timeline row so a driver that subscribes late still finds it.
+    private func noteInputReadyIfFirst() {
+        guard isDriven, !inputReadyRecorded, submitBlockReason == nil else { return }
+        inputReadyRecorded = true
+        let detail = openingWait.inputReadyDetail
+        SessionSubmit.log(
+            "input ready session=\(sessionRef)"
+                + " opening=\(openingWait.openingEventID.map(String.init) ?? "none")")
+        whenLedgerSessionKnown { ledgerSessionId in
+            TimelineService.record(
+                ledgerSessionId: ledgerSessionId,
+                eventType: OpeningWait.inputReadyEventType,
+                source: "galaxy-app/driven",
+                detailData: detail
+            )
         }
     }
 
@@ -1704,6 +1809,17 @@ class Session: Identifiable, ObservableObject {
         hasEverBeenReady = false
         resetSentAt = nil
         isRunning = true
+
+        // claude-persona submits a persona's opening message on a fresh launch
+        // and skips it on a resume; plain `claude` is launched with none.
+        launchGeneration += 1
+        inputReadyRecorded = false
+        if let persona = personaName, !resume {
+            openingWait = .pendingLookup
+            lookUpOpening(persona: persona, launcher: executablePath, generation: launchGeneration)
+        } else {
+            openingWait = .quiet
+        }
 
         // A fresh process is a fresh crossing. A session resumed above the
         // line should be cleared at the end of its first turn, not made to
@@ -2018,6 +2134,9 @@ extension Session: AgentInboxHost {
         case .neverReady:
             return "the session never reported ready; Sessions ▸ Mark Session "
                 + "Ready releases it"
+        case .awaitingOpening:
+            return "the session's opening turn hasn't ended yet; if it never "
+                + "started, Sessions ▸ Mark Session Ready releases it"
         }
     }
 
@@ -2043,6 +2162,8 @@ extension Session: AgentInboxHost {
         case inTurn = "in-turn"
         case awaitingReset = "awaiting-reset"
         case neverReady = "never-reported-ready"
+        /// Ready, but the launch's opening turn has not ended yet.
+        case awaitingOpening = "awaiting-opening"
 
         /// Human phrasing, for the log.
         var phrase: String {
@@ -2052,14 +2173,17 @@ extension Session: AgentInboxHost {
             case .inTurn: return "in a turn"
             case .awaitingReset: return "waiting on a post-reset session:ready"
             case .neverReady: return "never reported ready"
+            case .awaitingOpening: return "waiting for its opening turn"
             }
         }
     }
 
-    /// The two blocks a readiness signal ends, and so the two a lost one
-    /// leaves standing. Mid-turn, stopped and exited end without the reader.
+    /// The blocks a lost signal leaves standing: a readiness report, or an
+    /// opening turn that never came. Mid-turn, stopped and exited end without
+    /// the reader.
     var canReleaseBlock: Bool {
         submitBlockReason == .awaitingReset || submitBlockReason == .neverReady
+            || submitBlockReason == .awaitingOpening
     }
 
     /// Through `markReady`, so a `/galaxy:resume` or `/handoff` the session
@@ -2068,6 +2192,11 @@ extension Session: AgentInboxHost {
     func releaseBlock(force: Bool, completion: @escaping (Bool) -> Void) {
         guard canReleaseBlock else {
             completion(false)
+            return
+        }
+        if submitBlockReason == .awaitingOpening {
+            releaseOpeningWait(trigger: "inbox\(force ? ", forced" : "")")
+            completion(true)
             return
         }
         if !force {
@@ -2095,6 +2224,7 @@ extension Session: AgentInboxHost {
         if !isReady {
             return hasEverBeenReady ? .awaitingReset : .neverReady
         }
+        if openingWait.isAwaiting { return .awaitingOpening }
         return nil
     }
 

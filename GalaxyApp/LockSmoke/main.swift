@@ -492,6 +492,66 @@ check("the refusal names the folder and what to do, and a trusted folder has non
         && ClaudeTrust.refusal(for: "/work/repo", decision: .trusted) == nil
 }
 
+// MARK: - Opening turn
+
+check("a persona's JSON says whether a fresh launch opens with a turn") {
+    let opening = Data(#"{"name":"tools-dev","initial_message":"Ask me which tool."}"#.utf8)
+    let quiet = Data(#"{"name":"assist-ant-work","initial_message":null}"#.utf8)
+    return OpeningWait.expectsOpening(personaJSON: opening) == true
+        && OpeningWait.expectsOpening(personaJSON: quiet) == false
+}
+
+check("an unreadable persona reply is not taken as an answer") {
+    OpeningWait.expectsOpening(personaJSON: Data("not json".utf8)) == nil
+        && OpeningWait.expectsOpening(personaJSON: Data(#"{"name":"x"}"#.utf8)) == nil
+        && OpeningWait.expectsOpening(personaJSON: Data("[]".utf8)) == nil
+}
+
+check("a launch waits while its persona lookup is unanswered") {
+    OpeningWait.pendingLookup.isAwaiting && !OpeningWait.quiet.isAwaiting
+}
+
+check("an expected opening holds until the first turn ends, and names that turn") {
+    var wait = OpeningWait.pendingLookup
+    wait.resolve(expectsOpening: true)
+    let heldBefore = wait.isAwaiting
+    wait.turnEnded(eventID: 172606)
+    let afterFirst = (wait.isAwaiting, wait.openingEventID)
+    wait.turnEnded(eventID: 172609)
+    return heldBefore && afterFirst == (false, 172606) && wait.openingEventID == 172606
+}
+
+check("a lookup that finds no opening releases at once and names no turn") {
+    var wait = OpeningWait.pendingLookup
+    wait.resolve(expectsOpening: false)
+    return !wait.isAwaiting && wait.openingEventID == nil
+        && (wait.inputReadyDetail["opening_event_id"] is NSNull)
+}
+
+check("an opening that ends before the lookup answers still counts") {
+    var wait = OpeningWait.pendingLookup
+    wait.turnEnded(eventID: 41)
+    let stillWaiting = wait.isAwaiting
+    wait.resolve(expectsOpening: true)
+    return stillWaiting && !wait.isAwaiting && wait.openingEventID == 41
+}
+
+check("a resume holds for its /galaxy:resume turn") {
+    var wait = OpeningWait.quiet
+    wait.expectTurn()
+    let held = wait.isAwaiting
+    wait.turnEnded(eventID: 9)
+    return held && !wait.isAwaiting && wait.openingEventID == 9
+}
+
+check("releasing by hand ends the wait and says so in the event") {
+    var wait = OpeningWait.pendingLookup
+    wait.resolve(expectsOpening: true)
+    wait.release()
+    return !wait.isAwaiting && wait.inputReadyDetail["released_by_hand"] as? Bool == true
+        && (wait.inputReadyDetail["opening_event_id"] is NSNull)
+}
+
 // MARK: - Result
 
 if failures == 0 {
