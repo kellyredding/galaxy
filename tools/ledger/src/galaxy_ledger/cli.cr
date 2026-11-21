@@ -107,6 +107,8 @@ module GalaxyLedger
         handle_on_subagent_stop_command(rest)
       when "on-permission-request"
         handle_on_permission_request_command(rest)
+      when "allow-permission"
+        handle_allow_permission_command(rest)
       when "install"
         handle_install_command(rest)
       when "uninstall"
@@ -192,6 +194,8 @@ module GalaxyLedger
         on-subagent-start      Dispatch agent start to galaxy-agents
         on-subagent-stop       Dispatch agent stop to galaxy-agents
         on-user-prompt-submit  Capture user directions/preferences
+        allow-permission       Answer PermissionRequest with allow
+                               (driven sessions only, passed inline)
 
       Session Metrics:
         update-session-metrics  Update session metrics from stdin JSON
@@ -1832,6 +1836,42 @@ module GalaxyLedger
 
       OUTPUT (stdout):
         No output.
+      HELP
+    end
+
+    private def self.handle_allow_permission_command(
+      args : Array(String),
+    )
+      if args.first? == "-h" || args.first? == "--help"
+        show_allow_permission_help
+        return
+      end
+      Hooks::AllowPermission.new.run
+    end
+
+    private def self.show_allow_permission_help
+      puts <<-HELP
+      galaxy-ledger allow-permission - Answer PermissionRequest with allow
+
+      USAGE:
+        galaxy-ledger allow-permission
+
+      DESCRIPTION:
+        Claude Code PermissionRequest hook for driven sessions.
+        Galaxy passes it in the inline --settings it launches a
+        driven session with; it is never installed into
+        ~/.claude/settings.json. It approves every request, so an
+        unattended session never stops at a permission prompt,
+        whatever its permission mode. Publishes nothing: the
+        user-level on-permission-request hook still reports.
+
+      INPUT (stdin):
+        The PermissionRequest hook payload. Its tool_input, when
+        present, is echoed back as updatedInput.
+
+      OUTPUT (stdout):
+        {"hookSpecificOutput":{"hookEventName":"PermissionRequest",
+          "decision":{"behavior":"allow","updatedInput":{...}}}}
       HELP
     end
 
