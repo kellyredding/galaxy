@@ -479,6 +479,25 @@ class SessionManager: ObservableObject {
                         )
                 }
             }
+
+            // Queued behind processDidExit's own main-queue block, which marks
+            // the session not running, so a driver acting on this is not refused.
+            if let session = self.sessions.first(where: { $0.id == sessionId }),
+               session.isDriven, !session.isRunning
+            {
+                let detail = DrivenExit.detail(
+                    exitCode: session.exitCode,
+                    initiatedBy: session.stopInitiatedBy
+                )
+                session.whenLedgerSessionKnown { ledgerSessionId in
+                    TimelineService.record(
+                        ledgerSessionId: ledgerSessionId,
+                        eventType: DrivenExit.eventType,
+                        source: "galaxy-app/driven",
+                        detailData: detail
+                    )
+                }
+            }
         }
 
         NSLog("SessionManager: Session marked as exited, keeping in sidebar")
@@ -769,6 +788,7 @@ class SessionManager: ObservableObject {
         // Mark as user-initiated so handleSessionExited doesn't fire
         // the "exited unexpectedly" notification for intentional stops.
         session.userInitiatedStop = true
+        session.stopInitiatedBy = initiatedBy
 
         // Terminate the process using our tracked PID (sends SIGTERM)
         session.terminateProcess()
@@ -904,6 +924,7 @@ class SessionManager: ObservableObject {
         session.exitCode = nil
         session.isRunning = false
         session.userInitiatedStop = false
+        session.stopInitiatedBy = nil
 
         // Disable focus reporting (mode 1004) before the view transition.
         // Claude Code enables mode 1004 so the terminal sends ESC[I on focus-in.

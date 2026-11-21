@@ -52,6 +52,12 @@ describe "galaxy session" do
     stdout.should contain("SEND FILE")
   end
 
+  it "tells a driver to wait for session:exited, not session:ended, before dismissing" do
+    _, stdout, _ = galaxy(["session", "help"])
+    stdout.should contain("galaxy session wait <id> --events session:exited")
+    stdout.should contain("not\n  session:ended")
+  end
+
   describe "new" do
     it "sends session.create with the absolute directory and prints the reply" do
       fake = FakeGalaxy.new { |_e| %({"ok":true,"id":"abc","token":"t0k","name":"Worker","owner":"Atlas lead"}) }

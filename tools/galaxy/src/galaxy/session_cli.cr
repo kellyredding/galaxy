@@ -404,6 +404,18 @@ module Galaxy
         {"accepted": true}. The resume itself follows, reported as
         session:resumed, or session.resume:failed with {"error"}.
 
+      STOPPING:
+        A driven session's process exiting is reported as session:exited,
+        once Galaxy has marked it stopped: {"initiated_by"} names "user" or
+        "driver" when someone asked for the stop and is absent for a crash,
+        with {"exit_code"} when known. Wait for session:exited, not
+        session:ended, before dismiss or resume:
+          galaxy session stop <id> --token T
+          galaxy session wait <id> --events session:exited
+          galaxy session dismiss <id> --token T
+        Quitting Galaxy produces no session:exited; after a restart, status is
+        what says a session is stopped.
+
       DISMISS AND RESTORE (the menu's Dismiss session / Restore Session...):
         dismiss takes a stopped session out of the sidebar into the dismissed
         archive, keeping its owner, lock and token; stop it first. restore

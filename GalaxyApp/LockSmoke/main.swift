@@ -409,6 +409,19 @@ check("delivered lines make room again") {
     return backpressure.sent()
 }
 
+// MARK: - Exits
+
+check("an exit someone asked for names who; a crash names nobody") {
+    let stopped = DrivenExit.detail(exitCode: 0, initiatedBy: "driver")
+    let crashed = DrivenExit.detail(exitCode: 1, initiatedBy: nil)
+    return DrivenExit.eventType == "session:exited"
+        && stopped["initiated_by"] as? String == "driver"
+        && stopped["exit_code"] as? Int == 0
+        && crashed["initiated_by"] == nil
+        && crashed["exit_code"] as? Int == 1
+        && DrivenExit.detail(exitCode: nil, initiatedBy: nil).isEmpty
+}
+
 // MARK: - Trusted folders
 
 func trustConfig(_ projects: [String: Any]) throws -> Data {

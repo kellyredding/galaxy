@@ -173,6 +173,7 @@ targets:
       - GalaxyApp/Models/Driven/DrivenInput.swift
       - GalaxyApp/Models/Driven/WatchLine.swift
       - GalaxyApp/Models/Driven/ClaudeTrust.swift
+      - GalaxyApp/Models/Driven/DrivenExit.swift
       - LockSmoke
     settings:
       base:

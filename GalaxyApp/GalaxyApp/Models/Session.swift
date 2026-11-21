@@ -83,6 +83,9 @@ class Session: Identifiable, ObservableObject {
     /// True when the session was stopped by the user (stop button, ⌘W).
     /// Prevents "exited unexpectedly" notifications for intentional stops.
     var userInitiatedStop: Bool = false
+    /// Who asked for the current lifecycle's stop, `"user"` or `"driver"`; nil
+    /// when nobody did, so a driven session's `session:exited` can tell a crash.
+    var stopInitiatedBy: String?
     /// Whether this session has something waiting the user has not seen.
     ///
     /// Set by `SessionManager.markAttentionWanted(for:)` whenever a notable
