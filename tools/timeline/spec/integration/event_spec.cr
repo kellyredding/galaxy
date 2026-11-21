@@ -1,3 +1,5 @@
+require "file_utils"
+require "socket"
 require "../spec_helper"
 
 describe "CLI event commands", tags: "integration" do
@@ -14,6 +16,39 @@ describe "CLI event commands", tags: "integration" do
       result[:output].should contain("recorded")
       result[:output].should contain("session:started")
       result[:output].should contain("manual-test")
+    end
+
+    # A watcher of a driven session reads this ref as the event's row id, to
+    # page the timeline from where a notification left off.
+    it "publishes timeline.<type> carrying the new row id as its ref" do
+      dir = "/tmp/gtl-#{Random.rand(1_000_000)}"
+      Dir.mkdir_p(dir)
+      server = UNIXServer.new("#{dir}/galaxy.sock")
+      received = Channel(String).new(1)
+      spawn do
+        client = server.accept
+        received.send(client.gets || "")
+        client.close
+      end
+
+      begin
+        result = run_binary(
+          [
+            "record", "--ledger-session-id", "1",
+            "--event-type", "turn:completed",
+            "--source", "test", "--json",
+          ],
+          extra_env: {"GALAXY_DIR" => dir},
+        )
+        id = JSON.parse(result[:output])["id"].as_i64
+
+        envelope = JSON.parse(received.receive)
+        envelope["event"].as_s.should eq("timeline.turn:completed")
+        envelope["ref"].as_s.should eq(id.to_s)
+      ensure
+        server.close
+        FileUtils.rm_rf(dir)
+      end
     end
 
     it "records an event with detail-data" do
