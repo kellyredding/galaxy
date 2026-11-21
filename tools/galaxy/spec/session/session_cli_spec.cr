@@ -44,6 +44,67 @@ private def detail_of(fake : FakeGalaxy, index = 0) : JSON::Any
   fake.requests[index]["detail_data"]
 end
 
+# Stands in for galaxy-watch.sock: accepts every subscription and sends
+# `lines`, then holds the connection open.
+private class FakeWatch
+  getter path : String
+
+  def initialize(lines : Array(String))
+    @path = "/tmp/gxw-cli-#{Random.rand(1_000_000)}.sock"
+    @server = UNIXServer.new(@path)
+    server = @server
+    spawn do
+      while client = server.accept?
+        c = client
+        spawn do
+          if raw = c.gets
+            c.puts({"v" => 1, "subscribed" => JSON.parse(raw)["subscribe"]}.to_json)
+            lines.each { |l| c.puts l }
+            sleep 5.seconds
+          end
+          c.close rescue nil
+        end
+      end
+    end
+  end
+
+  def close
+    @server.close rescue nil
+  end
+end
+
+private def fake_watch(lines : Array(String)) : FakeWatch
+  FakeWatch.new(lines)
+end
+
+# A galaxy-timeline stand-in. `row` answers the newest-row lookup and every
+# list; `after_20`, when given, answers lists that start at event 20 or later.
+private def fake_timeline(row : String, after_20 : String? = nil) : String
+  dir = "#{SPEC_GALAXY_DIR}/fake-timeline-#{Random.rand(1_000_000)}"
+  Dir.mkdir_p(dir)
+  script = "#{dir}/galaxy-timeline"
+  later = after_20 || row
+  File.write(script, <<-SH)
+    #!/bin/sh
+    after=0
+    reverse=no
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --after-id) after=$2; shift ;;
+        --reverse) reverse=yes ;;
+      esac
+      shift
+    done
+    if [ "$reverse" = no ] && [ "$after" -ge 20 ]; then
+      echo '{"events":[#{later}]}'
+    else
+      echo '{"events":[#{row}]}'
+    fi
+    SH
+  File.chmod(script, 0o755)
+  script
+end
+
 describe "galaxy session" do
   it "prints usage for help" do
     code, stdout, _ = galaxy(["session", "help"])
@@ -62,7 +123,7 @@ describe "galaxy session" do
     it "sends session.create with the absolute directory and prints the reply" do
       fake = FakeGalaxy.new { |_e| %({"ok":true,"id":"abc","token":"t0k","name":"Worker","owner":"Atlas lead"}) }
       code, stdout, err = galaxy(
-        ["session", "new", "--as", "Atlas lead", "--dir", "/tmp", "--name", "Worker"],
+        ["session", "new", "--as", "Atlas lead", "--dir", "/tmp", "--name", "Worker", "--no-wait"],
         {"GALAXY_SOCKET_PATH" => fake.path})
 
       err.should eq("")
@@ -83,7 +144,7 @@ describe "galaxy session" do
 
     it "passes a persona that exists" do
       fake = FakeGalaxy.new { |_e| %({"ok":true,"id":"abc","token":"t"}) }
-      code, _, _ = galaxy(["session", "new", "--as", "L", "--dir", "/tmp", "--persona", "test-basic"],
+      code, _, _ = galaxy(["session", "new", "--as", "L", "--dir", "/tmp", "--persona", "test-basic", "--no-wait"],
         {"GALAXY_SOCKET_PATH" => fake.path})
       code.should eq(0)
       detail_of(fake)["persona"].as_s.should eq("test-basic")
@@ -130,8 +191,8 @@ describe "galaxy session" do
 
     it "sends stop_holder for resume and prints the acceptance" do
       fake = FakeGalaxy.new { |_e| %({"ok":true,"id":"abc","accepted":true}) }
-      code, stdout, _ = galaxy(["session", "resume", "abc", "--token", "t", "--stop-holder"], {"GALAXY_SOCKET_PATH" => fake.path})
-      galaxy(["session", "resume", "abc", "--token", "t"], {"GALAXY_SOCKET_PATH" => fake.path})
+      code, stdout, _ = galaxy(["session", "resume", "abc", "--token", "t", "--stop-holder", "--no-wait"], {"GALAXY_SOCKET_PATH" => fake.path})
+      galaxy(["session", "resume", "abc", "--token", "t", "--no-wait"], {"GALAXY_SOCKET_PATH" => fake.path})
       code.should eq(0)
       JSON.parse(stdout)["accepted"].as_bool.should be_true
       detail_of(fake, 0)["stop_holder"].as_bool.should be_true
@@ -334,6 +395,99 @@ describe "galaxy session" do
       fake.requests.first["event"].as_s.should eq("session.status")
     ensure
       fake.try(&.close)
+    end
+  end
+
+  describe "waiting for input after new and resume" do
+    it "new waits for session:input-ready and reports the opening turn" do
+      fake = FakeGalaxy.new do |e|
+        e["event"].as_s == "session.create" ? %({"ok":true,"id":"abc","token":"t0k"}) : %({"ok":true,"session":{"id":"abc","ledger_session_id":830}})
+      end
+      watch = fake_watch([%({"v":1,"event_id":20,"type":"session:input-ready","session_id":"abc","occurred_at":"x"})])
+      timeline = fake_timeline(%({"id":20,"event_type":"session:input-ready","occurred_at":"2026-11-21 16:50:59","source":"galaxy-app/driven","detail_data":"{\\"opening_event_id\\":18}"}))
+
+      code, stdout, err = galaxy(["session", "new", "--as", "L", "--dir", "/tmp", "--timeout", "5"],
+        {"GALAXY_SOCKET_PATH" => fake.path, "GALAXY_WATCH_SOCKET_PATH" => watch.path, "GALAXY_TIMELINE_BIN" => timeline})
+
+      err.should eq("")
+      code.should eq(0)
+      JSON.parse(stdout).should eq(JSON.parse(%({"id":"abc","token":"t0k","opening_event_id":18})))
+    ensure
+      fake.try(&.close)
+      watch.try(&.close)
+    end
+
+    it "new reports a quiet start as a null opening" do
+      fake = FakeGalaxy.new do |e|
+        e["event"].as_s == "session.create" ? %({"ok":true,"id":"abc","token":"t0k"}) : %({"ok":true,"session":{"id":"abc","ledger_session_id":830}})
+      end
+      watch = fake_watch([%({"v":1,"event_id":20,"type":"session:input-ready","session_id":"abc","occurred_at":"x"})])
+      timeline = fake_timeline(%({"id":20,"event_type":"session:input-ready","occurred_at":"2026-11-21 16:50:59","source":"galaxy-app/driven","detail_data":"{\\"opening_event_id\\":null}"}))
+
+      code, stdout, _ = galaxy(["session", "new", "--as", "L", "--dir", "/tmp", "--timeout", "5"],
+        {"GALAXY_SOCKET_PATH" => fake.path, "GALAXY_WATCH_SOCKET_PATH" => watch.path, "GALAXY_TIMELINE_BIN" => timeline})
+
+      code.should eq(0)
+      JSON.parse(stdout)["opening_event_id"].raw.should be_nil
+    ensure
+      fake.try(&.close)
+      watch.try(&.close)
+    end
+
+    it "new fails with the exit details if the session exits first, still printing the token" do
+      fake = FakeGalaxy.new do |e|
+        e["event"].as_s == "session.create" ? %({"ok":true,"id":"abc","token":"t0k"}) : %({"ok":true,"session":{"id":"abc","ledger_session_id":830}})
+      end
+      watch = fake_watch([%({"v":1,"event_id":21,"type":"session:exited","session_id":"abc","occurred_at":"x"})])
+      timeline = fake_timeline(%({"id":21,"event_type":"session:exited","occurred_at":"2026-11-21 16:50:59","source":"galaxy-app/driven","detail_data":"{\\"exit_code\\":1}"}))
+
+      code, stdout, err = galaxy(["session", "new", "--as", "L", "--dir", "/tmp", "--timeout", "5"],
+        {"GALAXY_SOCKET_PATH" => fake.path, "GALAXY_WATCH_SOCKET_PATH" => watch.path, "GALAXY_TIMELINE_BIN" => timeline})
+
+      code.should eq(1)
+      JSON.parse(stdout).should eq(JSON.parse(%({"id":"abc","token":"t0k","input_ready":false})))
+      err.should contain("exited before it was ready for input (exit code 1)")
+    ensure
+      fake.try(&.close)
+      watch.try(&.close)
+    end
+
+    it "new exits 2 when --timeout runs out, still printing the token" do
+      fake = FakeGalaxy.new do |e|
+        e["event"].as_s == "session.create" ? %({"ok":true,"id":"abc","token":"t0k"}) : %({"ok":true,"session":{"id":"abc","ledger_session_id":null}})
+      end
+      watch = fake_watch([] of String)
+
+      code, stdout, _ = galaxy(["session", "new", "--as", "L", "--dir", "/tmp", "--timeout", "0.3"],
+        {"GALAXY_SOCKET_PATH" => fake.path, "GALAXY_WATCH_SOCKET_PATH" => watch.path})
+
+      code.should eq(2)
+      JSON.parse(stdout)["token"].as_s.should eq("t0k")
+    ensure
+      fake.try(&.close)
+      watch.try(&.close)
+    end
+
+    it "resume ignores input-ready rows from earlier launches" do
+      fake = FakeGalaxy.new do |e|
+        e["event"].as_s == "session.resume" ? %({"ok":true,"id":"abc","accepted":true}) : %({"ok":true,"session":{"id":"abc","ledger_session_id":830}})
+      end
+      watch = fake_watch([%({"v":1,"event_id":30,"type":"session:input-ready","session_id":"abc","occurred_at":"x"})])
+      # The newest row before the resume is an earlier launch's input-ready
+      # (20); rows after it are this launch's (30, after its /galaxy:resume).
+      timeline = fake_timeline(
+        %({"id":20,"event_type":"session:input-ready","occurred_at":"2026-11-21 16:00:00","source":"galaxy-app/driven","detail_data":"{\\"opening_event_id\\":12}"}),
+        after_20: %({"id":30,"event_type":"session:input-ready","occurred_at":"2026-11-21 17:00:00","source":"galaxy-app/driven","detail_data":"{\\"opening_event_id\\":28}"}))
+
+      code, stdout, err = galaxy(["session", "resume", "abc", "--token", "t", "--timeout", "5"],
+        {"GALAXY_SOCKET_PATH" => fake.path, "GALAXY_WATCH_SOCKET_PATH" => watch.path, "GALAXY_TIMELINE_BIN" => timeline})
+
+      err.should eq("")
+      code.should eq(0)
+      JSON.parse(stdout).should eq(JSON.parse(%({"id":"abc","accepted":true,"opening_event_id":28})))
+    ensure
+      fake.try(&.close)
+      watch.try(&.close)
     end
   end
 

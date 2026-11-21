@@ -45,6 +45,12 @@ module Galaxy
   #     ledger_session_id, claude_session_id, dismissed}; times ISO 8601 UTC.
   #   status answers for a dismissed session too, with dismissed:true.
   #
+  # Input ready: a driven session records session:input-ready {opening_event_id
+  # (row id|null), released_by_hand?} the first time after each launch it can
+  # take a prompt: after a persona's opening turn or Galaxy's /galaxy:resume
+  # turn, at once otherwise. new and resume wait for it (or session:exited)
+  # on the watch socket unless --no-wait.
+  #
   # Watching: galaxy-watch.sock, one connection per subscriber.
   #   client -> {"v":1,"subscribe":"<galaxy session id>"}   (then only reads)
   #   server -> {"v":1,"subscribed":"<id>"}  or  {"v":1,"error":"…"}, close
@@ -98,11 +104,15 @@ module Galaxy
       persona : String? = nil
       name : String? = nil
       owner : String? = nil
+      wait = true
+      timeout : Time::Span? = nil
       parse(args, "new") do |p|
         p.on("--dir=DIR", "Working directory (default: current)") { |v| dir = v }
         p.on("--persona=NAME", "claude-persona persona") { |v| persona = v }
         p.on("--name=NAME", "Session name shown in Galaxy") { |v| name = v }
         p.on("--as=OWNER", "Owner name (required)") { |v| owner = v }
+        p.on("--no-wait", "Answer at once, without waiting for the session to take input") { wait = false }
+        p.on("--timeout=SECONDS", "Stop waiting after this long (exit #{EXIT_TIMEOUT})") { |v| timeout = seconds(v) }
       end
 
       owner_name = owner.try(&.strip)
@@ -116,7 +126,10 @@ module Galaxy
       detail = {"directory" => JSON::Any.new(directory), "owner" => JSON::Any.new(owner_name)}
       persona.try { |v| detail["persona"] = JSON::Any.new(v) }
       name.try { |v| detail["name"] = JSON::Any.new(v) }
-      print_reply(request("session.create", detail))
+      reply = request("session.create", detail)
+      return print_reply(reply) unless wait
+      # A new session has no earlier rows, so everything it records counts.
+      finish_waiting(reply, reply["id"].as_s, 0_i64, timeout)
     end
 
     private def self.cmd_token_op(op : String, args : Array(String))
@@ -126,12 +139,21 @@ module Galaxy
 
     private def self.cmd_resume(args : Array(String))
       stop_holder = false
+      wait = true
+      timeout : Time::Span? = nil
       id, token = id_and_token(args, "resume") do |p|
         p.on("--stop-holder", "Stop a process still holding the conversation") { stop_holder = true }
+        p.on("--no-wait", "Answer at once, without waiting for the session to take input") { wait = false }
+        p.on("--timeout=SECONDS", "Stop waiting after this long (exit #{EXIT_TIMEOUT})") { |v| timeout = seconds(v) }
       end
+      # Taken before asking, so the earlier launches' input-ready rows can't
+      # end the wait.
+      cursor = wait ? resume_cursor(id) : 0_i64
       detail = token_detail(id, token)
       detail["stop_holder"] = JSON::Any.new(stop_holder)
-      print_reply(request("session.resume", detail))
+      reply = request("session.resume", detail)
+      return print_reply(reply) unless wait
+      finish_waiting(reply, id, cursor, timeout)
     end
 
     private def self.cmd_send(args : Array(String))
@@ -217,8 +239,77 @@ module Galaxy
       end
       id = positional.first? || fail("#{name} needs a session id")
 
-      # The ledger session id is looked up lazily and kept: a brand-new
-      # session has none until Claude Code starts.
+      client = watch_client(id, STDOUT, EventFilter.new(events), stop_on_first, timeout)
+      case client.run(after)
+      in WatchClient::Outcome::Matched      then exit(0)
+      in WatchClient::Outcome::OutputClosed then exit(0)
+      in WatchClient::Outcome::TimedOut     then exit(EXIT_TIMEOUT)
+      in WatchClient::Outcome::Failed       then exit(1)
+      in WatchClient::Outcome::Dismissed    then exit(stop_on_first ? EXIT_DISMISSED : 0)
+      end
+    end
+
+    # --- waiting for input ---
+
+    # Prints the reply with what the wait found: opening_event_id once the
+    # session can take its first prompt, or input_ready:false and a reason
+    # (the reply still carries the id and token a driver needs).
+    private def self.finish_waiting(reply : JSON::Any, id : String, after : Int64, timeout : Time::Span?)
+      case result = await_input_ready(id, after, timeout)
+      in ReadyWait::Ready
+        opening = result.opening_event_id.try { |v| JSON::Any.new(v) } || JSON::Any.new(nil)
+        print_reply(reply, {"opening_event_id" => opening})
+      in ReadyWait::NotReady
+        print_reply(reply, {"input_ready" => JSON::Any.new(false)})
+        STDERR.puts "Error: #{result.message}"
+        exit(result.exit_code)
+      end
+    end
+
+    private def self.await_input_ready(id : String, after : Int64, timeout : Time::Span?) : ReadyWait::Ready | ReadyWait::NotReady
+      output = IO::Memory.new
+      client = watch_client(id, output, EventFilter.new(ReadyWait::FILTER), true, timeout)
+      case client.run(after)
+      in WatchClient::Outcome::Matched
+        line = output.to_s.lines.last?.try { |l| WatchLine.parse?(l) }
+        return ReadyWait::NotReady.new("could not read the event that ended the wait", 1) unless line
+        ReadyWait.decide(line.type, line.detail || row_detail(id, line.event_id))
+      in WatchClient::Outcome::TimedOut
+        ReadyWait::NotReady.new("timed out waiting for the session to be ready for input", EXIT_TIMEOUT)
+      in WatchClient::Outcome::Dismissed
+        ReadyWait::NotReady.new("the session was dismissed before it was ready for input", EXIT_DISMISSED)
+      in WatchClient::Outcome::Failed, WatchClient::Outcome::OutputClosed
+        ReadyWait::NotReady.new("could not watch the session to see it become ready for input", 1)
+      end
+    end
+
+    # The newest row before a resume, so the wait counts only what this
+    # launch records.
+    private def self.resume_cursor(id : String) : Int64
+      lsid = session_status?(id).try(&.["ledger_session_id"]?).try(&.as_i64?)
+      return 0_i64 unless lsid
+      TimelineReader.latest_id(lsid) ||
+        fail("could not read the session's timeline to tell this resume's events from earlier ones; pass --no-wait to skip waiting")
+    end
+
+    # A timeline row's detail, for a line that arrived without one.
+    private def self.row_detail(id : String, event_id : Int64?) : JSON::Any?
+      return nil unless event_id
+      lsid = session_status?(id).try(&.["ledger_session_id"]?).try(&.as_i64?)
+      return nil unless lsid
+      row = TimelineReader.events(lsid, event_id - 1, 1).try(&.first?)
+      row.try { |r| TimelineReader.readable(r)["detail"] }
+    end
+
+    # The ledger session id is looked up lazily and kept: a brand-new session
+    # has none until Claude Code starts.
+    private def self.watch_client(
+      id : String,
+      output : IO,
+      filter : EventFilter,
+      stop_on_first : Bool,
+      timeout : Time::Span?,
+    ) : WatchClient
       lsid : Int64? = nil
       resolve = -> { lsid ||= session_status?(id).try(&.["ledger_session_id"]?).try(&.as_i64?) }
       backfill = ->(cursor : Int64) do
@@ -239,21 +330,20 @@ module Galaxy
         end
       end
 
-      client = WatchClient.new(
-        id, STDOUT, EventFilter.new(events), backfill, latest,
+      WatchClient.new(
+        id, output, filter, backfill, latest,
         stop_on_first: stop_on_first,
         deadline: timeout.try { |t| Time.monotonic + t },
       )
-      case client.run(after)
-      in WatchClient::Outcome::Matched      then exit(0)
-      in WatchClient::Outcome::OutputClosed then exit(0)
-      in WatchClient::Outcome::TimedOut     then exit(EXIT_TIMEOUT)
-      in WatchClient::Outcome::Failed       then exit(1)
-      in WatchClient::Outcome::Dismissed    then exit(stop_on_first ? EXIT_DISMISSED : 0)
-      end
     end
 
     # --- plumbing ---
+
+    private def self.seconds(value : String) : Time::Span
+      s = value.to_f?
+      fail("--timeout needs a positive number of seconds") if s.nil? || s <= 0
+      s.seconds
+    end
 
     private def self.request(event : String, detail : Hash(String, JSON::Any)) : JSON::Any
       reply = begin
@@ -273,8 +363,8 @@ module Galaxy
     end
 
     # The reply minus its ok flag: what a driver acts on.
-    private def self.print_reply(reply : JSON::Any)
-      fields = reply.as_h.reject { |k, _| k == "ok" }
+    private def self.print_reply(reply : JSON::Any, extra = {} of String => JSON::Any)
+      fields = reply.as_h.reject { |k, _| k == "ok" }.merge(extra)
       puts fields.to_json
     end
 
@@ -358,11 +448,12 @@ module Galaxy
 
       USAGE:
         galaxy session new --as OWNER [--dir DIR] [--persona NAME] [--name NAME]
+                               [--no-wait] [--timeout SECONDS]
         galaxy session send    <id> --token T <file.json>
         galaxy session lock    <id> --token T
         galaxy session release <id> --token T
         galaxy session clear   <id> --token T
-        galaxy session resume  <id> --token T [--stop-holder]
+        galaxy session resume  <id> --token T [--stop-holder] [--no-wait] [--timeout SECONDS]
         galaxy session stop    <id> --token T
         galaxy session dismiss <id> --token T
         galaxy session restore <id> --token T
@@ -383,6 +474,20 @@ module Galaxy
       Kelly can force the lock open from Galaxy's Ledger tab; lock again with
       the same token afterwards. --token may come from GALAXY_SESSION_TOKEN.
 
+      STARTING UP:
+        new and resume wait until the session can take its first prompt,
+        then print their reply with "opening_event_id". A persona with an
+        opening message runs it first, and a resume runs /galaxy:resume
+        first; opening_event_id is that turn's row. After a persona's
+        opening, read it and make your first message respond to it:
+          galaxy session read <id> --after <opening_event_id - 1> --limit 1
+        null means the session started quietly. The moment is recorded as
+        session:input-ready. If the session exits first, the reply carries
+        "input_ready": false, the reason goes to stderr and the exit status
+        is 1 (#{EXIT_TIMEOUT} on --timeout). The id and token are printed
+        either way. --no-wait answers at once, as before; a send made then
+        still waits in Galaxy until the session can take it.
+
       SEND FILE (JSON, validated; every problem is reported):
         {"id": "lead-0007", "message": "Plain text, any length."}
         {"id": "lead-0008", "summary": "Optional overall comment.",
@@ -399,9 +504,10 @@ module Galaxy
       The session reads it through a short pointer, never typed raw.
 
       RESUME:
-        resume answers once it has decided: refused with holder_pid when
-        another process holds the conversation (unless --stop-holder), or
-        {"accepted": true}. The resume itself follows, reported as
+        resume is refused with holder_pid when another process holds the
+        conversation (unless --stop-holder). Otherwise it waits as above and
+        prints {"accepted": true, "opening_event_id": ...}; with --no-wait it
+        answers {"accepted": true} at once, and the resume is reported as
         session:resumed, or session.resume:failed with {"error"}.
 
       STOPPING:
