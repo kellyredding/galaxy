@@ -8,6 +8,14 @@ DERIVED_DATA = build
 # build unregisters what it just made.
 LSREGISTER = /System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/lsregister
 
+# Builds one configuration of the app, unregistering it however xcodebuild
+# ends: Xcode registers the app before its build finishes, so a build that
+# fails or is interrupted after that point would otherwise leave it behind.
+define build_app
+	trap '$(LSREGISTER) -u "$(CURDIR)/$(DERIVED_DATA)/Build/Products/$(1)/Galaxy.app" 2>/dev/null || true' EXIT INT TERM; \
+	xcodebuild -scheme GalaxyApp -configuration $(1) -derivedDataPath $(DERIVED_DATA) -destination 'platform=macOS' build
+endef
+
 # project.yml is the source of truth; the generated project file is
 # gitignored. Without this a fresh clone has no project to build at all, and
 # an edited project.yml is silently ignored in favour of whatever was last
@@ -25,12 +33,10 @@ validate-js:
 	node scripts/validate-js.mjs
 
 build: generate validate-js
-	xcodebuild -scheme GalaxyApp -configuration Debug -derivedDataPath $(DERIVED_DATA) -destination 'platform=macOS' build
-	@$(LSREGISTER) -u "$(CURDIR)/$(DERIVED_DATA)/Build/Products/Debug/Galaxy.app" 2>/dev/null || true
+	$(call build_app,Debug)
 
 release: generate validate-js
-	xcodebuild -scheme GalaxyApp -configuration Release -derivedDataPath $(DERIVED_DATA) -destination 'platform=macOS' build
-	@$(LSREGISTER) -u "$(CURDIR)/$(DERIVED_DATA)/Build/Products/Release/Galaxy.app" 2>/dev/null || true
+	$(call build_app,Release)
 
 # Sandboxed smoke checks: build the standalone tools and run them. No app
 # launch — each runs as its own process.
