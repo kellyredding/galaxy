@@ -1,21 +1,19 @@
 # Contributing to galaxy
 
-Thank you for your interest in contributing to galaxy!
+Galaxy is a personal toolkit with one developer, so there are no pull requests:
+work lands on the `development` branch by fast-forward, and `main` catches up
+at each release. Issues are welcome.
 
-## Development Setup
+[SETUP.md](SETUP.md) covers building from source, installing your changes,
+branches and releases. This file covers the conventions code here follows.
 
-### Prerequisites
-
-- [Crystal](https://crystal-lang.org/) >= 1.0.0
-- Git
-- Make
-
-### Getting Started
+## Getting Started
 
 1. Clone the repository:
    ```bash
    git clone https://github.com/kellyredding/galaxy.git
    cd galaxy
+   git checkout development
    ```
 
 2. Build and test a tool:
@@ -26,42 +24,30 @@ Thank you for your interest in contributing to galaxy!
 
 ## Project Structure
 
-Each tool lives in its own directory under `tools/`:
+Each CLI tool lives in its own directory under `tools/`, and the macOS app in
+`GalaxyApp/`. They are released together as one suite version (`VERSION` at
+the repository root); each tool still records its own version.
 
 ```
 tools/
 └── statusline/
     ├── README.md           # Tool documentation
-    ├── LICENSE             # MIT License
-    ├── RELEASING.md        # Release process
-    ├── VERSION.txt         # Current version
+    ├── version.txt         # This tool's version (VERSION.txt in some tools)
     ├── Makefile            # Build configuration
     ├── shard.yml           # Crystal dependencies
     ├── src/                # Source code
-    ├── spec/               # Tests
-    └── bin/                # Release scripts
+    └── spec/               # Tests
 ```
 
 ## Development Workflow
 
-### Making Changes
+Branches, landing work and releasing are described in
+[SETUP.md](SETUP.md#branches). Before committing:
 
-1. Create a feature branch:
-   ```bash
-   git checkout -b feature/my-feature
-   ```
-
-2. Make your changes
-
-3. Run the full check suite:
-   ```bash
-   cd tools/<tool>
-   make check  # Runs lint + build + test
-   ```
-
-4. Commit with a descriptive message
-
-5. Push and open a pull request
+```bash
+cd tools/<tool>
+make check  # Runs lint + build + test
+```
 
 ### Code Style
 
@@ -114,18 +100,19 @@ paths it was built from. Keep binaries out of the tree.
 
 1. Create the tool directory:
    ```bash
-   mkdir -p tools/newtool/{src,spec,bin}
+   mkdir -p tools/newtool/{src,spec}
    ```
 
 2. Copy scaffolding from an existing tool (e.g., statusline)
 
 3. Update the root Makefile to include the new tool
 
-4. Add the tool to the root README.md
+4. Add the tool to the root README.md and to `TOOLS` in `bin/package`, and to
+   `SETUP_TOOLS` in `install.sh` if its `install` subcommand sets anything up
 
 ## Release Process
 
-See individual tool `RELEASING.md` files for release instructions.
+Galaxy is released as a whole; see [SETUP.md](SETUP.md#release).
 
 ## Questions?
 

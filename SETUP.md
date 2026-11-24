@@ -67,19 +67,49 @@ make -C tools/ledger dev   # one tool's development binary
 Run `make check` before committing. `make audit` on its own is quick: this
 repository is public, and it refuses employer- and deployment-specific details.
 
+## Branches
+
+`development` is where work lands. `main` is the release branch, and it only
+ever moves by fast-forwarding to `development` at a release. Galaxy has one
+developer, so there are no pull requests.
+
+- Start each piece of work on a branch off an up-to-date `development`:
+  ```bash
+  git checkout development && git pull --ff-only
+  git checkout -b kr/feature-name01-task-name
+  ```
+- Land it by fast-forwarding `development` once its checks pass, then delete
+  the branch:
+  ```bash
+  git checkout development && git pull --ff-only
+  git merge --ff-only kr/feature-name01-task-name
+  git push origin development
+  git branch -d kr/feature-name01-task-name
+  ```
+  If the fast-forward refuses, `development` has moved: rebase the branch onto
+  it and try again, rather than merging.
+- Nothing is ever committed on `main` directly.
+
 ## Release
 
-Releases are made from `main` once a version bump has merged:
+Releases are made from `main` after it catches up with `development`:
 
-1. Bump `VERSION` (the suite version) and any tool's `version.txt` that
-   changed, in a PR.
-2. In the same PR, add `release-notes/vX.Y.Z.md`: the changes since the last
-   release, grouped by what a user notices. Each group is a `###` heading led
-   by an emoji, with two or three bullets under it. Ask your agent to draft it
-   from `git log <last tag>..HEAD`, then edit it. See
+1. On a branch off `development`, bump `VERSION` (the suite version) and any
+   tool's `version.txt` that changed.
+2. In the same branch, add `release-notes/vX.Y.Z.md`: the changes since the
+   last release, grouped by what a user notices. Each group is a `###` heading
+   led by an emoji, with two or three bullets under it. Ask your agent to draft
+   it from `git log <last tag>..HEAD`, then edit it. See
    `release-notes/v0.1.0.md` for the shape.
-3. After it merges, on an up-to-date `main`, from a real terminal (1Password's
-   approval does not reach a shell without one):
+3. Land that branch on `development` (above), then fast-forward `main` to it:
+   ```bash
+   git checkout main && git pull --ff-only
+   git merge --ff-only development
+   git push origin main
+   ```
+   If that fast-forward refuses, `main` has a commit `development` lacks; sort
+   that out before releasing rather than merging.
+4. On that `main`, from a terminal that can show 1Password's prompt:
    ```bash
    bin/release --dry-run   # everything but the tag; prints the release description
    bin/release             # tag vX.Y.Z and publish the GitHub release
@@ -88,7 +118,9 @@ Releases are made from `main` once a version bump has merged:
 `bin/release` refuses without the notes file. It runs every check, packages,
 verifies the archive (versions, commit, a clean tree, the signing authority),
 then tags and publishes, with the notes under the install instructions as the
-release description. Users get it with `galaxy update`.
+release description. Users get it with `galaxy update`. It commits nothing,
+only a tag, so `main` and `development` stay on the same commit; switch back to
+`development` afterwards.
 
 A release right after a dry run of the same commit reuses that run's archive:
 it skips the checks and the build (several minutes), verifies the archive
