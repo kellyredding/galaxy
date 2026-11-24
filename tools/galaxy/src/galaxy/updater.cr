@@ -84,11 +84,40 @@ module Galaxy
       opts.local ? run_local(opts) : run_release(opts)
     end
 
+    # The script is fetched before bash runs it: piped straight into bash, a
+    # failed download is an empty script, which bash runs and exits 0.
     private def run_release(opts : Options) : Int32
-      script = "curl -fsSL #{Process.quote(INSTALL_SCRIPT_URL)} | bash -s -- #{Process.quote(install_args(opts))}"
-      CLI.exit_code_for(
-        Process.run("bash", ["-c", script], input: :inherit, output: :inherit, error: :inherit)
-      )
+      script = IO::Memory.new
+      fetched = execute("curl", ["-fsSL", INSTALL_SCRIPT_URL], output: script)
+      return 1 unless fetched
+      unless fetched.success?
+        STDERR.puts "Error: could not download the installer from #{INSTALL_SCRIPT_URL} (#{describe(fetched)})."
+        return 1
+      end
+
+      script.rewind
+      installed = execute("bash", ["-s", "--"] + install_args(opts), input: script)
+      installed ? CLI.exit_code_for(installed) : 1
+    end
+
+    # Nil, with the reason on stderr, when the command cannot be started.
+    private def execute(command : String, args : Array(String),
+                        input : Process::Stdio = Process::Redirect::Inherit,
+                        output : Process::Stdio = Process::Redirect::Inherit) : Process::Status?
+      Process.run(command, args, input: input, output: output, error: :inherit)
+    rescue error : File::Error
+      STDERR.puts "Error: could not run #{command}: #{error.message}"
+      nil
+    end
+
+    private def describe(status : Process::Status) : String
+      if code = status.exit_code?
+        "exit #{code}"
+      elsif signal = status.exit_signal?
+        "signal #{signal}"
+      else
+        status.to_s
+      end
     end
 
     private def run_local(opts : Options) : Int32

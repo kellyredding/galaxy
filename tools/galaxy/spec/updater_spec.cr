@@ -98,6 +98,62 @@ describe Galaxy::Updater do
       end
     end
   end
+
+  describe "galaxy update (the dev binary, with a stand-in curl)" do
+    it "runs the downloaded installer with install.sh's flags and exits with its code" do
+      pending!("Binary not built") unless File.exists?(UPDATE_BINARY)
+      with_fake_curl(%(echo "installer $*"\nexit 7)) do |env|
+        code, stdout, stderr = run_update(["--version", "v0.2.0", "preview"], env)
+        stderr.should contain("curl -fsSL #{Galaxy::INSTALL_SCRIPT_URL}\n")
+        stdout.should eq("installer --version 0.2.0 --preview\n")
+        code.should eq(7)
+      end
+    end
+
+    it "refuses, running nothing, when the installer does not download" do
+      pending!("Binary not built") unless File.exists?(UPDATE_BINARY)
+      with_fake_curl(nil) do |env|
+        code, stdout, stderr = run_update([] of String, env)
+        code.should eq(1)
+        stdout.should be_empty
+        stderr.should contain(
+          "Error: could not download the installer from #{Galaxy::INSTALL_SCRIPT_URL} (exit 22).")
+      end
+    end
+  end
+end
+
+UPDATE_BINARY = File.expand_path(File.join(__DIR__, "../build/galaxy"))
+
+# A `curl` that prints its arguments to stderr and answers with the given
+# installer script, or, given nil, exits 22 as `curl -f` does on an HTTP error.
+def with_fake_curl(installer : String?, &)
+  root = Path.new(Dir.tempdir) / "galaxy-fake-curl-#{Random.rand(100000)}"
+  Dir.mkdir_p(root / "bin")
+  body = if installer
+           "#!/bin/sh\necho \"curl $*\" >&2\ncat <<'EOF'\n#{installer}\nEOF\n"
+         else
+           "#!/bin/sh\necho \"curl: (22) The requested URL returned error: 404\" >&2\nexit 22\n"
+         end
+  File.write(root / "bin" / "curl", body)
+  File.chmod(root / "bin" / "curl", 0o755)
+  begin
+    yield({
+      "PATH"       => "#{root / "bin"}:/usr/bin:/bin",
+      "HOME"       => root.to_s,
+      "GALAXY_DIR" => (root / "galaxy").to_s,
+    })
+  ensure
+    FileUtils.rm_rf(root.to_s)
+  end
+end
+
+def run_update(args : Array(String), env : Hash(String, String)) : {Int32, String, String}
+  stdout = IO::Memory.new
+  stderr = IO::Memory.new
+  status = Process.run(UPDATE_BINARY, ["update"] + args,
+    output: stdout, error: stderr, env: env, clear_env: true)
+  {Galaxy::CLI.exit_code_for(status), stdout.to_s, stderr.to_s}
 end
 
 def with_repo(galaxy : Bool, &)
