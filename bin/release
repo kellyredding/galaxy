@@ -47,7 +47,9 @@ release_notes="release-notes/$tag.md"
 
 # --- Everything that can refuse a release, before the slow parts -----------
 
-branch="$(git rev-parse --abbrev-ref HEAD)"
+# symbolic-ref names the branch even before its first commit, where
+# rev-parse --abbrev-ref fails.
+branch="$(git symbolic-ref --short -q HEAD || echo "a detached HEAD")"
 [[ "$branch" == "main" ]] || die "releases are made from main (currently on $branch). Merge, then release."
 [[ -z "$(git status --porcelain)" ]] || die "the working tree has changes."
 git fetch -q origin main --tags
