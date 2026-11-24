@@ -37,18 +37,6 @@ done
 say() { printf '==> %s\n' "$*"; }
 die() { printf 'bin/package: %s\n' "$*" >&2; exit 1; }
 
-# Build tools are loud on stderr even when they succeed. Keep each step's
-# output in a log and show its tail only when the step fails.
-logdir="$(mktemp -d)"
-run_logged() {
-  local name="$1"; shift
-  local log="$logdir/$name.log"
-  if ! "$@" > "$log" 2>&1; then
-    tail -40 "$log" >&2
-    die "$name failed; full log: $log"
-  fi
-}
-
 # No fallback to ad hoc when op is missing: an ad-hoc install silently costs
 # Galaxy its Full Disk Access grant, which is easy to miss in the output.
 [[ "$sign" == "op" || "$sign" == "adhoc" ]] || die "--sign takes op or adhoc, not '$sign'."
@@ -87,6 +75,29 @@ built_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 say "Packaging Galaxy $version ($commit$($dirty && echo ', uncommitted changes')), signing: $sign"
 
+# Build tools are loud on stderr even when they succeed. Keep each step's
+# output in a log and show its tail only when the step fails. Logs survive a
+# failure, so the path in the error message still exists.
+logdir="$(mktemp -d)"
+work=""
+packaged=false
+# shellcheck disable=SC2329 # run by the trap below
+gx_cleanup() {
+  [[ -n "$work" ]] && rm -rf "${work:?}"
+  $packaged && rm -rf "${logdir:?}"
+  return 0
+}
+trap gx_cleanup EXIT
+
+run_logged() {
+  local name="$1"; shift
+  local log="$logdir/$name.log"
+  if ! "$@" > "$log" 2>&1; then
+    tail -40 "$log" >&2
+    die "$name failed; full log: $log"
+  fi
+}
+
 # --- Build -----------------------------------------------------------------
 
 for t in "${TOOLS[@]}"; do
@@ -102,14 +113,6 @@ app_product="GalaxyApp/build/Build/Products/Release/Galaxy.app"
 # --- Stage -----------------------------------------------------------------
 
 work="$(mktemp -d)"
-packaged=false
-gx_cleanup() {
-  rm -rf "${work:?}"
-  # Logs survive a failure, so the path in the error message still exists.
-  $packaged && rm -rf "${logdir:?}"
-  return 0
-}
-trap gx_cleanup EXIT
 stage="$work/galaxy"
 mkdir -p "$stage/bin"
 
