@@ -5,8 +5,9 @@
 #        throwaway keychain that is deleted on exit. The login keychain is
 #        never used: a key there needs the user's login password, which
 #        surfaces as a dialog mid-build.
-# adhoc: signs with no identity. Works anywhere, but macOS treats every
-#        ad-hoc build as a new app and asks for its privacy permissions again.
+# adhoc: signs with no identity. macOS treats every ad-hoc build as a new app,
+#        so an installed one loses Galaxy's Full Disk Access and every other
+#        privacy permission. Never for anything installed.
 set -euo pipefail
 
 mode="${1:?usage: sign-app.sh (op|adhoc) <bundle>}"
@@ -51,7 +52,7 @@ for attempt in $(seq 1 20); do
   fi
   if (( attempt == 20 )); then
     echo "1Password never provided the signing identity. Last error from op: $last_error" >&2
-    echo "To build without it: bin/package --local --sign adhoc" >&2
+    echo "Run it from a terminal that can show 1Password's prompt; bin/signing-identity show checks the item exists." >&2
     exit 1
   fi
   sleep 3

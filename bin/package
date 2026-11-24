@@ -7,10 +7,11 @@
 #
 # Usage: bin/package [--local] [--sign op|adhoc] [--out DIR]
 #
-#   --local   Allow uncommitted changes (for `galaxy update --local`). Signs
-#             with the release identity when op is installed, ad-hoc
-#             otherwise. Pass --sign adhoc to skip 1Password on purpose.
-#   --sign    Force a signing mode. A release (no --local) always uses op.
+#   --local   Allow uncommitted changes (for `galaxy update --local`).
+#   --sign    op (the default, always): the release identity from 1Password.
+#             adhoc, with --local only, checks that a build signs. Never
+#             install its archive: an ad-hoc Galaxy.app loses its Full Disk
+#             Access and every other privacy permission.
 #   --out     Where to write the archive (default: dist/).
 set -euo pipefail
 
@@ -20,14 +21,14 @@ ASSET="galaxy-darwin-arm64.tar.gz"
 MIN_MACOS=26
 
 local_build=false
-sign=""
+sign=op
 out="$ROOT/dist"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --local) local_build=true ;;
     --sign) sign="${2:?--sign needs op or adhoc}"; shift ;;
     --out) out="${2:?--out needs a directory}"; shift ;;
-    -h|--help) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "bin/package: unknown option '$1'" >&2; exit 2 ;;
   esac
   shift
@@ -48,6 +49,13 @@ run_logged() {
   fi
 }
 
+# No fallback to ad hoc when op is missing: an ad-hoc install silently costs
+# Galaxy its Full Disk Access grant, which is easy to miss in the output.
+[[ "$sign" == "op" || "$sign" == "adhoc" ]] || die "--sign takes op or adhoc, not '$sign'."
+if [[ "$sign" == "adhoc" ]] && ! $local_build; then
+  die "a release must be signed with the release identity (--sign op)."
+fi
+
 # --- Preflight -------------------------------------------------------------
 
 [[ "$(uname -m)" == "arm64" ]] || die "Galaxy releases are built on Apple Silicon (arm64) only."
@@ -57,6 +65,9 @@ macos="$(sw_vers -productVersion)"
 for cmd in git xcodebuild xcodegen crystal shards node tar shasum; do
   command -v "$cmd" >/dev/null || die "'$cmd' is not installed. See SETUP.md."
 done
+if [[ "$sign" == "op" ]]; then
+  command -v op >/dev/null || die "the 1Password CLI (op) is not installed; it holds the signing identity."
+fi
 # Output is captured before matching throughout: under pipefail, `| grep -q`
 # exits on its match, the writer dies of SIGPIPE, and the pipeline fails.
 metal="$(xcodebuild -showComponent MetalToolchain 2>/dev/null || true)"
@@ -68,21 +79,6 @@ dirty=false
 [[ -n "$(git status --porcelain)" ]] && dirty=true
 if ! $local_build && $dirty; then
   die "the working tree has changes. Commit them, or use --local."
-fi
-
-# Local builds sign with the release identity whenever op is installed, and
-# fail rather than fall back: an ad-hoc build makes macOS ask for Galaxy's
-# permissions again, which is easy to miss in the output. `op whoami` cannot
-# decide this, since it reports "not signed in" without ever prompting.
-if [[ -z "$sign" ]]; then
-  if ! $local_build || command -v op >/dev/null; then
-    sign=op
-  else
-    sign=adhoc
-  fi
-fi
-if ! $local_build && [[ "$sign" != "op" ]]; then
-  die "a release must be signed with the release identity (--sign op)."
 fi
 
 version="$(tr -d '[:space:]' < VERSION)"

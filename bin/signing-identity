@@ -15,6 +15,15 @@ ACCOUNT="${GALAXY_SIGNING_OP_ACCOUNT:-my.1password.com}"
 VAULT="${GALAXY_SIGNING_OP_VAULT:-Private}"
 TITLE="Galaxy Release Signing"
 
+case "${1:-}" in
+  create|show) ;;
+  *)
+    sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
+    [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] || exit 2
+    exit 0
+    ;;
+esac
+
 die() { printf 'bin/signing-identity: %s\n' "$*" >&2; exit 1; }
 command -v op >/dev/null || die "the 1Password CLI (op) is not installed."
 
@@ -30,7 +39,7 @@ gx_wait_for_op() {
   die "1Password never approved this shell."
 }
 
-case "${1:-}" in
+case "$1" in
   create)
     gx_wait_for_op
     if op item get "$TITLE" --account "$ACCOUNT" --vault "$VAULT" >/dev/null 2>&1; then
@@ -69,9 +78,5 @@ case "${1:-}" in
   show)
     gx_wait_for_op
     op item get "$TITLE" --account "$ACCOUNT" --vault "$VAULT" --fields label=sha1
-    ;;
-  *)
-    sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
-    [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] || exit 2
     ;;
 esac

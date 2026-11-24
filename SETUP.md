@@ -48,9 +48,10 @@ installed: the tools into `~/.claude/galaxy/bin` (linked into
 keeps running; restart it to switch. `galaxy update` puts you back on the
 latest release.
 
-The app is signed with the release identity when 1Password can provide it,
-and ad-hoc otherwise. macOS keys an app's privacy permissions to its
-signature, so an ad-hoc build asks for them again.
+The app is signed with the release identity, which the 1Password CLI (`op`)
+reads from 1Password; without `op` the build refuses. macOS keys an app's
+privacy permissions to its signature, so a build signed any other way loses
+them.
 
 Underneath, that is `bin/package --local`, which writes
 `dist/galaxy-darwin-arm64.tar.gz`, and `install.sh --from` that archive.
