@@ -12,6 +12,11 @@
 #   --no-register     Skip Launch Services registration (sandboxed tests)
 #
 # Never launches, quits or restarts Galaxy.
+
+# One compound command, so bash reads all of it before running any: piped in,
+# a truncated download or a command that reads stdin would otherwise cut the
+# script short partway through an install.
+{
 set -euo pipefail
 
 REPO="kellyredding/galaxy"
@@ -39,7 +44,7 @@ while [[ $# -gt 0 ]]; do
     --preview|preview) preview=true ;;
     --force|force) force=true ;;
     --no-register) register=false ;;
-    -h|--help|help) sed -n '2,15p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//' \
+    -h|--help|help) sed -n '2,14p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//' \
                       || echo "See https://github.com/$REPO/blob/main/install.sh"; exit 0 ;;
     *) echo "install.sh: unknown option '$1'" >&2; exit 2 ;;
   esac
@@ -61,6 +66,7 @@ macos="$(sw_vers -productVersion)"
 
 work="$(mktemp -d)"
 installed_ok=false
+# shellcheck disable=SC2329 # run by the trap below
 gx_cleanup() {
   if $installed_ok || $preview; then rm -rf "${work:?}"
   else printf 'Working files kept for inspection: %s\n' "$work" >&2; fi
@@ -72,8 +78,10 @@ trap gx_cleanup EXIT
 if [[ -n "$from" ]]; then
   [[ -f "$from" ]] || die "no archive at $from"
   cp "$from" "$work/$ASSET"
+  # Renamed to the fixed name, so an archive saved under another name still
+  # checks against its own checksum file.
   if [[ -f "$from.sha256" ]]; then
-    cp "$from.sha256" "$work/$ASSET.sha256"
+    sed "s/[^ ]*$/$ASSET/" "$from.sha256" > "$work/$ASSET.sha256"
   fi
   source_label="$from"
 else
@@ -209,3 +217,5 @@ if $first_install; then
 else
   say "Restart Galaxy when you're ready to switch to the new version."
 fi
+exit 0
+}
