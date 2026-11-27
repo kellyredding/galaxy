@@ -5,6 +5,8 @@ BINDIR ?= $(PREFIX)/bin
 LOCAL_BINDIR ?= $(HOME)/.local/bin
 BUILDDIR ?= build
 
+include ../build.mk
+
 # Dependencies
 deps: lib/.shards-installed
 
@@ -56,8 +58,7 @@ dev: deps format
 
 # Release
 build: deps
-	@mkdir -p $(BUILDDIR)
-	crystal build --release --no-debug -o $(BUILDDIR)/galaxy-ledger src/galaxy_ledger.cr
+	$(call universal_build,galaxy-ledger,src/galaxy_ledger.cr)
 
 install: check build
 	install -d $(BINDIR)

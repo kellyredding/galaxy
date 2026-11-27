@@ -5,6 +5,8 @@ BINDIR ?= $(PREFIX)/bin
 LOCAL_BINDIR ?= $(HOME)/.local/bin
 BUILDDIR ?= build
 
+include ../build.mk
+
 # Dependencies
 deps: lib/.shards-installed
 
@@ -29,9 +31,7 @@ dev: deps format
 	  src/galaxy_agents.cr
 
 build: deps
-	@mkdir -p $(BUILDDIR)
-	crystal build --release --no-debug \
-	  -o $(BUILDDIR)/galaxy-agents src/galaxy_agents.cr
+	$(call universal_build,galaxy-agents,src/galaxy_agents.cr)
 
 install: check build
 	install -d $(BINDIR)

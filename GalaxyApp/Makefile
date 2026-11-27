@@ -11,9 +11,10 @@ LSREGISTER = /System/Library/Frameworks/CoreServices.framework/Versions/Current/
 # Builds one configuration of the app, unregistering it however xcodebuild
 # ends: Xcode registers the app before its build finishes, so a build that
 # fails or is interrupted after that point would otherwise leave it behind.
+# $(2) is extra build settings.
 define build_app
 	trap '$(LSREGISTER) -u "$(CURDIR)/$(DERIVED_DATA)/Build/Products/$(1)/Galaxy.app" 2>/dev/null || true' EXIT INT TERM; \
-	xcodebuild -scheme GalaxyApp -configuration $(1) -derivedDataPath $(DERIVED_DATA) -destination 'platform=macOS' build
+	xcodebuild -scheme GalaxyApp -configuration $(1) -derivedDataPath $(DERIVED_DATA) -destination 'platform=macOS' $(2) build
 endef
 
 # project.yml is the source of truth; the generated project file is
@@ -35,8 +36,9 @@ validate-js:
 build: generate validate-js
 	$(call build_app,Debug)
 
+# Releases run on Apple Silicon and Intel; development builds stay native.
 release: generate validate-js
-	$(call build_app,Release)
+	$(call build_app,Release,ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO)
 
 # Sandboxed smoke checks: build the standalone tools and run them. No app
 # launch — each runs as its own process.
