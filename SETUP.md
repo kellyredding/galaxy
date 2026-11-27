@@ -6,7 +6,9 @@ installing your changes, and making releases.
 
 ## Prerequisites
 
-- **Apple Silicon, macOS 26** or later
+- **Apple Silicon, macOS 26** or later. That is for building; a release runs on
+  Apple Silicon and Intel Macs with macOS 15 or later
+  (`bin/lib/universal.sh`), and nothing is built on an Intel Mac.
 - **Xcode** with Swift 6, pointed at by the developer tools:
   ```bash
   sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
@@ -54,7 +56,26 @@ privacy permissions to its signature, so a build signed any other way loses
 them.
 
 Underneath, that is `bin/package --local`, which writes
-`dist/galaxy-darwin-arm64.tar.gz`, and `install.sh --from` that archive.
+`dist/galaxy-darwin.tar.gz`, and `install.sh --from` that archive. A `galaxy`
+installed before the archive took that name looks for the older
+`galaxy-darwin-arm64.tar.gz`, so the first time, run the two steps by hand:
+
+```bash
+bin/package --local && ./install.sh --from dist/galaxy-darwin.tar.gz
+```
+
+## Apple Silicon and Intel
+
+Release tools and the release app hold both architectures; development builds
+(`make dev`, `make app-build`) stay native, so specs and day-to-day builds are
+no slower. Each tool's `build` compiles natively, cross-compiles for Intel and
+joins the two with `lipo` (`tools/build.mk`); the app's `release` builds both
+(`GalaxyApp/Makefile`). The minimum macOS lives in four places that must move
+together: `tools/build.mk`, `GalaxyApp/project.yml`, `install.sh`'s
+`MIN_MACOS`, and `bin/lib/universal.sh`. `bin/package` and `bin/release`
+refuse any binary missing an architecture, built for a newer macOS, or loading
+a library from outside the system, so a floor moved in one place but not the
+others fails there.
 
 ## Build and check without installing
 
@@ -116,7 +137,8 @@ Releases are made from `main` after it catches up with `development`:
    ```
 
 `bin/release` refuses without the notes file. It runs every check, packages,
-verifies the archive (versions, commit, a clean tree, the signing authority),
+verifies the archive (versions, commit, a clean tree, the signing authority,
+both architectures and the minimum macOS of every binary),
 then tags and publishes, with the notes under the install instructions as the
 release description. Users get it with `galaxy update`. It commits nothing,
 only a tag, so `main` and `development` stay on the same commit; switch back to

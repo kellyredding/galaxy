@@ -136,7 +136,11 @@ module Galaxy
         )
         return CLI.exit_code_for(package) unless package.success?
 
-        archive = out_dir / "galaxy-darwin-arm64.tar.gz"
+        archive = packaged_archive(out_dir)
+        unless archive
+          STDERR.puts "Error: bin/package wrote no galaxy-darwin*.tar.gz to #{out_dir}."
+          return 1
+        end
         CLI.exit_code_for(
           Process.run(
             "bash", [(repo / "install.sh").to_s, "--from", archive.to_s] + install_args(opts),
@@ -146,6 +150,14 @@ module Galaxy
       ensure
         FileUtils.rm_rf(out_dir.to_s)
       end
+    end
+
+    # The archive a checkout's bin/package wrote. Matched by pattern because a
+    # checkout of any age may be packaged, and the archive's name has changed.
+    def packaged_archive(out_dir : Path) : Path?
+      Dir.glob((out_dir / "galaxy-darwin*.tar.gz").to_s)
+        .max_by? { |path| File.info(path).modification_time }
+        .try { |path| Path.new(path) }
     end
 
     def help_text : String

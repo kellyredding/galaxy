@@ -17,7 +17,7 @@
 
 ## Installation
 
-Galaxy runs on Apple Silicon Macs with macOS 26 or later, and needs
+Galaxy runs on Apple Silicon and Intel Macs with macOS 15 or later, and needs
 [Claude Code](https://claude.com/claude-code).
 
 ```bash

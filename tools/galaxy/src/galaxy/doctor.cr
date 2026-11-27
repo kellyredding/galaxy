@@ -21,6 +21,9 @@ module Galaxy
         dirty = manifest["dirty"]?.try(&.as_bool?) ? ", uncommitted changes" : ""
         puts "  Suite:    #{manifest["version"]?} (#{manifest["commit"]?}#{dirty})"
         puts "  Built:    #{manifest["built_at"]?}, signing: #{manifest["signing"]?}"
+        if (archs = manifest["archs"]?) && (min_macos = manifest["min_macos"]?)
+          puts "  Runs on:  #{archs}, macOS #{min_macos} or later"
+        end
       else
         findings << Finding.new(false, "No install record at #{INSTALLED_MANIFEST}: this install predates install.sh. Run `galaxy update`.")
       end

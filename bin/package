@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Builds every CLI tool and a Release Galaxy.app from this tree, signs the
-# app, and writes one archive for install.sh:
+# Builds every CLI tool and a Release Galaxy.app from this tree, for Apple
+# Silicon and Intel, signs the app, and writes one archive for install.sh:
 #
-#   <out>/galaxy-darwin-arm64.tar.gz
-#   <out>/galaxy-darwin-arm64.tar.gz.sha256
+#   <out>/galaxy-darwin.tar.gz
+#   <out>/galaxy-darwin.tar.gz.sha256
 #
 # Usage: bin/package [--local] [--sign op|adhoc] [--out DIR]
 #
@@ -17,8 +17,11 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TOOLS=(galaxy statusline ledger artifacts timeline agents diff files)
-ASSET="galaxy-darwin-arm64.tar.gz"
-MIN_MACOS=26
+ASSET="galaxy-darwin.tar.gz"
+# The Mac that builds a release, not the ones it runs on (bin/lib/universal.sh).
+BUILD_MACOS=26
+# shellcheck source-path=SCRIPTDIR source=lib/universal.sh
+. "$ROOT/bin/lib/universal.sh"
 
 local_build=false
 sign=op
@@ -48,9 +51,9 @@ fi
 
 [[ "$(uname -m)" == "arm64" ]] || die "Galaxy releases are built on Apple Silicon (arm64) only."
 macos="$(sw_vers -productVersion)"
-(( ${macos%%.*} >= MIN_MACOS )) || die "macOS $MIN_MACOS or later is required (this Mac runs $macos)."
+(( ${macos%%.*} >= BUILD_MACOS )) || die "building needs macOS $BUILD_MACOS or later (this Mac runs $macos)."
 
-for cmd in git xcodebuild xcodegen crystal shards node tar shasum; do
+for cmd in git xcodebuild xcodegen crystal shards node tar shasum lipo vtool otool; do
   command -v "$cmd" >/dev/null || die "'$cmd' is not installed. See SETUP.md."
 done
 if [[ "$sign" == "op" ]]; then
@@ -136,6 +139,9 @@ for tv in "${tool_versions[@]}"; do
   pb "Add :GalaxyToolVersions:${tv%%=*} string ${tv#*=}"
 done
 
+say "Checking every binary runs on $GALAXY_ARCHS, macOS $GALAXY_MIN_MACOS or later"
+problem="$(gx_check_universal "$stage")" || die "$problem"
+
 say "Signing Galaxy.app ($sign)"
 # Not logged and not piped: op talks to the 1Password app on the user's
 # behalf, and signing may need to ask the user to approve it.
@@ -153,6 +159,8 @@ printf '%s\n' "$version" > "$stage/VERSION"
   printf '  "dirty": %s,\n' "$dirty"
   printf '  "built_at": "%s",\n' "$built_at"
   printf '  "signing": "%s",\n' "$sign"
+  printf '  "archs": "%s",\n' "$GALAXY_ARCHS"
+  printf '  "min_macos": "%s",\n' "$GALAXY_MIN_MACOS"
   printf '  "tools": {\n'
   last=$(( ${#tool_versions[@]} - 1 ))
   for i in "${!tool_versions[@]}"; do

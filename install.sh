@@ -20,8 +20,10 @@
 set -euo pipefail
 
 REPO="kellyredding/galaxy"
-ASSET="galaxy-darwin-arm64.tar.gz"
-MIN_MACOS=26
+ASSET="galaxy-darwin.tar.gz"
+# Releases from before Intel Macs and macOS 15 were supported publish only this.
+OLD_ASSET="galaxy-darwin-arm64.tar.gz"
+MIN_MACOS=15
 GALAXY_HOME="$HOME/.claude/galaxy"
 BIN_DIR="$GALAXY_HOME/bin"
 LOCAL_BIN="$HOME/.local/bin"
@@ -60,7 +62,9 @@ die() { printf '%sinstall.sh: %s%s\n' "$RED" "$*" "$NC" >&2; exit 1; }
 # --- This Mac ----------------------------------------------------------------
 
 [[ "$(uname -s)" == "Darwin" ]] || die "Galaxy runs on macOS only."
-[[ "$(uname -m)" == "arm64" ]] || die "Galaxy releases are built for Apple Silicon (arm64) only."
+machine="$(uname -m)"
+[[ "$machine" == "arm64" || "$machine" == "x86_64" ]] \
+  || die "Galaxy runs on Apple Silicon (arm64) or Intel (x86_64) Macs; this one is $machine."
 macos="$(sw_vers -productVersion)"
 (( ${macos%%.*} >= MIN_MACOS )) || die "Galaxy needs macOS $MIN_MACOS or later; this Mac runs $macos."
 
@@ -92,10 +96,28 @@ else
   fi
   # curl rather than a browser download: curl sets no quarantine flag, which
   # is what lets a self-signed Galaxy.app open without a Gatekeeper prompt.
-  curl -fsSL "$base/$ASSET" -o "$work/$ASSET" \
-    || die "could not download $base/$ASSET${version:+ (is v$version a Galaxy release?)}"
-  curl -fsSL "$base/$ASSET.sha256" -o "$work/$ASSET.sha256" \
-    || die "could not download the checksum for $ASSET"
+  # Saved under $ASSET whatever its published name. Returns 1 when the release
+  # has no such file (curl -f exits 22 on an HTTP error).
+  gx_fetch() {
+    local rc=0
+    curl -fsSL "$base/$1" -o "$work/$ASSET" 2>/dev/null || rc=$?
+    if (( rc == 22 )); then return 1; fi
+    (( rc == 0 )) || die "could not download $base/$1 (curl exit $rc)"
+    curl -fsSL "$base/$1.sha256" -o "$work/checksum" \
+      || die "could not download the checksum for $1"
+    sed "s/[^ ]*$/$ASSET/" "$work/checksum" > "$work/$ASSET.sha256"
+  }
+  if ! gx_fetch "$ASSET"; then
+    # Also the latest release's state for the few minutes a release takes to
+    # publish, since main, and so this script, is pushed first.
+    if [[ "$machine" != "arm64" ]] || (( ${macos%%.*} < 26 )); then
+      [[ -z "$version" ]] \
+        || die "Galaxy $version predates Intel and macOS 15 support: it needs Apple Silicon and macOS 26 or later."
+      die "the latest Galaxy release has no $ASSET yet. If one is being published, try again in a few minutes."
+    fi
+    gx_fetch "$OLD_ASSET" \
+      || die "could not download $base/$ASSET${version:+ (is v$version a Galaxy release?)}"
+  fi
   source_label="$base"
 fi
 
@@ -112,6 +134,15 @@ pkg="$work/galaxy"
   || die "$ASSET is not a Galaxy release archive"
 
 manifest_field() { sed -n "s/^  \"$1\": \"\{0,1\}\([^\",]*\)\"\{0,1\},\{0,1\}$/\1/p" "$2" | head -1; }
+
+# An archive that does not say what it runs on predates universal builds.
+runs_on="$(manifest_field archs "$pkg/manifest.json")"; runs_on="${runs_on:-arm64}"
+needs_macos="$(manifest_field min_macos "$pkg/manifest.json")"; needs_macos="${needs_macos:-26}"
+[[ " $runs_on " == *" $machine "* ]] \
+  || die "this archive runs on $runs_on only; this Mac is $machine. Nothing was installed."
+(( ${macos%%.*} >= ${needs_macos%%.*} )) \
+  || die "this archive needs macOS $needs_macos or later; this Mac runs $macos. Nothing was installed."
+
 new_version="$(manifest_field version "$pkg/manifest.json")"
 new_commit="$(manifest_field commit "$pkg/manifest.json")"
 new_dirty="$(manifest_field dirty "$pkg/manifest.json")"

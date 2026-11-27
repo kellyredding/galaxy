@@ -114,36 +114,9 @@ Colors can be set to:
 
 ## Installation
 
-Download the latest binary from
-[Releases](https://github.com/kellyredding/galaxy/releases) and place it
-in your PATH:
-
-```bash
-# Download tarball and checksum (check Releases page for latest version)
-# Use darwin-arm64 for Apple Silicon, darwin-amd64 for Intel
-curl -LO https://github.com/kellyredding/galaxy/releases/download/statusline-vX.X.X/galaxy-statusline-X.X.X-darwin-arm64.tar.gz
-curl -LO https://github.com/kellyredding/galaxy/releases/download/statusline-vX.X.X/galaxy-statusline-X.X.X-darwin-arm64.tar.gz.sha256
-
-# Verify checksum (should say "OK")
-shasum -a 256 -c galaxy-statusline-X.X.X-darwin-arm64.tar.gz.sha256
-
-# Extract and install
-tar -xzf galaxy-statusline-X.X.X-darwin-arm64.tar.gz
-mkdir -p ~/.claude/galaxy/bin
-mv galaxy-statusline-X.X.X-darwin-arm64 ~/.claude/galaxy/bin/galaxy-statusline
-chmod +x ~/.claude/galaxy/bin/galaxy-statusline
-
-# Clean up
-rm galaxy-statusline-X.X.X-darwin-arm64.tar.gz galaxy-statusline-X.X.X-darwin-arm64.tar.gz.sha256
-```
-
-Or build from source (requires Crystal):
-
-```bash
-git clone https://github.com/kellyredding/galaxy.git
-cd galaxy/tools/statusline
-make install
-```
+`galaxy-statusline` is installed with the rest of Galaxy; see the
+[installation steps](../../README.md#installation). Galaxy.app's Settings ›
+Statusline › Install points Claude Code at it.
 
 ## Development
 

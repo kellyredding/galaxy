@@ -23,8 +23,10 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REPO="kellyredding/galaxy"
-ASSET="galaxy-darwin-arm64.tar.gz"
+ASSET="galaxy-darwin.tar.gz"
 IDENTITY="Galaxy Release Signing"
+# shellcheck source-path=SCRIPTDIR source=lib/universal.sh
+. "$ROOT/bin/lib/universal.sh"
 
 dry_run=false
 fresh=false
@@ -151,13 +153,19 @@ for bin in "$pkg"/bin/*; do
   have="$("$bin" --version | awk '{print $NF}')"
   [[ -n "$want" && "$have" == "$want" ]] || die "$name reports $have, manifest says $want"
 done
+# install.sh trusts these two fields to refuse a Mac the archive cannot run on.
+grep -q "\"archs\": \"$GALAXY_ARCHS\"" "$pkg/manifest.json" || die "manifest does not say it runs on $GALAXY_ARCHS"
+grep -q "\"min_macos\": \"$GALAXY_MIN_MACOS\"" "$pkg/manifest.json" \
+  || die "manifest does not say it needs macOS $GALAXY_MIN_MACOS"
+problem="$(gx_check_universal "$pkg")" || die "$problem"
 codesign --verify --strict "$pkg/Galaxy.app" || die "Galaxy.app does not verify"
 # Captured before matching: under pipefail, `| grep -q` exits on its match,
 # codesign dies of SIGPIPE writing the lines after it, and the check fails.
 signature="$(codesign -dv --verbose=2 "$pkg/Galaxy.app" 2>&1)"
 [[ "$signature" == *$'\n'"Authority=$IDENTITY"$'\n'* ]] \
   || die "Galaxy.app is not signed by $IDENTITY"
-echo "    archive verified: $(find "$pkg/bin" -type f | wc -l | tr -d ' ') tools, app signed by $IDENTITY"
+echo "    archive verified: $(find "$pkg/bin" -type f | wc -l | tr -d ' ') tools, app signed by $IDENTITY," \
+     "all for $GALAXY_ARCHS on macOS $GALAXY_MIN_MACOS or later"
 printf '%s\n' "$head" > "$checked_stamp"
 
 # --- Release description ---------------------------------------------------
@@ -172,7 +180,7 @@ notes="$verify/notes.md"
   echo "curl -fsSL https://raw.githubusercontent.com/$REPO/main/install.sh | bash"
   echo '```'
   echo
-  echo "Apple Silicon, macOS 26 or later. Download with the script, not a browser:"
+  echo "macOS $GALAXY_MIN_MACOS or later, on Apple Silicon or Intel. Download with the script, not a browser:"
   echo "the app is self-signed, and macOS blocks a browser download of it."
   echo
   echo "## What's new"

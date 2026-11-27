@@ -86,7 +86,45 @@ describe Galaxy::Updater do
     end
   end
 
+  describe ".packaged_archive" do
+    it "finds the archive under its current name or the older arm64 one" do
+      %w[galaxy-darwin.tar.gz galaxy-darwin-arm64.tar.gz].each do |name|
+        with_out_dir do |dir|
+          File.write(dir / name, "")
+          File.write(dir / "#{name}.sha256", "")
+          Galaxy::Updater.packaged_archive(dir).should eq(dir / name)
+        end
+      end
+    end
+
+    it "is nil when bin/package wrote no archive" do
+      with_out_dir do |dir|
+        Galaxy::Updater.packaged_archive(dir).should be_nil
+      end
+    end
+  end
+
   describe ".run" do
+    it "installs the archive bin/package wrote and exits with install.sh's code" do
+      with_repo(galaxy: true) do |root|
+        write_script(root / "bin" / "package", %(mkdir -p "$3" && : > "$3/galaxy-darwin.tar.gz"))
+        write_script(root / "install.sh", %(echo "$@" > '#{root}/installed-with'\nexit 5))
+
+        Galaxy::Updater.run(Galaxy::Updater.parse(["--local", root.to_s])).should eq(5)
+        File.read(root / "installed-with").should match(/\A--from \S+\/galaxy-darwin\.tar\.gz\n\z/)
+      end
+    end
+
+    it "refuses when bin/package succeeds but writes no archive" do
+      with_repo(galaxy: true) do |root|
+        write_script(root / "bin" / "package", ":")
+        write_script(root / "install.sh", %(: > '#{root}/installed-with'))
+
+        Galaxy::Updater.run(Galaxy::Updater.parse(["--local", root.to_s])).should eq(1)
+        File.exists?(root / "installed-with").should be_false
+      end
+    end
+
     it "reports a packaging step killed by a signal as 128 + the signal" do
       with_repo(galaxy: true) do |root|
         package = root / "bin" / "package"
@@ -154,6 +192,21 @@ def run_update(args : Array(String), env : Hash(String, String)) : {Int32, Strin
   status = Process.run(UPDATE_BINARY, ["update"] + args,
     output: stdout, error: stderr, env: env, clear_env: true)
   {Galaxy::CLI.exit_code_for(status), stdout.to_s, stderr.to_s}
+end
+
+def write_script(path : Path, body : String)
+  File.write(path, "#!/bin/sh\n#{body}\n")
+  File.chmod(path, 0o755)
+end
+
+def with_out_dir(&)
+  dir = Path.new(Dir.tempdir) / "galaxy-out-#{Random.rand(100000)}"
+  Dir.mkdir_p(dir)
+  begin
+    yield dir
+  ensure
+    FileUtils.rm_rf(dir.to_s)
+  end
 end
 
 def with_repo(galaxy : Bool, &)

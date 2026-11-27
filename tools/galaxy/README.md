@@ -10,41 +10,8 @@ Launch Galaxy sessions from the terminal.
 
 ## Installation
 
-Download the latest binary from [Releases](https://github.com/kellyredding/galaxy/releases) and place it in your PATH:
-
-```bash
-# Download tarball and checksum (check Releases page for latest version)
-# Use darwin-arm64 for Apple Silicon, darwin-amd64 for Intel
-curl -LO https://github.com/kellyredding/galaxy/releases/download/galaxy-vX.X.X/galaxy-X.X.X-darwin-arm64.tar.gz
-curl -LO https://github.com/kellyredding/galaxy/releases/download/galaxy-vX.X.X/galaxy-X.X.X-darwin-arm64.tar.gz.sha256
-
-# Verify checksum (should say "OK")
-shasum -a 256 -c galaxy-X.X.X-darwin-arm64.tar.gz.sha256
-
-# Extract and install
-tar -xzf galaxy-X.X.X-darwin-arm64.tar.gz
-mkdir -p ~/.claude/galaxy/bin
-mv galaxy-X.X.X-darwin-arm64 ~/.claude/galaxy/bin/galaxy
-chmod +x ~/.claude/galaxy/bin/galaxy
-
-# Add to PATH (add to ~/.zshrc or ~/.bashrc)
-export PATH="$HOME/.local/bin:$PATH"
-
-# Create symlink for PATH access
-mkdir -p ~/.local/bin
-ln -sf ~/.claude/galaxy/bin/galaxy ~/.local/bin/galaxy
-
-# Clean up
-rm galaxy-X.X.X-darwin-arm64.tar.gz galaxy-X.X.X-darwin-arm64.tar.gz.sha256
-```
-
-Or build from source (requires Crystal):
-
-```bash
-git clone https://github.com/kellyredding/galaxy.git
-cd galaxy/tools/galaxy
-make install
-```
+`galaxy` is installed with the rest of Galaxy; see the
+[installation steps](../../README.md#installation).
 
 ## Prerequisites
 
